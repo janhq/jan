@@ -47,7 +47,7 @@ describe('llama.cpp inference', () => {
     // 6. Wait for an assistant message to appear and finish streaming
     await browser.waitUntil(
       async () => {
-        const messages = await $$('[data-testid="assistant-message"]')
+        const messages = await $$('[data-testid="assistant-message"]').getElements()
         if (messages.length === 0) return false
         const last = messages[messages.length - 1]
         const streaming = await last.getAttribute('data-streaming')
@@ -57,7 +57,7 @@ describe('llama.cpp inference', () => {
       { timeout: 180_000, timeoutMsg: 'No completed assistant reply' }
     )
 
-    const messages = await $$('[data-testid="assistant-message"]')
+    const messages = await $$('[data-testid="assistant-message"]').getElements()
     const reply = (await messages[messages.length - 1].getText()).toLowerCase()
     expect(reply).toContain('pong')
   })

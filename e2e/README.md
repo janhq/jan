@@ -1,7 +1,6 @@
 # Jan E2E (tauri-driver + WebdriverIO)
 
-End-to-end tests that drive the built Jan binary via WebDriver. Replaces
-the agent-based `autoqa/` harness for deterministic flows.
+End-to-end tests that drive the built Jan binary via WebDriver.
 
 ## Platform support
 
@@ -59,6 +58,26 @@ Use stable `data-testid` attributes in the React components — XPath/CSS
 text selectors are fragile across i18n locales. The included
 `llamacpp-inference.e2e.ts` lists the test IDs it expects; add them in
 `web-app/` as you stabilize each flow.
+
+Shared helpers live in `helpers/`:
+
+- `helpers/app.ts` — `waitForApp`, `clickNav`, `byTestId`, `existsTestId`,
+  `dismissDialog`.
+- `helpers/settings.ts` — `openSettings(tab)`, `settingsControl`,
+  `reloadRenderer`.
+
+Conventions:
+
+- **English only.** `wdio.conf.ts` pins `LANG`/`LC_ALL`/`LANGUAGE` to
+  `en_US.UTF-8` for the spawned Jan process. Don't write specs that
+  depend on other locales.
+- **Testid-only selectors.** Avoid CSS text or XPath text matches.
+- **Failed-test screenshots** are written to `e2e/screenshots/` (gitignored)
+  and uploaded by CI as an artifact.
+- **Manual-only flows** (anything requiring a real API key, model
+  download, or migration from a prior version) should live in
+  `specs/manual/` and be skipped by default via
+  `describe.skip` or an env-gated guard.
 
 ## Known gotchas
 

@@ -1,9 +1,9 @@
 import { spawn, spawnSync, ChildProcess } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { Options } from '@wdio/types'
+import { browser } from '@wdio/globals'
 
 const repoRoot = resolve(__dirname, '..')
 
@@ -66,10 +66,17 @@ function makeProfileEnv(): Record<string, string> {
     overrides.XDG_CONFIG_HOME = join(profileDir, 'config')
     overrides.XDG_CACHE_HOME = join(profileDir, 'cache')
   }
+  // Pin locale to English so testid-free fallback selectors (and any
+  // visible-text assertions) behave deterministically across CI runners.
+  overrides.LANG = 'en_US.UTF-8'
+  overrides.LC_ALL = 'en_US.UTF-8'
+  overrides.LANGUAGE = 'en_US:en'
   return overrides
 }
 
-export const config: Options.Testrunner = {
+const screenshotsDir = resolve(__dirname, 'screenshots')
+
+export const config: WebdriverIO.Config = {
   runner: 'local',
   tsConfigPath: './tsconfig.json',
 
@@ -128,6 +135,27 @@ export const config: Options.Testrunner = {
       throw new Error(`tauri-driver failed to start: ${err.message}`)
     })
     await waitForPort(DRIVER_PORT, '127.0.0.1', 30_000)
+  },
+
+  /**
+   * Capture a PNG screenshot for any failing test. Files land in
+   * `e2e/screenshots/` keyed by spec + test title; CI uploads the dir as
+   * an artifact. Best-effort: a failed screenshot must not mask the real
+   * test failure.
+   */
+  async afterTest(test, _context, result: { passed: boolean }) {
+    if (result.passed) return
+    try {
+      mkdirSync(screenshotsDir, { recursive: true })
+      const safe = `${test.parent}--${test.title}`
+        .replace(/[^a-z0-9-_]+/gi, '_')
+        .slice(0, 180)
+      const file = join(screenshotsDir, `${safe}.png`)
+      const png = await browser.takeScreenshot()
+      writeFileSync(file, Buffer.from(png, 'base64'))
+    } catch {
+      // ignore — don't shadow the underlying failure
+    }
   },
 
   afterSession() {

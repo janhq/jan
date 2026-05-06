@@ -169,3 +169,12 @@ jobs:
             e2e/.wdio-logs/
             e2e/wdio-*.log
           if-no-files-found: ignore
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-screenshots-${{ github.run_number }}
+          path: e2e/screenshots/
+          if-no-files-found: ignore
