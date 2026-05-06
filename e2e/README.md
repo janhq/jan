@@ -65,6 +65,10 @@ Shared helpers live in `helpers/`:
   `dismissDialog`.
 - `helpers/settings.ts` — `openSettings(tab)`, `settingsControl`,
   `reloadRenderer`.
+- `helpers/profile.ts` — `seedThread`, `seedAssistant`, `reloadAfterSeed`.
+  Use these to write fixture data into the per-run XDG profile before
+  the renderer reads from disk; lets specs exercise thread/assistant
+  flows without needing a running model.
 
 Conventions:
 

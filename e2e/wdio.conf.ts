@@ -4,6 +4,7 @@ import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { browser } from '@wdio/globals'
+import { setProfileDir, clearProfileDir } from './helpers/profileState'
 
 const repoRoot = resolve(__dirname, '..')
 
@@ -57,6 +58,7 @@ async function waitForPort(
  */
 function makeProfileEnv(): Record<string, string> {
   profileDir = mkdtempSync(join(tmpdir(), 'jan-e2e-'))
+  setProfileDir(profileDir)
   const overrides: Record<string, string> = {}
   if (process.platform === 'win32') {
     overrides.APPDATA = profileDir
@@ -167,5 +169,6 @@ export const config: WebdriverIO.Config = {
         // best-effort cleanup; ignore
       }
     }
+    clearProfileDir()
   },
 }
