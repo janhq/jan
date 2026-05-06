@@ -122,7 +122,7 @@ jan/
 │   └── llamacpp-extension/
 ├── docs/                 # Documentation website
 ├── website/              # Marketing website
-├── autoqa/               # Automated testing
+├── e2e/                  # End-to-end tests (tauri-driver + WebdriverIO)
 ├── scripts/              # Build utilities
 │
 ├── package.json          # Root workspace configuration
@@ -187,7 +187,7 @@ make dev
 ```bash
 yarn test                    # All tests
 cd src-tauri && cargo test  # Rust tests
-cd autoqa && python main.py # End-to-end tests
+cd e2e && yarn test         # End-to-end tests (requires built Jan binary)
 ```
 
 ## Code Standards
