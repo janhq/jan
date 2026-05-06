@@ -513,6 +513,7 @@ export const MessageItem = memo(
                     size="icon-xs"
                     onClick={handleRegenerate}
                     title="Regenerate response"
+                    data-testid="message-regenerate"
                   >
                     <IconRefresh size={16} />
                   </Button>

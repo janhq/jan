@@ -79,6 +79,21 @@ Conventions:
   `specs/manual/` and be skipped by default via
   `describe.skip` or an env-gated guard.
 
+## Coverage gaps
+
+The autoqa checklist (now removed) listed several thread features that
+no longer exist in the current UI. We do not have specs for them
+because the code paths are gone:
+
+- Thread starring / favourites section / "Unstar All"
+- Sidebar thread search (a global SearchDialog exists but is not the
+  same surface the checklist described)
+
+Specs that need a running model (chat-message edit/copy/delete/regenerate,
+local-API-server end-to-end, hub model download → chat reply) are gated
+out of the default run. Land them under `specs/manual/` with an env
+guard and pre-seed the model into the test profile.
+
 ## Known gotchas
 
 - WebKitGTK driver session can hang if a previous `tauri-driver` is still

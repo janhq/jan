@@ -84,6 +84,7 @@ function AssistantContent() {
             size="sm"
             variant="outline"
             className="relative z-50"
+            data-testid="assistant-add-button"
           >
             <IconCirclePlus size={16} />
             {t('assistants:addAssistant')}
@@ -93,16 +94,24 @@ function AssistantContent() {
       <div className="flex h-[calc(100%-60px)]">
         <div className="flex size-full">
           <SettingsMenu />
-          <div className="flex flex-col gap-4 p-4 pt-4 w-full overflow-y-auto">
+          <div
+            className="flex flex-col gap-4 p-4 pt-4 w-full overflow-y-auto"
+            data-testid="settings-panel-assistant"
+          >
             {/* Default Assistant */}
-            <Card>
+            <Card testId="assistants-list">
               <CardItem
                 title={t('assistants:defaultAssistantSection')}
                 description={t('assistants:defaultAssistantDesc')}
                 actions={
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="justify-between">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-between"
+                        data-testid="assistants-default-trigger"
+                      >
                         <span className={cn('truncate')}>
                           {defaultAssistant?.name ?? t('assistants:lastUsed')}
                         </span>
@@ -142,6 +151,7 @@ function AssistantContent() {
                 <div
                   className="group flex items-center gap-3 px-3 py-3 rounded-lg my-1 bg-secondary/20 hover:bg-secondary dark:hover:bg-secondary/20 transition-colors"
                   key={assistant.id}
+                  data-testid={`assistant-item-${assistant.id}`}
                 >
                   <div className="size-9 shrink-0 flex items-center justify-center bg-secondary dark:bg-secondary/40 rounded-lg">
                     {assistant?.avatar && (
@@ -174,6 +184,7 @@ function AssistantContent() {
                       variant="ghost"
                       size="icon-xs"
                       title={t('assistants:editAssistant')}
+                      data-testid={`assistant-edit-${assistant.id}`}
                       onClick={() => {
                         setEditingKey(assistant.id)
                         setOpen(true)
@@ -185,6 +196,7 @@ function AssistantContent() {
                       variant="ghost"
                       size="icon-xs"
                       title={t('assistants:deleteAssistant')}
+                      data-testid={`assistant-delete-${assistant.id}`}
                       onClick={() => handleDelete(assistant.id)}
                     >
                       <IconTrash className="text-destructive size-4" />
