@@ -275,6 +275,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconLoader: () => <span />,
   IconRefresh: () => <span />,
   IconUpload: () => <span />,
+  IconTrash: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({
