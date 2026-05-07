@@ -41,6 +41,7 @@ import {
   mergeEmbedResponses,
   type EmbedBatchResult,
 } from './util'
+import { generatePreset } from './preset'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -112,7 +113,6 @@ function parseBuildNumber(version: string): number | null {
 
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
-  autoUnload: boolean = true
   timeout: number = 600
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
@@ -125,6 +125,11 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
+
+  // Phase 2: router-mode lifecycle (runs alongside per-model spawn paths
+  // until Phase 3 repoints load()/unload() at the router).
+  private routerPort?: number
+  private routerApiKey?: string
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -159,12 +164,14 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v3: enable fit on Windows/Linux with a discrete GPU
     await this.migrateFitPlatformDefault()
 
-    this.autoUnload = this.config.auto_unload
+    // Migration v4 (Phase 2): translate auto_unload -> models_max
+    await this.migrateAutoUnloadToModelsMax()
+
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
-    this.getProviderPath()
+    await this.getProviderPath()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -174,7 +181,167 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    this.configureBackends()
+    // configureBackends is async; await it so the router has a backend to
+    // launch. Failures here previously surfaced via unhandled rejection — the
+    // try/catch below preserves that fail-soft behavior for the router step.
+    try {
+      await this.configureBackends()
+    } catch (e) {
+      logger.error('configureBackends failed during onLoad:', e)
+    }
+
+    // Router-mode startup (Phase 2). Runs side-by-side with the per-model
+    // spawn path; Phase 3 will repoint load/unload to use it.
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.error('Router failed to start during onLoad:', e)
+    }
+  }
+
+  /**
+   * Phase 2: start the single `llama-server` router. No-op if backend isn't
+   * configured yet — the router will be (re)started later in Phase 3 logic.
+   */
+  private async startRouter(): Promise<void> {
+    const versionBackend = this.config?.version_backend
+    if (
+      !versionBackend ||
+      versionBackend === 'none' ||
+      !versionBackend.includes('/')
+    ) {
+      logger.info(
+        'Router will start once backend is configured (no version_backend yet).'
+      )
+      return
+    }
+
+    const [version, backend] = versionBackend.split('/')
+    if (!version || !backend) {
+      logger.warn(
+        `Skipping router start; malformed version_backend: ${versionBackend}`
+      )
+      return
+    }
+
+    const providerPath = await this.getProviderPath()
+    const janDataFolderPath = await getJanDataFolderPath()
+    const presetPath = await generatePreset(
+      providerPath,
+      janDataFolderPath,
+      this.config
+    )
+
+    const backendExe = await getBackendExePath(backend, version)
+    const port = await this.getRandomPort()
+    const apiKey = await this.generateApiKey('router', String(port))
+
+    const envs: Record<string, string> = {}
+    envs['LLAMA_API_KEY'] = apiKey
+    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
+
+    const rawMax = (this.config as any).models_max
+    let modelsMax = 1
+    if (typeof rawMax === 'number') modelsMax = rawMax
+    else if (typeof rawMax === 'string' && rawMax.trim().length > 0) {
+      const n = parseInt(rawMax, 10)
+      if (!Number.isNaN(n) && n >= 0) modelsMax = n
+    }
+
+    // Defensive: if a router is already running (hot reload / dev), stop it
+    // first so start_router doesn't reject.
+    try {
+      const existing = await invoke<{ port: number; api_key: string } | null>(
+        'plugin:llamacpp|get_router_info'
+      )
+      if (existing) {
+        await invoke('plugin:llamacpp|stop_router').catch(() => undefined)
+      }
+    } catch {
+      /* ignore probe failures */
+    }
+
+    const info = await invoke<{ port: number; api_key: string; pid: number }>(
+      'plugin:llamacpp|start_router',
+      {
+        backendExe,
+        presetPath,
+        port,
+        apiKey,
+        modelsMax,
+        defaultArgs: [] as string[],
+        envs,
+      }
+    )
+
+    this.routerPort = info.port
+    this.routerApiKey = info.api_key
+    logger.info(
+      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, preset=${presetPath})`
+    )
+  }
+
+  /**
+   * Public accessor for downstream consumers (Phase 3 / web-app). Returns
+   * `null` if the router hasn't been started successfully yet.
+   */
+  async getRouterInfo(): Promise<{ port: number; apiKey: string } | null> {
+    if (this.routerPort != null && this.routerApiKey) {
+      return { port: this.routerPort, apiKey: this.routerApiKey }
+    }
+    try {
+      const info = await invoke<
+        { port: number; api_key: string; pid: number } | null
+      >('plugin:llamacpp|get_router_info')
+      if (info) {
+        this.routerPort = info.port
+        this.routerApiKey = info.api_key
+        return { port: info.port, apiKey: info.api_key }
+      }
+    } catch (e) {
+      logger.warn('get_router_info failed:', e)
+    }
+    return null
+  }
+
+  /**
+   * Phase 2 migration: translate the legacy `auto_unload` boolean to the new
+   * `models_max` numeric setting (true -> 1, false -> 0). Approach A: leaves
+   * the old `auto_unload` value untouched in storage; only the new key is
+   * authoritative going forward.
+   */
+  private async migrateAutoUnloadToModelsMax(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_models_max_migrated_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    try {
+      const old = await this.getSetting<boolean | undefined>(
+        'auto_unload',
+        undefined
+      )
+      if (old !== undefined) {
+        const targetValue = old ? '1' : '0'
+        const settings = await this.getSettings()
+        await this.updateSettings(
+          settings.map((item) => {
+            if (item.key === 'models_max') {
+              item.controllerProps.value = targetValue
+            }
+            return item
+          })
+        )
+        ;(this.config as any).models_max = targetValue
+        logger.info(
+          `Migrated auto_unload=${old} -> models_max=${targetValue}`
+        )
+      }
+    } catch (e) {
+      logger.warn('migrateAutoUnloadToModelsMax failed:', e)
+      return
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
   }
 
   private getStoredBackendType(): string | null {
@@ -840,6 +1007,15 @@ export default class llamacpp_extension extends AIEngine {
     if (this.unlistenValidationStarted) {
       this.unlistenValidationStarted()
     }
+
+    // Phase 2: stop the router if it was started.
+    try {
+      await invoke('plugin:llamacpp|stop_router')
+    } catch (e) {
+      logger.warn('stop_router during onUnload failed (ignored):', e)
+    }
+    this.routerPort = undefined
+    this.routerApiKey = undefined
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -877,8 +1053,6 @@ export default class llamacpp_extension extends AIEngine {
           logger.error('Error in onSettingUpdate async block:', e)
         }
       })()
-    } else if (key === 'auto_unload') {
-      this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
@@ -1615,8 +1789,9 @@ export default class llamacpp_extension extends AIEngine {
       .filter(([id, _]) => id !== modelId)
       .map(([_, promise]) => promise)
 
+    // TODO(phase3): replace with router models_max — for now we always run
+    // the orchestration to preserve "one model loaded at a time" behavior.
     if (
-      this.autoUnload &&
       !isEmbedding &&
       !bypassAutoUnload &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)

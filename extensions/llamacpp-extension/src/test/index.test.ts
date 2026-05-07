@@ -43,7 +43,9 @@ describe('llamacpp_extension', () => {
     it('should initialize with correct default values', () => {
       expect(extension.provider).toBe('llamacpp')
       expect(extension.providerId).toBe('llamacpp')
-      expect(extension.autoUnload).toBe(true)
+      // autoUnload was removed in Phase 2 — replaced by `models_max` setting
+      // applied at router start time.
+      expect(extension.timeout).toBe(600)
     })
   })
 

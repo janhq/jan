@@ -30,11 +30,16 @@
     "controllerProps": { "value": true }
   },
   {
-    "key": "auto_unload",
-    "title": "Auto-Unload Old Models",
-    "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": true }
+    "key": "models_max",
+    "title": "Max Concurrently Loaded Models",
+    "description": "Maximum number of models the router will keep loaded at once. 0 = unlimited.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "1",
+      "placeholder": "e.g 1",
+      "type": "number",
+      "textAlign": "right"
+    }
   },
   {
     "key": "auto_restart_on_crash",
