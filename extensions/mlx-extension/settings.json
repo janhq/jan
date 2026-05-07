@@ -31,5 +31,27 @@
       "min": 0,
       "max": 64
     }
+  },
+  {
+    "key": "mtp_enabled",
+    "title": "MTP Speculative Decoding (Gemma 4)",
+    "description": "Enable Multi-Token Prediction speculative decoding for Gemma 4 targets. The matching `mlx-community/gemma-4-*-it-assistant-bf16` drafter is auto-downloaded for the currently running MLX model. Mutually exclusive with DFlash.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "mtp_block_size",
+    "title": "MTP Block Size",
+    "description": "Number of speculatively drafted tokens per round for the Gemma 4 MTP drafter. Default 4 (matches the README perf table); raise for larger drafts at the cost of latency.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "4",
+      "value": "4",
+      "type": "number",
+      "min": 1,
+      "max": 16
+    }
   }
 ]

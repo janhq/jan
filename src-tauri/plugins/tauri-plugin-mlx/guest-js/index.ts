@@ -14,6 +14,7 @@ export function normalizeMlxConfig(config: any): MlxConfig {
     ctx_size: asNumber(config.ctx_size),
     draft_model_path: config.draft_model_path ?? '',
     block_size: asNumber(config.block_size),
+    draft_kind: config.draft_kind ?? '',
   }
 }
 

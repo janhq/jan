@@ -137,6 +137,34 @@ const QUANT_SUFFIX_RE =
 /// repo names (e.g. `-128k`, `-it`, `-chat`). Stripped after quant suffixes.
 const TRAIL_HINT_RE = /-(?:it|chat|128k|256k|1m|hf|base)$/i
 
+/// "Lossy" quantization markers — anything that is NOT a native bf16/fp16/
+/// fp32 representation. The published DFlash and MTP drafters in our
+/// registries are trained against bf16 targets; pairing them with a
+/// quantized target shifts the hidden-state distribution the drafter was
+/// calibrated on. mlx-vlm's strict-equality speculative verification is
+/// only lossless at temperature 0 — at chat-default temperatures the
+/// distribution mismatch can drive the model into degenerate loops
+/// (observed: `<|channel>thought` repetition on quantized Gemma 4).
+///
+/// Matches the suffix anywhere a quant tag is plausibly tacked on:
+///   * end of string  — `gemma-4-E4B-it-4bit`
+///   * before another suffix — `gemma-4-E4B-it-4bit-mlx`
+///   * underscore separator — sometimes used in HF repo names.
+const LOSSY_QUANT_SUFFIX_RE =
+  /-(?:[2-8]bit|q[2-8]_k(?:_[ms])?|q[28]_0|fp8)(?:[-_]|$)/i
+
+/**
+ * Whether the given target model id carries a lossy-quantization marker
+ * (`-4bit`, `-8bit`, `-q4_k_m`, `-q8_0`, `-fp8`, ...).
+ *
+ * Returns `false` for `-bf16`, `-fp16`, `-fp32`, `-mlx`, and unmarked
+ * ids (assumed bf16). Speculative-decoding drafters in this codebase
+ * require precision parity with the target; this helper is the gate.
+ */
+export function isQuantizedTarget(modelId: string): boolean {
+  return LOSSY_QUANT_SUFFIX_RE.test(modelId)
+}
+
 /**
  * Normalize an arbitrary MLX model id into the registry-key form.
  *
@@ -187,6 +215,12 @@ export function resolveDflashDraft(modelId: string): DraftResolution | null {
     }
     return null
   }
+
+  /// Forward path: the published z-lab DFlash drafters are bf16, and
+  /// mlx-vlm's strict-equality verification is only lossless at temp 0.
+  /// Pairing a bf16 drafter with a 4bit/8bit target produces gibberish
+  /// at chat-default temperatures — refuse the pairing here.
+  if (isQuantizedTarget(modelId)) return null
 
   const baseId = normalizeBaseId(modelId)
   const manifest = STATIC_DRAFT_MAP[baseId]

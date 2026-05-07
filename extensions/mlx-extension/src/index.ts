@@ -37,6 +37,7 @@ import {
 } from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
+import { resolveMtpDraft } from './mtpRegistry'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -87,6 +88,31 @@ export default class mlx_extension extends AIEngine {
   /// live session (e.g. after a prior auto-increase), so we cannot rely on
   /// `this.config.ctx_size` when computing the next window.
   private modelCtxSize = new Map<string, number>()
+
+  /// Last model that was loaded or received a chat completion. Used by the
+  /// `block_size` / `mtp_block_size` auto-reload path in `onSettingUpdate`
+  /// to decide which session to restart when the user adjusts the
+  /// speculative drafter block size from the settings UI.
+  private lastActiveModelId?: string
+
+  /// Per-family debounce timers for `block_size` / `mtp_block_size`. The
+  /// settings number input fires `onSettingUpdate` on every keystroke, so
+  /// we collapse rapid edits into a single reload after the debounce
+  /// window. Separate slots so a dflash edit cannot cancel an mtp edit.
+  private blockReloadTimers: {
+    dflash?: ReturnType<typeof setTimeout>
+    mtp?: ReturnType<typeof setTimeout>
+  } = {}
+
+  /// Per-family in-flight reload promises. We serialise reloads inside a
+  /// family so the latest debounced edit waits for the previous unload+load
+  /// cycle to settle before kicking another one.
+  private blockReloadInFlight: {
+    dflash?: Promise<void>
+    mtp?: Promise<void>
+  } = {}
+
+  private static readonly BLOCK_RELOAD_DEBOUNCE_MS = 800
 
   private unlistenAutoIncreaseCtx?: () => void
 
@@ -166,6 +192,11 @@ export default class mlx_extension extends AIEngine {
       this.unlistenAutoIncreaseCtx()
       this.unlistenAutoIncreaseCtx = undefined
     }
+    for (const family of ['dflash', 'mtp'] as const) {
+      const t = this.blockReloadTimers[family]
+      if (t) clearTimeout(t)
+      delete this.blockReloadTimers[family]
+    }
     // Cleanup handled by Tauri plugin on app exit
   }
 
@@ -174,7 +205,100 @@ export default class mlx_extension extends AIEngine {
 
     if (key === 'timeout') {
       this.timeout = value as number
+      return
     }
+
+    /// Auto-restart the live MLX session when the user changes the
+    /// speculative drafter block size. Debounced because the framework
+    /// fires `onSettingUpdate` on every keystroke of the number input.
+    /// Only triggers when the corresponding family is currently enabled
+    /// — otherwise the new value is just stored in `this.config` and
+    /// will be picked up the next time the user toggles the drafter on
+    /// from the SetupScreen.
+    if (key === 'block_size' || key === 'mtp_block_size') {
+      const family: 'dflash' | 'mtp' =
+        key === 'block_size' ? 'dflash' : 'mtp'
+      const numValue = Number(value)
+      if (!Number.isFinite(numValue) || numValue < 1) return
+      this.scheduleBlockReload(family, numValue)
+    }
+  }
+
+  /// Debounced auto-reload of the active MLX session with a new
+  /// `block_size` / `mtp_block_size`. Hard-aborts any in-flight chat
+  /// stream because the underlying `enableDflash` / `enableMtp` calls
+  /// SIGTERM the mlx-server process before respawning it with the new
+  /// `--draft-block-size` flag.
+  private scheduleBlockReload(
+    family: 'dflash' | 'mtp',
+    value: number
+  ): void {
+    const existing = this.blockReloadTimers[family]
+    if (existing) clearTimeout(existing)
+
+    this.blockReloadTimers[family] = setTimeout(async () => {
+      delete this.blockReloadTimers[family]
+
+      if (family === 'dflash' && !this.config.dflash_enabled) return
+      if (family === 'mtp' && !this.config.mtp_enabled) return
+
+      const modelId = this.lastActiveModelId
+      if (!modelId) {
+        logger.info(
+          `block_size auto-reload skipped (${family}=${value}): no active model yet`
+        )
+        return
+      }
+
+      const previous = this.blockReloadInFlight[family]
+      if (previous) {
+        try {
+          await previous
+        } catch {
+          /// previous reload already logged its own failure
+        }
+      }
+
+      let session: SessionInfo | null = null
+      try {
+        session = await this.findSessionByModel(modelId)
+      } catch (e) {
+        logger.warn(
+          `block_size auto-reload: cannot resolve session for ${modelId}: ${e}`
+        )
+        return
+      }
+      if (!session) {
+        logger.info(
+          `block_size auto-reload skipped (${family}=${value}): ${modelId} not currently loaded`
+        )
+        return
+      }
+
+      logger.info(
+        `block_size auto-reload: ${family}=${value}, model=${modelId} (will hard-abort any in-flight stream)`
+      )
+
+      const reload = (async () => {
+        try {
+          if (family === 'dflash') {
+            await this.enableDflash(modelId, value)
+          } else {
+            await this.enableMtp(modelId, value)
+          }
+        } catch (e) {
+          logger.error(`block_size auto-reload failed (${family}): ${e}`)
+        }
+      })()
+      this.blockReloadInFlight[family] = reload
+      try {
+        await reload
+      } finally {
+        if (this.blockReloadInFlight[family] === reload) {
+          delete this.blockReloadInFlight[family]
+        }
+      }
+    }, mlx_extension.BLOCK_RELOAD_DEBOUNCE_MS)
   }
 
   override async get(modelId: string): Promise<modelInfo | undefined> {
@@ -360,16 +484,83 @@ export default class mlx_extension extends AIEngine {
       modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }
 
-    /// `dflash_enabled` is the master switch: when off, draft path / block
-    /// size are forced empty even if a stale value lingers in `this.config`.
+    /// Speculative decoding has two mutually exclusive families:
+    /// DFlash (`z-lab/*`) and MTP (`mlx-community/gemma-4-*-assistant-*`).
+    /// The UI guarantees only one toggle is on at a time, but we
+    /// defensively prefer MTP if a stale config has both true and log a
+    /// warning. When neither is on, draft path / block size are forced
+    /// empty so a leftover `draft_model_path` cannot leak into the next
+    /// session.
     const dflashOn = !!cfg.dflash_enabled
-    const draftPath = dflashOn ? String(cfg.draft_model_path ?? '') : ''
-    const blockSize = dflashOn ? Number(cfg.block_size ?? 16) : 0
+    const mtpOn = !!cfg.mtp_enabled
+    if (dflashOn && mtpOn) {
+      logger.warn(
+        'Both dflash_enabled and mtp_enabled are true; preferring MTP.'
+      )
+    }
+    let draftPath = dflashOn || mtpOn ? String(cfg.draft_model_path ?? '') : ''
+    const draftKind = mtpOn ? 'mtp' : dflashOn ? 'dflash' : ''
+    const blockSize = mtpOn
+      ? Number(cfg.mtp_block_size ?? 4)
+      : dflashOn
+        ? Number(cfg.block_size ?? 16)
+        : 0
+
+    /// Cold-start auto-restore: `dflash_enabled` / `mtp_enabled` are
+    /// persisted by `registerSettings`, but `draft_model_path` lives only
+    /// in the in-memory `this.config` and gets wiped on app restart. If
+    /// a toggle is on but no path is known yet, re-resolve via the
+    /// matching registry and reuse the cached draft (or download it).
+    /// On any failure we fall back to running without the drafter so the
+    /// model load itself is never blocked by a missing/unreachable
+    /// assistant.
+    ///
+    /// `resolveMtpDraft` / `resolveDflashDraft` also enforce the bf16-only
+    /// guard (see `isQuantizedTarget`): a 4bit/8bit/fp8 target paired with
+    /// a bf16 drafter produces gibberish at chat-default temperatures, so
+    /// the resolvers refuse such pairings here and the fallback below
+    /// loads the target model alone.
+    if ((dflashOn || mtpOn) && !draftPath) {
+      try {
+        const resolution = mtpOn
+          ? resolveMtpDraft(modelId)
+          : resolveDflashDraft(modelId)
+        if (resolution) {
+          const restored = await this.ensureDraftDownloaded(
+            mtpOn ? 'mtp' : 'dflash',
+            resolution.repo,
+            resolution.required,
+            resolution.optional
+          )
+          draftPath = restored
+          this.config.draft_model_path = restored
+          logger.info(
+            `performLoad: restored ${draftKind} draft for ${modelId}: ${restored}`
+          )
+        } else {
+          logger.warn(
+            `performLoad: ${modelId} has ${draftKind}_enabled=true but no registry match (or quantized target); loading without drafter`
+          )
+        }
+      } catch (e) {
+        logger.error(
+          `performLoad: failed to restore ${draftKind} drafter for ${modelId}: ${e}; loading without drafter`
+        )
+      }
+    }
+
+    /// `--draft-block-size` and `--draft-kind` are meaningful only when a
+    /// drafter is actually attached. If the auto-restore above failed to
+    /// produce a path (registry miss or quantized target rejection), drop
+    /// them so we don't feed the mlx-vlm server orphan flags.
+    const effectiveDraftKind = draftPath ? draftKind : ''
+    const effectiveBlockSize = draftPath ? blockSize : 0
 
     const mlxConfig: MlxConfig = {
       ctx_size: Number(cfg.ctx_size ?? 4096),
       draft_model_path: draftPath,
-      block_size: blockSize,
+      block_size: effectiveBlockSize,
+      draft_kind: effectiveDraftKind,
     }
 
     logger.info(
@@ -390,6 +581,7 @@ export default class mlx_extension extends AIEngine {
         Number(this.timeout)
       )
       this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
+      this.lastActiveModelId = modelId
       return sInfo
     } catch (error) {
       logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
@@ -465,9 +657,7 @@ export default class mlx_extension extends AIEngine {
       try {
         await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
       } catch (e) {
-        logger.warn(
-          `Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
-        )
+        logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
       }
 
       await sendDone({ ok: true, new_ctx_len: newCtxLen })
@@ -524,6 +714,7 @@ export default class mlx_extension extends AIEngine {
     if (!sessionInfo) {
       throw new Error(`No active MLX session found for model: ${opts.model}`)
     }
+    this.lastActiveModelId = opts.model
 
     // Check if the process is alive
     const isAlive = await invoke<boolean>('plugin:mlx|is_mlx_process_running', {
@@ -1226,25 +1417,28 @@ export default class mlx_extension extends AIEngine {
   }
 
   /// ──────────────────────────────────────────────────────────────────
-  /// DFlash speculative decoding orchestration
+  /// Speculative decoding orchestration (DFlash + MTP)
   /// ──────────────────────────────────────────────────────────────────
   ///
-  /// The provider-level toggle in the UI calls into these methods. The
-  /// actual `--draft-model <path>` flag is plumbed through `performLoad`
-  /// via `MlxConfig.draft_model_path` (see commands.rs lines 100-108).
+  /// The provider-level toggles in the UI call into these methods. The
+  /// actual `--draft-model <path>` / `--draft-kind <kind>` flags are
+  /// plumbed through `performLoad` via `MlxConfig.draft_model_path` and
+  /// `MlxConfig.draft_kind` (see commands.rs).
+  ///
+  /// DFlash and MTP share the same on-disk cache layout
+  /// (`mlx/draft-models/<repo>/`); collisions are impossible because
+  /// the repo path is unique per drafter family
+  /// (`z-lab/...` vs `mlx-community/gemma-4-...-assistant-...`).
 
   /**
-   * Local folder where auto-downloaded DFlash drafts are cached. Lives
+   * Local folder where auto-downloaded drafts are cached. Lives
    * alongside `mlx/models/` under the Jan data dir so manually-imported
-   * z-lab models in `mlx/models/` and tool-managed copies in
-   * `mlx/draft-models/` share the same parent.
+   * draft repos in `mlx/models/` and tool-managed copies in
+   * `mlx/draft-models/` share the same parent. Used for both DFlash and
+   * MTP — the per-repo subdirectory disambiguates.
    */
-  private async getDflashDraftRoot(): Promise<string> {
-    return await joinPath([
-      await getJanDataFolderPath(),
-      'mlx',
-      'draft-models',
-    ])
+  private async getDraftRoot(): Promise<string> {
+    return await joinPath([await getJanDataFolderPath(), 'mlx', 'draft-models'])
   }
 
   /**
@@ -1350,19 +1544,25 @@ export default class mlx_extension extends AIEngine {
    * no network call is made. Otherwise required + optional files are pulled
    * directly from `https://huggingface.co/<repo>/resolve/main/<file>` —
    * `huggingface.co/api/...` is never touched.
+   *
+   * `kind` controls the download id prefix (`mlx/dflash:` vs `mlx/mtp:`),
+   * which lets the user distinguish drafter families in the download
+   * popover and keeps the `download.id.startsWith('mlx')` cancel routing
+   * intact.
    */
-  async ensureDflashDraftDownloaded(
+  async ensureDraftDownloaded(
+    kind: 'dflash' | 'mtp',
     repo: string,
     required: string[],
     optional: string[] = []
   ): Promise<string> {
     const local = await this.resolveLocalDraftDir(repo)
     if (local) {
-      logger.info(`ensureDflashDraftDownloaded: using local ${local}`)
+      logger.info(`ensureDraftDownloaded(${kind}): using local ${local}`)
       return local
     }
 
-    const draftRoot = await this.getDflashDraftRoot()
+    const draftRoot = await this.getDraftRoot()
     const draftDir = await joinPath([draftRoot, repo])
 
     if (!(await fs.existsSync(draftRoot))) {
@@ -1387,12 +1587,12 @@ export default class mlx_extension extends AIEngine {
     }
 
     if (missingRequired.length === 0 && missingOptional.length === 0) {
-      logger.info(`DFlash draft already present: ${draftDir}`)
+      logger.info(`${kind} draft already present: ${draftDir}`)
       return draftDir
     }
 
     logger.info(
-      `ensureDflashDraftDownloaded: ${repo} missing required=${missingRequired.length} optional=${missingOptional.length}; downloading to ${draftDir}`
+      `ensureDraftDownloaded(${kind}): ${repo} missing required=${missingRequired.length} optional=${missingOptional.length}; downloading to ${draftDir}`
     )
 
     const downloadManager = window.core.extensionManager.getByName(
@@ -1406,11 +1606,12 @@ export default class mlx_extension extends AIEngine {
     /// manager. Sanitize once and reuse.
     const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9\-_/:]/g, '_')
     const safeRepoId = sanitize(repo)
-    /// Prefix with `mlx/dflash:` so that
+    /// Prefix with `mlx/<kind>:` so that
     ///   * the download popover's `download.id.startsWith('mlx')` cancel
     ///     routing routes back through the download manager;
-    ///   * users can tell DFlash drafts apart from regular MLX downloads.
-    const downloadModelId = `mlx/dflash:${safeRepoId}`
+    ///   * users can tell drafts apart from regular MLX downloads
+    ///     (and DFlash apart from MTP).
+    const downloadModelId = `mlx/${kind}:${safeRepoId}`
 
     const buildItem = async (filename: string) => ({
       url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
@@ -1457,7 +1658,7 @@ export default class mlx_extension extends AIEngine {
         )
       } catch (e) {
         logger.info(
-          `ensureDflashDraftDownloaded: optional ${f} unavailable for ${repo}: ${e}`
+          `ensureDraftDownloaded(${kind}): optional ${f} unavailable for ${repo}: ${e}`
         )
       }
     }
@@ -1467,8 +1668,21 @@ export default class mlx_extension extends AIEngine {
       downloadType: 'Model',
     })
 
-    logger.info(`DFlash draft '${repo}' ready at ${draftDir}`)
+    logger.info(`${kind} draft '${repo}' ready at ${draftDir}`)
     return draftDir
+  }
+
+  /**
+   * @deprecated Use `ensureDraftDownloaded('dflash', ...)` directly.
+   * Kept as a thin wrapper for backward compatibility with any external
+   * callers still referencing the old name.
+   */
+  async ensureDflashDraftDownloaded(
+    repo: string,
+    required: string[],
+    optional: string[] = []
+  ): Promise<string> {
+    return this.ensureDraftDownloaded('dflash', repo, required, optional)
   }
 
   /**
@@ -1511,7 +1725,8 @@ export default class mlx_extension extends AIEngine {
       resolution = fresh
     }
 
-    const draftDir = await this.ensureDflashDraftDownloaded(
+    const draftDir = await this.ensureDraftDownloaded(
+      'dflash',
       resolution.repo,
       resolution.required,
       resolution.optional
@@ -1532,6 +1747,7 @@ export default class mlx_extension extends AIEngine {
       }
       await this.load(modelId, {
         dflash_enabled: true,
+        mtp_enabled: false,
         draft_model_path: draftDir,
         block_size: blockSize,
       })
@@ -1539,8 +1755,11 @@ export default class mlx_extension extends AIEngine {
     }
 
     /// Update in-memory config so subsequent `performLoad` calls (e.g. from
-    /// auto-increase-ctx, or a fresh start) keep DFlash enabled.
+    /// auto-increase-ctx, or a fresh start) keep DFlash enabled. Mutex:
+    /// turning DFlash on forces MTP off — both flags can never be true at
+    /// the same time.
     this.config.dflash_enabled = true
+    this.config.mtp_enabled = false
     this.config.draft_model_path = draftDir
     this.config.block_size = blockSize
   }
@@ -1564,6 +1783,156 @@ export default class mlx_extension extends AIEngine {
     }
 
     this.config.dflash_enabled = false
+    this.config.draft_model_path = ''
+  }
+
+  /// ──────────────────────────────────────────────────────────────────
+  /// MTP (Gemma 4 Multi-Token Prediction) speculative decoding
+  /// ──────────────────────────────────────────────────────────────────
+  ///
+  /// Mirrors the DFlash trio: a static registry resolves the assistant
+  /// repo from the active MLX model id; `ensureDraftDownloaded` pulls
+  /// it from `huggingface.co/<repo>/resolve/main/<file>` (or reuses a
+  /// local copy); the live session is unloaded + reloaded with
+  /// `--draft-kind mtp`.
+  ///
+  /// Mutually exclusive with DFlash: enabling MTP clears
+  /// `dflash_enabled`, and `performLoad` defensively prefers MTP if a
+  /// stale config has both true.
+
+  /**
+   * Whether the given MLX model has a known MTP assistant sibling.
+   *
+   * Pure / synchronous registry lookup — never touches the network. The
+   * resolved manifest is returned alongside so the caller can hand it
+   * back to `enableMtp` without re-resolving.
+   */
+  async checkMtpSupport(modelId: string): Promise<{
+    supported: boolean
+    repo?: string
+    required?: string[]
+    optional?: string[]
+    /// True iff a usable assistant directory is already present on disk.
+    local?: boolean
+    localPath?: string
+  }> {
+    logger.info(`checkMtpSupport: resolving MTP assistant for ${modelId}`)
+    try {
+      const resolution = resolveMtpDraft(modelId)
+      if (!resolution) {
+        logger.info(`checkMtpSupport: ${modelId} unsupported`)
+        return { supported: false }
+      }
+      const localPath = await this.resolveLocalDraftDir(resolution.repo)
+      logger.info(
+        `checkMtpSupport: ${modelId} -> ${resolution.repo}` +
+          (localPath ? ` (local: ${localPath})` : ' (needs download)')
+      )
+      return {
+        supported: true,
+        repo: resolution.repo,
+        required: resolution.required,
+        optional: resolution.optional,
+        local: localPath !== null,
+        localPath: localPath ?? undefined,
+      }
+    } catch (e) {
+      logger.warn(`checkMtpSupport failed for ${modelId}: ${e}`)
+      return { supported: false }
+    }
+  }
+
+  /**
+   * Enable MTP for `modelId`: resolve the assistant manifest, ensure the
+   * draft directory exists locally (download if needed), unload the
+   * active session, and reload it with `--draft-kind mtp`.
+   *
+   * `prefetched` lets callers reuse the result of `checkMtpSupport` so
+   * the static lookup is not repeated.
+   */
+  async enableMtp(
+    modelId: string,
+    blockSize: number = 4,
+    prefetched?: {
+      repo: string
+      required?: string[]
+      optional?: string[]
+    }
+  ): Promise<void> {
+    let resolution: DraftResolution
+    if (prefetched?.repo) {
+      resolution = {
+        repo: prefetched.repo,
+        required: prefetched.required ?? [],
+        optional: prefetched.optional ?? [],
+      }
+      /// Empty `required` would short-circuit local lookup; pull the
+      /// canonical manifest so we still know what to verify.
+      if (resolution.required.length === 0) {
+        const fresh = resolveMtpDraft(prefetched.repo)
+        if (fresh) {
+          resolution = fresh
+        }
+      }
+    } else {
+      const fresh = resolveMtpDraft(modelId)
+      if (!fresh) {
+        throw new Error(`Model ${modelId} does not support MTP`)
+      }
+      resolution = fresh
+    }
+
+    const draftDir = await this.ensureDraftDownloaded(
+      'mtp',
+      resolution.repo,
+      resolution.required,
+      resolution.optional
+    )
+    logger.info(`enableMtp: draft ready at ${draftDir}`)
+
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      logger.info(`enableMtp: reloading ${modelId} with MTP`)
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`enableMtp: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        dflash_enabled: false,
+        mtp_enabled: true,
+        draft_model_path: draftDir,
+        mtp_block_size: blockSize,
+      })
+      logger.info(`enableMtp: ${modelId} reloaded with MTP`)
+    }
+
+    /// Mutex: turning MTP on forces DFlash off.
+    this.config.mtp_enabled = true
+    this.config.dflash_enabled = false
+    this.config.draft_model_path = draftDir
+    this.config.mtp_block_size = blockSize
+  }
+
+  /**
+   * Disable MTP for `modelId`: unload + reload as plain MLX.
+   */
+  async disableMtp(modelId: string): Promise<void> {
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`disableMtp: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        mtp_enabled: false,
+        draft_model_path: '',
+        mtp_block_size: 0,
+      })
+    }
+
+    this.config.mtp_enabled = false
     this.config.draft_model_path = ''
   }
 }

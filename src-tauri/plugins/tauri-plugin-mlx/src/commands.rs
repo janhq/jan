@@ -34,6 +34,11 @@ pub struct MlxConfig {
     pub draft_model_path: String,
     #[serde(default)]
     pub block_size: i32,
+    /// Drafter family — "dflash" (default) or "mtp" (Gemma 4 assistant).
+    /// Empty string is treated as "dflash" so pre-update callers keep
+    /// working without churn.
+    #[serde(default)]
+    pub draft_kind: String,
 }
 
 /// Core model-loading logic, decoupled from Tauri AppHandle.
@@ -110,7 +115,10 @@ pub async fn load_mlx_model_impl(
     // Config-key translation (TS-side names → mlx-vlm CLI flags):
     //   * `ctx_size`   → `--max-kv-size`
     //   * `block_size` → `--draft-block-size`
-    //   * `draft_model_path` non-empty → `--draft-model ... --draft-kind dflash`
+    //   * `draft_model_path` non-empty → `--draft-model ... --draft-kind <kind>`
+    //   * `draft_kind` selects between mlx-vlm's two drafter families
+    //     ("dflash" or "mtp"); empty string falls back to "dflash" so
+    //     legacy callers (and stale persisted configs) keep working.
     // Keeping the TS-side names stable avoids churning the extension /
     // settings.json schema and the autoIncreaseCtx test suite.
     let mut args: Vec<String> = vec![
@@ -143,10 +151,16 @@ pub async fn load_mlx_model_impl(
         };
         args.push("--draft-model".to_string());
         args.push(draft_arg);
-        // Explicit kind keeps things ready for `mtp` (Gemma 4 assistant)
-        // when the registry starts shipping those drafters.
+        // Drafter family is selected by the frontend; default to "dflash"
+        // for empty/legacy configs so behavior is unchanged for callers
+        // that don't yet set `draft_kind`.
+        let kind = if config.draft_kind.is_empty() {
+            "dflash"
+        } else {
+            config.draft_kind.as_str()
+        };
         args.push("--draft-kind".to_string());
-        args.push("dflash".to_string());
+        args.push(kind.to_string());
     }
 
     if config.block_size > 0 {

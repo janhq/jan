@@ -18,6 +18,7 @@ import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedDialog'
+import { MtpUnsupportedDialog } from '@/containers/dialogs/MtpUnsupportedDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -153,6 +154,15 @@ function ProviderDetail() {
   const [dflashUnsupportedModel, setDflashUnsupportedModel] = useState<
     string | null
   >(null)
+  /// MTP mirror of the DFlash state. `isTogglingMtp` drives the inline
+  /// spinner next to the MTP Switch; `isMtpDownloading` keeps the Switch
+  /// disabled while the HF download is in flight (progress is owned by
+  /// the global DownloadManagement panel).
+  const [isTogglingMtp, setIsTogglingMtp] = useState(false)
+  const [isMtpDownloading, setIsMtpDownloading] = useState(false)
+  const [mtpUnsupportedModel, setMtpUnsupportedModel] = useState<string | null>(
+    null
+  )
   const {
     installBackend,
     recheckOptimalBackend,
@@ -279,12 +289,13 @@ function ProviderDetail() {
   }, [importingModel])
 
   /// Track the currently-running MLX model id (if this provider is `mlx`).
-  /// Whenever it changes we reset `dflash_enabled` to `false` because:
+  /// Whenever it changes we reset both `dflash_enabled` and `mtp_enabled`
+  /// to `false` because:
   ///   1. The new session was just started fresh without `--draft-model`,
-  ///      so the UI flag would otherwise lie about the server state.
+  ///      so the UI flags would otherwise lie about the server state.
   ///   2. The previous draft repo is almost certainly wrong for the new
-  ///      target — DFlash drafts are paired 1:1 with a base model and
-  ///      the new model may not even be on the supported list.
+  ///      target — drafts are paired 1:1 with a base model and the new
+  ///      model may not even be on either supported list.
   /// The user can opt back in explicitly after the new session is up.
   const activeMlxModelId = useMemo(() => {
     if (provider?.provider !== 'mlx') return undefined
@@ -310,13 +321,17 @@ function ProviderDetail() {
     const dflashSetting = provider.settings.find(
       (s) => s.key === 'dflash_enabled'
     )
-    const isOn = !!(
+    const dflashOn = !!(
       dflashSetting?.controller_props as { value?: boolean } | undefined
     )?.value
-    if (!isOn) return
+    const mtpSetting = provider.settings.find((s) => s.key === 'mtp_enabled')
+    const mtpOn = !!(
+      mtpSetting?.controller_props as { value?: boolean } | undefined
+    )?.value
+    if (!dflashOn && !mtpOn) return
 
     const next = provider.settings.map((s) =>
-      s.key === 'dflash_enabled'
+      s.key === 'dflash_enabled' || s.key === 'mtp_enabled'
         ? {
             ...s,
             controller_props: {
@@ -328,13 +343,7 @@ function ProviderDetail() {
     )
     serviceHub.providers().updateSettings(providerName, next)
     updateProvider(providerName, { ...provider, settings: next })
-  }, [
-    activeMlxModelId,
-    provider,
-    providerName,
-    serviceHub,
-    updateProvider,
-  ])
+  }, [activeMlxModelId, provider, providerName, serviceHub, updateProvider])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
@@ -417,10 +426,7 @@ function ProviderDetail() {
         })
       }
     } catch (err) {
-      console.error(
-        `[providers:${provider.provider}] refresh failed:`,
-        err
-      )
+      console.error(`[providers:${provider.provider}] refresh failed:`, err)
       const detail =
         err instanceof Error && err.message
           ? err.message
@@ -490,10 +496,19 @@ function ProviderDetail() {
   /// running: in that case we resolve the matching `z-lab/*-DFlash*` repo
   /// (auto-downloading it if needed) and restart the live session with
   /// the right CLI flags. Unsupported base models surface a modal popup.
+  ///
+  /// Mutex with MTP: if MTP is on and the user enables DFlash, we silently
+  /// disable MTP first (single Switch flip → both flags reconciled).
   const handleToggleDflash = useCallback(
     async (nextEnabled: boolean) => {
       if (provider?.provider !== 'mlx' || !provider) return
-      if (isTogglingDflash || isDflashDownloading) return
+      if (
+        isTogglingDflash ||
+        isDflashDownloading ||
+        isTogglingMtp ||
+        isMtpDownloading
+      )
+        return
 
       const writeSetting = (key: string, value: unknown) => {
         const next = provider.settings.map((s) =>
@@ -529,9 +544,13 @@ function ProviderDetail() {
         return
       }
 
-      const loadedModels: string[] =
-        (await mlxEngine.getLoadedModels?.()) ?? []
+      const loadedModels: string[] = (await mlxEngine.getLoadedModels?.()) ?? []
       const activeMlxModel = loadedModels[0]
+
+      const mtpCurrentlyOn = !!(
+        provider.settings.find((s) => s.key === 'mtp_enabled')
+          ?.controller_props as { value?: boolean } | undefined
+      )?.value
 
       setIsTogglingDflash(true)
       try {
@@ -547,6 +566,16 @@ function ProviderDetail() {
             return
           }
 
+          /// Mutex: silently turn MTP off before enabling DFlash. The
+          /// extension's `enableDflash` will also wipe `mtp_enabled` in
+          /// its in-memory config, but we still need to flip the UI flag
+          /// and run the server-side disable cleanly. We skip the
+          /// `disableMtp` reload (a single MLX reload happens inside
+          /// `enableDflash` instead) — only the metadata flips here.
+          if (mtpCurrentlyOn) {
+            writeSetting('mtp_enabled', false)
+          }
+
           /// When the draft is already cached on disk the MLX server can
           /// pick it up instantly — surface that as "Loading…" instead
           /// of misleading the user with "Downloading…".
@@ -557,8 +586,7 @@ function ProviderDetail() {
                   modelId: activeMlxModel,
                 })
               : t('settings:dflashDownloadingDraft', {
-                  defaultValue:
-                    'Downloading DFlash draft for {{modelId}}...',
+                  defaultValue: 'Downloading DFlash draft for {{modelId}}...',
                   modelId: activeMlxModel,
                 })
           )
@@ -609,8 +637,7 @@ function ProviderDetail() {
       } catch (error) {
         console.error('Failed to toggle DFlash:', error)
         toast.error(errTitle, {
-          description:
-            error instanceof Error ? error.message : 'Unknown error',
+          description: error instanceof Error ? error.message : 'Unknown error',
         })
       } finally {
         setIsTogglingDflash(false)
@@ -622,6 +649,155 @@ function ProviderDetail() {
       serviceHub,
       updateProvider,
       t,
+      isTogglingDflash,
+      isDflashDownloading,
+      isTogglingMtp,
+      isMtpDownloading,
+    ]
+  )
+
+  /// Toggle the MTP (Multi-Token Prediction) speculative-decoding flag on
+  /// the MLX provider. Mirrors `handleToggleDflash` 1:1 against the
+  /// `mlx-community/gemma-4-*-it-assistant-bf16` registry.
+  ///
+  /// Mutex with DFlash: if DFlash is on and the user enables MTP, we
+  /// silently disable DFlash first.
+  const handleToggleMtp = useCallback(
+    async (nextEnabled: boolean) => {
+      if (provider?.provider !== 'mlx' || !provider) return
+      if (
+        isTogglingMtp ||
+        isMtpDownloading ||
+        isTogglingDflash ||
+        isDflashDownloading
+      )
+        return
+
+      const writeSetting = (key: string, value: unknown) => {
+        const next = provider.settings.map((s) =>
+          s.key === key
+            ? {
+                ...s,
+                controller_props: {
+                  ...s.controller_props,
+                  value: value as never,
+                },
+              }
+            : s
+        )
+        serviceHub.providers().updateSettings(providerName, next)
+        updateProvider(providerName, { ...provider, settings: next })
+      }
+
+      const currentBlockSizeRaw = provider.settings.find(
+        (s) => s.key === 'mtp_block_size'
+      )?.controller_props?.value
+      const currentBlockSize = Number(currentBlockSizeRaw) || 4
+
+      const errTitle = t('settings:mtpEnableFailed', {
+        defaultValue: 'Failed to toggle MTP',
+      })
+      const noActive = t('settings:mtpNoActiveModel', {
+        defaultValue: 'Start an MLX model first.',
+      })
+
+      const mlxEngine: any = EngineManager.instance().get('mlx')
+      if (!mlxEngine) {
+        toast.error(errTitle, { description: noActive })
+        return
+      }
+
+      const loadedModels: string[] = (await mlxEngine.getLoadedModels?.()) ?? []
+      const activeMlxModel = loadedModels[0]
+
+      const dflashCurrentlyOn = !!(
+        provider.settings.find((s) => s.key === 'dflash_enabled')
+          ?.controller_props as { value?: boolean } | undefined
+      )?.value
+
+      setIsTogglingMtp(true)
+      try {
+        if (nextEnabled) {
+          if (!activeMlxModel) {
+            toast.error(errTitle, { description: noActive })
+            return
+          }
+
+          const support = await mlxEngine.checkMtpSupport(activeMlxModel)
+          if (!support?.supported) {
+            setMtpUnsupportedModel(activeMlxModel)
+            return
+          }
+
+          /// Mutex: silently turn DFlash off before enabling MTP. The
+          /// single MLX reload happens inside `enableMtp`; here we only
+          /// flip the UI flag.
+          if (dflashCurrentlyOn) {
+            writeSetting('dflash_enabled', false)
+          }
+
+          toast.info(
+            support.local
+              ? t('settings:mtpLoadingDraft', {
+                  defaultValue: 'Loading MTP assistant for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+              : t('settings:mtpDownloadingDraft', {
+                  defaultValue: 'Downloading MTP assistant for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+          )
+
+          if (!support.local) {
+            setIsMtpDownloading(true)
+            setIsTogglingMtp(false)
+          }
+
+          try {
+            await mlxEngine.enableMtp(activeMlxModel, currentBlockSize, {
+              repo: support.repo,
+              required: support.required,
+              optional: support.optional,
+            })
+          } finally {
+            if (!support.local) setIsMtpDownloading(false)
+          }
+          writeSetting('mtp_enabled', true)
+
+          toast.success(
+            t('settings:mtpEnableSuccess', {
+              defaultValue: 'MTP enabled',
+            })
+          )
+        } else {
+          if (activeMlxModel) {
+            await mlxEngine.disableMtp(activeMlxModel)
+          }
+          writeSetting('mtp_enabled', false)
+
+          toast.success(
+            t('settings:mtpDisableSuccess', {
+              defaultValue: 'MTP disabled',
+            })
+          )
+        }
+      } catch (error) {
+        console.error('Failed to toggle MTP:', error)
+        toast.error(errTitle, {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setIsTogglingMtp(false)
+      }
+    },
+    [
+      provider,
+      providerName,
+      serviceHub,
+      updateProvider,
+      t,
+      isTogglingMtp,
+      isMtpDownloading,
       isTogglingDflash,
       isDflashDownloading,
     ]
@@ -782,9 +958,8 @@ function ProviderDetail() {
                   // `cont_batching` and `expose_metrics`. When it's on, those
                   // rows are visually dimmed to signal they're managed.
                   const concurrentModeOn = !!(
-                    provider?.settings.find(
-                      (s) => s.key === 'concurrent_mode'
-                    )?.controller_props as { value?: boolean } | undefined
+                    provider?.settings.find((s) => s.key === 'concurrent_mode')
+                      ?.controller_props as { value?: boolean } | undefined
                   )?.value
                   const isManagedByConcurrentMode =
                     concurrentModeOn &&
@@ -797,21 +972,29 @@ function ProviderDetail() {
                     !concurrentModeOn && setting.key === 'concurrent_slots'
 
                   // The DFlash speculative-decoding toggle is the master
-                  // switch over `block_size`: hide that field when DFlash
-                  // is off so the panel stays uncluttered.
+                  // switch over `block_size`; the MTP toggle does the
+                  // same for `mtp_block_size`. Hide the corresponding
+                  // block-size row when its master switch is off so the
+                  // panel stays uncluttered.
                   const dflashEnabledOn = !!(
-                    provider?.settings.find(
-                      (s) => s.key === 'dflash_enabled'
-                    )?.controller_props as { value?: boolean } | undefined
+                    provider?.settings.find((s) => s.key === 'dflash_enabled')
+                      ?.controller_props as { value?: boolean } | undefined
+                  )?.value
+                  const mtpEnabledOn = !!(
+                    provider?.settings.find((s) => s.key === 'mtp_enabled')
+                      ?.controller_props as { value?: boolean } | undefined
                   )?.value
                   const isHiddenByDflash =
-                    !dflashEnabledOn && setting.key === 'block_size'
+                    (!dflashEnabledOn && setting.key === 'block_size') ||
+                    (!mtpEnabledOn && setting.key === 'mtp_block_size')
 
-                  // The dflash_enabled checkbox is rendered as a Switch with
-                  // a custom side-effecting handler that reloads the live
-                  // MLX session, so we short-circuit the generic
-                  // DynamicControllerSetting path for it.
+                  // The dflash_enabled / mtp_enabled checkboxes are
+                  // rendered as Switches with custom side-effecting
+                  // handlers that reload the live MLX session, so we
+                  // short-circuit the generic DynamicControllerSetting
+                  // path for them.
                   const isDflashToggle = setting.key === 'dflash_enabled'
+                  const isMtpToggle = setting.key === 'mtp_enabled'
 
                   // Use the DynamicController component
                   const actionComponent = (
@@ -825,13 +1008,21 @@ function ProviderDetail() {
                       ) : isDflashToggle ? (
                         <div className="flex items-center gap-2">
                           <Switch
-                            checked={!!(
-                              setting.controller_props as {
-                                value?: boolean
-                              }
-                            ).value}
+                            checked={
+                              !!(
+                                setting.controller_props as {
+                                  value?: boolean
+                                }
+                              ).value
+                            }
+                            /* Cross-disable while ANY speculative toggle
+                               is busy — prevents racy double-flips that
+                               would leave both flags true. */
                             disabled={
-                              isTogglingDflash || isDflashDownloading
+                              isTogglingDflash ||
+                              isDflashDownloading ||
+                              isTogglingMtp ||
+                              isMtpDownloading
                             }
                             onCheckedChange={(checked) => {
                               handleToggleDflash(checked)
@@ -843,6 +1034,33 @@ function ProviderDetail() {
                               UX. The spinner only covers the short MLX
                               reload window after the download. */}
                           {isTogglingDflash && (
+                            <IconLoader
+                              size={14}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          )}
+                        </div>
+                      ) : isMtpToggle ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={
+                              !!(
+                                setting.controller_props as {
+                                  value?: boolean
+                                }
+                              ).value
+                            }
+                            disabled={
+                              isTogglingMtp ||
+                              isMtpDownloading ||
+                              isTogglingDflash ||
+                              isDflashDownloading
+                            }
+                            onCheckedChange={(checked) => {
+                              handleToggleMtp(checked)
+                            }}
+                          />
+                          {isTogglingMtp && (
                             <IconLoader
                               size={14}
                               className="animate-spin text-muted-foreground"
@@ -883,7 +1101,7 @@ function ProviderDetail() {
                                   (s) => s.key === 'expose_metrics'
                                 )
                                 if (metricsIdx !== -1) {
-                                  ;(
+                                  (
                                     newSettings[metricsIdx]
                                       .controller_props as {
                                       value: boolean
@@ -1339,9 +1557,7 @@ function ProviderDetail() {
                                     <Button
                                       size="sm"
                                       disabled={isLoading || needsApiKey}
-                                      onClick={() =>
-                                        handleStartModel(model.id)
-                                      }
+                                      onClick={() => handleStartModel(model.id)}
                                     >
                                       {isLoading ? (
                                         <div className="flex items-center gap-2">
@@ -1422,6 +1638,13 @@ function ProviderDetail() {
           if (!open) setDflashUnsupportedModel(null)
         }}
         modelId={dflashUnsupportedModel ?? ''}
+      />
+      <MtpUnsupportedDialog
+        open={mtpUnsupportedModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setMtpUnsupportedModel(null)
+        }}
+        modelId={mtpUnsupportedModel ?? ''}
       />
     </div>
   )
