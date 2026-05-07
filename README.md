@@ -10,7 +10,7 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 <img src="https://img.shields.io/badge/Built_with-Tauri-FFC131?style=flat&logo=tauri&logoColor=white" alt="Tauri" />&nbsp;
 <img src="https://img.shields.io/badge/Runtime-Node.js_≥20-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js" />
 
-[Getting Started](https://atomic.chat/) · [Discord](https://discord.com/invite/AbWHHdKT) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+[Getting Started](https://atomic.chat/) · [Discord](https://discord.com/invite/BkeeDCmPYM) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
 
 <p align="center">
   <img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/preview.png" width="100%" alt="Atomic Chat Interface" />
@@ -123,7 +123,7 @@ If something isn't working:
 
 1. Copy your error logs and system specs
 2. Open an issue on [GitHub](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-3. Or ask for help in our [Discord](https://discord.com/invite/AbWHHdKT) `#🆘|atomic-chat-help` channel
+3. Or ask for help in our [](https://.com/invite/BkeeDCmPYM) `#🆘|atomic-chat-help` channel
 
 ---
 
@@ -132,7 +132,7 @@ If something isn't working:
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 <p align="center">
-  <a href="https://discord.com/invite/AbWHHdKT"><img src="https://img.shields.io/badge/💬_Chat_on-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>&nbsp;
+  <a href="https://discord.com/invite/BkeeDCmPYM"><img src="https://img.shields.io/badge/💬_Chat_on-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>&nbsp;
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/issues"><img src="https://img.shields.io/badge/🐛_Report-Issues-FF4444?style=for-the-badge" alt="Report Issues" /></a>&nbsp;
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/pulls"><img src="https://img.shields.io/badge/🔀_Submit-PRs-44CC11?style=for-the-badge" alt="Submit PRs" /></a>
 </p>
