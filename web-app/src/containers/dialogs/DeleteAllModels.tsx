@@ -18,7 +18,7 @@ import { useShallow } from 'zustand/shallow'
 
 import { IconTrash } from '@tabler/icons-react'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -38,9 +38,17 @@ export const DialogDeleteAllModels = ({
   const [totalBytes, setTotalBytes] = useState<number | undefined>(undefined)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const downloadedModels = provider.models.filter((m) => !m.imported)
-  const importedCount = provider.models.length - downloadedModels.length
-  const modelCount = downloadedModels.length
+  const downloadedIdsKey = provider.models
+    .filter((m) => !m.imported)
+    .map((m) => m.id)
+    .sort()
+    .join('|')
+  const downloadedIds = useMemo(
+    () => (downloadedIdsKey ? downloadedIdsKey.split('|') : []),
+    [downloadedIdsKey]
+  )
+  const importedCount = provider.models.length - downloadedIds.length
+  const modelCount = downloadedIds.length
 
   useEffect(() => {
     if (!open) return
@@ -51,7 +59,7 @@ export const DialogDeleteAllModels = ({
       .fetchModels()
       .then((infos) => {
         if (cancelled) return
-        const ids = new Set(downloadedModels.map((m) => m.id))
+        const ids = new Set(downloadedIds)
         const total = infos
           .filter((i) => ids.has(i.id) && i.providerId === provider.provider)
           .reduce((sum, i) => sum + (i.sizeBytes || 0), 0)
@@ -63,12 +71,12 @@ export const DialogDeleteAllModels = ({
     return () => {
       cancelled = true
     }
-  }, [open, provider, serviceHub, downloadedModels])
+  }, [open, provider.provider, serviceHub, downloadedIds])
 
   const handleDeleteAll = async () => {
     if (isDeleting) return
     setIsDeleting(true)
-    const ids = downloadedModels.map((m) => m.id)
+    const ids = downloadedIds
     let failed = 0
 
     for (const id of ids) {
