@@ -20,9 +20,11 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 
 ### Download
 
-|                       |                                                                          |
-| --------------------- | ------------------------------------------------------------------------ |
-| **macOS (Universal)** | [atomic-chat.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.0.23) |
+|                       |                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **macOS (Universal)** | [Atomic.Chat_1.1.66_universal.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.66/Atomic.Chat_1.1.66_universal.dmg) |
+| **Windows (x64)**     | [Atomic.Chat_1.1.66_x64-setup.exe](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.66/Atomic.Chat_1.1.66_x64-setup.exe) |
+| **iOS**               | [App Store](https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226)                                           |
 
 Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
 
@@ -31,11 +33,38 @@ Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://g
 ### Features
 
 - 🧠 **Local AI Models** — download and run LLMs (Llama, Gemma, Qwen, and more) from HuggingFace
+- ⚡ **Fast Inference Engines** — TurboQuant-optimized llama.cpp on all platforms, MLX for Apple Silicon
 - ☁️ **Cloud Integration** — connect to OpenAI, Anthropic, Mistral, Groq, MiniMax, and others
 - 🤖 **Custom Assistants** — create specialized AI assistants for your tasks
 - 🔌 **OpenAI-Compatible API** — local server at `localhost:1337` for other applications
 - 🔗 **Model Context Protocol** — MCP integration for agentic capabilities
 - 🔒 **Privacy First** — everything runs locally when you want it to
+
+---
+
+### Inference Engines
+
+Atomic Chat ships its own optimized inference stack so models run fast on whatever hardware you have:
+
+- **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our fork of `llama.cpp` with TurboQuant optimizations for faster quantized inference. Works on macOS, Windows, and Linux across CPU and GPU backends.
+- **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)** — Apple Silicon-native engine for vision-language models, running directly on the Neural Engine and unified memory. Faster than llama.cpp on M-series chips for supported models.
+
+The local API server at `http://localhost:1337/v1` exposes models from both engines through a single OpenAI-compatible endpoint — tools like OpenCode, OpenClaude, and your own scripts don't need to know which backend is running underneath.
+
+---
+
+### Use With
+
+Atomic Chat exposes an OpenAI-compatible API at `http://localhost:1337/v1`, so any tool that speaks OpenAI can talk to your local models. A few projects already ship first-class support:
+
+| Tool | What it is | Integration docs |
+| --- | --- | --- |
+| **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Atomic Chat as a local provider in `opencode.json`. | [Setup guide →](https://opencode.ai/docs/providers/#atomic-chat) |
+| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider. | [Supported providers →](https://github.com/Gitlawb/openclaude#supported-providers) |
+| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend. | [Repo →](https://github.com/outsourc-e/hermes-workspace) |
+| **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Atomic Chat as an MCP tool. | [Skill guide →](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
+
+> Building a tool that integrates with Atomic Chat? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
 
 ---
 
@@ -81,6 +110,8 @@ yarn dev
 ### System Requirements
 
 - **macOS**: 13.6+ (8GB RAM for 3B models, 16GB for 7B, 32GB for 13B)
+- **Windows**: 10/11 x64 (same RAM recommendations as macOS)
+- **iOS**: 17+ (download from App Store)
 
 ---
 
@@ -123,6 +154,7 @@ Apache 2.0 — see [LICENSE](LICENSE) for details.
 Built on the shoulders of giants:
 
 - [Llama.cpp](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)
+- [MLX-VLM](https://github.com/Blaizzy/mlx-vlm)
 - [Tauri](https://tauri.app/)
 - [Scalar](https://github.com/scalar/scalar)
 
