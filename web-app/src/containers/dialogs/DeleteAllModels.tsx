@@ -16,7 +16,7 @@ import { formatBytes } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 
-import { IconTrash, IconLoader } from '@tabler/icons-react'
+import { IconTrash } from '@tabler/icons-react'
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -126,27 +126,22 @@ export const DialogDeleteAllModels = ({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('providers:deleteAllModels.title')}</DialogTitle>
-          <DialogDescription asChild>
-            <div className="space-y-2">
-              <p>
-                {t('providers:deleteAllModels.description', {
-                  count: modelCount,
-                })}
-              </p>
-              <p className="text-sm">
-                {t('providers:deleteAllModels.sizeLabel')}{' '}
-                <span className="font-medium text-foreground">
-                  {totalBytes === undefined
-                    ? t('providers:deleteAllModels.calculating')
-                    : formatBytes(totalBytes, { fallback: '—' })}
-                </span>
-              </p>
-              <p className="text-sm text-destructive">
-                {t('providers:deleteAllModels.warning')}
-              </p>
-            </div>
+          <DialogDescription>
+            {t('providers:deleteAllModels.description', { count: modelCount })}{' '}
+            {t('providers:deleteAllModels.warning')}
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex items-center justify-between rounded-md bg-main-view-fg/5 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            {t('providers:deleteAllModels.sizeLabel')}
+          </span>
+          <span className="font-medium text-foreground">
+            {totalBytes === undefined
+              ? t('providers:deleteAllModels.calculating')
+              : formatBytes(totalBytes, { fallback: '—' })}
+          </span>
+        </div>
 
         <DialogFooter className="mt-2">
           <DialogClose asChild>
@@ -161,16 +156,9 @@ export const DialogDeleteAllModels = ({
             disabled={isDeleting}
             autoFocus
           >
-            {isDeleting ? (
-              <>
-                <IconLoader size={16} className="animate-spin" />
-                <span>{t('providers:deleteAllModels.deleting')}</span>
-              </>
-            ) : (
-              <span>
-                {t('providers:deleteAllModels.confirm', { count: modelCount })}
-              </span>
-            )}
+            {isDeleting
+              ? t('providers:deleteAllModels.deleting')
+              : t('providers:deleteAllModels.confirm', { count: modelCount })}
           </Button>
         </DialogFooter>
       </DialogContent>
