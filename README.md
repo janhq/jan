@@ -142,7 +142,7 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 ### Contact
 
 - **Bugs**: [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-- **General Discussion**: [Discord](https://discord.com/invite/AbWHHdKT)
+- **General Discussion**: [Discord](https://discord.com/invite/BkeeDCmPYM)
 - **Updates**: [X / Twitter](https://x.com/atomic_chat_hq)
 
 ---
