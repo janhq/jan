@@ -49,22 +49,24 @@ Atomic Chat ships its own optimized inference stack so models run fast on whatev
 - **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our fork of `llama.cpp` with TurboQuant optimizations for faster quantized inference. Works on macOS, Windows, and Linux across CPU and GPU backends.
 - **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)** — Apple Silicon-native engine for vision-language models, running directly on the Neural Engine and unified memory. Faster than llama.cpp on M-series chips for supported models.
 
-The local API server at `http://localhost:1337/v1` exposes models from both engines through a single OpenAI-compatible endpoint — tools like OpenCode, OpenClaude, and your own scripts don't need to know which backend is running underneath.
+The local API server at `http://localhost:1337/v1` exposes models from both engines through a single OpenAI-compatible endpoint — tools don't need to know which backend is running underneath.
 
 ---
 
-### Use With
+### Launch With
 
-Atomic Chat exposes an OpenAI-compatible API at `http://localhost:1337/v1`, so any tool that speaks OpenAI can talk to your local models. A few projects already ship first-class support:
+Atomic Chat runs an OpenAI-compatible server at `http://localhost:1337/v1`, so **any agent, CLI, IDE plugin, or app that speaks the OpenAI API can run on top of your local models** — no extra glue needed. Just point its base URL at Atomic Chat and you're done.
 
-| Tool | What it is | Integration docs |
+A few projects already ship first-class support with their own setup docs:
+
+| Tool | What it is | Setup |
 | --- | --- | --- |
-| **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Atomic Chat as a local provider in `opencode.json`. | [Setup guide →](https://opencode.ai/docs/providers/#atomic-chat) |
-| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider. | [Supported providers →](https://github.com/Gitlawb/openclaude#supported-providers) |
-| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend. | [Repo →](https://github.com/outsourc-e/hermes-workspace) |
-| **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Atomic Chat as an MCP tool. | [Skill guide →](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
+| **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Atomic Chat as a local provider in `opencode.json`. | [Setup&nbsp;guide&nbsp;→](https://opencode.ai/docs/providers/#atomic-chat) |
+| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider. | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers) |
+| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend. | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace) |
+| **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Atomic Chat as an MCP tool. | [Skill&nbsp;guide&nbsp;→](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
 
-> Building a tool that integrates with Atomic Chat? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
+> Built something that runs on Atomic Chat? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
 
 ---
 
