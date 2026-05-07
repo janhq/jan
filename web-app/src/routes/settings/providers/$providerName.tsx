@@ -1058,6 +1058,14 @@ function ProviderDetail() {
                               {getModelDisplayName(model)}
                             </h1>
                             <Capabilities capabilities={capabilities} />
+                            {model.imported && (
+                              <span
+                                className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                                title={t('providers:importedTooltip')}
+                              >
+                                {t('providers:imported')}
+                              </span>
+                            )}
                           </div>
                         }
                         actions={

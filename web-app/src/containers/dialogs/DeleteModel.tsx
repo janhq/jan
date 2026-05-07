@@ -117,7 +117,9 @@ export const DialogDeleteModel = ({
             {t('providers:deleteModel.title', { modelId: selectedModel.id })}
           </DialogTitle>
           <DialogDescription>
-            {t('providers:deleteModel.description')}
+            {selectedModel.imported
+              ? t('providers:deleteModel.importedDescription')
+              : t('providers:deleteModel.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -129,7 +131,9 @@ export const DialogDeleteModel = ({
           </DialogClose>
           <DialogClose asChild>
             <Button variant="destructive" size="sm" onClick={removeModel} autoFocus>
-              {t('providers:deleteModel.delete')}
+              {selectedModel.imported
+                ? t('providers:deleteModel.removeFromJan')
+                : t('providers:deleteModel.delete')}
             </Button>
           </DialogClose>
         </DialogFooter>

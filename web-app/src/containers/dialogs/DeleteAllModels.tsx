@@ -38,7 +38,9 @@ export const DialogDeleteAllModels = ({
   const [totalBytes, setTotalBytes] = useState<number | undefined>(undefined)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const modelCount = provider.models.length
+  const downloadedModels = provider.models.filter((m) => !m.imported)
+  const importedCount = provider.models.length - downloadedModels.length
+  const modelCount = downloadedModels.length
 
   useEffect(() => {
     if (!open) return
@@ -49,7 +51,7 @@ export const DialogDeleteAllModels = ({
       .fetchModels()
       .then((infos) => {
         if (cancelled) return
-        const ids = new Set(provider.models.map((m) => m.id))
+        const ids = new Set(downloadedModels.map((m) => m.id))
         const total = infos
           .filter((i) => ids.has(i.id) && i.providerId === provider.provider)
           .reduce((sum, i) => sum + (i.sizeBytes || 0), 0)
@@ -61,12 +63,12 @@ export const DialogDeleteAllModels = ({
     return () => {
       cancelled = true
     }
-  }, [open, provider, serviceHub])
+  }, [open, provider, serviceHub, downloadedModels])
 
   const handleDeleteAll = async () => {
     if (isDeleting) return
     setIsDeleting(true)
-    const ids = provider.models.map((m) => m.id)
+    const ids = downloadedModels.map((m) => m.id)
     let failed = 0
 
     for (const id of ids) {
@@ -142,6 +144,14 @@ export const DialogDeleteAllModels = ({
               : formatBytes(totalBytes, { fallback: '—' })}
           </span>
         </div>
+
+        {importedCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t('providers:deleteAllModels.importedExcluded', {
+              count: importedCount,
+            })}
+          </p>
+        )}
 
         <DialogFooter className="mt-2">
           <DialogClose asChild>
