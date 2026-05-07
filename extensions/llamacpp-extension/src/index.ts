@@ -45,7 +45,6 @@ import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
   readGgufMetadata,
-  getModelSize,
   isModelSupported,
   unloadLlamaModel,
   LlamacppConfig,
@@ -53,7 +52,6 @@ import {
   ModelConfig,
   EmbeddingResponse,
   DeviceList,
-  SystemMemory,
   mapOldBackendToNew,
   findLatestVersionForBackend,
   prioritizeBackends,
@@ -63,8 +61,6 @@ import {
   handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
-
-// Error message constant - matches web-app/src/utils/error.ts
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -175,10 +171,6 @@ export default class llamacpp_extension extends AIEngine {
       modelId: string
       downloadType: string
     }>('onModelValidationStarted', (event) => {
-      console.debug(
-        'LlamaCPP: bridging onModelValidationStarted event',
-        event.payload
-      )
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
@@ -2301,9 +2293,6 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(`Validating GGUF file: ${filePath}`)
       const metadata = await readGgufMetadata(filePath)
 
-      // Log full metadata for debugging
-      logger.info('Full GGUF metadata:', JSON.stringify(metadata, null, 2))
-
       // Check if architecture is 'clip' which is not supported for text generation
       const architecture = metadata.metadata?.['general.architecture']
       logger.info(`Model architecture: ${architecture}`)
@@ -2375,13 +2364,9 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     if (hasImages) {
-      logger.info('Conversation has images')
       try {
         // Read mmproj metadata to get vision parameters
-        logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
-
         const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
-        logger.info(`mmproj metadata: ${JSON.stringify(metadata.metadata)}`)
         imageTokens = await this.calculateImageTokens(
           opts.messages,
           metadata.metadata
