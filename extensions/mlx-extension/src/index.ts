@@ -216,8 +216,7 @@ export default class mlx_extension extends AIEngine {
     /// will be picked up the next time the user toggles the drafter on
     /// from the SetupScreen.
     if (key === 'block_size' || key === 'mtp_block_size') {
-      const family: 'dflash' | 'mtp' =
-        key === 'block_size' ? 'dflash' : 'mtp'
+      const family: 'dflash' | 'mtp' = key === 'block_size' ? 'dflash' : 'mtp'
       const numValue = Number(value)
       if (!Number.isFinite(numValue) || numValue < 1) return
       this.scheduleBlockReload(family, numValue)
@@ -229,10 +228,7 @@ export default class mlx_extension extends AIEngine {
   /// stream because the underlying `enableDflash` / `enableMtp` calls
   /// SIGTERM the mlx-server process before respawning it with the new
   /// `--draft-block-size` flag.
-  private scheduleBlockReload(
-    family: 'dflash' | 'mtp',
-    value: number
-  ): void {
+  private scheduleBlockReload(family: 'dflash' | 'mtp', value: number): void {
     const existing = this.blockReloadTimers[family]
     if (existing) clearTimeout(existing)
 
@@ -513,13 +509,10 @@ export default class mlx_extension extends AIEngine {
     /// matching registry and reuse the cached draft (or download it).
     /// On any failure we fall back to running without the drafter so the
     /// model load itself is never blocked by a missing/unreachable
-    /// assistant.
-    ///
-    /// `resolveMtpDraft` / `resolveDflashDraft` also enforce the bf16-only
-    /// guard (see `isQuantizedTarget`): a 4bit/8bit/fp8 target paired with
-    /// a bf16 drafter produces gibberish at chat-default temperatures, so
-    /// the resolvers refuse such pairings here and the fallback below
-    /// loads the target model alone.
+    /// assistant. For MTP, `resolveMtpDraft` also rejects quantized
+    /// targets (bf16-only per upstream README); DFlash stays open since
+    /// the mlx-vlm server forces `temp=0` on the speculative path,
+    /// keeping its output lossless on quantized targets too.
     if ((dflashOn || mtpOn) && !draftPath) {
       try {
         const resolution = mtpOn
@@ -539,7 +532,7 @@ export default class mlx_extension extends AIEngine {
           )
         } else {
           logger.warn(
-            `performLoad: ${modelId} has ${draftKind}_enabled=true but no registry match (or quantized target); loading without drafter`
+            `performLoad: ${modelId} has ${draftKind}_enabled=true but no ${draftKind} registry match (registry miss${draftKind === 'mtp' ? ' or quantized target — MTP requires bf16' : ''}); loading without drafter`
           )
         }
       } catch (e) {
@@ -551,8 +544,9 @@ export default class mlx_extension extends AIEngine {
 
     /// `--draft-block-size` and `--draft-kind` are meaningful only when a
     /// drafter is actually attached. If the auto-restore above failed to
-    /// produce a path (registry miss or quantized target rejection), drop
-    /// them so we don't feed the mlx-vlm server orphan flags.
+    /// produce a path (registry miss, or — for MTP — bf16-only guard
+    /// rejecting a quantized target), drop them so we don't feed the
+    /// mlx-vlm server orphan flags.
     const effectiveDraftKind = draftPath ? draftKind : ''
     const effectiveBlockSize = draftPath ? blockSize : 0
 
