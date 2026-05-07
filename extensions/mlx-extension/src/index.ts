@@ -509,10 +509,10 @@ export default class mlx_extension extends AIEngine {
     /// matching registry and reuse the cached draft (or download it).
     /// On any failure we fall back to running without the drafter so the
     /// model load itself is never blocked by a missing/unreachable
-    /// assistant. For MTP, `resolveMtpDraft` also rejects quantized
-    /// targets (bf16-only per upstream README); DFlash stays open since
-    /// the mlx-vlm server forces `temp=0` on the speculative path,
-    /// keeping its output lossless on quantized targets too.
+    /// assistant. Both MTP and DFlash now accept quantized targets — the
+    /// mlx-vlm server forces `temp=0` on the speculative path so a
+    /// quantization mismatch with the bf16 drafter only reduces the
+    /// acceptance rate, never corrupts output.
     if ((dflashOn || mtpOn) && !draftPath) {
       try {
         const resolution = mtpOn

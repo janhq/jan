@@ -27,26 +27,6 @@ const DEFAULT_REQUIRED = ['config.json', 'model.safetensors']
 /// fatal.
 const DEFAULT_OPTIONAL: string[] = ['model.safetensors.index.json']
 
-/// Lossy quantization suffixes that disqualify a target from MTP. The
-/// upstream MTP drafter is tightly coupled to the target's KV/embed
-/// distributions (see `mlx_vlm/speculative/drafters/gemma4_assistant/
-/// README.md::Supported pairings` — the table lists only `*-bf16`
-/// targets) and the bf16 drafter on a quantized target produces biased
-/// strict-equality verification at temperature > 0, collapsing the
-/// chat output to a litany of high-prob tokens.
-///
-/// Match is case-insensitive on the canonical MLX naming used by
-/// `mlx-community` (e.g. `-4bit`, `-8bit`, `-q4`, `-q8`, `-fp8`,
-/// `-mxfp4`). The DFlash registry intentionally stays open: forced
-/// `temp=0` on the mlx-vlm server keeps DFlash output lossless even on
-/// quantized targets.
-const LOSSY_QUANT_SUFFIX_RE =
-  /-(?:[248]bit|q[248]|fp8|mxfp4|nf4|awq|gptq|int4|int8)(?:[-./]|$)/i
-
-function isQuantizedTarget(modelId: string): boolean {
-  return LOSSY_QUANT_SUFFIX_RE.test(modelId)
-}
-
 /// Snapshot of the four canonical Gemma 4 target ↔ assistant pairings
 /// from `mlx_vlm/speculative/drafters/gemma4_assistant/README.md`.
 ///
@@ -103,13 +83,18 @@ export function resolveMtpDraft(modelId: string): DraftResolution | null {
     return null
   }
 
-  /// MTP README's `Supported pairings` table only lists `*-bf16`
-  /// targets. Quantized targets (4bit/8bit/fp8/...) break the
-  /// drafter's KV-cache sharing + shared embed assumptions and
-  /// degenerate the chat output. Reject them here so the toggle stays
-  /// off and the user sees the standard `mtpUnsupported*` toast.
-  if (isQuantizedTarget(modelId)) return null
-
+  /// Quantized targets (e.g. `gemma-4-E4B-it-4bit`) are now allowed.
+  /// The original block was a precaution against biased strict-equality
+  /// verification when the bf16 drafter was paired with a quantized
+  /// target — but the mlx-vlm server forces ``temp=0`` in
+  /// ``_run_speculative`` (greedy verify), so a quantization mismatch
+  /// only reduces acceptance rate (drafter argmax may diverge from
+  /// target argmax), it does not corrupt output. The long-prompt SWA
+  /// mask bug that previously turned this into "Just/Just/Just" cascades
+  /// is fixed upstream by Blaizzy/mlx-vlm#1139 (commit ``2bc33a6``).
+  /// ``normalizeBaseId`` strips the quant + ``-it`` suffixes so e.g.
+  /// ``gemma-4-E4B-it-4bit`` -> ``gemma-4-e4b`` and resolves to the
+  /// same bf16 drafter as the bf16 target.
   const baseId = normalizeBaseId(modelId)
   const manifest = STATIC_MTP_MAP[baseId]
   if (!manifest) return null
