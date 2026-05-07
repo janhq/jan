@@ -213,95 +213,6 @@ function getRuntimeFetch(): typeof globalThis.fetch {
 }
 
 /**
- * Custom fetch for Foundation Models that routes through Tauri IPC
- * instead of HTTP, emulating an OpenAI-compatible fetch interface.
- */
-function createFoundationModelsFetch(
-  parameters: Record<string, unknown>
-): typeof globalThis.fetch {
-  return async (
-    _input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> => {
-    const rawBody = init?.body ? JSON.parse(init.body as string) : {}
-    const body = { ...rawBody, ...parameters }
-    const isStreaming = body.stream === true
-
-    if (!isStreaming) {
-      const result = await invoke<string>(
-        'plugin:foundation-models|foundation_models_chat_completion',
-        { body: JSON.stringify(body) }
-      )
-      return new Response(result, {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
-    const requestId = crypto.randomUUID()
-    const { listen } = await import('@tauri-apps/api/event')
-
-    let unlistenFn: (() => void) | null = null
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const encoder = new TextEncoder()
-
-        unlistenFn = await listen(
-          `foundation-models-stream-${requestId}`,
-          (event: { payload: { data?: string; done?: boolean; error?: string } }) => {
-            const payload = event.payload
-            if (payload.done) {
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-              try {
-                controller.close()
-              } catch {
-                /* already closed */
-              }
-              unlistenFn?.()
-            } else if (payload.error) {
-              try {
-                controller.error(new Error(payload.error))
-              } catch {
-                /* already errored */
-              }
-              unlistenFn?.()
-            } else if (payload.data) {
-              controller.enqueue(
-                encoder.encode(`data: ${payload.data}\n\n`)
-              )
-            }
-          }
-        )
-
-        invoke(
-          'plugin:foundation-models|foundation_models_chat_completion_stream',
-          { body: JSON.stringify(body), requestId }
-        ).catch((err) => {
-          try {
-            controller.error(err)
-          } catch {
-            /* already errored */
-          }
-          unlistenFn?.()
-        })
-      },
-      cancel() {
-        unlistenFn?.()
-        invoke(
-          'plugin:foundation-models|abort_foundation_models_stream',
-          { requestId }
-        ).catch(() => {})
-      },
-    })
-
-    return new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
-  }
-}
-
-/**
  * Map of model keywords to their respective reasoning tags.
  * Used for models that use tags other than the default 'think'.
  */
@@ -349,9 +260,6 @@ export class ModelFactory {
 
       case 'mlx':
         return this.createMlxModel(modelId, provider, parameters)
-
-      case 'foundation-models':
-        return this.createFoundationModelsModel(modelId, provider, parameters)
 
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, parameters)
