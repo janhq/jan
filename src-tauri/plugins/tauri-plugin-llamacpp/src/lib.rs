@@ -13,6 +13,7 @@ mod error;
 mod gguf;
 mod path;
 mod process;
+pub mod router;
 pub mod state;
 pub use args::LlamacppConfig;
 pub use cleanup::cleanup_llama_processes;
@@ -28,6 +29,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             // LlamaCpp server commands
             commands::load_llama_model,
             commands::unload_llama_model,
+            // Router-mode commands (Phase 1)
+            commands::start_router,
+            commands::stop_router,
+            commands::get_router_info,
             commands::get_devices,
             commands::generate_api_key,
             commands::is_process_running,

@@ -39,12 +39,15 @@ pub struct LLamaBackendSession {
 /// LlamaCpp plugin state
 pub struct LlamacppState {
     pub llama_server_process: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    /// Router-mode `llama-server` (Phase 1). At most one instance at a time.
+    pub router: Mutex<Option<crate::router::RouterHandle>>,
 }
 
 impl Default for LlamacppState {
     fn default() -> Self {
         Self {
             llama_server_process: Arc::new(Mutex::new(HashMap::new())),
+            router: Mutex::new(None),
         }
     }
 }

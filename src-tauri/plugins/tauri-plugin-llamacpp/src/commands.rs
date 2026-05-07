@@ -608,3 +608,85 @@ pub async fn get_session_by_model<R: Runtime>(
 ) -> Result<Option<SessionInfo>, String> {
     find_session_by_model_id(app_handle, &model_id).await
 }
+
+// ============================================================================
+// Router-mode commands (Phase 1)
+//
+// These run alongside — not in place of — the per-model commands above.
+// Phase 2 wires the TS extension to use these; Phase 3 deprecates the per-model
+// load/unload paths.
+// ============================================================================
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct RouterInfo {
+    pub port: u16,
+    pub api_key: String,
+    pub pid: u32,
+}
+
+/// Start a single `llama-server` in router mode.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn start_router<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    backend_exe: String,
+    preset_path: String,
+    port: u16,
+    api_key: String,
+    models_max: u32,
+    default_args: Vec<String>,
+    envs: HashMap<String, String>,
+) -> Result<RouterInfo, String> {
+    let state: State<LlamacppState> = app_handle.state();
+    let mut guard = state.router.lock().await;
+    if guard.is_some() {
+        return Err("Router is already running.".to_string());
+    }
+
+    let handle = crate::router::start_router(
+        std::path::PathBuf::from(backend_exe),
+        std::path::PathBuf::from(preset_path),
+        port,
+        api_key,
+        models_max,
+        default_args,
+        envs,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let info = RouterInfo {
+        port: handle.port,
+        api_key: handle.api_key.clone(),
+        pid: handle.pid,
+    };
+    *guard = Some(handle);
+    Ok(info)
+}
+
+/// Stop the router if running. No-op otherwise.
+#[tauri::command]
+pub async fn stop_router<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Result<(), String> {
+    let state: State<LlamacppState> = app_handle.state();
+    let mut guard = state.router.lock().await;
+    if let Some(handle) = guard.take() {
+        crate::router::stop_router(handle)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Get info on the currently running router, if any.
+#[tauri::command]
+pub async fn get_router_info<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<Option<RouterInfo>, String> {
+    let state: State<LlamacppState> = app_handle.state();
+    let guard = state.router.lock().await;
+    Ok(guard.as_ref().map(|h| RouterInfo {
+        port: h.port,
+        api_key: h.api_key.clone(),
+        pid: h.pid,
+    }))
+}
