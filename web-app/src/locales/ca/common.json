@@ -9,6 +9,8 @@
   "general": "General",
   "settings": "Configuració",
   "modelProviders": "Proveïdors de models",
+  "localProviders": "Local",
+  "remoteProviders": "Remot",
   "interface": "Interfície",
   "privacy": "Privadesa",
   "keyboardShortcuts": "Dreceres",

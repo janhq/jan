@@ -11,6 +11,8 @@
   "general": "Umum",
   "settings": "Pengaturan",
   "modelProviders": "Penyedia Model",
+  "localProviders": "Lokal",
+  "remoteProviders": "Jarak Jauh",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Tampilan",

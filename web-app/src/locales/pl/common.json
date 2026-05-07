@@ -11,6 +11,8 @@
   "general": "Ogólne",
   "settings": "Ustawienia",
   "modelProviders": "Dostawcy Modeli",
+  "localProviders": "Lokalne",
+  "remoteProviders": "Zdalne",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Wygląd",
