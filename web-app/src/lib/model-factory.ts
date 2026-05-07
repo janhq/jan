@@ -261,6 +261,9 @@ export class ModelFactory {
       case 'mlx':
         return this.createMlxModel(modelId, provider, parameters)
 
+      case 'foundation-models':
+        return this.createFoundationModelsModel(modelId, provider, parameters)
+
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, parameters)
 
@@ -495,7 +498,7 @@ export class ModelFactory {
       )
     }
 
-    const customFetch = createFoundationModelsFetch(parameters)
+    const customFetch = createCustomFetch(getRuntimeFetch(), parameters)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'foundation-models',
