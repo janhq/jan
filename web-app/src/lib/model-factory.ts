@@ -115,24 +115,58 @@ const hasAnyMetric = (m: NormalizedMetrics): boolean =>
   m.promptPerSecond != null
 
 /**
+ * Merge `usage` (mlx-vlm shape) and `timings` (llama.cpp / dflash shape)
+ * into a single normalized view. Usage takes priority for token counts
+ * unconditionally, but for TPS fields we only let usage override timings
+ * when the usage value is *positive* — otherwise a server that emits
+ * `usage` with token counts only (the dflash case: it ships
+ * `predicted_per_second` exclusively in `timings`) would clobber a
+ * perfectly valid TPS reading with `null`.
+ */
+const mergeMetrics = (
+  usage: MlxVlmUsage | undefined,
+  timings: LlamaCppTimings | undefined
+): NormalizedMetrics | null => {
+  if (!usage && !timings) return null
+  const u = usage ? buildFromUsage(usage) : null
+  const t = timings ? buildFromTimings(timings) : null
+
+  const pickCount = (
+    a: number | null | undefined,
+    b: number | null | undefined
+  ): number | null => (a != null ? a : (b ?? null))
+
+  const pickRate = (
+    a: number | null | undefined,
+    b: number | null | undefined
+  ): number | null => {
+    if (a != null && a > 0) return a
+    if (b != null && b > 0) return b
+    return a ?? b ?? null
+  }
+
+  const merged: NormalizedMetrics = {
+    promptTokens: pickCount(u?.promptTokens, t?.promptTokens),
+    completionTokens: pickCount(u?.completionTokens, t?.completionTokens),
+    tokensPerSecond: pickRate(u?.tokensPerSecond, t?.tokensPerSecond),
+    promptPerSecond: pickRate(u?.promptPerSecond, t?.promptPerSecond),
+  }
+  return hasAnyMetric(merged) ? merged : null
+}
+
+/**
  * Custom metadata extractor for MLX that pulls token / TPS metrics from
- * the OpenAI-compatible `usage` block emitted by mlx-vlm. Falls back to
- * the legacy `timings.*` shape so older dflash binaries shipped in user
- * machines keep rendering TPS until they are upgraded.
+ * both the OpenAI-compatible `usage` block emitted by mlx-vlm and the
+ * legacy `timings.*` shape used by llama.cpp / dflash. The two shapes
+ * are merged (usage-first, timings-fallback per field) so a server that
+ * only fills one of the two channels still produces a complete metric.
  */
 const providerMetadataExtractor: MetadataExtractor = {
   extractMetadata: async ({ parsedBody }: { parsedBody: unknown }) => {
     const body = parsedBody as ProviderMetricsChunk
-    if (body?.usage) {
-      const metrics = buildFromUsage(body.usage)
-      if (hasAnyMetric(metrics)) {
-        return { providerMetadata: { ...metrics } }
-      }
-    }
-    if (body?.timings) {
-      return { providerMetadata: { ...buildFromTimings(body.timings) } }
-    }
-    return undefined
+    const merged = mergeMetrics(body?.usage, body?.timings)
+    if (!merged) return undefined
+    return { providerMetadata: { ...merged } }
   },
   createStreamExtractor: () => {
     let lastUsage: MlxVlmUsage | undefined
@@ -152,18 +186,9 @@ const providerMetadataExtractor: MetadataExtractor = {
         }
       },
       buildMetadata: () => {
-        if (lastUsage) {
-          const metrics = buildFromUsage(lastUsage)
-          if (hasAnyMetric(metrics)) {
-            return { providerMetadata: { ...metrics } }
-          }
-        }
-        if (lastTimings) {
-          return {
-            providerMetadata: { ...buildFromTimings(lastTimings) },
-          }
-        }
-        return undefined
+        const merged = mergeMetrics(lastUsage, lastTimings)
+        if (!merged) return undefined
+        return { providerMetadata: { ...merged } }
       },
     }
   },
