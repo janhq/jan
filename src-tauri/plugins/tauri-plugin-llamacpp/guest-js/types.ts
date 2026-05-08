@@ -66,6 +66,11 @@ export type LlamacppConfig = {
   rope_freq_scale: number
   ctx_shift: boolean
   parallel: number
+  reasoning: string
+  cache_ram: number
+  cache_reuse: number
+  swa_full: boolean
+  keep: number
 }
 
 export type ModelPlan = {

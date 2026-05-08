@@ -55,4 +55,42 @@ export const paramsSettings = {
     description:
       'Number of most relevant documents to retrieve. Higher values return more results.',
   },
+  mirostat: {
+    key: 'mirostat',
+    value: 0,
+    title: 'Mirostat',
+    description: `Mirostat sampling mode (llama.cpp only). 0 = disabled, 1 = Mirostat v1, 2 = Mirostat v2.`,
+  },
+  mirostat_tau: {
+    key: 'mirostat_tau',
+    value: 5.0,
+    title: 'Mirostat Tau',
+    description: `Mirostat target entropy (llama.cpp only). Lower values produce more focused output.`,
+  },
+  mirostat_eta: {
+    key: 'mirostat_eta',
+    value: 0.1,
+    title: 'Mirostat Eta',
+    description: `Mirostat learning rate (llama.cpp only).`,
+  },
+  grammar: {
+    key: 'grammar',
+    value: '',
+    title: 'Grammar (GBNF)',
+    description: `GBNF grammar string to constrain generations (llama.cpp only). Paste the grammar contents directly.`,
+  },
+  json_schema: {
+    key: 'json_schema',
+    value: '',
+    title: 'JSON Schema',
+    description: `JSON schema string to constrain generations as valid JSON (llama.cpp only).`,
+  },
 }
+
+export const LLAMACPP_ONLY_PARAM_KEYS: ReadonlySet<string> = new Set([
+  'mirostat',
+  'mirostat_tau',
+  'mirostat_eta',
+  'grammar',
+  'json_schema',
+])

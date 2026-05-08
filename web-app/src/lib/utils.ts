@@ -72,8 +72,6 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
-    case 'foundation-models':
-      return '/images/model-provider/apple-intelligence.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -111,8 +109,6 @@ export const getProviderTitle = (provider: string) => {
       return 'Llama.cpp'
     case 'mlx':
       return 'MLX'
-    case 'foundation-models':
-      return 'Apple Intelligence'
     case 'openai':
       return 'OpenAI'
     case 'openrouter':
@@ -173,6 +169,84 @@ export function getReadableLanguageName(language: string): string {
 export const isLocalProvider = (provider: string) => {
   const extension = ExtensionManager.getInstance().getEngine(provider)
   return extension && 'load' in extension
+}
+
+export const toGigabytes = (
+  input: number,
+  options?: { hideUnit?: boolean; toFixed?: number }
+) => {
+  if (!input) return ''
+  if (input > 1024 ** 3) {
+    return (
+      (input / 1024 ** 3).toFixed(options?.toFixed ?? 2) +
+      (options?.hideUnit ? '' : 'GB')
+    )
+  } else if (input > 1024 ** 2) {
+    return (
+      (input / 1024 ** 2).toFixed(options?.toFixed ?? 2) +
+      (options?.hideUnit ? '' : 'MB')
+    )
+  } else if (input > 1024) {
+    return (
+      (input / 1024).toFixed(options?.toFixed ?? 2) +
+      (options?.hideUnit ? '' : 'KB')
+    )
+  } else {
+    return input + (options?.hideUnit ? '' : 'B')
+  }
+}
+
+export type ByteUnit = 'B' | 'KB' | 'MB' | 'GB'
+
+export type FormatBytesOptions = {
+  decimals?: number | ((value: number, unit: ByteUnit) => number)
+  separator?: string
+  hideUnit?: boolean
+  minUnit?: ByteUnit
+  fallback?: string
+}
+
+const BYTE_UNITS: ByteUnit[] = ['B', 'KB', 'MB', 'GB']
+
+export function formatBytes(
+  bytes: number | undefined,
+  options?: FormatBytesOptions
+): string {
+  const fallback = options?.fallback ?? ''
+
+  if (bytes === undefined || !Number.isFinite(bytes)) {
+    return fallback
+  }
+
+  const minUnitIndex =
+    options?.minUnit === undefined ? 0 : BYTE_UNITS.indexOf(options.minUnit)
+
+  let unitIndex = 0
+  let scaledValue = bytes
+
+  while (scaledValue >= 1024 && unitIndex < BYTE_UNITS.length - 1) {
+    scaledValue /= 1024
+    unitIndex++
+  }
+
+  while (unitIndex < minUnitIndex) {
+    scaledValue /= 1024
+    unitIndex++
+  }
+
+  const unit = BYTE_UNITS[unitIndex]
+  const rawDecimals =
+    typeof options?.decimals === 'function'
+      ? options.decimals(scaledValue, unit)
+      : options?.decimals ?? 1
+  const decimals = Math.min(20, Math.max(0, Math.trunc(rawDecimals)))
+  const formattedValue = scaledValue.toFixed(decimals)
+
+  if (options?.hideUnit) {
+    return formattedValue
+  }
+
+  return `${formattedValue}${options?.separator ?? ' '}${unit}`
 }
 
 export function formatMegaBytes(mb: number) {
