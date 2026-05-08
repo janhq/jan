@@ -4,7 +4,6 @@ import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
 import { useMessageQueue } from "@/stores/message-queue-store";
-// import { showChatCompletionToast } from "@/components/toasts/chat-completion-toast";
 
 export type SessionData = {
   tools: any[];
@@ -64,7 +63,6 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
   setActiveConversationId: (conversationId) =>
     set({ activeConversationId: conversationId }),
   ensureSession: (sessionId, transport, createChat, title) => {
-    // Set active immediately - prevents toast for this session during status sync
     // Only update activeConversationId if it changed (avoid unnecessary state updates during render)
     if (get().activeConversationId !== sessionId) {
       set({ activeConversationId: sessionId });
@@ -143,25 +141,6 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
         return state;
       }
 
-      // Only notify if:
-      // 1. Was streaming and now stopped
-      // 2. Not the active conversation
-      // 3. Chat has messages (not a brand new session)
-      // 4. No pending tool calls (tools are still being executed)
-      // const hasMessages = existing.chat.messages.length > 0;
-      // const hasPendingTools = existing.data.tools.length > 0;
-      // const shouldNotify =
-      //   wasStreaming &&
-      //   !isStreaming &&
-      //   hasMessages &&
-      //   !hasPendingTools &&
-      //   state.activeConversationId !== sessionId;
-
-      // if (shouldNotify) {
-      //   const title = existing.title ?? "Conversation";
-      //   showChatCompletionToast(title, existing.chat.messages, sessionId);
-      // }
-
       return {
         sessions: {
           ...state.sessions,
@@ -201,7 +180,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     // Clear any pending queued messages for this session
     useMessageQueue.getState().clearQueue(sessionId);
 
-    // Remove from store FIRST - prevents updateStatus from showing toast during cleanup
+    // Remove from store FIRST so updateStatus callbacks during cleanup find nothing to update
     set((state) => {
       if (!state.sessions[sessionId]) {
         return state;
