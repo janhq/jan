@@ -180,7 +180,7 @@ pub fn decompress<R: Runtime>(
     path: &str,
     output_dir: &str,
 ) -> Result<(), String> {
-    let (_jan_data_folder, path_buf) = resolve_app_path_within_jan_data_folder(app.clone(), path)?;
+    let path_buf = std::path::PathBuf::from(path);
     let (_jan_data_folder, output_dir_buf) =
         resolve_app_path_within_jan_data_folder(app, output_dir)?;
 
