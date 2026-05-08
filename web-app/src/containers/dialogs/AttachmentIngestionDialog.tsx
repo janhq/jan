@@ -9,14 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import { useTranslation } from '@/i18n'
-
-const formatBytes = (bytes?: number) => {
-  if (!bytes || bytes <= 0) return ''
-  const units = ['B', 'KB', 'MB', 'GB']
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / Math.pow(1024, exponent)
-  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`
-}
+import { formatBytes } from '@/lib/utils'
 
 export default function AttachmentIngestionDialog() {
   const { t } = useTranslation()
@@ -47,7 +40,12 @@ export default function AttachmentIngestionDialog() {
               {currentAttachment.name}
             </span>
             <span className="text-xs text-muted-foreground shrink-0">
-              {formatBytes(currentAttachment.size)}
+              {currentAttachment.size && currentAttachment.size > 0
+                ? formatBytes(currentAttachment.size, {
+                    decimals: (value, unit) =>
+                      unit === 'B' || value >= 10 ? 0 : 1,
+                  })
+                : ''}
             </span>
           </div>
         </div>

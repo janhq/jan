@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { fileStorage } from '@/lib/fileStorage'
 import { ExtensionManager } from '@/lib/extension'
 type GeneralSettingState = {
   currentLanguage: Language
@@ -49,7 +48,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     }),
     {
       name: localStorageKey.settingGeneral,
-      storage: createJSONStorage(() => fileStorage),
+      storage: createJSONStorage(() => localStorage),
     }
   )
 )
