@@ -30,6 +30,7 @@ import {
   listSupportedBackends,
   downloadBackend,
   isBackendInstalled,
+  verifyBackendInstallation,
   getBackendExePath,
   getBackendDir,
 } from './backend'
@@ -134,6 +135,11 @@ export default class llamacpp_extension extends AIEngine {
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
+    if (!IS_MAC) {
+      const fitItem = settings.find((s) => s.key === 'fit')
+      if (fitItem) fitItem.controllerProps.value = true
+    }
+
     // This makes the settings (including the backend options and initial value) available to the Jan UI.
     this.registerSettings(settings)
 
@@ -153,6 +159,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // Migration v2: disable fit by default
     await this.migrateFitDefault()
+
+    // Migration v3: enable fit on Windows/Linux with a discrete GPU
+    await this.migrateFitPlatformDefault()
 
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
@@ -250,6 +259,47 @@ export default class llamacpp_extension extends AIEngine {
       )
       this.config.fit = false
       logger.info('Migrated fit setting: disabled by default')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migrateFitPlatformDefault(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_fit_platform_v2'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    if (IS_MAC) {
+      localStorage.setItem(MIGRATION_KEY, '1')
+      return
+    }
+
+    let hasDiscreteGpu = false
+    try {
+      const sysInfo = await getSystemInfo()
+      hasDiscreteGpu = (sysInfo?.gpus ?? []).some(
+        (g: any) =>
+          g?.nvidia_info != null ||
+          g?.vulkan_info?.device_type === 'DiscreteGpu'
+      )
+    } catch (error) {
+      // Skip writing the migration key so a transient probe failure retries.
+      logger.warn('Failed to probe GPU info for fit migration:', error)
+      return
+    }
+
+    // Only upgrade the v1 auto-default; preserve any explicit user override.
+    if (this.config.fit === false && hasDiscreteGpu) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'fit') {
+            item.controllerProps.value = true
+          }
+          return item
+        })
+      )
+      this.config.fit = true
+      logger.info('Migrated fit setting: enabled (discrete GPU detected)')
     }
 
     localStorage.setItem(MIGRATION_KEY, '1')
@@ -488,6 +538,18 @@ export default class llamacpp_extension extends AIEngine {
 
       if (!backendWasDownloaded && effectiveBackendString) {
         await this.ensureFinalBackendInstallation(effectiveBackendString)
+      }
+
+      // Run dependency verification once after the backend is confirmed
+      // installed. This covers both fresh downloads and pre-existing installs,
+      // and runs only once per app startup via the isConfiguringBackends guard.
+      if (effectiveBackendString) {
+        // effectiveBackendString is expected to be "<version>/<backend>" (e.g.
+        // "b4589/linux-cuda-12"). Any other shape silently skips verification.
+        const [version, backend] = effectiveBackendString.split('/')
+        if (version && backend) {
+          await this.verifyBackendDeps(backend, version)
+        }
       }
     } finally {
       this.isConfiguringBackends = false
@@ -1713,6 +1775,32 @@ export default class llamacpp_extension extends AIEngine {
       ? modelId.slice(0, modelId.indexOf('.'))
       : modelId
     return `${this.provider}/${cleanModelId}`
+  }
+
+  private async verifyBackendDeps(backend: string, version: string): Promise<void> {
+    const backendKey = `${version}/${backend}`
+    try {
+      const verification = await verifyBackendInstallation(backend, version)
+      if (verification.verified) {
+        logger.info(
+          `Backend ${backendKey} dependency verification passed (${verification.resolved_libraries.length} libraries resolved)`
+        )
+      } else {
+        logger.warn(
+          `Backend ${backendKey} is missing libraries: ${verification.missing_libraries.join(', ')}`
+        )
+        events.emit(AppEvent.onBackendVerificationFailed, {
+          backend,
+          version,
+          missingLibraries: verification.missing_libraries,
+        })
+      }
+    } catch (verifyErr) {
+      // Intentionally non-fatal: verification is advisory only. A BinaryNotFound
+      // error here means the exe disappeared between install and startup — the
+      // backend will fail naturally when first used, which is surfaced elsewhere.
+      logger.warn(`Backend ${backendKey} dependency verification failed: ${verifyErr}`)
+    }
   }
 
   private async ensureBackendReady(
