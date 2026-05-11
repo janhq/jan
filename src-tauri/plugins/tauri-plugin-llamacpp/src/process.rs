@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tauri::{Manager, Runtime, State};
 
@@ -16,7 +17,7 @@ pub async fn is_process_running_by_pid<R: Runtime>(
     let alive = system.process(process_pid).is_some();
 
     if !alive {
-        let state: State<LlamacppState> = app_handle.state();
+        let state: State<Arc<LlamacppState>> = app_handle.state();
         let mut map = state.llama_server_process.lock().await;
         map.remove(&pid);
     }
@@ -29,7 +30,7 @@ pub async fn get_random_available_port<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<u16, String> {
     // Get all active ports from sessions
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let map = state.llama_server_process.lock().await;
 
     let used_ports: HashSet<u16> = map
@@ -117,7 +118,7 @@ pub async fn find_session_by_model_id<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: &str,
 ) -> Result<Option<SessionInfo>, String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let map = state.llama_server_process.lock().await;
 
     let session_info = map
@@ -132,7 +133,7 @@ pub async fn find_session_by_model_id<R: Runtime>(
 pub async fn get_all_loaded_model_ids<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Vec<String>, String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let map = state.llama_server_process.lock().await;
 
     let model_ids = map
@@ -147,7 +148,7 @@ pub async fn get_all_loaded_model_ids<R: Runtime>(
 pub async fn get_all_active_sessions<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Vec<SessionInfo>, String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let map = state.llama_server_process.lock().await;
     let sessions: Vec<SessionInfo> = map.values().map(|s| s.info.clone()).collect();
     Ok(sessions)

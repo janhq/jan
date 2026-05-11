@@ -314,7 +314,7 @@ fn start_session_exit_monitor<R: Runtime>(app_handle: tauri::AppHandle<R>, model
             tokio::time::sleep(Duration::from_millis(1000)).await;
 
             let maybe_exited = {
-                let state: State<LlamacppState> = app_handle.state();
+                let state: State<Arc<LlamacppState>> = app_handle.state();
                 let mut map = state.llama_server_process.lock().await;
 
                 let maybe_session = map
@@ -361,7 +361,7 @@ pub async fn load_llama_model<R: Runtime>(
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let session_info = load_llama_model_impl(
         state.llama_server_process.clone(),
         backend_path,
@@ -388,7 +388,7 @@ pub async fn unload_llama_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     pid: i32,
 ) -> ServerResult<UnloadResult> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let mut map = state.llama_server_process.lock().await;
 
     if let Some(session) = map.remove(&pid) {
@@ -452,7 +452,7 @@ pub async fn ensure_session_ready<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: String,
 ) -> Result<SessionInfo, String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let process_map_arc = state.llama_server_process.clone();
 
     // Step 1: resolve session by model_id and check if alive from source-of-truth child handle.
@@ -637,7 +637,7 @@ pub async fn start_router<R: Runtime>(
     default_args: Vec<String>,
     envs: HashMap<String, String>,
 ) -> Result<RouterInfo, String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let mut guard = state.router.lock().await;
     if guard.is_some() {
         return Err("Router is already running.".to_string());
@@ -667,7 +667,7 @@ pub async fn start_router<R: Runtime>(
 /// Stop the router if running. No-op otherwise.
 #[tauri::command]
 pub async fn stop_router<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Result<(), String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let mut guard = state.router.lock().await;
     if let Some(handle) = guard.take() {
         crate::router::stop_router(handle)
@@ -682,7 +682,7 @@ pub async fn stop_router<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Result<
 pub async fn get_router_info<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Option<RouterInfo>, String> {
-    let state: State<LlamacppState> = app_handle.state();
+    let state: State<Arc<LlamacppState>> = app_handle.state();
     let guard = state.router.lock().await;
     Ok(guard.as_ref().map(|h| RouterInfo {
         port: h.port,

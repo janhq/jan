@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use tauri::{Manager, Runtime};
 
 pub async fn cleanup_processes<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
-    // Access the global AppState from the main app
-    let app_state = match app_handle.try_state::<crate::state::LlamacppState>() {
+    let app_state = match app_handle.try_state::<Arc<crate::state::LlamacppState>>() {
         Some(state) => state,
         None => {
             log::warn!("LlamacppState not found in app_handle");

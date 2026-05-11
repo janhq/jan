@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tauri::{
     plugin::{Builder, TauriPlugin},
     Manager, Runtime,
@@ -72,7 +74,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state
-            app.manage(state::LlamacppState::new());
+            app.manage(Arc::new(state::LlamacppState::new()));
             Ok(())
         })
         .build()
