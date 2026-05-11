@@ -126,10 +126,15 @@ export function ModelSetting({
         </SheetHeader>
 
         <div className="px-4 space-y-8 pb-4">
-          {Object.entries(model.settings || {})
+          {(() => {
+            const fitEnabled =
+              provider.settings?.find((s) => s.key === 'fit')?.controller_props
+                ?.value === true
+            return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc
             if (entry[0] === 'reasoning') return acc
+            if (fitEnabled && entry[0] === 'ctx_len') return acc
             if (entry[0] === 'ctx_len') {
               const autoIncrease = Object.entries(model.settings || {}).find(
                 ([k]) => k === 'auto_increase_ctx_len'
@@ -187,7 +192,8 @@ export function ModelSetting({
                 </p>
               </div>
             )
-          })}
+          })
+          })()}
         </div>
       </SheetContent>
     </Sheet>
