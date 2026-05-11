@@ -1714,17 +1714,8 @@ export default class llamacpp_extension extends AIEngine {
     await this.deleteModelFolder(modelId)
   }
 
-  /**
-   * Function to find a random port
-   */
   private async getRandomPort(): Promise<number> {
-    try {
-      const port = await invoke<number>('plugin:llamacpp|get_random_port')
-      return port
-    } catch {
-      logger.error('Unable to find a suitable port')
-      throw new Error('Unable to find a suitable port for model')
-    }
+    return 49152 + Math.floor(Math.random() * (65535 - 49152))
   }
 
   private parseEnvFromString(
@@ -1750,32 +1741,24 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(
     modelId: string,
-    overrideSettings?: Partial<LlamacppConfig>,
+    _overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    _bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
       throw new Error('Model already loaded!!')
     }
 
-    // If this model is already being loaded, return the existing promise
     if (this.loadingModels.has(modelId)) {
       return this.loadingModels.get(modelId)!
     }
 
-    // Create the loading promise
-    const loadingPromise = this.performLoad(
-      modelId,
-      overrideSettings,
-      isEmbedding,
-      bypassAutoUnload
-    )
+    const loadingPromise = this.performLoad(modelId, isEmbedding)
     this.loadingModels.set(modelId, loadingPromise)
 
     try {
-      const result = await loadingPromise
-      return result
+      return await loadingPromise
     } finally {
       this.loadingModels.delete(modelId)
     }
@@ -1783,135 +1766,17 @@ export default class llamacpp_extension extends AIEngine {
 
   private async performLoad(
     modelId: string,
-    overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    isEmbedding: boolean = false
   ): Promise<SessionInfo> {
-    const loadedModels = await this.getLoadedModels()
-
-    // Get OTHER models that are currently loading (exclude current model)
-    const otherLoadingPromises = Array.from(this.loadingModels.entries())
-      .filter(([id, _]) => id !== modelId)
-      .map(([_, promise]) => promise)
-
-    // TODO(phase3): replace with router models_max — for now we always run
-    // the orchestration to preserve "one model loaded at a time" behavior.
-    if (
-      !isEmbedding &&
-      !bypassAutoUnload &&
-      (loadedModels.length > 0 || otherLoadingPromises.length > 0)
-    ) {
-      // Wait for OTHER loading models to finish, then unload everything
-      if (otherLoadingPromises.length > 0) {
-        await Promise.all(otherLoadingPromises)
-      }
-
-      // Now unload all loaded Text models excluding embedding models
-      const allLoadedModels = await this.getLoadedModels()
-      if (allLoadedModels.length > 0) {
-        const sessionInfos: (SessionInfo | null)[] = await Promise.all(
-          allLoadedModels.map(async (modelId) => {
-            try {
-              return await this.findSessionByModel(modelId)
-            } catch (e) {
-              logger.warn(`Unable to find session for model "${modelId}": ${e}`)
-              return null
-            }
-          })
-        )
-
-        const nonEmbeddingModels: string[] = sessionInfos
-          .filter(
-            (s): s is SessionInfo => s !== null && s.is_embedding === false
-          )
-          .map((s) => s.model_id)
-
-        if (nonEmbeddingModels.length > 0) {
-          await Promise.all(
-            nonEmbeddingModels.map((modelId) => this.unload(modelId))
-          )
-        }
-      }
-    }
-
-    const envs: Record<string, string> = {}
-    const cfg = { ...this.config, ...(overrideSettings ?? {}) }
-    const [version, backend] = cfg.version_backend.split('/')
-
-    if (!version || !backend) {
+    const router = await this.getRouterInfo()
+    if (!router) {
       throw new Error(
-        'Initial setup for the backend failed due to a network issue. Please restart the app!'
+        'llama.cpp router is not running. Please restart the app.'
       )
     }
-
-    // Version-aware flash_attn handling:
-    // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
-    // For older versions, "auto" is not a valid value so we fall back to "off"
-    // (i.e. don't send the flag at all).
-    if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
-      const buildNum = parseBuildNumber(version)
-      if (buildNum !== null && buildNum < 6325) {
-        cfg.flash_attn = 'off'
-      }
-    }
-
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
-
-    const janDataFolderPath = await getJanDataFolderPath()
-    const modelConfigPath = await joinPath([
-      this.providerPath,
-      'models',
-      modelId,
-      'model.yml',
-    ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: modelConfigPath,
-    })
-    const port = await this.getRandomPort()
-
-    // Generate API key
-    const api_key = await this.generateApiKey(modelId, String(port))
-    envs['LLAMA_API_KEY'] = api_key
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
-
-    // Set user envs
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
-
-    // Resolve model path
-    const modelPath = await joinPath([
-      janDataFolderPath,
-      modelConfig.model_path,
-    ])
-
-    // Resolve mmproj path if present
-    let mmprojPath: string | undefined = undefined
-    if (modelConfig.mmproj_path) {
-      mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
-    }
-
-    // Migrate old env vars
-    if (typeof cfg.fit === 'string') cfg.fit = true
-
-    logger.info(
-      'Calling Tauri command load_llama_model with config:',
-      JSON.stringify(cfg)
-    )
-    const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const sInfo = await loadLlamaModel(
-        backendPath,
-        modelId,
-        modelPath,
-        port,
-        cfg,
-        envs,
-        mmprojPath,
-        isEmbedding,
-        Number(this.timeout)
-      )
-      return sInfo
+      return await loadLlamaModel(modelId, isEmbedding)
     } catch (error) {
       logger.error('Error in load command:\n', error)
       throw error
@@ -1919,22 +1784,17 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo: SessionInfo = await this.findSessionByModel(modelId)
+    const sInfo = await this.findSessionByModel(modelId)
     if (!sInfo) {
       throw new Error(`No active session found for model: ${modelId}`)
     }
-    const pid = sInfo.pid
     try {
-      // Pass the PID as the session_id
-      const result = await unloadLlamaModel(pid)
-
-      // If successful, remove from active sessions
+      const result = await unloadLlamaModel(modelId)
       if (result.success) {
-        logger.info(`Successfully unloaded model with PID ${pid}`)
+        logger.info(`Successfully unloaded model ${modelId}`)
       } else {
-        logger.warn(`Failed to unload model: ${result.error}`)
+        logger.warn(`Failed to unload model ${modelId}: ${result.error}`)
       }
-
       return result
     } catch (error) {
       logger.error('Error in unload command:', error)
@@ -2106,15 +1966,14 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async findSessionByModel(modelId: string): Promise<SessionInfo> {
+  private async findSessionByModel(
+    modelId: string
+  ): Promise<SessionInfo | null> {
     try {
-      let sInfo = await invoke<SessionInfo>(
+      return await invoke<SessionInfo | null>(
         'plugin:llamacpp|find_session_by_model',
-        {
-          modelId,
-        }
+        { modelId }
       )
-      return sInfo
     } catch (e) {
       logger.error(e)
       throw new Error(String(e))
@@ -2124,6 +1983,7 @@ export default class llamacpp_extension extends AIEngine {
   private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
     return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
       modelId,
+      isEmbedding: false,
     })
   }
 
@@ -2510,14 +2370,6 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
 
-    // Token counting should be side-effect free (no auto-restart/unload).
-    const isRunning = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
-    if (!isRunning) {
-      throw new Error('Model has crashed! Please reload!')
-    }
-
     try {
       const healthResponse = await fetch(
         `http://localhost:${sessionInfo.port}/health`
@@ -2535,7 +2387,6 @@ export default class llamacpp_extension extends AIEngine {
       'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
-    // Count image tokens first
     let imageTokens = 0
     const hasImages = opts.messages.some(
       (msg) =>
@@ -2545,15 +2396,30 @@ export default class llamacpp_extension extends AIEngine {
 
     if (hasImages) {
       try {
-        // Read mmproj metadata to get vision parameters
-        const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
+        const janDataFolderPath = await getJanDataFolderPath()
+        const modelConfigPath = await joinPath([
+          this.providerPath,
+          'models',
+          opts.model,
+          'model.yml',
+        ])
+        const modelConfig = await invoke<ModelConfig>('read_yaml', {
+          path: modelConfigPath,
+        })
+        if (!modelConfig.mmproj_path) {
+          throw new Error('mmproj_path not configured for model')
+        }
+        const mmprojPath = await joinPath([
+          janDataFolderPath,
+          modelConfig.mmproj_path,
+        ])
+        const metadata = await readGgufMetadata(mmprojPath)
         imageTokens = await this.calculateImageTokens(
           opts.messages,
           metadata.metadata
         )
       } catch (error) {
         logger.warn('Failed to calculate image tokens:', error)
-        // Fallback to a rough estimate if metadata reading fails
         imageTokens = this.estimateImageTokensFallback(opts.messages)
       }
     }

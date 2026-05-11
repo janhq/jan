@@ -266,18 +266,8 @@ describe('llamacpp_extension', () => {
         switch (cmd) {
           case 'plugin:llamacpp|find_session_by_model':
             return null
-          case 'plugin:llamacpp|get_loaded_models':
-            return []
-          case 'read_yaml':
-            return {
-              model_path: 'test-model/model.gguf',
-              name: 'Test Model',
-              size_bytes: 1000000,
-            }
-          case 'plugin:llamacpp|generate_api_key':
-            return 'test-api-key'
-          case 'plugin:llamacpp|get_random_port':
-            return 3000
+          case 'plugin:llamacpp|get_router_info':
+            return { port: 4000, api_key: 'router-key', pid: 999 }
           case 'plugin:llamacpp|load_llama_model':
             return expectedSession
           default:

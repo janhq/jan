@@ -16,7 +16,6 @@ use crate::core::threads::{
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tauri_plugin_mlx::state::MlxState;
 
-pub use tauri_plugin_llamacpp::LlamacppConfig;
 pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
 pub use tauri_plugin_mlx::state::SessionInfo;
 

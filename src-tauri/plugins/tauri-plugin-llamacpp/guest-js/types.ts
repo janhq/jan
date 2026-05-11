@@ -3,10 +3,8 @@ export interface SessionInfo {
   pid: number
   port: number
   model_id: string
-  model_path: string
   is_embedding: boolean
   api_key: string
-  mmproj_path?: string
 }
 
 export interface UnloadResult {

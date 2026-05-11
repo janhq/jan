@@ -5,7 +5,6 @@ use tauri::{
     Manager, Runtime,
 };
 
-mod args;
 mod backend;
 pub mod cleanup;
 pub mod deps_analyzer;
@@ -17,7 +16,6 @@ mod path;
 mod process;
 pub mod router;
 pub mod state;
-pub use args::LlamacppConfig;
 pub use cleanup::cleanup_llama_processes;
 pub use state::LlamacppState;
 
