@@ -14,6 +14,8 @@
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
+  "localProviders": "Local",
+  "remoteProviders": "Remote",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "hideProvider": "Hide provider",

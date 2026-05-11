@@ -10,6 +10,8 @@
   "general": "Obecné",
   "settings": "Nastavení",
   "modelProviders": "Poskytovatelé modelů",
+  "localProviders": "Lokální",
+  "remoteProviders": "Vzdálené",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "attachments": "Přílohy",

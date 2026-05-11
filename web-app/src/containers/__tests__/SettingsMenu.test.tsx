@@ -58,6 +58,8 @@ vi.mock('@/containers/dialogs', () => ({
 vi.mock('@/lib/utils', () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
   getProviderTitle: (provider: string) => provider,
+  isLocalProvider: (provider: string) =>
+    provider === 'llama.cpp' || provider === 'mlx',
 }))
 
 vi.mock('@/containers/ProvidersAvatar', () => ({
