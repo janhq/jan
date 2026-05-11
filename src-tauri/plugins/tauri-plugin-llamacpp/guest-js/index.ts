@@ -46,6 +46,10 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     version_backend: asString(config.version_backend),
     auto_update_engine: asBool(config.auto_update_engine),
     auto_unload: asBool(config.auto_unload),
+    models_max:
+      typeof config.models_max === 'number'
+        ? config.models_max
+        : asI32(config.models_max, 1),
     auto_restart_on_crash: asBool(config.auto_restart_on_crash),
     timeout: asI32(config.timeout, 600),
 
