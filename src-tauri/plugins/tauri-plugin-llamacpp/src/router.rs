@@ -48,6 +48,7 @@ pub fn router_args(
         port.to_string(),
         "--api-key".to_string(),
         api_key.to_string(),
+        "--no-webui".to_string(),
     ];
     args.extend(default_args.iter().cloned());
     args
@@ -268,6 +269,7 @@ mod tests {
         assert!(joined.contains("--host 127.0.0.1"));
         assert!(joined.contains("--port 1337"));
         assert!(joined.contains("--api-key secret-key"));
+        assert!(args.iter().any(|a| a == "--no-webui"));
     }
 
     #[test]
