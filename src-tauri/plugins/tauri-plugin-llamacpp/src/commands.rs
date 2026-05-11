@@ -56,18 +56,103 @@ async fn post_load(port: u16, api_key: &str, model_id: &str) -> ServerResult<()>
             ))
         })?;
     let status = resp.status();
-    if status.is_success() {
-        return Ok(());
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        if !body.to_lowercase().contains("already") {
+            return Err(ServerError::Llamacpp(LlamacppError::new(
+                ErrorCode::InternalError,
+                format!("Router rejected model load (status {})", status),
+                Some(body),
+            )));
+        }
     }
-    let body = resp.text().await.unwrap_or_default();
-    if body.to_lowercase().contains("already") {
-        return Ok(());
+
+    // /models/load returns success once loading is *initiated*; poll /models
+    // until the entry transitions from "loading" to "loaded" (or fails).
+    wait_until_loaded(port, api_key, model_id, Duration::from_secs(600)).await
+}
+
+async fn wait_until_loaded(
+    port: u16,
+    api_key: &str,
+    model_id: &str,
+    timeout: Duration,
+) -> ServerResult<()> {
+    let client = http_client().await;
+    let url = format!("http://127.0.0.1:{}/models", port);
+    let start = std::time::Instant::now();
+    let poll_interval = Duration::from_millis(250);
+
+    loop {
+        let resp = client
+            .get(&url)
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| {
+                ServerError::Llamacpp(LlamacppError::new(
+                    ErrorCode::InternalError,
+                    "Failed to poll router /models".into(),
+                    Some(e.to_string()),
+                ))
+            })?;
+
+        let json: serde_json::Value = resp.json().await.map_err(|e| {
+            ServerError::Llamacpp(LlamacppError::new(
+                ErrorCode::InternalError,
+                "Invalid JSON from /models".into(),
+                Some(e.to_string()),
+            ))
+        })?;
+
+        let entry = json
+            .get("data")
+            .and_then(|d| d.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
+            });
+
+        if let Some(entry) = entry {
+            let status = entry.get("status");
+            let value = status
+                .and_then(|s| s.get("value"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match value {
+                "loaded" => return Ok(()),
+                "loading" => {}
+                "unloaded" | "sleeping" => {
+                    let failed = status
+                        .and_then(|s| s.get("failed"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if failed {
+                        let exit_code = status
+                            .and_then(|s| s.get("exit_code"))
+                            .and_then(|v| v.as_i64());
+                        return Err(ServerError::Llamacpp(LlamacppError::new(
+                            ErrorCode::InternalError,
+                            format!("Model {} failed to load", model_id),
+                            Some(format!("exit_code={:?}", exit_code)),
+                        )));
+                    }
+                }
+                other => {
+                    log::warn!("Unknown model status value: {}", other);
+                }
+            }
+        }
+
+        if start.elapsed() >= timeout {
+            return Err(ServerError::Llamacpp(LlamacppError::new(
+                ErrorCode::ModelLoadTimedOut,
+                format!("Timed out waiting for model {} to load", model_id),
+                Some(format!("waited {:?}", timeout)),
+            )));
+        }
+        tokio::time::sleep(poll_interval).await;
     }
-    Err(ServerError::Llamacpp(LlamacppError::new(
-        ErrorCode::InternalError,
-        format!("Router rejected model load (status {})", status),
-        Some(body),
-    )))
 }
 
 async fn post_unload(port: u16, api_key: &str, model_id: &str) -> Result<(), String> {
@@ -80,31 +165,101 @@ async fn post_unload(port: u16, api_key: &str, model_id: &str) -> Result<(), Str
         .send()
         .await
         .map_err(|e| format!("Failed to call /models/unload: {}", e))?;
-    if resp.status().is_success() {
-        Ok(())
-    } else {
+    if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        Err(format!("Router rejected unload (status {}): {}", status, body))
+        return Err(format!("Router rejected unload (status {}): {}", status, body));
+    }
+
+    // /models/unload returns once shutdown is *initiated*; poll until the
+    // entry actually leaves the "loaded"/"loading" states. Preset's
+    // stop-timeout defaults to 10s, so 30s of slack is plenty.
+    wait_until_unloaded(port, api_key, model_id, Duration::from_secs(30))
+        .await
+        .map_err(|e| format!("{}", e))
+}
+
+async fn wait_until_unloaded(
+    port: u16,
+    api_key: &str,
+    model_id: &str,
+    timeout: Duration,
+) -> ServerResult<()> {
+    let client = http_client().await;
+    let url = format!("http://127.0.0.1:{}/models", port);
+    let start = std::time::Instant::now();
+    let poll_interval = Duration::from_millis(250);
+
+    loop {
+        let resp = client
+            .get(&url)
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| {
+                ServerError::Llamacpp(LlamacppError::new(
+                    ErrorCode::InternalError,
+                    "Failed to poll router /models".into(),
+                    Some(e.to_string()),
+                ))
+            })?;
+        let json: serde_json::Value = resp.json().await.map_err(|e| {
+            ServerError::Llamacpp(LlamacppError::new(
+                ErrorCode::InternalError,
+                "Invalid JSON from /models".into(),
+                Some(e.to_string()),
+            ))
+        })?;
+
+        let entry = json
+            .get("data")
+            .and_then(|d| d.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
+            });
+
+        // No entry at all → treat as unloaded.
+        let still_loaded = entry
+            .and_then(|e| e.get("status"))
+            .and_then(|s| s.get("value"))
+            .and_then(|v| v.as_str())
+            .map(|v| matches!(v, "loaded" | "loading"))
+            .unwrap_or(false);
+        if !still_loaded {
+            return Ok(());
+        }
+
+        if start.elapsed() >= timeout {
+            return Err(ServerError::Llamacpp(LlamacppError::new(
+                ErrorCode::InternalError,
+                format!("Timed out waiting for model {} to unload", model_id),
+                Some(format!("waited {:?}", timeout)),
+            )));
+        }
+        tokio::time::sleep(poll_interval).await;
     }
 }
 
 async fn router_loaded_model_ids(port: u16, api_key: &str) -> Result<Vec<String>, String> {
+    // Router-aware listing: `/models` (not `/v1/models`, which is OAI-compat
+    // and returns a single element). Each entry has a `status` object whose
+    // `value` is one of "loaded" / "loading" / "unloaded" / "sleeping".
     let client = http_client().await;
-    let url = format!("http://127.0.0.1:{}/v1/models", port);
+    let url = format!("http://127.0.0.1:{}/models", port);
     let resp = client
         .get(&url)
         .bearer_auth(api_key)
         .send()
         .await
-        .map_err(|e| format!("Failed to query /v1/models: {}", e))?;
+        .map_err(|e| format!("Failed to query /models: {}", e))?;
     if !resp.status().is_success() {
-        return Err(format!("/v1/models returned {}", resp.status()));
+        return Err(format!("/models returned {}", resp.status()));
     }
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Invalid JSON from /v1/models: {}", e))?;
+        .map_err(|e| format!("Invalid JSON from /models: {}", e))?;
     let data = json
         .get("data")
         .and_then(|d| d.as_array())
@@ -112,14 +267,15 @@ async fn router_loaded_model_ids(port: u16, api_key: &str) -> Result<Vec<String>
         .unwrap_or_default();
     let mut ids = Vec::new();
     for m in &data {
-        let id = match m.get("id").and_then(|v| v.as_str()) {
-            Some(s) => s,
-            None => continue,
+        let Some(id) = m.get("id").and_then(|v| v.as_str()) else {
+            continue;
         };
-        let loaded = match m.get("status").and_then(|v| v.as_str()) {
-            Some(status) => status.eq_ignore_ascii_case("loaded"),
-            None => true,
-        };
+        let loaded = m
+            .get("status")
+            .and_then(|s| s.get("value"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.eq_ignore_ascii_case("loaded"))
+            .unwrap_or(false);
         if loaded {
             ids.push(id.to_string());
         }
