@@ -16,6 +16,13 @@ import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-a
 // `chat_template` that aren't yet in the strict typing.
 type ModelYaml = ModelConfig & {
   chat_template?: string
+  ctx_size?: number
+  n_gpu_layers?: number
+  flash_attn?: string
+  cache_type_k?: string
+  cache_type_v?: string
+  parallel?: number
+  cont_batching?: boolean
 }
 
 function escapeIniValue(v: string): string {
@@ -78,11 +85,30 @@ export async function generatePreset(
 
   const lines: string[] = []
 
-  // ---------- [*] global defaults ----------
-  // Conservative: only emit `ctx-size` for now. Phase 3 will broaden.
   lines.push('[*]')
   if (typeof config.ctx_size === 'number' && config.ctx_size > 0) {
     lines.push(`ctx-size = ${config.ctx_size}`)
+  }
+  if (typeof config.n_gpu_layers === 'number' && config.n_gpu_layers >= 0) {
+    lines.push(`n-gpu-layers = ${config.n_gpu_layers}`)
+  }
+  if (
+    typeof config.flash_attn === 'string' &&
+    (config.flash_attn === 'on' || config.flash_attn === 'off')
+  ) {
+    lines.push(`flash-attn = ${config.flash_attn}`)
+  }
+  if (typeof config.cache_type_k === 'string' && config.cache_type_k.length > 0) {
+    lines.push(`cache-type-k = ${escapeIniValue(config.cache_type_k)}`)
+  }
+  if (typeof config.cache_type_v === 'string' && config.cache_type_v.length > 0) {
+    lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
+  }
+  if (typeof config.parallel === 'number' && config.parallel > 0) {
+    lines.push(`parallel = ${config.parallel}`)
+  }
+  if (typeof config.cont_batching === 'boolean') {
+    lines.push(`cont-batching = ${config.cont_batching}`)
   }
   lines.push('')
 
@@ -110,6 +136,31 @@ export async function generatePreset(
 
     if (mc.chat_template && mc.chat_template.trim().length > 0) {
       lines.push(`chat-template = ${escapeIniValue(mc.chat_template)}`)
+    }
+
+    if (typeof mc.ctx_size === 'number' && mc.ctx_size > 0) {
+      lines.push(`ctx-size = ${mc.ctx_size}`)
+    }
+    if (typeof mc.n_gpu_layers === 'number' && mc.n_gpu_layers >= 0) {
+      lines.push(`n-gpu-layers = ${mc.n_gpu_layers}`)
+    }
+    if (
+      typeof mc.flash_attn === 'string' &&
+      (mc.flash_attn === 'on' || mc.flash_attn === 'off')
+    ) {
+      lines.push(`flash-attn = ${mc.flash_attn}`)
+    }
+    if (typeof mc.cache_type_k === 'string' && mc.cache_type_k.length > 0) {
+      lines.push(`cache-type-k = ${escapeIniValue(mc.cache_type_k)}`)
+    }
+    if (typeof mc.cache_type_v === 'string' && mc.cache_type_v.length > 0) {
+      lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
+    }
+    if (typeof mc.parallel === 'number' && mc.parallel > 0) {
+      lines.push(`parallel = ${mc.parallel}`)
+    }
+    if (typeof mc.cont_batching === 'boolean') {
+      lines.push(`cont-batching = ${mc.cont_batching}`)
     }
 
     lines.push('load-on-startup = false')

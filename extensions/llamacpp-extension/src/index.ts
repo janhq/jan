@@ -1048,6 +1048,11 @@ export default class llamacpp_extension extends AIEngine {
           if (result.version && result.backend) {
             this.config.device = ''
             await this.ensureBackendReady(result.backend, result.version)
+            try {
+              await this.startRouter()
+            } catch (e) {
+              logger.warn('Router restart after backend update failed:', e)
+            }
           }
         } catch (e) {
           logger.error('Error in onSettingUpdate async block:', e)
