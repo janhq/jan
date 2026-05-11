@@ -1673,6 +1673,12 @@ export default class llamacpp_extension extends AIEngine {
         downloadType: 'Model',
       })
     }
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Router refresh after import(${modelId}) failed:`, e)
+    }
   }
 
   /**
@@ -2044,6 +2050,12 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     await fs.rm(modelDir)
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Router refresh after delete(${modelId}) failed:`, e)
+    }
   }
 
   override async getLoadedModels(): Promise<string[]> {
