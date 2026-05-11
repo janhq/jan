@@ -30,7 +30,6 @@ export type LlamacppConfig = {
   auto_update_engine: boolean
   auto_unload: boolean
   models_max: string | number
-  auto_restart_on_crash: boolean
   timeout: number
   llamacpp_env: string
   fit: boolean

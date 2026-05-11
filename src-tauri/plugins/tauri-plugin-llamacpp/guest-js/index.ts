@@ -50,7 +50,6 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
       typeof config.models_max === 'number'
         ? config.models_max
         : asI32(config.models_max, 1),
-    auto_restart_on_crash: asBool(config.auto_restart_on_crash),
     timeout: asI32(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
