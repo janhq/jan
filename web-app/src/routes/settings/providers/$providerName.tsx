@@ -598,6 +598,13 @@ function ProviderDetail() {
                     return null
                   }
 
+                  if (
+                    provider?.provider === 'llamacpp' &&
+                    setting.key === 'fit_ctx'
+                  ) {
+                    return null
+                  }
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">

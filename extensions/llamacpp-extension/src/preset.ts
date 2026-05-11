@@ -86,6 +86,21 @@ export async function generatePreset(
   const lines: string[] = []
 
   lines.push('[*]')
+  if (typeof config.fit === 'boolean') {
+    lines.push(`fit = ${config.fit ? 'on' : 'off'}`)
+  }
+  if (typeof config.fit_target === 'string' && config.fit_target.length > 0) {
+    lines.push(`fit-target = ${escapeIniValue(config.fit_target)}`)
+  }
+  const fitCtxNum =
+    typeof config.fit_ctx === 'number'
+      ? config.fit_ctx
+      : typeof config.fit_ctx === 'string' && config.fit_ctx.length > 0
+        ? Number(config.fit_ctx)
+        : NaN
+  if (Number.isFinite(fitCtxNum) && fitCtxNum > 0) {
+    lines.push(`fit-ctx = ${fitCtxNum}`)
+  }
   if (typeof config.ctx_size === 'number' && config.ctx_size > 0) {
     lines.push(`ctx-size = ${config.ctx_size}`)
   }

@@ -106,6 +106,28 @@ export function ModelSetting({
     }
   }
 
+  const handleEngineSettingChange = (
+    key: string,
+    value: string | boolean | number
+  ) => {
+    if (!provider) return
+    const newSettings = provider.settings.map((s) =>
+      s.key === key
+        ? {
+            ...s,
+            controller_props: { ...s.controller_props, value },
+          }
+        : s
+    )
+    serviceHub.providers().updateSettings(provider.provider, newSettings)
+    updateProvider(provider.provider, { settings: newSettings })
+  }
+
+  const fitEnabled =
+    provider.settings?.find((s) => s.key === 'fit')?.controller_props?.value ===
+    true
+  const fitCtxSetting = provider.settings?.find((s) => s.key === 'fit_ctx')
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -126,10 +148,31 @@ export function ModelSetting({
         </SheetHeader>
 
         <div className="px-4 space-y-8 pb-4">
+          {fitEnabled && fitCtxSetting && (
+            <div key="fit_ctx" className="space-y-2">
+              <div className="flex items-start justify-between gap-8">
+                <div className="mb-1 truncate">
+                  <span title={fitCtxSetting.title} className="font-medium">
+                    {fitCtxSetting.title}
+                  </span>
+                </div>
+                <DynamicControllerSetting
+                  key={fitCtxSetting.key}
+                  title={fitCtxSetting.title}
+                  description={fitCtxSetting.description}
+                  controllerType={fitCtxSetting.controller_type}
+                  controllerProps={fitCtxSetting.controller_props}
+                  onChange={(newValue) =>
+                    handleEngineSettingChange('fit_ctx', newValue)
+                  }
+                />
+              </div>
+              <p className="text-muted-foreground leading-normal text-xs">
+                {fitCtxSetting.description}
+              </p>
+            </div>
+          )}
           {(() => {
-            const fitEnabled =
-              provider.settings?.find((s) => s.key === 'fit')?.controller_props
-                ?.value === true
             return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc
