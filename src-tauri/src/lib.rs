@@ -259,6 +259,17 @@ pub fn run() {
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {
+        if let RunEvent::ExitRequested { .. } = event {
+            let app_handle = app.clone();
+            tokio::task::block_in_place(|| {
+                tauri::async_runtime::block_on(async {
+                    if let Err(e) = tauri_plugin_llamacpp::stop_router(app_handle).await {
+                        log::warn!("stop_router on ExitRequested failed: {}", e);
+                    }
+                })
+            });
+            return;
+        }
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 

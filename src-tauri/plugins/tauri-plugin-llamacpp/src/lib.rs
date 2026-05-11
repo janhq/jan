@@ -17,6 +17,7 @@ mod process;
 pub mod router;
 pub mod state;
 pub use cleanup::cleanup_llama_processes;
+pub use commands::stop_router;
 pub use state::LlamacppState;
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
