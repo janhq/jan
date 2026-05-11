@@ -2424,56 +2424,33 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
-    // Calculate text tokens
-    // Use chat_template_kwargs from opts if provided, otherwise default to disable enable_thinking
-    const tokenizeRequest = {
-      messages: opts.messages,
-      chat_template_kwargs: opts.chat_template_kwargs || {
-        enable_thinking: false,
-      },
-    }
-
     try {
-      let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: 'POST',
-        headers: headers,
-        body: JSON.stringify(tokenizeRequest),
-      })
-
-      if (!parseResponse.ok) {
-        const errorData = await parseResponse.json().catch(() => null)
-        throw new Error(
-          `API request failed with status ${
-            parseResponse.status
-          }: ${JSON.stringify(errorData)}`
-        )
-      }
-
-      const parsedPrompt = await parseResponse.json()
-
-      const response = await fetch(`${baseUrl}/tokenize`, {
-        method: 'POST',
-        headers: headers,
+        headers,
         body: JSON.stringify({
-          content: parsedPrompt.prompt,
+          model: opts.model,
+          messages: opts.messages,
+          max_tokens: 1,
+          stream: false,
+          chat_template_kwargs: opts.chat_template_kwargs || {
+            enable_thinking: false,
+          },
         }),
       })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
         throw new Error(
-          `API request failed with status ${response.status}: ${JSON.stringify(
-            errorData
-          )}`
+          `Token-count request failed with status ${response.status}: ${JSON.stringify(errorData)}`
         )
       }
 
-      const dataTokens = await response.json()
-      const textTokens = dataTokens.tokens?.length || 0
-
+      const data = await response.json()
+      const textTokens = data.usage?.prompt_tokens ?? 0
       return textTokens + imageTokens
     } catch (e) {
-      console.warn(String(e))
+      logger.warn(`getTokensCount failed: ${String(e)}`)
     }
     return 0
   }
