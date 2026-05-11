@@ -208,27 +208,6 @@ const ChatInput = memo(function ChatInput({
 
   const assistantCount = assistants?.length || 0
 
-  // Tool schemas sent to the model are not part of ThreadMessage[]; add them here only.
-  // Do not include system instructions — they are already present in messages and counted by useTokensCount.
-  const tokenCounterAdditionalContext = useMemo(() => {
-    const toolsText = tools
-      .map((tool) => {
-        const schema = (() => {
-          try {
-            return JSON.stringify(tool.inputSchema ?? {})
-          } catch {
-            return '{}'
-          }
-        })()
-        return `Tool ${tool.server}::${tool.name}\nDescription: ${tool.description}\nSchema: ${schema}`
-      })
-      .join('\n\n')
-
-    if (!toolsText) return ''
-    return `Available tools:\n${toolsText}`
-  }, [tools])
-
-  // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
   const {
@@ -1962,16 +1941,6 @@ const ChatInput = memo(function ChatInput({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
-                      additionalContextText={tokenCounterAdditionalContext}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
                     />
                   </div>
                 )}
@@ -2042,19 +2011,7 @@ const ChatInput = memo(function ChatInput({
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
           <div className="flex-1 w-full flex justify-start px-2">
-            <TokenCounter
-              messages={threadMessages || []}
-              additionalContextText={tokenCounterAdditionalContext}
-              uploadedFiles={attachments
-                .filter((a) => a.type === 'image' && a.dataUrl)
-                .map((a) => ({
-                  name: a.name,
-                  type: a.mimeType || getFileTypeFromExtension(a.name),
-                  size: a.size || 0,
-                  base64: a.base64 || '',
-                  dataUrl: a.dataUrl!,
-                }))}
-            />
+            <TokenCounter messages={threadMessages || []} />
           </div>
         )}
 

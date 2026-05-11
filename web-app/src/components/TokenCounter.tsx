@@ -13,29 +13,15 @@ interface TokenCounterProps {
   messages?: ThreadMessage[]
   className?: string
   compact?: boolean
-  additionalTokens?: number // For vision tokens or other additions
-  additionalContextText?: string
-  uploadedFiles?: Array<{
-    name: string
-    type: string
-    size: number
-    base64: string
-    dataUrl: string
-  }>
+  additionalTokens?: number
 }
 
 export const TokenCounter = memo(function TokenCounter({
   messages = [],
   className,
   additionalTokens = 0,
-  additionalContextText,
-  uploadedFiles = [],
 }: TokenCounterProps) {
-  const { calculateTokens, ...tokenData } = useTokensCount(
-    messages,
-    uploadedFiles,
-    additionalContextText
-  )
+  const { calculateTokens, ...tokenData } = useTokensCount(messages)
 
   const [isAnimating, setIsAnimating] = useState(false)
   const [prevTokenCount, setPrevTokenCount] = useState(0)

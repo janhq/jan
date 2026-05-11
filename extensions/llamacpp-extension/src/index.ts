@@ -2377,28 +2377,6 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
-    if (!sessionInfo) {
-      throw new Error(`No active session found for model: ${opts.model}`)
-    }
-
-    try {
-      const healthResponse = await fetch(
-        `http://localhost:${sessionInfo.port}/health`
-      )
-      if (!healthResponse.ok) {
-        throw new Error('unhealthy')
-      }
-    } catch (_e) {
-      throw new Error('Model appears to have crashed! Please reload!')
-    }
-
-    const baseUrl = `http://localhost:${sessionInfo.port}`
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sessionInfo.api_key}`,
-    }
-
     let imageTokens = 0
     const hasImages = opts.messages.some(
       (msg) =>
@@ -2418,53 +2396,37 @@ export default class llamacpp_extension extends AIEngine {
         const modelConfig = await invoke<ModelConfig>('read_yaml', {
           path: modelConfigPath,
         })
-        if (!modelConfig.mmproj_path) {
-          throw new Error('mmproj_path not configured for model')
+        if (modelConfig.mmproj_path) {
+          const mmprojPath = await joinPath([
+            janDataFolderPath,
+            modelConfig.mmproj_path,
+          ])
+          const metadata = await readGgufMetadata(mmprojPath)
+          imageTokens = await this.calculateImageTokens(
+            opts.messages,
+            metadata.metadata
+          )
         }
-        const mmprojPath = await joinPath([
-          janDataFolderPath,
-          modelConfig.mmproj_path,
-        ])
-        const metadata = await readGgufMetadata(mmprojPath)
-        imageTokens = await this.calculateImageTokens(
-          opts.messages,
-          metadata.metadata
-        )
       } catch (error) {
         logger.warn('Failed to calculate image tokens:', error)
         imageTokens = this.estimateImageTokensFallback(opts.messages)
       }
     }
 
-    try {
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: opts.model,
-          messages: opts.messages,
-          max_tokens: 1,
-          stream: false,
-          chat_template_kwargs: opts.chat_template_kwargs || {
-            enable_thinking: false,
-          },
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null)
-        throw new Error(
-          `Token-count request failed with status ${response.status}: ${JSON.stringify(errorData)}`
-        )
+    let textChars = 0
+    for (const msg of opts.messages) {
+      if (typeof msg.content === 'string') {
+        textChars += msg.content.length
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === 'text' && typeof part.text === 'string') {
+            textChars += part.text.length
+          }
+        }
       }
-
-      const data = await response.json()
-      const textTokens = data.usage?.prompt_tokens ?? 0
-      return textTokens + imageTokens
-    } catch (e) {
-      logger.warn(`getTokensCount failed: ${String(e)}`)
     }
-    return 0
+    const textTokens = Math.ceil(textChars / 4)
+    return textTokens + imageTokens
   }
 
   private async calculateImageTokens(
