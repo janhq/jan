@@ -11,6 +11,8 @@
   "general": "全般",
   "settings": "設定",
   "modelProviders": "モデルプロバイダー",
+  "localProviders": "ローカル",
+  "remoteProviders": "リモート",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "外観",

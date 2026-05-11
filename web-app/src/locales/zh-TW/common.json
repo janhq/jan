@@ -11,6 +11,8 @@
   "general": "一般",
   "settings": "設定",
   "modelProviders": "模型提供者",
+  "localProviders": "本機",
+  "remoteProviders": "遠端",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "外觀",

@@ -3,8 +3,10 @@
 //! a crash from taking down the app.
 
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_os = "macos"))]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "macos"))]
 use std::process::{Command, Stdio};
 
 pub const ANALYZE_FLAG: &str = "--internal-analyze-deps";
@@ -15,6 +17,11 @@ pub struct AnalyzeOutput {
     pub resolved: Vec<String>,
 }
 
+// On macOS we never spawn the analyzer subprocess, so this is a no-op.
+#[cfg(target_os = "macos")]
+pub fn run_deps_analyzer_if_requested() {}
+
+#[cfg(not(target_os = "macos"))]
 pub fn run_deps_analyzer_if_requested() {
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() != Some(ANALYZE_FLAG) {
@@ -57,6 +64,7 @@ pub fn run_deps_analyzer_if_requested() {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn analyze(lib_dir: &Path, targets: &[PathBuf]) -> AnalyzeOutput {
     let analyzer =
         lddtree::DependencyAnalyzer::default().add_library_path(lib_dir.to_path_buf());
@@ -92,6 +100,14 @@ pub(crate) fn is_virtual_windows_dll(name: &str) -> bool {
     lower.starts_with("api-ms-win-") || lower.starts_with("ext-ms-win-")
 }
 
+// macOS resolves dynamic libraries via dyld at load time; lddtree's Mach-O
+// handling is unreliable and has crashed in the field, so skip the analyzer.
+#[cfg(target_os = "macos")]
+pub fn analyze_out_of_process(_lib_dir: &Path, _targets: &[PathBuf]) -> AnalyzeOutput {
+    AnalyzeOutput::default()
+}
+
+#[cfg(not(target_os = "macos"))]
 pub fn analyze_out_of_process(lib_dir: &Path, targets: &[PathBuf]) -> AnalyzeOutput {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
