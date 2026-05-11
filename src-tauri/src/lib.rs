@@ -313,9 +313,9 @@ pub fn run() {
                     }
 
                     if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to cleanup llama processes: {}", e);
+                        log::warn!("Failed to shut down llama-server router: {}", e);
                     } else {
-                        log::info!("Llama processes cleaned up successfully");
+                        log::info!("Llama-server router shut down successfully");
                     }
 
                     #[cfg(feature = "mlx")]

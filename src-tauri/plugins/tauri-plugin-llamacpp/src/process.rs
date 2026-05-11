@@ -27,6 +27,11 @@ pub async fn graceful_terminate_process(child: &mut tokio::process::Child) {
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub async fn force_terminate_process(child: &mut tokio::process::Child) {
+    // Graceful shutdown is not implemented on Windows: llama-server's console
+    // handler only reacts to CTRL_C_EVENT (server.cpp), and
+    // GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid) is only deliverable with
+    // group ID 0 — which would also terminate this process. CTRL_BREAK_EVENT
+    // can target a specific group but the server ignores it.
     if let Some(raw_pid) = child.id() {
         log::warn!(
             "gracefully killing is unsupported on Windows, force-killing PID {}",
