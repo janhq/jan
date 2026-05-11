@@ -11,6 +11,8 @@
   "general": "Общие",
   "settings": "Настройки",
   "modelProviders": "Поставщики моделей",
+  "localProviders": "Локальные",
+  "remoteProviders": "Удалённые",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Интерфейс",
