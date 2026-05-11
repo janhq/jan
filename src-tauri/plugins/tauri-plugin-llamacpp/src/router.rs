@@ -40,7 +40,6 @@ pub fn router_args(
     let mut args: Vec<String> = vec![
         "--models-preset".to_string(),
         preset_path.to_string_lossy().to_string(),
-        "--no-models-autoload".to_string(),
         "--models-max".to_string(),
         models_max.to_string(),
         "--host".to_string(),
@@ -264,7 +263,7 @@ mod tests {
         // Required flags present
         let joined = args.join(" ");
         assert!(joined.contains("--models-preset /tmp/preset.ini"));
-        assert!(args.iter().any(|a| a == "--no-models-autoload"));
+        assert!(!args.iter().any(|a| a == "--no-models-autoload"));
         assert!(joined.contains("--models-max 4"));
         assert!(joined.contains("--host 127.0.0.1"));
         assert!(joined.contains("--port 1337"));
