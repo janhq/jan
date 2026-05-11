@@ -85,6 +85,17 @@ describe('CustomChatTransport', () => {
     expect(true).toBe(true)
   })
 
+  it('setCapabilityToggles accepts all three flags without error', () => {
+    transport.setCapabilityToggles({ webSearch: true, reasoning: true, embeddings: true })
+    expect(true).toBe(true)
+  })
+
+  it('setCapabilityToggles can be updated multiple times', () => {
+    transport.setCapabilityToggles({ webSearch: true, reasoning: false, embeddings: false })
+    transport.setCapabilityToggles({ webSearch: false, reasoning: true, embeddings: true })
+    expect(true).toBe(true)
+  })
+
   it('reconnectToStream returns null', async () => {
     const result = await transport.reconnectToStream({ chatId: 'c1' } as any)
     expect(result).toBeNull()

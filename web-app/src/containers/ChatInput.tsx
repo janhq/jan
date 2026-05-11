@@ -88,6 +88,7 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
+import { useCapabilityToggles } from '@/stores/capability-toggles-store'
 
 type ChatInputProps = {
   className?: string
@@ -161,6 +162,24 @@ const ChatInput = memo(function ChatInput({
     toggleAgentMode(agentModeKey)
   }, [agentModeKey, toggleAgentMode])
 
+  // Capability toggles (web search, reasoning, embeddings) — per-thread, same key as agent mode
+  const capabilityKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const capabilityToggles = useCapabilityToggles((state) => state.getToggles(capabilityKey))
+  const toggleCapability = useCapabilityToggles((state) => state.toggle)
+  const setCapabilityToggle = useCapabilityToggles((state) => state.setToggle)
+
+  const handleWebSearchToggle = useCallback(() => {
+    toggleCapability(capabilityKey, 'webSearch')
+  }, [capabilityKey, toggleCapability])
+
+  const handleReasoningToggle = useCallback(() => {
+    toggleCapability(capabilityKey, 'reasoning')
+  }, [capabilityKey, toggleCapability])
+
+  const handleEmbeddingsToggle = useCallback(() => {
+    toggleCapability(capabilityKey, 'embeddings')
+  }, [capabilityKey, toggleCapability])
+
   // Get current thread messages for token counting
   const threadMessages = useMessages(
     useShallow((state) =>
@@ -173,6 +192,20 @@ const ChatInput = memo(function ChatInput({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
+
+  // Auto-disable capability toggles when the model no longer supports them
+  useEffect(() => {
+    const caps = selectedModel?.capabilities ?? []
+    if (capabilityToggles.webSearch && !caps.includes('web_search')) {
+      setCapabilityToggle(capabilityKey, 'webSearch', false)
+    }
+    if (capabilityToggles.reasoning && !caps.includes('reasoning')) {
+      setCapabilityToggle(capabilityKey, 'reasoning', false)
+    }
+    if (capabilityToggles.embeddings && !caps.includes('embeddings')) {
+      setCapabilityToggle(capabilityKey, 'embeddings', false)
+    }
+  }, [selectedModel?.capabilities, capabilityKey, capabilityToggles, setCapabilityToggle])
   const selectModelProvider = useModelProvider(
     (state) => state.selectModelProvider
   )
@@ -1807,17 +1840,26 @@ const ChatInput = memo(function ChatInput({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                          variant="ghost"
-                          size="icon-xs"
-                        >
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={handleEmbeddingsToggle}
+                        className={cn(capabilityToggles.embeddings && 'text-primary')}
+                      >
                         <IconCodeCircle2
                           size={18}
-                          className="text-muted-foreground"
+                          className={cn(
+                            'text-muted-foreground',
+                            capabilityToggles.embeddings && 'text-primary'
+                          )}
                         />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>{t('embeddings')}</p>
+                      <p>
+                        {capabilityToggles.embeddings
+                          ? `${t('embeddings')} (${t('active')})`
+                          : t('embeddings')}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -1921,15 +1963,27 @@ const ChatInput = memo(function ChatInput({
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={handleWebSearchToggle}
+                        className={cn(capabilityToggles.webSearch && 'text-primary')}
+                      >
                         <IconWorld
                           size={18}
-                          className="text-muted-foreground"
+                          className={cn(
+                            'text-muted-foreground',
+                            capabilityToggles.webSearch && 'text-primary'
+                          )}
                         />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Web Search</p>
+                      <p>
+                        {capabilityToggles.webSearch
+                          ? `${t('webSearch')} (${t('active')})`
+                          : t('webSearch')}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -1937,15 +1991,27 @@ const ChatInput = memo(function ChatInput({
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={handleReasoningToggle}
+                        className={cn(capabilityToggles.reasoning && 'text-primary')}
+                      >
                         <IconAtom
                           size={18}
-                          className="text-muted-foreground"
+                          className={cn(
+                            'text-muted-foreground',
+                            capabilityToggles.reasoning && 'text-primary'
+                          )}
                         />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>{t('reasoning')}</p>
+                      <p>
+                        {capabilityToggles.reasoning
+                          ? `${t('reasoning')} (${t('active')})`
+                          : t('reasoning')}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 )}

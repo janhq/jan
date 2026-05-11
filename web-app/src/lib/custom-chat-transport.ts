@@ -180,6 +180,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private continueFromContent: string | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
+  private capabilityToggles: { webSearch: boolean; reasoning: boolean; embeddings: boolean } = {
+    webSearch: false,
+    reasoning: false,
+    embeddings: false,
+  }
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -198,6 +203,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   setOnTokenUsage(callback: TokenUsageCallback | undefined) {
     this.onTokenUsage = callback
+  }
+
+  setCapabilityToggles(toggles: { webSearch: boolean; reasoning: boolean; embeddings: boolean }) {
+    this.capabilityToggles = toggles
   }
 
   /**
@@ -280,8 +289,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
       }
 
-      // Load RAG tools if documents are available
-      if (hasDocuments && ragFeatureAvailable) {
+      // Load RAG tools if documents are available, or if the embeddings toggle is on
+      if ((hasDocuments || this.capabilityToggles.embeddings) && ragFeatureAvailable) {
         try {
           const ragTools = await this.serviceHub.rag().getTools()
           if (Array.isArray(ragTools) && ragTools.length > 0) {
@@ -457,12 +466,42 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       const currentAssistant = useAssistant.getState().currentAssistant
       const inferenceParams = currentAssistant?.parameters
 
+      // Merge capability toggle flags into inference params so they are forwarded
+      // in the request body via createCustomFetch.
+      const capabilityParams: Record<string, unknown> = {}
+
+      // web_search: only inject for OpenAI-compatible pass-through providers (e.g. Perplexity).
+      // Native SDK providers (Anthropic, OpenAI, Google, xAI) validate request bodies strictly
+      // and will reject unknown fields with a 400 error.
+      const NATIVE_STRICT_PROVIDERS = new Set(['anthropic', 'openai', 'google', 'gemini', 'xai'])
+      if (this.capabilityToggles.webSearch && !NATIVE_STRICT_PROVIDERS.has(effectiveProviderName)) {
+        capabilityParams.web_search = true
+      }
+
+      // thinking: Anthropic extended-thinking format. budget_tokens must be less than max_tokens,
+      // so we derive a safe budget from the assistant's configured max_tokens and ensure
+      // max_tokens is bumped to at least budget + 1024 output tokens if needed.
+      if (this.capabilityToggles.reasoning && effectiveProviderName === 'anthropic') {
+        const rawMax = inferenceParams?.max_output_tokens ?? inferenceParams?.max_tokens
+        const configuredMax = rawMax !== undefined && !isNaN(Number(rawMax)) ? Number(rawMax) : 0
+        const MIN_OUTPUT_TOKENS = 1024
+        const DEFAULT_BUDGET = 8000
+        const budgetTokens = configuredMax > MIN_OUTPUT_TOKENS
+          ? Math.min(DEFAULT_BUDGET, configuredMax - MIN_OUTPUT_TOKENS)
+          : DEFAULT_BUDGET
+        capabilityParams.thinking = { type: 'enabled', budget_tokens: budgetTokens }
+        // Ensure max_tokens is large enough to accommodate the budget
+        if (!configuredMax || configuredMax < budgetTokens + MIN_OUTPUT_TOKENS) {
+          capabilityParams.max_tokens = budgetTokens + MIN_OUTPUT_TOKENS
+        }
+      }
+
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
       this.model = await ModelFactory.createModel(
         modelId,
         updatedProvider ?? provider,
-        inferenceParams ?? {}
+        { ...(inferenceParams ?? {}), ...capabilityParams }
       )
     } catch (error) {
       console.error('Failed to create model:', error)

@@ -7,6 +7,7 @@ import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { createFileRoute, Link, useParams } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
+import { detectModelCapabilities } from '@/lib/model-capabilities-detector'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
@@ -52,6 +53,19 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
     }
   },
 })
+
+function mergeDetectedCapabilities(model: Model): string[] {
+  const stored = model.capabilities || []
+  if ((model as Model & { _userConfiguredCapabilities?: boolean })._userConfiguredCapabilities) {
+    return stored
+  }
+  const detected = detectModelCapabilities(model.id)
+  const merged = [...stored]
+  if (detected.reasoning && !merged.includes('reasoning')) merged.push('reasoning')
+  if (detected.web_search && !merged.includes('web_search')) merged.push('web_search')
+  if (detected.embeddings && !merged.includes('embeddings')) merged.push('embeddings')
+  return merged
+}
 
 function ProviderDetail() {
   const { t } = useTranslation()
@@ -1039,7 +1053,7 @@ function ProviderDetail() {
               >
                 {provider?.models.length ? (
                   provider?.models.map((model, modelIndex) => {
-                    const capabilities = model.capabilities || []
+                    const displayCapabilities = mergeDetectedCapabilities(model)
                     return (
                       <CardItem
                         key={modelIndex}
@@ -1051,7 +1065,7 @@ function ProviderDetail() {
                             >
                               {getModelDisplayName(model)}
                             </h1>
-                            <Capabilities capabilities={capabilities} />
+                            <Capabilities capabilities={displayCapabilities} />
                           </div>
                         }
                         actions={

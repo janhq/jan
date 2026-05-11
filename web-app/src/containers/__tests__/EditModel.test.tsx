@@ -83,6 +83,10 @@ vi.mock('@tabler/icons-react', () => ({
   IconTool: () => <div data-testid="tool-icon" />,
   IconLoader2: () => <div data-testid="loader-icon" />,
   IconSparkles: () => <div data-testid="sparkles-icon" />,
+  IconAtom: () => <div data-testid="atom-icon" />,
+  IconWorld: () => <div data-testid="world-icon" />,
+  IconCodeCircle2: () => <div data-testid="code-circle-icon" />,
+  IconInfoCircle: () => <div data-testid="info-circle-icon" />,
 }))
 
 describe('DialogEditModel - Basic Component Tests', () => {
@@ -240,8 +244,7 @@ describe('DialogEditModel - Basic Component Tests', () => {
       />
     )
 
-    // Component should render without errors even with extra capabilities
-    // The capabilities helper should only extract vision and tools
+    // Component should render without errors with all capabilities
     expect(container).toBeInTheDocument()
   })
 })
