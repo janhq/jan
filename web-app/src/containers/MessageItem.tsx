@@ -107,7 +107,25 @@ export const MessageItem = memo(
         .map((part) => (part as { url: string }).url)
     }, [message.parts])
 
-    const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    // A tool part is "pending" until it reaches a terminal state. While any
+    // tool on the last assistant message is still pending the turn isn't
+    // done — the model will resume once the tool result arrives, even if the
+    // SDK briefly reports status as 'ready' between the tool-call stream and
+    // the follow-up request.
+    const hasPendingToolCall = useMemo(() => {
+      if (!isLastMessage || message.role !== 'assistant') return false
+      return message.parts.some((part) => {
+        if (!part.type?.startsWith('tool-')) return false
+        const state = (part as { state?: string }).state
+        return state !== 'output-available' && state !== 'output-error'
+      })
+    }, [isLastMessage, message.role, message.parts])
+
+    const isStreaming =
+      (isLastMessage &&
+        (status === CHAT_STATUS.STREAMING ||
+          status === CHAT_STATUS.SUBMITTED)) ||
+      hasPendingToolCall
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -460,7 +478,8 @@ export const MessageItem = memo(
             </span>
             <CopyButton text={getFullTextContent()} />
 
-            {onEdit && status !== CHAT_STATUS.STREAMING && (
+            {onEdit && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <EditMessageDialog
                 message={getFullTextContent()}
                 imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
@@ -468,7 +487,8 @@ export const MessageItem = memo(
               />
             )}
 
-            {onDelete && status !== CHAT_STATUS.STREAMING && (
+            {onDelete && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <DeleteMessageDialog onDelete={handleDelete} />
             )}
           </div>
@@ -538,8 +558,12 @@ export const MessageItem = memo(
     )
   },
   (prevProps, nextProps) => {
-    // Always re-render if streaming and this is the last message
-    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
+    // Always re-render if the last message is in-flight (streaming or submitted)
+    if (
+      nextProps.isLastMessage &&
+      (nextProps.status === CHAT_STATUS.STREAMING ||
+        nextProps.status === CHAT_STATUS.SUBMITTED)
+    ) {
       return false
     }
 
