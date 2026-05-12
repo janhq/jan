@@ -58,6 +58,7 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
@@ -171,10 +172,52 @@ function createCustomFetch(
         normalised[targetKey] = value
       }
 
-      init = { ...init, body: JSON.stringify({ ...body, ...normalised }) }
+      const merged = { ...body, ...normalised }
+      decodeAudioSentinelsInBody(merged)
+      init = { ...init, body: JSON.stringify(merged) }
     }
 
     return baseFetch(input, init)
+  }
+}
+
+// Rewrites any sentinel-bearing text content (planted by
+// CustomChatTransport.encodeAudioAttachments) back into OpenAI `input_audio`
+// content parts. Mutates `body.messages` in place.
+export function decodeAudioSentinelsInBody(body: Record<string, unknown>): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'user') continue
+    if (typeof m.content === 'string') {
+      if (!hasAudioSentinel(m.content)) continue
+      const split = splitAudioSentinels(m.content)
+      if (split) m.content = split
+      continue
+    }
+    if (!Array.isArray(m.content)) continue
+    const next: unknown[] = []
+    let touched = false
+    for (const part of m.content) {
+      if (
+        part &&
+        typeof part === 'object' &&
+        (part as { type?: string }).type === 'text' &&
+        typeof (part as { text?: string }).text === 'string' &&
+        hasAudioSentinel((part as { text: string }).text)
+      ) {
+        const split = splitAudioSentinels((part as { text: string }).text)
+        if (split) {
+          next.push(...split)
+          touched = true
+          continue
+        }
+      }
+      next.push(part)
+    }
+    if (touched) m.content = next
   }
 }
 

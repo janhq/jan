@@ -32,6 +32,7 @@ import {
 } from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
+import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -614,7 +615,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(effectiveMessages)
+      this.encodeAudioAttachments(this.mapUserInlineAttachments(effectiveMessages))
     )
 
     // If continuing a truncated response, append the partial assistant content as a
@@ -744,6 +745,34 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // This function normally handles reconnecting to a stream on the backend, e.g. /api/chat
     // Since this project has no backend, we can't reconnect to a stream, so this is intentionally no-op.
     return null
+  }
+
+  // Replace audio `file` parts on user messages with sentinel-bearing `text`
+  // parts. The `@ai-sdk/openai-compatible` provider rejects non-image file
+  // parts in its converter; the matching fetch wrapper in model-factory.ts
+  // decodes these sentinels back into OpenAI `input_audio` content parts on
+  // the outgoing wire, which llama-server's chat-completions endpoint accepts.
+  encodeAudioAttachments(messages: UIMessage[]): UIMessage[] {
+    return messages.map((message) => {
+      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
+      let touched = false
+      const nextParts = message.parts.map((part) => {
+        if (
+          part?.type === 'file' &&
+          typeof (part as { mediaType?: string }).mediaType === 'string' &&
+          (part as { mediaType: string }).mediaType.startsWith('audio/') &&
+          typeof (part as { url?: string }).url === 'string'
+        ) {
+          const parsed = parseAudioDataUrl((part as { url: string }).url)
+          if (!parsed) return part
+          touched = true
+          return { type: 'text' as const, text: encodeAudioSentinel(parsed.format, parsed.data) }
+        }
+        return part
+      })
+      if (!touched) return message
+      return { ...message, parts: nextParts } as UIMessage
+    })
   }
 
   /**
