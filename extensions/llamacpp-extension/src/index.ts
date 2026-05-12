@@ -306,6 +306,32 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+   * Fetch the runtime context size for a loaded model from the router's
+   * `/props?model=<id>` endpoint. Returns `undefined` if the router isn't
+   * running, the model isn't loaded, or the response doesn't carry a usable
+   * `n_ctx`. This is the post-fit value (i.e. what `fit_ctx` actually settled
+   * on), so it's the right denominator for the token-usage popup.
+   */
+  async getModelContext(modelId: string): Promise<number | undefined> {
+    const router = await this.getRouterInfo()
+    if (!router || !modelId) return undefined
+    try {
+      const url = `http://127.0.0.1:${router.port}/props?model=${encodeURIComponent(modelId)}`
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${router.apiKey}` },
+      })
+      if (!res.ok) return undefined
+      const json = (await res.json()) as {
+        default_generation_settings?: { n_ctx?: number }
+      }
+      const n = json?.default_generation_settings?.n_ctx
+      return typeof n === 'number' && n > 0 ? n : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
    * Phase 2 migration: translate the legacy `auto_unload` boolean to the new
    * `models_max` numeric setting (true -> 1, false -> 0). Approach A: leaves
    * the old `auto_unload` value untouched in storage; only the new key is

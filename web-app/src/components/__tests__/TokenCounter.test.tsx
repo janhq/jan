@@ -97,10 +97,16 @@ describe('TokenCounter', () => {
     expect(circles.length).toBe(2)
   })
 
-  it('shows 0.0% when maxTokens is 0 (no model selected)', () => {
+  it('renders nothing when maxTokens is unavailable', () => {
+    mockTokens({ tokenCount: 0, maxTokens: undefined })
+    const { container } = render(<TokenCounter />)
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('renders nothing when maxTokens is 0', () => {
     mockTokens({ tokenCount: 0, maxTokens: 0 })
-    render(<TokenCounter />)
-    expect(screen.getAllByText('0.0%').length).toBeGreaterThanOrEqual(1)
+    const { container } = render(<TokenCounter />)
+    expect(container.firstChild).toBeNull()
   })
 
   describe('formatNumber helper (via rendered output)', () => {

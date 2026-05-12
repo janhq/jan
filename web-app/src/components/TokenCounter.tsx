@@ -89,6 +89,11 @@ export const TokenCounter = memo(function TokenCounter({
     return adjustedPercentage !== undefined && adjustedPercentage > 100
   }, [adjustedPercentage])
 
+  // n_ctx comes from llama-server /props; if the router doesn't have it
+  // (model not loaded yet, request failed), don't render anything — a
+  // percentage without a real denominator is misinformation.
+  if (!tokenData.maxTokens) return null
+
   const formatNumber = (num: number) => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
     if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
