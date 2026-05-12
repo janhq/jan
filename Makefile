@@ -149,15 +149,19 @@ ifeq ($(DETECTED_OS),Darwin)
 	mkdir -p src-tauri/resources/bin; \
 	echo "Copying mlx-server from $$BUILD_DIR..."; \
 	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
-	CMLX_BUNDLE=$$(find "$$BUILD_DIR" -maxdepth 4 -type d -name '*Cmlx*.bundle' -print -quit); \
-	if [ -z "$$CMLX_BUNDLE" ]; then \
-		CMLX_BUNDLE=$$(find "$$BUILD_DIR" -maxdepth 5 -type f -name 'default.metallib' -print -quit | xargs -I{} dirname {}); \
-	fi; \
-	if [ -z "$$CMLX_BUNDLE" ] || [ ! -f "$$CMLX_BUNDLE/default.metallib" ]; then \
-		echo "Error: mlx-swift Cmlx resource bundle with default.metallib not found under $$BUILD_DIR"; \
-		find "$$BUILD_DIR" -maxdepth 5 -name '*.bundle' -o -name 'default.metallib' 2>/dev/null; \
+	BUILD_ROOT="$$(cd mlx-server && pwd)/.build"; \
+	METALLIB=$$(find "$$BUILD_ROOT" -type f -name 'default.metallib' -print 2>/dev/null | head -1); \
+	if [ -z "$$METALLIB" ]; then \
+		echo "Error: default.metallib not found anywhere under $$BUILD_ROOT"; \
+		echo "--- *.bundle under $$BUILD_ROOT ---"; \
+		find "$$BUILD_ROOT" -name '*.bundle' 2>/dev/null; \
+		echo "--- *.metallib under $$BUILD_ROOT ---"; \
+		find "$$BUILD_ROOT" -name '*.metallib' 2>/dev/null; \
+		echo "--- top-level .build layout ---"; \
+		ls -la "$$BUILD_ROOT" 2>/dev/null; \
 		exit 1; \
 	fi; \
+	CMLX_BUNDLE=$$(dirname "$$METALLIB"); \
 	echo "Copying Cmlx bundle from $$CMLX_BUNDLE..."; \
 	rm -rf src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
 	cp -r "$$CMLX_BUNDLE" src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
