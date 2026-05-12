@@ -90,8 +90,7 @@ export function ModelSetting({
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe' ||
-        key === 'reasoning'
+        key === 'n_cpu_moe'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -184,14 +183,6 @@ export function ModelSetting({
               )
               if (autoIncrease) acc.push(autoIncrease)
             }
-            acc.push(entry)
-            return acc
-          }, [])
-          .reduce<[string, unknown][]>((acc, entry) => {
-            const reasoning = Object.entries(model.settings || {}).find(
-              ([k]) => k === 'reasoning'
-            )
-            if (reasoning && acc.length === 0) acc.push(reasoning)
             acc.push(entry)
             return acc
           }, [])

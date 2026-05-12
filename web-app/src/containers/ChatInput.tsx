@@ -21,7 +21,7 @@ import {
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
-  IconAtom,
+  IconBrain,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -1913,21 +1913,131 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <IconAtom
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('reasoning')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode &&
+                  selectedProvider === 'llamacpp' &&
+                  (() => {
+                    const reasoningValue =
+                      (selectedModel?.settings?.reasoning?.controller_props
+                        ?.value as 'auto' | 'on' | 'off' | undefined) ?? 'auto'
+                    const setReasoning = (value: 'auto' | 'on' | 'off') => {
+                      if (!selectedProvider || !selectedModel) return
+                      const providerObj = getProviderByName(selectedProvider)
+                      if (!providerObj) return
+                      const modelIndex = providerObj.models.findIndex(
+                        (m) => m.id === selectedModel.id
+                      )
+                      if (modelIndex === -1) return
+                      const existing =
+                        selectedModel.settings?.reasoning ?? {
+                          key: 'reasoning',
+                          title: 'Reasoning',
+                          description: '',
+                          controller_type: 'dropdown',
+                          controller_props: { value },
+                        }
+                      const updatedModel = {
+                        ...selectedModel,
+                        settings: {
+                          ...selectedModel.settings,
+                          reasoning: {
+                            ...existing,
+                            controller_props: {
+                              ...(existing.controller_props ?? {}),
+                              value,
+                            },
+                          },
+                        },
+                      } as Model
+                      const updatedModels = [...providerObj.models]
+                      updatedModels[modelIndex] = updatedModel
+                      updateProvider(selectedProvider, {
+                        models: updatedModels,
+                      })
+                      if (activeModels.includes(selectedModel.id)) {
+                        serviceHub
+                          .models()
+                          .stopModel(selectedModel.id)
+                          .then(() => {
+                            serviceHub
+                              .models()
+                              .getActiveModels()
+                              .then((models) =>
+                                useAppState
+                                  .getState()
+                                  .setActiveModels(models || [])
+                              )
+                          })
+                      }
+                    }
+                    const label =
+                      reasoningValue === 'on'
+                        ? 'On'
+                        : reasoningValue === 'off'
+                          ? 'Off'
+                          : 'Auto'
+                    const tooltipText =
+                      reasoningValue === 'on'
+                        ? 'Reasoning forced on for every request.'
+                        : reasoningValue === 'off'
+                          ? 'Reasoning disabled for every request.'
+                          : "Reasoning auto-detected from the model's chat template."
+                    return (
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1 px-1.5"
+                              >
+                                <IconBrain
+                                  size={18}
+                                  className={cn(
+                                    'text-muted-foreground',
+                                    reasoningValue === 'on' && 'text-primary',
+                                    reasoningValue === 'off' && 'opacity-50'
+                                  )}
+                                />
+                                <span className="text-xs text-muted-foreground lowercase">
+                                  {label}
+                                </span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{tooltipText}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onClick={() => setReasoning('auto')}>
+                            Auto
+                            {reasoningValue === 'auto' && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ✓
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setReasoning('on')}>
+                            On
+                            {reasoningValue === 'on' && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ✓
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setReasoning('off')}>
+                            Off
+                            {reasoningValue === 'off' && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ✓
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )
+                  })()}
               </div>
             </div>
 
