@@ -193,7 +193,7 @@ export async function generatePreset(
     // overwrite on all platforms.
     if (await fs.existsSync(outPath)) {
       try {
-        await fs.unlinkSync(outPath)
+        await fs.rm(outPath)
       } catch {
         /* ignore */
       }
@@ -203,7 +203,7 @@ export async function generatePreset(
     // Fallback: if rename fails, write directly to the target.
     await fs.writeFileSync(outPath, body)
     try {
-      await fs.unlinkSync(tmpPath)
+      await fs.rm(tmpPath)
     } catch {
       /* ignore */
     }
