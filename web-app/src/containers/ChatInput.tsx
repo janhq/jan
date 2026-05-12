@@ -1953,21 +1953,10 @@ const ChatInput = memo(function ChatInput({
                       updateProvider(selectedProvider, {
                         models: updatedModels,
                       })
-                      if (activeModels.includes(selectedModel.id)) {
-                        serviceHub
-                          .models()
-                          .stopModel(selectedModel.id)
-                          .then(() => {
-                            serviceHub
-                              .models()
-                              .getActiveModels()
-                              .then((models) =>
-                                useAppState
-                                  .getState()
-                                  .setActiveModels(models || [])
-                              )
-                          })
-                      }
+                      // selectedModel is a snapshot, not a live derivation —
+                      // re-select to refresh it so the dropdown UI and the
+                      // chat transport both observe the new value.
+                      selectModelProvider(selectedProvider, selectedModel.id)
                     }
                     const label =
                       reasoningValue === 'on'

@@ -457,12 +457,31 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       const currentAssistant = useAssistant.getState().currentAssistant
       const inferenceParams = currentAssistant?.parameters
 
+      // llama-server reads `chat_template_kwargs.enable_thinking` per-request
+      // (server-common.cpp:1063), so the model's reasoning preference is
+      // applied without a reload. 'auto' omits the kwarg so the server falls
+      // back to its --reasoning-budget default.
+      const reasoningParams = (() => {
+        if (effectiveProviderName !== 'llamacpp') return {}
+        const selectedModel = useModelProvider.getState().selectedModel
+        const reasoning = selectedModel?.settings?.reasoning?.controller_props
+          ?.value as 'auto' | 'on' | 'off' | undefined
+        if (reasoning === 'on' || reasoning === 'off') {
+          return {
+            chat_template_kwargs: {
+              enable_thinking: reasoning === 'on',
+            },
+          }
+        }
+        return {}
+      })()
+
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
       this.model = await ModelFactory.createModel(
         modelId,
         updatedProvider ?? provider,
-        inferenceParams ?? {}
+        { ...(inferenceParams ?? {}), ...reasoningParams }
       )
     } catch (error) {
       console.error('Failed to create model:', error)
