@@ -52,6 +52,7 @@ import {
   DownloadItem,
   ModelConfig,
   EmbeddingResponse,
+  ModelProps,
   DeviceList,
   mapOldBackendToNew,
   findLatestVersionForBackend,
@@ -306,13 +307,13 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Fetch the runtime context size for a loaded model from the router's
+   * Fetch runtime properties for a loaded model from the router's
    * `/props?model=<id>` endpoint. Returns `undefined` if the router isn't
-   * running, the model isn't loaded, or the response doesn't carry a usable
-   * `n_ctx`. This is the post-fit value (i.e. what `fit_ctx` actually settled
-   * on), so it's the right denominator for the token-usage popup.
+   * running, the model isn't loaded, or the response is unusable. `nCtx` is
+   * the post-fit value — what `fit_ctx` settled on — so it's the right
+   * denominator for the token-usage popup.
    */
-  async getModelContext(modelId: string): Promise<number | undefined> {
+  async getModelProps(modelId: string): Promise<ModelProps | undefined> {
     const router = await this.getRouterInfo()
     if (!router || !modelId) return undefined
     try {
@@ -323,9 +324,24 @@ export default class llamacpp_extension extends AIEngine {
       if (!res.ok) return undefined
       const json = (await res.json()) as {
         default_generation_settings?: { n_ctx?: number }
+        total_slots?: number
+        model_alias?: string
+        modalities?: { vision?: boolean; audio?: boolean }
+        is_sleeping?: boolean
       }
       const n = json?.default_generation_settings?.n_ctx
-      return typeof n === 'number' && n > 0 ? n : undefined
+      if (typeof n !== 'number' || n <= 0) return undefined
+      return {
+        nCtx: n,
+        totalSlots:
+          typeof json.total_slots === 'number' ? json.total_slots : undefined,
+        modelAlias: json.model_alias,
+        modalities: {
+          vision: !!json.modalities?.vision,
+          audio: !!json.modalities?.audio,
+        },
+        isSleeping: !!json.is_sleeping,
+      }
     } catch {
       return undefined
     }

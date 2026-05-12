@@ -18,6 +18,14 @@ export interface DeviceInfo {
   memory: number
 }
 
+export interface ModelProps {
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  modalities?: { vision: boolean; audio: boolean }
+  isSleeping?: boolean
+}
+
 export interface GgufMetadata {
   version: number
   tensor_count: number
