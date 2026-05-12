@@ -112,6 +112,26 @@ export function normalizeToolInputSchema(
 }
 
 /** Text from the most recent user message (for MCP server routing). */
+/**
+ * Build the per-request reasoning kwargs for llama-server's chat completions
+ * endpoint. The server parses `chat_template_kwargs.enable_thinking` via
+ * `json_value(...).dump()` (server-common.cpp:1056-1069) and rejects values
+ * that serialize to a quoted JSON string — so this must emit a JSON boolean
+ * (`true` / `false`), never the strings `"true"` / `"false"`. 'auto' omits
+ * the kwarg entirely so the server falls back to its --reasoning-budget
+ * default. The function is a no-op for non-llamacpp providers.
+ */
+export function buildLlamacppReasoningParams(
+  providerName: string | null | undefined,
+  reasoning: 'auto' | 'on' | 'off' | undefined
+): { chat_template_kwargs?: { enable_thinking: boolean } } {
+  if (providerName !== 'llamacpp') return {}
+  if (reasoning !== 'on' && reasoning !== 'off') return {}
+  return {
+    chat_template_kwargs: { enable_thinking: reasoning === 'on' },
+  }
+}
+
 function extractLatestUserText(messages: UIMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
@@ -457,24 +477,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       const currentAssistant = useAssistant.getState().currentAssistant
       const inferenceParams = currentAssistant?.parameters
 
-      // llama-server reads `chat_template_kwargs.enable_thinking` per-request
-      // (server-common.cpp:1063), so the model's reasoning preference is
-      // applied without a reload. 'auto' omits the kwarg so the server falls
-      // back to its --reasoning-budget default.
-      const reasoningParams = (() => {
-        if (effectiveProviderName !== 'llamacpp') return {}
-        const selectedModel = useModelProvider.getState().selectedModel
-        const reasoning = selectedModel?.settings?.reasoning?.controller_props
-          ?.value as 'auto' | 'on' | 'off' | undefined
-        if (reasoning === 'on' || reasoning === 'off') {
-          return {
-            chat_template_kwargs: {
-              enable_thinking: reasoning === 'on',
-            },
-          }
-        }
-        return {}
-      })()
+      const selectedModel = useModelProvider.getState().selectedModel
+      const reasoningParams = buildLlamacppReasoningParams(
+        effectiveProviderName,
+        selectedModel?.settings?.reasoning?.controller_props?.value as
+          | 'auto'
+          | 'on'
+          | 'off'
+          | undefined
+      )
 
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
