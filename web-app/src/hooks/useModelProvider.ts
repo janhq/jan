@@ -38,7 +38,13 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
+          // MLX is Apple-Silicon only; drop it on every other platform so it
+          // can't be reactivated, queried, or shown anywhere in the UI.
+          providers = IS_MACOS
+            ? providers
+            : providers.filter((e) => e.provider !== 'mlx')
           const existingProviders = state.providers
+            .filter((e) => IS_MACOS || e.provider !== 'mlx')
             // Filter out legacy llama.cpp provider for migration
             // Can remove after a couple of releases
             .filter((e) => e.provider !== 'llama.cpp')
