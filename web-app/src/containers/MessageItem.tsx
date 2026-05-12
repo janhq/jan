@@ -107,9 +107,25 @@ export const MessageItem = memo(
         .map((part) => (part as { url: string }).url)
     }, [message.parts])
 
+    // A tool part is "pending" until it reaches a terminal state. While any
+    // tool on the last assistant message is still pending the turn isn't
+    // done — the model will resume once the tool result arrives, even if the
+    // SDK briefly reports status as 'ready' between the tool-call stream and
+    // the follow-up request.
+    const hasPendingToolCall = useMemo(() => {
+      if (!isLastMessage || message.role !== 'assistant') return false
+      return message.parts.some((part) => {
+        if (!part.type?.startsWith('tool-')) return false
+        const state = (part as { state?: string }).state
+        return state !== 'output-available' && state !== 'output-error'
+      })
+    }, [isLastMessage, message.role, message.parts])
+
     const isStreaming =
-      isLastMessage &&
-      (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED)
+      (isLastMessage &&
+        (status === CHAT_STATUS.STREAMING ||
+          status === CHAT_STATUS.SUBMITTED)) ||
+      hasPendingToolCall
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
