@@ -307,6 +307,14 @@ export default class llamacpp_extension extends AIEngine {
   async getModelProps(modelId: string): Promise<ModelProps | undefined> {
     const router = await this.getRouterInfo()
     if (!router || !modelId) return undefined
+    // Router runs with models_autoload=true, so `/props?model=X` against an
+    // unloaded model would trigger a load. Gate on the loaded-set first.
+    try {
+      const loaded = await this.getLoadedModels()
+      if (!loaded.includes(modelId)) return undefined
+    } catch {
+      return undefined
+    }
     try {
       const url = `http://127.0.0.1:${router.port}/props?model=${encodeURIComponent(modelId)}`
       const res = await fetch(url, {
