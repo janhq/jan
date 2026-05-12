@@ -151,9 +151,10 @@ ifeq ($(DETECTED_OS),Darwin)
 		echo "Error: Could not find xcodebuild products under DerivedData"; \
 		exit 1; \
 	fi; \
-	if [ ! -f "$$DERIVED_DATA/mlx-swift_Cmlx.bundle/default.metallib" ]; then \
-		echo "Error: $$DERIVED_DATA/mlx-swift_Cmlx.bundle/default.metallib missing -- PrepareMetalShaders did not run"; \
-		ls -la "$$DERIVED_DATA" 2>/dev/null; \
+	METALLIB=$$(find "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" -name 'default.metallib' -print -quit 2>/dev/null); \
+	if [ -z "$$METALLIB" ]; then \
+		echo "Error: default.metallib missing under $$DERIVED_DATA/mlx-swift_Cmlx.bundle -- PrepareMetalShaders did not run"; \
+		find "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" -maxdepth 4 2>/dev/null; \
 		exit 1; \
 	fi; \
 	mkdir -p src-tauri/resources/bin; \
@@ -168,8 +169,8 @@ ifeq ($(DETECTED_OS),Darwin)
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
 		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
-		if [ ! -f "src-tauri/resources/bin/mlx-swift_Cmlx.bundle/default.metallib" ]; then \
-			echo "Error: mlx-swift_Cmlx.bundle is missing default.metallib; refusing to sign an empty bundle"; \
+		if ! find src-tauri/resources/bin/mlx-swift_Cmlx.bundle -name 'default.metallib' -print -quit 2>/dev/null | grep -q .; then \
+			echo "Error: staged mlx-swift_Cmlx.bundle is missing default.metallib; refusing to sign an empty bundle"; \
 			exit 1; \
 		fi; \
 		echo "Signing mlx-swift_Cmlx.bundle..."; \
