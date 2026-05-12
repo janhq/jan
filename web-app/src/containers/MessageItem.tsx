@@ -107,7 +107,9 @@ export const MessageItem = memo(
         .map((part) => (part as { url: string }).url)
     }, [message.parts])
 
-    const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    const isStreaming =
+      isLastMessage &&
+      (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED)
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -460,7 +462,8 @@ export const MessageItem = memo(
             </span>
             <CopyButton text={getFullTextContent()} />
 
-            {onEdit && status !== CHAT_STATUS.STREAMING && (
+            {onEdit && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <EditMessageDialog
                 message={getFullTextContent()}
                 imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
@@ -468,7 +471,8 @@ export const MessageItem = memo(
               />
             )}
 
-            {onDelete && status !== CHAT_STATUS.STREAMING && (
+            {onDelete && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <DeleteMessageDialog onDelete={handleDelete} />
             )}
           </div>
@@ -538,8 +542,12 @@ export const MessageItem = memo(
     )
   },
   (prevProps, nextProps) => {
-    // Always re-render if streaming and this is the last message
-    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
+    // Always re-render if the last message is in-flight (streaming or submitted)
+    if (
+      nextProps.isLastMessage &&
+      (nextProps.status === CHAT_STATUS.STREAMING ||
+        nextProps.status === CHAT_STATUS.SUBMITTED)
+    ) {
       return false
     }
 
