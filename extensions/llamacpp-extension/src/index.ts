@@ -127,8 +127,6 @@ export default class llamacpp_extension extends AIEngine {
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
-  // Phase 2: router-mode lifecycle (runs alongside per-model spawn paths
-  // until Phase 3 repoints load()/unload() at the router).
   private routerPort?: number
   private routerApiKey?: string
 
@@ -165,7 +163,6 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v3: enable fit on Windows/Linux with a discrete GPU
     await this.migrateFitPlatformDefault()
 
-    // Migration v4 (Phase 2): translate auto_unload -> models_max
     await this.migrateAutoUnloadToModelsMax()
 
     this.timeout = this.config.timeout
@@ -191,8 +188,6 @@ export default class llamacpp_extension extends AIEngine {
       logger.error('configureBackends failed during onLoad:', e)
     }
 
-    // Router-mode startup (Phase 2). Runs side-by-side with the per-model
-    // spawn path; Phase 3 will repoint load/unload to use it.
     try {
       await this.startRouter()
     } catch (e) {
@@ -200,10 +195,6 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /**
-   * Phase 2: start the single `llama-server` router. No-op if backend isn't
-   * configured yet — the router will be (re)started later in Phase 3 logic.
-   */
   private async startRouter(): Promise<void> {
     const versionBackend = this.config?.version_backend
     if (
@@ -284,8 +275,8 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Public accessor for downstream consumers (Phase 3 / web-app). Returns
-   * `null` if the router hasn't been started successfully yet.
+   * Public accessor for downstream consumers. Returns `null` if the router
+   * hasn't been started successfully yet.
    */
   async getRouterInfo(): Promise<{ port: number; apiKey: string } | null> {
     if (this.routerPort != null && this.routerApiKey) {
@@ -348,11 +339,20 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Phase 2 migration: translate the legacy `auto_unload` boolean to the new
-   * `models_max` numeric setting (true -> 1, false -> 0). Approach A: leaves
-   * the old `auto_unload` value untouched in storage; only the new key is
-   * authoritative going forward.
+   * Returns the multimodal modalities advertised by the loaded model, or
+   * undefined when the model isn't loaded yet (so callers can probe again).
    */
+  async getModelModalities(
+    modelId: string
+  ): Promise<{ vision: boolean; audio: boolean } | undefined> {
+    const props = await this.getModelProps(modelId)
+    if (!props) return undefined
+    return {
+      vision: !!props.modalities?.vision,
+      audio: !!props.modalities?.audio,
+    }
+  }
+
   private async migrateAutoUnloadToModelsMax(): Promise<void> {
     const MIGRATION_KEY = 'llamacpp_models_max_migrated_v1'
     if (localStorage.getItem(MIGRATION_KEY)) return
@@ -1050,7 +1050,6 @@ export default class llamacpp_extension extends AIEngine {
       this.unlistenValidationStarted()
     }
 
-    // Phase 2: stop the router if it was started.
     try {
       await invoke('plugin:llamacpp|stop_router')
     } catch (e) {

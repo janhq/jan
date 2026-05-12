@@ -243,6 +243,25 @@ export const MessageItem = memo(
       partIndex: number
     ) => {
       const isImage = part.mediaType?.startsWith('image/')
+      const isAudio =
+        part.mediaType === 'audio/wav' || part.mediaType === 'audio/mpeg'
+
+      if (isAudio && part.url) {
+        const justify =
+          message.role === 'user' ? 'justify-end' : 'justify-start'
+        return (
+          <div
+            key={`${message.id}-${partIndex}`}
+            className={`flex ${justify} w-full my-2`}
+          >
+            <audio
+              controls
+              src={part.url}
+              className="max-w-[80%] rounded-md"
+            />
+          </div>
+        )
+      }
 
       if (message.role === 'user' && isImage && part.url) {
         return (
