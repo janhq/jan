@@ -67,7 +67,15 @@ export const useModelModalities = (): {
     }
     const id = ++reqId.current
     let cancelled = false
+    let handle: ReturnType<typeof setInterval> | undefined
     setLoading(true)
+
+    const stop = () => {
+      if (handle !== undefined) {
+        clearInterval(handle)
+        handle = undefined
+      }
+    }
 
     const probe = async () => {
       try {
@@ -76,6 +84,7 @@ export const useModelModalities = (): {
         if (m) {
           setModalities(m)
           setLoading(false)
+          stop()
         }
       } catch {
         if (!cancelled && id === reqId.current) setLoading(false)
@@ -83,14 +92,17 @@ export const useModelModalities = (): {
     }
 
     probe()
-    const handle = setInterval(() => {
-      if (cancelled) return
+    handle = setInterval(() => {
+      if (cancelled) {
+        stop()
+        return
+      }
       probe()
     }, PROBE_INTERVAL_MS)
 
     return () => {
       cancelled = true
-      clearInterval(handle)
+      stop()
     }
   }, [modelId])
 
