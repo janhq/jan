@@ -139,32 +139,28 @@ endif
 build-mlx-server:
 ifeq ($(DETECTED_OS),Darwin)
 	@echo "Building MLX server for Apple Silicon..."
-	cd mlx-server && swift build -c release
-	@echo "Copying build products..."
-	@BUILD_DIR=$$(cd mlx-server && swift build -c release --show-bin-path); \
-	if [ -z "$$BUILD_DIR" ]; then \
-		echo "Error: Could not find build products"; \
+	# mlx-swift's Metal shaders are compiled by the PrepareMetalShaders
+	# plugin, which only runs under Xcode -- `swift build` produces a
+	# binary with no default.metallib and the app fails at runtime. See
+	# https://github.com/ml-explore/mlx-swift README ("SwiftPM (command
+	# line) cannot build the Metal shaders").
+	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release OTHER_LDFLAGS="-dead_strip"
+	@echo "Finding build products..."
+	@DERIVED_DATA=$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1); \
+	if [ -z "$$DERIVED_DATA" ] || [ ! -f "$$DERIVED_DATA/mlx-server" ]; then \
+		echo "Error: Could not find xcodebuild products under DerivedData"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$DERIVED_DATA/mlx-swift_Cmlx.bundle/default.metallib" ]; then \
+		echo "Error: $$DERIVED_DATA/mlx-swift_Cmlx.bundle/default.metallib missing -- PrepareMetalShaders did not run"; \
+		ls -la "$$DERIVED_DATA" 2>/dev/null; \
 		exit 1; \
 	fi; \
 	mkdir -p src-tauri/resources/bin; \
-	echo "Copying mlx-server from $$BUILD_DIR..."; \
-	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
-	BUILD_ROOT="$$(cd mlx-server && pwd)/.build"; \
-	METALLIB=$$(find "$$BUILD_ROOT" -type f -name 'default.metallib' -print 2>/dev/null | head -1); \
-	if [ -z "$$METALLIB" ]; then \
-		echo "Error: default.metallib not found anywhere under $$BUILD_ROOT"; \
-		echo "--- *.bundle under $$BUILD_ROOT ---"; \
-		find "$$BUILD_ROOT" -name '*.bundle' 2>/dev/null; \
-		echo "--- *.metallib under $$BUILD_ROOT ---"; \
-		find "$$BUILD_ROOT" -name '*.metallib' 2>/dev/null; \
-		echo "--- top-level .build layout ---"; \
-		ls -la "$$BUILD_ROOT" 2>/dev/null; \
-		exit 1; \
-	fi; \
-	CMLX_BUNDLE=$$(dirname "$$METALLIB"); \
-	echo "Copying Cmlx bundle from $$CMLX_BUNDLE..."; \
+	echo "Copying mlx-server from $$DERIVED_DATA..."; \
+	cp "$$DERIVED_DATA/mlx-server" src-tauri/resources/bin/mlx-server; \
 	rm -rf src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
-	cp -r "$$CMLX_BUNDLE" src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+	cp -r "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
 	echo "MLX server built and copied successfully"; \
 	echo "Checking for code signing identity..."; \
