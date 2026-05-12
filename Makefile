@@ -149,11 +149,18 @@ ifeq ($(DETECTED_OS),Darwin)
 	mkdir -p src-tauri/resources/bin; \
 	echo "Copying mlx-server from $$BUILD_DIR..."; \
 	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
-	if [ -d "$$BUILD_DIR/mlx-swift_Cmlx.bundle" ]; then \
-		cp -r "$$BUILD_DIR/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
-	else \
-		mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+	CMLX_BUNDLE=$$(find "$$BUILD_DIR" -maxdepth 4 -type d -name '*Cmlx*.bundle' -print -quit); \
+	if [ -z "$$CMLX_BUNDLE" ]; then \
+		CMLX_BUNDLE=$$(find "$$BUILD_DIR" -maxdepth 5 -type f -name 'default.metallib' -print -quit | xargs -I{} dirname {}); \
 	fi; \
+	if [ -z "$$CMLX_BUNDLE" ] || [ ! -f "$$CMLX_BUNDLE/default.metallib" ]; then \
+		echo "Error: mlx-swift Cmlx resource bundle with default.metallib not found under $$BUILD_DIR"; \
+		find "$$BUILD_DIR" -maxdepth 5 -name '*.bundle' -o -name 'default.metallib' 2>/dev/null; \
+		exit 1; \
+	fi; \
+	echo "Copying Cmlx bundle from $$CMLX_BUNDLE..."; \
+	rm -rf src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+	cp -r "$$CMLX_BUNDLE" src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
 	echo "MLX server built and copied successfully"; \
 	echo "Checking for code signing identity..."; \
@@ -161,10 +168,12 @@ ifeq ($(DETECTED_OS),Darwin)
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
 		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
-		if [ -d "src-tauri/resources/bin/mlx-swift_Cmlx.bundle" ]; then \
-			echo "Signing mlx-swift_Cmlx.bundle..."; \
-			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		if [ ! -f "src-tauri/resources/bin/mlx-swift_Cmlx.bundle/default.metallib" ]; then \
+			echo "Error: mlx-swift_Cmlx.bundle is missing default.metallib; refusing to sign an empty bundle"; \
+			exit 1; \
 		fi; \
+		echo "Signing mlx-swift_Cmlx.bundle..."; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
 		echo "Code signing completed successfully"; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
