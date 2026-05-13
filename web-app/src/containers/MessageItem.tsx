@@ -27,6 +27,7 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
+import { PromptProgress } from '@/components/PromptProgress'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -313,7 +314,7 @@ export const MessageItem = memo(
         <Tool
           key={`${message.id}-${partIndex}`}
           state={part.state}
-          className="mb-2"
+          className="mb-1"
         >
           <ToolHeader
             title={toolName}
@@ -488,6 +489,12 @@ export const MessageItem = memo(
 
         {/* Render message parts */}
         {renderedParts}
+
+        {isLastMessage &&
+          message.role === 'assistant' &&
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+            <PromptProgress />
+          )}
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
