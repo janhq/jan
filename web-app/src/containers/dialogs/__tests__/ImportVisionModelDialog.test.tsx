@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 
 const hoisted = vi.hoisted(() => ({
@@ -8,6 +9,7 @@ const hoisted = vi.hoisted(() => ({
   validateGgufFile: vi.fn(),
   basename: vi.fn((p: string) => p.split('/').pop() || p),
   invoke: vi.fn(),
+  mockGetGgufFiles: vi.fn(),
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -17,6 +19,17 @@ const hoisted = vi.hoisted(() => ({
 }))
 
 vi.mock('sonner', () => ({ toast: hoisted.toast }))
+
+vi.mock('@janhq/core', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@janhq/core')>()
+  return {
+    ...mod,
+    fs: {
+      ...mod.fs,
+      getGgufFiles: hoisted.mockGetGgufFiles,
+    },
+  }
+})
 
 // Override the global useServiceHub mock from setup.ts with a tailored one.
 vi.mock('@/hooks/useServiceHub', () => {
@@ -278,6 +291,120 @@ describe('ImportVisionModelDialog', () => {
     fireEvent.click(screen.getByText('Cancel'))
     await waitFor(() =>
       expect(screen.queryByText('Import Model')).not.toBeInTheDocument()
+    )
+  })
+})
+
+describe('ImportVisionModelDialog — directory import', () => {
+  const mockProvider = {
+    provider: 'llamacpp',
+    active: true,
+    models: [],
+    settings: [],
+  } as ModelProvider
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    hoisted.validateGgufFile.mockResolvedValue({
+      isValid: true,
+      metadata: { metadata: { 'general.architecture': 'llama' } },
+    })
+    hoisted.invoke.mockResolvedValue({
+      metadata: { 'general.architecture': 'clip' },
+    })
+    hoisted.dialogOpen.mockResolvedValue('/data/models-folder')
+    hoisted.mockGetGgufFiles.mockResolvedValue(['/data/models-folder/a.gguf'])
+  })
+
+  it('selecting a folder calls getGgufFiles with that path', async () => {
+    const user = userEvent.setup()
+    render(
+      <ImportVisionModelDialog
+        provider={mockProvider}
+        trigger={<button type="button">Open import</button>}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /Open import/i }))
+
+    const pickFolderButtons = screen.getAllByRole('button', {
+      name: /Import Folder/i,
+    })
+    await user.click(pickFolderButtons[0])
+
+    await waitFor(() => {
+      expect(hoisted.dialogOpen).toHaveBeenCalledWith({
+        multiple: false,
+        directory: true,
+      })
+    })
+    await waitFor(() => {
+      expect(hoisted.mockGetGgufFiles).toHaveBeenCalledWith([
+        '/data/models-folder',
+      ])
+    })
+    expect(
+      await screen.findByText(/Found 1 importable GGUF model/)
+    ).toBeInTheDocument()
+  })
+
+  it('shows an error toast when the folder has no gguf models', async () => {
+    hoisted.mockGetGgufFiles.mockResolvedValue([])
+    const user = userEvent.setup()
+    render(
+      <ImportVisionModelDialog
+        provider={mockProvider}
+        trigger={<button type="button">Open import</button>}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /Open import/i }))
+
+    await user.click(
+      screen.getAllByRole('button', { name: /Import Folder/i })[0]
+    )
+
+    await waitFor(() => {
+      expect(hoisted.toast.error).toHaveBeenCalledWith(
+        'No GGUF models found in folder'
+      )
+    })
+  })
+
+  it('folder import invokes pullModel per discovered file', async () => {
+    hoisted.mockGetGgufFiles.mockResolvedValue([
+      '/data/models-folder/m1.gguf',
+      '/data/models-folder/m2.gguf',
+    ])
+    hoisted.pullModel.mockResolvedValue(undefined)
+
+    const user = userEvent.setup()
+    render(
+      <ImportVisionModelDialog
+        provider={mockProvider}
+        trigger={<button type="button">Open import</button>}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /Open import/i }))
+
+    await user.click(
+      screen.getAllByRole('button', { name: /Import Folder/i })[0]
+    )
+    await screen.findByText(/Found 2 importable GGUF models/)
+
+    const importButtons = screen.getAllByRole('button', {
+      name: /Import Folder/i,
+    })
+    await user.click(importButtons[importButtons.length - 1])
+
+    await waitFor(() => {
+      expect(hoisted.pullModel).toHaveBeenCalledTimes(2)
+    })
+    expect(hoisted.pullModel).toHaveBeenCalledWith(
+      'm1',
+      '/data/models-folder/m1.gguf'
+    )
+    expect(hoisted.pullModel).toHaveBeenCalledWith(
+      'm2',
+      '/data/models-folder/m2.gguf'
     )
   })
 })

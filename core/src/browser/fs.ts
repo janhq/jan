@@ -71,13 +71,18 @@ const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
   globalThis.core.api?.copyFile(src, dest)
 
 /**
- * Gets the list of gguf files in a directory
- *
- * @param path - The paths to the file.
- * @returns {Promise<{any}>} - A promise that resolves with the list of gguf and non-gguf files
+ * Lists importable `.gguf` model files under each given directory (recursive).
+ * Skips files whose lowercase name contains `mmproj`.
+ * When `core.api.getGgufFiles` is not provided, uses the desktop `get_gguf_files` Tauri command.
  */
-const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
-  globalThis.core.api?.getGgufFiles(paths)
+const getGgufFiles: (paths: string[]) => Promise<string[]> = async (paths) => {
+  if (globalThis.core.api?.getGgufFiles) {
+    const result = await globalThis.core.api.getGgufFiles(paths)
+    return Array.isArray(result) ? result : []
+  }
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<string[]>('get_gguf_files', { paths })
+}
 
 /**
  * Gets the file's stats.

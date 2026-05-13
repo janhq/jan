@@ -10,7 +10,13 @@ export default defineConfig([
       sourcemap: true,
     },
     platform: 'browser',
-    external: ['path', 'react', 'react-dom', 'react/jsx-runtime'],
+    external: [
+      'path',
+      'react',
+      'react-dom',
+      'react/jsx-runtime',
+      '@tauri-apps/api/core',
+    ],
     define: {
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       VERSION: JSON.stringify(pkgJson.version),

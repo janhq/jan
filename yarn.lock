@@ -50,6 +50,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@ai-sdk/google@npm:^2.0.0":
+  version: 2.0.68
+  resolution: "@ai-sdk/google@npm:2.0.68"
+  dependencies:
+    "@ai-sdk/provider": "npm:2.0.1"
+    "@ai-sdk/provider-utils": "npm:3.0.23"
+  peerDependencies:
+    zod: ^3.25.76 || ^4.1.8
+  checksum: 10c0/6e146e8bedebe85c59da401d38b4df6859440620b973b09bd2578327981bfd26417b2ed97b939886dacf13734568ae992976effa62937f732f0f2b1004efe637
+  languageName: node
+  linkType: hard
+
 "@ai-sdk/openai-compatible@npm:1.0.33, @ai-sdk/openai-compatible@npm:^1.0.28":
   version: 1.0.33
   resolution: "@ai-sdk/openai-compatible@npm:1.0.33"
@@ -97,6 +109,19 @@ __metadata:
   peerDependencies:
     zod: ^3.25.76 || ^4.1.8
   checksum: 10c0/272645109b4990c1367d46fd8982ee3436f88f4f5ec96d78f98c928052dcee6e9a7df326558d908d73901a5c0a84b3374c31722bb78579c2efd3417afb2100fb
+  languageName: node
+  linkType: hard
+
+"@ai-sdk/provider-utils@npm:3.0.23":
+  version: 3.0.23
+  resolution: "@ai-sdk/provider-utils@npm:3.0.23"
+  dependencies:
+    "@ai-sdk/provider": "npm:2.0.1"
+    "@standard-schema/spec": "npm:^1.0.0"
+    eventsource-parser: "npm:^3.0.6"
+  peerDependencies:
+    zod: ^3.25.76 || ^4.1.8
+  checksum: 10c0/7b2adcbea13a09f7c8c0c6c5a77cde5c9973689acea2c3a7f79742d7edf463d1cbc90df38911e0235efeae89e37af43cfea2d856dedea4acdc5b0c3e65bf7d1b
   languageName: node
   linkType: hard
 
@@ -2702,6 +2727,7 @@ __metadata:
   resolution: "@janhq/core@workspace:core"
   dependencies:
     "@npmcli/arborist": "npm:^7.1.0"
+    "@tauri-apps/api": "npm:2.8.0"
     "@types/node": "npm:^22.10.0"
     "@types/react": "npm:19.1.2"
     "@vitest/coverage-v8": "npm:^2.1.8"
@@ -2720,7 +2746,11 @@ __metadata:
     ulidx: "npm:^2.3.0"
     vitest: "npm:^2.1.8"
   peerDependencies:
+    "@tauri-apps/api": ^2.8.0
     react: 19.0.0
+  peerDependenciesMeta:
+    "@tauri-apps/api":
+      optional: true
   languageName: unknown
   linkType: soft
 
@@ -2774,6 +2804,7 @@ __metadata:
   resolution: "@janhq/web-app@workspace:web-app"
   dependencies:
     "@ai-sdk/anthropic": "npm:^2.0.0"
+    "@ai-sdk/google": "npm:^2.0.0"
     "@ai-sdk/openai": "npm:^2.0.0"
     "@ai-sdk/openai-compatible": "npm:^1.0.28"
     "@ai-sdk/react": "npm:^2.0.109"

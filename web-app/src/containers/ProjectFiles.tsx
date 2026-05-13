@@ -16,6 +16,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { join } from '@tauri-apps/api/path'
 
 type ProjectFilesProps = {
   projectId: string
@@ -169,6 +170,17 @@ const SUPPORTED_EXTENSIONS = [
   'gitignore',
 ]
 
+/** `readdirSync` may return basenames or full paths depending on the host; join when needed. */
+async function resolveDirectoryEntry(
+  dirPath: string,
+  entry: string
+): Promise<string> {
+  if (entry.includes('/') || entry.includes('\\')) {
+    return entry
+  }
+  return join(dirPath, entry)
+}
+
 async function getFilesFromPaths(paths: string[]): Promise<string[]> {
   const files: string[] = []
   const { fs } = await import('@janhq/core')
@@ -199,15 +211,16 @@ async function getFilesFromDirectory(
   try {
     const entries = await fs.readdirSync(dirPath)
     for (const entry of entries) {
-      console.log('Reading entry:', entry)
-      const stat = await fs.fileStat(entry)
+      const fullPath = await resolveDirectoryEntry(dirPath, entry)
+      console.log('Reading entry:', fullPath)
+      const stat = await fs.fileStat(fullPath)
       if (stat?.isDirectory) {
-        const nestedFiles = await getFilesFromDirectory(entry, fs)
+        const nestedFiles = await getFilesFromDirectory(fullPath, fs)
         files.push(...nestedFiles)
       } else if (!stat?.isDirectory) {
-        const ext = entry.split('.').pop()?.toLowerCase()
+        const ext = fullPath.split('.').pop()?.toLowerCase()
         if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
-          files.push(entry)
+          files.push(fullPath)
         }
       }
     }

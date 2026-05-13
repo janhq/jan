@@ -33,6 +33,7 @@ macro_rules! invoke_commands_with_extras {
         core::filesystem::commands::rm,
         core::filesystem::commands::mv,
         core::filesystem::commands::file_stat,
+        core::filesystem::commands::get_gguf_files,
         core::filesystem::commands::write_file_sync,
         core::filesystem::commands::write_yaml,
         core::filesystem::commands::read_yaml,
