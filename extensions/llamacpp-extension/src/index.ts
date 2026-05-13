@@ -39,6 +39,9 @@ import {
   getProxyConfig,
   buildEmbedBatches,
   mergeEmbedResponses,
+  detectEmbeddingFromGgufMeta,
+  getDefaultEmbeddingModelId,
+  setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
 import { generatePreset } from './preset'
@@ -63,6 +66,8 @@ import {
   handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+
+const EMBEDDING_CHECK_VERSION = 3
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -1156,12 +1161,16 @@ export default class llamacpp_extension extends AIEngine {
     modelId: string,
     modelConfig: ModelConfig
   ): Promise<boolean> {
-    // Fast exit: if explicitly set in config, return it
-    if (typeof modelConfig.embedding === 'boolean') {
-      return modelConfig.embedding
+    const cfg = modelConfig as ModelConfig & { embedding_check_v?: number }
+    const hasFlag = typeof cfg.embedding === 'boolean'
+    const upToDate = cfg.embedding_check_v === EMBEDDING_CHECK_VERSION
+    if (hasFlag && upToDate) {
+      return cfg.embedding as boolean
+    }
+    if (hasFlag && cfg.embedding === true) {
+      return true
     }
 
-    // Migration logic: Detect from GGUF
     let isEmbedding = false
     try {
       const janDataFolderPath = await getJanDataFolderPath()
@@ -1172,20 +1181,15 @@ export default class llamacpp_extension extends AIEngine {
 
       if (await fs.existsSync(fullModelPath)) {
         const metadata = await readGgufMetadata(fullModelPath)
-        // Check for BERT-based architectures usually used for embeddings
-        // You can expand this list (e.g., 'nomic-bert', 'xlm-roberta')
-        const arch = metadata.metadata['general.architecture']
-        if (arch === 'bert' || arch === 'nomic-bert') {
+        if (detectEmbeddingFromGgufMeta(metadata.metadata)) {
           isEmbedding = true
         }
       }
     } catch (e) {
-      // If GGUF read fails, default to false but log it
       logger.warn(`Failed to check metadata for ${modelId}`, e)
-      return false
+      return cfg.embedding === true
     }
 
-    // Persist the result back to model.yml so we don't read GGUF next time
     try {
       const configPath = await joinPath([
         await this.getProviderPath(),
@@ -1194,12 +1198,21 @@ export default class llamacpp_extension extends AIEngine {
         'model.yml',
       ])
 
-      // Update the local object
-      modelConfig.embedding = isEmbedding
+      cfg.embedding = isEmbedding
+      cfg.embedding_check_v = EMBEDDING_CHECK_VERSION
+      if (isEmbedding) {
+        const c = cfg as ModelConfig & {
+          pooling?: string
+          ubatch_size?: number
+          batch_size?: number
+        }
+        if (!c.pooling) c.pooling = 'mean'
+        if (!c.ubatch_size) c.ubatch_size = 2048
+        if (!c.batch_size) c.batch_size = 2048
+      }
 
-      // Write to disk
       await invoke<void>('write_yaml', {
-        data: modelConfig,
+        data: cfg,
         savePath: configPath,
       })
     } catch (e) {
@@ -1658,9 +1671,7 @@ export default class llamacpp_extension extends AIEngine {
         `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
       )
 
-      // check if the model is an embedding model
-      const architecture = modelMetadata.metadata['general.architecture']
-      if (architecture === 'bert' || architecture === 'nomic-bert') {
+      if (detectEmbeddingFromGgufMeta(modelMetadata.metadata)) {
         isEmbedding = true
       }
 
@@ -1701,6 +1712,10 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
+      embedding_check_v: EMBEDDING_CHECK_VERSION,
+      ...(isEmbedding
+        ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
+        : {}),
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
@@ -2257,22 +2272,45 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
-    // Ensure the sentence-transformer model is present
-    let sInfo = await this.findSessionByModel('sentence-transformer-mini')
+    const downloadedModelList = await this.list()
+    const installedEmbedding = downloadedModelList.filter(
+      (m) => (m as any).embedding === true
+    )
+    const hasMini = downloadedModelList.some(
+      (m) => m.id === 'sentence-transformer-mini'
+    )
+    let preferred = getDefaultEmbeddingModelId('llamacpp')
+
+    if (!preferred && installedEmbedding.length === 1 && !hasMini) {
+      preferred = installedEmbedding[0].id
+      setDefaultEmbeddingModelId('llamacpp', preferred)
+      logger.info(
+        `Auto-promoted "${preferred}" as default embedding model (single installed model, sentence-transformer-mini not present)`
+      )
+    }
+
+    const preferredMatch =
+      preferred && installedEmbedding.find((m) => m.id === preferred)
+
+    if (preferred && !preferredMatch) {
+      logger.warn(
+        `Default embedding model "${preferred}" not installed; falling back to sentence-transformer-mini`
+      )
+    }
+
+    const targetModelId = preferredMatch
+      ? (preferred as string)
+      : 'sentence-transformer-mini'
+
+    let sInfo = await this.findSessionByModel(targetModelId)
     if (!sInfo) {
-      const downloadedModelList = await this.list()
-      if (
-        !downloadedModelList.some(
-          (model) => model.id === 'sentence-transformer-mini'
-        )
-      ) {
+      if (targetModelId === 'sentence-transformer-mini' && !hasMini) {
         await this.import('sentence-transformer-mini', {
           modelPath:
             'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
         })
       }
-      // Load specifically in embedding mode
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      sInfo = await this.load(targetModelId, undefined, true)
     }
 
     const ubatchSize =
@@ -2304,25 +2342,14 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const sendBatch = async (batchInput: string[]) => {
-      let response = await attemptRequest(sInfo as SessionInfo, batchInput)
-
-      // If embeddings endpoint is not available (501), reload with embedding mode and retry once
-      if (response.status === 501) {
-        try {
-          await this.unload('sentence-transformer-mini')
-        } catch {}
-        sInfo = await this.load('sentence-transformer-mini', undefined, true)
-        response = await attemptRequest(sInfo as SessionInfo, batchInput)
-      }
-
+      const response = await attemptRequest(sInfo as SessionInfo, batchInput)
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
         throw new Error(
           `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
         )
       }
-      const responseData = (await response.json()) as EmbedBatchResult
-      return responseData
+      return (await response.json()) as EmbedBatchResult
     }
 
     const batchResults: Array<{ result: EmbedBatchResult; offset: number }> = []

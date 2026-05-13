@@ -23,7 +23,12 @@ type ModelYaml = ModelConfig & {
   cache_type_v?: string
   parallel?: number
   cont_batching?: boolean
+  pooling?: 'none' | 'mean' | 'cls' | 'last' | 'rank'
+  ubatch_size?: number
+  batch_size?: number
 }
+
+const DEFAULT_EMBEDDING_UBATCH = 2048
 
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
@@ -176,6 +181,25 @@ export async function generatePreset(
     }
     if (typeof mc.cont_batching === 'boolean') {
       lines.push(`cont-batching = ${mc.cont_batching}`)
+    }
+
+    if (mc.embedding === true) {
+      lines.push('embeddings = true')
+      const pooling =
+        typeof mc.pooling === 'string' && mc.pooling.length > 0
+          ? mc.pooling
+          : 'mean'
+      lines.push(`pooling = ${escapeIniValue(pooling)}`)
+      const ubatch =
+        typeof mc.ubatch_size === 'number' && mc.ubatch_size > 0
+          ? mc.ubatch_size
+          : DEFAULT_EMBEDDING_UBATCH
+      const batch =
+        typeof mc.batch_size === 'number' && mc.batch_size >= ubatch
+          ? mc.batch_size
+          : ubatch
+      lines.push(`ubatch-size = ${ubatch}`)
+      lines.push(`batch-size = ${batch}`)
     }
 
     lines.push('load-on-startup = false')
