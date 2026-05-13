@@ -19,6 +19,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
+import { invoke } from '@tauri-apps/api/core'
 import { ExtensionManager } from '@/lib/extension'
 import {
   ExtensionTypeEnum,
@@ -489,6 +490,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           | undefined
       )
 
+      if (providerId === 'llamacpp') {
+        try {
+          const loaded = await invoke<string[]>(
+            'plugin:llamacpp|get_loaded_models'
+          )
+          if (!loaded.includes(modelId)) {
+            useAppState.getState().updateLoadingModel(true)
+          }
+        } catch {
+          // Ignore probe failures; the router will still load on demand
+        }
+      }
+
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
       this.model = await ModelFactory.createModel(
@@ -496,7 +510,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         updatedProvider ?? provider,
         { ...(inferenceParams ?? {}), ...reasoningParams }
       )
+      useAppState.getState().updateLoadingModel(false)
     } catch (error) {
+      useAppState.getState().updateLoadingModel(false)
       console.error('Failed to create model:', error)
       throw new Error(
         `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
@@ -704,6 +720,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
       onError: (error) => {
         useAppState.getState().updatePromptProgress(undefined)
+        useAppState.getState().updateLoadingModel(false)
         const errorMessage = error == null
           ? 'Unknown error'
           : typeof error === 'string'
@@ -716,6 +733,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
       onFinish: ({ responseMessage }) => {
         useAppState.getState().updatePromptProgress(undefined)
+        useAppState.getState().updateLoadingModel(false)
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>

@@ -112,6 +112,9 @@ const providerMetadataExtractor: MetadataExtractor = {
     return {
       processChunk: (parsedChunk: unknown) => {
         const chunk = parsedChunk as LlamaCppChunk
+        if (useAppState.getState().loadingModel) {
+          useAppState.getState().updateLoadingModel(false)
+        }
         if (chunk?.timings) {
           lastTimings = chunk.timings
         }
