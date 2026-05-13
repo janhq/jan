@@ -35,6 +35,7 @@ import {
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
+import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -526,7 +527,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // split it into separate messages so convertToModelMessages produces the
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
-    const messagesToConvert = (() => {
+    let messagesToConvert = (() => {
       if (effectiveProviderName !== 'anthropic') {
         return options.messages
       }
@@ -574,6 +575,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const selectedModel = useModelProvider.getState().selectedModel
 
+    const { messages: strippedMessages, files: attachedFiles } =
+      this.extractFileMetadataForSystem(messagesToConvert)
+    messagesToConvert = strippedMessages
+    const filesAddendum = this.buildFilesSystemAddendum(attachedFiles)
+    const effectiveSystem = filesAddendum
+      ? this.systemMessage
+        ? `${this.systemMessage}\n\n${filesAddendum}`
+        : filesAddendum
+      : this.systemMessage
+
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
       if (raw === undefined || raw === null) return undefined
@@ -598,8 +609,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         autoCompact: !!autoCompact,
       }
 
-      const systemPromptTokens = this.systemMessage
-        ? estimateTokens(this.systemMessage) + 4
+      const systemPromptTokens = effectiveSystem
+        ? estimateTokens(effectiveSystem) + 4
         : 0
 
       if (autoCompact && this.model) {
@@ -657,7 +668,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       abortSignal: options.abortSignal,
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
-      system: this.systemMessage,
+      system: effectiveSystem,
       ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
     })
 
@@ -800,6 +811,67 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * @param messages
    * @returns
    */
+  /**
+   * Strip persisted [ATTACHED_FILES] blocks from user message text and return
+   * the aggregated, deduped file metadata so it can be folded into the system
+   * prompt instead of the user turn. The stored ThreadMessages are untouched
+   * (UI still relies on the inline block for display); this only affects what
+   * is sent to the model.
+   */
+  extractFileMetadataForSystem(
+    messages: UIMessage[]
+  ): { messages: UIMessage[]; files: FileMetadata[] } {
+    const byId = new Map<string, FileMetadata>()
+    const next = messages.map((message) => {
+      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
+      let touched = false
+      const parts = message.parts.map((part) => {
+        if (
+          part?.type === 'text' &&
+          typeof (part as { text?: string }).text === 'string' &&
+          (part as { text: string }).text.includes('[ATTACHED_FILES]')
+        ) {
+          const { files, cleanPrompt } = extractFilesFromPrompt(
+            (part as { text: string }).text
+          )
+          if (files.length === 0) return part
+          for (const f of files) {
+            if (!byId.has(f.id)) byId.set(f.id, f)
+          }
+          touched = true
+          return { ...part, text: cleanPrompt }
+        }
+        return part
+      })
+      if (!touched) return message
+      return { ...message, parts } as UIMessage
+    })
+    return { messages: next, files: Array.from(byId.values()) }
+  }
+
+  /**
+   * Format collected file metadata as a system-prompt addendum. The block is
+   * stable / parseable so models can reference file_ids when invoking RAG tools.
+   */
+  buildFilesSystemAddendum(files: FileMetadata[]): string {
+    if (files.length === 0) return ''
+    const lines = files.map((f) => {
+      const parts = [`file_id: ${f.id}`, `name: ${f.name}`]
+      if (f.type) parts.push(`type: ${f.type}`)
+      if (typeof f.size === 'number') parts.push(`size: ${f.size}`)
+      if (typeof f.chunkCount === 'number') parts.push(`chunks: ${f.chunkCount}`)
+      if (f.injectionMode) parts.push(`mode: ${f.injectionMode}`)
+      return `- ${parts.join(', ')}`
+    })
+    return [
+      'The user has attached the following files to this conversation.',
+      'Use the available retrieval tools with these file_ids when their contents are relevant.',
+      '[ATTACHED_FILES]',
+      ...lines,
+      '[/ATTACHED_FILES]',
+    ].join('\n')
+  }
+
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {
     return messages.map((message) => {
       if (message.role === 'user') {
