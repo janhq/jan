@@ -1334,6 +1334,7 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         cache_type_k: "q8_0".to_string(),
         cache_type_v: "q8_0".to_string(),
         defrag_thold: -1.0,
+        reasoning_budget_message: String::new(),
         rope_scaling: String::new(),
         rope_scale: 0.0,
         rope_freq_base: 0.0,

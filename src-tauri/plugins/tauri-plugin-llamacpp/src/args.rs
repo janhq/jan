@@ -50,6 +50,7 @@ pub struct LlamacppConfig {
     pub cache_type_k: String,
     pub cache_type_v: String,
     pub defrag_thold: f32,
+    pub reasoning_budget_message: String,
     pub rope_scaling: String,
     pub rope_scale: f32,
     pub rope_freq_base: f32,
@@ -408,6 +409,12 @@ impl ArgumentBuilder {
             self.args.push(self.config.defrag_thold.to_string());
         }
 
+        if !self.config.reasoning_budget_message.is_empty() {
+            let processed_message = self.config.reasoning_budget_message.replace("\\n", "\n");
+            self.args.push("--reasoning-budget-message".to_string());
+            self.args.push(processed_message);
+        }
+
         self.add_rope_settings();
     }
 
@@ -494,6 +501,7 @@ mod tests {
             cache_type_k: "f16".to_string(),
             cache_type_v: "f16".to_string(),
             defrag_thold: 0.1,
+            reasoning_budget_message: "\\n\\nStop!\\n".to_string(),
             rope_scaling: "none".to_string(),
             rope_scale: 1.0,
             rope_freq_base: 0.0,
@@ -1001,6 +1009,25 @@ mod tests {
         let args = builder.build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--cache-type-v");
+    }
+
+    #[test]
+    fn test_reasoning_budget_is_empty() {
+        let mut config = default_config();
+        config.reasoning_budget_message = "".to_string();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--reasoning-budget-message");
+    }
+
+    #[test]
+    fn test_reasoning_budget_standard_value() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--reasoning-budget-message", "\n\nStop!\n");
     }
 
     #[test]

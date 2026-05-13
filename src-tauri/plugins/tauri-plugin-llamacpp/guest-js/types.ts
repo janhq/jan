@@ -60,6 +60,7 @@ export type LlamacppConfig = {
   cache_type_k: string
   cache_type_v: string
   defrag_thold: number
+  reasoning_budget_message: string
   rope_scaling: string
   rope_scale: number
   rope_freq_base: number
