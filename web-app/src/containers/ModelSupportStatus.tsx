@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -16,6 +17,31 @@ interface ModelSupportStatusProps {
   className?: string
 }
 
+type CheckResult = {
+  status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null
+  effectiveCtx: number
+}
+
+const readTrainContext = async (
+  modelPath: string
+): Promise<number | undefined> => {
+  try {
+    const result = await invoke<{ metadata?: Record<string, string> }>(
+      'plugin:llamacpp|read_gguf_metadata',
+      { path: modelPath }
+    )
+    const meta = result?.metadata
+    const arch = meta?.['general.architecture']
+    if (!arch) return undefined
+    const raw = meta?.[`${arch}.context_length`]
+    const parsed = raw ? parseInt(raw, 10) : NaN
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+  } catch (e) {
+    console.error('Error reading GGUF context length:', e)
+    return undefined
+  }
+}
+
 export const ModelSupportStatus = ({
   modelId,
   provider,
@@ -25,14 +51,12 @@ export const ModelSupportStatus = ({
   const [modelSupportStatus, setModelSupportStatus] = useState<
     'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | null | 'GREY'
   >(null)
+  const [effectiveCtx, setEffectiveCtx] = useState<number>(contextSize)
   const serviceHub = useServiceHub()
 
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
-    async (
-      id: string,
-      ctxSize: number
-    ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null> => {
+    async (id: string, ctxSize: number): Promise<CheckResult> => {
       try {
         const janDataFolder = await getJanDataFolderPath()
 
@@ -45,47 +69,53 @@ export const ModelSupportStatus = ({
           'model.gguf',
         ])
 
-        // Check if the standard model.gguf file exists
+        let actualModelPath: string | null = null
         if (await fs.existsSync(ggufModelPath)) {
-          return await serviceHub.models().isModelSupported(ggufModelPath, ctxSize)
+          actualModelPath = ggufModelPath
+        } else {
+          // If model.gguf doesn't exist, try reading from model.yml (for imported models)
+          const modelConfigPath = await joinPath([
+            janDataFolder,
+            'llamacpp',
+            'models',
+            id,
+            'model.yml',
+          ])
+
+          if (!(await fs.existsSync(modelConfigPath))) {
+            console.error(
+              `Neither model.gguf nor model.yml found for model: ${id}`
+            )
+            return { status: null, effectiveCtx: ctxSize }
+          }
+
+          const modelConfig = await serviceHub
+            .app()
+            .readYaml<{ model_path: string }>(
+              `llamacpp/models/${id}/model.yml`
+            )
+
+          actualModelPath =
+            modelConfig.model_path.startsWith('/') ||
+            modelConfig.model_path.match(/^[A-Za-z]:/)
+              ? modelConfig.model_path
+              : await joinPath([janDataFolder, modelConfig.model_path])
         }
 
-        // If model.gguf doesn't exist, try reading from model.yml (for imported models)
-        const modelConfigPath = await joinPath([
-          janDataFolder,
-          'llamacpp',
-          'models',
-          id,
-          'model.yml',
-        ])
-
-        if (!(await fs.existsSync(modelConfigPath))) {
-          console.error(
-            `Neither model.gguf nor model.yml found for model: ${id}`
-          )
-          return null
-        }
-
-        // Read the model configuration to get the actual model path
-        const modelConfig = await serviceHub.app().readYaml<{ model_path: string }>(
-          `llamacpp/models/${id}/model.yml`
-        )
-
-        // Handle both absolute and relative paths
-        const actualModelPath =
-          modelConfig.model_path.startsWith('/') ||
-          modelConfig.model_path.match(/^[A-Za-z]:/)
-            ? modelConfig.model_path // absolute path, use as-is
-            : await joinPath([janDataFolder, modelConfig.model_path]) // relative path, join with data folder
-
-        return await serviceHub.models().isModelSupported(actualModelPath, ctxSize)
+        const trainCtx = await readTrainContext(actualModelPath)
+        const ctxForCheck = trainCtx
+          ? Math.min(ctxSize, trainCtx)
+          : ctxSize
+        const status = await serviceHub
+          .models()
+          .isModelSupported(actualModelPath, ctxForCheck)
+        return { status, effectiveCtx: trainCtx ?? ctxSize }
       } catch (error) {
         console.error(
           'Error checking model support with path resolution:',
           error
         )
-        // If path construction or model support check fails, assume not supported
-        return null
+        return { status: null, effectiveCtx: ctxSize }
       }
     },
     [serviceHub]
@@ -111,11 +141,11 @@ export const ModelSupportStatus = ({
   const getStatusTooltip = (): string => {
     switch (modelSupportStatus) {
       case 'GREEN':
-        return `Works Well on your device (ctx: ${contextSize})`
+        return `Works Well on your device (ctx: ${effectiveCtx})`
       case 'YELLOW':
-        return `Might work on your device (ctx: ${contextSize})`
+        return `Might work on your device (ctx: ${effectiveCtx})`
       case 'RED':
-        return `Doesn't work on your device  (ctx: ${contextSize})`
+        return `Doesn't work on your device  (ctx: ${effectiveCtx})`
       case 'LOADING':
         return 'Checking device compatibility...'
       default:
@@ -130,11 +160,12 @@ export const ModelSupportStatus = ({
         // Set loading state immediately
         setModelSupportStatus('LOADING')
         try {
-          const supportStatus = await checkModelSupportWithPath(
+          const { status, effectiveCtx: ctx } = await checkModelSupportWithPath(
             modelId,
             contextSize
           )
-          setModelSupportStatus(supportStatus)
+          setEffectiveCtx(ctx)
+          setModelSupportStatus(status)
         } catch (error) {
           console.error('Error checking model support:', error)
           setModelSupportStatus('RED')
