@@ -22,7 +22,6 @@ permissions = [
     "allow-estimate-kv-cache-size",
     "allow-get-model-size",
     "allow-is-model-supported",
-    "allow-plan-model-load",
 
     # Backend management commands
     "allow-map-old-backend-to-new",

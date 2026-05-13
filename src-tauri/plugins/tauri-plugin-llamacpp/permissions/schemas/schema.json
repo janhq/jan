@@ -559,18 +559,6 @@
           "markdownDescription": "Denies the handle_setting_update command without any pre-configured scope."
         },
         {
-          "description": "Enables the init_native_backend command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-init-native-backend",
-          "markdownDescription": "Enables the init_native_backend command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the init_native_backend command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-init-native-backend",
-          "markdownDescription": "Denies the init_native_backend command without any pre-configured scope."
-        },
-        {
           "description": "Enables the is_cuda_installed command without any pre-configured scope.",
           "type": "string",
           "const": "allow-is-cuda-installed",
@@ -643,90 +631,6 @@
           "markdownDescription": "Denies the map_old_backend_to_new command without any pre-configured scope."
         },
         {
-          "description": "Enables the native_chat_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-chat-completion",
-          "markdownDescription": "Enables the native_chat_completion command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_chat_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-chat-completion",
-          "markdownDescription": "Denies the native_chat_completion command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_chat_template command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-chat-template",
-          "markdownDescription": "Enables the native_chat_template command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_chat_template command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-chat-template",
-          "markdownDescription": "Denies the native_chat_template command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_detokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-detokenize",
-          "markdownDescription": "Enables the native_detokenize command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_detokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-detokenize",
-          "markdownDescription": "Denies the native_detokenize command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_embeddings command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-embeddings",
-          "markdownDescription": "Enables the native_embeddings command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_embeddings command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-embeddings",
-          "markdownDescription": "Denies the native_embeddings command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_model_metadata command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-model-metadata",
-          "markdownDescription": "Enables the native_model_metadata command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_model_metadata command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-model-metadata",
-          "markdownDescription": "Denies the native_model_metadata command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_system_info command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-system-info",
-          "markdownDescription": "Enables the native_system_info command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_system_info command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-system-info",
-          "markdownDescription": "Denies the native_system_info command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_tokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-tokenize",
-          "markdownDescription": "Enables the native_tokenize command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_tokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-tokenize",
-          "markdownDescription": "Denies the native_tokenize command without any pre-configured scope."
-        },
-        {
           "description": "Enables the parse_backend_version command without any pre-configured scope.",
           "type": "string",
           "const": "allow-parse-backend-version",
@@ -737,18 +641,6 @@
           "type": "string",
           "const": "deny-parse-backend-version",
           "markdownDescription": "Denies the parse_backend_version command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the plan_model_load command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-plan-model-load",
-          "markdownDescription": "Enables the plan_model_load command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the plan_model_load command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-plan-model-load",
-          "markdownDescription": "Denies the plan_model_load command without any pre-configured scope."
         },
         {
           "description": "Enables the prioritize_backends command without any pre-configured scope.",
@@ -835,10 +727,10 @@
           "markdownDescription": "Denies the verify_backend_installation command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`",
+          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`"
+          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`"
         }
       ]
     }

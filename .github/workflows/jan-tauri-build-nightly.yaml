@@ -75,7 +75,25 @@ jobs:
     uses: ./.github/workflows/template-tauri-build-macos.yml
     needs: [get-update-version, set-public-provider]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    secrets: inherit
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+      DELTA_AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+      DELTA_AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+      DELTA_AWS_REGION: ${{ secrets.DELTA_AWS_REGION }}
+      CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+      CODE_SIGN_P12_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
+      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -85,9 +103,24 @@ jobs:
 
   build-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
-    secrets: inherit
     needs: [get-update-version, set-public-provider]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+      DELTA_AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+      DELTA_AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+      DELTA_AWS_REGION: ${{ secrets.DELTA_AWS_REGION }}
+      AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -96,9 +129,19 @@ jobs:
       cortex_api_port: '39261'
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
-    secrets: inherit
     needs: [get-update-version, set-public-provider]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+      DELTA_AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+      DELTA_AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+      DELTA_AWS_REGION: ${{ secrets.DELTA_AWS_REGION }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -178,7 +221,10 @@ jobs:
   #       set-public-provider,
   #       sync-temp-to-latest,
   #     ]
-  #   secrets: inherit
+  #   # Forward only secrets the Discord/readme template uses (avoid secrets: inherit).
+  #   secrets:
+  #     PAT_SERVICE_ACCOUNT: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   #   if: github.event_name == 'schedule'
   #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
   #   with:
@@ -197,7 +243,10 @@ jobs:
   #       set-public-provider,
   #       sync-temp-to-latest,
   #     ]
-  #   secrets: inherit
+  #   # Forward only secrets the Discord/readme template uses (avoid secrets: inherit).
+  #   secrets:
+  #     PAT_SERVICE_ACCOUNT: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   #   if: github.event_name == 'push'
   #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
   #   with:
@@ -216,7 +265,10 @@ jobs:
   #       set-public-provider,
   #       sync-temp-to-latest,
   #     ]
-  #   secrets: inherit
+  #   # Forward only secrets the Discord/readme template uses (avoid secrets: inherit).
+  #   secrets:
+  #     PAT_SERVICE_ACCOUNT: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
   #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
   #   with:

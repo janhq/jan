@@ -38,8 +38,12 @@ describe('defaultModel', () => {
     expect(defaultModel()).toBe('gpt-5')
   })
 
-  it('returns first OpenAI model when unknown provider is given', () => {
-    expect(defaultModel('unknown')).toBe('gpt-5')
+  it('returns undefined when unknown provider is given', () => {
+    expect(defaultModel('unknown')).toBeUndefined()
+  })
+
+  it('returns undefined for local providers not in static providerModels', () => {
+    expect(defaultModel('llamacpp')).toBeUndefined()
   })
 
   it('returns first model for known providers', () => {

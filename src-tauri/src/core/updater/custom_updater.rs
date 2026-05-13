@@ -9,19 +9,11 @@
  * Convention: The first endpoint in the list should be the signed endpoint
  * (e.g., https://apps.jan.ai/update-check)
  */
-use super::hmac_client::SignedRequestHeaders;
+use super::hmac_client::{BUILD_TIME_SIGNING_KEY, SignedRequestHeaders};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
-
-/// Secret key for HMAC signature
-/// - In CI: Set JAN_SIGNING_KEY environment variable at build time
-/// - In local dev: Falls back to a test key
-const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
-    Some(key) => key,
-    None => "local-dev-test-key-not-for-production",
-};
 
 /// Timeout for HTTP requests
 const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -78,7 +70,7 @@ impl CustomUpdater {
 
         Ok(Self {
             client,
-            secret_key: SECRET_KEY.to_string(),
+            secret_key: BUILD_TIME_SIGNING_KEY.to_string(),
         })
     }
 

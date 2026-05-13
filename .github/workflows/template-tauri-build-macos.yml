@@ -51,6 +51,20 @@ on:
         required: false
       JAN_SIGNING_KEY:
         required: false
+      DELTA_AWS_REGION:
+        required: false
+      GITHUB_TOKEN:
+        required: false
+      NOTARIZE_P8_BASE64:
+        required: false
+      NOTARY_ISSUER:
+        required: false
+      NOTARY_KEY_ID:
+        required: false
+      POSTHOG_KEY:
+        required: false
+      POSTHOG_HOST:
+        required: false
     outputs:
       MAC_UNIVERSAL_SIG:
         value: ${{ jobs.build-macos.outputs.MAC_UNIVERSAL_SIG }}
