@@ -498,7 +498,7 @@ export const MessageItem = memo(
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
-          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
+          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs">
             <span className="text-muted-foreground">
               {formatDate(createdAt)}
             </span>
@@ -522,7 +522,7 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs">
               {!isStreaming && (
                 <span className="text-muted-foreground">
                   {formatDate(createdAt)}
