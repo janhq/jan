@@ -23,7 +23,9 @@ describe('PromptProgress', () => {
       total: 150,
     }
 
-    mockUseAppState.mockReturnValue(mockProgress)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
 
     render(<PromptProgress />)
 
@@ -38,7 +40,9 @@ describe('PromptProgress', () => {
       total: 0,
     }
 
-    mockUseAppState.mockReturnValue(mockProgress)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
 
     const { container } = render(<PromptProgress />)
 
