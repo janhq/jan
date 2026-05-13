@@ -231,10 +231,12 @@ pub async fn start_router(
 
 /// Gracefully shut down a router process.
 ///
-/// On Unix: SIGTERM, wait up to 5s, then SIGKILL (matches
-/// `process::graceful_terminate_process`). On Windows: forced kill (matches
-/// `process::force_terminate_process`).
+/// Unloads loaded models over HTTP first so children flush GPU / KV cache
+/// state, then terminates the router itself (SIGTERM→SIGKILL on Unix, forced
+/// kill on Windows).
 pub async fn stop_router(mut handle: RouterHandle) -> ServerResult<()> {
+    unload_all_models_best_effort(handle.port, &handle.api_key).await;
+
     #[cfg(unix)]
     {
         crate::process::graceful_terminate_process(&mut handle.child).await;
@@ -249,6 +251,78 @@ pub async fn stop_router(mut handle: RouterHandle) -> ServerResult<()> {
         let _ = handle.child.wait().await;
     }
     Ok(())
+}
+
+async fn unload_all_models_best_effort(port: u16, api_key: &str) {
+    let overall = Duration::from_secs(10);
+    let _ = tokio::time::timeout(overall, async {
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("stop_router: failed to build http client: {}", e);
+                return;
+            }
+        };
+
+        let list_url = format!("http://127.0.0.1:{}/models", port);
+        let resp = match client.get(&list_url).bearer_auth(api_key).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("stop_router: GET /models failed (router likely already down): {}", e);
+                return;
+            }
+        };
+        let json: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("stop_router: invalid JSON from /models: {}", e);
+                return;
+            }
+        };
+        let ids: Vec<String> = json
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|m| {
+                        m.get("status")
+                            .and_then(|s| s.get("value"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| matches!(s, "loaded" | "loading"))
+                            .unwrap_or(false)
+                    })
+                    .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if ids.is_empty() {
+            return;
+        }
+        log::info!("stop_router: unloading {} model(s) before shutdown", ids.len());
+
+        let unload_url = format!("http://127.0.0.1:{}/models/unload", port);
+        let tasks = ids.into_iter().map(|id| {
+            let client = client.clone();
+            let url = unload_url.clone();
+            let key = api_key.to_string();
+            tokio::spawn(async move {
+                let body = serde_json::json!({ "model": id });
+                match client.post(&url).bearer_auth(&key).json(&body).send().await {
+                    Ok(r) if r.status().is_success() => {}
+                    Ok(r) => log::warn!("stop_router: unload {} returned {}", id, r.status()),
+                    Err(e) => log::warn!("stop_router: unload {} failed: {}", id, e),
+                }
+            })
+        });
+        for t in tasks {
+            let _ = t.await;
+        }
+    })
+    .await;
 }
 
 #[cfg(test)]
