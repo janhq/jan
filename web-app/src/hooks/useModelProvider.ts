@@ -113,15 +113,17 @@ export const useModelProvider = create<ModelProviderState>()(
                   }
                 )?._userConfiguredCapabilities === true
 
-              // When the user set tools/vision in Edit Model, honor that list on every
-              // refresh from the engine; otherwise fresh engine data would re-add defaults.
+              const engineOwnedCaps = new Set(['vision', 'audio', 'embeddings'])
+              const engineCaps = model.capabilities || []
+              const existingCaps = existingModel?.capabilities || []
               const mergedCapabilities = userConfiguredCapabilities
-                ? [...(existingModel?.capabilities || [])]
+                ? [
+                    ...existingCaps.filter((c) => !engineOwnedCaps.has(c)),
+                    ...engineCaps.filter((c) => engineOwnedCaps.has(c)),
+                  ]
                 : [
-                    ...(model.capabilities || []),
-                    ...(existingModel?.capabilities || []).filter(
-                      (cap) => !(model.capabilities || []).includes(cap)
-                    ),
+                    ...engineCaps,
+                    ...existingCaps.filter((c) => !engineCaps.includes(c)),
                   ]
               return {
                 ...model,

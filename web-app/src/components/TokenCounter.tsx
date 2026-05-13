@@ -126,7 +126,7 @@ export const TokenCounter = memo(function TokenCounter({
     typeof tokenData.configuredCtxLen === 'number' &&
     tokenData.configuredCtxLen !== tokenData.maxTokens
   const hasModalities =
-    modelProps?.modalities?.vision || modelProps?.modalities?.audio
+    tokenData.modalities?.vision || tokenData.modalities?.audio
   const showFooter =
     showFittedBadge ||
     hasModalities ||
@@ -288,7 +288,7 @@ export const TokenCounter = memo(function TokenCounter({
                     {modelProps.totalSlots} slots
                   </span>
                 )}
-              {modelProps?.modalities?.vision && (
+              {tokenData.modalities?.vision && (
                 <span
                   className="flex items-center gap-1"
                   title="Vision input supported"
@@ -297,7 +297,7 @@ export const TokenCounter = memo(function TokenCounter({
                   Vision
                 </span>
               )}
-              {modelProps?.modalities?.audio && (
+              {tokenData.modalities?.audio && (
                 <span
                   className="flex items-center gap-1"
                   title="Audio input supported"

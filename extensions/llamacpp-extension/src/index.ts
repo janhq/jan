@@ -325,7 +325,6 @@ export default class llamacpp_extension extends AIEngine {
         default_generation_settings?: { n_ctx?: number }
         total_slots?: number
         model_alias?: string
-        modalities?: { vision?: boolean; audio?: boolean }
         is_sleeping?: boolean
       }
       const n = json?.default_generation_settings?.n_ctx
@@ -335,10 +334,6 @@ export default class llamacpp_extension extends AIEngine {
         totalSlots:
           typeof json.total_slots === 'number' ? json.total_slots : undefined,
         modelAlias: json.model_alias,
-        modalities: {
-          vision: !!json.modalities?.vision,
-          audio: !!json.modalities?.audio,
-        },
         isSleeping: !!json.is_sleeping,
       }
     } catch {
@@ -346,18 +341,22 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /**
-   * Returns the multimodal modalities advertised by the loaded model, or
-   * undefined when the model isn't loaded yet (so callers can probe again).
-   */
-  async getModelModalities(
-    modelId: string
-  ): Promise<{ vision: boolean; audio: boolean } | undefined> {
-    const props = await this.getModelProps(modelId)
-    if (!props) return undefined
-    return {
-      vision: !!props.modalities?.vision,
-      audio: !!props.modalities?.audio,
+  private async readMmprojCapabilities(
+    mmprojPath: string
+  ): Promise<{ vision: boolean; audio: boolean }> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullPath = await joinPath([janDataFolderPath, mmprojPath])
+      const meta = (await readGgufMetadata(fullPath)).metadata ?? {}
+      const truthy = (v: string | undefined) =>
+        typeof v === 'string' && v.toLowerCase() === 'true'
+      const vision = truthy(meta['clip.has_vision_encoder'])
+      const audio = truthy(meta['clip.has_audio_encoder'])
+      if (!vision && !audio) return { vision: true, audio: false }
+      return { vision, audio }
+    } catch (error) {
+      logger.warn('Failed to read mmproj capabilities:', error)
+      return { vision: true, audio: false }
     }
   }
 
@@ -1259,7 +1258,11 @@ export default class llamacpp_extension extends AIEngine {
 
       const capabilities: string[] = []
       if (modelConfig.mmproj_path) {
-        capabilities.push('vision')
+        const caps = await this.readMmprojCapabilities(
+          modelConfig.mmproj_path
+        )
+        if (caps.vision) capabilities.push('vision')
+        if (caps.audio) capabilities.push('audio')
       }
 
       const mp = modelConfig.model_path ?? ''

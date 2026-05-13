@@ -22,7 +22,6 @@ export interface ModelProps {
   nCtx: number
   totalSlots?: number
   modelAlias?: string
-  modalities?: { vision: boolean; audio: boolean }
   isSleeping?: boolean
 }
 

@@ -85,7 +85,6 @@ import {
   createDocumentAttachment,
   createAudioAttachment,
 } from '@/types/attachment'
-import { useModelModalities } from '@/hooks/useModelModalities'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
@@ -556,8 +555,7 @@ const ChatInput = memo(function ChatInput({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
-  const { modalities } = useModelModalities()
-  const audioSupported = !!modalities?.audio
+  const audioSupported = !!selectedModel?.capabilities?.includes('audio')
 
   const processNewDocumentAttachments = useCallback(
     async (docs: Attachment[]) => {

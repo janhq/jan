@@ -7,7 +7,6 @@ export interface ModelProps {
   nCtx: number
   totalSlots?: number
   modelAlias?: string
-  modalities?: { vision: boolean; audio: boolean }
   isSleeping?: boolean
 }
 
@@ -23,6 +22,7 @@ export interface TokenCountData {
   modelDisplayName?: string
   fitEnabled: boolean
   configuredCtxLen?: number
+  modalities?: { vision: boolean; audio: boolean }
   error?: string
 }
 
@@ -136,6 +136,11 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     )
     const modelDisplayName =
       modelProps?.modelAlias || selectedModel?.name || modelId
+    const caps = selectedModel?.capabilities ?? []
+    const modalities = {
+      vision: caps.includes('vision'),
+      audio: caps.includes('audio'),
+    }
 
     return {
       tokenCount,
@@ -149,6 +154,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
       modelDisplayName,
       fitEnabled,
       configuredCtxLen,
+      modalities,
     }
   }, [
     messages,
@@ -158,6 +164,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     loading,
     getProviderByName,
     selectedModel?.name,
+    selectedModel?.capabilities,
     selectedModel?.settings?.ctx_len?.controller_props?.value,
   ])
 

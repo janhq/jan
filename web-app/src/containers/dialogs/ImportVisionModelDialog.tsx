@@ -13,10 +13,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   IconLoader2,
-  IconEye,
+  IconSparkles,
+  IconPhoto,
+  IconMicrophone,
   IconCheck,
   IconAlertTriangle,
 } from '@tabler/icons-react'
+
+type DetectedModalities = { vision: boolean; audio: boolean }
 
 type ImportVisionModelDialogProps = {
   provider: ModelProvider
@@ -32,7 +36,7 @@ export const ImportVisionModelDialog = ({
   const serviceHub = useServiceHub()
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [isVisionModel, setIsVisionModel] = useState(false)
+  const [isMultimodal, setIsMultimodal] = useState(false)
   const [modelFile, setModelFile] = useState<string | null>(null)
   const [mmProjFile, setMmProjFile] = useState<string | null>(null)
   const [modelName, setModelName] = useState('')
@@ -42,6 +46,8 @@ export const ImportVisionModelDialog = ({
     string | null
   >(null)
   const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
+  const [detectedModalities, setDetectedModalities] =
+    useState<DetectedModalities | null>(null)
 
   const validateGgufFile = useCallback(
     async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
@@ -97,18 +103,26 @@ export const ImportVisionModelDialog = ({
               }
             )
 
-            // Check if architecture matches expected type
-            const architecture = (
+            const meta = (
               metadata as { metadata?: Record<string, string> }
-            ).metadata?.['general.architecture']
+            ).metadata
+            const architecture = meta?.['general.architecture']
 
-            // MMProj files MUST be clip
             if (architecture !== 'clip') {
-              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision processing.`
+              const errorMessage = `This MMProj file has "${architecture}" architecture but should have "clip" architecture. MMProj files must be CLIP models for vision or audio processing.`
               setMmprojValidationError(errorMessage)
+              setDetectedModalities(null)
               console.error(
                 'Non-CLIP architecture detected in mmproj file:',
                 architecture
+              )
+            } else {
+              const truthy = (v: string | undefined) =>
+                typeof v === 'string' && v.toLowerCase() === 'true'
+              const vision = truthy(meta?.['clip.has_vision_encoder'])
+              const audio = truthy(meta?.['clip.has_audio_encoder'])
+              setDetectedModalities(
+                vision || audio ? { vision, audio } : { vision: true, audio: false }
               )
             }
           } catch (directError) {
@@ -192,8 +206,8 @@ export const ImportVisionModelDialog = ({
       return
     }
 
-    if (isVisionModel && !mmProjFile) {
-      toast.error('Please select both model and MMPROJ files for vision models')
+    if (isMultimodal && !mmProjFile) {
+      toast.error('Please select both model and MMPROJ files for multimodal models')
       return
     }
 
@@ -217,7 +231,7 @@ export const ImportVisionModelDialog = ({
     setImporting(true)
 
     try {
-      if (isVisionModel && mmProjFile) {
+      if (isMultimodal && mmProjFile) {
         // Import vision model with both files - let backend calculate SHA256 and sizes
         await serviceHub.models().pullModel(
           modelName,
@@ -255,19 +269,19 @@ export const ImportVisionModelDialog = ({
     setModelFile(null)
     setMmProjFile(null)
     setModelName('')
-    setIsVisionModel(false)
+    setIsMultimodal(false)
     setValidationError(null)
     setIsValidating(false)
     setMmprojValidationError(null)
     setIsValidatingMmproj(false)
+    setDetectedModalities(null)
   }
 
-  // Re-validate MMProj file when model name changes
   useEffect(() => {
-    if (mmProjFile && modelName && isVisionModel) {
+    if (mmProjFile && modelName && isMultimodal) {
       validateMmprojFile(mmProjFile)
     }
-  }, [modelName, mmProjFile, isVisionModel, validateMmprojFile])
+  }, [modelName, mmProjFile, isMultimodal, validateMmprojFile])
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!importing) {
@@ -291,36 +305,34 @@ export const ImportVisionModelDialog = ({
             Import Model
           </DialogTitle>
           <DialogDescription>
-            Import a GGUF model file to add it to your collection. Enable vision
-            support for models that work with images.
+            Import a GGUF model file to add it to your collection. Enable
+            multimodal support to attach an mmproj for image or audio input.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Vision Model Toggle Card */}
           <div className="border  rounded-lg p-4 space-y-3">
             <div className="flex items-start space-x-3">
               <div className="shrink-0 mt-0.5">
-                <IconEye size={20} className="text-muted-foreground" />
+                <IconSparkles size={20} className="text-muted-foreground" />
               </div>
               <div className="flex-1">
-                <h3 className="font-medium">
-                  Vision Model Support
-                </h3>
+                <h3 className="font-medium">Multimodal Support</h3>
                 <p className="text-sm text-muted-foreground leading-normal">
-                  Enable if your model supports image understanding (requires
-                  MMPROJ file)
+                  Enable if your model uses an mmproj for image or audio input.
+                  Modalities are detected from the projector file.
                 </p>
               </div>
               <Switch
-                id="vision-model"
-                checked={isVisionModel}
+                id="multimodal"
+                checked={isMultimodal}
                 onCheckedChange={(checked) => {
-                  setIsVisionModel(checked)
+                  setIsMultimodal(checked)
                   if (!checked) {
                     setMmProjFile(null)
                     setMmprojValidationError(null)
                     setIsValidatingMmproj(false)
+                    setDetectedModalities(null)
                   }
                 }}
                 className="mt-1"
@@ -436,13 +448,12 @@ export const ImportVisionModelDialog = ({
               )}
             </div>
 
-            {/* MMPROJ File Selection - only show if vision model is enabled */}
-            {isVisionModel && (
+            {isMultimodal && (
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium">MMPROJ File</h3>
                   <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
-                    Required for Vision
+                    Required for Multimodal
                   </span>
                 </div>
 
@@ -477,6 +488,27 @@ export const ImportVisionModelDialog = ({
                           Change
                         </Button>
                       </div>
+                      {!isValidatingMmproj &&
+                        !mmprojValidationError &&
+                        detectedModalities && (
+                          <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                            <span className="text-xs text-muted-foreground">
+                              Detected:
+                            </span>
+                            {detectedModalities.vision && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-secondary px-2 py-0.5 rounded-sm">
+                                <IconPhoto size={12} />
+                                Vision
+                              </span>
+                            )}
+                            {detectedModalities.audio && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-secondary px-2 py-0.5 rounded-sm">
+                                <IconMicrophone size={12} />
+                                Audio
+                              </span>
+                            )}
+                          </div>
+                        )}
                     </div>
 
                     {/* MMProj Validation Error Display */}
@@ -546,7 +578,7 @@ export const ImportVisionModelDialog = ({
               importing ||
               !modelFile ||
               !modelName ||
-              (isVisionModel && !mmProjFile) ||
+              (isMultimodal && !mmProjFile) ||
               validationError !== null ||
               isValidating ||
               mmprojValidationError !== null ||
@@ -554,11 +586,7 @@ export const ImportVisionModelDialog = ({
             }
           >
             {importing && <IconLoader2 className="mr-2 size-4 animate-spin" />}
-            {importing ? (
-              'Importing...'
-            ) : (
-              <>Import {isVisionModel ? 'Vision ' : ''}Model</>
-            )}
+            {importing ? 'Importing...' : 'Import Model'}
           </Button>
         </div>
       </DialogContent>

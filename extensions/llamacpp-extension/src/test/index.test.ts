@@ -132,6 +132,7 @@ describe('llamacpp_extension', () => {
           port: 0,
           sizeBytes: 1000000,
           embedding: false,
+          imported: false,
           capabilities: undefined,
         }
       ])
