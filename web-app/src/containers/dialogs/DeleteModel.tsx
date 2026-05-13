@@ -94,9 +94,9 @@ export const DialogDeleteModel = ({
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Tooltip>
-          <TooltipTrigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
             <div
               role="button"
               tabIndex={0}
@@ -105,12 +105,12 @@ export const DialogDeleteModel = ({
             >
               <IconTrash size={18} className="text-muted-foreground" />
             </div>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('providers:deleteModel.delete')}</p>
-          </TooltipContent>
-        </Tooltip>
-      </DialogTrigger>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{t('providers:deleteModel.delete')}</p>
+        </TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
