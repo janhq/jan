@@ -1102,7 +1102,20 @@ function ProviderDetail() {
                 }
               >
                 {provider?.models.length ? (
-                  (isLlamacpp ? chatModels : allModels).map((model, modelIndex) => {
+                  <>
+                  {isLlamacpp && embeddingModels.length > 0 && chatModels.length > 0 && (
+                    <div
+                      role="separator"
+                      aria-label={t('providers:chatModels')}
+                      className="mt-1 mb-3 flex items-center gap-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t('providers:chatModels')}
+                      </span>
+                      <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
+                    </div>
+                  )}
+                  {(isLlamacpp ? chatModels : allModels).map((model, modelIndex) => {
                     const capabilities = model.capabilities || []
                     return (
                       <CardItem
@@ -1191,7 +1204,8 @@ function ProviderDetail() {
                         }
                       />
                     )
-                  })
+                  })}
+                  </>
                 ) : (
                   <div className="-mt-2">
                     <div className="flex items-center gap-2">
@@ -1234,8 +1248,13 @@ function ProviderDetail() {
                     <div
                       role="separator"
                       aria-label={t('providers:embeddingModels')}
-                      className="my-2 h-px bg-main-view-fg/10"
-                    />
+                      className="mt-5 mb-3 flex items-center gap-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t('providers:embeddingModels')}
+                      </span>
+                      <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
+                    </div>
                     {embeddingModels.map((model, modelIndex) => {
                       const isDefault = defaultEmbeddingModelId === model.id
                       return (

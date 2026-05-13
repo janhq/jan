@@ -4,6 +4,7 @@
   "noNewModels": "No new models found. All available models are already added.",
   "refreshModelsFailed": "Failed to fetch models from {{provider}}. Please check your API key and base URL.",
   "models": "Models",
+  "chatModels": "Chat Models",
   "embeddingModels": "Embedding Models",
   "embeddingModelsDesc": "Used for RAG and vector search. The selected model becomes the default when generating embeddings.",
   "embeddingModelDefault": "Default",
