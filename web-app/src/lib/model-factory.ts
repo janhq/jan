@@ -62,6 +62,7 @@ import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
+import { useAppState } from '@/hooks/useAppState'
 
 /**
  * Llama.cpp timings structure from the response
@@ -73,8 +74,16 @@ interface LlamaCppTimings {
   prompt_per_second?: number
 }
 
+interface LlamaCppPromptProgress {
+  total?: number
+  cache?: number
+  processed?: number
+  time_ms?: number
+}
+
 interface LlamaCppChunk {
   timings?: LlamaCppTimings
+  prompt_progress?: LlamaCppPromptProgress
 }
 
 /**
@@ -105,6 +114,19 @@ const providerMetadataExtractor: MetadataExtractor = {
         const chunk = parsedChunk as LlamaCppChunk
         if (chunk?.timings) {
           lastTimings = chunk.timings
+        }
+        const pp = chunk?.prompt_progress
+        if (
+          pp &&
+          typeof pp.total === 'number' &&
+          typeof pp.processed === 'number'
+        ) {
+          useAppState.getState().updatePromptProgress({
+            total: pp.total,
+            processed: pp.processed,
+            cache: pp.cache ?? 0,
+            time_ms: pp.time_ms ?? 0,
+          })
         }
       },
       buildMetadata: () => {
@@ -173,6 +195,9 @@ function createCustomFetch(
       }
 
       const merged = { ...body, ...normalised }
+      if (keepLlamacppOnly && merged.stream === true) {
+        merged.return_progress = true
+      }
       decodeAudioSentinelsInBody(merged)
       init = { ...init, body: JSON.stringify(merged) }
     }

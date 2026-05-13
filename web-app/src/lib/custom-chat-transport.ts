@@ -18,6 +18,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
 import {
   ExtensionTypeEnum,
@@ -631,8 +632,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
-    // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
+    useAppState.getState().updatePromptProgress(undefined)
 
     const result = streamText({
       model: this.model,
@@ -702,6 +703,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
+        useAppState.getState().updatePromptProgress(undefined)
         const errorMessage = error == null
           ? 'Unknown error'
           : typeof error === 'string'
@@ -713,7 +715,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return errorMessage
       },
       onFinish: ({ responseMessage }) => {
-        // Call the token usage callback with usage data when stream completes
+        useAppState.getState().updatePromptProgress(undefined)
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>
