@@ -38,7 +38,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: hoisted.invoke,
 }))
 
-import { ImportVisionModelDialog } from '../ImportVisionModelDialog'
+import { ImportLlamacppModelDialog } from '../ImportLlamacppModelDialog'
 
 const provider = { models: [] } as unknown as any
 
@@ -46,7 +46,7 @@ const openDialog = () => {
   fireEvent.click(screen.getByText('Open'))
 }
 
-describe('ImportVisionModelDialog', () => {
+describe('ImportLlamacppModelDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     hoisted.validateGgufFile.mockResolvedValue({
@@ -60,7 +60,7 @@ describe('ImportVisionModelDialog', () => {
 
   it('renders the trigger and opens the dialog content', () => {
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -72,7 +72,7 @@ describe('ImportVisionModelDialog', () => {
 
   it('shows Select MMPROJ File when the vision switch is enabled', () => {
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -85,7 +85,7 @@ describe('ImportVisionModelDialog', () => {
 
   it('toasts an error when Import is clicked with no model file selected', () => {
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -101,7 +101,7 @@ describe('ImportVisionModelDialog', () => {
     hoisted.dialogOpen.mockResolvedValueOnce('/tmp/model.gguf')
     hoisted.basename.mockReturnValueOnce('model.gguf')
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -124,7 +124,7 @@ describe('ImportVisionModelDialog', () => {
       metadata: { metadata: { 'general.architecture': 'clip' } },
     })
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -142,7 +142,7 @@ describe('ImportVisionModelDialog', () => {
       models: [{ name: 'dup.gguf' }],
     } as unknown as any
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={providerWithModel}
         trigger={<button>Open</button>}
       />
@@ -171,7 +171,7 @@ describe('ImportVisionModelDialog', () => {
     hoisted.pullModel.mockResolvedValueOnce(undefined)
     const onSuccess = vi.fn()
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
         onSuccess={onSuccess}
@@ -204,7 +204,7 @@ describe('ImportVisionModelDialog', () => {
     hoisted.dialogOpen.mockResolvedValueOnce('/tmp/fail.gguf')
     hoisted.pullModel.mockRejectedValueOnce(new Error('boom'))
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -228,7 +228,7 @@ describe('ImportVisionModelDialog', () => {
   it('renders the MMPROJ file chip after selection', async () => {
     hoisted.dialogOpen.mockResolvedValueOnce('/tmp/mmproj.gguf')
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -254,7 +254,7 @@ describe('ImportVisionModelDialog', () => {
       metadata: { 'general.architecture': 'llama' },
     })
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />
@@ -269,7 +269,7 @@ describe('ImportVisionModelDialog', () => {
 
   it('Cancel button closes the dialog', async () => {
     render(
-      <ImportVisionModelDialog
+      <ImportLlamacppModelDialog
         provider={provider}
         trigger={<button>Open</button>}
       />

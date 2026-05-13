@@ -18,21 +18,52 @@ import {
   IconMicrophone,
   IconCheck,
   IconAlertTriangle,
+  IconCodeCircle2,
 } from '@tabler/icons-react'
 
 type DetectedModalities = { vision: boolean; audio: boolean }
 
-type ImportVisionModelDialogProps = {
+const EMBEDDING_GGUF_ARCHS = new Set([
+  'bert',
+  'nomic-bert',
+  'nomic-bert-moe',
+  'jina-bert-v2',
+  'jina-bert-v3',
+  'xlm-roberta',
+  'mpnet',
+  't5encoder',
+  'gemma-embedding',
+  'pangu-embedded',
+  'llama-embed',
+])
+
+function detectEmbeddingFromMetadata(
+  meta: Record<string, string> | undefined
+): boolean {
+  if (!meta) return false
+  const arch = meta['general.architecture']
+  if (typeof arch !== 'string') return false
+  if (EMBEDDING_GGUF_ARCHS.has(arch)) return true
+  if (arch.toLowerCase().includes('embed')) return true
+  const poolingRaw = meta[`${arch}.pooling_type`]
+  if (typeof poolingRaw === 'string' && poolingRaw.length > 0) {
+    const n = Number(poolingRaw)
+    if (Number.isFinite(n) && n > 0) return true
+  }
+  return false
+}
+
+type ImportLlamacppModelDialogProps = {
   provider: ModelProvider
   trigger?: React.ReactNode
   onSuccess?: (importedModelName?: string) => void
 }
 
-export const ImportVisionModelDialog = ({
+export const ImportLlamacppModelDialog = ({
   provider,
   trigger,
   onSuccess,
-}: ImportVisionModelDialogProps) => {
+}: ImportLlamacppModelDialogProps) => {
   const serviceHub = useServiceHub()
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -48,6 +79,7 @@ export const ImportVisionModelDialog = ({
   const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
   const [detectedModalities, setDetectedModalities] =
     useState<DetectedModalities | null>(null)
+  const [isEmbeddingModel, setIsEmbeddingModel] = useState(false)
 
   const validateGgufFile = useCallback(
     async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
@@ -73,7 +105,18 @@ export const ImportVisionModelDialog = ({
 
               setModelName(await serviceHub.path().basename(filePath))
 
-              // Model files should NOT be clip
+              const embedding = detectEmbeddingFromMetadata(
+                result.metadata.metadata
+              )
+              setIsEmbeddingModel(embedding)
+              if (embedding) {
+                setIsMultimodal(false)
+                setMmProjFile(null)
+                setMmprojValidationError(null)
+                setIsValidatingMmproj(false)
+                setDetectedModalities(null)
+              }
+
               if (architecture === 'clip') {
                 const errorMessage =
                   'This model has CLIP architecture and cannot be imported as a text generation model. CLIP models are designed for vision tasks and require different handling.'
@@ -275,6 +318,7 @@ export const ImportVisionModelDialog = ({
     setMmprojValidationError(null)
     setIsValidatingMmproj(false)
     setDetectedModalities(null)
+    setIsEmbeddingModel(false)
   }
 
   useEffect(() => {
@@ -307,6 +351,7 @@ export const ImportVisionModelDialog = ({
           <DialogDescription>
             Import a GGUF model file to add it to your collection. Enable
             multimodal support to attach an mmproj for image or audio input.
+            Embedding models are detected automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -326,6 +371,7 @@ export const ImportVisionModelDialog = ({
               <Switch
                 id="multimodal"
                 checked={isMultimodal}
+                disabled={isEmbeddingModel}
                 onCheckedChange={(checked) => {
                   setIsMultimodal(checked)
                   if (!checked) {
@@ -430,6 +476,21 @@ export const ImportVisionModelDialog = ({
                         />
                         <p className="text-sm text-blue-700">
                           Validating model file...
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!isValidating && !validationError && isEmbeddingModel && (
+                    <div className="border rounded-lg p-3 flex items-start gap-2">
+                      <IconCodeCircle2 size={16} className="mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium">
+                          Embedding model detected
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          This model will be imported for embeddings only.
+                          Multimodal options are disabled.
                         </p>
                       </div>
                     </div>
