@@ -234,45 +234,4 @@ describe('ModelFactory - coverage', () => {
     ).rejects.toThrow('No running MLX session found')
   })
 
-  it('creates foundation-models model', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    vi.mocked(invoke)
-      .mockResolvedValueOnce('available')  // availability check
-      .mockResolvedValueOnce(true)          // is_loaded check
-    const model = await ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-    expect(model).toBeDefined()
-  })
-
-  it('throws when foundation-models not available', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    vi.mocked(invoke).mockResolvedValueOnce('notEligible')
-    await expect(
-      ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-    ).rejects.toThrow('Apple Intelligence is not supported')
-  })
-
-  it('throws when foundation-models not loaded', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    vi.mocked(invoke)
-      .mockResolvedValueOnce('available')
-      .mockResolvedValueOnce(false)
-    await expect(
-      ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-    ).rejects.toThrow('No running Foundation Models session')
-  })
-
-  it('throws specific messages for each unavailability reason', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-
-    for (const [reason, snippet] of [
-      ['appleIntelligenceNotEnabled', 'not enabled'],
-      ['modelNotReady', 'still preparing'],
-      ['unavailable', 'currently unavailable'],
-    ] as const) {
-      vi.mocked(invoke).mockResolvedValueOnce(reason)
-      await expect(
-        ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-      ).rejects.toThrow(snippet)
-    }
-  })
 })

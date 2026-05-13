@@ -11,6 +11,8 @@
   "general": "通用",
   "settings": "设置",
   "modelProviders": "模型提供商",
+  "localProviders": "本地",
+  "remoteProviders": "远程",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "外观",
