@@ -134,6 +134,8 @@ export default class llamacpp_extension extends AIEngine {
 
   private routerPort?: number
   private routerApiKey?: string
+  private userModelsMax: number = 1
+  private loadedChatOrder: string[] = []
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -223,7 +225,7 @@ export default class llamacpp_extension extends AIEngine {
 
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
-    const presetPath = await generatePreset(
+    const { path: presetPath, embeddingCount } = await generatePreset(
       providerPath,
       janDataFolderPath,
       this.config
@@ -244,6 +246,15 @@ export default class llamacpp_extension extends AIEngine {
     else if (typeof rawMax === 'string' && rawMax.trim().length > 0) {
       const n = parseInt(rawMax, 10)
       if (!Number.isNaN(n) && n >= 0) modelsMax = n
+    }
+    // Reserve extra slots for embedding models so loading an embedder doesn't
+    // evict the user's chat model. `models_max` governs chat models only;
+    // Jan pre-evicts the oldest chat model in `performLoad` so the router's
+    // LRU never picks the embedding. 0 (unlimited) stays unlimited.
+    const userModelsMax = modelsMax
+    this.userModelsMax = userModelsMax
+    if (modelsMax > 0 && embeddingCount > 0) {
+      modelsMax += embeddingCount
     }
 
     // Defensive: if a router is already running (hot reload / dev), stop it
@@ -275,7 +286,7 @@ export default class llamacpp_extension extends AIEngine {
     this.routerPort = info.port
     this.routerApiKey = info.api_key
     logger.info(
-      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, preset=${presetPath})`
+      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingCount} embedding], preset=${presetPath})`
     )
   }
 
@@ -1848,11 +1859,61 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
+    if (!isEmbedding) {
+      await this.evictChatIfAtCapacity(modelId)
+    }
+
     try {
-      return await loadLlamaModel(modelId, isEmbedding)
+      const info = await loadLlamaModel(modelId, isEmbedding)
+      if (!isEmbedding) {
+        this.loadedChatOrder = this.loadedChatOrder.filter((m) => m !== modelId)
+        this.loadedChatOrder.push(modelId)
+      }
+      return info
     } catch (error) {
       logger.error('Error in load command:\n', error)
       throw error
+    }
+  }
+
+  /**
+   * Enforce `userModelsMax` against chat models only. Reconciles the local
+   * FIFO against the router's loaded set, then unloads the oldest chat model
+   * if loading `incomingModelId` would exceed the user-configured cap.
+   */
+  private async evictChatIfAtCapacity(incomingModelId: string): Promise<void> {
+    if (this.userModelsMax <= 0) return // unlimited
+
+    let loaded: string[] = []
+    try {
+      loaded = await this.getLoadedModels()
+    } catch {
+      // If we can't introspect, fall back to the local FIFO — better to
+      // over-evict than to violate the cap.
+      loaded = [...this.loadedChatOrder]
+    }
+    const loadedSet = new Set(loaded)
+    this.loadedChatOrder = this.loadedChatOrder.filter(
+      (m) => loadedSet.has(m) && m !== incomingModelId
+    )
+
+    while (this.loadedChatOrder.length >= this.userModelsMax) {
+      const victim = this.loadedChatOrder.shift()
+      if (!victim) break
+      try {
+        const result = await unloadLlamaModel(victim)
+        if (!result.success) {
+          logger.warn(
+            `Pre-eviction of ${victim} reported failure: ${result.error}`
+          )
+        } else {
+          logger.info(
+            `Pre-evicted chat model ${victim} to make room for ${incomingModelId}`
+          )
+        }
+      } catch (e) {
+        logger.warn(`Pre-eviction of ${victim} threw:`, e)
+      }
     }
   }
 
@@ -1864,6 +1925,7 @@ export default class llamacpp_extension extends AIEngine {
     try {
       const result = await unloadLlamaModel(modelId)
       if (result.success) {
+        this.loadedChatOrder = this.loadedChatOrder.filter((m) => m !== modelId)
         logger.info(`Successfully unloaded model ${modelId}`)
       } else {
         logger.warn(`Failed to unload model ${modelId}: ${result.error}`)

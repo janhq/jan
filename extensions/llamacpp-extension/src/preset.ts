@@ -45,7 +45,7 @@ export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
   config: LlamacppConfig
-): Promise<string> {
+): Promise<{ path: string; embeddingCount: number }> {
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -133,6 +133,7 @@ export async function generatePreset(
   lines.push('')
 
   // ---------- per-model sections ----------
+  let embeddingCount = 0
   for (const { modelId, configPath } of modelEntries) {
     let mc: ModelYaml
     try {
@@ -184,6 +185,7 @@ export async function generatePreset(
     }
 
     if (mc.embedding === true) {
+      embeddingCount++
       lines.push('embeddings = true')
       const pooling =
         typeof mc.pooling === 'string' && mc.pooling.length > 0
@@ -233,5 +235,5 @@ export async function generatePreset(
     }
   }
 
-  return outPath
+  return { path: outPath, embeddingCount }
 }
