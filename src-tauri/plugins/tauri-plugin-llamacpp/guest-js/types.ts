@@ -66,6 +66,8 @@ export type LlamacppConfig = {
   rope_freq_scale: number
   ctx_shift: boolean
   parallel: number
+  /** Folder name under llamacpp/models used for RAG/file embeddings; empty = auto */
+  embedding_model_id: string
   reasoning: string
   cache_ram: number
   cache_reuse: number

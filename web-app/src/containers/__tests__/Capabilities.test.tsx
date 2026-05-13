@@ -16,7 +16,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconTool: () => <div data-testid="icon-tool">Tool Icon</div>,
   IconAtom: () => <div data-testid="icon-atom">Atom Icon</div>,
   IconWorld: () => <div data-testid="icon-world">World Icon</div>,
-  IconCodeCircle2: () => <div data-testid="icon-code">Code Icon</div>,
+  IconCircles: () => <div data-testid="icon-circles">Circles Icon</div>,
 }))
 
 describe('Capabilities', () => {
@@ -48,11 +48,11 @@ describe('Capabilities', () => {
     expect(worldIcon).toBeInTheDocument()
   })
 
-  it('should render embeddings capability with code icon', () => {
+  it('should render embeddings capability with circles icon', () => {
     render(<Capabilities capabilities={['embeddings']} />)
 
-    const codeIcon = screen.getByTestId('icon-code')
-    expect(codeIcon).toBeInTheDocument()
+    const circlesIcon = screen.getByTestId('icon-circles')
+    expect(circlesIcon).toBeInTheDocument()
   })
 
   it('should render multiple capabilities', () => {
@@ -70,7 +70,7 @@ describe('Capabilities', () => {
     expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
     expect(screen.getByTestId('icon-atom')).toBeInTheDocument()
     expect(screen.getByTestId('icon-world')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-code')).toBeInTheDocument()
+    expect(screen.getByTestId('icon-circles')).toBeInTheDocument()
   })
 
   it('should handle empty capabilities array', () => {

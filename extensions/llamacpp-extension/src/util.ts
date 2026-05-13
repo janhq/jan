@@ -107,6 +107,38 @@ export function getProxyConfig(): Record<
   }
 }
 
+// --- RAG embedding model selection (testable without extension I/O) ---
+
+/** Bundled default id when no local embedding model exists */
+export const DEFAULT_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
+
+/**
+ * Resolve which llama.cpp model id to use for embeddings.
+ * @param configuredTrimmed - non-empty = user override from settings
+ * @param models - output of list() (id + embedding flag)
+ */
+export function resolveEmbeddingModelIdFromModels(
+  configuredTrimmed: string,
+  models: Array<{ id: string; embedding?: boolean }>
+): string {
+  if (configuredTrimmed) {
+    return configuredTrimmed
+  }
+
+  const embeddingModels = models
+    .filter((m) => m.embedding === true)
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+  if (embeddingModels.length === 0) {
+    return DEFAULT_EMBEDDING_MODEL_ID
+  }
+
+  const preferred = embeddingModels.find(
+    (m) => m.id === DEFAULT_EMBEDDING_MODEL_ID
+  )
+  return (preferred ?? embeddingModels[0]).id
+}
+
 // --- Embedding batching helpers ---
 
 export type EmbedBatch = { batch: string[]; offset: number }
