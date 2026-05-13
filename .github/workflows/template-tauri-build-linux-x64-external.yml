@@ -20,6 +20,9 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+    secrets:
+      JAN_SIGNING_KEY:
+        required: false
 jobs:
   build-linux-x64-external:
     runs-on: ubuntu-22.04
@@ -137,6 +140,8 @@ jobs:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
           TAURI_TRAY: libappindicator3
+          # release jan-cli build; fork/external workflows often have no repo secret
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

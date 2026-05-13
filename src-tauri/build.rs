@@ -1,4 +1,6 @@
 fn main() {
+    configure_jan_signing_key();
+
     #[cfg(not(feature = "cli"))]
     {
         tauri_build::build();
@@ -29,4 +31,23 @@ fn main() {
             }
         }
     }
+}
+
+/// Exposes `JAN_SIGNING_KEY` to the crate via `env!` (`cargo:rustc-env`). Cargo does not pass
+/// arbitrary host env vars through to `rustc`, so `option_env!` alone cannot read CI secrets.
+fn configure_jan_signing_key() {
+    println!("cargo:rerun-if-env-changed=JAN_SIGNING_KEY");
+
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    let signing_key = std::env::var("JAN_SIGNING_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .unwrap_or_else(|| {
+            if profile == "release" {
+                panic!("JAN_SIGNING_KEY must be set to a non-empty value for release builds");
+            }
+            "local-dev-test-key-not-for-production".to_string()
+        });
+
+    println!("cargo:rustc-env=JAN_SIGNING_KEY={signing_key}");
 }

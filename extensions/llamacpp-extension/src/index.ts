@@ -63,6 +63,8 @@ import {
   handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+import { BackendPreferenceStore } from './backend-preference-store'
+import { parseBuildNumber } from './version-utils'
 
 // Error message constant - matches web-app/src/utils/error.ts
 
@@ -90,15 +92,6 @@ const logger = {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-
-/**
- * Parse the build number from a llama.cpp version string like "b6325".
- * Returns the numeric portion, or null if the format doesn't match.
- */
-function parseBuildNumber(version: string): number | null {
-  const match = version.match(/^b(\d+)$/)
-  return match ? parseInt(match[1], 10) : null
-}
 
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
@@ -129,6 +122,10 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
+  private readonly backendPreferenceStore = new BackendPreferenceStore(
+    (...args) => logger.info(...args),
+    (...args) => logger.warn(...args)
+  )
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -186,30 +183,15 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private getStoredBackendType(): string | null {
-    try {
-      return localStorage.getItem('llama_cpp_backend_type')
-    } catch (error) {
-      logger.warn('Failed to read backend type from localStorage:', error)
-      return null
-    }
+    return this.backendPreferenceStore.getStoredBackendType()
   }
 
   private setStoredBackendType(backendType: string): void {
-    try {
-      localStorage.setItem('llama_cpp_backend_type', backendType)
-      logger.info(`Stored backend type preference: ${backendType}`)
-    } catch (error) {
-      logger.warn('Failed to store backend type in localStorage:', error)
-    }
+    this.backendPreferenceStore.setStoredBackendType(backendType)
   }
 
   private clearStoredBackendType(): void {
-    try {
-      localStorage.removeItem('llama_cpp_backend_type')
-      logger.info('Cleared stored backend type preference')
-    } catch (error) {
-      logger.warn('Failed to clear backend type from localStorage:', error)
-    }
+    this.backendPreferenceStore.clearStoredBackendType()
   }
 
   private async migrateKvCacheDefaults(): Promise<void> {

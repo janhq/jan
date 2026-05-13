@@ -559,18 +559,6 @@
           "markdownDescription": "Denies the handle_setting_update command without any pre-configured scope."
         },
         {
-          "description": "Enables the init_native_backend command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-init-native-backend",
-          "markdownDescription": "Enables the init_native_backend command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the init_native_backend command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-init-native-backend",
-          "markdownDescription": "Denies the init_native_backend command without any pre-configured scope."
-        },
-        {
           "description": "Enables the is_cuda_installed command without any pre-configured scope.",
           "type": "string",
           "const": "allow-is-cuda-installed",
@@ -641,90 +629,6 @@
           "type": "string",
           "const": "deny-map-old-backend-to-new",
           "markdownDescription": "Denies the map_old_backend_to_new command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_chat_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-chat-completion",
-          "markdownDescription": "Enables the native_chat_completion command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_chat_completion command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-chat-completion",
-          "markdownDescription": "Denies the native_chat_completion command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_chat_template command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-chat-template",
-          "markdownDescription": "Enables the native_chat_template command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_chat_template command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-chat-template",
-          "markdownDescription": "Denies the native_chat_template command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_detokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-detokenize",
-          "markdownDescription": "Enables the native_detokenize command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_detokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-detokenize",
-          "markdownDescription": "Denies the native_detokenize command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_embeddings command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-embeddings",
-          "markdownDescription": "Enables the native_embeddings command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_embeddings command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-embeddings",
-          "markdownDescription": "Denies the native_embeddings command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_model_metadata command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-model-metadata",
-          "markdownDescription": "Enables the native_model_metadata command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_model_metadata command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-model-metadata",
-          "markdownDescription": "Denies the native_model_metadata command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_system_info command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-system-info",
-          "markdownDescription": "Enables the native_system_info command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_system_info command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-system-info",
-          "markdownDescription": "Denies the native_system_info command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the native_tokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-native-tokenize",
-          "markdownDescription": "Enables the native_tokenize command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the native_tokenize command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-native-tokenize",
-          "markdownDescription": "Denies the native_tokenize command without any pre-configured scope."
         },
         {
           "description": "Enables the parse_backend_version command without any pre-configured scope.",

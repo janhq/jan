@@ -1,7 +1,7 @@
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
-use crate::core::updater::hmac_client::SignedRequestHeaders;
+use crate::core::updater::hmac_client::{BUILD_TIME_SIGNING_KEY, SignedRequestHeaders};
 use crate::core::updater::session::get_session_id;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -39,14 +39,6 @@ fn get_mirror_prefix() -> &'static str {
         JAN_MIRROR_PREFIX_STABLE
     }
 }
-
-/// Secret key for HMAC request authentication
-/// - In CI: Set JAN_SIGNING_KEY environment variable at build time
-/// - In local dev: Falls back to a test key
-const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
-    Some(key) => key,
-    None => "local-dev-test-key-not-for-production",
-};
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -775,7 +767,7 @@ async fn _get_maybe_resume_with_hmac(
     // Generate HMAC headers for request authentication
     let nonce_seed = get_download_nonce_seed();
     let app_version = get_app_version();
-    let signed_headers = SignedRequestHeaders::new(SECRET_KEY, &nonce_seed, app_version);
+    let signed_headers = SignedRequestHeaders::new(BUILD_TIME_SIGNING_KEY, &nonce_seed, app_version);
 
     let mut request = if start_bytes > 0 {
         client
