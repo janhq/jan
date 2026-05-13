@@ -12,7 +12,7 @@ import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { IconEye, IconSquareCheck } from '@tabler/icons-react'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
 
@@ -254,6 +254,12 @@ function SetupScreen() {
     }
   }, [defaultVariant, downloadProcesses])
 
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0'
+    const gb = bytes / (1024 * 1024 * 1024)
+    return gb.toFixed(1)
+  }
+
   const isDownloaded = useMemo(() => {
     if (!defaultVariant) return false
     return llamaProvider?.models.some(
@@ -455,20 +461,7 @@ function SetupScreen() {
                                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                               />
                             </svg>
-                            <span>
-                              {formatBytes(downloadedSize.current, {
-                                hideUnit: true,
-                                minUnit: 'GB',
-                                decimals: (value) => (value === 0 ? 0 : 1),
-                              })}{' '}
-                              /{' '}
-                              {formatBytes(downloadedSize.total, {
-                                hideUnit: true,
-                                minUnit: 'GB',
-                                decimals: (value) => (value === 0 ? 0 : 1),
-                              })}
-                              GB
-                            </span>
+                            <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
                           </div>
                         )}
 

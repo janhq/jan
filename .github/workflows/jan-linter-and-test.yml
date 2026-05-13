@@ -34,6 +34,10 @@ on:
       - 'web-app/**'
       - '!README.md'
 
+# Dev/test key for CI debug builds (build.rs injects via cargo:rustc-env).
+env:
+  JAN_SIGNING_KEY: ci-test-key-not-for-production
+
 jobs:
   base_branch_cov:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository

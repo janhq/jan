@@ -9,6 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Signing key injected at compile time via `build.rs` (`cargo:rustc-env`).
+pub const BUILD_TIME_SIGNING_KEY: &str = env!("JAN_SIGNING_KEY");
+
 /// Header names for request signing
 pub struct HeaderNames;
 

@@ -74,7 +74,7 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: create latest.json file
         run: |

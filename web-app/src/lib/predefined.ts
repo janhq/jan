@@ -12,12 +12,11 @@ export const modelSettings = {
   ctx_len: {
     key: 'ctx_len',
     title: 'Context Size',
-    description:
-      'Size of the prompt context. Leave empty to auto-fit when --fit is on, or fall back to 4096 when off.',
+    description: 'Size of the prompt context (0 = loaded from model).',
     controller_type: 'input',
     controller_props: {
-      value: '',
-      placeholder: 'auto',
+      value: 8192,
+      placeholder: '8192',
       type: 'number',
     },
   },
@@ -196,21 +195,6 @@ export const modelSettings = {
       placeholder: '2048',
       type: 'number',
       textAlign: 'right',
-    },
-  },
-  reasoning: {
-    key: 'reasoning',
-    title: 'Reasoning',
-    description:
-      "Use reasoning/thinking in the chat. 'auto' detects from the chat template.",
-    controller_type: 'dropdown',
-    controller_props: {
-      value: 'auto',
-      options: [
-        { value: 'auto', name: 'Auto' },
-        { value: 'on', name: 'On' },
-        { value: 'off', name: 'Off' },
-      ],
     },
   },
 }
