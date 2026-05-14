@@ -90,8 +90,7 @@ export function ModelSetting({
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe' ||
-        key === 'reasoning'
+        key === 'n_cpu_moe'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -105,6 +104,28 @@ export function ModelSetting({
       }
     }
   }
+
+  const handleEngineSettingChange = (
+    key: string,
+    value: string | boolean | number
+  ) => {
+    if (!provider) return
+    const newSettings = provider.settings.map((s) =>
+      s.key === key
+        ? {
+            ...s,
+            controller_props: { ...s.controller_props, value },
+          }
+        : s
+    )
+    serviceHub.providers().updateSettings(provider.provider, newSettings)
+    updateProvider(provider.provider, { settings: newSettings })
+  }
+
+  const fitEnabled =
+    provider.settings?.find((s) => s.key === 'fit')?.controller_props?.value ===
+    true
+  const fitCtxSetting = provider.settings?.find((s) => s.key === 'fit_ctx')
 
   return (
     <Sheet>
@@ -126,24 +147,42 @@ export function ModelSetting({
         </SheetHeader>
 
         <div className="px-4 space-y-8 pb-4">
-          {Object.entries(model.settings || {})
+          {fitEnabled && fitCtxSetting && (
+            <div key="fit_ctx" className="space-y-2">
+              <div className="flex items-start justify-between gap-8">
+                <div className="mb-1 truncate">
+                  <span title={fitCtxSetting.title} className="font-medium">
+                    {fitCtxSetting.title}
+                  </span>
+                </div>
+                <DynamicControllerSetting
+                  key={fitCtxSetting.key}
+                  title={fitCtxSetting.title}
+                  description={fitCtxSetting.description}
+                  controllerType={fitCtxSetting.controller_type}
+                  controllerProps={fitCtxSetting.controller_props}
+                  onChange={(newValue) =>
+                    handleEngineSettingChange('fit_ctx', newValue)
+                  }
+                />
+              </div>
+              <p className="text-muted-foreground leading-normal text-xs">
+                {fitCtxSetting.description}
+              </p>
+            </div>
+          )}
+          {(() => {
+            return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc
             if (entry[0] === 'reasoning') return acc
+            if (fitEnabled && entry[0] === 'ctx_len') return acc
             if (entry[0] === 'ctx_len') {
               const autoIncrease = Object.entries(model.settings || {}).find(
                 ([k]) => k === 'auto_increase_ctx_len'
               )
               if (autoIncrease) acc.push(autoIncrease)
             }
-            acc.push(entry)
-            return acc
-          }, [])
-          .reduce<[string, unknown][]>((acc, entry) => {
-            const reasoning = Object.entries(model.settings || {}).find(
-              ([k]) => k === 'reasoning'
-            )
-            if (reasoning && acc.length === 0) acc.push(reasoning)
             acc.push(entry)
             return acc
           }, [])
@@ -187,7 +226,8 @@ export function ModelSetting({
                 </p>
               </div>
             )
-          })}
+          })
+          })()}
         </div>
       </SheetContent>
     </Sheet>

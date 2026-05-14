@@ -8,6 +8,10 @@ vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(),
 }))
 
+vi.mock('@tanstack/react-router', () => ({
+  useParams: () => undefined,
+}))
+
 const mockUseAppState = useAppState as ReturnType<typeof vi.fn>
 
 describe('PromptProgress', () => {
@@ -23,7 +27,9 @@ describe('PromptProgress', () => {
       total: 150,
     }
 
-    mockUseAppState.mockReturnValue(mockProgress)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
 
     render(<PromptProgress />)
 
@@ -38,7 +44,9 @@ describe('PromptProgress', () => {
       total: 0,
     }
 
-    mockUseAppState.mockReturnValue(mockProgress)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
 
     const { container } = render(<PromptProgress />)
 

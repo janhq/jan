@@ -20,7 +20,7 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 // Mock the AI SDK providers
 vi.mock('@ai-sdk/openai-compatible', () => {
   const MockChatModel = vi.fn().mockImplementation(() => ({
-    type: 'foundation-models',
+    type: 'openai-compatible-chat',
     modelId: 'apple/on-device',
   }))
   return {
@@ -232,117 +232,4 @@ describe('ModelFactory', () => {
     })
   })
 
-  describe('foundation-models provider', () => {
-    const foundationModelsProvider: ProviderObject = {
-      provider: 'foundation-models',
-      models: [],
-      settings: [],
-      active: true,
-    }
-
-    it('should throw with notEligible message when device is not eligible', async () => {
-      mockedInvoke.mockResolvedValueOnce('notEligible')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Intelligence is not supported on this device. An Apple Silicon Mac (M1 or later) with macOS 26+ is required.'
-      )
-
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|check_foundation_models_availability',
-        {}
-      )
-    })
-
-    it('should throw when Apple Intelligence is not enabled', async () => {
-      mockedInvoke.mockResolvedValueOnce('appleIntelligenceNotEnabled')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.'
-      )
-    })
-
-    it('should throw when the model is not ready', async () => {
-      mockedInvoke.mockResolvedValueOnce('modelNotReady')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'The Apple on-device model is still preparing. Please wait and try again shortly.'
-      )
-    })
-
-    it('should throw when the server binary is missing', async () => {
-      mockedInvoke.mockResolvedValueOnce('binaryNotFound')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Foundation Models are currently unavailable on this device.'
-      )
-    })
-
-    it('should throw with generic unavailable message for unknown status', async () => {
-      mockedInvoke.mockResolvedValueOnce('unavailable')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Foundation Models are currently unavailable on this device.'
-      )
-    })
-
-    it('should throw when available but model is not loaded after start', async () => {
-      mockedInvoke
-        .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(false)       // is_foundation_models_loaded
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'No running Foundation Models session. The model may have failed to load — please check the logs.'
-      )
-
-      expect(mockStartModel).toHaveBeenCalledWith(
-        foundationModelsProvider,
-        'apple/on-device'
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|check_foundation_models_availability',
-        {}
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|is_foundation_models_loaded',
-        {}
-      )
-    })
-
-    it('should create a model when available and model is loaded', async () => {
-      mockedInvoke
-        .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(true)        // is_foundation_models_loaded
-
-      const model = await ModelFactory.createModel(
-        'apple/on-device',
-        foundationModelsProvider
-      )
-
-      expect(model).toBeDefined()
-      expect(mockStartModel).toHaveBeenCalledWith(
-        foundationModelsProvider,
-        'apple/on-device'
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|check_foundation_models_availability',
-        {}
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|is_foundation_models_loaded',
-        {}
-      )
-    })
-  })
 })

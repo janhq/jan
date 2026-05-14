@@ -145,11 +145,6 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_mlx::init());
     }
 
-    #[cfg(feature = "foundation-models")]
-    {
-        app_builder = app_builder.plugin(tauri_plugin_foundation_models::init());
-    }
-
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
@@ -266,6 +261,17 @@ pub fn run() {
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {
+        if let RunEvent::ExitRequested { .. } = event {
+            let app_handle = app.clone();
+            tokio::task::block_in_place(|| {
+                tauri::async_runtime::block_on(async {
+                    if let Err(e) = tauri_plugin_llamacpp::stop_router(app_handle).await {
+                        log::warn!("stop_router on ExitRequested failed: {}", e);
+                    }
+                })
+            });
+            return;
+        }
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 
@@ -309,9 +315,9 @@ pub fn run() {
                     }
 
                     if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to cleanup llama processes: {}", e);
+                        log::warn!("Failed to shut down llama-server router: {}", e);
                     } else {
-                        log::info!("Llama processes cleaned up successfully");
+                        log::info!("Llama-server router shut down successfully");
                     }
 
                     #[cfg(feature = "mlx")]
@@ -324,13 +330,6 @@ pub fn run() {
                         }
                     }
 
-
-                    #[cfg(feature = "foundation-models")]
-                    {
-                        use tauri_plugin_foundation_models::cleanup_processes;
-                        cleanup_processes(&app_handle).await;
-                        log::info!("Foundation Models state cleaned up successfully");
-                    }
 
                     log::info!("App cleanup completed");
                 });

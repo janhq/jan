@@ -107,18 +107,6 @@ describe('TauriProvidersService', () => {
       expect(llama!.models).toHaveLength(1)
     })
 
-    it('skips hidden providers (foundation-models)', async () => {
-      const hiddenEngine = { list: vi.fn(), getSettings: vi.fn() }
-      vi.mocked(EngineManager.instance).mockReturnValue({
-        engines: new Map([['foundation-models', hiddenEngine]]),
-      } as any)
-
-      const result = await svc.getProviders()
-      expect(hiddenEngine.list).not.toHaveBeenCalled()
-      // Only builtins
-      expect(result.every((p: any) => p.provider !== 'foundation-models')).toBe(true)
-    })
-
     it('adds TOOLS capability when isToolSupported returns true', async () => {
       const mockEngine = {
         list: vi.fn().mockResolvedValue([{ id: 'm1', name: 'M1', description: '' }]),

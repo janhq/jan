@@ -39,6 +39,9 @@ type Model = {
   settings?: Record<string, ProviderSetting>
   /** Whether this model is an embedding model (e.g., BERT-based) */
   embedding?: boolean
+  /** Whether this model was imported from a user-supplied local file
+   *  (path lives outside the provider's managed models directory). */
+  imported?: boolean
 }
 
 /**

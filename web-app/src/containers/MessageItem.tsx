@@ -27,6 +27,7 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
+import { PromptProgress } from '@/components/PromptProgress'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -107,7 +108,25 @@ export const MessageItem = memo(
         .map((part) => (part as { url: string }).url)
     }, [message.parts])
 
-    const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    // A tool part is "pending" until it reaches a terminal state. While any
+    // tool on the last assistant message is still pending the turn isn't
+    // done — the model will resume once the tool result arrives, even if the
+    // SDK briefly reports status as 'ready' between the tool-call stream and
+    // the follow-up request.
+    const hasPendingToolCall = useMemo(() => {
+      if (!isLastMessage || message.role !== 'assistant') return false
+      return message.parts.some((part) => {
+        if (!part.type?.startsWith('tool-')) return false
+        const state = (part as { state?: string }).state
+        return state !== 'output-available' && state !== 'output-error'
+      })
+    }, [isLastMessage, message.role, message.parts])
+
+    const isStreaming =
+      (isLastMessage &&
+        (status === CHAT_STATUS.STREAMING ||
+          status === CHAT_STATUS.SUBMITTED)) ||
+      hasPendingToolCall
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -225,6 +244,25 @@ export const MessageItem = memo(
       partIndex: number
     ) => {
       const isImage = part.mediaType?.startsWith('image/')
+      const isAudio =
+        part.mediaType === 'audio/wav' || part.mediaType === 'audio/mpeg'
+
+      if (isAudio && part.url) {
+        const justify =
+          message.role === 'user' ? 'justify-end' : 'justify-start'
+        return (
+          <div
+            key={`${message.id}-${partIndex}`}
+            className={`flex ${justify} w-full my-2`}
+          >
+            <audio
+              controls
+              src={part.url}
+              className="max-w-[80%] rounded-md"
+            />
+          </div>
+        )
+      }
 
       if (message.role === 'user' && isImage && part.url) {
         return (
@@ -276,7 +314,7 @@ export const MessageItem = memo(
         <Tool
           key={`${message.id}-${partIndex}`}
           state={part.state}
-          className="mb-2"
+          className="mb-1"
         >
           <ToolHeader
             title={toolName}
@@ -452,15 +490,22 @@ export const MessageItem = memo(
         {/* Render message parts */}
         {renderedParts}
 
+        {isLastMessage &&
+          message.role === 'assistant' &&
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+            <PromptProgress />
+          )}
+
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
-          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
+          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs">
             <span className="text-muted-foreground">
               {formatDate(createdAt)}
             </span>
             <CopyButton text={getFullTextContent()} />
 
-            {onEdit && status !== CHAT_STATUS.STREAMING && (
+            {onEdit && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <EditMessageDialog
                 message={getFullTextContent()}
                 imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
@@ -468,7 +513,8 @@ export const MessageItem = memo(
               />
             )}
 
-            {onDelete && status !== CHAT_STATUS.STREAMING && (
+            {onDelete && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <DeleteMessageDialog onDelete={handleDelete} />
             )}
           </div>
@@ -476,7 +522,7 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs">
               {!isStreaming && (
                 <span className="text-muted-foreground">
                   {formatDate(createdAt)}
@@ -538,8 +584,12 @@ export const MessageItem = memo(
     )
   },
   (prevProps, nextProps) => {
-    // Always re-render if streaming and this is the last message
-    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
+    // Always re-render if the last message is in-flight (streaming or submitted)
+    if (
+      nextProps.isLastMessage &&
+      (nextProps.status === CHAT_STATUS.STREAMING ||
+        nextProps.status === CHAT_STATUS.SUBMITTED)
+    ) {
       return false
     }
 

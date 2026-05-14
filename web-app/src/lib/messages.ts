@@ -43,7 +43,6 @@ export function convertUIMessageToThreadMessage(
         })
       }
     } else if (part.type === 'file' && part.mediaType) {
-      // Handle file parts (images)
       const mediaType = part.mediaType as string
       if (mediaType?.startsWith('image/')) {
         content.push({
@@ -52,6 +51,17 @@ export function convertUIMessageToThreadMessage(
             url: part.url,
             detail: 'auto',
           },
+        })
+      } else if (mediaType === 'audio/wav' || mediaType === 'audio/mpeg') {
+        const format = mediaType === 'audio/wav' ? 'wav' : 'mp3'
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: ContentType.InputAudio,
+          input_audio: { data, format },
         })
       }
     }
@@ -239,6 +249,14 @@ export function convertThreadMessageToUIMessage(
         mediaType: 'image/jpeg',
         url: content.image_url.url,
       })
+    } else if (content.type === 'input_audio' && content.input_audio?.data) {
+      const fmt = content.input_audio.format
+      const mediaType = fmt === 'mp3' ? 'audio/mpeg' : 'audio/wav'
+      parts.push({
+        type: 'file',
+        mediaType,
+        url: `data:${mediaType};base64,${content.input_audio.data}`,
+      })
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
       // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
@@ -375,7 +393,6 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
         })
       }
     } else if (part.type === 'file' && part.mediaType) {
-      // Handle file parts (images)
       const mediaType = part.mediaType as string
       if (mediaType?.startsWith('image/')) {
         content.push({
@@ -384,6 +401,17 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
             url: part.url,
             detail: 'auto',
           },
+        })
+      } else if (mediaType === 'audio/wav' || mediaType === 'audio/mpeg') {
+        const format = mediaType === 'audio/wav' ? 'wav' : 'mp3'
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: 'input_audio' as ContentType.InputAudio,
+          input_audio: { data, format },
         })
       }
     } else if (part.type.startsWith('tool-')) {

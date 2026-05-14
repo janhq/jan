@@ -58,9 +58,11 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
+import { useAppState } from '@/hooks/useAppState'
 
 /**
  * Llama.cpp timings structure from the response
@@ -72,8 +74,16 @@ interface LlamaCppTimings {
   prompt_per_second?: number
 }
 
+interface LlamaCppPromptProgress {
+  total?: number
+  cache?: number
+  processed?: number
+  time_ms?: number
+}
+
 interface LlamaCppChunk {
   timings?: LlamaCppTimings
+  prompt_progress?: LlamaCppPromptProgress
 }
 
 /**
@@ -102,8 +112,33 @@ const providerMetadataExtractor: MetadataExtractor = {
     return {
       processChunk: (parsedChunk: unknown) => {
         const chunk = parsedChunk as LlamaCppChunk
+        const state = useAppState.getState()
+        const streamThreadId = state.currentStreamThreadId
+        if (state.loadingModel) {
+          state.updateLoadingModel(false)
+        }
+        if (streamThreadId) {
+          state.updateThreadLoadingModel(streamThreadId, false)
+        }
         if (chunk?.timings) {
           lastTimings = chunk.timings
+        }
+        const pp = chunk?.prompt_progress
+        if (
+          pp &&
+          typeof pp.total === 'number' &&
+          typeof pp.processed === 'number'
+        ) {
+          const progress = {
+            total: pp.total,
+            processed: pp.processed,
+            cache: pp.cache ?? 0,
+            time_ms: pp.time_ms ?? 0,
+          }
+          state.updatePromptProgress(progress)
+          if (streamThreadId) {
+            state.updateThreadPromptProgress(streamThreadId, progress)
+          }
         }
       },
       buildMetadata: () => {
@@ -171,10 +206,55 @@ function createCustomFetch(
         normalised[targetKey] = value
       }
 
-      init = { ...init, body: JSON.stringify({ ...body, ...normalised }) }
+      const merged = { ...body, ...normalised }
+      if (keepLlamacppOnly && merged.stream === true) {
+        merged.return_progress = true
+      }
+      decodeAudioSentinelsInBody(merged)
+      init = { ...init, body: JSON.stringify(merged) }
     }
 
     return baseFetch(input, init)
+  }
+}
+
+// Rewrites any sentinel-bearing text content (planted by
+// CustomChatTransport.encodeAudioAttachments) back into OpenAI `input_audio`
+// content parts. Mutates `body.messages` in place.
+export function decodeAudioSentinelsInBody(body: Record<string, unknown>): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'user') continue
+    if (typeof m.content === 'string') {
+      if (!hasAudioSentinel(m.content)) continue
+      const split = splitAudioSentinels(m.content)
+      if (split) m.content = split
+      continue
+    }
+    if (!Array.isArray(m.content)) continue
+    const next: unknown[] = []
+    let touched = false
+    for (const part of m.content) {
+      if (
+        part &&
+        typeof part === 'object' &&
+        (part as { type?: string }).type === 'text' &&
+        typeof (part as { text?: string }).text === 'string' &&
+        hasAudioSentinel((part as { text: string }).text)
+      ) {
+        const split = splitAudioSentinels((part as { text: string }).text)
+        if (split) {
+          next.push(...split)
+          touched = true
+          continue
+        }
+      }
+      next.push(part)
+    }
+    if (touched) m.content = next
   }
 }
 
@@ -229,95 +309,6 @@ function getRuntimeFetch(): typeof globalThis.fetch {
 }
 
 /**
- * Custom fetch for Foundation Models that routes through Tauri IPC
- * instead of HTTP, emulating an OpenAI-compatible fetch interface.
- */
-function createFoundationModelsFetch(
-  parameters: Record<string, unknown>
-): typeof globalThis.fetch {
-  return async (
-    _input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> => {
-    const rawBody = init?.body ? JSON.parse(init.body as string) : {}
-    const body = { ...rawBody, ...parameters }
-    const isStreaming = body.stream === true
-
-    if (!isStreaming) {
-      const result = await invoke<string>(
-        'plugin:foundation-models|foundation_models_chat_completion',
-        { body: JSON.stringify(body) }
-      )
-      return new Response(result, {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
-    const requestId = crypto.randomUUID()
-    const { listen } = await import('@tauri-apps/api/event')
-
-    let unlistenFn: (() => void) | null = null
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const encoder = new TextEncoder()
-
-        unlistenFn = await listen(
-          `foundation-models-stream-${requestId}`,
-          (event: { payload: { data?: string; done?: boolean; error?: string } }) => {
-            const payload = event.payload
-            if (payload.done) {
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-              try {
-                controller.close()
-              } catch {
-                /* already closed */
-              }
-              unlistenFn?.()
-            } else if (payload.error) {
-              try {
-                controller.error(new Error(payload.error))
-              } catch {
-                /* already errored */
-              }
-              unlistenFn?.()
-            } else if (payload.data) {
-              controller.enqueue(
-                encoder.encode(`data: ${payload.data}\n\n`)
-              )
-            }
-          }
-        )
-
-        invoke(
-          'plugin:foundation-models|foundation_models_chat_completion_stream',
-          { body: JSON.stringify(body), requestId }
-        ).catch((err) => {
-          try {
-            controller.error(err)
-          } catch {
-            /* already errored */
-          }
-          unlistenFn?.()
-        })
-      },
-      cancel() {
-        unlistenFn?.()
-        invoke(
-          'plugin:foundation-models|abort_foundation_models_stream',
-          { requestId }
-        ).catch(() => {})
-      },
-    })
-
-    return new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
-  }
-}
-
-/**
  * Map of model keywords to their respective reasoning tags.
  * Used for models that use tags other than the default 'think'.
  */
@@ -365,9 +356,6 @@ export class ModelFactory {
 
       case 'mlx':
         return this.createMlxModel(modelId, provider, parameters)
-
-      case 'foundation-models':
-        return this.createFoundationModelsModel(modelId, provider, parameters)
 
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, parameters)
@@ -542,81 +530,6 @@ export class ModelFactory {
 
     return wrapLanguageModel({
       model: model,
-      middleware: extractReasoningMiddleware({
-        tagName: getReasoningTagName(modelId),
-        separator: '\n',
-      }),
-    })
-  }
-
-  /**
-   * Create a Foundation Models model (Apple on-device) via direct Tauri IPC
-   * to the fm-rs Rust bindings — no HTTP server involved.
-   */
-  private static async createFoundationModelsModel(
-    modelId: string,
-    provider?: ProviderObject,
-    parameters: Record<string, unknown> = {}
-  ): Promise<LanguageModel> {
-    parameters = filterParameters(parameters, false)
-    const availability = await invoke<string>(
-      'plugin:foundation-models|check_foundation_models_availability',
-      {}
-    )
-
-    if (availability !== 'available') {
-      const messages: Record<string, string> = {
-        notEligible:
-          'Apple Intelligence is not supported on this device. An Apple Silicon Mac (M1 or later) with macOS 26+ is required.',
-        appleIntelligenceNotEnabled:
-          'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.',
-        modelNotReady:
-          'The Apple on-device model is still preparing. Please wait and try again shortly.',
-        unavailable:
-          'Apple Foundation Models are currently unavailable on this device.',
-      }
-      throw new Error(messages[availability] ?? messages.unavailable)
-    }
-
-    if (provider) {
-      try {
-        const { useServiceStore } = await import('@/hooks/useServiceHub')
-        const serviceHub = useServiceStore.getState().serviceHub
-
-        if (serviceHub) {
-          await serviceHub.models().startModel(provider, modelId)
-        }
-      } catch (error) {
-        console.error('Failed to start Foundation Models:', error)
-        throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
-      }
-    }
-
-    const loaded = await invoke<boolean>(
-      'plugin:foundation-models|is_foundation_models_loaded',
-      {}
-    )
-
-    if (!loaded) {
-      throw new Error(
-        'No running Foundation Models session. The model may have failed to load — please check the logs.'
-      )
-    }
-
-    const customFetch = createFoundationModelsFetch(parameters)
-
-    const model = new OpenAICompatibleChatLanguageModel(modelId, {
-      provider: 'foundation-models',
-      headers: () => ({}),
-      url: ({ path }) => `foundation-models://local/v1${path}`,
-      fetch: customFetch as typeof httpFetch,
-      metadataExtractor: providerMetadataExtractor,
-    })
-
-    return wrapLanguageModel({
-      model,
       middleware: extractReasoningMiddleware({
         tagName: getReasoningTagName(modelId),
         separator: '\n',

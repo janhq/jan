@@ -139,21 +139,29 @@ endif
 build-mlx-server:
 ifeq ($(DETECTED_OS),Darwin)
 	@echo "Building MLX server for Apple Silicon..."
-	cd mlx-server && swift build -c release
-	@echo "Copying build products..."
-	@BUILD_DIR=$$(cd mlx-server && swift build -c release --show-bin-path); \
-	if [ -z "$$BUILD_DIR" ]; then \
-		echo "Error: Could not find build products"; \
+	# mlx-swift's Metal shaders are compiled by the PrepareMetalShaders
+	# plugin, which only runs under Xcode -- `swift build` produces a
+	# binary with no default.metallib and the app fails at runtime. See
+	# https://github.com/ml-explore/mlx-swift README ("SwiftPM (command
+	# line) cannot build the Metal shaders").
+	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release OTHER_LDFLAGS="-dead_strip"
+	@echo "Finding build products..."
+	@DERIVED_DATA=$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1); \
+	if [ -z "$$DERIVED_DATA" ] || [ ! -f "$$DERIVED_DATA/mlx-server" ]; then \
+		echo "Error: Could not find xcodebuild products under DerivedData"; \
+		exit 1; \
+	fi; \
+	METALLIB=$$(find "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" -name 'default.metallib' -print -quit 2>/dev/null); \
+	if [ -z "$$METALLIB" ]; then \
+		echo "Error: default.metallib missing under $$DERIVED_DATA/mlx-swift_Cmlx.bundle -- PrepareMetalShaders did not run"; \
+		find "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" -maxdepth 4 2>/dev/null; \
 		exit 1; \
 	fi; \
 	mkdir -p src-tauri/resources/bin; \
-	echo "Copying mlx-server from $$BUILD_DIR..."; \
-	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
-	if [ -d "$$BUILD_DIR/mlx-swift_Cmlx.bundle" ]; then \
-		cp -r "$$BUILD_DIR/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
-	else \
-		mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
-	fi; \
+	echo "Copying mlx-server from $$DERIVED_DATA..."; \
+	cp "$$DERIVED_DATA/mlx-server" src-tauri/resources/bin/mlx-server; \
+	rm -rf src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+	cp -r "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
 	echo "MLX server built and copied successfully"; \
 	echo "Checking for code signing identity..."; \
@@ -161,10 +169,12 @@ ifeq ($(DETECTED_OS),Darwin)
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
 		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
-		if [ -d "src-tauri/resources/bin/mlx-swift_Cmlx.bundle" ]; then \
-			echo "Signing mlx-swift_Cmlx.bundle..."; \
-			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		if ! find src-tauri/resources/bin/mlx-swift_Cmlx.bundle -name 'default.metallib' -print -quit 2>/dev/null | grep -q .; then \
+			echo "Error: staged mlx-swift_Cmlx.bundle is missing default.metallib; refusing to sign an empty bundle"; \
+			exit 1; \
 		fi; \
+		echo "Signing mlx-swift_Cmlx.bundle..."; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
 		echo "Code signing completed successfully"; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \

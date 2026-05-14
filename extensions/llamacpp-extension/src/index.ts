@@ -39,21 +39,24 @@ import {
   getProxyConfig,
   buildEmbedBatches,
   mergeEmbedResponses,
+  detectEmbeddingFromGgufMeta,
+  getDefaultEmbeddingModelId,
+  setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
+import { generatePreset } from './preset'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
   readGgufMetadata,
-  getModelSize,
   isModelSupported,
   unloadLlamaModel,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
   EmbeddingResponse,
+  ModelProps,
   DeviceList,
-  SystemMemory,
   mapOldBackendToNew,
   findLatestVersionForBackend,
   prioritizeBackends,
@@ -64,7 +67,7 @@ import {
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
-// Error message constant - matches web-app/src/utils/error.ts
+const EMBEDDING_CHECK_VERSION = 3
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -116,7 +119,6 @@ function parseBuildNumber(version: string): number | null {
 
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
-  autoUnload: boolean = true
   timeout: number = 600
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
@@ -129,6 +131,11 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
+
+  private routerPort?: number
+  private routerApiKey?: string
+  private userModelsMax: number = 1
+  private loadedChatOrder: string[] = []
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -163,26 +170,243 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v3: enable fit on Windows/Linux with a discrete GPU
     await this.migrateFitPlatformDefault()
 
-    this.autoUnload = this.config.auto_unload
+    await this.migrateAutoUnloadToModelsMax()
+
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
-    this.getProviderPath()
+    await this.getProviderPath()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
       modelId: string
       downloadType: string
     }>('onModelValidationStarted', (event) => {
-      console.debug(
-        'LlamaCPP: bridging onModelValidationStarted event',
-        event.payload
-      )
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    this.configureBackends()
+    // configureBackends is async; await it so the router has a backend to
+    // launch. Failures here previously surfaced via unhandled rejection — the
+    // try/catch below preserves that fail-soft behavior for the router step.
+    try {
+      await this.configureBackends()
+    } catch (e) {
+      logger.error('configureBackends failed during onLoad:', e)
+    }
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.error('Router failed to start during onLoad:', e)
+    }
+  }
+
+  private async startRouter(): Promise<void> {
+    const versionBackend = this.config?.version_backend
+    if (
+      !versionBackend ||
+      versionBackend === 'none' ||
+      !versionBackend.includes('/')
+    ) {
+      logger.info(
+        'Router will start once backend is configured (no version_backend yet).'
+      )
+      return
+    }
+
+    const [version, backend] = versionBackend.split('/')
+    if (!version || !backend) {
+      logger.warn(
+        `Skipping router start; malformed version_backend: ${versionBackend}`
+      )
+      return
+    }
+
+    const providerPath = await this.getProviderPath()
+    const janDataFolderPath = await getJanDataFolderPath()
+    const { path: presetPath, embeddingCount } = await generatePreset(
+      providerPath,
+      janDataFolderPath,
+      this.config
+    )
+
+    const backendExe = await getBackendExePath(backend, version)
+    const port = await this.getRandomPort()
+    const apiKey = await this.generateApiKey('router', String(port))
+
+    const envs: Record<string, string> = {}
+    envs['LLAMA_API_KEY'] = apiKey
+    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
+
+    const rawMax = (this.config as any).models_max
+    let modelsMax = 1
+    if (typeof rawMax === 'number') modelsMax = rawMax
+    else if (typeof rawMax === 'string' && rawMax.trim().length > 0) {
+      const n = parseInt(rawMax, 10)
+      if (!Number.isNaN(n) && n >= 0) modelsMax = n
+    }
+    // Reserve extra slots for embedding models so loading an embedder doesn't
+    // evict the user's chat model. `models_max` governs chat models only;
+    // Jan pre-evicts the oldest chat model in `performLoad` so the router's
+    // LRU never picks the embedding. 0 (unlimited) stays unlimited.
+    const userModelsMax = modelsMax
+    this.userModelsMax = userModelsMax
+    if (modelsMax > 0 && embeddingCount > 0) {
+      modelsMax += embeddingCount
+    }
+
+    // Defensive: if a router is already running (hot reload / dev), stop it
+    // first so start_router doesn't reject.
+    try {
+      const existing = await invoke<{ port: number; api_key: string } | null>(
+        'plugin:llamacpp|get_router_info'
+      )
+      if (existing) {
+        await invoke('plugin:llamacpp|stop_router').catch(() => undefined)
+      }
+    } catch {
+      /* ignore probe failures */
+    }
+
+    const info = await invoke<{ port: number; api_key: string; pid: number }>(
+      'plugin:llamacpp|start_router',
+      {
+        backendExe,
+        presetPath,
+        port,
+        apiKey,
+        modelsMax,
+        defaultArgs: [] as string[],
+        envs,
+      }
+    )
+
+    this.routerPort = info.port
+    this.routerApiKey = info.api_key
+    logger.info(
+      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingCount} embedding], preset=${presetPath})`
+    )
+  }
+
+  /**
+   * Public accessor for downstream consumers. Returns `null` if the router
+   * hasn't been started successfully yet.
+   */
+  async getRouterInfo(): Promise<{ port: number; apiKey: string } | null> {
+    if (this.routerPort != null && this.routerApiKey) {
+      return { port: this.routerPort, apiKey: this.routerApiKey }
+    }
+    try {
+      const info = await invoke<
+        { port: number; api_key: string; pid: number } | null
+      >('plugin:llamacpp|get_router_info')
+      if (info) {
+        this.routerPort = info.port
+        this.routerApiKey = info.api_key
+        return { port: info.port, apiKey: info.api_key }
+      }
+    } catch (e) {
+      logger.warn('get_router_info failed:', e)
+    }
+    return null
+  }
+
+  /**
+   * Fetch runtime properties for a loaded model from the router's
+   * `/props?model=<id>` endpoint. Returns `undefined` if the router isn't
+   * running, the model isn't loaded, or the response is unusable. `nCtx` is
+   * the post-fit value — what `fit_ctx` settled on — so it's the right
+   * denominator for the token-usage popup.
+   */
+  async getModelProps(modelId: string): Promise<ModelProps | undefined> {
+    const router = await this.getRouterInfo()
+    if (!router || !modelId) return undefined
+    // Router runs with models_autoload=true, so `/props?model=X` against an
+    // unloaded model would trigger a load. Gate on the loaded-set first.
+    try {
+      const loaded = await this.getLoadedModels()
+      if (!loaded.includes(modelId)) return undefined
+    } catch {
+      return undefined
+    }
+    try {
+      const url = `http://127.0.0.1:${router.port}/props?model=${encodeURIComponent(modelId)}`
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${router.apiKey}` },
+      })
+      if (!res.ok) return undefined
+      const json = (await res.json()) as {
+        default_generation_settings?: { n_ctx?: number }
+        total_slots?: number
+        model_alias?: string
+        is_sleeping?: boolean
+      }
+      const n = json?.default_generation_settings?.n_ctx
+      if (typeof n !== 'number' || n <= 0) return undefined
+      return {
+        nCtx: n,
+        totalSlots:
+          typeof json.total_slots === 'number' ? json.total_slots : undefined,
+        modelAlias: json.model_alias,
+        isSleeping: !!json.is_sleeping,
+      }
+    } catch {
+      return undefined
+    }
+  }
+
+  private async readMmprojCapabilities(
+    mmprojPath: string
+  ): Promise<{ vision: boolean; audio: boolean }> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullPath = await joinPath([janDataFolderPath, mmprojPath])
+      const meta = (await readGgufMetadata(fullPath)).metadata ?? {}
+      const truthy = (v: string | undefined) =>
+        typeof v === 'string' && v.toLowerCase() === 'true'
+      const vision = truthy(meta['clip.has_vision_encoder'])
+      const audio = truthy(meta['clip.has_audio_encoder'])
+      if (!vision && !audio) return { vision: true, audio: false }
+      return { vision, audio }
+    } catch (error) {
+      logger.warn('Failed to read mmproj capabilities:', error)
+      return { vision: true, audio: false }
+    }
+  }
+
+  private async migrateAutoUnloadToModelsMax(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_models_max_migrated_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    try {
+      const old = await this.getSetting<boolean | undefined>(
+        'auto_unload',
+        undefined
+      )
+      if (old !== undefined) {
+        const targetValue = old ? '1' : '0'
+        const settings = await this.getSettings()
+        await this.updateSettings(
+          settings.map((item) => {
+            if (item.key === 'models_max') {
+              item.controllerProps.value = targetValue
+            }
+            return item
+          })
+        )
+        ;(this.config as any).models_max = targetValue
+        logger.info(
+          `Migrated auto_unload=${old} -> models_max=${targetValue}`
+        )
+      }
+    } catch (e) {
+      logger.warn('migrateAutoUnloadToModelsMax failed:', e)
+      return
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
   }
 
   private getStoredBackendType(): string | null {
@@ -848,6 +1072,14 @@ export default class llamacpp_extension extends AIEngine {
     if (this.unlistenValidationStarted) {
       this.unlistenValidationStarted()
     }
+
+    try {
+      await invoke('plugin:llamacpp|stop_router')
+    } catch (e) {
+      logger.warn('stop_router during onUnload failed (ignored):', e)
+    }
+    this.routerPort = undefined
+    this.routerApiKey = undefined
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -880,13 +1112,16 @@ export default class llamacpp_extension extends AIEngine {
           if (result.version && result.backend) {
             this.config.device = ''
             await this.ensureBackendReady(result.backend, result.version)
+            try {
+              await this.startRouter()
+            } catch (e) {
+              logger.warn('Router restart after backend update failed:', e)
+            }
           }
         } catch (e) {
           logger.error('Error in onSettingUpdate async block:', e)
         }
       })()
-    } else if (key === 'auto_unload') {
-      this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
@@ -937,12 +1172,16 @@ export default class llamacpp_extension extends AIEngine {
     modelId: string,
     modelConfig: ModelConfig
   ): Promise<boolean> {
-    // Fast exit: if explicitly set in config, return it
-    if (typeof modelConfig.embedding === 'boolean') {
-      return modelConfig.embedding
+    const cfg = modelConfig as ModelConfig & { embedding_check_v?: number }
+    const hasFlag = typeof cfg.embedding === 'boolean'
+    const upToDate = cfg.embedding_check_v === EMBEDDING_CHECK_VERSION
+    if (hasFlag && upToDate) {
+      return cfg.embedding as boolean
+    }
+    if (hasFlag && cfg.embedding === true) {
+      return true
     }
 
-    // Migration logic: Detect from GGUF
     let isEmbedding = false
     try {
       const janDataFolderPath = await getJanDataFolderPath()
@@ -953,20 +1192,15 @@ export default class llamacpp_extension extends AIEngine {
 
       if (await fs.existsSync(fullModelPath)) {
         const metadata = await readGgufMetadata(fullModelPath)
-        // Check for BERT-based architectures usually used for embeddings
-        // You can expand this list (e.g., 'nomic-bert', 'xlm-roberta')
-        const arch = metadata.metadata['general.architecture']
-        if (arch === 'bert' || arch === 'nomic-bert') {
+        if (detectEmbeddingFromGgufMeta(metadata.metadata)) {
           isEmbedding = true
         }
       }
     } catch (e) {
-      // If GGUF read fails, default to false but log it
       logger.warn(`Failed to check metadata for ${modelId}`, e)
-      return false
+      return cfg.embedding === true
     }
 
-    // Persist the result back to model.yml so we don't read GGUF next time
     try {
       const configPath = await joinPath([
         await this.getProviderPath(),
@@ -975,12 +1209,21 @@ export default class llamacpp_extension extends AIEngine {
         'model.yml',
       ])
 
-      // Update the local object
-      modelConfig.embedding = isEmbedding
+      cfg.embedding = isEmbedding
+      cfg.embedding_check_v = EMBEDDING_CHECK_VERSION
+      if (isEmbedding) {
+        const c = cfg as ModelConfig & {
+          pooling?: string
+          ubatch_size?: number
+          batch_size?: number
+        }
+        if (!c.pooling) c.pooling = 'mean'
+        if (!c.ubatch_size) c.ubatch_size = 2048
+        if (!c.batch_size) c.batch_size = 2048
+      }
 
-      // Write to disk
       await invoke<void>('write_yaml', {
-        data: modelConfig,
+        data: cfg,
         savePath: configPath,
       })
     } catch (e) {
@@ -1039,8 +1282,15 @@ export default class llamacpp_extension extends AIEngine {
 
       const capabilities: string[] = []
       if (modelConfig.mmproj_path) {
-        capabilities.push('vision')
+        const caps = await this.readMmprojCapabilities(
+          modelConfig.mmproj_path
+        )
+        if (caps.vision) capabilities.push('vision')
+        if (caps.audio) capabilities.push('audio')
       }
+
+      const mp = modelConfig.model_path ?? ''
+      const isAbsolute = mp.startsWith('/') || /^[A-Za-z]:[\\/]/.test(mp)
 
       const modelInfo = {
         id: modelId,
@@ -1050,6 +1300,7 @@ export default class llamacpp_extension extends AIEngine {
         port: 0, // port is not known until the model is loaded
         sizeBytes: modelConfig.size_bytes ?? 0,
         embedding: isEmbedding,
+        imported: isAbsolute,
         capabilities: capabilities.length > 0 ? capabilities : undefined,
       } as modelInfo
       modelInfos.push(modelInfo)
@@ -1431,9 +1682,7 @@ export default class llamacpp_extension extends AIEngine {
         `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
       )
 
-      // check if the model is an embedding model
-      const architecture = modelMetadata.metadata['general.architecture']
-      if (architecture === 'bert' || architecture === 'nomic-bert') {
+      if (detectEmbeddingFromGgufMeta(modelMetadata.metadata)) {
         isEmbedding = true
       }
 
@@ -1474,6 +1723,10 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
+      embedding_check_v: EMBEDDING_CHECK_VERSION,
+      ...(isEmbedding
+        ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
+        : {}),
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
@@ -1497,6 +1750,12 @@ export default class llamacpp_extension extends AIEngine {
         modelId,
         downloadType: 'Model',
       })
+    }
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Router refresh after import(${modelId}) failed:`, e)
     }
   }
 
@@ -1539,17 +1798,8 @@ export default class llamacpp_extension extends AIEngine {
     await this.deleteModelFolder(modelId)
   }
 
-  /**
-   * Function to find a random port
-   */
   private async getRandomPort(): Promise<number> {
-    try {
-      const port = await invoke<number>('plugin:llamacpp|get_random_port')
-      return port
-    } catch {
-      logger.error('Unable to find a suitable port')
-      throw new Error('Unable to find a suitable port for model')
-    }
+    return 49152 + Math.floor(Math.random() * (65535 - 49152))
   }
 
   private parseEnvFromString(
@@ -1575,32 +1825,24 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(
     modelId: string,
-    overrideSettings?: Partial<LlamacppConfig>,
+    _overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    _bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
       throw new Error('Model already loaded!!')
     }
 
-    // If this model is already being loaded, return the existing promise
     if (this.loadingModels.has(modelId)) {
       return this.loadingModels.get(modelId)!
     }
 
-    // Create the loading promise
-    const loadingPromise = this.performLoad(
-      modelId,
-      overrideSettings,
-      isEmbedding,
-      bypassAutoUnload
-    )
+    const loadingPromise = this.performLoad(modelId, isEmbedding)
     this.loadingModels.set(modelId, loadingPromise)
 
     try {
-      const result = await loadingPromise
-      return result
+      return await loadingPromise
     } finally {
       this.loadingModels.delete(modelId)
     }
@@ -1608,157 +1850,86 @@ export default class llamacpp_extension extends AIEngine {
 
   private async performLoad(
     modelId: string,
-    overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    isEmbedding: boolean = false
   ): Promise<SessionInfo> {
-    const loadedModels = await this.getLoadedModels()
-
-    // Get OTHER models that are currently loading (exclude current model)
-    const otherLoadingPromises = Array.from(this.loadingModels.entries())
-      .filter(([id, _]) => id !== modelId)
-      .map(([_, promise]) => promise)
-
-    if (
-      this.autoUnload &&
-      !isEmbedding &&
-      !bypassAutoUnload &&
-      (loadedModels.length > 0 || otherLoadingPromises.length > 0)
-    ) {
-      // Wait for OTHER loading models to finish, then unload everything
-      if (otherLoadingPromises.length > 0) {
-        await Promise.all(otherLoadingPromises)
-      }
-
-      // Now unload all loaded Text models excluding embedding models
-      const allLoadedModels = await this.getLoadedModels()
-      if (allLoadedModels.length > 0) {
-        const sessionInfos: (SessionInfo | null)[] = await Promise.all(
-          allLoadedModels.map(async (modelId) => {
-            try {
-              return await this.findSessionByModel(modelId)
-            } catch (e) {
-              logger.warn(`Unable to find session for model "${modelId}": ${e}`)
-              return null
-            }
-          })
-        )
-
-        const nonEmbeddingModels: string[] = sessionInfos
-          .filter(
-            (s): s is SessionInfo => s !== null && s.is_embedding === false
-          )
-          .map((s) => s.model_id)
-
-        if (nonEmbeddingModels.length > 0) {
-          await Promise.all(
-            nonEmbeddingModels.map((modelId) => this.unload(modelId))
-          )
-        }
-      }
-    }
-
-    const envs: Record<string, string> = {}
-    const cfg = { ...this.config, ...(overrideSettings ?? {}) }
-    const [version, backend] = cfg.version_backend.split('/')
-
-    if (!version || !backend) {
+    const router = await this.getRouterInfo()
+    if (!router) {
       throw new Error(
-        'Initial setup for the backend failed due to a network issue. Please restart the app!'
+        'llama.cpp router is not running. Please restart the app.'
       )
     }
 
-    // Version-aware flash_attn handling:
-    // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
-    // For older versions, "auto" is not a valid value so we fall back to "off"
-    // (i.e. don't send the flag at all).
-    if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
-      const buildNum = parseBuildNumber(version)
-      if (buildNum !== null && buildNum < 6325) {
-        cfg.flash_attn = 'off'
-      }
+    if (!isEmbedding) {
+      await this.evictChatIfAtCapacity(modelId)
     }
-
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
-
-    const janDataFolderPath = await getJanDataFolderPath()
-    const modelConfigPath = await joinPath([
-      this.providerPath,
-      'models',
-      modelId,
-      'model.yml',
-    ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: modelConfigPath,
-    })
-    const port = await this.getRandomPort()
-
-    // Generate API key
-    const api_key = await this.generateApiKey(modelId, String(port))
-    envs['LLAMA_API_KEY'] = api_key
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
-
-    // Set user envs
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
-
-    // Resolve model path
-    const modelPath = await joinPath([
-      janDataFolderPath,
-      modelConfig.model_path,
-    ])
-
-    // Resolve mmproj path if present
-    let mmprojPath: string | undefined = undefined
-    if (modelConfig.mmproj_path) {
-      mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
-    }
-
-    // Migrate old env vars
-    if (typeof cfg.fit === 'string') cfg.fit = true
-
-    logger.info(
-      'Calling Tauri command load_llama_model with config:',
-      JSON.stringify(cfg)
-    )
-    const backendPath = await getBackendExePath(backend, version)
 
     try {
-      const sInfo = await loadLlamaModel(
-        backendPath,
-        modelId,
-        modelPath,
-        port,
-        cfg,
-        envs,
-        mmprojPath,
-        isEmbedding,
-        Number(this.timeout)
-      )
-      return sInfo
+      const info = await loadLlamaModel(modelId, isEmbedding)
+      if (!isEmbedding) {
+        this.loadedChatOrder = this.loadedChatOrder.filter((m) => m !== modelId)
+        this.loadedChatOrder.push(modelId)
+      }
+      return info
     } catch (error) {
       logger.error('Error in load command:\n', error)
       throw error
     }
   }
 
+  /**
+   * Enforce `userModelsMax` against chat models only. Reconciles the local
+   * FIFO against the router's loaded set, then unloads the oldest chat model
+   * if loading `incomingModelId` would exceed the user-configured cap.
+   */
+  private async evictChatIfAtCapacity(incomingModelId: string): Promise<void> {
+    if (this.userModelsMax <= 0) return // unlimited
+
+    let loaded: string[] = []
+    try {
+      loaded = await this.getLoadedModels()
+    } catch {
+      // If we can't introspect, fall back to the local FIFO — better to
+      // over-evict than to violate the cap.
+      loaded = [...this.loadedChatOrder]
+    }
+    const loadedSet = new Set(loaded)
+    this.loadedChatOrder = this.loadedChatOrder.filter(
+      (m) => loadedSet.has(m) && m !== incomingModelId
+    )
+
+    while (this.loadedChatOrder.length >= this.userModelsMax) {
+      const victim = this.loadedChatOrder.shift()
+      if (!victim) break
+      try {
+        const result = await unloadLlamaModel(victim)
+        if (!result.success) {
+          logger.warn(
+            `Pre-eviction of ${victim} reported failure: ${result.error}`
+          )
+        } else {
+          logger.info(
+            `Pre-evicted chat model ${victim} to make room for ${incomingModelId}`
+          )
+        }
+      } catch (e) {
+        logger.warn(`Pre-eviction of ${victim} threw:`, e)
+      }
+    }
+  }
+
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo: SessionInfo = await this.findSessionByModel(modelId)
+    const sInfo = await this.findSessionByModel(modelId)
     if (!sInfo) {
       throw new Error(`No active session found for model: ${modelId}`)
     }
-    const pid = sInfo.pid
     try {
-      // Pass the PID as the session_id
-      const result = await unloadLlamaModel(pid)
-
-      // If successful, remove from active sessions
+      const result = await unloadLlamaModel(modelId)
       if (result.success) {
-        logger.info(`Successfully unloaded model with PID ${pid}`)
+        this.loadedChatOrder = this.loadedChatOrder.filter((m) => m !== modelId)
+        logger.info(`Successfully unloaded model ${modelId}`)
       } else {
-        logger.warn(`Failed to unload model: ${result.error}`)
+        logger.warn(`Failed to unload model ${modelId}: ${result.error}`)
       }
-
       return result
     } catch (error) {
       logger.error('Error in unload command:', error)
@@ -1930,15 +2101,14 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async findSessionByModel(modelId: string): Promise<SessionInfo> {
+  private async findSessionByModel(
+    modelId: string
+  ): Promise<SessionInfo | null> {
     try {
-      let sInfo = await invoke<SessionInfo>(
+      return await invoke<SessionInfo | null>(
         'plugin:llamacpp|find_session_by_model',
-        {
-          modelId,
-        }
+        { modelId }
       )
-      return sInfo
     } catch (e) {
       logger.error(e)
       throw new Error(String(e))
@@ -1948,6 +2118,7 @@ export default class llamacpp_extension extends AIEngine {
   private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
     return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
       modelId,
+      isEmbedding: false,
     })
   }
 
@@ -2008,6 +2179,12 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     await fs.rm(modelDir)
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Router refresh after delete(${modelId}) failed:`, e)
+    }
   }
 
   override async getLoadedModels(): Promise<string[]> {
@@ -2157,22 +2334,45 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
-    // Ensure the sentence-transformer model is present
-    let sInfo = await this.findSessionByModel('sentence-transformer-mini')
+    const downloadedModelList = await this.list()
+    const installedEmbedding = downloadedModelList.filter(
+      (m) => (m as any).embedding === true
+    )
+    const hasMini = downloadedModelList.some(
+      (m) => m.id === 'sentence-transformer-mini'
+    )
+    let preferred = getDefaultEmbeddingModelId('llamacpp')
+
+    if (!preferred && installedEmbedding.length === 1 && !hasMini) {
+      preferred = installedEmbedding[0].id
+      setDefaultEmbeddingModelId('llamacpp', preferred)
+      logger.info(
+        `Auto-promoted "${preferred}" as default embedding model (single installed model, sentence-transformer-mini not present)`
+      )
+    }
+
+    const preferredMatch =
+      preferred && installedEmbedding.find((m) => m.id === preferred)
+
+    if (preferred && !preferredMatch) {
+      logger.warn(
+        `Default embedding model "${preferred}" not installed; falling back to sentence-transformer-mini`
+      )
+    }
+
+    const targetModelId = preferredMatch
+      ? (preferred as string)
+      : 'sentence-transformer-mini'
+
+    let sInfo = await this.findSessionByModel(targetModelId)
     if (!sInfo) {
-      const downloadedModelList = await this.list()
-      if (
-        !downloadedModelList.some(
-          (model) => model.id === 'sentence-transformer-mini'
-        )
-      ) {
+      if (targetModelId === 'sentence-transformer-mini' && !hasMini) {
         await this.import('sentence-transformer-mini', {
           modelPath:
             'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
         })
       }
-      // Load specifically in embedding mode
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      sInfo = await this.load(targetModelId, undefined, true)
     }
 
     const ubatchSize =
@@ -2204,25 +2404,14 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const sendBatch = async (batchInput: string[]) => {
-      let response = await attemptRequest(sInfo as SessionInfo, batchInput)
-
-      // If embeddings endpoint is not available (501), reload with embedding mode and retry once
-      if (response.status === 501) {
-        try {
-          await this.unload('sentence-transformer-mini')
-        } catch {}
-        sInfo = await this.load('sentence-transformer-mini', undefined, true)
-        response = await attemptRequest(sInfo as SessionInfo, batchInput)
-      }
-
+      const response = await attemptRequest(sInfo as SessionInfo, batchInput)
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
         throw new Error(
           `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
         )
       }
-      const responseData = (await response.json()) as EmbedBatchResult
-      return responseData
+      return (await response.json()) as EmbedBatchResult
     }
 
     const batchResults: Array<{ result: EmbedBatchResult; offset: number }> = []
@@ -2297,9 +2486,6 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(`Validating GGUF file: ${filePath}`)
       const metadata = await readGgufMetadata(filePath)
 
-      // Log full metadata for debugging
-      logger.info('Full GGUF metadata:', JSON.stringify(metadata, null, 2))
-
       // Check if architecture is 'clip' which is not supported for text generation
       const architecture = metadata.metadata?.['general.architecture']
       logger.info(`Model architecture: ${architecture}`)
@@ -2332,37 +2518,6 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
-    if (!sessionInfo) {
-      throw new Error(`No active session found for model: ${opts.model}`)
-    }
-
-    // Token counting should be side-effect free (no auto-restart/unload).
-    const isRunning = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
-    if (!isRunning) {
-      throw new Error('Model has crashed! Please reload!')
-    }
-
-    try {
-      const healthResponse = await fetch(
-        `http://localhost:${sessionInfo.port}/health`
-      )
-      if (!healthResponse.ok) {
-        throw new Error('unhealthy')
-      }
-    } catch (_e) {
-      throw new Error('Model appears to have crashed! Please reload!')
-    }
-
-    const baseUrl = `http://localhost:${sessionInfo.port}`
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sessionInfo.api_key}`,
-    }
-
-    // Count image tokens first
     let imageTokens = 0
     const hasImages = opts.messages.some(
       (msg) =>
@@ -2371,76 +2526,48 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     if (hasImages) {
-      logger.info('Conversation has images')
       try {
-        // Read mmproj metadata to get vision parameters
-        logger.info(`MMPROJ PATH: ${sessionInfo.mmproj_path}`)
-
-        const metadata = await readGgufMetadata(sessionInfo.mmproj_path)
-        logger.info(`mmproj metadata: ${JSON.stringify(metadata.metadata)}`)
-        imageTokens = await this.calculateImageTokens(
-          opts.messages,
-          metadata.metadata
-        )
+        const janDataFolderPath = await getJanDataFolderPath()
+        const modelConfigPath = await joinPath([
+          this.providerPath,
+          'models',
+          opts.model,
+          'model.yml',
+        ])
+        const modelConfig = await invoke<ModelConfig>('read_yaml', {
+          path: modelConfigPath,
+        })
+        if (modelConfig.mmproj_path) {
+          const mmprojPath = await joinPath([
+            janDataFolderPath,
+            modelConfig.mmproj_path,
+          ])
+          const metadata = await readGgufMetadata(mmprojPath)
+          imageTokens = await this.calculateImageTokens(
+            opts.messages,
+            metadata.metadata
+          )
+        }
       } catch (error) {
         logger.warn('Failed to calculate image tokens:', error)
-        // Fallback to a rough estimate if metadata reading fails
         imageTokens = this.estimateImageTokensFallback(opts.messages)
       }
     }
 
-    // Calculate text tokens
-    // Use chat_template_kwargs from opts if provided, otherwise default to disable enable_thinking
-    const tokenizeRequest = {
-      messages: opts.messages,
-      chat_template_kwargs: opts.chat_template_kwargs || {
-        enable_thinking: false,
-      },
-    }
-
-    try {
-      let parseResponse = await fetch(`${baseUrl}/apply-template`, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(tokenizeRequest),
-      })
-
-      if (!parseResponse.ok) {
-        const errorData = await parseResponse.json().catch(() => null)
-        throw new Error(
-          `API request failed with status ${
-            parseResponse.status
-          }: ${JSON.stringify(errorData)}`
-        )
+    let textChars = 0
+    for (const msg of opts.messages) {
+      if (typeof msg.content === 'string') {
+        textChars += msg.content.length
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === 'text' && typeof part.text === 'string') {
+            textChars += part.text.length
+          }
+        }
       }
-
-      const parsedPrompt = await parseResponse.json()
-
-      const response = await fetch(`${baseUrl}/tokenize`, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({
-          content: parsedPrompt.prompt,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null)
-        throw new Error(
-          `API request failed with status ${response.status}: ${JSON.stringify(
-            errorData
-          )}`
-        )
-      }
-
-      const dataTokens = await response.json()
-      const textTokens = dataTokens.tokens?.length || 0
-
-      return textTokens + imageTokens
-    } catch (e) {
-      console.warn(String(e))
     }
-    return 0
+    const textTokens = Math.ceil(textChars / 4)
+    return textTokens + imageTokens
   }
 
   private async calculateImageTokens(
