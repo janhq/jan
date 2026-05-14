@@ -1,9 +1,18 @@
 import { useAppState } from '@/hooks/useAppState'
 import { Loader } from 'lucide-react'
+import { useParams } from '@tanstack/react-router'
 
 export function PromptProgress() {
-  const promptProgress = useAppState((state) => state.promptProgress)
-  const loadingModel = useAppState((state) => state.loadingModel)
+  const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
+  const threadId = params?.threadId
+  const promptProgress = useAppState((state) =>
+    (threadId ? state.promptProgresses[threadId] : undefined) ??
+    state.promptProgress
+  )
+  const loadingModel = useAppState((state) =>
+    (threadId ? state.loadingModels[threadId] : undefined) ??
+    state.loadingModel
+  )
 
   const percentage =
     promptProgress && promptProgress.total > 0

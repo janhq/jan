@@ -460,6 +460,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+    const threadId = this.threadId ?? options.chatId
+    useAppState.getState().setCurrentStreamThreadId(threadId)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -498,6 +500,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           )
           if (!loaded.includes(modelId)) {
             useAppState.getState().updateLoadingModel(true)
+            useAppState.getState().updateThreadLoadingModel(threadId, true)
           }
         } catch {
           // Ignore probe failures; the router will still load on demand
@@ -512,8 +515,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         { ...(inferenceParams ?? {}), ...reasoningParams }
       )
       useAppState.getState().updateLoadingModel(false)
+      useAppState.getState().updateThreadLoadingModel(threadId, false)
     } catch (error) {
       useAppState.getState().updateLoadingModel(false)
+      useAppState.getState().updateThreadLoadingModel(threadId, false)
       console.error('Failed to create model:', error)
       throw new Error(
         `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
@@ -661,6 +666,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     let streamStartTime: number | undefined
     useAppState.getState().updatePromptProgress(undefined)
+    useAppState.getState().updateThreadPromptProgress(threadId, undefined)
 
     const result = streamText({
       model: this.model,
@@ -732,6 +738,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       onError: (error) => {
         useAppState.getState().updatePromptProgress(undefined)
         useAppState.getState().updateLoadingModel(false)
+        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+        useAppState.getState().updateThreadLoadingModel(threadId, false)
+        if (useAppState.getState().currentStreamThreadId === threadId) {
+          useAppState.getState().setCurrentStreamThreadId(undefined)
+        }
         const errorMessage = error == null
           ? 'Unknown error'
           : typeof error === 'string'
@@ -745,6 +756,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       onFinish: ({ responseMessage }) => {
         useAppState.getState().updatePromptProgress(undefined)
         useAppState.getState().updateLoadingModel(false)
+        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+        useAppState.getState().updateThreadLoadingModel(threadId, false)
+        if (useAppState.getState().currentStreamThreadId === threadId) {
+          useAppState.getState().setCurrentStreamThreadId(undefined)
+        }
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>
