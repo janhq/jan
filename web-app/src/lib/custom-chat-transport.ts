@@ -460,7 +460,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-    const threadId = options.chatId
+    const threadId = this.threadId ?? options.chatId
     useAppState.getState().setCurrentStreamThreadId(threadId)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the

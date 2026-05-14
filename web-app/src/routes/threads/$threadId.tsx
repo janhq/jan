@@ -626,7 +626,10 @@ function ThreadDetail() {
       let processedAttachments = combinedAttachments
       const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
-        if (hasEmbeddingDocuments) setProcessingEmbeddings(true)
+        if (hasEmbeddingDocuments) {
+          setProcessingEmbeddings(true)
+          useAppState.getState().setThreadBusy(threadId, true)
+        }
         try {
           const parsePreference = useAttachments.getState().parseMode
           const result = await processAttachmentsForSend({
@@ -661,6 +664,7 @@ function ThreadDetail() {
           return
         } finally {
           setProcessingEmbeddings(false)
+          useAppState.getState().setThreadBusy(threadId, false)
         }
       }
 

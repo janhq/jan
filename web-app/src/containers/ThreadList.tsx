@@ -1,6 +1,7 @@
 import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useIsThreadActive } from '@/hooks/useAppState'
+import { useChatSessions } from '@/stores/chat-session-store'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -135,7 +136,11 @@ const ThreadItem = memo(
       }
     }
 
-    const isActive = useIsThreadActive(thread.id)
+    const isAppStateActive = useIsThreadActive(thread.id)
+    const isSessionStreaming = useChatSessions(
+      (state) => state.sessions[thread.id]?.isStreaming ?? false
+    )
+    const isActive = isAppStateActive || isSessionStreaming
 
     return (
       <SidebarMenuItem>

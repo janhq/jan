@@ -36,6 +36,7 @@ type AppState = {
   tokenSpeeds: Record<string, TokenSpeed>
   cancelToolCalls: Record<string, () => void>
   errorMessages: Record<string, AppErrorMessage>
+  busyThreads: Record<string, boolean>
   currentStreamThreadId?: string
 
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
@@ -90,6 +91,7 @@ type AppState = {
   ) => void
   clearThreadState: (threadId: string) => void
   setCurrentStreamThreadId: (threadId: string | undefined) => void
+  setThreadBusy: (threadId: string, busy: boolean) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -110,8 +112,16 @@ export const useAppState = create<AppState>()((set) => ({
   tokenSpeeds: {},
   cancelToolCalls: {},
   errorMessages: {},
+  busyThreads: {},
   currentStreamThreadId: undefined,
   setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
+  setThreadBusy: (threadId, busy) =>
+    set((state) => {
+      const next = { ...state.busyThreads }
+      if (busy) next[threadId] = true
+      else delete next[threadId]
+      return { busyThreads: next }
+    }),
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     set(() => ({
       streamingContent: content
@@ -322,12 +332,14 @@ export const useAppState = create<AppState>()((set) => ({
       const tokenSpeeds = { ...state.tokenSpeeds }
       const cancelToolCalls = { ...state.cancelToolCalls }
       const errorMessages = { ...state.errorMessages }
+      const busyThreads = { ...state.busyThreads }
       delete streamingContents[threadId]
       delete loadingModels[threadId]
       delete promptProgresses[threadId]
       delete tokenSpeeds[threadId]
       delete cancelToolCalls[threadId]
       delete errorMessages[threadId]
+      delete busyThreads[threadId]
       return {
         streamingContents,
         loadingModels,
@@ -335,6 +347,7 @@ export const useAppState = create<AppState>()((set) => ({
         tokenSpeeds,
         cancelToolCalls,
         errorMessages,
+        busyThreads,
       }
     }),
 }))
@@ -345,6 +358,7 @@ export const useActiveThreadIds = () =>
     Object.keys(state.streamingContents).forEach((id) => ids.add(id))
     Object.keys(state.loadingModels).forEach((id) => ids.add(id))
     Object.keys(state.cancelToolCalls).forEach((id) => ids.add(id))
+    Object.keys(state.busyThreads).forEach((id) => ids.add(id))
     return ids
   })
 
@@ -353,6 +367,7 @@ export const useIsThreadActive = (threadId: string | undefined) =>
     threadId
       ? threadId in state.streamingContents ||
         threadId in state.loadingModels ||
-        threadId in state.cancelToolCalls
+        threadId in state.cancelToolCalls ||
+        threadId in state.busyThreads
       : false
   )
