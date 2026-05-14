@@ -16,4 +16,6 @@ export interface RAGService {
   getToolNames(): Promise<string[]>
   // Parse a document to text for inline injection decisions
   parseDocument?: (path: string, type?: string) => Promise<string>
+  // Embed a batch of texts using the configured embedding model
+  embed?: (texts: string[]) => Promise<number[][]>
 }
