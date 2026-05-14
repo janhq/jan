@@ -430,6 +430,9 @@ pub async fn start_router<R: Runtime>(
         api_key: handle.api_key.clone(),
         pid: handle.pid,
     };
+    state
+        .router_pid
+        .store(handle.pid, std::sync::atomic::Ordering::SeqCst);
     *guard = Some(handle);
     Ok(info)
 }
@@ -439,6 +442,9 @@ pub async fn stop_router<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Result<
     let state: State<Arc<LlamacppState>> = app_handle.state();
     let mut guard = state.router.lock().await;
     if let Some(handle) = guard.take() {
+        state
+            .router_pid
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         crate::router::stop_router(handle)
             .await
             .map_err(|e| e.to_string())?;
@@ -457,4 +463,105 @@ pub async fn get_router_info<R: Runtime>(
         api_key: h.api_key.clone(),
         pid: h.pid,
     }))
+}
+
+/// `Ok(Some(busy))` on deadline; handle is restored to state.
+#[tauri::command]
+pub async fn try_graceful_stop_router<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    deadline_secs: u64,
+) -> Result<Option<Vec<String>>, String> {
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let maybe_handle = {
+        let mut guard = state.router.lock().await;
+        guard.take()
+    };
+    let Some(handle) = maybe_handle else {
+        return Ok(None);
+    };
+    match crate::router::try_graceful_stop_router(handle, Duration::from_secs(deadline_secs)).await {
+        Ok(()) => {
+            state
+                .router_pid
+                .store(0, std::sync::atomic::Ordering::SeqCst);
+            Ok(None)
+        }
+        Err((h, busy)) => {
+            let mut guard = state.router.lock().await;
+            *guard = Some(h);
+            Ok(Some(busy))
+        }
+    }
+}
+
+/// Issues `POST /models/unload` for `model_id` only if `/slots?model=<id>`
+/// reports `is_processing: true`. Returns whether an unload was triggered.
+#[tauri::command]
+pub async fn force_stop_model<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: String,
+) -> Result<bool, String> {
+    let (port, api_key, _pid) = router_endpoint(&app_handle).await?;
+    let client = http_client().await;
+
+    let slots_url = format!("http://127.0.0.1:{}/slots", port);
+    let resp = client
+        .get(&slots_url)
+        .query(&[("model", model_id.as_str())])
+        .bearer_auth(&api_key)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Ok(false);
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let busy = json
+        .as_array()
+        .map(|arr| {
+            arr.iter().any(|s| {
+                s.get("is_processing")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+    if !busy {
+        return Ok(false);
+    }
+
+    let url = format!("http://127.0.0.1:{}/models/unload", port);
+    let resp = client
+        .post(&url)
+        .bearer_auth(&api_key)
+        .json(&ModelRequestBody { model: &model_id })
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    log::info!(
+        "force_stop_model: unload {} returned {}",
+        model_id,
+        resp.status()
+    );
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn force_kill_router_tree<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<(), String> {
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let pid = state
+        .router_pid
+        .swap(0, std::sync::atomic::Ordering::SeqCst);
+    let maybe_handle = {
+        let mut guard = state.router.lock().await;
+        guard.take()
+    };
+    match (maybe_handle, pid) {
+        (Some(handle), _) => crate::router::force_kill_router_tree(handle).await,
+        (None, p) if p != 0 => crate::router::force_kill_router_tree_by_pid(p),
+        _ => {}
+    }
+    Ok(())
 }

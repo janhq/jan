@@ -17,7 +17,7 @@ mod process;
 pub mod router;
 pub mod state;
 pub use cleanup::cleanup_llama_processes;
-pub use commands::stop_router;
+pub use commands::{force_kill_router_tree, stop_router, try_graceful_stop_router};
 pub use state::LlamacppState;
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -28,6 +28,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::unload_llama_model,
             commands::start_router,
             commands::stop_router,
+            commands::try_graceful_stop_router,
+            commands::force_kill_router_tree,
+            commands::force_stop_model,
             commands::get_router_info,
             commands::get_devices,
             commands::generate_api_key,

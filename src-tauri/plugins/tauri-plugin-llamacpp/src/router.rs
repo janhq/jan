@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
@@ -229,100 +230,274 @@ pub async fn start_router(
     })
 }
 
-/// Gracefully shut down a router process.
-///
-/// Unloads loaded models over HTTP first so children flush GPU / KV cache
-/// state, then terminates the router itself (SIGTERM→SIGKILL on Unix, forced
-/// kill on Windows).
-pub async fn stop_router(mut handle: RouterHandle) -> ServerResult<()> {
-    unload_all_models_best_effort(handle.port, &handle.api_key).await;
+/// Always terminates; force-kills on busy-deadline. For user-prompt flows
+/// use [`try_graceful_stop_router`] directly.
+pub async fn stop_router(handle: RouterHandle) -> ServerResult<()> {
+    match try_graceful_stop_router(handle, Duration::from_secs(10)).await {
+        Ok(()) => Ok(()),
+        Err((h, busy)) => {
+            log::warn!(
+                "stop_router: deadline hit with {} busy model(s) {:?}; force-killing tree",
+                busy.len(),
+                busy
+            );
+            force_kill_router_tree(h).await;
+            Ok(())
+        }
+    }
+}
 
-    #[cfg(unix)]
-    {
-        crate::process::graceful_terminate_process(&mut handle.child).await;
+/// `Err((handle, busy))` on deadline — caller decides next step.
+pub async fn try_graceful_stop_router(
+    mut handle: RouterHandle,
+    deadline: Duration,
+) -> Result<(), (RouterHandle, Vec<String>)> {
+    let start = Instant::now();
+
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("try_graceful_stop_router: failed to build http client: {}; terminating directly", e);
+            terminate_router_process(&mut handle.child).await;
+            return Ok(());
+        }
+    };
+
+    let initial = match list_busy_models(&client, handle.port, &handle.api_key).await {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!(
+                "try_graceful_stop_router: GET /models failed ({}); router likely already down, terminating",
+                e
+            );
+            terminate_router_process(&mut handle.child).await;
+            return Ok(());
+        }
+    };
+
+    let loaded_only: Vec<String> = match list_models_filtered(&client, handle.port, &handle.api_key, &["loaded"]).await {
+        Ok(v) => v,
+        Err(_) => initial.clone(),
+    };
+    let processing =
+        list_processing_models(&client, handle.port, &handle.api_key, &loaded_only).await;
+    if !processing.is_empty() {
+        log::warn!(
+            "try_graceful_stop_router: {} model(s) actively processing: {:?}",
+            processing.len(),
+            processing
+        );
+        return Err((handle, processing));
     }
-    #[cfg(all(windows, target_arch = "x86_64"))]
-    {
-        crate::process::force_terminate_process(&mut handle.child).await;
+
+    if !initial.is_empty() {
+        log::info!(
+            "try_graceful_stop_router: requesting unload for {} model(s)",
+            initial.len()
+        );
+        let unload_url = format!("http://127.0.0.1:{}/models/unload", handle.port);
+        for id in &initial {
+            let body = serde_json::json!({ "model": id });
+            match client
+                .post(&unload_url)
+                .bearer_auth(&handle.api_key)
+                .json(&body)
+                .send()
+                .await
+            {
+                Ok(r) if r.status().is_success() => {}
+                Ok(r) => log::warn!("try_graceful_stop_router: unload {} returned {}", id, r.status()),
+                Err(e) => log::warn!("try_graceful_stop_router: unload {} failed: {}", id, e),
+            }
+        }
     }
-    #[cfg(not(any(unix, all(windows, target_arch = "x86_64"))))]
-    {
-        let _ = handle.child.kill().await;
-        let _ = handle.child.wait().await;
+
+    loop {
+        let still = list_busy_models(&client, handle.port, &handle.api_key)
+            .await
+            .unwrap_or_default();
+        if still.is_empty() {
+            break;
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= deadline {
+            log::warn!(
+                "try_graceful_stop_router: deadline ({:?}) hit with {} busy model(s)",
+                deadline,
+                still.len()
+            );
+            return Err((handle, still));
+        }
+        let remaining = deadline - elapsed;
+        tokio::time::sleep(Duration::from_millis(150).min(remaining)).await;
     }
+
+    terminate_router_process(&mut handle.child).await;
     Ok(())
 }
 
-async fn unload_all_models_best_effort(port: u16, api_key: &str) {
-    let overall = Duration::from_secs(10);
-    let _ = tokio::time::timeout(overall, async {
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("stop_router: failed to build http client: {}", e);
-                return;
-            }
-        };
+async fn list_busy_models(
+    client: &reqwest::Client,
+    port: u16,
+    api_key: &str,
+) -> Result<Vec<String>, String> {
+    list_models_filtered(client, port, api_key, &["loaded", "loading"]).await
+}
 
-        let list_url = format!("http://127.0.0.1:{}/models", port);
-        let resp = match client.get(&list_url).bearer_auth(api_key).send().await {
+async fn list_models_filtered(
+    client: &reqwest::Client,
+    port: u16,
+    api_key: &str,
+    allowed_status: &[&str],
+) -> Result<Vec<String>, String> {
+    let url = format!("http://127.0.0.1:{}/models", port);
+    let resp = client
+        .get(&url)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(json
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter(|m| {
+                    m.get("status")
+                        .and_then(|s| s.get("value"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| allowed_status.contains(&s))
+                        .unwrap_or(false)
+                })
+                .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+async fn list_processing_models(
+    client: &reqwest::Client,
+    port: u16,
+    api_key: &str,
+    candidates: &[String],
+) -> Vec<String> {
+    let url = format!("http://127.0.0.1:{}/slots", port);
+    let mut busy = Vec::new();
+    for id in candidates {
+        let resp = match client
+            .get(&url)
+            .query(&[("model", id.as_str())])
+            .bearer_auth(api_key)
+            .send()
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
-                log::warn!("stop_router: GET /models failed (router likely already down): {}", e);
-                return;
+                log::warn!("list_processing_models: GET /slots?model={} failed: {}", id, e);
+                continue;
             }
         };
-        let json: serde_json::Value = match resp.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("stop_router: invalid JSON from /models: {}", e);
-                return;
-            }
+        if !resp.status().is_success() {
+            continue;
+        }
+        let Ok(json) = resp.json::<serde_json::Value>().await else {
+            continue;
         };
-        let ids: Vec<String> = json
-            .get("data")
-            .and_then(|d| d.as_array())
+        let is_busy = json
+            .as_array()
             .map(|arr| {
-                arr.iter()
-                    .filter(|m| {
-                        m.get("status")
-                            .and_then(|s| s.get("value"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| matches!(s, "loaded" | "loading"))
-                            .unwrap_or(false)
-                    })
-                    .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
-                    .collect()
+                arr.iter().any(|s| {
+                    s.get("is_processing")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
             })
-            .unwrap_or_default();
-
-        if ids.is_empty() {
-            return;
+            .unwrap_or(false);
+        if is_busy {
+            busy.push(id.clone());
         }
-        log::info!("stop_router: unloading {} model(s) before shutdown", ids.len());
+    }
+    busy
+}
 
-        let unload_url = format!("http://127.0.0.1:{}/models/unload", port);
-        let tasks = ids.into_iter().map(|id| {
-            let client = client.clone();
-            let url = unload_url.clone();
-            let key = api_key.to_string();
-            tokio::spawn(async move {
-                let body = serde_json::json!({ "model": id });
-                match client.post(&url).bearer_auth(&key).json(&body).send().await {
-                    Ok(r) if r.status().is_success() => {}
-                    Ok(r) => log::warn!("stop_router: unload {} returned {}", id, r.status()),
-                    Err(e) => log::warn!("stop_router: unload {} failed: {}", id, e),
-                }
-            })
-        });
-        for t in tasks {
-            let _ = t.await;
+async fn terminate_router_process(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        crate::process::graceful_terminate_process(child).await;
+    }
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    {
+        crate::process::force_terminate_process(child).await;
+    }
+    #[cfg(not(any(unix, all(windows, target_arch = "x86_64"))))]
+    {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+}
+
+/// Force-kill by PID only; used when the handle is owned elsewhere
+/// (e.g. the watcher loop). Does not reap — the holder of the `Child`
+/// will reap on its next operation or on drop.
+pub fn force_kill_router_tree_by_pid(router_pid: u32) {
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let rpid = Pid::from_u32(router_pid);
+    let children: Vec<Pid> = sys
+        .processes()
+        .values()
+        .filter(|p| p.parent() == Some(rpid))
+        .map(|p| p.pid())
+        .collect();
+    log::info!(
+        "force_kill_router_tree_by_pid: router pid {} + {} direct child(ren)",
+        router_pid,
+        children.len()
+    );
+    if let Some(p) = sys.process(rpid) {
+        let _ = p.kill();
+    }
+    for cpid in &children {
+        if let Some(p) = sys.process(*cpid) {
+            let _ = p.kill();
         }
-    })
-    .await;
+    }
+}
+
+/// Router is killed before children so it can't spawn new ones mid-sweep.
+pub async fn force_kill_router_tree(mut handle: RouterHandle) {
+    let router_pid = handle.pid;
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+
+    let rpid = Pid::from_u32(router_pid);
+    let children: Vec<Pid> = sys
+        .processes()
+        .values()
+        .filter(|p| p.parent() == Some(rpid))
+        .map(|p| p.pid())
+        .collect();
+
+    log::info!(
+        "force_kill_router_tree: router pid {} + {} direct child(ren)",
+        router_pid,
+        children.len()
+    );
+
+    if let Some(p) = sys.process(rpid) {
+        if !p.kill() {
+            log::debug!("force_kill_router_tree: router pid {} kill() false (likely already dying)", router_pid);
+        }
+    }
+    // Failures are expected: router's own exit handler reaps these in parallel.
+    for cpid in &children {
+        if let Some(p) = sys.process(*cpid) {
+            let _ = p.kill();
+        }
+    }
+
+    let _ = handle.child.wait().await;
 }
 
 #[cfg(test)]

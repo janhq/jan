@@ -101,11 +101,94 @@ macro_rules! invoke_commands_with_extras {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        // App lifecycle
+        confirm_exit,
         $(
             $extra,
         )*
     ]
     };
+}
+
+#[cfg(not(feature = "cli"))]
+static SHUTTING_DOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+static GRACEFUL_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+static BUSY_MODELS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+async fn confirm_exit<R: tauri::Runtime>(_app_handle: tauri::AppHandle<R>) {
+    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        std::process::exit(0);
+    });
+}
+
+#[cfg(not(feature = "cli"))]
+fn is_llamacpp_router_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    app.try_state::<std::sync::Arc<tauri_plugin_llamacpp::LlamacppState>>()
+        .map(|s| s.router_pid.load(std::sync::atomic::Ordering::SeqCst) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(feature = "cli"))]
+fn reemit_busy_if_any<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) {
+    let busy = BUSY_MODELS.lock().map(|g| g.clone()).unwrap_or_default();
+    if !busy.is_empty() {
+        let _ = app_handle.emit("llamacpp-busy-on-exit", &busy);
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+async fn handle_graceful_exit<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    source: &'static str,
+    exit_code: i32,
+) {
+    use std::sync::atomic::Ordering;
+    let mut emitted = false;
+    loop {
+        if SHUTTING_DOWN.load(Ordering::SeqCst) {
+            return;
+        }
+        match tauri_plugin_llamacpp::try_graceful_stop_router(app_handle.clone(), 1).await {
+            Ok(None) => {
+                if let Ok(mut g) = BUSY_MODELS.lock() {
+                    g.clear();
+                }
+                SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                app_handle.exit(exit_code);
+                return;
+            }
+            Ok(Some(busy)) => {
+                if let Ok(mut g) = BUSY_MODELS.lock() {
+                    *g = busy.clone();
+                }
+                if !emitted {
+                    log::warn!("{}: {} model(s) busy: {:?}", source, busy.len(), busy);
+                    if let Err(e) = app_handle.emit("llamacpp-busy-on-exit", &busy) {
+                        log::warn!("emit llamacpp-busy-on-exit failed: {}", e);
+                        SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                        app_handle.exit(exit_code);
+                        return;
+                    }
+                    emitted = true;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            Err(e) => {
+                log::warn!("{}: try_graceful_stop_router failed: {}", source, e);
+                SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                app_handle.exit(exit_code);
+                return;
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "cli"))]
@@ -259,14 +342,46 @@ pub fn run() {
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {
-        if let RunEvent::ExitRequested { .. } = event {
+        use std::sync::atomic::Ordering;
+        if let RunEvent::WindowEvent {
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            label,
+            ..
+        } = &event
+        {
+            if label == "main"
+                && !SHUTTING_DOWN.load(Ordering::SeqCst)
+                && is_llamacpp_router_running(app)
+            {
+                api.prevent_close();
+                let _ = app.emit("llamacpp-close-attempt", ());
+                if GRACEFUL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                    reemit_busy_if_any(app);
+                    return;
+                }
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    handle_graceful_exit(app_handle, "CloseRequested", 0).await;
+                    GRACEFUL_IN_PROGRESS.store(false, Ordering::SeqCst);
+                });
+                return;
+            }
+        }
+        if let RunEvent::ExitRequested { api, code, .. } = &event {
+            if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_router_running(app) {
+                return;
+            }
+            api.prevent_exit();
+            let _ = app.emit("llamacpp-close-attempt", ());
+            if GRACEFUL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                reemit_busy_if_any(app);
+                return;
+            }
             let app_handle = app.clone();
-            tokio::task::block_in_place(|| {
-                tauri::async_runtime::block_on(async {
-                    if let Err(e) = tauri_plugin_llamacpp::stop_router(app_handle).await {
-                        log::warn!("stop_router on ExitRequested failed: {}", e);
-                    }
-                })
+            let exit_code = code.unwrap_or(0);
+            tauri::async_runtime::spawn(async move {
+                handle_graceful_exit(app_handle, "ExitRequested", exit_code).await;
+                GRACEFUL_IN_PROGRESS.store(false, Ordering::SeqCst);
             });
             return;
         }
