@@ -91,3 +91,54 @@ pub enum ModelSupportStatus {
     #[serde(rename = "GREEN")]
     Green,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HubModelScoreRequest {
+    pub model_name: String,
+    pub developer: Option<String>,
+    pub model_path: String,
+    pub runtime: Option<String>,
+    pub quantization: Option<String>,
+    pub total_size_bytes: Option<u64>,
+    pub ctx_size: Option<u32>,
+    pub use_case: Option<String>,
+    pub capabilities: Option<Vec<String>>,
+    pub release_date: Option<String>,
+    pub tools: Option<bool>,
+    pub num_mmproj: Option<u32>,
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelScoreBreakdown {
+    pub quality: f32,
+    pub speed: f32,
+    pub fit: f32,
+    pub context: f32,
+    pub best_quant: String,
+    pub fit_level: String,
+    pub run_mode: String,
+    pub memory_required_gb: f64,
+    pub utilization_pct: f64,
+    pub use_case: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModelScoreStatus {
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "unavailable")]
+    Unavailable,
+    #[serde(rename = "error")]
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HubModelScoreResult {
+    pub status: ModelScoreStatus,
+    pub overall: Option<f32>,
+    pub estimated_tps: Option<f32>,
+    pub breakdown: Option<ModelScoreBreakdown>,
+    pub used_builtin_fallback: bool,
+    pub reason: Option<String>,
+}
