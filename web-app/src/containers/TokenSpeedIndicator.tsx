@@ -26,11 +26,15 @@ export const TokenSpeedIndicator = memo(
     const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
     const threadId = params?.threadId
     const streamingTokenSpeed = useAppState((state) => {
-      const ts = threadId ? state.tokenSpeeds[threadId] : state.tokenSpeed
+      const ts =
+        (threadId ? state.tokenSpeeds[threadId] : undefined) ??
+        state.tokenSpeed
       return ts ? Math.round(ts.tokenSpeed) : 0
     })
     const streamingTokenCount = useAppState((state) => {
-      const ts = threadId ? state.tokenSpeeds[threadId] : state.tokenSpeed
+      const ts =
+        (threadId ? state.tokenSpeeds[threadId] : undefined) ??
+        state.tokenSpeed
       return ts?.tokenCount || 0
     })
 

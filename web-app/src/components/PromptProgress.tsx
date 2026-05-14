@@ -6,10 +6,12 @@ export function PromptProgress() {
   const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
   const threadId = params?.threadId
   const promptProgress = useAppState((state) =>
-    threadId ? state.promptProgresses[threadId] : state.promptProgress
+    (threadId ? state.promptProgresses[threadId] : undefined) ??
+    state.promptProgress
   )
   const loadingModel = useAppState((state) =>
-    threadId ? state.loadingModels[threadId] : state.loadingModel
+    (threadId ? state.loadingModels[threadId] : undefined) ??
+    state.loadingModel
   )
 
   const percentage =
