@@ -131,7 +131,7 @@ export const ToolContent = memo(
   ({ className, children, ...props }: ToolContentProps) => (
     <CollapsibleContent
       className={cn(
-        'mt-4 text-sm relative',
+        'overflow-hidden text-sm relative data-[state=open]:mt-4',
         'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
         className
       )}

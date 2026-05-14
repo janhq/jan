@@ -58,9 +58,11 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
+import { useAppState } from '@/hooks/useAppState'
 
 /**
  * Llama.cpp timings structure from the response
@@ -72,8 +74,16 @@ interface LlamaCppTimings {
   prompt_per_second?: number
 }
 
+interface LlamaCppPromptProgress {
+  total?: number
+  cache?: number
+  processed?: number
+  time_ms?: number
+}
+
 interface LlamaCppChunk {
   timings?: LlamaCppTimings
+  prompt_progress?: LlamaCppPromptProgress
 }
 
 /**
@@ -102,8 +112,24 @@ const providerMetadataExtractor: MetadataExtractor = {
     return {
       processChunk: (parsedChunk: unknown) => {
         const chunk = parsedChunk as LlamaCppChunk
+        if (useAppState.getState().loadingModel) {
+          useAppState.getState().updateLoadingModel(false)
+        }
         if (chunk?.timings) {
           lastTimings = chunk.timings
+        }
+        const pp = chunk?.prompt_progress
+        if (
+          pp &&
+          typeof pp.total === 'number' &&
+          typeof pp.processed === 'number'
+        ) {
+          useAppState.getState().updatePromptProgress({
+            total: pp.total,
+            processed: pp.processed,
+            cache: pp.cache ?? 0,
+            time_ms: pp.time_ms ?? 0,
+          })
         }
       },
       buildMetadata: () => {
@@ -171,10 +197,55 @@ function createCustomFetch(
         normalised[targetKey] = value
       }
 
-      init = { ...init, body: JSON.stringify({ ...body, ...normalised }) }
+      const merged = { ...body, ...normalised }
+      if (keepLlamacppOnly && merged.stream === true) {
+        merged.return_progress = true
+      }
+      decodeAudioSentinelsInBody(merged)
+      init = { ...init, body: JSON.stringify(merged) }
     }
 
     return baseFetch(input, init)
+  }
+}
+
+// Rewrites any sentinel-bearing text content (planted by
+// CustomChatTransport.encodeAudioAttachments) back into OpenAI `input_audio`
+// content parts. Mutates `body.messages` in place.
+export function decodeAudioSentinelsInBody(body: Record<string, unknown>): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'user') continue
+    if (typeof m.content === 'string') {
+      if (!hasAudioSentinel(m.content)) continue
+      const split = splitAudioSentinels(m.content)
+      if (split) m.content = split
+      continue
+    }
+    if (!Array.isArray(m.content)) continue
+    const next: unknown[] = []
+    let touched = false
+    for (const part of m.content) {
+      if (
+        part &&
+        typeof part === 'object' &&
+        (part as { type?: string }).type === 'text' &&
+        typeof (part as { text?: string }).text === 'string' &&
+        hasAudioSentinel((part as { text: string }).text)
+      ) {
+        const split = splitAudioSentinels((part as { text: string }).text)
+        if (split) {
+          next.push(...split)
+          touched = true
+          continue
+        }
+      }
+      next.push(part)
+    }
+    if (touched) m.content = next
   }
 }
 

@@ -129,7 +129,7 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('My Custom Model')
   })
 
-  it('should preserve user-configured capabilities when merging setProviders refresh', () => {
+  it('should preserve user-controlled capabilities but always pick up engine-owned ones (vision/audio/embeddings) on refresh', () => {
     const { result } = renderHook(() => useModelProvider())
 
     act(() => {
@@ -174,7 +174,7 @@ describe('useModelProvider - displayName functionality', () => {
     })
 
     const provider = result.current.getProviderByName('llamacpp')
-    expect(provider?.models[0].capabilities).toEqual(['completion'])
+    expect(provider?.models[0].capabilities).toEqual(['completion', 'vision'])
     expect(
       (provider?.models[0] as { _userConfiguredCapabilities?: boolean })
         ._userConfiguredCapabilities

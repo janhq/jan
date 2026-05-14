@@ -483,6 +483,11 @@ function ThreadDetail() {
     reset: resetReasoningScroll,
   } = useAutoScroll()
 
+  const lastIsAssistant = useMemo(() => {
+    const last = chatMessages[chatMessages.length - 1]
+    return !!last && last.role === 'assistant'
+  }, [chatMessages])
+
   useEffect(() => {
     if (status === 'streaming') {
       resetReasoningScroll()
@@ -1114,7 +1119,9 @@ function ThreadDetail() {
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
                   )}
-                  {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+                  {status === CHAT_STATUS.SUBMITTED && !lastIsAssistant && (
+                    <PromptProgress />
+                  )}
                 </div>
               )}
               {(error || contextLimitError) && !isAutoIncreasingContext && (

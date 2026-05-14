@@ -140,6 +140,7 @@ export enum ContentType {
   Text = 'text',
   Reasoning = 'reasoning',
   Image = 'image_url',
+  InputAudio = 'input_audio',
   ToolCall = 'tool_call',
 }
 
@@ -162,6 +163,15 @@ export type ImageContentValue = {
 }
 
 /**
+ * The `InputAudioContentValue` type carries base64-encoded audio for OAI-compatible
+ * `input_audio` content parts (supported by llama.cpp mtmd-capable models).
+ */
+export type InputAudioContentValue = {
+  data: string
+  format: 'wav' | 'mp3'
+}
+
+/**
  * The `ThreadContent` type defines the shape of a message's content object
  * @data_transfer_object
  */
@@ -171,6 +181,8 @@ export type ThreadContent = {
   text?: ContentValue
   // For image content
   image_url?: ImageContentValue
+  // For input_audio content
+  input_audio?: InputAudioContentValue
   // For tool call content
   tool_call_id?: string
   tool_name?: string
