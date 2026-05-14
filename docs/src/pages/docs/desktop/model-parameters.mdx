@@ -47,6 +47,38 @@ A panel will slide open on the right with all available model settings:
 | **Presence Penalty** | Encourages talking about new topics | Higher values make the model explore new subjects instead of staying on one topic. |
 | **Frequency Penalty** | Reduces word repetition | Similar to repeat penalty but focuses on how often words are used. |
 
+## Speculative Decoding Settings
+
+Speculative decoding speeds up generation by predicting multiple tokens in advance. Jan supports two modes that can be used independently or together.
+
+| Setting | What It Does | Simple Explanation |
+|---------|-------------|-------------------|
+| **Draft Model** | A smaller model that generates candidate tokens for the main model to verify | Pick a smaller model with the same architecture (e.g., Llama 3.2 3B as draft for Llama 3.1 8B). The main model accepts or rejects the drafts — accepted tokens are free. |
+| **Speculative Type** | Model-free speculative decoding using token history patterns | Works without a draft model. `ngram-mod` is recommended for reasoning models. `none` disables this mode. |
+| **Max Draft Tokens** | How many draft tokens to generate per step | Default is 16. Higher values can improve speed when drafts are frequently accepted. |
+| **Min Draft Tokens** | Minimum tokens to always generate before verification | Default is 0 (use llama.cpp default). Raise if you see performance regressions. |
+
+<Callout type="info">
+**Speculative decoding requires a restart** — changing any of these settings will automatically stop and restart the running model.
+</Callout>
+
+### Choosing a Draft Model
+
+- The draft model **must share the same tokenizer** as the main model
+- Smaller is faster: a 3B–7B draft for a 70B main model is a common pairing
+- The draft model dropdown only shows other installed llamacpp models, so install the draft model first
+
+### Choosing a Speculative Type
+
+| Value | Best For |
+|-------|----------|
+| `none` | Disabled (default) |
+| `ngram-simple` | General use, minimal overhead |
+| `ngram-mod` | Reasoning models (e.g., DeepSeek-R1, Qwen-QwQ) |
+| `ngram-cache` | Long conversations with repeated phrasing |
+| `ngram-map-k` | Advanced n-gram with key mapping |
+| `ngram-map-k4v` | Experimental variant of ngram-map-k |
+
 ## Hardware Settings
 
 These control how efficiently the model runs on your computer:

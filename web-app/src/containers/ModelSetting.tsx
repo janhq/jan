@@ -16,6 +16,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
+import { useCallback, useMemo } from 'react'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -26,10 +27,47 @@ export function ModelSetting({
   model,
   provider,
 }: ModelSettingProps) {
-  const { updateProvider } = useModelProvider()
+  const { updateProvider, providers } = useModelProvider()
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
+
+  // All non-embedding llamacpp models except the current one (candidates for draft model)
+  const draftModelCandidates = useMemo(
+    () =>
+      providers
+        .filter((p) => p.provider === 'llamacpp')
+        .flatMap((p) => p.models)
+        .filter(
+          (candidate) =>
+            candidate.id !== model.id &&
+            !candidate.settings?.embedding?.controller_props?.value
+        )
+        .map((candidate) => ({
+          value: candidate.id,
+          name: candidate.displayName ?? candidate.id,
+        })),
+    [model.id, providers]
+  )
+
+  const getControllerProps = useCallback((config: ProviderSetting) => {
+    switch (config.key) {
+      case 'draft_model_id':
+        return {
+          ...config.controller_props,
+          options: [
+            ...(config.controller_props?.options || []),
+            ...draftModelCandidates,
+          ],
+          value: config.controller_props?.value,
+        }
+      default:
+        return {
+          ...config.controller_props,
+          value: config.controller_props?.value,
+        }
+    }
+  }, [draftModelCandidates])
 
   // Create a debounced version of stopModel that waits 500ms after the last call
   const debouncedStopModel = debounce((modelId: string) => {
@@ -90,7 +128,12 @@ export function ModelSetting({
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe'
+        key === 'n_cpu_moe' ||
+        key === 'reasoning' ||
+        key === 'draft_model_id' ||
+        key === 'spec_type' ||
+        key === 'draft_max' ||
+        key === 'draft_min'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -104,28 +147,6 @@ export function ModelSetting({
       }
     }
   }
-
-  const handleEngineSettingChange = (
-    key: string,
-    value: string | boolean | number
-  ) => {
-    if (!provider) return
-    const newSettings = provider.settings.map((s) =>
-      s.key === key
-        ? {
-            ...s,
-            controller_props: { ...s.controller_props, value },
-          }
-        : s
-    )
-    serviceHub.providers().updateSettings(provider.provider, newSettings)
-    updateProvider(provider.provider, { settings: newSettings })
-  }
-
-  const fitEnabled =
-    provider.settings?.find((s) => s.key === 'fit')?.controller_props?.value ===
-    true
-  const fitCtxSetting = provider.settings?.find((s) => s.key === 'fit_ctx')
 
   return (
     <Sheet>
@@ -147,42 +168,24 @@ export function ModelSetting({
         </SheetHeader>
 
         <div className="px-4 space-y-8 pb-4">
-          {fitEnabled && fitCtxSetting && (
-            <div key="fit_ctx" className="space-y-2">
-              <div className="flex items-start justify-between gap-8">
-                <div className="mb-1 truncate">
-                  <span title={fitCtxSetting.title} className="font-medium">
-                    {fitCtxSetting.title}
-                  </span>
-                </div>
-                <DynamicControllerSetting
-                  key={fitCtxSetting.key}
-                  title={fitCtxSetting.title}
-                  description={fitCtxSetting.description}
-                  controllerType={fitCtxSetting.controller_type}
-                  controllerProps={fitCtxSetting.controller_props}
-                  onChange={(newValue) =>
-                    handleEngineSettingChange('fit_ctx', newValue)
-                  }
-                />
-              </div>
-              <p className="text-muted-foreground leading-normal text-xs">
-                {fitCtxSetting.description}
-              </p>
-            </div>
-          )}
-          {(() => {
-            return Object.entries(model.settings || {})
+          {Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc
             if (entry[0] === 'reasoning') return acc
-            if (fitEnabled && entry[0] === 'ctx_len') return acc
             if (entry[0] === 'ctx_len') {
               const autoIncrease = Object.entries(model.settings || {}).find(
                 ([k]) => k === 'auto_increase_ctx_len'
               )
               if (autoIncrease) acc.push(autoIncrease)
             }
+            acc.push(entry)
+            return acc
+          }, [])
+          .reduce<[string, unknown][]>((acc, entry) => {
+            const reasoning = Object.entries(model.settings || {}).find(
+              ([k]) => k === 'reasoning'
+            )
+            if (reasoning && acc.length === 0) acc.push(reasoning)
             acc.push(entry)
             return acc
           }, [])
@@ -214,10 +217,7 @@ export function ModelSetting({
                     title={config.title}
                     description={config.description}
                     controllerType={config.controller_type}
-                    controllerProps={{
-                      ...config.controller_props,
-                      value: config.controller_props?.value,
-                    }}
+                    controllerProps={getControllerProps(config)}
                     onChange={(newValue) => handleSettingChange(key, newValue)}
                   />
                 </div>
@@ -226,8 +226,7 @@ export function ModelSetting({
                 </p>
               </div>
             )
-          })
-          })()}
+          })}
         </div>
       </SheetContent>
     </Sheet>

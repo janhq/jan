@@ -50,6 +50,7 @@ import {
   loadLlamaModel,
   readGgufMetadata,
   isModelSupported,
+  scoreHubModel,
   unloadLlamaModel,
   LlamacppConfig,
   DownloadItem,
@@ -57,6 +58,9 @@ import {
   EmbeddingResponse,
   ModelProps,
   DeviceList,
+  HubModelScoreRequest,
+  HubModelScoreResult,
+  SystemMemory,
   mapOldBackendToNew,
   findLatestVersionForBackend,
   prioritizeBackends,
@@ -2469,6 +2473,16 @@ export default class llamacpp_extension extends AIEngine {
     try {
       const result = await isModelSupported(path, Number(ctxSize))
       return result
+    } catch (e) {
+      throw new Error(String(e))
+    }
+  }
+
+  async getHubModelScore(
+    request: HubModelScoreRequest
+  ): Promise<HubModelScoreResult> {
+    try {
+      return await scoreHubModel(request)
     } catch (e) {
       throw new Error(String(e))
     }

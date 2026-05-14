@@ -592,9 +592,47 @@ export const useModelProvider = create<ModelProviderState>()(
             })
           })
         }
+
+        if (version <= 13 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.models && provider.provider === 'llamacpp') {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.draft_model_id) {
+                  model.settings.draft_model_id = {
+                    ...modelSettings.draft_model_id,
+                    controller_props: {
+                      ...modelSettings.draft_model_id.controller_props,
+                    },
+                  }
+                }
+
+                if (!model.settings.draft_max) {
+                  model.settings.draft_max = {
+                    ...modelSettings.draft_max,
+                    controller_props: {
+                      ...modelSettings.draft_max.controller_props,
+                    },
+                  }
+                }
+
+                if (!model.settings.draft_min) {
+                  model.settings.draft_min = {
+                    ...modelSettings.draft_min,
+                    controller_props: {
+                      ...modelSettings.draft_min.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
         return state
       },
-      version: 13,
+      version: 14,
     }
   )
 )

@@ -386,5 +386,22 @@
       "type": "number",
       "textAlign": "right"
     }
+  },
+  {
+    "key": "spec_type",
+    "title": "Speculative type",
+    "description": "Model-free speculative decoding using token history patterns. Works without a draft model. Can be combined with a draft model. None = disabled. ngram-mod - good for reasoning models. ",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": [
+        { "value": "none", "name": "none" },
+        { "value": "ngram-simple", "name": "ngram-simple" },
+        { "value": "ngram-mod", "name": "ngram-mod" },
+        { "value": "ngram-cache", "name": "ngram-cache" },
+        { "value": "ngram-map-k", "name": "ngram-map-k" },
+        { "value": "ngram-map-k4v", "name": "ngram-map-k4v (experimental)" }
+      ]
+    }
   }
 ]

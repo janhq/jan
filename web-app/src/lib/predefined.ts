@@ -213,4 +213,43 @@ export const modelSettings = {
       ],
     },
   },
+  draft_model_id: {
+    key: 'draft_model_id',
+    title: 'Draft Model',
+    description: 'A smaller model of the same architecture that generates draft tokens. Requires a compatible (same tokenizer) smaller model to be installed.',
+    controller_type: 'dropdown',
+    controller_props: {
+      value: 'none',
+      options: [
+        { value: 'none', name: 'None' },
+        // Draft model options will be populated dynamically based on other models of the same provider that have compatible tokenizers
+      ]
+    }
+  },
+  draft_max: {
+    key: 'draft_max',
+    title: 'Max draft tokens per step',
+    description:
+      'Number of tokens to draft for speculative decoding (default: 16)',
+    controller_type: 'input',
+    controller_props: {
+      value: 16,
+      placeholder: '16',
+      type: 'number',
+      textAlign: 'right'
+    }
+  },
+  draft_min: {
+    key: 'draft_min',
+    title: 'Min draft tokens per step',
+    description:
+      'Minimum number of draft tokens to use for speculative decoding (default: 0)',
+    controller_type: 'input',
+    controller_props: {
+      value: 0,
+      placeholder: '0',
+      type: 'number',
+      textAlign: 'right'
+    }
+  },
 }
