@@ -1,5 +1,6 @@
-import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useIsThreadActive } from '@/hooks/useAppState'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -134,11 +135,18 @@ const ThreadItem = memo(
       }
     }
 
+    const isActive = useIsThreadActive(thread.id)
+
     return (
       <SidebarMenuItem>
         {currentProjectId ?
           <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block max-w-full overflow-hidden">
-              <span className="block truncate" title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {isActive && (
+                  <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+                )}
+                <span className="block truncate" title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
+              </div>
               {currentProjectId && lastUserMessageText && (
                 <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
                   {lastUserMessageText}
@@ -148,6 +156,9 @@ const ThreadItem = memo(
           :
           <SidebarMenuButton asChild>
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
+              {isActive && (
+                <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+              )}
               <span className="block truncate" title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
             </Link>
           </SidebarMenuButton>
