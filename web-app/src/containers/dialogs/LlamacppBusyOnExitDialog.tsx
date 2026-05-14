@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAppState } from '@/hooks/useAppState'
+import { isPlatformTauri } from '@/lib/platform/utils'
 import {
   Dialog,
   DialogContent,
@@ -22,20 +23,27 @@ export default function LlamacppBusyOnExitDialog() {
   const [forcing, setForcing] = useState(false)
 
   useEffect(() => {
+    if (!isPlatformTauri()) return
     const CLOSING_TOAST_ID = 'llamacpp-closing'
     const unlistenAttempt = listen('llamacpp-close-attempt', () => {
       toast.loading(t('common:llamacppBusyOnExit.shuttingDown'), {
         id: CLOSING_TOAST_ID,
         duration: Infinity,
       })
+    }).catch((e) => {
+      console.warn('listen llamacpp-close-attempt failed:', e)
+      return () => {}
     })
     const unlistenBusy = listen<string[]>('llamacpp-busy-on-exit', (event) => {
       toast.dismiss(CLOSING_TOAST_ID)
       setBusyModels(event.payload ?? [])
+    }).catch((e) => {
+      console.warn('listen llamacpp-busy-on-exit failed:', e)
+      return () => {}
     })
     return () => {
-      void unlistenAttempt.then((fn) => fn())
-      void unlistenBusy.then((fn) => fn())
+      void unlistenAttempt.then((fn) => fn?.())
+      void unlistenBusy.then((fn) => fn?.())
       toast.dismiss(CLOSING_TOAST_ID)
     }
   }, [t])
