@@ -36,6 +36,7 @@ type AppState = {
   tokenSpeeds: Record<string, TokenSpeed>
   cancelToolCalls: Record<string, () => void>
   errorMessages: Record<string, AppErrorMessage>
+  currentStreamThreadId?: string
 
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -88,6 +89,7 @@ type AppState = {
     error: AppErrorMessage | undefined
   ) => void
   clearThreadState: (threadId: string) => void
+  setCurrentStreamThreadId: (threadId: string | undefined) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -108,6 +110,8 @@ export const useAppState = create<AppState>()((set) => ({
   tokenSpeeds: {},
   cancelToolCalls: {},
   errorMessages: {},
+  currentStreamThreadId: undefined,
+  setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     set(() => ({
       streamingContent: content

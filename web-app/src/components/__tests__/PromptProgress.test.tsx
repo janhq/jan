@@ -8,6 +8,10 @@ vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(),
 }))
 
+vi.mock('@tanstack/react-router', () => ({
+  useParams: () => undefined,
+}))
+
 const mockUseAppState = useAppState as ReturnType<typeof vi.fn>
 
 describe('PromptProgress', () => {

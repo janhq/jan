@@ -461,6 +461,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = options.chatId
+    useAppState.getState().setCurrentStreamThreadId(threadId)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -739,6 +740,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         useAppState.getState().updateLoadingModel(false)
         useAppState.getState().updateThreadPromptProgress(threadId, undefined)
         useAppState.getState().updateThreadLoadingModel(threadId, false)
+        if (useAppState.getState().currentStreamThreadId === threadId) {
+          useAppState.getState().setCurrentStreamThreadId(undefined)
+        }
         const errorMessage = error == null
           ? 'Unknown error'
           : typeof error === 'string'
@@ -754,6 +758,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         useAppState.getState().updateLoadingModel(false)
         useAppState.getState().updateThreadPromptProgress(threadId, undefined)
         useAppState.getState().updateThreadLoadingModel(threadId, false)
+        if (useAppState.getState().currentStreamThreadId === threadId) {
+          useAppState.getState().setCurrentStreamThreadId(undefined)
+        }
         if (responseMessage) {
           const metadata = responseMessage.metadata as
             | Record<string, unknown>

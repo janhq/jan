@@ -112,8 +112,13 @@ const providerMetadataExtractor: MetadataExtractor = {
     return {
       processChunk: (parsedChunk: unknown) => {
         const chunk = parsedChunk as LlamaCppChunk
-        if (useAppState.getState().loadingModel) {
-          useAppState.getState().updateLoadingModel(false)
+        const state = useAppState.getState()
+        const streamThreadId = state.currentStreamThreadId
+        if (state.loadingModel) {
+          state.updateLoadingModel(false)
+        }
+        if (streamThreadId) {
+          state.updateThreadLoadingModel(streamThreadId, false)
         }
         if (chunk?.timings) {
           lastTimings = chunk.timings
@@ -124,12 +129,16 @@ const providerMetadataExtractor: MetadataExtractor = {
           typeof pp.total === 'number' &&
           typeof pp.processed === 'number'
         ) {
-          useAppState.getState().updatePromptProgress({
+          const progress = {
             total: pp.total,
             processed: pp.processed,
             cache: pp.cache ?? 0,
             time_ms: pp.time_ms ?? 0,
-          })
+          }
+          state.updatePromptProgress(progress)
+          if (streamThreadId) {
+            state.updateThreadPromptProgress(streamThreadId, progress)
+          }
         }
       },
       buildMetadata: () => {

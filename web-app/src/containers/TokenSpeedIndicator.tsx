@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { useAppState } from '@/hooks/useAppState'
 import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
+import { useParams } from '@tanstack/react-router'
 
 interface TokenUsage {
   inputTokens?: number
@@ -22,13 +23,16 @@ interface TokenSpeedIndicatorProps {
 
 export const TokenSpeedIndicator = memo(
   ({ metadata, streaming }: TokenSpeedIndicatorProps) => {
-    // Get real-time token speed from global state during streaming
-    const streamingTokenSpeed = useAppState((state) =>
-      state.tokenSpeed ? Math.round(state.tokenSpeed.tokenSpeed) : 0
-    )
-    const streamingTokenCount = useAppState((state) =>
-      state.tokenSpeed?.tokenCount || 0
-    )
+    const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
+    const threadId = params?.threadId
+    const streamingTokenSpeed = useAppState((state) => {
+      const ts = threadId ? state.tokenSpeeds[threadId] : state.tokenSpeed
+      return ts ? Math.round(ts.tokenSpeed) : 0
+    })
+    const streamingTokenCount = useAppState((state) => {
+      const ts = threadId ? state.tokenSpeeds[threadId] : state.tokenSpeed
+      return ts?.tokenCount || 0
+    })
 
     // Fallback to persisted metadata when not streaming
     const persistedTokenSpeed =
