@@ -11,6 +11,8 @@
   "general": "Chung",
   "settings": "Cài đặt",
   "modelProviders": "Nhà cung cấp Mô hình",
+  "localProviders": "Cục bộ",
+  "remoteProviders": "Từ xa",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Giao diện",

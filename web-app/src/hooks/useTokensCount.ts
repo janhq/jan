@@ -1,287 +1,175 @@
-import { useCallback, useState, useRef, useEffect, useMemo } from 'react'
-import { ThreadMessage, ContentType } from '@janhq/core'
-import { useServiceHub } from './useServiceHub'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ThreadMessage } from '@janhq/core'
+import { ExtensionManager } from '@/lib/extension'
 import { useModelProvider } from './useModelProvider'
-import { usePrompt } from './usePrompt'
-import { removeReasoningContent } from '@/utils/reasoning'
+
+export interface ModelProps {
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  isSleeping?: boolean
+}
 
 export interface TokenCountData {
   tokenCount: number
+  inputTokens?: number
+  outputTokens?: number
   maxTokens?: number
   percentage?: number
   isNearLimit: boolean
   loading: boolean
+  modelProps?: ModelProps
+  modelDisplayName?: string
+  fitEnabled: boolean
+  configuredCtxLen?: number
+  modalities?: { vision: boolean; audio: boolean }
   error?: string
 }
 
-type InlineFileContent = {
-  name?: string
-  content: string
+interface UsageMeta {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
 }
 
-const getInlineFileContents = (
-  metadata: ThreadMessage['metadata']
-): InlineFileContent[] => {
-  const inlineFileContents = (
-    metadata as { inline_file_contents?: unknown }
-  )?.inline_file_contents
-
-  if (!Array.isArray(inlineFileContents)) return []
-
-  return inlineFileContents.filter((file): file is InlineFileContent => {
-    if (!file || typeof file !== 'object') return false
-    const { content, name } = file as { content?: unknown; name?: unknown }
-
-    const hasContent = typeof content === 'string' && content.length > 0
-    const hasValidName =
-      typeof name === 'string' || typeof name === 'undefined'
-
-    return hasContent && hasValidName
-  })
+interface LlamacppExtensionLike {
+  getModelProps?: (modelId: string) => Promise<ModelProps | undefined>
 }
 
-export const useTokensCount = (
-  messages: ThreadMessage[] = [],
-  uploadedFiles?: Array<{
-    name: string
-    type: string
-    size: number
-    base64: string
-    dataUrl: string
-  }>,
-  additionalContextText?: string
-) => {
-  const [tokenData, setTokenData] = useState<TokenCountData>({
-    tokenCount: 0,
-    loading: false,
-    isNearLimit: false,
-  })
+const getLatestServerUsage = (messages: ThreadMessage[]): UsageMeta => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const usage = (messages[i].metadata as { usage?: UsageMeta } | undefined)
+      ?.usage
+    if (usage && typeof usage.totalTokens === 'number' && usage.totalTokens > 0)
+      return usage
+  }
+  return {}
+}
 
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
-  const latestCalculationRef = useRef<(() => Promise<void>) | null>(null)
-  const requestIdRef = useRef(0)
-  const isIncreasingContextSize = useRef<boolean>(false)
-  const serviceHub = useServiceHub()
-  const { selectedModel, selectedProvider } = useModelProvider()
-  const { prompt } = usePrompt()
+const getLlamacppExtension = (): LlamacppExtensionLike | undefined => {
+  const mgr = ExtensionManager.getInstance()
+  const candidates = [
+    mgr.getByName('@janhq/llamacpp-extension'),
+    mgr.getByName('llamacpp-extension'),
+  ]
+  for (const c of candidates) {
+    if (c && typeof (c as LlamacppExtensionLike).getModelProps === 'function')
+      return c as LlamacppExtensionLike
+  }
+  return mgr.listExtensions().find(
+    (ext) =>
+      typeof (ext as LlamacppExtensionLike).getModelProps === 'function'
+  ) as LlamacppExtensionLike | undefined
+}
 
-  // Create messages with current prompt for live calculation.
-  // This mirrors the payload sent to token counting by appending the draft
-  // user message (text plus any uploaded images) to the existing thread
-  // history so the model sees the full context that will be submitted.
-  const messagesWithPrompt = useMemo(() => {
-    const result = [...messages]
-    if (prompt.trim() || (uploadedFiles && uploadedFiles.length > 0)) {
-      const content = []
+const readSettingNumber = (v: unknown): number | undefined => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string') {
+    const n = parseInt(v, 10)
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
+}
 
-      // Add text content if prompt exists
-      if (prompt.trim()) {
-        content.push({ type: ContentType.Text, text: { value: prompt } })
-      }
+export const useTokensCount = (messages: ThreadMessage[] = []) => {
+  const { selectedModel, selectedProvider, getProviderByName } =
+    useModelProvider()
+  const [modelProps, setModelProps] = useState<ModelProps | undefined>(
+    undefined
+  )
+  const [loading, setLoading] = useState(false)
+  const reqId = useRef(0)
 
-      // Add image content for uploaded files
-      if (uploadedFiles && uploadedFiles.length > 0) {
-        uploadedFiles.forEach((file) => {
-          content.push({
-            type: ContentType.Image,
-            image_url: {
-              url: file.dataUrl,
-              detail: 'high', // Default to high detail for token calculation
-            },
-          })
-        })
-      }
+  const modelId =
+    selectedProvider === 'llamacpp' ? selectedModel?.id : undefined
 
-      if (content.length > 0) {
-        result.push({
-          id: 'temp-prompt',
-          thread_id: '',
-          role: 'user',
-          content,
-          created_at: Date.now(),
-        } as ThreadMessage)
-      }
-    }
-
-    if (additionalContextText?.trim()) {
-      result.push({
-        id: 'temp-runtime-context',
-        thread_id: '',
-        role: 'system',
-        content: [
-          {
-            type: ContentType.Text,
-            text: { value: additionalContextText.trim() },
-          },
-        ],
-        created_at: Date.now(),
-      } as ThreadMessage)
-    }
-
-    return result.map((e) => {
-      // Pull inline file contents stored on the message metadata
-      const inlineFileContents = getInlineFileContents(e.metadata)
-
-      const buildInlineText = (base: string) => {
-        if (!inlineFileContents.length) return base
-        const formatted = inlineFileContents
-          .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
-          .join('\n\n')
-        return base ? `${base}\n\n${formatted}` : formatted
-      }
-
-      return {
-        ...e,
-        content: e.content.map((c) => ({
-          ...c,
-          text:
-            c.type === 'text'
-              ? {
-                  value: removeReasoningContent(
-                    buildInlineText(c.text?.value ?? '.')
-                  ),
-                  annotations: [],
-                }
-              : c.text,
-        })),
-      }
-    })
-  }, [messages, prompt, uploadedFiles, additionalContextText])
-
-  // Debounced calculation that includes current prompt
-  const runTokenCalculation = useCallback(async () => {
-    const requestId = ++requestIdRef.current
-    const modelId = selectedModel?.id
-
-    if (
-      !modelId ||
-      selectedProvider !== 'llamacpp' ||
-      messagesWithPrompt.length === 0
-    ) {
-      if (requestId === requestIdRef.current) {
-        setTokenData({
-          tokenCount: 0,
-          loading: false,
-          isNearLimit: false,
-        })
-      }
+  useEffect(() => {
+    if (!modelId) {
+      setModelProps(undefined)
+      setLoading(false)
       return
     }
-
-    setTokenData((prev) => ({ ...prev, loading: true, error: undefined }))
-
-    try {
-      const tokenCount = await serviceHub
-        .models()
-        .getTokensCount(modelId, messagesWithPrompt)
-
-      if (requestId !== requestIdRef.current) {
-        return
-      }
-
-      const maxTokensValue =
-        selectedModel?.settings?.ctx_len?.controller_props?.value
-      const maxTokensNum =
-        typeof maxTokensValue === 'string'
-          ? parseInt(maxTokensValue)
-          : typeof maxTokensValue === 'number'
-            ? maxTokensValue
-            : undefined
-
-      const percentage = maxTokensNum
-        ? (tokenCount / maxTokensNum) * 100
-        : undefined
-      const isNearLimit = percentage ? percentage > 85 : false
-
-      setTokenData({
-        tokenCount,
-        maxTokens: maxTokensNum,
-        percentage,
-        isNearLimit,
-        loading: false,
+    const ext = getLlamacppExtension()
+    if (!ext?.getModelProps) {
+      setModelProps(undefined)
+      return
+    }
+    const id = ++reqId.current
+    setLoading(true)
+    ext
+      .getModelProps(modelId)
+      .then((props) => {
+        if (id !== reqId.current) return
+        setModelProps(props)
       })
-    } catch (error) {
-      if (requestId !== requestIdRef.current) {
-        return
-      }
+      .catch(() => {
+        if (id !== reqId.current) return
+        setModelProps(undefined)
+      })
+      .finally(() => {
+        if (id !== reqId.current) return
+        setLoading(false)
+      })
+  }, [modelId, messages.length])
 
-      console.error('Failed to calculate tokens:', error)
-      setTokenData((prev) => ({
-        ...prev,
-        loading: false,
-        error:
-          error instanceof Error ? error.message : 'Failed to calculate tokens',
-      }))
-    }
-  }, [
-    selectedModel?.id,
-    selectedProvider,
-    messagesWithPrompt,
-    serviceHub,
-    selectedModel?.settings?.ctx_len?.controller_props?.value,
-  ])
-
-  useEffect(() => {
-    latestCalculationRef.current = runTokenCalculation
-  }, [runTokenCalculation])
-
-  // Debounced effect that triggers when prompt or messages change
-  useEffect(() => {
-    // Clear existing timeout
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current)
-    }
-
-    // Skip calculation if we're currently increasing context size
-    if (isIncreasingContextSize.current) {
-      return
-    }
-
-    // Only calculate if we have messages or a prompt
-    if (
-      messagesWithPrompt.length > 0 &&
-      selectedProvider === 'llamacpp' &&
-      selectedModel?.id
-    ) {
-      debounceTimeoutRef.current = setTimeout(() => {
-        void latestCalculationRef.current?.()
-      }, 500) // 500ms debounce to reduce repeated token calculations
-    } else {
-      // Reset immediately if no content
-      requestIdRef.current += 1
-      setTokenData({
+  const tokenData: TokenCountData = useMemo(() => {
+    if (selectedProvider !== 'llamacpp' || !modelId) {
+      return {
         tokenCount: 0,
         loading: false,
         isNearLimit: false,
-      })
-    }
-
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current)
+        fitEnabled: false,
       }
     }
+    const usage = getLatestServerUsage(messages)
+    const tokenCount = usage.totalTokens ?? 0
+    const maxTokens = modelProps?.nCtx
+    const percentage = maxTokens ? (tokenCount / maxTokens) * 100 : undefined
+    const isNearLimit = percentage ? percentage > 85 : false
+
+    const provider = getProviderByName('llamacpp')
+    const fitEnabled =
+      provider?.settings?.find((s) => s.key === 'fit')?.controller_props
+        ?.value === true
+    const configuredCtxLen = readSettingNumber(
+      selectedModel?.settings?.ctx_len?.controller_props?.value
+    )
+    const modelDisplayName =
+      modelProps?.modelAlias || selectedModel?.name || modelId
+    const caps = selectedModel?.capabilities ?? []
+    const modalities = {
+      vision: caps.includes('vision'),
+      audio: caps.includes('audio'),
+    }
+
+    return {
+      tokenCount,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      maxTokens,
+      percentage,
+      isNearLimit,
+      loading,
+      modelProps,
+      modelDisplayName,
+      fitEnabled,
+      configuredCtxLen,
+      modalities,
+    }
   }, [
-    prompt,
-    messages.length,
-    selectedModel?.id,
+    messages,
+    modelId,
     selectedProvider,
-    messagesWithPrompt.length,
-    messagesWithPrompt,
+    modelProps,
+    loading,
+    getProviderByName,
+    selectedModel?.name,
+    selectedModel?.capabilities,
     selectedModel?.settings?.ctx_len?.controller_props?.value,
   ])
 
-  // Manual calculation function (for click events)
-  const calculateTokens = useCallback(async () => {
-    // Trigger the debounced calculation immediately
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current)
-    }
-    await latestCalculationRef.current?.()
-  }, [])
-
   return {
     ...tokenData,
-    calculateTokens,
+    calculateTokens: async () => undefined,
   }
 }

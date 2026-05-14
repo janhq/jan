@@ -5,6 +5,7 @@ export const localStorageKey = {
   theme: 'theme',
   modelProvider: 'model-provider',
   modelSources: 'model-sources',
+  modelScores: 'model-scores',
   settingInterface: 'setting-appearance',
   settingGeneral: 'setting-general',
   settingCodeBlock: 'setting-code-block',
@@ -28,6 +29,7 @@ export const localStorageKey = {
   janModelPromptDismissed: 'jan-model-prompt-dismissed',
   agentMode: 'agent-mode',
   latestJanModel: 'latest-jan-model',
+  defaultEmbeddingModel: 'default-embedding-model',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

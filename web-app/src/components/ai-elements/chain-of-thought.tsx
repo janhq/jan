@@ -22,6 +22,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
 import { Shimmer } from './shimmer'
@@ -36,7 +37,10 @@ type ChainOfThoughtContextValue = {
   isOpen: boolean
   setIsOpen: (open: boolean) => void
   isStreaming: boolean
+  duration: number | undefined
 }
+
+const MS_IN_S = 1000
 
 const ChainOfThoughtContext = createContext<ChainOfThoughtContextValue | null>(
   null
@@ -91,9 +95,23 @@ export const ChainOfThought = memo(
       setIsOpen(newOpen)
     }
 
+    const [startTime, setStartTime] = useState<number | null>(null)
+    const [duration, setDuration] = useState<number | undefined>(undefined)
+
+    useEffect(() => {
+      if (isStreaming) {
+        if (startTime === null) {
+          setStartTime(Date.now())
+        }
+      } else if (startTime !== null) {
+        setDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
+        setStartTime(null)
+      }
+    }, [isStreaming, startTime])
+
     const contextValue = useMemo(
-      () => ({ isStreaming, isOpen, setIsOpen }),
-      [isStreaming, isOpen, setIsOpen]
+      () => ({ isStreaming, isOpen, setIsOpen, duration }),
+      [isStreaming, isOpen, setIsOpen, duration]
     )
 
     return (
@@ -121,7 +139,7 @@ export type ChainOfThoughtHeaderProps = ComponentProps<
 
 export const ChainOfThoughtHeader = memo(
   ({ className, title, children, ...props }: ChainOfThoughtHeaderProps) => {
-    const { isStreaming, isOpen } = useChainOfThought()
+    const { isStreaming, isOpen, duration } = useChainOfThought()
 
     return (
       <CollapsibleTrigger
@@ -134,10 +152,14 @@ export const ChainOfThoughtHeader = memo(
         {children ?? (
           <>
             <SparklesIcon className="size-4" />
-            {isStreaming ? (
+            {isStreaming || duration === 0 ? (
               <Shimmer duration={1}>Reasoning...</Shimmer>
+            ) : title ? (
+              <p>{title}</p>
+            ) : duration === undefined ? (
+              <p>Thought for a few seconds</p>
             ) : (
-              <p>{title ?? 'Reasoned through the problem'}</p>
+              <p>Thought for {duration} seconds</p>
             )}
             <ChevronDownIcon
               className={cn(

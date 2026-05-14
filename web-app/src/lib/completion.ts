@@ -23,8 +23,9 @@ export const newUserThreadContent = (
   attachments?: Attachment[],
   id?: string
 ): ThreadMessage => {
-  // Separate images and documents
+  // Separate images, audio, and documents
   const images = attachments?.filter((a) => a.type === 'image') || []
+  const audios = attachments?.filter((a) => a.type === 'audio') || []
   const documents = attachments?.filter((a) => a.type === 'document') || []
 
   const inlineDocuments = documents.filter(
@@ -63,6 +64,18 @@ export const newUserThreadContent = (
         image_url: {
           url: `data:${img.mimeType};base64,${img.base64}`,
           detail: 'auto',
+        },
+      } as any)
+    }
+  })
+
+  audios.forEach((aud) => {
+    if (aud.base64 && aud.audioFormat) {
+      contentParts.push({
+        type: ContentType.InputAudio,
+        input_audio: {
+          data: aud.base64,
+          format: aud.audioFormat,
         },
       } as any)
     }

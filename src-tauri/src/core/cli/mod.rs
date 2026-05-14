@@ -16,8 +16,6 @@ use crate::core::threads::{
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tauri_plugin_mlx::state::MlxState;
 
-// Re-export impl functions and config types so the binary can call them directly
-pub use tauri_plugin_llamacpp::{load_llama_model_impl, LlamacppConfig};
 pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
 pub use tauri_plugin_mlx::state::SessionInfo;
 
@@ -107,7 +105,7 @@ pub async fn cli_start_server(
 ) -> Result<u16, String> {
     proxy::start_server(
         app_state.server_handle.clone(),
-        llama_state.llama_server_process.clone(),
+        llama_state.clone(),
         mlx_state.mlx_server_process.clone(),
         host,
         port,

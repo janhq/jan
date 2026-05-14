@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeToolInputSchema } from '../custom-chat-transport'
+import {
+  buildLlamacppReasoningParams,
+  normalizeToolInputSchema,
+} from '../custom-chat-transport'
 
 describe('normalizeToolInputSchema', () => {
   it('adds empty properties for object schemas without properties', () => {
@@ -166,5 +169,50 @@ describe('normalizeToolInputSchema', () => {
         },
       ],
     })
+  })
+})
+
+describe('buildLlamacppReasoningParams', () => {
+  it('returns empty object for non-llamacpp providers regardless of reasoning value', () => {
+    expect(buildLlamacppReasoningParams('openai', 'on')).toEqual({})
+    expect(buildLlamacppReasoningParams('anthropic', 'off')).toEqual({})
+    expect(buildLlamacppReasoningParams(null, 'on')).toEqual({})
+    expect(buildLlamacppReasoningParams(undefined, 'off')).toEqual({})
+  })
+
+  it('omits the kwarg for llamacpp when reasoning is auto or undefined', () => {
+    expect(buildLlamacppReasoningParams('llamacpp', 'auto')).toEqual({})
+    expect(buildLlamacppReasoningParams('llamacpp', undefined)).toEqual({})
+  })
+
+  it('emits chat_template_kwargs.enable_thinking=true for on', () => {
+    const params = buildLlamacppReasoningParams('llamacpp', 'on')
+    expect(params).toEqual({
+      chat_template_kwargs: { enable_thinking: true },
+    })
+  })
+
+  it('emits chat_template_kwargs.enable_thinking=false for off', () => {
+    const params = buildLlamacppReasoningParams('llamacpp', 'off')
+    expect(params).toEqual({
+      chat_template_kwargs: { enable_thinking: false },
+    })
+  })
+
+  // Regression: llama-server's server-common.cpp:1056-1069 parses kwargs via
+  // `json_value(...).dump()` and rejects values that serialize to a quoted
+  // string ("invalid type for \"enable_thinking\" (expected boolean, got
+  // string)"). The value MUST be a JSON boolean.
+  it('emits enable_thinking as a JSON boolean, not a string', () => {
+    for (const r of ['on', 'off'] as const) {
+      const params = buildLlamacppReasoningParams('llamacpp', r)
+      const value = params.chat_template_kwargs?.enable_thinking
+      expect(typeof value).toBe('boolean')
+      expect(value).not.toBe('true')
+      expect(value).not.toBe('false')
+      // The exact serialization llama-server sees: JSON.stringify of the
+      // value must produce literal `true` / `false`, never quoted strings.
+      expect(JSON.stringify(value)).toMatch(/^(true|false)$/)
+    }
   })
 })

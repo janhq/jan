@@ -213,8 +213,8 @@ vi.mock('@/containers/dialogs/EditModel', () => ({
   DialogEditModel: ({ modelId }: any) => <div data-testid={`edit-${modelId}`} />,
 }))
 
-vi.mock('@/containers/dialogs/ImportVisionModelDialog', () => ({
-  ImportVisionModelDialog: ({ trigger }: any) => (
+vi.mock('@/containers/dialogs/ImportLlamacppModelDialog', () => ({
+  ImportLlamacppModelDialog: ({ trigger }: any) => (
     <div data-testid="import-vision">{trigger}</div>
   ),
 }))
@@ -275,6 +275,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconLoader: () => <span />,
   IconRefresh: () => <span />,
   IconUpload: () => <span />,
+  IconTrash: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({

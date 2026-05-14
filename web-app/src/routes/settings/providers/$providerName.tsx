@@ -10,10 +10,11 @@ import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
-import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
+import { ImportLlamacppModelDialog } from '@/containers/dialogs/ImportLlamacppModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
+import { DialogDeleteAllModels } from '@/containers/dialogs/DeleteAllModels'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
@@ -22,11 +23,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
+  IconCircleCheck,
+  IconCircle,
   IconFolderPlus,
   IconLoader,
   IconRefresh,
   IconUpload,
 } from '@tabler/icons-react'
+import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
@@ -76,6 +80,54 @@ function ProviderDetail() {
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const isLlamacpp = provider?.provider === 'llamacpp'
+  const allModels = provider?.models ?? []
+  const embeddingModels = isLlamacpp
+    ? allModels.filter((m) => (m as any).embedding === true)
+    : []
+  const chatModels = isLlamacpp
+    ? allModels.filter((m) => (m as any).embedding !== true)
+    : allModels
+  const defaultEmbeddingModelId = useDefaultEmbeddingModel((s) =>
+    isLlamacpp ? s.getDefault('llamacpp') : undefined
+  )
+  const setDefaultEmbeddingModel = useDefaultEmbeddingModel((s) => s.setDefault)
+  const clearDefaultEmbeddingModel = useDefaultEmbeddingModel(
+    (s) => s.clearDefault
+  )
+
+  useEffect(() => {
+    if (!isLlamacpp) return
+    const hasMini = allModels.some(
+      (m) => m.id === 'sentence-transformer-mini'
+    )
+    if (
+      !defaultEmbeddingModelId &&
+      embeddingModels.length === 1 &&
+      !hasMini
+    ) {
+      setDefaultEmbeddingModel('llamacpp', embeddingModels[0].id)
+      return
+    }
+    if (
+      defaultEmbeddingModelId &&
+      embeddingModels.length > 0 &&
+      !embeddingModels.some((m) => m.id === defaultEmbeddingModelId)
+    ) {
+      clearDefaultEmbeddingModel('llamacpp')
+      return
+    }
+    if (defaultEmbeddingModelId && embeddingModels.length === 0) {
+      clearDefaultEmbeddingModel('llamacpp')
+    }
+  }, [
+    isLlamacpp,
+    defaultEmbeddingModelId,
+    embeddingModels,
+    allModels,
+    setDefaultEmbeddingModel,
+    clearDefaultEmbeddingModel,
+  ])
 
   // Check if llamacpp/mlx provider needs backend configuration
   const needsBackendConfig =
@@ -597,6 +649,13 @@ function ProviderDetail() {
                     return null
                   }
 
+                  if (
+                    provider?.provider === 'llamacpp' &&
+                    setting.key === 'fit_ctx'
+                  ) {
+                    return null
+                  }
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
@@ -998,8 +1057,13 @@ function ProviderDetail() {
                           <DialogAddModel provider={provider} />
                         </>
                       )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'mlx') && (
+                          <DialogDeleteAllModels provider={provider} />
+                        )}
                       {provider && provider.provider === 'llamacpp' && (
-                        <ImportVisionModelDialog
+                        <ImportLlamacppModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
@@ -1038,7 +1102,20 @@ function ProviderDetail() {
                 }
               >
                 {provider?.models.length ? (
-                  provider?.models.map((model, modelIndex) => {
+                  <>
+                  {isLlamacpp && embeddingModels.length > 0 && chatModels.length > 0 && (
+                    <div
+                      role="separator"
+                      aria-label={t('providers:chatModels')}
+                      className="mt-1 mb-3 flex items-center gap-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t('providers:chatModels')}
+                      </span>
+                      <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
+                    </div>
+                  )}
+                  {(isLlamacpp ? chatModels : allModels).map((model, modelIndex) => {
                     const capabilities = model.capabilities || []
                     return (
                       <CardItem
@@ -1052,6 +1129,14 @@ function ProviderDetail() {
                               {getModelDisplayName(model)}
                             </h1>
                             <Capabilities capabilities={capabilities} />
+                            {model.imported && (
+                              <span
+                                className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                                title={t('providers:importedTooltip')}
+                              >
+                                {t('providers:imported')}
+                              </span>
+                            )}
                           </div>
                         }
                         actions={
@@ -1119,7 +1204,8 @@ function ProviderDetail() {
                         }
                       />
                     )
-                  })
+                  })}
+                  </>
                 ) : (
                   <div className="-mt-2">
                     <div className="flex items-center gap-2">
@@ -1155,6 +1241,105 @@ function ProviderDetail() {
                       </div>
                     }
                   />
+                )}
+
+                {isLlamacpp && provider && embeddingModels.length > 0 && (
+                  <>
+                    <div
+                      role="separator"
+                      aria-label={t('providers:embeddingModels')}
+                      className="mt-5 mb-3 flex items-center gap-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t('providers:embeddingModels')}
+                      </span>
+                      <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
+                    </div>
+                    {embeddingModels.map((model, modelIndex) => {
+                      const isDefault = defaultEmbeddingModelId === model.id
+                      return (
+                        <CardItem
+                          key={`embedding-${modelIndex}`}
+                          title={
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDefaultEmbeddingModel(
+                                    'llamacpp',
+                                    model.id
+                                  )
+                                }
+                                aria-label={
+                                  isDefault
+                                    ? t('providers:embeddingModelIsDefault')
+                                    : t('providers:embeddingModelSetDefault')
+                                }
+                                title={
+                                  isDefault
+                                    ? t('providers:embeddingModelIsDefault')
+                                    : t('providers:embeddingModelSetDefault')
+                                }
+                                className="size-6 flex items-center justify-center rounded transition-all hover:bg-main-view-fg/8"
+                              >
+                                {isDefault ? (
+                                  <IconCircleCheck
+                                    size={18}
+                                    className="text-muted-foreground"
+                                  />
+                                ) : (
+                                  <IconCircle
+                                    size={18}
+                                    className="text-muted-foreground"
+                                  />
+                                )}
+                              </button>
+                              <h1
+                                className="font-medium line-clamp-1"
+                                title={model.id}
+                              >
+                                {getModelDisplayName(model)}
+                              </h1>
+                              <Capabilities
+                                capabilities={model.capabilities || []}
+                              />
+                              {isDefault && (
+                                <span className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                  {t('providers:embeddingModelDefault')}
+                                </span>
+                              )}
+                              {model.imported && (
+                                <span
+                                  className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                                  title={t('providers:importedTooltip')}
+                                >
+                                  {t('providers:imported')}
+                                </span>
+                              )}
+                            </div>
+                          }
+                          actions={
+                            <div className="flex items-center gap-0.5">
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {model.settings && (
+                                <ModelSetting
+                                  provider={provider}
+                                  model={model}
+                                />
+                              )}
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                            </div>
+                          }
+                        />
+                      )
+                    })}
+                  </>
                 )}
               </Card>
             </div>

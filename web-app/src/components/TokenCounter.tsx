@@ -8,34 +8,43 @@ import {
 } from '@/components/ui/tooltip'
 import { useTokensCount } from '@/hooks/useTokensCount'
 import { ThreadMessage } from '@janhq/core'
+import {
+  IconBrain,
+  IconArrowUp,
+  IconArrowDown,
+  IconSum,
+  IconRulerMeasure,
+  IconStack2,
+  IconPhoto,
+  IconMicrophone,
+  IconMoon,
+  IconAdjustmentsAlt,
+} from '@tabler/icons-react'
 
 interface TokenCounterProps {
   messages?: ThreadMessage[]
   className?: string
   compact?: boolean
-  additionalTokens?: number // For vision tokens or other additions
-  additionalContextText?: string
-  uploadedFiles?: Array<{
-    name: string
-    type: string
-    size: number
-    base64: string
-    dataUrl: string
-  }>
+  additionalTokens?: number
 }
+
+const WARN_PCT = 85
+const OVER_PCT = 100
+
+const formatNumber = (num: number) => {
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
+  return num.toString()
+}
+
+const formatExact = (num: number) => num.toLocaleString()
 
 export const TokenCounter = memo(function TokenCounter({
   messages = [],
   className,
   additionalTokens = 0,
-  additionalContextText,
-  uploadedFiles = [],
 }: TokenCounterProps) {
-  const { calculateTokens, ...tokenData } = useTokensCount(
-    messages,
-    uploadedFiles,
-    additionalContextText
-  )
+  const { calculateTokens, ...tokenData } = useTokensCount(messages)
 
   const [isAnimating, setIsAnimating] = useState(false)
   const [prevTokenCount, setPrevTokenCount] = useState(0)
@@ -44,70 +53,85 @@ export const TokenCounter = memo(function TokenCounter({
     {}
   )
 
-  // Manual calculation - trigger on click
   const handleCalculateTokens = () => {
     calculateTokens()
   }
 
-  // Handle token count changes with proper debouncing and cleanup
   useEffect(() => {
     const currentTotal = tokenData.tokenCount + additionalTokens
     const timers = timersRef.current
-
-    // Clear any existing timers
     if (timers.update) clearTimeout(timers.update)
     if (timers.anim) clearTimeout(timers.anim)
 
     if (currentTotal !== prevTokenCount) {
       setIsUpdating(true)
-
-      // Clear updating state after a longer delay for smoother transitions
-      timers.update = setTimeout(() => {
-        setIsUpdating(false)
-      }, 250)
-
-      // Only animate for significant changes and avoid animating on initial load
-      if (prevTokenCount > 0) {
-        const difference = Math.abs(currentTotal - prevTokenCount)
-        if (difference > 10) {
-          // Increased threshold to reduce micro-animations
-          setIsAnimating(true)
-          timers.anim = setTimeout(() => {
-            setIsAnimating(false)
-          }, 600)
-        }
+      timers.update = setTimeout(() => setIsUpdating(false), 250)
+      if (prevTokenCount > 0 && Math.abs(currentTotal - prevTokenCount) > 10) {
+        setIsAnimating(true)
+        timers.anim = setTimeout(() => setIsAnimating(false), 600)
       }
-
       setPrevTokenCount(currentTotal)
     }
 
-    // Cleanup function
     return () => {
       if (timers.update) clearTimeout(timers.update)
       if (timers.anim) clearTimeout(timers.anim)
     }
   }, [tokenData.tokenCount, additionalTokens, prevTokenCount])
 
-  const totalTokens = useMemo(() => {
-    return tokenData.tokenCount + additionalTokens
-  }, [tokenData.tokenCount, additionalTokens])
+  const totalTokens = useMemo(
+    () => tokenData.tokenCount + additionalTokens,
+    [tokenData.tokenCount, additionalTokens]
+  )
 
-  // Percentage calculation to match useTokensCount exactly
-  const adjustedPercentage = useMemo(() => {
+  const pct = useMemo(() => {
     if (!tokenData.maxTokens) return undefined
     return (totalTokens / tokenData.maxTokens) * 100
   }, [totalTokens, tokenData.maxTokens])
 
-  // Check if percentage exceeds max (100%)
-  const isOverLimit = useMemo(() => {
-    return adjustedPercentage !== undefined && adjustedPercentage > 100
-  }, [adjustedPercentage])
+  const tier: 'ok' | 'warn' | 'over' = useMemo(() => {
+    if (pct === undefined) return 'ok'
+    if (pct >= OVER_PCT) return 'over'
+    if (pct >= WARN_PCT) return 'warn'
+    return 'ok'
+  }, [pct])
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
-    return num.toString()
-  }
+  // n_ctx from /props is required for a meaningful denominator. Without it,
+  // hide entirely rather than render a misleading 0%/0 indicator.
+  if (!tokenData.maxTokens) return null
+
+  const textCls =
+    tier === 'over'
+      ? 'text-destructive'
+      : tier === 'warn'
+        ? 'text-amber-500'
+        : 'text-foreground'
+  const ringCls =
+    tier === 'over'
+      ? 'stroke-destructive'
+      : tier === 'warn'
+        ? 'stroke-amber-500'
+        : 'stroke-primary'
+  const barCls =
+    tier === 'over'
+      ? 'bg-destructive'
+      : tier === 'warn'
+        ? 'bg-amber-500'
+        : 'bg-primary'
+
+  const { inputTokens, outputTokens, modelProps, modelDisplayName } = tokenData
+  const remaining = Math.max(0, tokenData.maxTokens - totalTokens)
+  const showFittedBadge =
+    tokenData.fitEnabled &&
+    typeof tokenData.configuredCtxLen === 'number' &&
+    tokenData.configuredCtxLen !== tokenData.maxTokens
+  const hasModalities =
+    tokenData.modalities?.vision || tokenData.modalities?.audio
+  const showFooter =
+    showFittedBadge ||
+    hasModalities ||
+    modelProps?.isSleeping ||
+    (modelProps?.totalSlots !== undefined && modelProps.totalSlots > 1)
 
   return (
     <TooltipProvider delayDuration={isUpdating ? 1200 : 400}>
@@ -117,18 +141,16 @@ export const TokenCounter = memo(function TokenCounter({
             className={cn('relative cursor-pointer', className)}
             onClick={handleCalculateTokens}
           >
-            {/* Main compact display */}
             <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-background border border-border">
               <span
                 className={cn(
                   'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
-                  isOverLimit ? 'text-destructive' : 'text-primary',
+                  textCls,
                   isAnimating && 'scale-110'
                 )}
               >
-                {adjustedPercentage?.toFixed(1) || '0.0'}%
+                {pct?.toFixed(1) ?? '0.0'}%
               </span>
-
               <div className="relative size-4 shrink-0">
                 <svg
                   className="size-4 transform -rotate-90"
@@ -141,7 +163,7 @@ export const TokenCounter = memo(function TokenCounter({
                     stroke="currentColor"
                     strokeWidth="1.5"
                     fill="none"
-                    className="text-muted-foreground"
+                    className="text-muted-foreground/40"
                   />
                   <circle
                     cx="8"
@@ -151,14 +173,12 @@ export const TokenCounter = memo(function TokenCounter({
                     strokeWidth="1.5"
                     fill="none"
                     strokeDasharray={`${2 * Math.PI * 6}`}
-                    strokeDashoffset={`${2 * Math.PI * 6 * (1 - (adjustedPercentage || 0) / 100)}`}
+                    strokeDashoffset={`${2 * Math.PI * 6 * (1 - Math.min(pct ?? 0, 100) / 100)}`}
                     className={cn(
                       'transition-all duration-500 ease-out',
-                      isOverLimit ? 'stroke-destructive' : 'stroke-primary'
+                      ringCls
                     )}
-                    style={{
-                      transformOrigin: 'center',
-                    }}
+                    style={{ transformOrigin: 'center' }}
                   />
                 </svg>
               </div>
@@ -168,67 +188,157 @@ export const TokenCounter = memo(function TokenCounter({
         <TooltipContent
           side="bottom"
           align="center"
-          sideOffset={5}
+          sideOffset={6}
           showArrow={false}
-          className="min-w-60 max-w-60 bg-background border"
+          className="min-w-72 max-w-80 bg-background border p-0 overflow-hidden"
         >
-          {/* Detailed breakdown panel */}
-          <>
-            {/* Header with percentage and progress bar */}
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-2">
+          {/* Header */}
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
+            <IconBrain className="size-4 text-muted-foreground shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-foreground">
+                Context window
+              </div>
+              {modelDisplayName && (
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {modelDisplayName}
+                </div>
+              )}
+            </div>
+            {modelProps?.isSleeping && (
+              <IconMoon
+                className="size-3.5 text-muted-foreground"
+                aria-label="Model sleeping"
+              />
+            )}
+          </div>
+
+          {/* Progress block */}
+          <div className="px-3 py-2.5">
+            <div className="flex items-baseline justify-between mb-1.5">
+              <span
+                className={cn(
+                  'text-xl font-semibold tabular-nums leading-none',
+                  textCls
+                )}
+              >
+                {pct?.toFixed(1) ?? '0.0'}%
+              </span>
+              <span className="text-xs text-muted-foreground tabular-nums font-mono">
+                {formatNumber(totalTokens)} /{' '}
+                {formatNumber(tokenData.maxTokens)}
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all duration-500 ease-out',
+                  barCls
+                )}
+                style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Token breakdown */}
+          <div className="px-3 py-2 border-t border-border space-y-1.5">
+            {typeof inputTokens === 'number' && inputTokens > 0 && (
+              <Row
+                icon={<IconArrowUp className="size-3.5" />}
+                label="Prompt"
+                value={formatExact(inputTokens)}
+              />
+            )}
+            {typeof outputTokens === 'number' && outputTokens > 0 && (
+              <Row
+                icon={<IconArrowDown className="size-3.5" />}
+                label="Completion"
+                value={formatExact(outputTokens)}
+              />
+            )}
+            <Row
+              icon={<IconSum className="size-3.5" />}
+              label="Used"
+              value={formatExact(totalTokens)}
+              strong
+            />
+            <Row
+              icon={<IconRulerMeasure className="size-3.5" />}
+              label="Remaining"
+              value={formatExact(remaining)}
+            />
+          </div>
+
+          {/* Footer: fit + slots + modalities */}
+          {showFooter && (
+            <div className="px-3 py-2 border-t border-border flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              {showFittedBadge && (
                 <span
-                  className={cn(
-                    'text-lg font-semibold tabular-nums',
-                    isOverLimit ? 'text-destructive' : 'text-primary'
-                  )}
+                  className="flex items-center gap-1"
+                  title={`Configured ctx_len: ${formatExact(tokenData.configuredCtxLen!)}`}
                 >
-                  {adjustedPercentage?.toFixed(1) || '0.0'}%
+                  <IconAdjustmentsAlt className="size-3" />
+                  Fitted to {formatNumber(tokenData.maxTokens)}
                 </span>
-                <span className="text-sm text-muted-foreground font-mono">
-                  {formatNumber(totalTokens)} /{' '}
-                  {formatNumber(tokenData.maxTokens || 0)}
+              )}
+              {modelProps?.totalSlots !== undefined &&
+                modelProps.totalSlots > 1 && (
+                  <span className="flex items-center gap-1">
+                    <IconStack2 className="size-3" />
+                    {modelProps.totalSlots} slots
+                  </span>
+                )}
+              {tokenData.modalities?.vision && (
+                <span
+                  className="flex items-center gap-1"
+                  title="Vision input supported"
+                >
+                  <IconPhoto className="size-3" />
+                  Vision
                 </span>
-              </div>
-
-              {/* Progress bar */}
-              <div className="w-full h-2 bg-secondary/20 rounded-full overflow-hidden">
-                <div
-                  className={cn(
-                    'h-2 rounded-full transition-all duration-500 ease-out',
-                    isOverLimit ? 'bg-destructive' : 'bg-primary'
-                  )}
-                  style={{
-                    width: `${Math.min(adjustedPercentage || 0, 100)}%`,
-                  }}
-                />
-              </div>
+              )}
+              {tokenData.modalities?.audio && (
+                <span
+                  className="flex items-center gap-1"
+                  title="Audio input supported"
+                >
+                  <IconMicrophone className="size-3" />
+                  Audio
+                </span>
+              )}
             </div>
-
-            {/* Token breakdown */}
-            <div className="space-y-2 mb-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Text</span>
-                <span className="text-foreground font-mono">
-                  {formatNumber(Math.max(0, tokenData.tokenCount))}
-                </span>
-              </div>
-            </div>
-
-            {/* Remaining tokens */}
-            <div className="border-t border-border pt-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Remaining</span>
-                <span className="text-foreground font-semibold font-mono">
-                  {formatNumber(
-                    Math.max(0, (tokenData.maxTokens || 0) - totalTokens)
-                  )}
-                </span>
-              </div>
-            </div>
-          </>
+          )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   )
 })
+
+function Row({
+  icon,
+  label,
+  value,
+  strong,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  strong?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        {icon}
+        {label}
+      </span>
+      <span
+        className={cn(
+          'font-mono tabular-nums',
+          strong ? 'text-foreground font-semibold' : 'text-foreground'
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}

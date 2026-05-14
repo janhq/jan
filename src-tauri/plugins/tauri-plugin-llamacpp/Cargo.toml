@@ -15,6 +15,12 @@ base64 = "0.22.1"
 byteorder = "1.5.0"
 hmac = "0.12.1"
 jan-utils = { path = "../../utils" }
+# llmfit-core pulls in `ureq` (an HTTP client) as a transitive dependency.
+# llmfit-core itself uses it only for optional model-card fetching that is NOT
+# exercised by this integration -- all scoring is local/offline. No network
+# calls are made during hub model scoring. Track upstream if a no-network
+# feature flag becomes available: https://github.com/janhq/jan/pull/7784
+llmfit-core = "0.8.9"
 lddtree = "0.5"
 walkdir = "2"
 log = "0.4"
@@ -30,6 +36,10 @@ serde_json = "1.0.149"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls"] }
+
+# lddtree's Mach-O handling has crashed in the field; we skip dep analysis on macOS.
+[target.'cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))'.dependencies]
+lddtree = "0.5"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }

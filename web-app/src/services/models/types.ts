@@ -2,7 +2,12 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
+import {
+  SessionInfo,
+  modelInfo,
+  ThreadMessage,
+  UnloadResult,
+} from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -22,7 +27,35 @@ export interface SafetensorsFile {
   model_id: string
   path: string
   file_size: string
+  size_bytes?: number
   sha256?: string
+}
+
+export type ModelScoreStatus = 'loading' | 'ready' | 'unavailable' | 'error'
+
+export interface ModelScoreBreakdown {
+  quality: number
+  speed: number
+  fit: number
+  context: number
+  best_quant: string
+  fit_level: string
+  run_mode: string
+  memory_required_gb: number
+  utilization_pct: number
+  use_case: string
+}
+
+export interface ModelScore {
+  status: ModelScoreStatus
+  overall?: number
+  breakdown?: ModelScoreBreakdown
+  estimated_tps: number
+  hardware_fingerprint?: string
+  cache_key?: string
+  updated_at?: number
+  used_builtin_fallback?: boolean
+  reason?: string
 }
 
 export interface CatalogModel {
@@ -39,9 +72,14 @@ export interface CatalogModel {
   safetensors_files?: SafetensorsFile[]
   num_safetensors?: number
   created_at?: string
+  createdAt?: string
   readme?: string
   tools?: boolean
   is_mlx?: boolean
+  use_case?: string
+  capabilities?: string[]
+  pinned?: boolean
+  score?: ModelScore
 }
 
 export type ModelCatalog = CatalogModel[]
@@ -93,7 +131,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-
 export type PreflightReason =
   | 'AUTH_REQUIRED'
   | 'LICENSE_NOT_ACCEPTED'
@@ -101,6 +138,15 @@ export type PreflightReason =
   | 'RATE_LIMITED'
   | 'NETWORK'
   | 'UNKNOWN'
+
+export type HubScoreRequestSource = {
+  model_id: string
+  path: string
+  file_size: string
+  runtime: 'llamacpp' | 'mlx' | undefined
+  quantization?: string
+  total_size_bytes?: number
+}
 
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
@@ -153,6 +199,11 @@ export interface ModelsService {
     modelPath: string,
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
+  getHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant,
+    ctxSize?: number
+  ): Promise<ModelScore>
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

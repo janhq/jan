@@ -15,6 +15,8 @@
   "general": "सामान्य",
   "settings": "सेटिंग्स",
   "modelProviders": "मॉडल प्रदाता",
+  "localProviders": "स्थानीय",
+  "remoteProviders": "दूरस्थ",
   "manageProviders": "प्रदाताओं का प्रबंधन करें",
   "hiddenProviders": "{{count}} निष्क्रिय",
   "hideProvider": "प्रदाता छिपाएं",
