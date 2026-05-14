@@ -1,7 +1,6 @@
 import {
   CustomChatTransport,
 } from '@/lib/custom-chat-transport'
-// import { useCapabilities } from "@/stores/capabilities-store";
 import {
   Chat,
   type UIMessage,

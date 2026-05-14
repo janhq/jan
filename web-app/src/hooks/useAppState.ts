@@ -60,7 +60,6 @@ export const useAppState = create<AppState>()((set) => ({
   serverStatus: 'stopped',
   abortControllers: {},
   tokenSpeed: undefined,
-  currentToolCall: undefined,
   promptProgress: undefined,
   cancelToolCall: undefined,
   activeModels: [],
