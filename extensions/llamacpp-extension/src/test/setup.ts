@@ -40,6 +40,19 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
+vi.mock('@tauri-apps/plugin-log', () => ({
+  error: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  debug: vi.fn(),
+  trace: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => undefined),
+  emit: vi.fn(),
+}))
+
 // Mock Tauri path API
 vi.mock('@tauri-apps/api/path', () => ({
   basename: vi.fn(),
@@ -68,6 +81,16 @@ vi.mock('@janhq/core', () => ({
   chatCompletionRequest: {},
   events: {
     emit: vi.fn(),
+  },
+  AppEvent: {
+    onModelImported: 'onModelImported',
+    onBackendVerificationFailed: 'onBackendVerificationFailed',
+  },
+  DownloadEvent: {
+    onFileDownloadUpdate: 'onFileDownloadUpdate',
+    onFileDownloadStopped: 'onFileDownloadStopped',
+    onModelValidationStarted: 'onModelValidationStarted',
+    onModelValidationFailed: 'onModelValidationFailed',
   },
   AIEngine: vi.fn(),
 }))

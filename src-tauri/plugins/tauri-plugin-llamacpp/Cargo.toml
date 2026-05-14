@@ -37,6 +37,10 @@ serde_json = "1.0.149"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls"] }
 
+# lddtree's Mach-O handling has crashed in the field; we skip dep analysis on macOS.
+[target.'cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))'.dependencies]
+lddtree = "0.5"
+
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
 

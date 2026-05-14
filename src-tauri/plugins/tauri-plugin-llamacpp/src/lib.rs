@@ -1,9 +1,10 @@
+use std::sync::Arc;
+
 use tauri::{
     plugin::{Builder, TauriPlugin},
     Manager, Runtime,
 };
 
-mod args;
 mod backend;
 pub mod cleanup;
 pub mod deps_analyzer;
@@ -13,31 +14,26 @@ mod error;
 mod gguf;
 mod path;
 mod process;
+pub mod router;
 pub mod state;
-pub use args::LlamacppConfig;
 pub use cleanup::cleanup_llama_processes;
-pub use commands::load_llama_model_impl;
-pub use state::{LLamaBackendSession, LlamacppState};
+pub use commands::stop_router;
+pub use state::LlamacppState;
 
-/// Initializes the plugin.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("llamacpp")
         .invoke_handler(tauri::generate_handler![
-            // Cleanup command
             cleanup::cleanup_llama_processes,
-            // LlamaCpp server commands
             commands::load_llama_model,
             commands::unload_llama_model,
+            commands::start_router,
+            commands::stop_router,
+            commands::get_router_info,
             commands::get_devices,
             commands::generate_api_key,
-            commands::is_process_running,
             commands::ensure_session_ready,
-            commands::get_random_port,
             commands::find_session_by_model,
             commands::get_loaded_models,
-            commands::get_all_sessions,
-            commands::get_session_by_model,
-            // GGUF commands
             gguf::commands::read_gguf_metadata,
             gguf::commands::estimate_kv_cache_size,
             gguf::commands::get_model_size,
@@ -58,7 +54,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::validate_backend_string,
             backend::should_migrate_backend,
             backend::handle_setting_update,
-            // Backend path & download commands
             backend::get_backend_dir,
             backend::get_backend_exe_path,
             backend::check_backend_installed,
@@ -67,8 +62,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::build_backend_download_items
         ])
         .setup(|app, _api| {
-            // Initialize and manage the plugin state
-            app.manage(state::LlamacppState::new());
+            app.manage(Arc::new(state::LlamacppState::new()));
             Ok(())
         })
         .build()

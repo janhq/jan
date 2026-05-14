@@ -7,6 +7,9 @@ Default permissions for the llamacpp plugin
 - `allow-cleanup-llama-processes`
 - `allow-load-llama-model`
 - `allow-unload-llama-model`
+- `allow-start-router`
+- `allow-stop-router`
+- `allow-get-router-info`
 - `allow-get-devices`
 - `allow-generate-api-key`
 - `allow-is-process-running`
@@ -549,6 +552,32 @@ Denies the get_random_port command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-get-router-info`
+
+</td>
+<td>
+
+Enables the get_router_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-router-info`
+
+</td>
+<td>
+
+Denies the get_router_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-get-session-by-model`
 
 </td>
@@ -958,6 +987,58 @@ Enables the should_migrate_backend command without any pre-configured scope.
 <td>
 
 Denies the should_migrate_backend command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-start-router`
+
+</td>
+<td>
+
+Enables the start_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-start-router`
+
+</td>
+<td>
+
+Denies the start_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-stop-router`
+
+</td>
+<td>
+
+Enables the stop_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-stop-router`
+
+</td>
+<td>
+
+Denies the stop_router command without any pre-configured scope.
 
 </td>
 </tr>

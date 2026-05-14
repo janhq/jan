@@ -172,6 +172,9 @@ export interface modelInfo {
   path?: string // Absolute path to the model file, if applicable
   // Additional provider-specific metadata can be added here
   embedding?: boolean
+  // True if the model was imported from a user-supplied local file
+  // (path lives outside the provider's managed models directory).
+  imported?: boolean
   [key: string]: any
 }
 

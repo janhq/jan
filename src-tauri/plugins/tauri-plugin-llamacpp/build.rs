@@ -4,6 +4,10 @@ const COMMANDS: &[&str] = &[
     // LlamaCpp server commands
     "load_llama_model",
     "unload_llama_model",
+    // Router-mode commands (Phase 1)
+    "start_router",
+    "stop_router",
+    "get_router_info",
     "get_devices",
     "generate_api_key",
     "is_process_running",

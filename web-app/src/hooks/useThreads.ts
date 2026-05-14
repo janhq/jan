@@ -6,6 +6,8 @@ import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { useChatSessions } from '@/stores/chat-session-store'
+import { useAppState } from '@/hooks/useAppState'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -155,9 +157,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
 
-      // Clean up agent mode state
       useAgentMode.getState().removeThread(threadId)
-      // Clean up vector DB collection
+      useChatSessions.getState().removeSession(threadId)
+      useAppState.getState().clearThreadState(threadId)
       cleanupVectorDB(threadId)
       getServiceHub().threads().deleteThread(threadId)
 
@@ -224,9 +226,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
-      // Delete all threads and clean up their vector DB collections
       allThreadIds.forEach((threadId) => {
         useAgentMode.getState().removeThread(threadId)
+        useChatSessions.getState().removeSession(threadId)
+        useAppState.getState().clearThreadState(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
@@ -250,8 +253,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           state.threads[threadId].metadata?.project?.id === projectId
       )
 
-      // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
+        useChatSessions.getState().removeSession(threadId)
+        useAppState.getState().clearThreadState(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })

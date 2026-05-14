@@ -38,7 +38,13 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
+          // MLX is Apple-Silicon only; drop it on every other platform so it
+          // can't be reactivated, queried, or shown anywhere in the UI.
+          providers = IS_MACOS
+            ? providers
+            : providers.filter((e) => e.provider !== 'mlx')
           const existingProviders = state.providers
+            .filter((e) => IS_MACOS || e.provider !== 'mlx')
             // Filter out legacy llama.cpp provider for migration
             // Can remove after a couple of releases
             .filter((e) => e.provider !== 'llama.cpp')
@@ -107,15 +113,17 @@ export const useModelProvider = create<ModelProviderState>()(
                   }
                 )?._userConfiguredCapabilities === true
 
-              // When the user set tools/vision in Edit Model, honor that list on every
-              // refresh from the engine; otherwise fresh engine data would re-add defaults.
+              const engineOwnedCaps = new Set(['vision', 'audio', 'embeddings'])
+              const engineCaps = model.capabilities || []
+              const existingCaps = existingModel?.capabilities || []
               const mergedCapabilities = userConfiguredCapabilities
-                ? [...(existingModel?.capabilities || [])]
+                ? [
+                    ...existingCaps.filter((c) => !engineOwnedCaps.has(c)),
+                    ...engineCaps.filter((c) => engineOwnedCaps.has(c)),
+                  ]
                 : [
-                    ...(model.capabilities || []),
-                    ...(existingModel?.capabilities || []).filter(
-                      (cap) => !(model.capabilities || []).includes(cap)
-                    ),
+                    ...engineCaps,
+                    ...existingCaps.filter((c) => !engineCaps.includes(c)),
                   ]
               return {
                 ...model,

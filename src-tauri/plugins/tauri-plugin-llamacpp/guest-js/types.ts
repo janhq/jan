@@ -3,10 +3,8 @@ export interface SessionInfo {
   pid: number
   port: number
   model_id: string
-  model_path: string
   is_embedding: boolean
   api_key: string
-  mmproj_path?: string
 }
 
 export interface UnloadResult {
@@ -18,6 +16,13 @@ export interface DeviceInfo {
   id: string
   name: string
   memory: number
+}
+
+export interface ModelProps {
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  isSleeping?: boolean
 }
 
 export interface GgufMetadata {
@@ -71,7 +76,7 @@ export type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
-  auto_restart_on_crash: boolean
+  models_max: string | number
   timeout: number
   llamacpp_env: string
   fit: boolean

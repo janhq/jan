@@ -373,17 +373,14 @@ function ThreadDetail() {
       // The thread title is the user's first message (set in ChatInput on creation),
       // so we use it directly as the summarization input.
       // Skipped if already summarized, manually renamed, or max attempts reached.
-      console.log('[ThreadTitle] onFinish fired, isAbort:', isAbort)
       if (!isAbort) {
         const currentThread = useThreads.getState().threads[threadId]
-        console.log('[ThreadTitle] thread:', !!currentThread, 'titleSummarized:', currentThread?.metadata?.titleSummarized, 'attempts:', titleAttemptsRef.current)
         if (
           currentThread &&
           !currentThread.metadata?.titleSummarized &&
           titleAttemptsRef.current < MAX_TITLE_SUMMARIZATION_ATTEMPTS
         ) {
           const titleText = currentThread.title
-          console.log('[ThreadTitle] titleText length:', titleText?.length, 'threshold:', TITLE_SUMMARIZATION_MIN_LENGTH)
 
           if (titleText && titleText.length >= TITLE_SUMMARIZATION_MIN_LENGTH) {
             // Cancel any previous in-flight summarization
@@ -393,9 +390,7 @@ function ThreadDetail() {
             titleAttemptsRef.current++
             const originalTitle = titleText
 
-            console.log('[ThreadTitle] calling generateThreadTitle...')
             generateThreadTitle(titleText, controller.signal).then((title) => {
-              console.log('[ThreadTitle] result:', title, 'aborted:', controller.signal.aborted)
               if (!title || controller.signal.aborted) return
               // Don't overwrite if the user manually renamed while we were generating
               const thread = useThreads.getState().threads[threadId]
@@ -482,6 +477,11 @@ function ThreadDetail() {
     forceScrollToBottom: forceScrollReasoningToBottom,
     reset: resetReasoningScroll,
   } = useAutoScroll()
+
+  const lastIsAssistant = useMemo(() => {
+    const last = chatMessages[chatMessages.length - 1]
+    return !!last && last.role === 'assistant'
+  }, [chatMessages])
 
   useEffect(() => {
     if (status === 'streaming') {
@@ -626,7 +626,10 @@ function ThreadDetail() {
       let processedAttachments = combinedAttachments
       const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
-        if (hasEmbeddingDocuments) setProcessingEmbeddings(true)
+        if (hasEmbeddingDocuments) {
+          setProcessingEmbeddings(true)
+          useAppState.getState().setThreadBusy(threadId, true)
+        }
         try {
           const parsePreference = useAttachments.getState().parseMode
           const result = await processAttachmentsForSend({
@@ -661,6 +664,7 @@ function ThreadDetail() {
           return
         } finally {
           setProcessingEmbeddings(false)
+          useAppState.getState().setThreadBusy(threadId, false)
         }
       }
 
@@ -1114,7 +1118,9 @@ function ThreadDetail() {
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
                   )}
-                  {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+                  {status === CHAT_STATUS.SUBMITTED && !lastIsAssistant && (
+                    <PromptProgress />
+                  )}
                 </div>
               )}
               {(error || contextLimitError) && !isAutoIncreasingContext && (

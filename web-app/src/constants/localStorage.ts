@@ -29,6 +29,7 @@ export const localStorageKey = {
   janModelPromptDismissed: 'jan-model-prompt-dismissed',
   agentMode: 'agent-mode',
   latestJanModel: 'latest-jan-model',
+  defaultEmbeddingModel: 'default-embedding-model',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24
