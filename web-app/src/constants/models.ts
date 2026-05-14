@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  qiniu: {
+    models: ['deepseek-v3'],
+    supportsCompletion: true,
+    supportsStreaming: ['deepseek-v3'],
+    supportsJSON: [],
+    supportsImages: [],
+    supportsToolCalls: [],
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,

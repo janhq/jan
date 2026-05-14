@@ -213,6 +213,21 @@ describe('ModelFactory', () => {
       expect(model.type).toBe('openai-compatible')
     })
 
+    it('should create an OpenAI-compatible model for qiniu provider', async () => {
+      const provider: ProviderObject = {
+        provider: 'qiniu',
+        api_key: 'test-api-key',
+        base_url: 'https://api.qnaigc.com/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      const model = await ModelFactory.createModel('deepseek-v3', provider)
+      expect(model).toBeDefined()
+      expect(model.type).toBe('openai-compatible')
+    })
+
     it('should handle custom headers for OpenAI-compatible providers', async () => {
       const provider: ProviderObject = {
         provider: 'custom',

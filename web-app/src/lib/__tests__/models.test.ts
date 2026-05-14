@@ -45,6 +45,7 @@ describe('defaultModel', () => {
   it('returns first model for known providers', () => {
     expect(defaultModel('anthropic')).toBe('claude-sonnet-4-5')
     expect(defaultModel('mistral')).toBe('mistral-large-2411')
+    expect(defaultModel('qiniu')).toBe('deepseek-v3')
   })
 
   it('handles empty string provider', () => {

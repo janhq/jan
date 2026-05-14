@@ -11,7 +11,7 @@
  * - anthropic: Claude models via Anthropic API (@ai-sdk/anthropic v2.0)
  * - google/gemini: Gemini models via Google Generative AI API (@ai-sdk/google v2.0)
  * - openai: OpenAI models via OpenAI API (@ai-sdk/openai)
- * - OpenAI-compatible: Azure, Groq, Together, Fireworks, DeepSeek, Mistral, Cohere, etc.
+ * - OpenAI-compatible: Azure, Groq, Together, Fireworks, DeepSeek, Mistral, Cohere, Qiniu, etc.
  *
  * Usage:
  * ```typescript
@@ -375,6 +375,7 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
+      case 'qiniu':
         return this.createOpenAICompatibleModel(modelId, provider)
 
       case 'xai':

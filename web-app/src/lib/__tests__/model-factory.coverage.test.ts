@@ -125,7 +125,7 @@ describe('ModelFactory - coverage', () => {
   })
 
   it('creates openai-compatible model for known providers', async () => {
-    for (const p of ['azure', 'groq', 'together', 'fireworks', 'deepseek', 'mistral', 'cohere', 'perplexity', 'moonshot', 'minimax']) {
+    for (const p of ['azure', 'groq', 'together', 'fireworks', 'deepseek', 'mistral', 'cohere', 'perplexity', 'moonshot', 'minimax', 'qiniu']) {
       const model = await ModelFactory.createModel('model-1', mkProvider(p), {})
       expect(model).toBeDefined()
     }

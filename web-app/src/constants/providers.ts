@@ -482,4 +482,38 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.qnaigc.com/v1',
+    explore_models_url: 'https://developer.qiniu.com/',
+    provider: 'qiniu',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Qiniu model gateway uses API keys for authentication. Use the key from your Qiniu console for this endpoint.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'OpenAI-compatible chat completions endpoint. See the Qiniu documentation for your deployment.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.qnaigc.com/v1',
+          value: 'https://api.qnaigc.com/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]
