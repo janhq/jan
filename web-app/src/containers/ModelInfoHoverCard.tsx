@@ -28,9 +28,7 @@ export const ModelInfoHoverCard = ({
   const displayVariant =
     variant ||
     model.quants?.find((m: ModelQuant) =>
-      defaultModelQuantizations.some((e) =>
-        m.model_id.toLowerCase().includes(e)
-      )
+      defaultModelQuantizations.some((e) => m.model_id.toLowerCase().includes(e))
     ) ||
     model.quants?.[0]
 
