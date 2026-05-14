@@ -66,8 +66,10 @@ export function useChat(
     }
   }, [systemMessage])
 
-  // Set up streaming token speed callback to update global state
   const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed)
+  const resetThreadTokenSpeed = useAppState(
+    (state) => state.resetThreadTokenSpeed
+  )
 
   // Update the token usage callback when it changes
   useEffect(() => {
@@ -109,12 +111,12 @@ export function useChat(
     }
   }, [sessionId, chatResult.status, updateStatus])
 
-  // Reset token speed when streaming stops
   useEffect(() => {
     if (chatResult.status !== 'streaming') {
       resetTokenSpeed()
+      if (sessionId) resetThreadTokenSpeed(sessionId)
     }
-  }, [chatResult.status, resetTokenSpeed])
+  }, [chatResult.status, resetTokenSpeed, resetThreadTokenSpeed, sessionId])
 
   // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
   useEffect(() => {
