@@ -3,6 +3,10 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import {
+  API_KEY_FALLBACKS_SETTING_KEY,
+  parseApiKeyFallbacks,
+} from '@/lib/provider-api-keys'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -137,26 +141,57 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             })
 
+            const mergedSettings = provider.settings.map((setting) => {
+              const existingSetting = provider.persist
+                ? undefined
+                : existingProvider?.settings?.find(
+                    (x) => x.key === setting.key
+                  )
+              return {
+                ...setting,
+                controller_props: {
+                  ...setting.controller_props,
+                  ...(existingSetting?.controller_props || {}),
+                },
+              }
+            })
+
+            // Preserve a zustand-only api-key-fallbacks setting when the
+            // backend doesn't return it, so disk-persisted fallbacks survive
+            // localStorage clears once they round-trip through updateSettings.
+            if (
+              !provider.persist &&
+              !mergedSettings.some((s) => s.key === API_KEY_FALLBACKS_SETTING_KEY)
+            ) {
+              const existingFallbacksSetting = existingProvider?.settings?.find(
+                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+              )
+              if (existingFallbacksSetting) {
+                mergedSettings.push(existingFallbacksSetting)
+              }
+            }
+
+            const fallbacksSetting = mergedSettings.find(
+              (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+            )
+            const fallbacksFromSetting = fallbacksSetting
+              ? parseApiKeyFallbacks(
+                  (
+                    fallbacksSetting.controller_props as {
+                      value?: unknown
+                    }
+                  )?.value
+                )
+              : undefined
+
             return {
               ...provider,
               models: provider.persist ? updatedModels : mergedModels,
-              settings: provider.settings.map((setting) => {
-                const existingSetting = provider.persist
-                  ? undefined
-                  : existingProvider?.settings?.find(
-                      (x) => x.key === setting.key
-                    )
-                return {
-                  ...setting,
-                  controller_props: {
-                    ...setting.controller_props,
-                    ...(existingSetting?.controller_props || {}),
-                  },
-                }
-              }),
+              settings: mergedSettings,
               api_key: existingProvider?.api_key || provider.api_key,
               api_key_fallbacks:
                 existingProvider?.api_key_fallbacks ??
+                fallbacksFromSetting ??
                 provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,

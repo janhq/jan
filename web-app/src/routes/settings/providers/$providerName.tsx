@@ -44,6 +44,8 @@ import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
+  API_KEY_FALLBACKS_SETTING_KEY,
+  serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
 
 // as route.threadsDetail
@@ -275,6 +277,29 @@ function ProviderDetail() {
         value: string | boolean | number
       }
       apiKeyProps.value = nextPrimary
+    }
+
+    const fallbacksValue = serializeApiKeyFallbacks(nextFallbacks)
+    const fallbacksIndex = newSettings.findIndex(
+      (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+    )
+    if (fallbacksIndex !== -1) {
+      const props = newSettings[fallbacksIndex].controller_props as {
+        value: string | boolean | number
+      }
+      props.value = fallbacksValue
+    } else if (fallbacksValue.length > 0) {
+      newSettings.push({
+        key: API_KEY_FALLBACKS_SETTING_KEY,
+        title: 'API Key Fallbacks',
+        description: '',
+        controller_type: 'input',
+        controller_props: {
+          value: fallbacksValue,
+          type: 'password',
+          placeholder: '',
+        },
+      } as (typeof newSettings)[number])
     }
 
     serviceHub.providers().updateSettings(providerName, newSettings)

@@ -1,3 +1,17 @@
+export const API_KEY_FALLBACKS_SETTING_KEY = 'api-key-fallbacks'
+
+export function serializeApiKeyFallbacks(fallbacks: string[]): string {
+  return fallbacks.map((k) => k.trim()).filter((k) => k.length > 0).join('\n')
+}
+
+export function parseApiKeyFallbacks(value: unknown): string[] {
+  if (typeof value !== 'string' || value.length === 0) return []
+  return value
+    .split(/\r?\n/)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0)
+}
+
 /**
  * Ordered API keys for a remote provider: primary `api_key` first, then `api_key_fallbacks`.
  */
