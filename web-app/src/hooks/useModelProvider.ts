@@ -6,7 +6,10 @@ import { modelSettings } from '@/lib/predefined'
 import {
   API_KEY_FALLBACKS_SETTING_KEY,
   parseApiKeyFallbacks,
+  serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
+
+const API_KEY_FALLBACKS_MIGRATION_FLAG = 'api_key_fallbacks_migrated_to_settings'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -197,14 +200,72 @@ export const useModelProvider = create<ModelProviderState>()(
               active: existingProvider ? existingProvider?.active : true,
             }
           })
-          return {
-            providers: [
-              ...updatedProviders,
-              ...existingProviders.filter(
-                (e) => !updatedProviders.some((p) => p.provider === e.provider)
-              ),
-            ],
+          const nextProviders = [
+            ...updatedProviders,
+            ...existingProviders.filter(
+              (e) => !updatedProviders.some((p) => p.provider === e.provider)
+            ),
+          ]
+
+          // One-shot migration: persist zustand-only fallback keys to disk
+          // via the providers extension so they survive localStorage clears.
+          if (
+            typeof localStorage !== 'undefined' &&
+            localStorage.getItem(API_KEY_FALLBACKS_MIGRATION_FLAG) !== 'true'
+          ) {
+            const toMigrate = nextProviders.filter((p) => {
+              const fallbacks = p.api_key_fallbacks ?? []
+              if (fallbacks.length === 0) return false
+              const setting = p.settings?.find(
+                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+              )
+              const persistedValue = setting
+                ? (setting.controller_props as { value?: unknown })?.value
+                : undefined
+              return (
+                typeof persistedValue !== 'string' || persistedValue.length === 0
+              )
+            })
+            localStorage.setItem(API_KEY_FALLBACKS_MIGRATION_FLAG, 'true')
+            if (toMigrate.length > 0) {
+              queueMicrotask(() => {
+                const svc = getServiceHub().providers()
+                for (const p of toMigrate) {
+                  const value = serializeApiKeyFallbacks(p.api_key_fallbacks ?? [])
+                  const settings = [...(p.settings ?? [])]
+                  const idx = settings.findIndex(
+                    (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+                  )
+                  if (idx !== -1) {
+                    const props = settings[idx].controller_props as {
+                      value: string | boolean | number
+                    }
+                    props.value = value
+                  } else {
+                    settings.push({
+                      key: API_KEY_FALLBACKS_SETTING_KEY,
+                      title: 'API Key Fallbacks',
+                      description: '',
+                      controller_type: 'input',
+                      controller_props: {
+                        value,
+                        type: 'password',
+                        placeholder: '',
+                      },
+                    } as (typeof settings)[number])
+                  }
+                  svc.updateSettings(p.provider, settings).catch((err) => {
+                    console.warn(
+                      `[api-key-fallbacks] migration failed for ${p.provider}:`,
+                      err
+                    )
+                  })
+                }
+              })
+            }
           }
+
+          return { providers: nextProviders }
         }),
       updateProvider: (providerName, data) => {
         set((state) => ({
