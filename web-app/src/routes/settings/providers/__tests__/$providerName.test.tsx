@@ -70,12 +70,14 @@ const h = vi.hoisted(() => {
 
   const updateProvider = vi.fn()
   const setProviders = vi.fn()
+  const addDeletedModels = vi.fn()
   const getProviderByName = vi.fn((name: string) => providerMap[name])
 
   const modelProviderStore: any = {
     getProviderByName,
     setProviders,
     updateProvider,
+    addDeletedModels,
   }
 
   const appState = {
@@ -272,10 +274,13 @@ vi.mock('@/components/ui/switch', () => ({
 
 vi.mock('@tabler/icons-react', () => ({
   IconFolderPlus: () => <span />,
+  IconInfoCircle: () => <span />,
   IconLoader: () => <span />,
   IconRefresh: () => <span />,
   IconUpload: () => <span />,
   IconTrash: () => <span />,
+  IconCircle: () => <span />,
+  IconCircleCheck: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -283,6 +288,7 @@ vi.mock('@/lib/utils', () => ({
   getProviderTitle: (name: string) => `Title:${name}`,
   getModelDisplayName: (m: any) => m.name ?? m.id,
   basenameNoExt: (p: string) => p.split('/').pop() ?? p,
+  isLocalProvider: (p: string) => p === 'llamacpp' || p === 'mlx',
 }))
 
 vi.mock('@/constants/providers', () => ({
@@ -394,11 +400,11 @@ describe('ProviderDetail route', () => {
   })
 
   describe('Rendering', () => {
-    it('renders the openai provider title, settings card, delete provider, and models', () => {
+    it('renders the openai provider title and models (settings card is hidden for predefined)', () => {
       renderComponent()
       expect(screen.getByTestId('header-page')).toBeInTheDocument()
       expect(screen.getByText('Title:openai')).toBeInTheDocument()
-      expect(screen.getByTestId('delete-provider')).toHaveTextContent('openai')
+      expect(screen.queryByTestId('delete-provider')).not.toBeInTheDocument()
       expect(screen.getByTestId('edit-gpt-4')).toBeInTheDocument()
       expect(screen.getByTestId('del-gpt-4')).toBeInTheDocument()
       expect(screen.getByTestId('add-model')).toBeInTheDocument()
@@ -740,20 +746,48 @@ describe('ProviderDetail route', () => {
   })
 
   describe('Dynamic setting changes', () => {
-    it('for openai, only the base-url dynamic control renders (api-key input is hidden)', () => {
+    const setupCustomProvider = () => {
+      const custom: any = {
+        provider: 'custom-llm',
+        active: true,
+        api_key: 'sk-x',
+        base_url: 'https://example.com/v1',
+        models: [],
+        settings: [
+          {
+            key: 'api-key',
+            title: 'API Key',
+            description: 'd',
+            controller_type: 'input',
+            controller_props: { value: 'sk-x', type: 'password' },
+          },
+          {
+            key: 'base-url',
+            title: 'Base URL',
+            description: 'd',
+            controller_type: 'input',
+            controller_props: { value: 'https://example.com/v1' },
+          },
+        ],
+      }
+      h.providerMap['custom-llm'] = custom
+      h.params.providerName = 'custom-llm'
+    }
+
+    it('for a non-predefined provider, only the base-url dynamic control renders (api-key input is hidden)', () => {
+      setupCustomProvider()
       renderComponent()
-      // Only one dynamic control (base-url) — the api-key setting is routed through
-      // the dedicated api-keys Card for non-llamacpp/non-mlx providers.
       expect(screen.getAllByTestId('dynamic-ctrl')).toHaveLength(1)
     })
 
     it('changing the base-url setting propagates to base_url and calls updateSettings', () => {
+      setupCustomProvider()
       renderComponent()
       const dyn = screen.getByTestId('dynamic-ctrl')
       fireEvent.click(dyn)
       expect(h.providersSvc.updateSettings).toHaveBeenCalled()
       expect(h.updateProvider).toHaveBeenCalledWith(
-        'openai',
+        'custom-llm',
         expect.objectContaining({ base_url: 'new-value' })
       )
     })
