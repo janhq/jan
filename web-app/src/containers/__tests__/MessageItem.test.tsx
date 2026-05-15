@@ -38,6 +38,7 @@ vi.mock('@/components/ai-elements/tool', () => ({
   ToolOutput: ({ output, errorText }: any) => (
     <div data-testid="tool-output">{errorText ?? String(output ?? '')}</div>
   ),
+  ToolApprovalActions: () => null,
 }))
 
 // Stub dialogs

@@ -14,6 +14,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { MermaidError } from '@/components/MermaidError'
+import { CitationLink } from '@/components/CitationLink'
 
 interface MarkdownProps {
   content: string
@@ -103,6 +104,23 @@ function RenderMarkdownComponent({
   // Memoize the normalized content to avoid reprocessing on every render
   const normalizedContent = useMemo(() => normalizeLatex(content), [content])
 
+  const mergedComponents = useMemo<Components>(() => {
+    const Anchor = (
+      props: React.AnchorHTMLAttributes<HTMLAnchorElement>
+    ) => {
+      const { href, children, className: aClass } = props
+      if (typeof href === 'string' && href.startsWith('#cite-')) {
+        return (
+          <CitationLink href={href} className={aClass}>
+            {children}
+          </CitationLink>
+        )
+      }
+      return <a {...props}>{children}</a>
+    }
+    return { a: Anchor, ...(components ?? {}) } as Components
+  }, [components])
+
   const streamdownEl = (
     <Streamdown
         animate={isAnimating ?? true}
@@ -119,7 +137,7 @@ function RenderMarkdownComponent({
           rehypeKatex,
           defaultRehypePlugins.harden,
         ]}
-        components={components}
+        components={mergedComponents}
         plugins={{
           code: code,
           mermaid: mermaid,

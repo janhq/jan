@@ -293,7 +293,7 @@ function ThreadDetail() {
               ? true
               : await useToolApproval
                   .getState()
-                  .showApprovalModal(toolName, threadId, toolCall.input)
+                  .requestApproval(toolCall.toolCallId, toolName, threadId)
 
             if (!approved) {
               // User denied the tool call

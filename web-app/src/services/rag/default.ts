@@ -74,6 +74,19 @@ export class DefaultRAGService implements RAGService {
     }
   }
 
+  async embed(texts: string[]): Promise<number[][]> {
+    if (!texts || texts.length === 0) return []
+    try {
+      const ext = ExtensionManager.getInstance().get<RAGExtension>(
+        ExtensionTypeEnum.RAG
+      )
+      if (ext?.embed) return await ext.embed(texts)
+    } catch (e) {
+      console.debug('RAG embed unavailable', e)
+    }
+    return []
+  }
+
   async parseDocument(path: string, type?: string): Promise<string> {
     try {
       const ext = ExtensionManager.getInstance().get<RAGExtension>(
