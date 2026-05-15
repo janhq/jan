@@ -88,6 +88,10 @@ function ProviderDetail() {
     useModelProvider()
   const provider = getProviderByName(providerName)
   const isLlamacpp = provider?.provider === 'llamacpp'
+  const isPredefinedProvider = useMemo(
+    () => predefinedProviders.some((p) => p.provider === providerName),
+    [providerName]
+  )
   const allModels = useMemo(() => provider?.models ?? [], [provider?.models])
   const embeddingModels = useMemo(
     () =>
@@ -727,7 +731,13 @@ function ProviderDetail() {
                   'flex-col-reverse'
               )}
             >
-              {/* Settings */}
+              {/* Settings — hidden for predefined remote providers since
+                  api-key + base-url are both surfaced elsewhere / hidden. */}
+              {!(
+                isPredefinedProvider &&
+                provider?.provider !== 'llamacpp' &&
+                provider?.provider !== 'mlx'
+              ) && (
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
                   if (
@@ -839,6 +849,10 @@ function ProviderDetail() {
                     </div>
                   )
 
+                  if (isPredefinedProvider && setting.key === 'base-url') {
+                    return null
+                  }
+
                   return (
                     <CardItem
                       key={settingIndex}
@@ -939,6 +953,7 @@ function ProviderDetail() {
 
                 <DeleteProvider provider={provider} />
               </Card>
+              )}
 
               {provider &&
                 provider.provider !== 'llamacpp' &&
