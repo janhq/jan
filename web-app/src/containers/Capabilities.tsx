@@ -10,6 +10,7 @@ import {
   IconAtom,
   IconWorld,
   IconCodeCircle2,
+  IconHeadphones,
 } from '@tabler/icons-react'
 import { Fragment, memo } from 'react'
 
@@ -35,6 +36,8 @@ const Capabilities = memo(function Capabilities({ capabilities }: CapabilitiesPr
 
         if (capability === 'vision') {
           icon = <IconEye className="size-4" />
+        } else if (capability === 'audio') {
+          icon = <IconHeadphones className="size-3.5" />
         } else if (capability === 'tools') {
           icon = <IconTool className="size-3.5" />
         } else if (capability === 'reasoning') {
