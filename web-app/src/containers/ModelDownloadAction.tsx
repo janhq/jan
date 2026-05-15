@@ -77,9 +77,10 @@ export const ModelDownloadAction = ({
     } catch (err) {
       removeLocalDownloadingModel(variant.model_id)
       console.error('Failed to start download:', err)
-      toast.error(t('hub:downloadFailed', 'Failed to start download'), {
-        description: err instanceof Error ? err.message : String(err),
-      })
+      toast.error(
+        t('hub:downloadFailed', { defaultValue: 'Failed to start download' }),
+        { description: err instanceof Error ? err.message : String(err) }
+      )
     }
   }, [
     serviceHub,
