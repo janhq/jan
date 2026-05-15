@@ -100,10 +100,11 @@ export const ModelDownloadAction = ({
     downloadProcesses.some((e) => e.id === variant.model_id)
   const downloadProgress =
     downloadProcesses.find((e) => e.id === variant.model_id)?.progress || 0
-  const isDownloaded = useModelProvider
-    .getState()
-    .getProviderByName('llamacpp')
-    ?.models.some((m: { id: string }) => m.id === variant.model_id)
+  const isDownloaded = useModelProvider((state) =>
+    state.providers
+      .find((p) => p.provider === 'llamacpp')
+      ?.models.some((m: { id: string }) => m.id === variant.model_id)
+  )
 
   if (isDownloading) {
     return (
