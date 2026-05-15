@@ -53,8 +53,8 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createXai } from '@ai-sdk/xai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
@@ -575,43 +575,6 @@ export class ModelFactory {
     return anthropic(modelId)
   }
 
-  /**
-   * Create a Google/Gemini model using the official AI SDK
-   */
-  private static createGoogleModel(
-    modelId: string,
-    provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
-  ): LanguageModel {
-    const headers: Record<string, string> = {}
-
-    // Add custom headers if specified
-    if (provider.custom_header) {
-      provider.custom_header.forEach((customHeader) => {
-        headers[customHeader.header] = customHeader.value
-      })
-    }
-
-    const keyChain = providerRemoteApiKeyChain(provider)
-    const fetchImpl =
-      keyChain.length > 1
-        ? createApiKeyRotatingFetch(
-            getRuntimeFetch(),
-            keyChain,
-            parameters,
-            'x-api-key'
-          )
-        : createCustomFetch(getRuntimeFetch(), parameters)
-
-    const google = createGoogleGenerativeAI({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
-      baseURL: provider.base_url,
-      headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: fetchImpl,
-    })
-
-    return google(modelId)
-  }
 
   /**
    * Create an OpenAI model using the official AI SDK
@@ -687,6 +650,41 @@ export class ModelFactory {
     })
 
     return xai(modelId)
+  }
+
+  // Native Google provider. Gemini 3 preview models require a
+  // `thought_signature` to be round-tripped on tool-call replays, which
+  // Google's /v1beta/openai compat layer does not surface — so we go native.
+  // Stored base_url points at …/v1beta/openai for the compat path; the native
+  // client wants the bare …/v1beta base.
+  private static createGoogleModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl = createCustomFetch(getRuntimeFetch(), parameters)
+
+    const rawBase = provider.base_url?.trim()
+    const baseURL = rawBase
+      ? rawBase.replace(/\/openai\/?$/, '').replace(/\/$/, '')
+      : 'https://generativelanguage.googleapis.com/v1beta'
+
+    const google = createGoogleGenerativeAI({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return google(modelId)
   }
 
   /**

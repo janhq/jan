@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ModelFactory } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 const mockGlobalFetch = vi.fn()
@@ -37,7 +36,10 @@ vi.mock('@ai-sdk/anthropic', () => ({
 }))
 
 vi.mock('@ai-sdk/google', () => ({
-  createGoogleGenerativeAI: vi.fn(() => vi.fn(() => ({ type: 'google' }))),
+  createGoogleGenerativeAI: vi.fn((cfg: any) => {
+    ;(globalThis as any).__capturedGoogleCfg = cfg
+    return vi.fn(() => ({ type: 'google' }))
+  }),
 }))
 
 vi.mock('ai', () => ({
@@ -58,7 +60,6 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 
 const mockedInvoke = vi.mocked(invoke)
-const mockedCreateGoogleGenerativeAI = vi.mocked(createGoogleGenerativeAI)
 const mockedCreateOpenAICompatible = vi.mocked(createOpenAICompatible)
 
 describe('ModelFactory', () => {
@@ -88,85 +89,28 @@ describe('ModelFactory', () => {
       expect(model.type).toBe('anthropic')
     })
 
-    it('should create a Google model for google provider', async () => {
-      const provider: ProviderObject = {
-        provider: 'google',
-        api_key: 'test-api-key',
-        base_url: 'https://generativelanguage.googleapis.com/v1',
-        models: [],
-        settings: [],
-        active: true,
-      }
-
-      const model = await ModelFactory.createModel('gemini-pro', provider)
-      expect(model).toBeDefined()
-      expect(model.type).toBe('google')
-      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
-        apiKey: 'test-api-key',
-        baseURL: 'https://generativelanguage.googleapis.com/v1',
-        headers: undefined,
-        fetch: expect.any(Function),
-      })
-      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
-    })
-
-    it('should create a Google model for gemini provider', async () => {
-      const provider: ProviderObject = {
-        provider: 'gemini',
-        api_key: 'test-api-key',
-        base_url: 'https://generativelanguage.googleapis.com/v1',
-        models: [],
-        settings: [],
-        active: true,
-      }
-
-      const model = await ModelFactory.createModel('gemini-pro', provider)
-      expect(model).toBeDefined()
-      expect(model.type).toBe('google')
-      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
-        apiKey: 'test-api-key',
-        baseURL: 'https://generativelanguage.googleapis.com/v1',
-        headers: undefined,
-        fetch: expect.any(Function),
-      })
-      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
-    })
-
-    it('should forward Gemini parameters through the injected fetch', async () => {
-      const provider: ProviderObject = {
-        provider: 'gemini',
-        api_key: 'test-api-key',
-        base_url: 'https://generativelanguage.googleapis.com/v1',
-        models: [],
-        settings: [],
-        active: true,
-      }
-
-      await ModelFactory.createModel('gemini-pro', provider, {
-        temperature: 0.2,
-        max_output_tokens: 256,
-        ctx_len: 4096,
-      })
-
-      const googleConfig = mockedCreateGoogleGenerativeAI.mock.calls[0]?.[0]
-      expect(googleConfig).toBeDefined()
-      expect(googleConfig?.fetch).toEqual(expect.any(Function))
-
-      await googleConfig!.fetch!(
-        'https://example.com/v1/chat/completions',
-        {
-          method: 'POST',
-          body: JSON.stringify({ prompt: 'hello' }),
+    it('routes google and gemini through the native @ai-sdk/google client and strips the /openai suffix', async () => {
+      const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
+      for (const name of ['google', 'gemini'] as const) {
+        vi.mocked(createGoogleGenerativeAI).mockClear()
+        const provider: ProviderObject = {
+          provider: name,
+          api_key: 'test-api-key',
+          base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+          models: [],
+          settings: [],
+          active: true,
         }
-      )
 
-      expect(mockGlobalFetch).toHaveBeenCalledTimes(1)
-      const [, requestInit] = mockGlobalFetch.mock.calls[0]!
-      expect(JSON.parse(String(requestInit?.body))).toEqual({
-        prompt: 'hello',
-        temperature: 0.2,
-        max_tokens: 256,
-      })
+        const model = await ModelFactory.createModel('gemini-2.5-flash', provider)
+        expect(model).toEqual({ type: 'google' })
+        expect(createGoogleGenerativeAI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            apiKey: 'test-api-key',
+            baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+          })
+        )
+      }
     })
 
     it('should create an OpenAI-compatible model for openai provider', async () => {

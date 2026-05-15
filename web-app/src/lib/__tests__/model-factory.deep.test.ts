@@ -235,9 +235,15 @@ describe('model-factory deep coverage', () => {
 
   /* custom headers on google, openai, xai */
   describe('custom headers', () => {
-    it('google passes custom headers', async () => {
+    it('google passes custom headers via the native @ai-sdk/google client', async () => {
+      const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
+      vi.mocked(createGoogleGenerativeAI).mockClear()
       await ModelFactory.createModel('g', mkProvider('google', { custom_header: [{ header: 'X-G', value: 'v' }] }), {})
-      expect((globalThis as any).__capturedGoogleCfg.headers).toEqual({ 'X-G': 'v' })
+      expect(createGoogleGenerativeAI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'X-G': 'v' }),
+        })
+      )
     })
 
     it('openai passes custom headers', async () => {
