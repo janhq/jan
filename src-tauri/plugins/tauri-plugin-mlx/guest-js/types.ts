@@ -16,4 +16,7 @@ export type MlxConfig = {
   ctx_size: number
   draft_model_path: string
   block_size: number
+  /// Drafter family — "dflash" (default) or "mtp" (Gemma 4 assistant).
+  /// Empty string is treated by the Rust shim as "dflash".
+  draft_kind: string
 }

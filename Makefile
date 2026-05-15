@@ -281,22 +281,22 @@ endif
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
-# Download DFlash MLX server binary from GitHub releases (macOS only)
+# Download MLX server binary (mlx-vlm fork) from GitHub releases (macOS only)
 # Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
-# Override DFLASH_TAG to pin a specific release, e.g.:
-#   make build-mlx-server DFLASH_TAG=dflash-macos-arm64-abc1234
-DFLASH_TAG ?=
+# Override MLXVLM_TAG to pin a specific release, e.g.:
+#   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
+MLXVLM_TAG ?=
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin
-	@echo "Downloading DFlash MLX server binary..."; \
-	if [ -n "$(DFLASH_TAG)" ]; then \
-		TAG="$(DFLASH_TAG)"; \
+	@echo "Downloading MLX server binary (mlx-vlm)..."; \
+	if [ -n "$(MLXVLM_TAG)" ]; then \
+		TAG="$(MLXVLM_TAG)"; \
 		echo "Using pinned release: $$TAG"; \
 	else \
-		echo "Fetching latest DFlash release..."; \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases?per_page=50"; \
-		TMPREL=$$(mktemp /tmp/dflash-releases-XXXXXX.json); \
+		echo "Fetching latest mlx-vlm release..."; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/mlx-vlm/releases?per_page=50"; \
+		TMPREL=$$(mktemp /tmp/mlxvlm-releases-XXXXXX.json); \
 		_gh_get() { \
 			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
 				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
@@ -341,24 +341,24 @@ ifeq ($(shell uname -s),Darwin)
 		fi; \
 		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
 		echo "GitHub API returned $$REL_COUNT release(s)"; \
-		TAG=$$(jq -r '[.[] | select(.tag_name | startswith("dflash-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
+		TAG=$$(jq -r '[.[] | select(.tag_name | startswith("mlxvlm-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
 		if [ -z "$$TAG" ]; then \
-			echo "Error: No DFlash release found matching 'dflash-macos-arm64*'. First 10 tags in response:"; \
+			echo "Error: No mlx-vlm release found matching 'mlxvlm-macos-arm64*'. First 10 tags in response:"; \
 			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
 		rm -f "$$TMPREL"; \
 	fi; \
 	echo "Release: $$TAG"; \
-	URL="https://github.com/AtomicBot-ai/dflash/releases/download/$$TAG/dflash-mlx-server-macos-arm64.tar.gz"; \
+	URL="https://github.com/AtomicBot-ai/mlx-vlm/releases/download/$$TAG/mlxvlm-mlx-server-macos-arm64.tar.gz"; \
 	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/dflash-mlx-server.tar.gz; \
-	tar -xzf /tmp/dflash-mlx-server.tar.gz -C src-tauri/resources/bin/; \
-	rm -f /tmp/dflash-mlx-server.tar.gz; \
+	curl -fSL "$$URL" -o /tmp/mlxvlm-mlx-server.tar.gz; \
+	tar -xzf /tmp/mlxvlm-mlx-server.tar.gz -C src-tauri/resources/bin/; \
+	rm -f /tmp/mlxvlm-mlx-server.tar.gz; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
 	echo "$$TAG" > src-tauri/resources/bin/mlx-server-version.txt; \
 	echo "macos-arm64" > src-tauri/resources/bin/mlx-server-backend.txt; \
-	echo "DFlash MLX server downloaded and extracted successfully ($$TAG)"
+	echo "MLX server (mlx-vlm) downloaded and extracted successfully ($$TAG)"
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
@@ -386,11 +386,11 @@ ifeq ($(shell uname -s),Darwin)
 		make build-mlx-server; \
 	else \
 		LOCAL_TAG=$$(cat src-tauri/resources/bin/mlx-server-version.txt 2>/dev/null); \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/dflash/releases"; \
+		API_URL="https://api.github.com/repos/AtomicBot-ai/mlx-vlm/releases"; \
 		if [ -n "$$GH_TOKEN" ]; then \
-			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+			LATEST_TAG=$$(curl -sf -H "Authorization: Bearer $$GH_TOKEN" "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('mlxvlm-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
 		else \
-			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('dflash-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
+			LATEST_TAG=$$(curl -sf "$$API_URL" | python3 -c "import sys,json; rs=json.load(sys.stdin); ts=sorted([r for r in rs if r['tag_name'].startswith('mlxvlm-macos-arm64')], key=lambda r: r.get('published_at') or r.get('created_at') or '', reverse=True); print(ts[0]['tag_name'] if ts else '')" 2>/dev/null); \
 		fi; \
 		if [ -z "$$LATEST_TAG" ]; then \
 			echo "Could not fetch latest release tag — keeping current ($$LOCAL_TAG)"; \

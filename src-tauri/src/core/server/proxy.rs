@@ -563,6 +563,16 @@ fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
     if b.contains("the request exceeds the available context size") {
         return true;
     }
+    // mlx-vlm wraps generation errors as `{"detail":"Generation failed: ..."}`
+    // (see `mlx_vlm.server` HTTPException handler). The inner mlx-lm error may
+    // mention `kv cache`, `max_kv_size`, or token capacity rather than the
+    // word "context", so we also classify those phrasings as overflow.
+    if b.contains("max_kv_size") || b.contains("max-kv-size") || b.contains("max kv size") {
+        return true;
+    }
+    if b.contains("kv cache") && (b.contains("exceed") || b.contains("overflow") || b.contains("too")) {
+        return true;
+    }
     if !b.contains("context") {
         return false;
     }
@@ -856,7 +866,10 @@ async fn resolve_local_session(
 
 /// Rebuild and re-send the proxied request after a successful
 /// auto-increase-ctx reload. `new_port` points at the freshly-spawned
-/// llama-server / mlx-server, `new_api_key` is the per-session bearer token.
+/// llama-server / mlx-server, `new_api_key` is the per-session bearer
+/// token (empty for MLX sessions, since mlx-vlm has no auth layer and is
+/// bound to loopback only — the `if !new_api_key.is_empty()` branch below
+/// gracefully omits the `Authorization` header in that case).
 /// All other parameters mirror the original request so the retry is
 /// byte-identical on the wire.
 async fn retry_local_upstream(
@@ -3061,10 +3074,25 @@ mod auto_increase_ctx_tests {
 
     #[test]
     fn detects_mlx_ctx_overflow_500() {
-        // mlx-server surfaces a similar message; exact wording varies between
-        // the python/swift implementations so we just match the "context" +
-        // size/length/exceed pattern.
+        // Legacy dflash mlx-server surface: still in the wild on user
+        // machines until they upgrade to the new mlx-vlm binary.
         let body = r#"{"detail":"Context size exceeded: requested 9000 tokens but the model only supports 8192."}"#;
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_mlxvlm_kv_overflow_500() {
+        // mlx-vlm wraps generation errors as `Generation failed: ...`.
+        // The inner phrasing typically references the KV cache rather than
+        // the word "context"; classify those too so auto-increase-ctx still
+        // fires on the new backend.
+        let body = r#"{"detail":"Generation failed: kv cache exceeded max_kv_size=8192"}"#;
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+    }
+
+    #[test]
+    fn detects_mlxvlm_max_kv_size_500() {
+        let body = r#"{"detail":"Generation failed: requested tokens exceed max-kv-size limit"}"#;
         assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, body));
     }
 

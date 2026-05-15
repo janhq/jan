@@ -34,6 +34,11 @@ pub struct MlxConfig {
     pub draft_model_path: String,
     #[serde(default)]
     pub block_size: i32,
+    /// Drafter family — "dflash" (default) or "mtp" (Gemma 4 assistant).
+    /// Empty string is treated as "dflash" so pre-update callers keep
+    /// working without churn.
+    #[serde(default)]
+    pub draft_kind: String,
 }
 
 /// Core model-loading logic, decoupled from Tauri AppHandle.
@@ -77,39 +82,90 @@ pub async fn load_mlx_model_impl(
         .into());
     }
 
-    let api_key: String = envs
-        .get("MLX_API_KEY")
-        .map(|s| s.to_string())
-        .unwrap_or_default();
+    // mlx-vlm expects `--model` to point at a *directory* containing
+    // `config.json`, `tokenizer.json`, and the safetensors shards
+    // (cf. `mlx_vlm/utils.load_config`). The legacy dflash server
+    // accepted the safetensors file path directly and walked up to its
+    // parent on its own, so historic `model.yml` entries persist as
+    // e.g. `mlx/models/<id>/model.safetensors`. Normalize to the
+    // containing directory here, on the boundary, instead of touching
+    // every TS caller and breaking imported-model metadata.
+    let model_dir_path = if model_path_pb.is_file() {
+        model_path_pb
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| model_path_pb.clone())
+    } else {
+        model_path_pb.clone()
+    };
+    let model_dir_arg = model_dir_path.to_string_lossy().to_string();
+    if model_dir_arg != model_path {
+        log::info!(
+            "Resolving MLX model directory: {} -> {}",
+            model_path,
+            model_dir_arg
+        );
+    }
 
-    // Build command arguments
+    // Build command arguments for `mlx_vlm.server` (Atomic-Chat fork at
+    // AtomicBot-ai/mlx-vlm). The server binds to loopback only and runs
+    // without any auth layer — there is no equivalent of `MLX_API_KEY`
+    // upstream, so we drop it entirely and rely on the host filter.
+    //
+    // Config-key translation (TS-side names → mlx-vlm CLI flags):
+    //   * `ctx_size`   → `--max-kv-size`
+    //   * `block_size` → `--draft-block-size`
+    //   * `draft_model_path` non-empty → `--draft-model ... --draft-kind <kind>`
+    //   * `draft_kind` selects between mlx-vlm's two drafter families
+    //     ("dflash" or "mtp"); empty string falls back to "dflash" so
+    //     legacy callers (and stale persisted configs) keep working.
+    // Keeping the TS-side names stable avoids churning the extension /
+    // settings.json schema and the autoIncreaseCtx test suite.
     let mut args: Vec<String> = vec![
         "--model".to_string(),
-        model_path.clone(),
+        model_dir_arg,
+        "--host".to_string(),
+        "127.0.0.1".to_string(),
         "--port".to_string(),
         port.to_string(),
-        "--model-id".to_string(),
-        model_id.clone(),
     ];
 
     if config.ctx_size > 0 {
-        args.push("--ctx-size".to_string());
+        args.push("--max-kv-size".to_string());
         args.push(config.ctx_size.to_string());
     }
 
     if !config.draft_model_path.is_empty() {
+        // Same file-vs-directory normalization as the target model: if the
+        // drafter path points at a safetensors shard, hand mlx-vlm the
+        // containing directory. HF repo IDs (e.g. `z-lab/Qwen3.5-4B-DFlash`)
+        // are not local paths and pass through untouched.
+        let draft_pb = PathBuf::from(&config.draft_model_path);
+        let draft_arg = if draft_pb.is_file() {
+            draft_pb
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| config.draft_model_path.clone())
+        } else {
+            config.draft_model_path.clone()
+        };
         args.push("--draft-model".to_string());
-        args.push(config.draft_model_path.clone());
+        args.push(draft_arg);
+        // Drafter family is selected by the frontend; default to "dflash"
+        // for empty/legacy configs so behavior is unchanged for callers
+        // that don't yet set `draft_kind`.
+        let kind = if config.draft_kind.is_empty() {
+            "dflash"
+        } else {
+            config.draft_kind.as_str()
+        };
+        args.push("--draft-kind".to_string());
+        args.push(kind.to_string());
     }
 
     if config.block_size > 0 {
-        args.push("--block-size".to_string());
+        args.push("--draft-block-size".to_string());
         args.push(config.block_size.to_string());
-    }
-
-    if !api_key.is_empty() {
-        args.push("--api-key".to_string());
-        args.push(api_key.clone());
     }
 
     log::info!("MLX server arguments: {:?}", args);
@@ -118,6 +174,12 @@ pub async fn load_mlx_model_impl(
     let mut command = Command::new(&bin_path);
     command.args(&args);
     command.envs(envs);
+    // Tell our mlx-vlm fork to lock onto the preloaded model and ignore
+    // arbitrary `model` labels in incoming chat-completion bodies. Without
+    // this the server would unload + try to fetch the requested label from
+    // HF (e.g. `gemma-4-e4b-it-4bit`), which 401s for non-existent repos.
+    // See `mlx_vlm/server.py::get_cached_model` (Atomic-Chat fork patch).
+    command.env("MLX_VLM_SINGLE_MODEL", "1");
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
@@ -148,7 +210,13 @@ pub async fn load_mlx_model_impl(
                     }
 
                     let line_lower = line.to_lowercase();
-                    if line_lower.contains("http server listening")
+                    // Recognise readiness logs from both the legacy dflash
+                    // server (Starlette) and the new mlx-vlm server (FastAPI
+                    // + uvicorn). Uvicorn writes "Uvicorn running on ..."
+                    // once the lifespan startup has completed.
+                    if line_lower.contains("uvicorn running on")
+                        || line_lower.contains("application startup complete")
+                        || line_lower.contains("http server listening")
                         || line_lower.contains("server is listening")
                         || line_lower.contains("server started")
                         || line_lower.contains("ready to accept")
@@ -189,7 +257,11 @@ pub async fn load_mlx_model_impl(
                         log::info!("[mlx] {}", line);
 
                         let line_lower = line.to_lowercase();
-                        if line_lower.contains("server is listening")
+                        // Same dual-format recognition as on stdout — uvicorn
+                        // prints its readiness message on stderr by default.
+                        if line_lower.contains("uvicorn running on")
+                            || line_lower.contains("application startup complete")
+                            || line_lower.contains("server is listening")
                             || line_lower.contains("server listening on")
                             || line_lower.contains("server started and listening on")
                         {
@@ -266,13 +338,21 @@ pub async fn load_mlx_model_impl(
     let pid = child.id().map(|id| id as i32).unwrap_or(-1);
 
     log::info!("MLX server process started with PID: {} and is ready", pid);
+    // `api_key` is retained on `SessionInfo` for ABI compatibility with TS
+    // consumers (always empty — mlx-vlm has no auth layer).
+    //
+    // `model_path` is exposed as the *directory* that was passed to
+    // `--model`. Clients use this string as the OpenAI `model` field in
+    // outgoing chat-completion requests so mlx-vlm's path-based cache
+    // (`get_cached_model`) matches and skips the unload+reload+HF fetch
+    // dance for legacy `model_id`-style request bodies.
     let session_info = SessionInfo {
         pid,
         port: port.into(),
         model_id,
-        model_path: model_path_pb.display().to_string(),
+        model_path: model_dir_path.display().to_string(),
         is_embedding,
-        api_key,
+        api_key: String::new(),
     };
 
     process_map.insert(

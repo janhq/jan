@@ -365,5 +365,15 @@
   "dflashLoadingDraft": "Loading DFlash draft for {{modelId}}...",
   "dflashEnableSuccess": "DFlash enabled",
   "dflashDisableSuccess": "DFlash disabled",
-  "dflashEnableFailed": "Failed to toggle DFlash"
+  "dflashEnableFailed": "Failed to toggle DFlash",
+  "mtpUnsupportedTitle": "MTP isn't available for this model",
+  "mtpUnsupportedDesc": "{{modelId}} doesn't have a paired MTP assistant, or the target is quantized. MTP only supports bf16 Gemma 4 targets — pick one from the mlx-community/gemma-4 collection (e.g. gemma-4-E4B-it-bf16) to enable Multi-Token Prediction speculative decoding.",
+  "mtpUnsupportedDescPrefix": "{{modelId}} doesn't have a paired MTP assistant. Pick a supported Gemma 4 target from ",
+  "mtpUnsupportedDescSuffix": " to enable Multi-Token Prediction speculative decoding.",
+  "mtpNoActiveModel": "Start an MLX model first.",
+  "mtpDownloadingDraft": "Downloading MTP assistant for {{modelId}}...",
+  "mtpLoadingDraft": "Loading MTP assistant for {{modelId}}...",
+  "mtpEnableSuccess": "MTP enabled",
+  "mtpDisableSuccess": "MTP disabled",
+  "mtpEnableFailed": "Failed to toggle MTP"
 }

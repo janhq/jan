@@ -337,5 +337,15 @@
   "dflashLoadingDraft": "Загружается DFlash draft для {{modelId}}…",
   "dflashEnableSuccess": "DFlash включён",
   "dflashDisableSuccess": "DFlash отключён",
-  "dflashEnableFailed": "Не удалось переключить DFlash"
+  "dflashEnableFailed": "Не удалось переключить DFlash",
+  "mtpUnsupportedTitle": "MTP недоступен для этой модели",
+  "mtpUnsupportedDesc": "У модели {{modelId}} нет парного MTP-ассистента, либо таргет квантован. MTP поддерживает только bf16 Gemma 4 — выберите модель из коллекции mlx-community/gemma-4 (например, gemma-4-E4B-it-bf16), чтобы включить Multi-Token Prediction.",
+  "mtpUnsupportedDescPrefix": "У модели {{modelId}} нет парного MTP-ассистента. Выберите поддерживаемую Gemma 4 из коллекции ",
+  "mtpUnsupportedDescSuffix": ", чтобы включить Multi-Token Prediction.",
+  "mtpNoActiveModel": "Сначала запустите MLX-модель.",
+  "mtpDownloadingDraft": "Скачивается MTP-ассистент для {{modelId}}…",
+  "mtpLoadingDraft": "Загружается MTP-ассистент для {{modelId}}…",
+  "mtpEnableSuccess": "MTP включён",
+  "mtpDisableSuccess": "MTP отключён",
+  "mtpEnableFailed": "Не удалось переключить MTP"
 }

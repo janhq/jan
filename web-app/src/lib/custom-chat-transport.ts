@@ -460,7 +460,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
-    // Track stream timing and token count for token speed calculation
+    // Track stream timing and token count for token speed calculation.
+    // We start the clock on the *first generated delta* (text or reasoning),
+    // not on the `start` event, so the wall-clock fallback measures decode
+    // throughput rather than (TTFT + prefill + decode). Without this, long
+    // system prompts and MTP/dflash spin-up artificially deflate the
+    // displayed tokens/sec.
     let streamStartTime: number | undefined
 
     const maxOutputTokens = useAssistant.getState().currentAssistant?.parameters
@@ -481,8 +486,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-        // Track stream start time on start
-        if (part.type === 'start' && !streamStartTime) {
+        // Start the wall-clock timer on the first generated delta (text or
+        // reasoning), NOT on `start` — the latter fires before prefill, so
+        // including it would tank the fallback TPS on long prompts.
+        if (
+          !streamStartTime &&
+          (part.type === 'text-delta' || part.type === 'reasoning-delta')
+        ) {
           streamStartTime = Date.now()
         }
 
@@ -507,11 +517,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           const outputTokens = usage?.outputTokens ?? 0
           const inputTokens = usage?.inputTokens
 
-          // Use llama.cpp's tokens per second if available, otherwise calculate from duration
+          // Prefer the provider-reported decode TPS (mlx-vlm `generation_tps`
+          // or llama.cpp / dflash `predicted_per_second`). Fall back to a
+          // wall-clock estimate measured from the first delta — but only if
+          // the timer ever started AND we actually produced tokens (e.g. a
+          // pure tool-call response yields 0 tokens and no delta, so the
+          // fallback would otherwise divide by zero).
           let tokenSpeed: number
-          if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed =
-              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
+          if (tokensPerSecond > 0) {
+            tokenSpeed = tokensPerSecond
+          } else if (
+            streamStartTime !== undefined &&
+            durationSec > 0 &&
+            outputTokens > 0
+          ) {
+            tokenSpeed = outputTokens / durationSec
           } else {
             tokenSpeed = 0
           }
