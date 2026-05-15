@@ -28,6 +28,43 @@ export async function getLocalInstalledBackends(): Promise<
   return await getLocalInstalledBackendsInternal(backendDir)
 }
 
+// Translate an upstream ggml-org/llama.cpp release asset stem (the segment
+// between "llama-<version>-bin-" and the archive extension) to Jan's internal
+// backend identifier. Used by the install-from-file flow so a user who
+// downloads an archive from upstream GitHub lands in a directory whose name
+// matches what `determineSupportedBackends` returns — otherwise the backend
+// installs on disk but never appears in the UI dropdown (issue #7973).
+//
+// Returns null if the upstream stem has no internal equivalent; the caller
+// should then fall back to the original stem.
+export function mapUpstreamAssetToInternal(stem: string): string | null {
+  switch (stem) {
+    case 'macos-arm64':
+      return 'macos-arm64'
+    case 'macos-x64':
+      return 'macos-x64'
+    case 'ubuntu-x64':
+      return 'linux-common_cpus-x64'
+    case 'ubuntu-arm64':
+      return 'linux-arm64'
+    case 'ubuntu-vulkan-x64':
+      return 'linux-vulkan-common_cpus-x64'
+    case 'win-cpu-x64':
+      return 'win-common_cpus-x64'
+    case 'win-cpu-arm64':
+      return 'win-arm64'
+    case 'win-vulkan-x64':
+      return 'win-vulkan-common_cpus-x64'
+  }
+  // Upstream ships "win-cuda-<major>.<minor>-x64" (e.g. win-cuda-12.4-x64).
+  // Jan buckets CUDA by major version only.
+  const cudaMatch = /^win-cuda-(\d+)\.(\d+)-x64$/.exec(stem)
+  if (cudaMatch) {
+    return `win-cuda-${cudaMatch[1]}-common_cpus-x64`
+  }
+  return null
+}
+
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 

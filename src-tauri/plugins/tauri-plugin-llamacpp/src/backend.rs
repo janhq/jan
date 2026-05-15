@@ -272,7 +272,8 @@ pub async fn list_supported_backends(
 
     // Sort newest version first; if versions tie, sort by backend name
     merged.sort_by(|a, b| {
-        let version_cmp = b.version.cmp(&a.version);
+        let version_cmp = parse_backend_version(b.version.clone())
+            .cmp(&parse_backend_version(a.version.clone()));
         if version_cmp == std::cmp::Ordering::Equal {
             a.backend.cmp(&b.backend)
         } else {
@@ -397,7 +398,9 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // Define library name lookup table
+    // Keys use the synthetic version labels passed by the TypeScript caller
+    // (e.g. "12.0" means "any CUDA 12.x"). The library filenames are major-
+    // version-bucketed by NVIDIA, so minor-version precision is not needed.
     let mut libname_lookup: HashMap<String, &str> = HashMap::new();
     libname_lookup.insert("windows-11.7".to_string(), "cudart64_110.dll");
     libname_lookup.insert("windows-12.0".to_string(), "cudart64_12.dll");
@@ -494,7 +497,9 @@ pub fn find_latest_version_for_backend(
     }
 
     // Sort by version (newest first)
-    matching_backends.sort_by(|a, b| b.version.cmp(&a.version));
+    matching_backends.sort_by(|a, b| {
+        parse_backend_version(b.version.clone()).cmp(&parse_backend_version(a.version.clone()))
+    });
 
     // Return the full string including the original asset name
     Some(format!(
