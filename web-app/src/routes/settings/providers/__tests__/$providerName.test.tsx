@@ -558,13 +558,20 @@ describe('ProviderDetail route', () => {
 
   describe('Refresh models', () => {
     it('refreshing adds newly fetched models and toasts success', async () => {
+      h.providersSvc.fetch = vi.fn(() =>
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              data: [
+                { id: 'gpt-4', created: 1 },
+                { id: 'gpt-5', created: 2 },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      )
       renderComponent()
-      // The refresh icon button is the first secondary icon-xs button inside the models card header
-      // It's rendered alongside DialogAddModel. We locate it by being the button before add-model.
-      const buttons = screen.getAllByRole('button')
-      // Find one that has no text children (icon-only) and is not the provider switch
-      // Simpler: click every button and find side-effect; instead, pick the one whose aria isn't set — use first button in the models card.
-      // Use a more targeted approach: the first button inside the element that contains add-model.
       const addModel = screen.getByTestId('add-model')
       const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
       expect(refreshBtn).toBeTruthy()
@@ -582,8 +589,6 @@ describe('ProviderDetail route', () => {
           ]),
         })
       )
-      // Unused var to keep linter happy
-      void buttons
     })
 
     it('refresh errors out when provider lacks api keys', async () => {
@@ -615,14 +620,16 @@ describe('ProviderDetail route', () => {
     })
 
     it('refresh toasts error on fetch failure', async () => {
-      h.providersSvc.fetchModelsFromProvider = vi.fn().mockRejectedValue(new Error('nope'))
+      h.providersSvc.fetch = vi.fn(() => vi.fn().mockRejectedValue(new Error('nope')))
       renderComponent()
       const addModel = screen.getByTestId('add-model')
       const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
       await act(async () => {
         fireEvent.click(refreshBtn)
       })
-      expect(h.toastError).toHaveBeenCalled()
+      await waitFor(() => {
+        expect(h.toastError).toHaveBeenCalled()
+      })
     })
   })
 

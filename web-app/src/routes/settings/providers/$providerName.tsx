@@ -32,7 +32,7 @@ import {
 } from '@tabler/icons-react'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { toast } from 'sonner'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
@@ -47,6 +47,10 @@ import {
   API_KEY_FALLBACKS_SETTING_KEY,
   serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
+import {
+  supportsRemoteCatalog,
+  fetchTopRemoteModels,
+} from '@/lib/remoteModelCatalog'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -253,6 +257,20 @@ function ProviderDetail() {
     setApiKeysDraft(providerRemoteApiKeyChain(provider).join('\n'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
+
+  const autoCatalogAttempted = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!provider) return
+    if (!supportsRemoteCatalog(provider.provider)) return
+    if (provider.models.length > 0) return
+    if (!providerHasRemoteApiKeys(provider)) return
+    if (autoCatalogAttempted.current.has(provider.provider)) return
+    autoCatalogAttempted.current.add(provider.provider)
+    handleRefreshModels()
+    // handleRefreshModels closes over the latest provider; only watch the
+    // signals that decide whether auto-fetch should fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider?.provider, provider?.api_key, provider?.models.length])
 
   const commitApiKeysDraft = useCallback(() => {
     if (!provider) return
@@ -479,18 +497,28 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      const modelIds = await serviceHub
-        .providers()
-        .fetchModelsFromProvider(provider)
-
-      // Create new models from the fetched IDs
-      const newModels: Model[] = modelIds.map((id) => ({
-        id,
-        model: id,
-        name: id,
-        capabilities: ['completion'], // Default capability
-        version: '1.0',
-      }))
+      let newModels: Model[]
+      if (supportsRemoteCatalog(provider.provider)) {
+        const catalog = await fetchTopRemoteModels(provider, serviceHub.providers().fetch())
+        newModels = catalog.map((m) => ({
+          id: m.id,
+          model: m.id,
+          name: m.id,
+          capabilities: m.capabilities,
+          version: '1.0',
+        }))
+      } else {
+        const modelIds = await serviceHub
+          .providers()
+          .fetchModelsFromProvider(provider)
+        newModels = modelIds.map((id) => ({
+          id,
+          model: id,
+          name: id,
+          capabilities: ['completion'],
+          version: '1.0',
+        }))
+      }
 
       // Filter out models that already exist
       const existingModelIds = provider.models.map((m) => m.id)
