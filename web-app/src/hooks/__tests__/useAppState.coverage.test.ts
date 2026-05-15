@@ -67,39 +67,6 @@ describe('useAppState - coverage', () => {
     expect(result.current.mcpToolNames).toEqual(new Set(['mcp1', 'mcp2']))
   })
 
-  it('should set token speed directly', () => {
-    const { result } = renderHook(() => useAppState())
-    const msg = { id: 'msg-1', thread_id: 't1' } as any
-
-    act(() => {
-      result.current.setTokenSpeed(msg, 25.5, 100)
-    })
-
-    expect(result.current.tokenSpeed).toBeDefined()
-    expect(result.current.tokenSpeed?.tokenSpeed).toBe(25.5)
-    expect(result.current.tokenSpeed?.tokenCount).toBe(100)
-    expect(result.current.tokenSpeed?.message).toBe('msg-1')
-  })
-
-  it('should compute average token speed on subsequent updates', () => {
-    const { result } = renderHook(() => useAppState())
-    const msg = { id: 'msg-1', thread_id: 't1' } as any
-
-    // First update initializes
-    act(() => {
-      result.current.updateTokenSpeed(msg, 1)
-    })
-    expect(result.current.tokenSpeed?.tokenCount).toBe(1)
-    expect(result.current.tokenSpeed?.tokenSpeed).toBe(0)
-
-    // Second update computes average
-    act(() => {
-      result.current.updateTokenSpeed(msg, 5)
-    })
-    expect(result.current.tokenSpeed?.tokenCount).toBe(6)
-    expect(result.current.tokenSpeed?.tokenSpeed).toBeGreaterThan(0)
-  })
-
   it('should clear app state', () => {
     const { result } = renderHook(() => useAppState())
 
@@ -117,7 +84,6 @@ describe('useAppState - coverage', () => {
 
     expect(result.current.streamingContent).toBeUndefined()
     expect(result.current.abortControllers).toEqual({})
-    expect(result.current.tokenSpeed).toBeUndefined()
     expect(result.current.showOutOfContextDialog).toBe(false)
     expect(result.current.errorMessage).toBeUndefined()
     expect(result.current.cancelToolCall).toBeUndefined()
@@ -175,13 +141,4 @@ describe('useAppState - coverage', () => {
     expect(result.current.activeModels).toEqual(['model-a', 'model-b'])
   })
 
-  it('should update token speed with default increment', () => {
-    const { result } = renderHook(() => useAppState())
-    const msg = { id: 'msg-1', thread_id: 't1' } as any
-
-    act(() => {
-      result.current.updateTokenSpeed(msg)
-    })
-    expect(result.current.tokenSpeed?.tokenCount).toBe(1)
-  })
 })

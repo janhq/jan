@@ -1,8 +1,6 @@
 import { memo } from 'react'
-import { useAppState } from '@/hooks/useAppState'
 import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
-import { useParams } from '@tanstack/react-router'
 
 interface TokenUsage {
   inputTokens?: number
@@ -10,7 +8,7 @@ interface TokenUsage {
   totalTokens?: number
 }
 
-interface TokenSpeed {
+interface TokenSpeedMeta {
   tokenSpeed: number
   tokenCount?: number
   durationMs?: number
@@ -23,28 +21,6 @@ interface TokenSpeedIndicatorProps {
 
 export const TokenSpeedIndicator = memo(
   ({ metadata, streaming }: TokenSpeedIndicatorProps) => {
-    const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
-    const threadId = params?.threadId
-    const streamingTokenSpeed = useAppState((state) => {
-      const ts =
-        (threadId ? state.tokenSpeeds[threadId] : undefined) ??
-        state.tokenSpeed
-      return ts ? Math.round(ts.tokenSpeed) : 0
-    })
-    const streamingTokenCount = useAppState((state) => {
-      const ts =
-        (threadId ? state.tokenSpeeds[threadId] : undefined) ??
-        state.tokenSpeed
-      return ts?.tokenCount || 0
-    })
-
-    // Fallback to persisted metadata when not streaming
-    const persistedTokenSpeed =
-      (metadata?.tokenSpeed as TokenSpeed)?.tokenSpeed || 0
-    const persistedTokenCount =
-      (metadata?.tokenSpeed as TokenSpeed)?.tokenCount || 0
-    const usage = metadata?.usage as TokenUsage | undefined
-
     const nonStreamingAssistantParam =
       typeof metadata?.assistant === 'object' &&
       metadata?.assistant !== null &&
@@ -53,31 +29,24 @@ export const TokenSpeedIndicator = memo(
             .parameters?.stream === false
         : undefined
 
-    if (nonStreamingAssistantParam) return
+    if (nonStreamingAssistantParam) return null
+    if (streaming) return null
 
-    // Use streaming data if available, otherwise fall back to metadata
-    const displaySpeed = streaming
-      ? streamingTokenSpeed
-      : Math.round(toNumber(persistedTokenSpeed))
+    const persisted = metadata?.tokenSpeed as TokenSpeedMeta | undefined
+    const usage = metadata?.usage as TokenUsage | undefined
+    const displaySpeed = Math.round(toNumber(persisted?.tokenSpeed ?? 0))
+    const displayTokenCount = usage?.outputTokens ?? persisted?.tokenCount ?? 0
 
-    const displayTokenCount = streaming
-      ? streamingTokenCount
-      : (usage?.outputTokens ?? persistedTokenCount)
-
-    // Hide the indicator if token speed is 0 and not streaming
-    if (displaySpeed === 0) return
-
-    // Show indicator during streaming OR when we have persisted data
-    const shouldShow = streaming || (displaySpeed > 0 && displayTokenCount > 0)
-
-    if (!shouldShow) return
+    if (displaySpeed === 0 && displayTokenCount === 0) return null
 
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
-        <div className="flex items-center gap-1">
-          <Gauge size={16} />
-          <span>{displaySpeed} tokens/sec</span>
-        </div>
+        {displaySpeed > 0 && (
+          <div className="flex items-center gap-1">
+            <Gauge size={16} />
+            <span>{displaySpeed} tokens/sec</span>
+          </div>
+        )}
         {displayTokenCount > 0 && (
           <span className="text-muted-foreground">
             ({displayTokenCount} tokens)

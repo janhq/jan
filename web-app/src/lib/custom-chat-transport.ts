@@ -685,8 +685,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-        // Track stream start time on start
-        if (part.type === 'start' && !streamStartTime) {
+        if (
+          !streamStartTime &&
+          (part.type === 'text-start' || part.type === 'reasoning-start')
+        ) {
           streamStartTime = Date.now()
         }
 
