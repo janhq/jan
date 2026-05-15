@@ -143,9 +143,6 @@ function HubContent() {
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
-  >({})
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -364,44 +361,6 @@ function HubContent() {
     [navigate]
   )
 
-  const checkModelSupport = useCallback(
-    async (variant: any) => {
-      const modelKey = variant.model_id
-
-      // Don't check again if already checking or checked
-      if (modelSupportStatus[modelKey]) {
-        return
-      }
-
-      // Set loading state
-      setModelSupportStatus((prev) => ({
-        ...prev,
-        [modelKey]: 'LOADING',
-      }))
-
-      try {
-        // Use the HuggingFace path for the model
-        const modelPath = variant.path
-        const supportStatus = await serviceHub
-          .models()
-          .isModelSupported(modelPath, 8192)
-
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: supportStatus,
-        }))
-      } catch (error) {
-        console.error('Error checking model support:', error)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: 'RED',
-        }))
-      }
-    },
-    [modelSupportStatus, serviceHub]
-  )
-
-  // Check if we're on the last step
   const renderFilter = () => {
     return (
       <>
@@ -604,8 +563,6 @@ function HubContent() {
                                   DEFAULT_MODEL_QUANTIZATIONS
                                 )}
                                 isDefaultVariant={true}
-                                modelSupportStatus={modelSupportStatus}
-                                onCheckModelSupport={checkModelSupport}
                               />
                               {filteredModels[virtualItem.index].is_mlx ? (
                                 <MlxModelDownloadAction
@@ -783,12 +740,6 @@ function HubContent() {
                                           variant={variant}
                                           defaultModelQuantizations={
                                             DEFAULT_MODEL_QUANTIZATIONS
-                                          }
-                                          modelSupportStatus={
-                                            modelSupportStatus
-                                          }
-                                          onCheckModelSupport={
-                                            checkModelSupport
                                           }
                                         />
                                         {filteredModels[virtualItem.index]
