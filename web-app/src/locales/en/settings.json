@@ -94,6 +94,8 @@
     "notificationPositionTopLeft": "Top left",
     "notificationPositionBottomRight": "Bottom right",
     "notificationPositionBottomLeft": "Bottom left",
+    "showTokenSpeed": "Show token speed",
+    "showTokenSpeedDesc": "Display the tokens/sec and token count below assistant messages.",
     "windowBackground": "Window Background",
     "windowBackgroundDesc": "Set the app window's background color.",
     "appMainView": "App Main View",

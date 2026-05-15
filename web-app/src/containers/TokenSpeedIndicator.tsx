@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 
 interface TokenUsage {
   inputTokens?: number
@@ -21,6 +22,9 @@ interface TokenSpeedIndicatorProps {
 
 export const TokenSpeedIndicator = memo(
   ({ metadata, streaming }: TokenSpeedIndicatorProps) => {
+    const showTokenSpeed = useInterfaceSettings((s) => s.showTokenSpeed)
+    if (!showTokenSpeed) return null
+
     const nonStreamingAssistantParam =
       typeof metadata?.assistant === 'object' &&
       metadata?.assistant !== null &&
