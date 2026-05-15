@@ -190,6 +190,40 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.perplexity.ai',
+    explore_models_url: 'https://docs.perplexity.ai/docs/agent/models',
+    provider: 'perplexity',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Perplexity API uses API keys for authentication. Visit your [API Keys](https://www.perplexity.ai/account/api/keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. Perplexity exposes an OpenAI-compatible Agent API. See the [Perplexity API documentation](https://docs.perplexity.ai/docs/agent/quickstart) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.perplexity.ai',
+          value: 'https://api.perplexity.ai',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
