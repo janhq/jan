@@ -5,11 +5,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
-import {
-  extractModelName,
-  extractQuantLabel,
-  selectDefaultQuant,
-} from '@/lib/models'
+import { extractModelName, selectDefaultQuant } from '@/lib/models'
 import { toast } from 'sonner'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
@@ -174,12 +170,7 @@ export function DownloadButtonPlaceholder({
           onClick={handleDownload}
           className={cn(isDownloading && 'hidden')}
         >
-          {(() => {
-            const label = extractQuantLabel(quant?.model_id)
-            return label
-              ? `${t('hub:download')} · ${label}`
-              : t('hub:download')
-          })()}
+          {t('hub:download')}
         </Button>
       )}
     </div>

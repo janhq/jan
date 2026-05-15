@@ -507,9 +507,9 @@ function HubContent() {
                     >
                       <Card
                         header={
-                          <div className="flex items-center justify-between gap-x-2">
+                          <div className="flex items-start justify-between gap-x-3">
                             <div
-                              className="cursor-pointer"
+                              className="cursor-pointer min-w-0 flex-1"
                               onClick={() => {
                                 navigate({
                                   to: route.hub.model,
@@ -543,27 +543,29 @@ function HubContent() {
                                 ) || ''}
                               </h1>
                             </div>
-                            <div className="shrink-0 space-x-3 flex items-center">
-                              <span className="text-muted-foreground font-medium text-xs">
-                                {filteredModels[virtualItem.index].is_mlx
-                                  ? filteredModels[virtualItem.index]
-                                      .safetensors_files?.[0]?.file_size
-                                  : selectDefaultQuant(
-                                      filteredModels[virtualItem.index].quants,
-                                      DEFAULT_MODEL_QUANTIZATIONS
-                                    )?.file_size}
-                              </span>
-                              <ModelInfoHoverCard
-                                model={filteredModels[virtualItem.index]}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
-                                }
-                                variant={selectDefaultQuant(
-                                  filteredModels[virtualItem.index].quants,
-                                  DEFAULT_MODEL_QUANTIZATIONS
-                                )}
-                                isDefaultVariant={true}
-                              />
+                            <div className="shrink-0 flex flex-col items-end gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground font-medium text-xs">
+                                  {filteredModels[virtualItem.index].is_mlx
+                                    ? filteredModels[virtualItem.index]
+                                        .safetensors_files?.[0]?.file_size
+                                    : selectDefaultQuant(
+                                        filteredModels[virtualItem.index].quants,
+                                        DEFAULT_MODEL_QUANTIZATIONS
+                                      )?.file_size}
+                                </span>
+                                <ModelInfoHoverCard
+                                  model={filteredModels[virtualItem.index]}
+                                  defaultModelQuantizations={
+                                    DEFAULT_MODEL_QUANTIZATIONS
+                                  }
+                                  variant={selectDefaultQuant(
+                                    filteredModels[virtualItem.index].quants,
+                                    DEFAULT_MODEL_QUANTIZATIONS
+                                  )}
+                                  isDefaultVariant={true}
+                                />
+                              </div>
                               {filteredModels[virtualItem.index].is_mlx ? (
                                 <MlxModelDownloadAction
                                   model={filteredModels[virtualItem.index]}
