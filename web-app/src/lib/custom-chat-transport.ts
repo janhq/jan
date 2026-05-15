@@ -49,9 +49,6 @@ export type OnFinishCallback = (params: {
   message: UIMessage
   isAbort?: boolean
 }) => void
-export type OnToolCallCallback = (params: {
-  toolCall: { toolCallId: string; toolName: string; input: unknown }
-}) => void
 export type ServiceHub = {
   rag(): {
     getTools(): Promise<
@@ -367,17 +364,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
 
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          // MCP tools added after RAG tools, so they take precedence on name conflicts
+          const seenBy = new Map<string, string>()
           mcpTools.forEach((tool) => {
             const serverName = tool.server || 'unknown'
-            if (!isToolDisabled(serverName, tool.name)) {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                inputSchema: jsonSchema(
-                  normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
-                ),
-              } as Tool
+            if (isToolDisabled(serverName, tool.name)) return
+            const prevServer = seenBy.get(tool.name)
+            if (prevServer && prevServer !== serverName) {
+              console.warn(
+                `[tools] MCP tool name collision: "${tool.name}" exposed by both "${prevServer}" and "${serverName}". Using "${serverName}".`
+              )
             }
+            seenBy.set(tool.name, serverName)
+            toolsRecord[tool.name] = {
+              description: tool.description,
+              inputSchema: jsonSchema(
+                normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+              ),
+            } as Tool
           })
         }
       } catch (error) {
