@@ -59,8 +59,12 @@ function inferOpenAICapabilities(id: string): string[] | null {
   return null
 }
 
+function stripModelsPrefix(id: string): string {
+  return id.toLowerCase().replace(/^models\//, '')
+}
+
 function inferGeminiCapabilities(id: string): string[] | null {
-  const lower = id.toLowerCase().replace(/^models\//, '')
+  const lower = stripModelsPrefix(id)
   if (
     lower.startsWith('text-embedding-') ||
     lower.startsWith('embedding-') ||
@@ -71,14 +75,20 @@ function inferGeminiCapabilities(id: string): string[] | null {
   ) {
     return null
   }
-  if (!lower.startsWith('gemini-')) return null
-  if (lower.startsWith('gemini-1.0-pro-vision') || lower === 'gemini-pro-vision') {
-    return ['completion', 'vision']
-  }
-  if (lower.startsWith('gemini-1.0-pro') || lower === 'gemini-pro') {
-    return ['completion', 'tools']
-  }
-  return ['completion', 'tools', 'vision', 'audio']
+  if (!lower.startsWith('gemini-') && !lower.startsWith('gemma-')) return null
+  return ['completion', 'tools', 'vision']
+}
+
+// Score Gemini/Gemma ids by version so the catalog sorts newest-first
+// regardless of the `created` field (which is missing on Google's
+// OpenAI-compat /models response).
+export function geminiVersionScore(id: string): number {
+  const lower = stripModelsPrefix(id)
+  const match = lower.match(/^(?:gemini|gemma)-(\d+)(?:\.(\d+))?/)
+  if (!match) return 0
+  const major = Number(match[1])
+  const minor = match[2] ? Number(match[2]) : 0
+  return major * 100 + minor
 }
 
 function inferAnthropicCapabilities(id: string): string[] | null {
@@ -178,7 +188,16 @@ function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogM
     parsed.push({ id, capabilities: caps, createdMs })
   }
 
-  parsed.sort((a, b) => b.createdMs - a.createdMs || a.id.localeCompare(b.id))
+  if (providerName === 'gemini') {
+    parsed.sort((a, b) => {
+      const va = geminiVersionScore(a.id)
+      const vb = geminiVersionScore(b.id)
+      if (vb !== va) return vb - va
+      return a.id.localeCompare(b.id)
+    })
+  } else {
+    parsed.sort((a, b) => b.createdMs - a.createdMs || a.id.localeCompare(b.id))
+  }
   return parsed.slice(0, TOP_N)
 }
 

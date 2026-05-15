@@ -49,37 +49,43 @@ describe('supportsRemoteCatalog', () => {
 })
 
 describe('fetchTopRemoteModels gemini', () => {
-  it('infers vision+audio+tools on multimodal gemini, hides embeddings/imagen/veo', async () => {
+  it('sorts by version desc, infers vision+tools, includes gemma, hides embeddings/imagen/veo/aqa', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       mkResponse({
         data: [
-          { id: 'models/gemini-2.5-pro', created: 5000 },
-          { id: 'models/gemini-2.0-flash', created: 4000 },
-          { id: 'models/gemini-1.5-pro', created: 3000 },
-          { id: 'models/gemini-1.0-pro-vision', created: 2000 },
-          { id: 'models/gemini-1.0-pro', created: 1500 },
-          { id: 'models/gemini-embedding-001', created: 4500 },
-          { id: 'models/text-embedding-004', created: 4500 },
-          { id: 'models/imagen-3.0-generate-001', created: 4500 },
-          { id: 'models/veo-2.0-generate-001', created: 4500 },
-          { id: 'models/aqa', created: 4500 },
+          { id: 'models/gemini-1.0-pro' },
+          { id: 'models/gemini-2.0-flash' },
+          { id: 'models/gemini-3.5-pro' },
+          { id: 'models/gemini-3-flash' },
+          { id: 'models/gemini-2.5-pro' },
+          { id: 'models/gemini-1.5-pro' },
+          { id: 'models/gemma-3-27b-it' },
+          { id: 'models/gemma-2-9b-it' },
+          { id: 'models/gemini-embedding-001' },
+          { id: 'models/text-embedding-004' },
+          { id: 'models/imagen-3.0-generate-001' },
+          { id: 'models/veo-2.0-generate-001' },
+          { id: 'models/aqa' },
         ],
       })
     )
     const result = await fetchTopRemoteModels(mkGeminiProvider(), fetchImpl)
     const ids = result.map((m) => m.id)
+
     expect(ids).not.toContain('models/gemini-embedding-001')
     expect(ids).not.toContain('models/text-embedding-004')
     expect(ids).not.toContain('models/imagen-3.0-generate-001')
     expect(ids).not.toContain('models/veo-2.0-generate-001')
     expect(ids).not.toContain('models/aqa')
 
-    const pro25 = result.find((m) => m.id === 'models/gemini-2.5-pro')!
-    expect(pro25.capabilities).toEqual(['completion', 'tools', 'vision', 'audio'])
-    const v10 = result.find((m) => m.id === 'models/gemini-1.0-pro-vision')!
-    expect(v10.capabilities).toEqual(['completion', 'vision'])
-    const t10 = result.find((m) => m.id === 'models/gemini-1.0-pro')!
-    expect(t10.capabilities).toEqual(['completion', 'tools'])
+    // Version desc: 3.5 > 3 > 2.5 > 2 > 1.5 > 1
+    expect(ids[0]).toBe('models/gemini-3.5-pro')
+    expect(ids[1]).toBe('models/gemini-3-flash')
+    expect(ids).toContain('models/gemma-3-27b-it')
+
+    for (const m of result) {
+      expect(m.capabilities).toEqual(['completion', 'tools', 'vision'])
+    }
   })
 })
 
