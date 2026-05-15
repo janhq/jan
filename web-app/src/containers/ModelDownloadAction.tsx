@@ -10,6 +10,7 @@ import { CatalogModel } from '@/services/models/types'
 import { IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 
 export const ModelDownloadAction = ({
   variant,
@@ -22,8 +23,12 @@ export const ModelDownloadAction = ({
 
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
   const downloadProcesses = useMemo(
     () =>
       Object.values(downloads).map((download) => ({
@@ -56,18 +61,26 @@ export const ModelDownloadAction = ({
 
   const handleDownloadModel = useCallback(async () => {
     addLocalDownloadingModel(variant.model_id)
-    serviceHub
-      .models()
-      .pullModelWithMetadata(
-        variant.model_id,
-        variant.path,
-        (
-          model.mmproj_models?.find(
-            (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-          ) || model.mmproj_models?.[0]
-        )?.path,
-        huggingfaceToken
-      )
+    try {
+      await serviceHub
+        .models()
+        .pullModelWithMetadata(
+          variant.model_id,
+          variant.path,
+          (
+            model.mmproj_models?.find(
+              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+            ) || model.mmproj_models?.[0]
+          )?.path,
+          huggingfaceToken
+        )
+    } catch (err) {
+      removeLocalDownloadingModel(variant.model_id)
+      console.error('Failed to start download:', err)
+      toast.error(t('hub:downloadFailed', 'Failed to start download'), {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
   }, [
     serviceHub,
     variant.path,
@@ -75,6 +88,8 @@ export const ModelDownloadAction = ({
     huggingfaceToken,
     model.mmproj_models,
     addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+    t,
   ])
 
   const isDownloading =

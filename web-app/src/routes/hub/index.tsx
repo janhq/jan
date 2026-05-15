@@ -15,7 +15,11 @@ import {
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
-import { extractModelName, extractDescription } from '@/lib/models'
+import {
+  extractModelName,
+  extractDescription,
+  selectDefaultQuant,
+} from '@/lib/models'
 import {
   IconChevronDown,
   IconChevronUp,
@@ -585,16 +589,9 @@ function HubContent() {
                                 {filteredModels[virtualItem.index].is_mlx
                                   ? filteredModels[virtualItem.index]
                                       .safetensors_files?.[0]?.file_size
-                                  : (
-                                      filteredModels[
-                                        virtualItem.index
-                                      ].quants?.find((m) =>
-                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                          m.model_id.toLowerCase().includes(e)
-                                        )
-                                      ) ??
-                                      filteredModels[virtualItem.index]
-                                        .quants?.[0]
+                                  : selectDefaultQuant(
+                                      filteredModels[virtualItem.index].quants,
+                                      DEFAULT_MODEL_QUANTIZATIONS
                                     )?.file_size}
                               </span>
                               <ModelInfoHoverCard
@@ -602,17 +599,10 @@ function HubContent() {
                                 defaultModelQuantizations={
                                   DEFAULT_MODEL_QUANTIZATIONS
                                 }
-                                variant={
-                                  filteredModels[
-                                    virtualItem.index
-                                  ].quants?.find((m) =>
-                                    DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                      m.model_id.toLowerCase().includes(e)
-                                    )
-                                  ) ??
-                                  filteredModels[virtualItem.index]
-                                    .quants?.[0]
-                                }
+                                variant={selectDefaultQuant(
+                                  filteredModels[virtualItem.index].quants,
+                                  DEFAULT_MODEL_QUANTIZATIONS
+                                )}
                                 isDefaultVariant={true}
                                 modelSupportStatus={modelSupportStatus}
                                 onCheckModelSupport={checkModelSupport}
@@ -746,12 +736,9 @@ function HubContent() {
                           (() => {
                             const quants =
                               filteredModels[virtualItem.index].quants ?? []
-                            const recommendedId = (
-                              quants.find((m) =>
-                                DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                  m.model_id.toLowerCase().includes(e)
-                                )
-                              ) ?? quants[0]
+                            const recommendedId = selectDefaultQuant(
+                              quants,
+                              DEFAULT_MODEL_QUANTIZATIONS
                             )?.model_id
                             return (
                             <div className="mt-5">

@@ -7,6 +7,7 @@ import {
   extractModelRepo,
   extractQuantLabel,
   getModelCapabilities,
+  selectDefaultQuant,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
 
@@ -233,6 +234,45 @@ describe('extractModelRepo', () => {
     expect(extractModelRepo('https://huggingface.co/cortexso/tinyllama/')).toBe(
       'cortexso/tinyllama/'
     )
+  })
+})
+
+describe('selectDefaultQuant', () => {
+  const preferred = ['iq4_xs', 'q4_k_m'] as const
+
+  it('returns the first preferred match', () => {
+    const quants = [
+      { model_id: 'Model-Q3_K_L' },
+      { model_id: 'Model-Q4_K_M' },
+      { model_id: 'Model-Q5_K_S' },
+    ]
+    expect(selectDefaultQuant(quants, preferred)).toBe(quants[1])
+  })
+
+  it('prefers earlier entries in the preferred list', () => {
+    const quants = [
+      { model_id: 'Model-Q4_K_M' },
+      { model_id: 'Model-IQ4_XS' },
+    ]
+    expect(selectDefaultQuant(quants, preferred)?.model_id).toBe('Model-Q4_K_M')
+  })
+
+  it('matches case-insensitively', () => {
+    const quants = [{ model_id: 'model-q4_k_m' }]
+    expect(selectDefaultQuant(quants, preferred)).toBe(quants[0])
+  })
+
+  it('falls back to the first quant when nothing matches', () => {
+    const quants = [
+      { model_id: 'Model-Q3_K_L' },
+      { model_id: 'Model-Q8_0' },
+    ]
+    expect(selectDefaultQuant(quants, preferred)).toBe(quants[0])
+  })
+
+  it('returns undefined for empty or missing input', () => {
+    expect(selectDefaultQuant([], preferred)).toBeUndefined()
+    expect(selectDefaultQuant(undefined, preferred)).toBeUndefined()
   })
 })
 
