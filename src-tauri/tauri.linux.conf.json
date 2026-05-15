@@ -31,7 +31,7 @@
   "bundle": {
     "targets": ["deb", "appimage"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli"],
-    "externalBin": ["resources/bin/uv"],
+    "externalBin": ["resources/bin/jan-uv"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,
@@ -39,7 +39,8 @@
       },
       "deb": {
         "files": {
-          "usr/bin/bun": "resources/bin/bun"
+          "usr/bin/bun": "resources/bin/bun",
+          "usr/bin/jan-uv": "resources/bin/jan-uv"
         }
       }
     }
