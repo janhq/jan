@@ -15,6 +15,9 @@ pub async fn cleanup_processes<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
         guard.take()
     };
     if let Some(handle) = maybe_handle {
+        app_state
+            .router_pid
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         if let Err(e) = crate::router::stop_router(handle).await {
             log::warn!("Failed to stop router during cleanup: {}", e);
         }

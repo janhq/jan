@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicU32;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,12 +13,16 @@ pub struct SessionInfo {
 
 pub struct LlamacppState {
     pub router: Mutex<Option<crate::router::RouterHandle>>,
+    /// Mirror of the router PID for emergency lookup (e.g. force-kill while
+    /// the handle is temporarily owned by the watcher loop). 0 = no router.
+    pub router_pid: AtomicU32,
 }
 
 impl Default for LlamacppState {
     fn default() -> Self {
         Self {
             router: Mutex::new(None),
+            router_pid: AtomicU32::new(0),
         }
     }
 }
