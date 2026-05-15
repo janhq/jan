@@ -7,7 +7,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { CatalogModel } from '@/services/models/types'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeModelId } from '@/lib/utils'
 import { DownloadEvent, EngineManager, events } from '@janhq/core'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -53,16 +53,19 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
   const downloadProgress =
     downloadProcesses.find((e) => e.id === modelId)?.progress || 0
 
-  // Get the actual downloaded model ID (with or without developer prefix)
+  // Get the actual downloaded model ID (with or without developer prefix).
+  // Also matches legacy on-disk ids saved before sanitizeModelId replaced dots with underscores.
   const downloadedModelId = useMemo(() => {
     const mlxProvider = useModelProvider.getState().getProviderByName('mlx')
     const foundModel = mlxProvider?.models.find(
       (m: { id: string }) =>
         m.id === modelId ||
-        m.id === `${model.developer}/${modelId}`
+        m.id === `${model.developer}/${modelId}` ||
+        m.id === modelName ||
+        m.id === `${model.developer}/${modelName}`
     )
     return foundModel?.id || modelId
-  }, [modelId, model.developer])
+  }, [modelId, modelName, model.developer])
 
   // Check if MLX model is already downloaded
   useEffect(() => {
@@ -70,10 +73,12 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
     const downloaded = mlxProvider?.models.some(
       (m: { id: string }) =>
         m.id === modelId ||
-        m.id === `${model.developer}/${modelId}`
+        m.id === `${model.developer}/${modelId}` ||
+        m.id === modelName ||
+        m.id === `${model.developer}/${modelName}`
     )
     setDownloaded(!!downloaded)
-  }, [modelId, model.developer])
+  }, [modelId, modelName, model.developer])
 
   // Listen for download success
   useEffect(() => {
@@ -203,8 +208,3 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
     </div>
   )
 })
-
-// Helper function to sanitize model ID
-function sanitizeModelId(id: string): string {
-  return id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
-}
