@@ -1334,9 +1334,15 @@ function ProviderDetail() {
                       </h6>
                     </div>
                     <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                      {t('providers:noModelFoundDesc')}
-                      &nbsp;
-                      <Link to={route.hub.index}>{t('common:hub')}</Link>
+                      {provider && !isLocalProvider(provider.provider) ? (
+                        t('providers:noModelFoundRemoteDesc')
+                      ) : (
+                        <>
+                          {t('providers:noModelFoundDesc')}
+                          &nbsp;
+                          <Link to={route.hub.index}>{t('common:hub')}</Link>
+                        </>
+                      )}
                     </p>
                   </div>
                 )}

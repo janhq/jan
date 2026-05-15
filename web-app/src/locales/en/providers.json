@@ -22,6 +22,7 @@
   "start": "Start",
   "noModelFound": "No model found",
   "noModelFoundDesc": "Available models will be listed here. If you don't have any models yet, visit the Hub to download.",
+  "noModelFoundRemoteDesc": "Available models will be listed here. Use the refresh button above to fetch models from the provider, or add one manually with the + button.",
   "configuration": "Configuration",
   "apiEndpoint": "API Endpoint",
   "testConnection": "Test Connection",
