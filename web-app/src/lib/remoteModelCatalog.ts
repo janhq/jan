@@ -52,7 +52,7 @@ function inferOpenAICapabilities(id: string): string[] | null {
   if (id.startsWith('gpt-4') || id.startsWith('gpt-3.5')) {
     return ['completion', 'tools']
   }
-  return ['completion']
+  return null
 }
 
 function inferAnthropicCapabilities(id: string): string[] | null {

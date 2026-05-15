@@ -520,14 +520,36 @@ function ProviderDetail() {
         }))
       }
 
-      // Filter out models that already exist
+      if (supportsRemoteCatalog(provider.provider)) {
+        const importedModels = provider.models.filter((m) => m.imported)
+        const importedIds = new Set(importedModels.map((m) => m.id))
+        const fresh = newModels.filter((m) => !importedIds.has(m.id))
+        if (fresh.length === 0) {
+          toast.success(t('providers:models'), {
+            description: t('providers:noNewModels'),
+          })
+          return
+        }
+        const updatedModels = [...importedModels, ...fresh]
+        updateProvider(providerName, {
+          ...provider,
+          models: updatedModels,
+        })
+        toast.success(t('providers:models'), {
+          description: t('providers:refreshModelsSuccess', {
+            count: fresh.length,
+            provider: provider.provider,
+          }),
+        })
+        return
+      }
+
       const existingModelIds = provider.models.map((m) => m.id)
       const modelsToAdd = newModels.filter(
         (model) => !existingModelIds.includes(model.id)
       )
 
       if (modelsToAdd.length > 0) {
-        // Update the provider with new models
         const updatedModels = [...provider.models, ...modelsToAdd]
         updateProvider(providerName, {
           ...provider,

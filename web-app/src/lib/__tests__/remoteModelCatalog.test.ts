@@ -100,6 +100,20 @@ describe('fetchTopRemoteModels openai', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
+  it('drops unrecognized ids whose capabilities cannot be inferred', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          { id: 'gpt-4o', created: 5 },
+          { id: 'codex-mystery', created: 4 },
+          { id: 'some-unknown-model', created: 3 },
+        ],
+      })
+    )
+    const result = await fetchTopRemoteModels(mkOpenAIProvider(), fetchImpl)
+    expect(result.map((m) => m.id)).toEqual(['gpt-4o'])
+  })
+
   it('throws when all keys fail', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(mkResponse({}, 401))
     await expect(
