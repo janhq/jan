@@ -1,0 +1,98 @@
+---
+title: FuturMix
+description: A step-by-step guide on integrating Jan with FuturMix AI Gateway.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    FuturMix integration,
+    FuturMix,
+    AI Gateway,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# FuturMix
+
+## Integrate FuturMix with Jan
+
+[FuturMix](https://futurmix.ai) is a unified AI Gateway that provides access to AI models from
+multiple providers (Anthropic, OpenAI, Google, and more) through a single OpenAI-compatible API.
+
+Jan supports the FuturMix API, allowing you to use models from various providers with a single API
+key, helping you avoid the complexity of managing multiple provider accounts and API keys.
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit [FuturMix](https://futurmix.ai) and create an account
+2. Navigate to your dashboard and create a new API key
+3. Copy your API key for use in Jan
+
+<Callout type='info'>
+FuturMix API keys work across all available models from different providers.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **OpenAI** (FuturMix uses OpenAI-compatible endpoints)
+3. Configure the following:
+   - **API Key**: Insert your FuturMix API Key
+   - **API Base URL**: `https://futurmix.ai/v1`
+
+### Step 3: Start Using FuturMix Models
+
+1. Pick any existing **Chat** or create a new one
+2. In the model selector, you can now use any FuturMix-supported model
+3. Enter the model ID in the model field (see available models below)
+4. Start chatting
+</Steps>
+
+## Available Models Through FuturMix
+
+FuturMix provides access to models across multiple providers. For custom configurations:
+
+**Model Field Settings:**
+- Specify a model using its standard model ID
+- Available options can be found on the [FuturMix website](https://futurmix.ai)
+
+**Examples of Model IDs:**
+- Claude Sonnet 4.5: `claude-sonnet-4-5-20250929`
+- Claude Opus 4.6: `claude-opus-4-6-20250415`
+- GPT-5.4: `gpt-5.4`
+- Gemini 2.5 Pro: `gemini-2.5-pro`
+- Gemini 2.5 Flash: `gemini-2.5-flash`
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and properly copied from the FuturMix dashboard
+- Ensure your API key has sufficient credits in your FuturMix account
+- Check that you've set the API Base URL to `https://futurmix.ai/v1`
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify the API Base URL is correctly configured (no trailing slash)
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm you're using the correct model ID format
+- Check that the model is currently available on FuturMix
+- Verify the model provider is currently operational
+
+**4. Authentication Errors**
+- Ensure you've configured both the API Key AND the custom API Base URL
+- Double-check there are no extra spaces in the API key or base URL
+- Try regenerating your API key in the FuturMix dashboard
