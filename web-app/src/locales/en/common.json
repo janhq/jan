@@ -8,6 +8,7 @@
   "integrations": "Integrations",
   "experimental": "Experimental",
   "claude_code": "Claude Code",
+  "codex": "Codex",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
   "attachments": "Attachments",

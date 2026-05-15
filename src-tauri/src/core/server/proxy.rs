@@ -25,8 +25,93 @@ use crate::core::{
 /// A strict JSON schema converter inside the upstream server rejects those schemas.
 /// To be robust, we default `type` to `"string"` for description-only leaf schemas.
 /// Keep this behavior aligned with `normalizeToolInputSchema` in the frontend.
+pub(crate) fn normalize_openai_schema_root(schema: &mut serde_json::Value) {
+    let Some(schema_type) = schema.as_str() else {
+        return;
+    };
+
+    if matches!(
+        schema_type,
+        "string" | "number" | "integer" | "boolean" | "object" | "array" | "null"
+    ) {
+        *schema = serde_json::json!({ "type": schema_type });
+    }
+}
+
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
+    normalize_openai_tool_parameters_schema_at(schema, true);
+}
+
+fn normalize_openai_tool_parameters_schema_at(
+    schema: &mut serde_json::Value,
+    is_schema_position: bool,
+) {
     match schema {
+        serde_json::Value::String(_) if is_schema_position => {
+            normalize_openai_schema_root(schema);
+        }
+        serde_json::Value::Object(map) => {
+            let has_description = map.contains_key("description");
+            let has_type = map.contains_key("type");
+            let is_object_type = map.get("type").and_then(|v| v.as_str()) == Some("object");
+            let has_nested_schema_keywords = map.contains_key("properties")
+                || map.contains_key("items")
+                || map.contains_key("anyOf")
+                || map.contains_key("oneOf")
+                || map.contains_key("allOf")
+                || map.contains_key("$ref");
+
+            if is_object_type && !map.contains_key("properties") {
+                map.insert(
+                    "properties".to_string(),
+                    serde_json::Value::Object(serde_json::Map::new()),
+                );
+            }
+
+            if has_description && !has_type && !has_nested_schema_keywords {
+                map.insert(
+                    "type".to_string(),
+                    serde_json::Value::String("string".to_string()),
+                );
+            }
+
+            for (key, value) in map.iter_mut() {
+                match key.as_str() {
+                    "properties" | "patternProperties" | "$defs" | "definitions" | "dependentSchemas" => {
+                        if let serde_json::Value::Object(children) = value {
+                            for child in children.values_mut() {
+                                normalize_openai_tool_parameters_schema_at(child, true);
+                            }
+                        }
+                    }
+                    "items" | "additionalProperties" | "contains" | "not" | "if" | "then" | "else" => {
+                        normalize_openai_tool_parameters_schema_at(value, true);
+                    }
+                    "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                        if let serde_json::Value::Array(children) = value {
+                            for child in children.iter_mut() {
+                                normalize_openai_tool_parameters_schema_at(child, true);
+                            }
+                        }
+                    }
+                    _ => normalize_openai_tool_parameters_schema_at(value, false),
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for value in arr.iter_mut() {
+                normalize_openai_tool_parameters_schema_at(value, is_schema_position);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_openai_responses_schema(schema: &mut serde_json::Value) {
+    match schema {
+        serde_json::Value::String(_) => {
+            normalize_openai_schema_root(schema);
+        }
         serde_json::Value::Object(map) => {
             let has_description = map.contains_key("description");
             let has_type = map.contains_key("type");
@@ -53,14 +138,43 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
                 );
             }
 
-            // Recurse into nested schema (properties, items, anyOf, etc.) in one pass.
-            for v in map.values_mut() {
-                normalize_openai_tool_parameters_schema(v);
+            for key in ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] {
+                if let Some(children) = map.get_mut(key).and_then(|value| value.as_object_mut()) {
+                    for child in children.values_mut() {
+                        normalize_openai_responses_schema(child);
+                    }
+                }
+            }
+
+            for key in [
+                "items",
+                "additionalProperties",
+                "contains",
+                "not",
+                "if",
+                "then",
+                "else",
+                "propertyNames",
+                "unevaluatedItems",
+                "unevaluatedProperties",
+                "contentSchema",
+            ] {
+                if let Some(value) = map.get_mut(key) {
+                    normalize_openai_responses_schema(value);
+                }
+            }
+
+            for key in ["anyOf", "oneOf", "allOf", "prefixItems"] {
+                if let Some(children) = map.get_mut(key).and_then(|value| value.as_array_mut()) {
+                    for child in children.iter_mut() {
+                        normalize_openai_responses_schema(child);
+                    }
+                }
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr.iter_mut() {
-                normalize_openai_tool_parameters_schema(v);
+                normalize_openai_responses_schema(v);
             }
         }
         _ => {}
@@ -92,11 +206,389 @@ pub(crate) fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) 
     }
 }
 
+pub(crate) fn normalize_openai_tools_in_responses_body(body: &mut serde_json::Value) {
+    let tools = match body.get_mut("tools") {
+        Some(t) => t,
+        None => return,
+    };
+
+    let tools_arr = match tools.as_array_mut() {
+        Some(a) => a,
+        None => return,
+    };
+
+    tools_arr.retain_mut(|tool| {
+        if tool.get("type").and_then(|v| v.as_str()) != Some("function") {
+            return false;
+        }
+
+        let parameters = match tool.get_mut("parameters") {
+            Some(p) => p,
+            None => return true,
+        };
+
+        normalize_openai_responses_schema(parameters);
+        true
+    });
+}
+
+pub(crate) fn normalize_openai_text_format_schema_in_responses_body(body: &mut serde_json::Value) {
+    let text = match body.get_mut("text") {
+        Some(t) => t,
+        None => return,
+    };
+
+    let format = match text.get_mut("format") {
+        Some(f) => f,
+        None => return,
+    };
+
+    let schema = match format.get_mut("schema") {
+        Some(s) => s,
+        None => return,
+    };
+
+    normalize_openai_responses_schema(schema);
+}
+
+pub(crate) fn normalize_openai_responses_body(body: &mut serde_json::Value) {
+    normalize_openai_input_in_responses_body(body);
+    normalize_openai_reasoning_in_responses_body(body);
+    normalize_unsupported_items_in_responses_body(body);
+    normalize_openai_tools_in_responses_body(body);
+    normalize_openai_text_format_schema_in_responses_body(body);
+}
+
+pub(crate) fn normalize_openai_input_in_responses_body(body: &mut serde_json::Value) {
+    let instructions_text = body
+        .get("instructions")
+        .and_then(extract_response_message_text);
+
+    let input = match body.get_mut("input") {
+        Some(v) => v,
+        None => return,
+    };
+
+    let items = match input.as_array_mut() {
+        Some(v) => v,
+        None => return,
+    };
+
+    for item in items.iter_mut() {
+        let Some(obj) = item.as_object_mut() else {
+            continue;
+        };
+
+        let is_message = obj.get("type").and_then(|v| v.as_str()) == Some("message")
+            || obj.contains_key("role");
+        if !is_message {
+            continue;
+        }
+
+        let Some(content) = obj.get_mut("content") else {
+            continue;
+        };
+
+        let Some(text) = content.as_str() else {
+            continue;
+        };
+
+        *content = serde_json::json!([
+            {
+                "type": "input_text",
+                "text": text
+            }
+        ]);
+    }
+
+    // llama.cpp chat templates can require a single leading system prompt. Codex may
+    // replay `instructions` plus developer/system messages later in the transcript.
+    // Collapse all prompt-like sources into one leading system message and preserve the
+    // relative order of the remaining items.
+    let mut prompt_segments = Vec::new();
+
+    if let Some(text) = instructions_text {
+        if !text.is_empty() {
+            prompt_segments.push(text);
+        }
+    }
+
+    let mut remaining_items = Vec::new();
+
+    for item in items.drain(..) {
+        let role = item.get("role").and_then(|v| v.as_str());
+        if matches!(role, Some("system") | Some("developer")) {
+            if let Some(content) = item.get("content") {
+                if let Some(text) = extract_response_message_text(content) {
+                    if !text.is_empty() {
+                        prompt_segments.push(text);
+                    }
+                }
+            }
+        } else {
+            remaining_items.push(item);
+        }
+    }
+
+    if !prompt_segments.is_empty() {
+        remaining_items.insert(
+            0,
+            serde_json::json!({
+                "type": "message",
+                "role": "system",
+                "content": [{
+                    "type": "input_text",
+                    "text": prompt_segments.join("\n\n"),
+                }]
+            }),
+        );
+    }
+
+    items.extend(remaining_items);
+
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("instructions");
+    }
+}
+
+fn extract_response_message_text(content: &serde_json::Value) -> Option<String> {
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+
+    let items = content.as_array()?;
+    let text = items
+        .iter()
+        .filter_map(|item| {
+            let item_type = item.get("type").and_then(|v| v.as_str());
+            match item_type {
+                Some("input_text") | Some("text") | Some("output_text") => {
+                    item.get("text").and_then(|v| v.as_str())
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+pub(crate) fn normalize_openai_reasoning_in_responses_body(body: &mut serde_json::Value) {
+    let input = match body.get_mut("input") {
+        Some(v) => v,
+        None => return,
+    };
+
+    let items = match input.as_array_mut() {
+        Some(v) => v,
+        None => return,
+    };
+
+    items.retain_mut(|item| {
+        let Some(obj) = item.as_object_mut() else {
+            return true;
+        };
+
+        if obj.get("type").and_then(|v| v.as_str()) != Some("reasoning") {
+            return true;
+        }
+
+        let has_content_array = obj
+            .get("content")
+            .and_then(|v| v.as_array())
+            .is_some_and(|content| !content.is_empty());
+        if has_content_array {
+            return true;
+        }
+
+        let summary_as_content: Vec<serde_json::Value> = obj
+            .get("summary")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                let text = entry.get("text")?.as_str()?;
+                Some(serde_json::json!({
+                    "type": "text",
+                    "text": text,
+                }))
+            })
+            .collect();
+
+        if !summary_as_content.is_empty() {
+            obj.insert("content".to_string(), serde_json::Value::Array(summary_as_content));
+            return true;
+        }
+
+        // Codex may replay reasoning items with only encrypted_content, which llama.cpp's
+        // /responses parser cannot consume. Drop those items rather than failing the request.
+        false
+    });
+}
+
+pub(crate) fn normalize_unsupported_items_in_responses_body(body: &mut serde_json::Value) {
+    let input = match body.get_mut("input") {
+        Some(v) => v,
+        None => return,
+    };
+
+    let items = match input.as_array_mut() {
+        Some(v) => v,
+        None => return,
+    };
+
+    items.retain_mut(|item| {
+        let Some(obj) = item.as_object() else {
+            return true;
+        };
+
+        let Some(item_type) = obj.get("type").and_then(|v| v.as_str()) else {
+            return true;
+        };
+
+        match item_type {
+            "local_shell_call" => {
+                let Some(call_id) = obj.get("call_id").and_then(|v| v.as_str()) else {
+                    return false;
+                };
+                let Some(action) = obj.get("action").and_then(|v| v.as_object()) else {
+                    return false;
+                };
+                if action.get("type").and_then(|v| v.as_str()) != Some("exec") {
+                    return false;
+                }
+
+                let mut arguments = serde_json::Map::new();
+                if let Some(command) = action.get("command") {
+                    arguments.insert("command".to_string(), command.clone());
+                }
+                for key in [
+                    "working_directory",
+                    "workdir",
+                    "timeout_ms",
+                    "timeout",
+                    "env",
+                    "user",
+                ] {
+                    if let Some(value) = action.get(key) {
+                        arguments.insert(key.to_string(), value.clone());
+                    }
+                }
+
+                *item = serde_json::json!({
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": "local_shell",
+                    "arguments": serde_json::Value::Object(arguments).to_string(),
+                });
+                true
+            }
+            "custom_tool_call" => {
+                let Some(call_id) = obj.get("call_id").and_then(|v| v.as_str()) else {
+                    return false;
+                };
+                let Some(name) = obj.get("name").and_then(|v| v.as_str()) else {
+                    return false;
+                };
+                let Some(input_value) = obj.get("input") else {
+                    return false;
+                };
+
+                let arguments = serde_json::json!({
+                    "input": input_value.as_str().unwrap_or(&input_value.to_string())
+                })
+                .to_string();
+
+                *item = serde_json::json!({
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": name,
+                    "arguments": arguments,
+                });
+                true
+            }
+            "custom_tool_call_output" => {
+                let Some(call_id) = obj.get("call_id").and_then(|v| v.as_str()) else {
+                    return false;
+                };
+                let Some(output) = obj.get("output") else {
+                    return false;
+                };
+
+                *item = serde_json::json!({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output.clone(),
+                });
+                true
+            }
+            "tool_search_call" => {
+                let Some(call_id) = obj.get("call_id").and_then(|v| v.as_str()) else {
+                    return false;
+                };
+                let arguments = obj
+                    .get("arguments")
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| value.to_string())
+                    })
+                    .unwrap_or_else(|| "{}".to_string());
+
+                *item = serde_json::json!({
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": "tool_search",
+                    "arguments": arguments,
+                });
+                true
+            }
+            "tool_search_output" => {
+                let Some(call_id) = obj.get("call_id").and_then(|v| v.as_str()) else {
+                    return false;
+                };
+                let output = serde_json::json!({
+                    "status": obj.get("status").cloned().unwrap_or(serde_json::Value::Null),
+                    "execution": obj.get("execution").cloned().unwrap_or(serde_json::Value::Null),
+                    "tools": obj.get("tools").cloned().unwrap_or_else(|| serde_json::Value::Array(vec![])),
+                })
+                .to_string();
+
+                *item = serde_json::json!({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                });
+                true
+            }
+            "web_search_call"
+            | "image_generation_call"
+            | "compaction"
+            | "compaction_summary"
+            | "context_compaction"
+            | "other" => false,
+            _ => true,
+        }
+    });
+}
+
 pub(crate) fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
     matches!(
         status,
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
     )
+}
+
+pub(crate) fn should_forward_upstream_request_header(name: &hyper::header::HeaderName) -> bool {
+    name != hyper::header::HOST
+        && name != hyper::header::AUTHORIZATION
+        && name != hyper::header::CONTENT_LENGTH
 }
 
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
@@ -725,6 +1217,100 @@ async fn resolve_upstream_for_model(
     }
 
     Err(format!("No upstream session found for model '{model_id}'"))
+}
+
+async fn first_available_local_model_id(
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Option<String> {
+    let sessions_guard = sessions.lock().await;
+    if let Some(session) = sessions_guard.values().next() {
+        return Some(session.info.model_id.clone());
+    }
+    drop(sessions_guard);
+
+    let mlx_guard = mlx_sessions.lock().await;
+    mlx_guard.values().next().map(|s| s.info.model_id.clone())
+}
+
+pub(crate) fn choose_proxy_model_id(
+    requested_model: Option<&str>,
+    requested_model_available: bool,
+    fallback_model: Option<&str>,
+) -> Option<String> {
+    if requested_model_available {
+        return requested_model.map(str::to_string);
+    }
+
+    fallback_model.map(str::to_string)
+}
+
+async fn resolve_proxy_model_id(
+    requested_model: Option<&str>,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Option<String> {
+    let requested_model_available = if let Some(model_id) = requested_model {
+        resolve_upstream_for_model(
+            model_id,
+            provider_configs.clone(),
+            sessions.clone(),
+            mlx_sessions.clone(),
+        )
+        .await
+        .is_ok()
+    } else {
+        false
+    };
+
+    let fallback_model = first_available_local_model_id(sessions, mlx_sessions).await;
+    let resolved_model = choose_proxy_model_id(
+        requested_model,
+        requested_model_available,
+        fallback_model.as_deref(),
+    );
+
+    if let (Some(requested_model), Some(resolved_model)) = (requested_model, resolved_model.as_deref()) {
+        if requested_model != resolved_model {
+            log::info!(
+                "Requested model '{requested_model}' is unavailable; falling back to running model '{resolved_model}'"
+            );
+        }
+    }
+
+    resolved_model
+}
+
+async fn rewrite_request_model_to_available_fallback(
+    json_body: &mut serde_json::Value,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Result<bool, &'static str> {
+    let Some(requested_model_id) = json_body.get("model").and_then(|v| v.as_str()) else {
+        return Ok(false);
+    };
+
+    let resolved_model_id = resolve_proxy_model_id(
+        Some(requested_model_id),
+        provider_configs,
+        sessions,
+        mlx_sessions,
+    )
+    .await
+    .ok_or("No models are available")?;
+
+    log::debug!(
+        "Extracted model_id: {requested_model_id}, resolved to: {resolved_model_id}"
+    );
+
+    if requested_model_id == resolved_model_id {
+        return Ok(false);
+    }
+
+    json_body["model"] = serde_json::json!(resolved_model_id);
+    Ok(true)
 }
 
 pub(crate) fn copy_optional_chat_params(from: &serde_json::Value, into: &mut serde_json::Map<String, serde_json::Value>) {
@@ -1866,6 +2452,7 @@ async fn proxy_request(
             return Ok(response);
         }
         (hyper::Method::POST, "/chat/completions")
+        | (hyper::Method::POST, "/responses")
         | (hyper::Method::POST, "/completions")
         | (hyper::Method::POST, "/embeddings")
         | (hyper::Method::POST, "/messages/count_tokens") => {
@@ -1894,9 +2481,14 @@ async fn proxy_request(
                 Ok(mut json_body) => {
                     // Work around strict JSON-schema converters that reject property schemas
                     // of the form `{ "description": "..." }` (missing `type`).
-                    // This happens for OpenAI-style tool schemas used with /chat/completions.
+                    // This happens for OpenAI-compatible function tool schemas.
                     if destination_path == "/chat/completions" {
                         normalize_openai_tools_in_chat_body(&mut json_body);
+                        if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
+                            buffered_body = Some(normalized_bytes.into());
+                        }
+                    } else if destination_path == "/responses" {
+                        normalize_openai_responses_body(&mut json_body);
                         if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
                             buffered_body = Some(normalized_bytes.into());
                         }
@@ -1945,6 +2537,34 @@ async fn proxy_request(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response.body(Body::from(e)).unwrap());
+                            }
+                        }
+                    }
+                    if destination_path == "/responses" {
+                        let model_was_rewritten = match rewrite_request_model_to_available_fallback(
+                            &mut json_body,
+                            provider_configs.clone(),
+                            sessions.clone(),
+                            mlx_sessions.clone(),
+                        )
+                        .await {
+                            Ok(changed) => changed,
+                            Err(error_msg) => {
+                                let mut error_response =
+                                    Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
+                                error_response = add_cors_headers_with_host_and_origin(
+                                    error_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                );
+                                return Ok(error_response.body(Body::from(error_msg)).unwrap());
+                            }
+                        };
+
+                        if model_was_rewritten {
+                            if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
+                                buffered_body = Some(normalized_bytes.into());
                             }
                         }
                     }
@@ -2368,7 +2988,7 @@ async fn proxy_request(
         let mut outbound_req = client.request(method.clone(), upstream_url.clone());
 
         for (name, value) in headers.iter() {
-            if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+            if should_forward_upstream_request_header(name) {
                 outbound_req = outbound_req.header(name, value);
             }
         }
