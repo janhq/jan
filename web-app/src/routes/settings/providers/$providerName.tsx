@@ -3,7 +3,7 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import { cn, getProviderTitle, getModelDisplayName, isLocalProvider } from '@/lib/utils'
 import { createFileRoute, Link, useParams } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
@@ -26,6 +26,7 @@ import {
   IconCircleCheck,
   IconCircle,
   IconFolderPlus,
+  IconInfoCircle,
   IconLoader,
   IconRefresh,
   IconUpload,
@@ -721,6 +722,20 @@ function ProviderDetail() {
                 onCheckedChange={(checked) => provider && updateProvider(providerName, { active: checked })}
               />
             </div>
+
+            {provider &&
+              !isLocalProvider(provider.provider) &&
+              !supportsRemoteCatalog(provider.provider) && (
+                <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
+                  <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    {t('providers:limitedSupport', {
+                      defaultValue:
+                        'This provider may not be fully supported. Capabilities (tools, vision, audio) are not auto-detected - add models manually and configure capabilities per model.',
+                    })}
+                  </span>
+                </div>
+              )}
 
             <div
               className={cn(
