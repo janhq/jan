@@ -485,6 +485,19 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
+/// Compare a model id from an incoming request against a model id from an
+/// active session. Dots and underscores are treated as equivalent so that
+/// e.g. `Qwen3_5-9B-MLX-4bit` matches `Qwen3.5-9B-MLX-4bit` — some clients
+/// (and filesystems) substitute one for the other.
+pub fn model_ids_match(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.bytes().zip(b.bytes()).all(|(x, y)| {
+        x == y || matches!((x, y), (b'.', b'_') | (b'_', b'.'))
+    })
+}
+
 pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
     match path {
         "/" | "/openapi.json" | "/docs/swagger-ui.css" | "/docs/swagger-ui-bundle.js" => {
@@ -819,7 +832,7 @@ async fn is_embedding_session(
             let guard = sessions.lock().await;
             guard
                 .values()
-                .find(|s| s.info.model_id == model_id)
+                .find(|s| model_ids_match(&s.info.model_id, model_id))
                 .map(|s| s.info.is_embedding)
                 .unwrap_or(false)
         }
@@ -827,7 +840,7 @@ async fn is_embedding_session(
             let guard = mlx_sessions.lock().await;
             guard
                 .values()
-                .find(|s| s.info.model_id == model_id)
+                .find(|s| model_ids_match(&s.info.model_id, model_id))
                 .map(|s| s.info.is_embedding)
                 .unwrap_or(false)
         }
@@ -850,14 +863,14 @@ async fn resolve_local_session(
             let guard = sessions.lock().await;
             guard
                 .values()
-                .find(|s| s.info.model_id == model_id)
+                .find(|s| model_ids_match(&s.info.model_id, model_id))
                 .map(|s| (s.info.port, s.info.api_key.clone()))
         }
         "mlx" => {
             let guard = mlx_sessions.lock().await;
             guard
                 .values()
-                .find(|s| s.info.model_id == model_id)
+                .find(|s| model_ids_match(&s.info.model_id, model_id))
                 .map(|s| (s.info.port, s.info.api_key.clone()))
         }
         _ => None,
@@ -1450,13 +1463,13 @@ async fn inner_proxy_request<R: Runtime>(
                             let sessions_guard = sessions.lock().await;
                             let llama_session = sessions_guard
                                 .values()
-                                .find(|s| s.info.model_id == model_id);
+                                .find(|s| model_ids_match(&s.info.model_id, model_id));
 
                             let mlx_session_info = {
                                 let mlx_guard = mlx_sessions.lock().await;
                                 mlx_guard
                                     .values()
-                                    .find(|s| s.info.model_id == model_id)
+                                    .find(|s| model_ids_match(&s.info.model_id, model_id))
                                     .map(|s| s.info.clone())
                             };
 
@@ -1624,7 +1637,7 @@ async fn inner_proxy_request<R: Runtime>(
                             // Check both llama.cpp and MLX sessions
                             let llama_session = sessions_guard
                                 .values()
-                                .find(|s| s.info.model_id == sessions_find_model);
+                                .find(|s| model_ids_match(&s.info.model_id, sessions_find_model));
 
                             let (mlx_session_info, mlx_count) = {
                                 let mut mlx_session_info: Option<SessionInfo> = None;
@@ -1633,7 +1646,7 @@ async fn inner_proxy_request<R: Runtime>(
                                 mlx_count = mlx_guard.len();
                                 if let Some(session) = mlx_guard
                                     .values()
-                                    .find(|s| s.info.model_id == sessions_find_model)
+                                    .find(|s| model_ids_match(&s.info.model_id, sessions_find_model))
                                 {
                                     // Clone just the SessionInfo since MlxBackendSession is not Clone
                                     mlx_session_info = Some(session.info.clone());
@@ -1872,7 +1885,7 @@ async fn inner_proxy_request<R: Runtime>(
                 let sessions_guard = sessions.lock().await;
                 sessions_guard
                     .values()
-                    .find(|s| s.info.model_id == metrics_model_id)
+                    .find(|s| model_ids_match(&s.info.model_id, &metrics_model_id))
                     .map(|s| (s.info.port, s.info.api_key.clone()))
             };
 

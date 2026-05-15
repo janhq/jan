@@ -124,6 +124,37 @@ mod tests {
     }
 
     #[test]
+    fn test_model_ids_match_exact() {
+        assert!(proxy::model_ids_match("Qwen3.5-9B-MLX-4bit", "Qwen3.5-9B-MLX-4bit"));
+        assert!(proxy::model_ids_match("", ""));
+    }
+
+    #[test]
+    fn test_model_ids_match_dot_underscore_equivalent() {
+        // The motivating case: a client sending the underscore form must still
+        // resolve to the active session whose id uses dots.
+        assert!(proxy::model_ids_match(
+            "Qwen3_5-9B-MLX-4bit",
+            "Qwen3.5-9B-MLX-4bit",
+        ));
+        assert!(proxy::model_ids_match(
+            "Qwen3.5-9B-MLX-4bit",
+            "Qwen3_5-9B-MLX-4bit",
+        ));
+        assert!(proxy::model_ids_match("a.b_c", "a_b.c"));
+    }
+
+    #[test]
+    fn test_model_ids_match_negatives() {
+        assert!(!proxy::model_ids_match("Qwen3.5-9B", "Qwen3.5-7B"));
+        assert!(!proxy::model_ids_match("Qwen3.5", "Qwen3.5-9B"));
+        assert!(!proxy::model_ids_match("llama-3", "llama-4"));
+        // Non-{dot,underscore} chars must still match exactly.
+        assert!(!proxy::model_ids_match("a-b", "a.b"));
+        assert!(!proxy::model_ids_match("a.b", "a-b"));
+    }
+
+    #[test]
     fn test_allowed_headers() {
         let allowed_headers = [
             "accept",
