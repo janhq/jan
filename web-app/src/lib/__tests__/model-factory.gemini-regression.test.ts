@@ -29,7 +29,11 @@ vi.mock('@ai-sdk/google', () => ({
 }))
 
 vi.mock('@ai-sdk/openai', () => ({
-  createOpenAI: vi.fn(() => vi.fn(() => ({ type: 'openai' }))),
+  createOpenAI: vi.fn(() => {
+    const fn: any = vi.fn(() => ({ type: 'openai' }))
+    fn.chat = vi.fn(() => ({ type: 'openai' }))
+    return fn
+  }),
 }))
 
 vi.mock('@ai-sdk/xai', () => ({

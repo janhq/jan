@@ -648,7 +648,7 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return openai(modelId)
+    return openai.chat(modelId)
   }
 
   /**

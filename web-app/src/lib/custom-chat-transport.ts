@@ -647,7 +647,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
-    const baseMessages = convertToModelMessages(
+    const baseMessages = await convertToModelMessages(
       this.encodeAudioAttachments(this.mapUserInlineAttachments(effectiveMessages))
     )
 
