@@ -682,6 +682,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     let tokensPerSecond = 0
+    let promptPerSecond = 0
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
@@ -696,6 +697,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           tokensPerSecond =
             (part.providerMetadata?.providerMetadata
               ?.tokensPerSecond as number) || 0
+          promptPerSecond =
+            (part.providerMetadata?.providerMetadata
+              ?.promptPerSecond as number) || 0
         }
 
         // Add usage and token speed to metadata on finish
@@ -731,7 +735,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
             },
             tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
+              tokenSpeed: Math.round(tokenSpeed * 100) / 100,
+              promptSpeed: promptPerSecond
+                ? Math.round(promptPerSecond * 100) / 100
+                : undefined,
               tokenCount: outputTokens,
               durationMs,
             },
