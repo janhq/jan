@@ -30,20 +30,28 @@ function ModelProviders() {
   const navigate = useNavigate()
 
   const createProvider = useCallback(
-    (name: string) => {
+    (name: string, baseUrl: string, apiKey: string) => {
       if (
         providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
       ) {
         toast.error(t('providerAlreadyExists', { name }))
         return
       }
+      const settings = cloneDeep(openAIProviderSettings) as ProviderSetting[]
+      for (const s of settings) {
+        if (s.key === 'base-url') {
+          (s.controller_props as { value: string }).value = baseUrl
+        } else if (s.key === 'api-key') {
+          (s.controller_props as { value: string }).value = apiKey
+        }
+      }
       const newProvider: ProviderObject = {
         provider: name,
         active: true,
         models: [],
-        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
-        api_key: '',
-        base_url: 'https://api.openai.com/v1',
+        settings,
+        api_key: apiKey,
+        base_url: baseUrl,
       }
       addProvider(newProvider)
       setTimeout(() => {
