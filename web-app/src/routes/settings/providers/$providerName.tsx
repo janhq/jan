@@ -32,7 +32,7 @@ import {
 } from '@tabler/icons-react'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { toast } from 'sonner'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
@@ -81,13 +81,21 @@ function ProviderDetail() {
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
   const isLlamacpp = provider?.provider === 'llamacpp'
-  const allModels = provider?.models ?? []
-  const embeddingModels = isLlamacpp
-    ? allModels.filter((m) => (m as any).embedding === true)
-    : []
-  const chatModels = isLlamacpp
-    ? allModels.filter((m) => (m as any).embedding !== true)
-    : allModels
+  const allModels = useMemo(() => provider?.models ?? [], [provider?.models])
+  const embeddingModels = useMemo(
+    () =>
+      isLlamacpp
+        ? allModels.filter((m) => (m as any).embedding === true)
+        : [],
+    [isLlamacpp, allModels]
+  )
+  const chatModels = useMemo(
+    () =>
+      isLlamacpp
+        ? allModels.filter((m) => (m as any).embedding !== true)
+        : allModels,
+    [isLlamacpp, allModels]
+  )
   const defaultEmbeddingModelId = useDefaultEmbeddingModel((s) =>
     isLlamacpp ? s.getDefault('llamacpp') : undefined
   )
