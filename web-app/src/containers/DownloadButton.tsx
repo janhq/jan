@@ -5,7 +5,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
-import { extractModelName } from '@/lib/models'
+import { extractModelName, extractQuantLabel } from '@/lib/models'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
@@ -161,7 +161,12 @@ export function DownloadButtonPlaceholder({
           onClick={handleDownload}
           className={cn(isDownloading && 'hidden')}
         >
-          {t('hub:download')}
+          {(() => {
+            const label = extractQuantLabel(quant?.model_id)
+            return label
+              ? `${t('hub:download')} · ${label}`
+              : t('hub:download')
+          })()}
         </Button>
       )}
     </div>

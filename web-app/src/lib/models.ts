@@ -90,3 +90,11 @@ export const extractModelName = (model?: string) => {
 export const extractModelRepo = (model?: string) => {
   return model?.replace('https://huggingface.co/', '')
 }
+
+export const extractQuantLabel = (modelId?: string): string | null => {
+  if (!modelId) return null
+  const match = modelId.match(
+    /(IQ\d+(?:_[A-Z0-9]+)+|Q\d+(?:_[A-Z0-9]+)*|BF16|F16|F32)(?:[-_.][^-_.]*)?$/i
+  )
+  return match ? match[1].toUpperCase() : null
+}

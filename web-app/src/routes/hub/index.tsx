@@ -57,6 +57,36 @@ type SearchParams = {
   repo: string
 }
 
+type QuantTier = {
+  label: string
+  className: string
+}
+
+function getQuantTier(modelId: string): QuantTier | null {
+  const id = modelId.toLowerCase()
+  if (/(^|[-_.])(f32|bf16|f16|q8|q6)([-_.]|$)/.test(id)) {
+    return {
+      label: 'Large',
+      className:
+        'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    }
+  }
+  if (/(^|[-_.])(q5|q4_k|iq4)/.test(id)) {
+    return {
+      label: 'Balanced',
+      className:
+        'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    }
+  }
+  if (/(^|[-_.])(iq2|iq3|q2|q3|q4_0|q4_1)/.test(id)) {
+    return {
+      label: 'Small',
+      className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    }
+  }
+  return null
+}
+
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -665,38 +695,16 @@ function HubContent() {
                             <div className="flex gap-1.5 items-center">
                               {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
                                 0 && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconEye
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('vision')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
+                                <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-foreground/80">
+                                  <IconEye size={13} />
+                                  {t('vision')}
+                                </span>
                               )}
                               {filteredModels[virtualItem.index].tools && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconTool
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('tools')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
+                                <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-foreground/80">
+                                  <IconTool size={13} />
+                                  {t('tools')}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -734,55 +742,47 @@ function HubContent() {
                           filteredModels[virtualItem.index].model_name
                         ] &&
                           (filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            0 && (
+                            0 &&
+                          (() => {
+                            const quants =
+                              filteredModels[virtualItem.index].quants ?? []
+                            const recommendedId = (
+                              quants.find((m) =>
+                                DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
+                                  m.model_id.toLowerCase().includes(e)
+                                )
+                              ) ?? quants[0]
+                            )?.model_id
+                            return (
                             <div className="mt-5">
-                              {filteredModels[virtualItem.index].quants?.map(
+                              {quants.map(
                                 (variant) => (
                                   <CardItem
                                     key={variant.model_id}
                                     title={
-                                      <>
-                                        <div className="flex items-center gap-1">
-                                          <span className="mr-2">
-                                            {variant.model_id}
+                                      <div className="flex items-center gap-2">
+                                        <span>{variant.model_id}</span>
+                                        {(() => {
+                                          const tier = getQuantTier(
+                                            variant.model_id
+                                          )
+                                          return tier ? (
+                                            <span
+                                              className={cn(
+                                                'text-xs font-medium px-1.5 py-0.5 rounded',
+                                                tier.className
+                                              )}
+                                            >
+                                              {tier.label}
+                                            </span>
+                                          ) : null
+                                        })()}
+                                        {variant.model_id === recommendedId && (
+                                          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                                            Recommended
                                           </span>
-                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconEye
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('vision')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                          {filteredModels[virtualItem.index]
-                                            .tools && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconTool
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('tools')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </>
+                                        )}
+                                      </div>
                                     }
                                     actions={
                                       <div className="flex items-center gap-2">
@@ -825,7 +825,8 @@ function HubContent() {
                                 )
                               )}
                             </div>
-                          )}
+                            )
+                          })()}
                       </Card>
                     </div>
                   ))}

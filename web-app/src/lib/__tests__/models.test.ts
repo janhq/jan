@@ -5,6 +5,7 @@ import {
   removeYamlFrontMatter,
   extractModelName,
   extractModelRepo,
+  extractQuantLabel,
   getModelCapabilities,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
@@ -232,6 +233,42 @@ describe('extractModelRepo', () => {
     expect(extractModelRepo('https://huggingface.co/cortexso/tinyllama/')).toBe(
       'cortexso/tinyllama/'
     )
+  })
+})
+
+describe('extractQuantLabel', () => {
+  it('extracts standard K-quant suffixes', () => {
+    expect(extractQuantLabel('Jan-v2-VL-high-Q4_K_M')).toBe('Q4_K_M')
+    expect(extractQuantLabel('Jan-v2-VL-high-Q5_K_S')).toBe('Q5_K_S')
+    expect(extractQuantLabel('Jan-v2-VL-high-Q3_K_L')).toBe('Q3_K_L')
+  })
+
+  it('extracts plain Q-quant suffixes', () => {
+    expect(extractQuantLabel('Model-Q4_0')).toBe('Q4_0')
+    expect(extractQuantLabel('Model-Q8_0')).toBe('Q8_0')
+  })
+
+  it('extracts IQ quant variants', () => {
+    expect(extractQuantLabel('Model-IQ4_XS')).toBe('IQ4_XS')
+    expect(extractQuantLabel('Model-IQ4_NL')).toBe('IQ4_NL')
+    expect(extractQuantLabel('Model-IQ3_M')).toBe('IQ3_M')
+  })
+
+  it('extracts float precision labels', () => {
+    expect(extractQuantLabel('Model-F16')).toBe('F16')
+    expect(extractQuantLabel('Model-BF16')).toBe('BF16')
+    expect(extractQuantLabel('Model-F32')).toBe('F32')
+  })
+
+  it('normalizes case to uppercase', () => {
+    expect(extractQuantLabel('jan-v2-vl-high-q4_k_m')).toBe('Q4_K_M')
+    expect(extractQuantLabel('model-iq4_xs')).toBe('IQ4_XS')
+  })
+
+  it('returns null when no quant marker present', () => {
+    expect(extractQuantLabel('some-random-model')).toBeNull()
+    expect(extractQuantLabel('')).toBeNull()
+    expect(extractQuantLabel()).toBeNull()
   })
 })
 
