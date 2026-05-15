@@ -84,7 +84,8 @@ function ProviderDetail() {
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
-  const { getProviderByName, setProviders, updateProvider } = useModelProvider()
+  const { getProviderByName, setProviders, updateProvider, addDeletedModels } =
+    useModelProvider()
   const provider = getProviderByName(providerName)
   const isLlamacpp = provider?.provider === 'llamacpp'
   const allModels = useMemo(() => provider?.models ?? [], [provider?.models])
@@ -531,6 +532,11 @@ function ProviderDetail() {
           return
         }
         const updatedModels = [...importedModels, ...fresh]
+        const keepIds = new Set(updatedModels.map((m) => m.id))
+        const removedIds = provider.models
+          .filter((m) => !m.imported && !keepIds.has(m.id))
+          .map((m) => m.id)
+        addDeletedModels(removedIds)
         updateProvider(providerName, {
           ...provider,
           models: updatedModels,

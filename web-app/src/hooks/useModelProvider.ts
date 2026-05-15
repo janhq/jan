@@ -27,6 +27,7 @@ type ModelProviderState = {
   addProvider: (provider: ModelProvider) => void
   deleteProvider: (providerName: string) => void
   deleteModel: (modelId: string) => void
+  addDeletedModels: (modelIds: string[]) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -326,6 +327,18 @@ export const useModelProvider = create<ModelProviderState>()(
             }),
             deletedModels: [...currentDeletedModels, modelId],
           }
+        })
+      },
+      addDeletedModels: (modelIds: string[]) => {
+        if (modelIds.length === 0) return
+        set((state) => {
+          const current = Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+          const next = new Set(current)
+          modelIds.forEach((id) => next.add(id))
+          if (next.size === current.length) return state
+          return { deletedModels: Array.from(next) }
         })
       },
       addProvider: (provider: ModelProvider) => {
