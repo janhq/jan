@@ -71,6 +71,7 @@
     "capabilities": "Capabilities",
     "tools": "Tools",
     "vision": "Vision",
+    "audio": "Audio",
     "proactive": "Proactive (Experimental)",
     "embeddings": "Embeddings",
     "notAvailable": "Not available yet",
