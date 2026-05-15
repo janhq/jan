@@ -99,6 +99,7 @@
   "completed": "Completed",
   "image": "Image",
   "vision": "Vision",
+  "multimodal": "Multimodal",
   "embeddings": "Embeddings",
   "tools": "Tools",
   "webSearch": "Web Search",

@@ -480,7 +480,7 @@ function SetupScreen() {
                         </span>
                         {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
                           <IconEye size={12} />
-                          Vision
+                          Multimodal
                         </span>}
                       </div>
                     </div>
