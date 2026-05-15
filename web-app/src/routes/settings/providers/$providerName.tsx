@@ -900,6 +900,7 @@ function ProviderDetail() {
                       {!showAdvancedApiKeys && (
                         <div className="flex flex-col gap-2">
                           <Input
+                            type="password"
                             className="font-mono"
                             placeholder={t('providers:apiKeys.primaryPlaceholder')}
                             value={primaryKeyDraft}
