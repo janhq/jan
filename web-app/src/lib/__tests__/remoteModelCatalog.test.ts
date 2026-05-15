@@ -29,12 +29,57 @@ function mkAnthropicProvider(extra: Record<string, unknown> = {}) {
   } as any
 }
 
+function mkGeminiProvider(extra: Record<string, unknown> = {}) {
+  return {
+    provider: 'gemini',
+    base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    api_key: 'gm-test',
+    ...extra,
+  } as any
+}
+
 describe('supportsRemoteCatalog', () => {
-  it('supports openai and anthropic only', () => {
+  it('supports openai, anthropic and gemini', () => {
     expect(supportsRemoteCatalog('openai')).toBe(true)
     expect(supportsRemoteCatalog('anthropic')).toBe(true)
+    expect(supportsRemoteCatalog('gemini')).toBe(true)
     expect(supportsRemoteCatalog('groq')).toBe(false)
     expect(supportsRemoteCatalog('mistral')).toBe(false)
+  })
+})
+
+describe('fetchTopRemoteModels gemini', () => {
+  it('infers vision+audio+tools on multimodal gemini, hides embeddings/imagen/veo', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          { id: 'models/gemini-2.5-pro', created: 5000 },
+          { id: 'models/gemini-2.0-flash', created: 4000 },
+          { id: 'models/gemini-1.5-pro', created: 3000 },
+          { id: 'models/gemini-1.0-pro-vision', created: 2000 },
+          { id: 'models/gemini-1.0-pro', created: 1500 },
+          { id: 'models/gemini-embedding-001', created: 4500 },
+          { id: 'models/text-embedding-004', created: 4500 },
+          { id: 'models/imagen-3.0-generate-001', created: 4500 },
+          { id: 'models/veo-2.0-generate-001', created: 4500 },
+          { id: 'models/aqa', created: 4500 },
+        ],
+      })
+    )
+    const result = await fetchTopRemoteModels(mkGeminiProvider(), fetchImpl)
+    const ids = result.map((m) => m.id)
+    expect(ids).not.toContain('models/gemini-embedding-001')
+    expect(ids).not.toContain('models/text-embedding-004')
+    expect(ids).not.toContain('models/imagen-3.0-generate-001')
+    expect(ids).not.toContain('models/veo-2.0-generate-001')
+    expect(ids).not.toContain('models/aqa')
+
+    const pro25 = result.find((m) => m.id === 'models/gemini-2.5-pro')!
+    expect(pro25.capabilities).toEqual(['completion', 'tools', 'vision', 'audio'])
+    const v10 = result.find((m) => m.id === 'models/gemini-1.0-pro-vision')!
+    expect(v10.capabilities).toEqual(['completion', 'vision'])
+    const t10 = result.find((m) => m.id === 'models/gemini-1.0-pro')!
+    expect(t10.capabilities).toEqual(['completion', 'tools'])
   })
 })
 

@@ -19,7 +19,11 @@ type FetchImpl = typeof fetch
 const TOP_N = 10
 
 export function supportsRemoteCatalog(providerName: string): boolean {
-  return providerName === 'openai' || providerName === 'anthropic'
+  return (
+    providerName === 'openai' ||
+    providerName === 'anthropic' ||
+    providerName === 'gemini'
+  )
 }
 
 function inferOpenAICapabilities(id: string): string[] | null {
@@ -53,6 +57,28 @@ function inferOpenAICapabilities(id: string): string[] | null {
     return ['completion', 'tools']
   }
   return null
+}
+
+function inferGeminiCapabilities(id: string): string[] | null {
+  const lower = id.toLowerCase().replace(/^models\//, '')
+  if (
+    lower.startsWith('text-embedding-') ||
+    lower.startsWith('embedding-') ||
+    lower.startsWith('gemini-embedding') ||
+    lower.startsWith('imagen-') ||
+    lower.startsWith('veo-') ||
+    lower.startsWith('aqa')
+  ) {
+    return null
+  }
+  if (!lower.startsWith('gemini-')) return null
+  if (lower.startsWith('gemini-1.0-pro-vision') || lower === 'gemini-pro-vision') {
+    return ['completion', 'vision']
+  }
+  if (lower.startsWith('gemini-1.0-pro') || lower === 'gemini-pro') {
+    return ['completion', 'tools']
+  }
+  return ['completion', 'tools', 'vision', 'audio']
 }
 
 function inferAnthropicCapabilities(id: string): string[] | null {
@@ -134,7 +160,11 @@ export async function fetchTopRemoteModels(
 
 function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogModel[] {
   const inferCaps =
-    providerName === 'openai' ? inferOpenAICapabilities : inferAnthropicCapabilities
+    providerName === 'openai'
+      ? inferOpenAICapabilities
+      : providerName === 'gemini'
+        ? inferGeminiCapabilities
+        : inferAnthropicCapabilities
 
   const parsed: RemoteCatalogModel[] = []
   for (const raw of rows) {
