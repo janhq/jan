@@ -778,6 +778,87 @@ fn test_extract_active_status_variants() {
 }
 
 // ============================================================================
+// helpers.rs Tests: compute_backoff_delay
+// ============================================================================
+
+#[test]
+fn test_compute_backoff_delay_normal_exponential_growth() {
+    use super::helpers::compute_backoff_delay;
+    // Default settings: base=1000ms, max=30000ms, multiplier=2.0
+    assert_eq!(compute_backoff_delay(1000, 30000, 2.0, 0), 1000);
+    assert_eq!(compute_backoff_delay(1000, 30000, 2.0, 1), 2000);
+    assert_eq!(compute_backoff_delay(1000, 30000, 2.0, 2), 4000);
+    assert_eq!(compute_backoff_delay(1000, 30000, 2.0, 4), 16000);
+}
+
+#[test]
+fn test_compute_backoff_delay_caps_at_max() {
+    use super::helpers::compute_backoff_delay;
+    // 1000 * 2^5 = 32000 > 30000 → capped
+    assert_eq!(compute_backoff_delay(1000, 30000, 2.0, 5), 30000);
+    // Very high attempt still caps
+    assert_eq!(compute_backoff_delay(1000, 30000, 2.0, 100), 30000);
+}
+
+#[test]
+fn test_compute_backoff_delay_invalid_multiplier_zero() {
+    use super::helpers::compute_backoff_delay;
+    // multiplier=0 falls back to 1.0 → constant base delay, no spin loop
+    assert_eq!(compute_backoff_delay(1000, 30000, 0.0, 0), 1000);
+    assert_eq!(compute_backoff_delay(1000, 30000, 0.0, 5), 1000);
+}
+
+#[test]
+fn test_compute_backoff_delay_invalid_multiplier_nan() {
+    use super::helpers::compute_backoff_delay;
+    assert_eq!(compute_backoff_delay(1000, 30000, f64::NAN, 0), 1000);
+    assert_eq!(compute_backoff_delay(1000, 30000, f64::NAN, 5), 1000);
+}
+
+#[test]
+fn test_compute_backoff_delay_invalid_multiplier_infinity() {
+    use super::helpers::compute_backoff_delay;
+    assert_eq!(compute_backoff_delay(1000, 30000, f64::INFINITY, 0), 1000);
+    assert_eq!(compute_backoff_delay(1000, 30000, f64::INFINITY, 5), 1000);
+}
+
+#[test]
+fn test_compute_backoff_delay_invalid_multiplier_negative() {
+    use super::helpers::compute_backoff_delay;
+    assert_eq!(compute_backoff_delay(1000, 30000, -2.0, 0), 1000);
+    assert_eq!(compute_backoff_delay(1000, 30000, -2.0, 5), 1000);
+}
+
+#[test]
+fn test_compute_backoff_delay_invalid_multiplier_less_than_one() {
+    use super::helpers::compute_backoff_delay;
+    // multiplier=0.5 < 1.0 → falls back to 1.0
+    assert_eq!(compute_backoff_delay(1000, 30000, 0.5, 3), 1000);
+}
+
+#[test]
+fn test_compute_backoff_delay_large_multiplier_overflows_to_max() {
+    use super::helpers::compute_backoff_delay;
+    // base=1000, multiplier=1e200 at attempt=5 → raw overflows to infinity → max
+    assert_eq!(compute_backoff_delay(1000, 30000, 1e200, 5), 30000);
+}
+
+#[test]
+fn test_compute_backoff_delay_floor_is_base_delay() {
+    use super::helpers::compute_backoff_delay;
+    // With multiplier=1.0, delay stays exactly at base for any attempt
+    assert_eq!(compute_backoff_delay(5000, 30000, 1.0, 0), 5000);
+    assert_eq!(compute_backoff_delay(5000, 30000, 1.0, 10), 5000);
+}
+
+#[test]
+fn test_compute_backoff_delay_base_zero_documents_no_floor() {
+    use super::helpers::compute_backoff_delay;
+    // base_delay_ms=0 is a misconfiguration not guarded here; result is 0
+    assert_eq!(compute_backoff_delay(0, 30000, 2.0, 0), 0);
+}
+
+// ============================================================================
 // lockfile.rs Tests
 // ============================================================================
 
