@@ -643,59 +643,124 @@ export default class mlx_extension extends AIEngine {
         }
       }
 
-      await downloadManager.downloadFiles(
-        downloadItems,
-        this.createDownloadTaskId(modelId),
-        (transferred: number, total: number) => {
-          events.emit(DownloadEvent.onFileDownloadUpdate, {
+      try {
+        await downloadManager.downloadFiles(
+          downloadItems,
+          this.createDownloadTaskId(modelId),
+          (transferred: number, total: number) => {
+            events.emit(DownloadEvent.onFileDownloadUpdate, {
+              modelId,
+              percent: transferred / total,
+              size: { transferred, total },
+              downloadType: 'Model',
+            })
+          }
+        )
+      } catch (error) {
+        logger.error('Error downloading model:', modelId, opts, error)
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+
+        const isCancellationError =
+          errorMessage.includes('Download cancelled') ||
+          errorMessage.includes('Validation cancelled') ||
+          errorMessage.includes('Hash computation cancelled') ||
+          errorMessage.includes('cancelled') ||
+          errorMessage.includes('aborted')
+
+        const isValidationError =
+          errorMessage.includes('Hash verification failed') ||
+          errorMessage.includes('Size verification failed') ||
+          errorMessage.includes('Failed to verify file')
+
+        if (isCancellationError) {
+          logger.info('Download cancelled for model:', modelId)
+          events.emit(DownloadEvent.onFileDownloadStopped, {
             modelId,
-            percent: transferred / total,
-            size: { transferred, total },
             downloadType: 'Model',
           })
+        } else if (isValidationError) {
+          logger.error(
+            'Validation failed for model:',
+            modelId,
+            'Error:',
+            errorMessage
+          )
+          try {
+            await this.abortImport(modelId)
+          } catch (cancelError) {
+            logger.warn('Failed to cancel download task:', cancelError)
+          }
+          await this.deleteModelFolder(modelId)
+          events.emit(DownloadEvent.onModelValidationFailed, {
+            modelId,
+            downloadType: 'Model',
+            error: errorMessage,
+            reason: 'validation_failed',
+          })
+        } else {
+          events.emit(DownloadEvent.onFileDownloadError, {
+            modelId,
+            downloadType: 'Model',
+            error: errorMessage,
+          })
         }
-      )
-
-      // Emit download success event so DownloadManagement clears the download state
-      events.emit('onFileDownloadSuccess', { modelId, downloadType: 'Model' })
-
-      // Detect capabilities after download
-      const isVision = await this.isVisionSupported(localPath)
-
-      // Build capabilities array
-      const capabilities: string[] = []
-      if (isVision) capabilities.push('vision')
-
-      // Create model.yml with relative path
-      const modelConfig: any = {
-        model_path: `mlx/models/${modelId}/model.safetensors`,
-        name: modelId,
-        size_bytes: opts.modelSize ?? 0,
+        throw error
       }
 
-      // For vision models, add mmproj_path
-      if (isVision) {
-        modelConfig.mmproj_path = `mlx/models/${modelId}/model.safetensors`
-        logger.info(`Vision model detected: ${modelId}`)
+      try {
+        // Detect capabilities after download
+        const isVision = await this.isVisionSupported(localPath)
+
+        // Build capabilities array
+        const capabilities: string[] = []
+        if (isVision) capabilities.push('vision')
+
+        // Create model.yml with relative path
+        const modelConfig: any = {
+          model_path: `mlx/models/${modelId}/model.safetensors`,
+          name: modelId,
+          size_bytes: opts.modelSize ?? 0,
+        }
+
+        // For vision models, add mmproj_path
+        if (isVision) {
+          modelConfig.mmproj_path = `mlx/models/${modelId}/model.safetensors`
+          logger.info(`Vision model detected: ${modelId}`)
+        }
+
+        // Add capabilities array
+        if (capabilities.length > 0) {
+          modelConfig.capabilities = capabilities
+        }
+
+        await fs.mkdir(modelDir)
+        await invoke<void>('write_yaml', {
+          data: modelConfig,
+          savePath: configPath,
+        })
+
+        // Emit after model.yml exists so DownloadManagement clears only on full success
+        events.emit('onFileDownloadSuccess', { modelId, downloadType: 'Model' })
+
+        events.emit(AppEvent.onModelImported, {
+          modelId,
+          modelPath: modelConfig.model_path,
+          size_bytes: modelConfig.size_bytes,
+          capabilities: capabilities,
+        })
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+        logger.error('Error finalizing MLX model import:', modelId, error)
+        await this.deleteModelFolder(modelId)
+        events.emit(DownloadEvent.onFileDownloadError, {
+          modelId,
+          downloadType: 'Model',
+          error: errorMessage,
+        })
+        throw error
       }
-
-      // Add capabilities array
-      if (capabilities.length > 0) {
-        modelConfig.capabilities = capabilities
-      }
-
-      await fs.mkdir(modelDir)
-      await invoke<void>('write_yaml', {
-        data: modelConfig,
-        savePath: configPath,
-      })
-
-      events.emit(AppEvent.onModelImported, {
-        modelId,
-        modelPath: modelConfig.model_path,
-        size_bytes: modelConfig.size_bytes,
-        capabilities: capabilities,
-      })
     } else {
       // Local folder - use absolute folder path directly
       if (!(await fs.existsSync(sourcePath))) {
@@ -775,8 +840,9 @@ export default class mlx_extension extends AIEngine {
       logger.warn('Failed to cancel download task:', cancelError)
     }
 
-    // Delete the entire model folder if it exists (for validation failures)
-    await this.deleteModelFolder(modelId)
+    // Keep partial .tmp files so downloads can be resumed later.
+    // import() deletes the model folder on download verification failures and on
+    // errors while writing model.yml (see URL import path).
   }
 
   /**
