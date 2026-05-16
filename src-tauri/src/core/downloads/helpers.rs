@@ -595,9 +595,10 @@ async fn download_single_file(
     log::info!("Started downloading: {decoded_url}");
     let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
-    let mut initial_progress = 0u64;
+    let mut total_transferred = 0u64;
 
-    let (resp, actual_url) = if should_resume {
+    // --- Initial connection ---
+    let (initial_resp, actual_url) = if should_resume {
         let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
         match _get_maybe_resume(&client, &item.url, downloaded_size).await {
             Ok(resp) => {
@@ -606,7 +607,7 @@ async fn download_single_file(
                     item.url,
                     downloaded_size
                 );
-                initial_progress = downloaded_size;
+                total_transferred = downloaded_size;
 
                 // Initialize progress for resumed download
                 progress_tracker
@@ -644,12 +645,10 @@ async fn download_single_file(
     // If HEAD gave us no size, refine the running total from the GET response
     // so the UI can progress past "Initializing" and show a real percentage.
     if file_size == 0 {
-        if let Some(content_length) = resp.content_length() {
-            progress_tracker.add_to_total(initial_progress + content_length);
+        if let Some(content_length) = initial_resp.content_length() {
+            progress_tracker.add_to_total(total_transferred + content_length);
         }
     }
-
-    let mut stream = resp.bytes_stream();
 
     let file = if should_resume {
         // resume download, append to existing file
@@ -664,42 +663,65 @@ async fn download_single_file(
         File::create(&tmp_save_path).await.map_err(err_to_string)?
     };
     let mut writer = tokio::io::BufWriter::new(file);
-    let mut total_transferred = initial_progress;
+    let mut stream = initial_resp.bytes_stream();
 
-    // write chunk to file
-    while let Some(chunk) = stream.next().await {
-        if cancel_token.is_cancelled() {
-            if !should_resume {
-                tokio::fs::remove_dir_all(&save_path.parent().unwrap())
-                    .await
-                    .ok();
+    // Download loop with automatic retry on network errors
+    loop {
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                writer.write_all(&chunk).await.map_err(err_to_string)?;
+                download_delta += chunk.len() as u64;
+                total_transferred += chunk.len() as u64;
+
+                // Update progress every 10 MB
+                if download_delta >= 10 * 1024 * 1024 {
+                    progress_tracker
+                        .update_progress(&file_id, total_transferred)
+                        .await;
+
+                    let (combined_transferred, combined_total) =
+                        progress_tracker.get_total_progress().await;
+                    let evt = DownloadEvent {
+                        transferred: combined_transferred,
+                        total: combined_total,
+                    };
+                    app.emit(&evt_name, evt).unwrap();
+
+                    download_delta = 0u64;
+                }
             }
-            log::info!("Download cancelled: {}", item.url);
-            return Err("Download cancelled".to_string());
+            Some(Err(e)) => {
+                // Best-effort flush before retry. If it fails, unflushed bytes
+                // would make `total_transferred` overcount what's on disk and the
+                // next Range request would skip data — log so it's diagnosable.
+                if let Err(flush_err) = writer.flush().await {
+                    log::warn!(
+                        "Flush failed during error recovery for {}: {}",
+                        item.url,
+                        flush_err
+                    );
+                }
+
+                if cancel_token.is_cancelled() {
+                    log::info!("Download cancelled (resumable): {}", item.url);
+                    return Err("Download cancelled".to_string());
+                }
+
+                log::warn!("Download interrupted, reconnecting: {} - {}", item.url, e);
+                stream = reconnect_with_backoff(&client, &item.url, total_transferred, &cancel_token)
+                    .await?
+                    .bytes_stream();
+            }
+            None => {
+                // Stream ended — download complete
+                break;
+            }
         }
 
-        let chunk = chunk.map_err(err_to_string)?;
-        writer.write_all(&chunk).await.map_err(err_to_string)?;
-        download_delta += chunk.len() as u64;
-        total_transferred += chunk.len() as u64;
-
-        // Update progress every 10 MB
-        if download_delta >= 10 * 1024 * 1024 {
-            // Update individual file progress
-            progress_tracker
-                .update_progress(&file_id, total_transferred)
-                .await;
-
-            // Emit combined progress event
-            let (combined_transferred, combined_total) =
-                progress_tracker.get_total_progress().await;
-            let evt = DownloadEvent {
-                transferred: combined_transferred,
-                total: combined_total,
-            };
-            app.emit(&evt_name, evt).unwrap();
-
-            download_delta = 0u64;
+        if cancel_token.is_cancelled() {
+            writer.flush().await.ok();
+            log::info!("Download cancelled (resumable): {}", item.url);
+            return Err("Download cancelled".to_string());
         }
     }
 
@@ -735,6 +757,48 @@ async fn download_single_file(
 }
 
 // ===== HTTP CLIENT HELPER FUNCTIONS =====
+
+/// Reconnect a broken download with exponential backoff. Each call has its own
+/// retry budget (`MAX_RETRIES`), so a chunk error followed by failed reconnects
+/// no longer drains a shared counter — only consecutive reconnect failures
+/// within a single interruption do. Cancellation is honored during every wait.
+async fn reconnect_with_backoff(
+    client: &reqwest::Client,
+    url: &str,
+    total_transferred: u64,
+    cancel_token: &CancellationToken,
+) -> Result<reqwest::Response, String> {
+    const MAX_RETRIES: u32 = 10;
+    const INITIAL_RETRY_DELAY_SECS: u64 = 2;
+    const MAX_RETRY_DELAY_SECS: u64 = 60;
+
+    for attempt in 1..=MAX_RETRIES {
+        let delay = std::cmp::min(
+            INITIAL_RETRY_DELAY_SECS * 2u64.saturating_pow(attempt - 1),
+            MAX_RETRY_DELAY_SECS,
+        );
+        log::info!("Reconnect attempt {attempt}/{MAX_RETRIES} in {delay}s: {url}");
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(delay)) => {}
+            _ = cancel_token.cancelled() => {
+                return Err("Download cancelled".to_string());
+            }
+        }
+
+        match _get_maybe_resume_with_fallback(client, url, total_transferred).await {
+            Ok((resp, _)) => {
+                log::info!("Resumed from {total_transferred} bytes: {url}");
+                return Ok(resp);
+            }
+            Err(e) => {
+                log::warn!("Reconnect attempt {attempt}/{MAX_RETRIES} failed: {url} - {e}");
+            }
+        }
+    }
+
+    Err(format!("Download failed after {MAX_RETRIES} reconnect attempts"))
+}
 
 /// Attempts to download from mirror URL first, falls back to original URL if mirror fails
 /// When using mirror URL, adds HMAC headers for request authentication
