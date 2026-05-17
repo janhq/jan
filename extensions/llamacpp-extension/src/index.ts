@@ -105,6 +105,49 @@ function parseBuildNumber(version: string): number | null {
   return match ? parseInt(match[1], 10) : null
 }
 
+/**
+ * Breadth-first search of `rootDir` for the directory directly containing
+ * a file named `serverName`. Returns the absolute path of that directory,
+ * or null if not found. Used by manual backend install to tolerate
+ * different archive layouts (Jan-built `build/bin/...` vs upstream
+ * llama.cpp's flat `llama-bXXXX/...`).
+ */
+async function findLlamaServerDir(
+  rootDir: string,
+  serverName: string
+): Promise<string | null> {
+  const queue: string[] = [rootDir]
+  while (queue.length > 0) {
+    const current = queue.shift() as string
+    let entries: string[]
+    try {
+      entries = await fs.readdirSync(current)
+    } catch {
+      continue
+    }
+    if (entries.includes(serverName)) {
+      const candidate = await joinPath([current, serverName])
+      const stat = await fs.fileStat(candidate)
+      if (stat && !stat.isDirectory) {
+        return current
+      }
+    }
+    for (const entry of entries) {
+      const childPath = await joinPath([current, entry])
+      let stat
+      try {
+        stat = await fs.fileStat(childPath)
+      } catch {
+        continue
+      }
+      if (stat?.isDirectory) {
+        queue.push(childPath)
+      }
+    }
+  }
+  return null
+}
+
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
 //  - models/<modelId>/
@@ -782,6 +825,83 @@ export default class llamacpp_extension extends AIEngine {
       }
     } finally {
       this.isConfiguringBackends = false
+    }
+  }
+
+  /*
+   * Narrow refresh of the `version_backend` setting's options dropdown.
+   *
+   * Re-scans installed + remote backends and rewrites
+   * `controllerProps.options` on the persisted setting without re-running
+   * the heavy `configureBackends` flow (no autoupdate, no initial
+   * download, no dep verification). The user's current selection is
+   * preserved unless it disappeared from the list.
+   *
+   * Used by the manual "Install from file" flow so the just-extracted
+   * backend shows up in the dropdown immediately.
+   */
+  async refreshBackendOptions(): Promise<void> {
+    let version_backends: { version: string; backend: string }[] = []
+    try {
+      version_backends = await listSupportedBackends()
+    } catch (e) {
+      logger.error(
+        `refreshBackendOptions: failed to list supported backends: ${String(e)}`
+      )
+      return
+    }
+    if (version_backends.length === 0) {
+      logger.warn('refreshBackendOptions: no supported backends found')
+      return
+    }
+    version_backends.sort((a, b) => b.version.localeCompare(a.version))
+
+    const settings = await this.getSettings()
+    const backendSetting = settings.find(
+      (item) => item.key === 'version_backend'
+    )
+    if (!backendSetting) {
+      logger.error(
+        'refreshBackendOptions: version_backend setting not found in persisted settings'
+      )
+      return
+    }
+
+    const newOptions = version_backends.map((b) => {
+      const key = `${b.version}/${b.backend}`
+      return { value: key, name: key }
+    })
+
+    backendSetting.controllerProps.options = newOptions
+
+    // Preserve current selection if still present; otherwise fall back to
+    // the best available so the UI stays consistent.
+    const currentValue = backendSetting.controllerProps.value as
+      | string
+      | undefined
+    const stillPresent =
+      typeof currentValue === 'string' &&
+      newOptions.some((o) => o.value === currentValue)
+    if (!stillPresent) {
+      const best = await this.determineBestBackend(version_backends)
+      if (best) {
+        backendSetting.controllerProps.value = best
+        this.config.version_backend = best
+      }
+    }
+
+    // registerSettings overwrites the persisted settings (including the
+    // new options array). updateSettings only copies `value`, which would
+    // silently drop our options change.
+    await this.registerSettings(settings)
+
+    // Tell the rest of the app (GlobalEventHandler) to refetch providers
+    // so the dropdown re-renders with the new options.
+    if (events && typeof events.emit === 'function') {
+      events.emit('settingsChanged', {
+        key: 'version_backend',
+        value: backendSetting.controllerProps.value,
+      })
     }
   }
 
@@ -1519,12 +1639,45 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Failed to decompress archive: ${String(e)}`)
     }
 
-    const binPath =
-      platformName === 'win'
-        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
-        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+    const serverName =
+      platformName === 'win' ? 'llama-server.exe' : 'llama-server'
+    const expectedBinDir = await joinPath([backendDir, 'build', 'bin'])
+    const expectedBinPath = await joinPath([expectedBinDir, serverName])
 
-    if (!fs.existsSync(binPath)) {
+    // Archive layouts vary: Jan-published tarballs expand to
+    // `<backendDir>/build/bin/llama-server`, while upstream llama.cpp
+    // GitHub release tarballs (e.g. `llama-b9193-bin-...`) expand to
+    // a flat `<backendDir>/llama-bXXXX/llama-server`. If the binary is
+    // not at the expected path, scan the extracted tree for it and
+    // relocate its containing directory into `build/bin/`.
+    if (!(await fs.existsSync(expectedBinPath))) {
+      const foundDir = await findLlamaServerDir(backendDir, serverName)
+      if (!foundDir) {
+        await fs.rm(backendDir)
+        throw new Error(
+          'Not a supported backend archive! Missing llama-server binary.'
+        )
+      }
+      if (foundDir !== expectedBinDir) {
+        try {
+          await fs.mkdir(expectedBinDir)
+          const entries = await fs.readdirSync(foundDir)
+          for (const entry of entries) {
+            await fs.mv(
+              await joinPath([foundDir, entry]),
+              await joinPath([expectedBinDir, entry])
+            )
+          }
+        } catch (e) {
+          await fs.rm(backendDir)
+          throw new Error(
+            `Failed to normalize backend layout: ${String(e)}`
+          )
+        }
+      }
+    }
+
+    if (!(await fs.existsSync(expectedBinPath))) {
       await fs.rm(backendDir)
       throw new Error(
         'Not a supported backend archive! Missing llama-server binary.'
@@ -1532,7 +1685,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      await this.configureBackends()
+      await this.refreshBackendOptions()
       logger.info(
         `Backend ${backendIdentifier}/${version} installed and UI refreshed`
       )
