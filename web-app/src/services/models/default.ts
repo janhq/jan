@@ -542,6 +542,57 @@ export class DefaultModelsService implements ModelsService {
     return false
   }
 
+  async getMtpInfo(modelId: string): Promise<{
+    mtp_layers: number
+    mtp: boolean
+    spec_draft_n_max?: number
+    spec_draft_n_min?: number
+    spec_draft_p_min?: number
+  }> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        getMtpInfo?: (id: string) => Promise<{
+          mtp_layers: number
+          mtp: boolean
+          spec_draft_n_max?: number
+          spec_draft_n_min?: number
+          spec_draft_p_min?: number
+        }>
+      }
+      if (engine && typeof engine.getMtpInfo === 'function') {
+        return await engine.getMtpInfo(modelId)
+      }
+    } catch (error) {
+      console.error(`Error reading MTP info for ${modelId}:`, error)
+    }
+    return { mtp_layers: 0, mtp: false }
+  }
+
+  async updateMtpSettings(
+    modelId: string,
+    patch: {
+      mtp?: boolean
+      spec_draft_n_max?: number | null
+      spec_draft_n_min?: number | null
+      spec_draft_p_min?: number | null
+    }
+  ): Promise<void> {
+    const engine = this.getEngine('llamacpp') as AIEngine & {
+      updateMtpSettings?: (
+        id: string,
+        patch: {
+          mtp?: boolean
+          spec_draft_n_max?: number | null
+          spec_draft_n_min?: number | null
+          spec_draft_p_min?: number | null
+        }
+      ) => Promise<void>
+    }
+    if (engine && typeof engine.updateMtpSettings === 'function') {
+      await engine.updateMtpSettings(modelId, patch)
+    }
+  }
+
   async isModelSupported(
     modelPath: string,
     ctxSize?: number

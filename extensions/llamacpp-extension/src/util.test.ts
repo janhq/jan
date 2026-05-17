@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEmbedBatches,
+  detectMtpLayersFromGgufMeta,
   estimateTokensFromText,
   getProxyConfig,
   truncateToTokenBudget,
@@ -576,5 +577,68 @@ describe('buildEmbedBatches', () => {
 
   it('throws on ubatch_size too small to satisfy the safety margin', () => {
     expect(() => buildEmbedBatches(['hi'], 1, 3)).toThrow(/too small/)
+  })
+})
+
+describe('detectMtpLayersFromGgufMeta', () => {
+  it('returns 0 for undefined or empty meta', () => {
+    expect(detectMtpLayersFromGgufMeta(undefined)).toBe(0)
+    expect(detectMtpLayersFromGgufMeta({})).toBe(0)
+  })
+
+  it('reads {arch}.nextn_predict_layers when general.architecture is set', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '1',
+      })
+    ).toBe(1)
+  })
+
+  it('accepts numeric values', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'mimo',
+        'mimo.nextn_predict_layers': 2,
+      })
+    ).toBe(2)
+  })
+
+  it('falls back to suffix scan when arch key is missing', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'some_new_arch.nextn_predict_layers': '3',
+      })
+    ).toBe(3)
+  })
+
+  it('returns 0 when value is zero, negative, or unparseable', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '0',
+      })
+    ).toBe(0)
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '-1',
+      })
+    ).toBe(0)
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': 'abc',
+      })
+    ).toBe(0)
+  })
+
+  it('floors non-integer values', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '2.7',
+      })
+    ).toBe(2)
   })
 })

@@ -237,7 +237,19 @@
   },
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
-    "description": "Configure model settings to optimize performance and behavior."
+    "description": "Configure model settings to optimize performance and behavior.",
+    "mtp": {
+      "section": "Multi-Token Prediction (MTP)",
+      "enable": "Enable MTP",
+      "enableDescription": "Use the model's built-in MTP heads to draft multiple tokens per step. Speeds up generation when the model has MTP weights (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
+      "needsUpgrade": "Update the llama.cpp backend to build b9193 or newer to enable MTP.",
+      "nMax": "Max draft tokens",
+      "nMaxDescription": "Maximum number of tokens to draft per step. Default 16.",
+      "nMin": "Min draft tokens",
+      "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
+      "pMin": "Min draft probability",
+      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+    }
   },
   "dialogs": {
     "changeDataFolder": {

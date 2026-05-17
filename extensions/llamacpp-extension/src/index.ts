@@ -40,11 +40,12 @@ import {
   buildEmbedBatches,
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
+  detectMtpLayersFromGgufMeta,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
-import { generatePreset } from './preset'
+import { generatePreset, MTP_MIN_BUILD } from './preset'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -68,6 +69,7 @@ import {
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
+const MTP_CHECK_VERSION = 1
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -225,10 +227,13 @@ export default class llamacpp_extension extends AIEngine {
 
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
+    const build = parseBuildNumber(version)
+    const supportsMtp = build !== null && build >= MTP_MIN_BUILD
     const { path: presetPath, embeddingCount } = await generatePreset(
       providerPath,
       janDataFolderPath,
-      this.config
+      this.config,
+      { supportsMtp }
     )
 
     const backendExe = await getBackendExePath(backend, version)
@@ -1152,6 +1157,7 @@ export default class llamacpp_extension extends AIEngine {
     })
 
     const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+    await this.resolveMtpLayersConfig(modelId, modelConfig)
 
     return {
       id: modelId,
@@ -1231,6 +1237,57 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     return isEmbedding
+  }
+
+  private async resolveMtpLayersConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<number> {
+    const cfg = modelConfig as ModelConfig & {
+      mtp_layers?: number
+      mtp_check_v?: number
+    }
+    if (
+      typeof cfg.mtp_layers === 'number' &&
+      cfg.mtp_check_v === MTP_CHECK_VERSION
+    ) {
+      return cfg.mtp_layers
+    }
+
+    let mtpLayers = 0
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        mtpLayers = detectMtpLayersFromGgufMeta(metadata.metadata)
+      }
+    } catch (e) {
+      logger.warn(`Failed to check MTP metadata for ${modelId}`, e)
+      return cfg.mtp_layers ?? 0
+    }
+
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      cfg.mtp_layers = mtpLayers
+      cfg.mtp_check_v = MTP_CHECK_VERSION
+      await invoke<void>('write_yaml', {
+        data: cfg,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to persist MTP layers for ${modelId}`, e)
+    }
+
+    return mtpLayers
   }
 
   // Implement the required LocalProvider interface methods
@@ -1674,6 +1731,7 @@ export default class llamacpp_extension extends AIEngine {
     const janDataFolderPath = await getJanDataFolderPath()
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
+    let mtpLayers = 0
 
     try {
       // Validate main model file
@@ -1685,6 +1743,7 @@ export default class llamacpp_extension extends AIEngine {
       if (detectEmbeddingFromGgufMeta(modelMetadata.metadata)) {
         isEmbedding = true
       }
+      mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -1724,6 +1783,8 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
       embedding_check_v: EMBEDDING_CHECK_VERSION,
+      mtp_layers: mtpLayers,
+      mtp_check_v: MTP_CHECK_VERSION,
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),
@@ -2232,6 +2293,87 @@ export default class llamacpp_extension extends AIEngine {
     } catch (e) {
       logger.error(`Error checking mmproj.gguf for model ${modelId}:`, e)
       return false
+    }
+  }
+
+  async getMtpInfo(modelId: string): Promise<{
+    mtp_layers: number
+    mtp: boolean
+    spec_draft_n_max?: number
+    spec_draft_n_min?: number
+    spec_draft_p_min?: number
+  }> {
+    const path = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    if (!(await fs.existsSync(path))) {
+      return { mtp_layers: 0, mtp: false }
+    }
+    const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
+      mtp_layers?: number
+      mtp?: boolean
+      spec_draft_n_max?: number
+      spec_draft_n_min?: number
+      spec_draft_p_min?: number
+    }
+    return {
+      mtp_layers: typeof cfg.mtp_layers === 'number' ? cfg.mtp_layers : 0,
+      mtp: cfg.mtp === true,
+      spec_draft_n_max: cfg.spec_draft_n_max,
+      spec_draft_n_min: cfg.spec_draft_n_min,
+      spec_draft_p_min: cfg.spec_draft_p_min,
+    }
+  }
+
+  async updateMtpSettings(
+    modelId: string,
+    patch: {
+      mtp?: boolean
+      spec_draft_n_max?: number | null
+      spec_draft_n_min?: number | null
+      spec_draft_p_min?: number | null
+    }
+  ): Promise<void> {
+    const configPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    if (!(await fs.existsSync(configPath))) {
+      throw new Error(`model.yml not found for ${modelId}`)
+    }
+    const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
+      mtp?: boolean
+      spec_draft_n_max?: number
+      spec_draft_n_min?: number
+      spec_draft_p_min?: number
+    }
+
+    if (typeof patch.mtp === 'boolean') cfg.mtp = patch.mtp
+    const assignNumeric = (
+      key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
+      value: number | null | undefined
+    ) => {
+      if (value === null) {
+        delete cfg[key]
+      } else if (typeof value === 'number' && Number.isFinite(value)) {
+        cfg[key] = value
+      }
+    }
+    if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
+    if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
+    if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
+
+    await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
     }
   }
 
