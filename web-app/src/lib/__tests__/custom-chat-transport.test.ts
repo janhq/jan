@@ -6,7 +6,9 @@ import {
   coalesceMessagesForAlternation,
   extractContextInfoFromError,
   normalizeToolInputSchema,
+  stripRetryErrorWrapper,
   stripUnsupportedImageParts,
+  unwrapRetryError,
 } from '../custom-chat-transport'
 
 const userMsg = (id: string, text: string): UIMessage =>
@@ -508,5 +510,60 @@ describe('stripUnsupportedImageParts', () => {
     // practice never carry image parts. Verify the strip still works rather
     // than carving out a role exception.
     expect(out[0].parts).toEqual([textPart])
+  })
+})
+
+describe('stripRetryErrorWrapper', () => {
+  it('strips the standard retry-exhausted prefix', () => {
+    expect(
+      stripRetryErrorWrapper(
+        'Failed after 3 attempts. Last error: llama-server returned 500'
+      )
+    ).toBe('llama-server returned 500')
+  })
+
+  it('strips the non-retryable wrapper', () => {
+    expect(
+      stripRetryErrorWrapper(
+        "Failed after 2 attempts with non-retryable error: 'context length exceeded'"
+      )
+    ).toBe('context length exceeded')
+  })
+
+  it('returns the message unchanged when no wrapper is present', () => {
+    expect(stripRetryErrorWrapper('just a normal error')).toBe(
+      'just a normal error'
+    )
+  })
+
+  it('handles a multiline inner error', () => {
+    const wrapped =
+      'Failed after 3 attempts. Last error: line one\nline two\nline three'
+    expect(stripRetryErrorWrapper(wrapped)).toBe(
+      'line one\nline two\nline three'
+    )
+  })
+})
+
+describe('unwrapRetryError', () => {
+  it('returns the last underlying error when given a RetryError-like object', () => {
+    const inner = new Error('inner')
+    const retry = { errors: [new Error('first'), inner] }
+    expect(unwrapRetryError(retry)).toBe(inner)
+  })
+
+  it('returns the input unchanged for plain errors', () => {
+    const err = new Error('boom')
+    expect(unwrapRetryError(err)).toBe(err)
+  })
+
+  it('returns the input unchanged when errors is empty', () => {
+    expect(unwrapRetryError({ errors: [] })).toEqual({ errors: [] })
+  })
+
+  it('handles null / undefined / primitives', () => {
+    expect(unwrapRetryError(null)).toBeNull()
+    expect(unwrapRetryError(undefined)).toBeUndefined()
+    expect(unwrapRetryError('boom')).toBe('boom')
   })
 })

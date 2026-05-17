@@ -270,6 +270,25 @@ export function extractContextInfoFromError(
   }
 }
 
+export function unwrapRetryError(error: unknown): unknown {
+  if (!error || typeof error !== 'object') return error
+  const errors = (error as { errors?: unknown }).errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    return errors[errors.length - 1] ?? error
+  }
+  return error
+}
+
+const RETRY_PREFIX_RE = /^Failed after \d+ attempts\. Last error: /
+const RETRY_NONRETRYABLE_RE = /^Failed after \d+ attempts with non-retryable error: '(.+)'$/s
+
+export function stripRetryErrorWrapper(message: string): string {
+  if (typeof message !== 'string') return message
+  const m = message.match(RETRY_NONRETRYABLE_RE)
+  if (m) return m[1]
+  return message.replace(RETRY_PREFIX_RE, '')
+}
+
 export function stripUnsupportedImageParts(
   messages: UIMessage[],
   modelSupportsVision: boolean
@@ -989,15 +1008,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         if (useAppState.getState().currentStreamThreadId === threadId) {
           useAppState.getState().setCurrentStreamThreadId(undefined)
         }
-        const baseMessage = error == null
+        const unwrapped = unwrapRetryError(error)
+        const rawMessage = unwrapped == null
           ? 'Unknown error'
-          : typeof error === 'string'
-            ? error
-            : error instanceof Error
-              ? error.message
-              : JSON.stringify(error)
+          : typeof unwrapped === 'string'
+            ? unwrapped
+            : unwrapped instanceof Error
+              ? unwrapped.message
+              : JSON.stringify(unwrapped)
+        const baseMessage = stripRetryErrorWrapper(rawMessage)
 
-        const contextInfo = extractContextInfoFromError(error)
+        const contextInfo = extractContextInfoFromError(unwrapped)
         if (contextInfo) {
           return `${baseMessage}\n\n(Used ${contextInfo.nPromptTokens.toLocaleString()} of ${contextInfo.nCtx.toLocaleString()} context tokens.)`
         }

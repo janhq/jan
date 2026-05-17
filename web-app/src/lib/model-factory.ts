@@ -227,7 +227,8 @@ export function cleanUpstreamErrorMessage(raw: string): string {
 export function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
   parameters: Record<string, unknown>,
-  keepLlamacppOnly = false
+  keepLlamacppOnly = false,
+  onLlamacppServerError?: () => void
 ): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (init?.method === 'POST' || !init?.method) {
@@ -261,29 +262,56 @@ export function createCustomFetch(
     const res = await baseFetch(input, init)
     if (res.ok) return res
 
+    const isLlamacpp500 = keepLlamacppOnly && res.status === 500
+    if (isLlamacpp500) {
+      onLlamacppServerError?.()
+    }
+
+    let parsed: { error?: { message?: unknown; [k: string]: unknown } } | null =
+      null
     const contentType = res.headers.get('content-type') || ''
-    if (!contentType.includes('json')) return res
-    try {
-      const text = await res.clone().text()
-      const parsed = JSON.parse(text) as {
-        error?: { message?: unknown }
+    if (contentType.includes('json')) {
+      try {
+        parsed = JSON.parse(await res.clone().text())
+      } catch {
+        parsed = null
       }
-      const innerMessage = parsed?.error?.message
-      if (typeof innerMessage !== 'string') return res
-      const cleaned = cleanUpstreamErrorMessage(innerMessage)
-      if (cleaned === innerMessage) return res
+    }
+
+    const innerMessage =
+      typeof parsed?.error?.message === 'string'
+        ? (parsed.error.message as string)
+        : null
+
+    if (isLlamacpp500 && !innerMessage) {
+      const synthMessage =
+        'The model crashed and is being reloaded. Please retry.'
       const nextBody = JSON.stringify({
-        ...parsed,
-        error: { ...parsed.error, message: cleaned },
+        error: {
+          message: synthMessage,
+          code: 500,
+          type: 'llamacpp_server_error',
+        },
       })
       return new Response(nextBody, {
         status: res.status,
         statusText: res.statusText,
-        headers: res.headers,
+        headers: { 'content-type': 'application/json' },
       })
-    } catch {
-      return res
     }
+
+    if (!innerMessage) return res
+    const cleaned = cleanUpstreamErrorMessage(innerMessage)
+    if (cleaned === innerMessage) return res
+    const nextBody = JSON.stringify({
+      ...parsed,
+      error: { ...parsed!.error, message: cleaned },
+    })
+    return new Response(nextBody, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    })
   }
 }
 
@@ -489,12 +517,26 @@ export class ModelFactory {
       throw new Error(`No running session found for model: ${modelId}`)
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters, true)
+    const onLlamacppServerError = provider
+      ? () => {
+          void (async () => {
+            try {
+              const { useServiceStore } = await import('@/hooks/useServiceHub')
+              const hub = useServiceStore.getState().serviceHub
+              await hub?.models().startModel(provider, modelId)
+            } catch (e) {
+              console.warn('[llamacpp] reload after 500 failed:', e)
+            }
+          })()
+        }
+      : undefined
+    const customFetch = createCustomFetch(
+      httpFetch,
+      parameters,
+      true,
+      onLlamacppServerError
+    )
 
-    // llama-server splits reasoning server-side (default reasoning_format
-    // "deepseek") and the @ai-sdk/openai-compatible provider reads the
-    // resulting `reasoning_content` field on each delta natively. No
-    // client-side tag extraction needed — the middleware is a no-op here.
     return new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',
       headers: () => ({

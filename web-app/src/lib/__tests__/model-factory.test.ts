@@ -255,3 +255,81 @@ describe('createCustomFetch — max_tokens coercion', () => {
     expect(sent.max_tokens).toBe(-1)
   })
 })
+
+describe('createCustomFetch — llamacpp 500 handling', () => {
+  function fetchReturning(
+    status: number,
+    body: string,
+    contentType = 'application/json'
+  ): typeof globalThis.fetch {
+    return (async () =>
+      new Response(body, {
+        status,
+        statusText: status === 500 ? 'Internal Server Error' : 'OK',
+        headers: { 'content-type': contentType },
+      })) as typeof globalThis.fetch
+  }
+
+  it('synthesizes an llamacpp error body when llamacpp returns 500 with empty body', async () => {
+    const onErr = vi.fn()
+    const wrapped = createCustomFetch(
+      fetchReturning(500, '', 'text/plain'),
+      {},
+      true,
+      onErr
+    )
+    const res = await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('content-type')).toBe('application/json')
+    const parsed = await res.json()
+    expect(parsed.error.message).toMatch(/model crashed and is being reloaded/i)
+    expect(parsed.error.message).not.toMatch(/500|Internal Server Error|llama-server/i)
+    expect(parsed.error.type).toBe('llamacpp_server_error')
+    expect(onErr).toHaveBeenCalledTimes(1)
+  })
+
+  it('triggers the reload callback on llamacpp 500 even when the body parses', async () => {
+    const onErr = vi.fn()
+    const body = JSON.stringify({
+      error: { code: 500, message: 'some inner crash', type: 'server_error' },
+    })
+    const wrapped = createCustomFetch(fetchReturning(500, body), {}, true, onErr)
+    await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(onErr).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not trigger the reload callback or synthesize a body for non-llamacpp 500', async () => {
+    const onErr = vi.fn()
+    const wrapped = createCustomFetch(
+      fetchReturning(500, '', 'text/plain'),
+      {},
+      false,
+      onErr
+    )
+    const res = await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(onErr).not.toHaveBeenCalled()
+    expect(res.headers.get('content-type')).toBe('text/plain')
+  })
+
+  it('does not trigger the reload callback on llamacpp non-500 errors (e.g. 400)', async () => {
+    const onErr = vi.fn()
+    const body = JSON.stringify({
+      error: { code: 400, message: 'bad request', type: 'invalid_request' },
+    })
+    const wrapped = createCustomFetch(fetchReturning(400, body), {}, true, onErr)
+    await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(onErr).not.toHaveBeenCalled()
+  })
+})
