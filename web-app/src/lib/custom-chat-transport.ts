@@ -225,6 +225,49 @@ function mergeMessageParts(
  * Adjacent assistant messages are intentionally left alone: the Anthropic
  * serial-tool-use wave-split in `sendMessages` deliberately produces them.
  */
+/**
+ * Drop image parts (and AI-SDK `image` parts) from the history when the
+ * active model lacks the `vision` capability. Without this, switching from
+ * a vision-capable model to a text-only model mid-thread sends `file` parts
+ * the new model can't interpret — most OpenAI-compatible providers 400 on
+ * unsupported content types, and llama-server with a non-vision template
+ * either errors or silently strips the content (depending on template).
+ *
+ * Audio sentinels (planted by `encodeAudioAttachments`) are not file parts
+ * at this point yet — they're still `file` parts with `audio/*` mediaType —
+ * so this only matches `image/*`. Files inlined via `mapUserInlineAttachments`
+ * are already text and not affected.
+ */
+export function stripUnsupportedImageParts(
+  messages: UIMessage[],
+  modelSupportsVision: boolean
+): UIMessage[] {
+  if (modelSupportsVision) return messages
+  return messages.map((message) => {
+    if (!Array.isArray(message.parts) || message.parts.length === 0) {
+      return message
+    }
+    let touched = false
+    const nextParts = message.parts.filter((part) => {
+      const type = (part as { type?: string }).type
+      if (type === 'image') {
+        touched = true
+        return false
+      }
+      if (type === 'file') {
+        const mediaType = (part as { mediaType?: string }).mediaType
+        if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+          touched = true
+          return false
+        }
+      }
+      return true
+    })
+    if (!touched) return message
+    return { ...message, parts: nextParts } as UIMessage
+  })
+}
+
 export function coalesceMessagesForAlternation(
   messages: UIMessage[]
 ): UIMessage[] {
@@ -794,10 +837,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    const modelSupportsVision =
+      selectedModel?.capabilities?.includes('vision') ?? false
     const baseMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         this.encodeAudioAttachments(
-          this.mapUserInlineAttachments(effectiveMessages)
+          stripUnsupportedImageParts(
+            this.mapUserInlineAttachments(effectiveMessages),
+            modelSupportsVision
+          )
         )
       )
     )

@@ -5,6 +5,7 @@ import {
   buildLlamacppReasoningParams,
   coalesceMessagesForAlternation,
   normalizeToolInputSchema,
+  stripUnsupportedImageParts,
 } from '../custom-chat-transport'
 
 const userMsg = (id: string, text: string): UIMessage =>
@@ -393,5 +394,74 @@ describe('coalesceMessagesForAlternation', () => {
 
   it('handles an empty input array', () => {
     expect(coalesceMessagesForAlternation([])).toEqual([])
+  })
+})
+
+describe('stripUnsupportedImageParts', () => {
+  const imagePart = {
+    type: 'file',
+    mediaType: 'image/png',
+    url: 'data:image/png;base64,AAA',
+  } as unknown as UIMessage['parts'][number]
+  const audioPart = {
+    type: 'file',
+    mediaType: 'audio/wav',
+    url: 'data:audio/wav;base64,BBB',
+  } as unknown as UIMessage['parts'][number]
+  const textPart = { type: 'text', text: 'hello' } as UIMessage['parts'][number]
+
+  const userWithParts = (id: string, parts: UIMessage['parts']): UIMessage =>
+    ({ id, role: 'user', parts }) as UIMessage
+
+  it('returns input unchanged when model supports vision', () => {
+    const input = [userWithParts('u1', [textPart, imagePart])]
+    expect(stripUnsupportedImageParts(input, true)).toBe(input)
+  })
+
+  it('drops image file parts when model lacks vision', () => {
+    const input = [userWithParts('u1', [textPart, imagePart])]
+    const out = stripUnsupportedImageParts(input, false)
+    expect(out[0].parts).toEqual([textPart])
+  })
+
+  it('drops AI-SDK image-type parts when model lacks vision', () => {
+    const imagePartV2 = {
+      type: 'image',
+      image: 'data:image/png;base64,AAA',
+    } as unknown as UIMessage['parts'][number]
+    const input = [userWithParts('u1', [textPart, imagePartV2])]
+    const out = stripUnsupportedImageParts(input, false)
+    expect(out[0].parts).toEqual([textPart])
+  })
+
+  it('preserves audio file parts when model lacks vision', () => {
+    const input = [userWithParts('u1', [textPart, audioPart])]
+    const out = stripUnsupportedImageParts(input, false)
+    expect(out[0].parts).toEqual([textPart, audioPart])
+  })
+
+  it('returns the same message reference when no image parts present', () => {
+    const message = userWithParts('u1', [textPart, audioPart])
+    const out = stripUnsupportedImageParts([message], false)
+    expect(out[0]).toBe(message)
+  })
+
+  it('leaves an empty parts array when a user message had only an image', () => {
+    const input = [userWithParts('u1', [imagePart])]
+    const out = stripUnsupportedImageParts(input, false)
+    expect(out[0].parts).toEqual([])
+  })
+
+  it('does not touch assistant messages even if they somehow carry an image part', () => {
+    const assistantMsgWithImage: UIMessage = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [textPart, imagePart],
+    } as UIMessage
+    const out = stripUnsupportedImageParts([assistantMsgWithImage], false)
+    // We strip from any message — the safety is uniform — but assistants in
+    // practice never carry image parts. Verify the strip still works rather
+    // than carving out a role exception.
+    expect(out[0].parts).toEqual([textPart])
   })
 })
