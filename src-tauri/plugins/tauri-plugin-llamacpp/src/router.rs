@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use sysinfo::{Pid, ProcessesToUpdate, System};
@@ -15,6 +16,33 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
+
+pub type ErrorCallback = Arc<dyn Fn(&'static str, String) + Send + Sync + 'static>;
+
+fn is_oom_line(line_lower: &str) -> bool {
+    if line_lower.contains("erroroutofdevicememory")
+        || line_lower.contains("erroroutofhostmemory")
+    {
+        return true;
+    }
+    line_lower.contains("failed to allocate") && line_lower.contains("buffer of size")
+}
+
+fn is_backend_error_line(line_lower: &str) -> bool {
+    if line_lower.contains("cuda error:") {
+        return true;
+    }
+    if line_lower.contains("ggml_assert(") {
+        return true;
+    }
+    if line_lower.contains("ggml_vulkan") && line_lower.contains("error") {
+        return true;
+    }
+    if line_lower.contains("ggml_metal") && line_lower.contains("error") {
+        return true;
+    }
+    false
+}
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use jan_utils::{binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags};
@@ -67,6 +95,7 @@ pub async fn start_router(
     models_max: u32,
     default_args: Vec<String>,
     envs: HashMap<String, String>,
+    on_error: Option<ErrorCallback>,
 ) -> Result<RouterHandle, ServerError> {
     log::info!(
         "Starting llama-server in router mode: exe={:?} preset={:?} port={} models_max={}",
@@ -113,11 +142,12 @@ pub async fn start_router(
 
     let (ready_tx, mut ready_rx) = mpsc::channel::<bool>(1);
 
-    // stdout reader (replicates the marker-detection patterns in commands.rs)
     let stdout_ready_tx = ready_tx.clone();
+    let stdout_on_error = on_error.clone();
     let _stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut byte_buffer = Vec::new();
+        let mut last_error_at: Option<Instant> = None;
         loop {
             byte_buffer.clear();
             match reader.read_until(b'\n', &mut byte_buffer).await {
@@ -136,6 +166,25 @@ pub async fn start_router(
                     {
                         let _ = stdout_ready_tx.send(true).await;
                     }
+                    if let Some(cb) = &stdout_on_error {
+                        let kind = if is_oom_line(&line_lower) {
+                            Some("oom")
+                        } else if is_backend_error_line(&line_lower) {
+                            Some("backend")
+                        } else {
+                            None
+                        };
+                        if let Some(k) = kind {
+                            let now = Instant::now();
+                            let fire = last_error_at
+                                .map(|t| now.duration_since(t) > Duration::from_secs(3))
+                                .unwrap_or(true);
+                            if fire {
+                                last_error_at = Some(now);
+                                cb(k, line.to_string());
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     log::error!("Error reading router stdout: {}", e);
@@ -145,10 +194,12 @@ pub async fn start_router(
         }
     });
 
+    let stderr_on_error = on_error.clone();
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
         let mut byte_buffer = Vec::new();
         let mut stderr_buffer = String::new();
+        let mut last_error_at: Option<Instant> = None;
         loop {
             byte_buffer.clear();
             match reader.read_until(b'\n', &mut byte_buffer).await {
@@ -167,6 +218,25 @@ pub async fn start_router(
                             || line_lower.contains("http server listening")
                         {
                             let _ = ready_tx.send(true).await;
+                        }
+                        if let Some(cb) = &stderr_on_error {
+                            let kind = if is_oom_line(&line_lower) {
+                                Some("oom")
+                            } else if is_backend_error_line(&line_lower) {
+                                Some("backend")
+                            } else {
+                                None
+                            };
+                            if let Some(k) = kind {
+                                let now = Instant::now();
+                                let fire = last_error_at
+                                    .map(|t| now.duration_since(t) > Duration::from_secs(3))
+                                    .unwrap_or(true);
+                                if fire {
+                                    last_error_at = Some(now);
+                                    cb(k, line.to_string());
+                                }
+                            }
                         }
                     }
                 }

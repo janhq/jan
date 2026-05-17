@@ -31,6 +31,7 @@ import { WindowControls } from '@/components/WindowControls'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import LlamacppBusyOnExitDialog from '@/containers/dialogs/LlamacppBusyOnExitDialog'
+import LlamacppOomListener from '@/containers/dialogs/LlamacppOomListener'
 import MissingDependenciesDialog from '@/containers/dialogs/MissingDependenciesDialog'
 
 export const Route = createRootRoute({
@@ -160,6 +161,7 @@ function RootLayout() {
           <AttachmentIngestionDialog />
           <ErrorDialog />
           <LlamacppBusyOnExitDialog />
+          <LlamacppOomListener />
           <MissingDependenciesDialog />
           <OutOfContextPromiseModal />
         </TranslationProvider>

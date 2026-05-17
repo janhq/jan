@@ -162,6 +162,11 @@ function ThreadDetail() {
   const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
+  const oomError = useAppState((s) => s.oomError)
+  const setOomError = useAppState((s) => s.setOomError)
+  const backendError = useAppState((s) => s.backendError)
+  const setBackendError = useAppState((s) => s.setBackendError)
+
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
     null
@@ -376,26 +381,42 @@ function ThreadDetail() {
           (assistantCount > 0 &&
             assistantCount % TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES === 0)
         if (isRefreshTick) {
-          const lastUserMessage = [...localMessages]
-            .reverse()
-            .find((m) => m.role === 'user')
+          const TITLE_TRANSCRIPT_MAX_TURNS = 8
+          const recent = localMessages.slice(-TITLE_TRANSCRIPT_MAX_TURNS)
           const inputText =
-            lastUserMessage?.content?.[0]?.text?.value ??
+            recent
+              .map((m) => {
+                const text = m.content
+                  ?.map((c) => c?.text?.value ?? '')
+                  .join('')
+                  .trim()
+                if (!text) return ''
+                const role = m.role === 'assistant' ? 'Assistant' : 'User'
+                return `${role}: ${text}`
+              })
+              .filter(Boolean)
+              .join('\n\n') ||
             useThreads.getState().threads[threadId]?.title
           if (inputText) {
             const provider = useModelProvider.getState().selectedProvider
             const modelId = useModelProvider.getState().selectedModel?.id
             ;(async () => {
               if (provider === 'llamacpp' && modelId) {
-                try {
-                  const idle = await invoke<boolean>(
-                    'plugin:llamacpp|router_slots_idle',
-                    { modelId }
-                  )
-                  if (!idle) return
-                } catch {
-                  /* best-effort */
+                let idle = false
+                for (let attempt = 0; attempt < 6; attempt++) {
+                  try {
+                    idle = await invoke<boolean>(
+                      'plugin:llamacpp|router_slots_idle',
+                      { modelId }
+                    )
+                  } catch {
+                    idle = true
+                    break
+                  }
+                  if (idle) break
+                  await new Promise((r) => setTimeout(r, 150))
                 }
+                if (!idle) return
               }
               titleAbortRef.current?.abort()
               const controller = new AbortController()
@@ -775,15 +796,23 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
+      if (oomError) setOomError(undefined)
+      if (backendError) setBackendError(undefined)
       await processAndSendMessage(text, files)
     },
-    [processAndSendMessage]
+    [processAndSendMessage, oomError, setOomError, backendError, setBackendError]
   )
 
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback((messageId?: string) => {
+    if (useAppState.getState().oomError) {
+      useAppState.getState().setOomError(undefined)
+    }
+    if (useAppState.getState().backendError) {
+      useAppState.getState().setBackendError(undefined)
+    }
     // Cancel any in-flight title summarization before regenerating
     titleAbortRef.current?.abort()
     titleAbortRef.current = null
@@ -997,6 +1026,16 @@ function ThreadDetail() {
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if ((oomError || backendError) && (status === 'streaming' || status === 'submitted')) {
+      try {
+        stop()
+      } catch (e) {
+        console.warn('router error stop() threw:', e)
+      }
+    }
+  }, [oomError, backendError, status, stop])
+
+  useEffect(() => {
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
     }
@@ -1108,7 +1147,7 @@ function ThreadDetail() {
                   <Shimmer duration={1}>Processing embeddings...</Shimmer>
                 </div>
               )}
-              {(status === CHAT_STATUS.SUBMITTED ||
+              {!oomError && !backendError && (status === CHAT_STATUS.SUBMITTED ||
                 isAutoIncreasingContext) && (
                 <div className="flex flex-row items-center gap-2">
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
@@ -1119,22 +1158,39 @@ function ThreadDetail() {
                   )}
                 </div>
               )}
-              {(error || contextLimitError) && !isAutoIncreasingContext && (
+              {(error || contextLimitError || oomError || backendError) && !isAutoIncreasingContext && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-destructive mb-1">
-                        Error generating response
+                        {oomError
+                          ? 'llama.cpp ran out of memory'
+                          : backendError
+                            ? 'GGML backend encountered an error'
+                            : 'Error generating response'}
                       </p>
                       <div className="table table-fixed w-full">
                         <span
-                          className="text-sm text-muted-foreground table-cell align-middle"
+                          className={
+                            (oomError || backendError
+                              ? 'text-xs font-mono'
+                              : 'text-sm') +
+                            ' text-muted-foreground table-cell align-middle'
+                          }
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {(error ?? contextLimitError)?.message}
+                          {oomError ?? backendError ?? (error ?? contextLimitError)?.message}
                         </span>
                       </div>
+                      {oomError && (
+                        <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+                          <li>Reduce context size (ctx-size)</li>
+                          <li>Disable MTP (Multi-Token Prediction)</li>
+                          <li>Lower n-gpu-layers or switch to a CPU backend</li>
+                          <li>Use a smaller / more quantized model</li>
+                        </ul>
+                      )}
                       {((error ?? contextLimitError)?.message
                         ?.toLowerCase()
                         .includes('context') &&
@@ -1166,7 +1222,7 @@ function ThreadDetail() {
                           onClick={() => handleRegenerate()}
                         >
                           <IconRefresh className="size-4 mr-2" />
-                          Regenerate
+                          {oomError || backendError ? 'Reload' : 'Regenerate'}
                         </Button>
                       )}
                     </div>
@@ -1184,7 +1240,7 @@ function ThreadDetail() {
             model={threadModel}
             onSubmit={handleSubmit}
             onStop={stop}
-            chatStatus={status}
+            chatStatus={oomError || backendError ? 'ready' : status}
           />
         </div>
       </div>

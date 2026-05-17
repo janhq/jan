@@ -36,6 +36,11 @@ type AppState = {
   errorMessages: Record<string, AppErrorMessage>
   busyThreads: Record<string, boolean>
   currentStreamThreadId?: string
+  oomError?: string
+  backendError?: string
+
+  setOomError: (line: string | undefined) => void
+  setBackendError: (line: string | undefined) => void
 
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -92,6 +97,8 @@ export const useAppState = create<AppState>()((set) => ({
   busyThreads: {},
   currentStreamThreadId: undefined,
   setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
+  setOomError: (line) => set({ oomError: line }),
+  setBackendError: (line) => set({ backendError: line }),
   setThreadBusy: (threadId, busy) =>
     set((state) => {
       const next = { ...state.busyThreads }
