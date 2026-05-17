@@ -465,6 +465,42 @@ pub async fn get_router_info<R: Runtime>(
     }))
 }
 
+/// Best-effort idle check; returns `Ok(true)` on any error so callers
+/// never block on a transient `/slots` failure.
+#[tauri::command]
+pub async fn router_slots_idle<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: Option<String>,
+) -> Result<bool, String> {
+    let (port, api_key, _pid) = match router_endpoint(&app_handle).await {
+        Ok(r) => r,
+        Err(_) => return Ok(true),
+    };
+    let client = http_client().await;
+    let url = format!("http://127.0.0.1:{}/slots", port);
+    let mut req = client.get(&url).bearer_auth(&api_key);
+    if let Some(m) = model_id.as_deref() {
+        req = req.query(&[("model", m)]);
+    }
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(_) => return Ok(true),
+    };
+    if !resp.status().is_success() {
+        return Ok(true);
+    }
+    let slots: Vec<serde_json::Value> = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return Ok(true),
+    };
+    Ok(slots.iter().all(|s| {
+        s.get("is_processing")
+            .and_then(|v| v.as_bool())
+            .map(|b| !b)
+            .unwrap_or(true)
+    }))
+}
+
 /// `Ok(Some(busy))` on deadline; handle is restored to state.
 #[tauri::command]
 pub async fn try_graceful_stop_router<R: Runtime>(

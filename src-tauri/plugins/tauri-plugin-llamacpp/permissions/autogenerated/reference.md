@@ -9,6 +9,9 @@ Default permissions for the llamacpp plugin
 - `allow-unload-llama-model`
 - `allow-start-router`
 - `allow-stop-router`
+- `allow-try-graceful-stop-router`
+- `allow-force-kill-router-tree`
+- `allow-force-stop-model`
 - `allow-get-router-info`
 - `allow-get-devices`
 - `allow-generate-api-key`
@@ -310,6 +313,58 @@ Enables the find_session_by_model command without any pre-configured scope.
 <td>
 
 Denies the find_session_by_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-force-kill-router-tree`
+
+</td>
+<td>
+
+Enables the force_kill_router_tree command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-force-kill-router-tree`
+
+</td>
+<td>
+
+Denies the force_kill_router_tree command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-force-stop-model`
+
+</td>
+<td>
+
+Enables the force_stop_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-force-stop-model`
+
+</td>
+<td>
+
+Denies the force_stop_model command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1149,6 +1204,32 @@ Denies the remove_old_backend_versions command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-router-slots-idle`
+
+</td>
+<td>
+
+Enables the router_slots_idle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-router-slots-idle`
+
+</td>
+<td>
+
+Denies the router_slots_idle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-should-migrate-backend`
 
 </td>
@@ -1220,6 +1301,32 @@ Enables the stop_router command without any pre-configured scope.
 <td>
 
 Denies the stop_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-try-graceful-stop-router`
+
+</td>
+<td>
+
+Enables the try_graceful_stop_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-try-graceful-stop-router`
+
+</td>
+<td>
+
+Denies the try_graceful_stop_router command without any pre-configured scope.
 
 </td>
 </tr>

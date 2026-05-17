@@ -21,6 +21,7 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
+import { invoke } from '@tauri-apps/api/core'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -62,9 +63,7 @@ const CHAT_STATUS = {
   SUBMITTED: 'submitted',
 } as const
 
-// Title summarization constants
-const MAX_TITLE_SUMMARIZATION_ATTEMPTS = 3
-const TITLE_SUMMARIZATION_MIN_LENGTH = 50
+const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 
 type ThreadModel = {
   id: string
@@ -113,9 +112,7 @@ function ThreadDetail() {
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
 
-  // Title auto-summarization state
   const titleAbortRef = useRef<AbortController | null>(null)
-  const titleAttemptsRef = useRef(0)
 
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
@@ -369,47 +366,48 @@ function ThreadDetail() {
         toolCallAbortController.current = null
       })
 
-      // Auto-summarize thread title after the first assistant response.
-      // The thread title is the user's first message (set in ChatInput on creation),
-      // so we use it directly as the summarization input.
-      // Skipped if already summarized, manually renamed, or max attempts reached.
       if (!isAbort) {
-        const currentThread = useThreads.getState().threads[threadId]
-        if (
-          currentThread &&
-          !currentThread.metadata?.titleSummarized &&
-          titleAttemptsRef.current < MAX_TITLE_SUMMARIZATION_ATTEMPTS
-        ) {
-          const titleText = currentThread.title
-
-          if (titleText && titleText.length >= TITLE_SUMMARIZATION_MIN_LENGTH) {
-            // Cancel any previous in-flight summarization
-            titleAbortRef.current?.abort()
-            const controller = new AbortController()
-            titleAbortRef.current = controller
-            titleAttemptsRef.current++
-            const originalTitle = titleText
-
-            generateThreadTitle(titleText, controller.signal).then((title) => {
+        const localMessages = useMessages.getState().getMessages(threadId)
+        const assistantCount = localMessages.filter(
+          (m) => m.role === 'assistant'
+        ).length
+        const isRefreshTick =
+          assistantCount === 1 ||
+          (assistantCount > 0 &&
+            assistantCount % TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES === 0)
+        if (isRefreshTick) {
+          const lastUserMessage = [...localMessages]
+            .reverse()
+            .find((m) => m.role === 'user')
+          const inputText =
+            lastUserMessage?.content?.[0]?.text?.value ??
+            useThreads.getState().threads[threadId]?.title
+          if (inputText) {
+            const provider = useModelProvider.getState().selectedProvider
+            const modelId = useModelProvider.getState().selectedModel?.id
+            ;(async () => {
+              if (provider === 'llamacpp' && modelId) {
+                try {
+                  const idle = await invoke<boolean>(
+                    'plugin:llamacpp|router_slots_idle',
+                    { modelId }
+                  )
+                  if (!idle) return
+                } catch {
+                  /* best-effort */
+                }
+              }
+              titleAbortRef.current?.abort()
+              const controller = new AbortController()
+              titleAbortRef.current = controller
+              const title = await generateThreadTitle(
+                inputText,
+                controller.signal
+              )
               if (!title || controller.signal.aborted) return
-              // Don't overwrite if the user manually renamed while we were generating
-              const thread = useThreads.getState().threads[threadId]
-              if (!thread || thread.title !== originalTitle) return
-
-              useThreads.getState().updateThread(threadId, {
-                title,
-                metadata: { ...thread.metadata, titleSummarized: true },
-              })
+              useThreads.getState().updateThread(threadId, { title })
               titleAbortRef.current = null
-            })
-          } else if (titleText) {
-            // Short messages are already good titles — mark as done
-            useThreads.getState().updateThread(threadId, {
-              metadata: {
-                ...currentThread.metadata,
-                titleSummarized: true,
-              },
-            })
+            })()
           }
         }
       }
@@ -497,10 +495,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    // Reset title summarization state for the new thread
     titleAbortRef.current?.abort()
     titleAbortRef.current = null
-    titleAttemptsRef.current = 0
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
