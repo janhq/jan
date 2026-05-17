@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ModelFactory, cleanUpstreamErrorMessage } from '../model-factory'
+import {
+  ModelFactory,
+  cleanUpstreamErrorMessage,
+  createCustomFetch,
+} from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
@@ -202,5 +206,52 @@ describe('cleanUpstreamErrorMessage', () => {
   it('returns non-string inputs as-is', () => {
     // @ts-expect-error intentional misuse
     expect(cleanUpstreamErrorMessage(null)).toBe(null)
+  })
+})
+
+describe('createCustomFetch — max_tokens coercion', () => {
+  async function captureSentBody(
+    parameters: Record<string, unknown>,
+    keepLlamacppOnly: boolean,
+    bodyIn: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const seen: { body?: string } = {}
+    const baseFetch: typeof globalThis.fetch = (async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      seen.body = typeof init?.body === 'string' ? init.body : ''
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as typeof globalThis.fetch
+    const wrapped = createCustomFetch(baseFetch, parameters, keepLlamacppOnly)
+    await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify(bodyIn),
+    })
+    return JSON.parse(seen.body ?? '{}') as Record<string, unknown>
+  }
+
+  it('coerces max_tokens=0 to -1 when keepLlamacppOnly is true', async () => {
+    const sent = await captureSentBody({}, true, { max_tokens: 0 })
+    expect(sent.max_tokens).toBe(-1)
+  })
+
+  it('does not coerce when keepLlamacppOnly is false (non-llamacpp providers)', async () => {
+    const sent = await captureSentBody({}, false, { max_tokens: 0 })
+    expect(sent.max_tokens).toBe(0)
+  })
+
+  it('leaves non-zero max_tokens alone', async () => {
+    const sent = await captureSentBody({}, true, { max_tokens: 512 })
+    expect(sent.max_tokens).toBe(512)
+  })
+
+  it('coerces max_tokens=0 even when it comes from injected parameters via max_output_tokens', async () => {
+    const sent = await captureSentBody(
+      { max_output_tokens: 0 },
+      true,
+      { messages: [] }
+    )
+    expect(sent.max_tokens).toBe(-1)
   })
 })

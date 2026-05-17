@@ -224,7 +224,7 @@ export function cleanUpstreamErrorMessage(raw: string): string {
  * `error.message` is cleaned of stack-trace noise before the AI SDK surfaces
  * it to the UI.
  */
-function createCustomFetch(
+export function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
   parameters: Record<string, unknown>,
   keepLlamacppOnly = false
@@ -246,6 +246,13 @@ function createCustomFetch(
       const merged = { ...body, ...normalised }
       if (keepLlamacppOnly && merged.stream === true) {
         merged.return_progress = true
+      }
+      // llama-server convention: max_tokens = -1 means "unlimited". Users who
+      // set max_output_tokens = 0 in assistant params mean "no cap", not
+      // "produce zero tokens" — coerce here, gated to llamacpp only because
+      // OpenAI/Anthropic reject negative values.
+      if (keepLlamacppOnly && merged.max_tokens === 0) {
+        merged.max_tokens = -1
       }
       decodeAudioSentinelsInBody(merged)
       init = { ...init, body: JSON.stringify(merged) }

@@ -806,11 +806,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       this.extractFileMetadataForSystem(messagesToConvert)
     messagesToConvert = strippedMessages
     const filesAddendum = this.buildFilesSystemAddendum(attachedFiles)
-    const effectiveSystem = filesAddendum
+    const rawSystem = filesAddendum
       ? this.systemMessage
         ? `${this.systemMessage}\n\n${filesAddendum}`
         : filesAddendum
       : this.systemMessage
+    // Drop whitespace-only system prompts so we don't send a useless system
+    // turn that some chat templates still wrap into special tokens.
+    const effectiveSystem =
+      typeof rawSystem === 'string' && rawSystem.trim().length > 0
+        ? rawSystem
+        : undefined
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
