@@ -491,7 +491,11 @@ export class ModelFactory {
 
     const customFetch = createCustomFetch(httpFetch, parameters, true)
 
-    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+    // llama-server splits reasoning server-side (default reasoning_format
+    // "deepseek") and the @ai-sdk/openai-compatible provider reads the
+    // resulting `reasoning_content` field on each delta natively. No
+    // client-side tag extraction needed — the middleware is a no-op here.
+    return new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
@@ -504,14 +508,6 @@ export class ModelFactory {
       includeUsage: true,
       fetch: customFetch,
       metadataExtractor: providerMetadataExtractor,
-    })
-
-    return wrapLanguageModel({
-      model,
-      middleware: extractReasoningMiddleware({
-        tagName: getReasoningTagName(modelId),
-        separator: '\n',
-      }),
     })
   }
 
