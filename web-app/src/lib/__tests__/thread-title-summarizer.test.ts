@@ -168,16 +168,15 @@ describe('generateThreadTitle', () => {
 
   it('truncates long messages before sending to model', async () => {
     mockGenerateText.mockResolvedValue({ text: 'Summary Title' })
-    const longMessage = 'x'.repeat(1000)
+    const longMessage = 'x'.repeat(2000)
 
     const controller = new AbortController()
     await generateThreadTitle(longMessage, controller.signal)
 
-    // Verify the prompt was truncated (500 chars + "...")
     const callArgs = mockGenerateText.mock.calls[0][0]
     const prompt = callArgs.messages[0].content
     expect(prompt).toContain('...')
-    expect(prompt.length).toBeLessThan(1000)
+    expect(prompt.length).toBeLessThan(2000)
   })
 
   it('passes the abort signal to generateText', async () => {
