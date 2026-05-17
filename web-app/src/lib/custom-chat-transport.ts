@@ -238,6 +238,38 @@ function mergeMessageParts(
  * so this only matches `image/*`. Files inlined via `mapUserInlineAttachments`
  * are already text and not affected.
  */
+/**
+ * Pull llama-server's structured context-overflow fields out of an
+ * APICallError. The AI SDK's OpenAI-compatible provider zod-parses the
+ * error body and strips unknown keys from `error.data`, but the raw text
+ * survives on `error.responseBody`. Parse that to recover the original
+ * `n_prompt_tokens` / `n_ctx` siblings so the UI can render an actionable
+ * "Used X of Y context tokens" line instead of just the keyword-based
+ * banner.
+ *
+ * Returns null unless both fields are present and numeric.
+ */
+export function extractContextInfoFromError(
+  error: unknown
+): { nPromptTokens: number; nCtx: number } | null {
+  if (!error || typeof error !== 'object') return null
+  const responseBody = (error as { responseBody?: unknown }).responseBody
+  if (typeof responseBody !== 'string' || responseBody.length === 0) return null
+  try {
+    const parsed = JSON.parse(responseBody) as {
+      error?: { n_prompt_tokens?: unknown; n_ctx?: unknown }
+    }
+    const inner = parsed?.error
+    if (!inner || typeof inner !== 'object') return null
+    const nPromptTokens = (inner as Record<string, unknown>).n_prompt_tokens
+    const nCtx = (inner as Record<string, unknown>).n_ctx
+    if (typeof nPromptTokens !== 'number' || typeof nCtx !== 'number') return null
+    return { nPromptTokens, nCtx }
+  } catch {
+    return null
+  }
+}
+
 export function stripUnsupportedImageParts(
   messages: UIMessage[],
   modelSupportsVision: boolean
@@ -951,7 +983,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         if (useAppState.getState().currentStreamThreadId === threadId) {
           useAppState.getState().setCurrentStreamThreadId(undefined)
         }
-        const errorMessage = error == null
+        const baseMessage = error == null
           ? 'Unknown error'
           : typeof error === 'string'
             ? error
@@ -959,7 +991,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ? error.message
               : JSON.stringify(error)
 
-        return errorMessage
+        const contextInfo = extractContextInfoFromError(error)
+        if (contextInfo) {
+          return `${baseMessage}\n\n(Used ${contextInfo.nPromptTokens.toLocaleString()} of ${contextInfo.nCtx.toLocaleString()} context tokens.)`
+        }
+        return baseMessage
       },
       onFinish: ({ responseMessage }) => {
         useAppState.getState().updatePromptProgress(undefined)

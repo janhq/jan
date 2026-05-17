@@ -4,6 +4,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import {
   buildLlamacppReasoningParams,
   coalesceMessagesForAlternation,
+  extractContextInfoFromError,
   normalizeToolInputSchema,
   stripUnsupportedImageParts,
 } from '../custom-chat-transport'
@@ -450,6 +451,50 @@ describe('stripUnsupportedImageParts', () => {
     const input = [userWithParts('u1', [imagePart])]
     const out = stripUnsupportedImageParts(input, false)
     expect(out[0].parts).toEqual([])
+  })
+
+  it('extracts context info from a llama-server APICallError-like object', () => {
+    const error = {
+      message: 'the request exceeds the available context size',
+      responseBody: JSON.stringify({
+        error: {
+          code: 400,
+          message: 'the request exceeds the available context size',
+          n_prompt_tokens: 5123,
+          n_ctx: 4096,
+        },
+      }),
+    }
+    expect(extractContextInfoFromError(error)).toEqual({
+      nPromptTokens: 5123,
+      nCtx: 4096,
+    })
+  })
+
+  it('returns null when only one of the context fields is present', () => {
+    const error = {
+      responseBody: JSON.stringify({
+        error: { message: 'oops', n_prompt_tokens: 5123 },
+      }),
+    }
+    expect(extractContextInfoFromError(error)).toBeNull()
+  })
+
+  it('returns null for non-numeric values', () => {
+    const error = {
+      responseBody: JSON.stringify({
+        error: { n_prompt_tokens: '5123', n_ctx: '4096' },
+      }),
+    }
+    expect(extractContextInfoFromError(error)).toBeNull()
+  })
+
+  it('returns null when responseBody is missing, empty, or unparseable', () => {
+    expect(extractContextInfoFromError({})).toBeNull()
+    expect(extractContextInfoFromError({ responseBody: '' })).toBeNull()
+    expect(extractContextInfoFromError({ responseBody: 'not json' })).toBeNull()
+    expect(extractContextInfoFromError(null)).toBeNull()
+    expect(extractContextInfoFromError(undefined)).toBeNull()
   })
 
   it('does not touch assistant messages even if they somehow carry an image part', () => {
