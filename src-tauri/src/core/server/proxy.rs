@@ -19,11 +19,35 @@ use crate::core::{
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
 };
 
+const SCHEMA_PRIMITIVE_TYPES: &[&str] = &[
+    "string", "number", "integer", "boolean", "null", "array", "object",
+];
+
+/// If `value` is a bare string naming a JSON-schema primitive type (e.g.
+/// `"string"`), expand it to `{ "type": <that> }`. Some tool generators emit
+/// shorthand like `{ "properties": { "foo": "string" } }`; llama.cpp's
+/// json-schema-to-grammar rejects that with `Unrecognized schema: "string"`.
+fn coerce_schema_node(value: &mut serde_json::Value) {
+    if let serde_json::Value::String(s) = value {
+        if SCHEMA_PRIMITIVE_TYPES.contains(&s.as_str()) {
+            let mut obj = serde_json::Map::new();
+            obj.insert(
+                "type".to_string(),
+                serde_json::Value::String(std::mem::take(s)),
+            );
+            *value = serde_json::Value::Object(obj);
+        }
+    }
+    normalize_openai_tool_parameters_schema(value);
+}
+
 /// Some OpenAI tool schema generators (and some MCP servers) may emit schemas where
-/// a property schema only contains `description` but omits `type`.
+/// a property schema only contains `description` but omits `type`, or where a
+/// schema-node slot holds a bare type-name string instead of a sub-schema object.
 ///
 /// A strict JSON schema converter inside the upstream server rejects those schemas.
-/// To be robust, we default `type` to `"string"` for description-only leaf schemas.
+/// To be robust, we default `type` to `"string"` for description-only leaf schemas
+/// and expand bare-string sub-schemas to `{ "type": <name> }`.
 /// Keep this behavior aligned with `normalizeToolInputSchema` in the frontend.
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
     match schema {
@@ -53,9 +77,38 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
                 );
             }
 
-            // Recurse into nested schema (properties, items, anyOf, etc.) in one pass.
-            for v in map.values_mut() {
-                normalize_openai_tool_parameters_schema(v);
+            // Recurse, with shorthand expansion for keys whose direct children
+            // are schema nodes.
+            for (key, v) in map.iter_mut() {
+                match key.as_str() {
+                    "properties" | "patternProperties" | "definitions" | "$defs" => {
+                        if let serde_json::Value::Object(inner) = v {
+                            for (_, child) in inner.iter_mut() {
+                                coerce_schema_node(child);
+                            }
+                        } else {
+                            normalize_openai_tool_parameters_schema(v);
+                        }
+                    }
+                    "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                        if let serde_json::Value::Array(arr) = v {
+                            for child in arr.iter_mut() {
+                                coerce_schema_node(child);
+                            }
+                        } else {
+                            normalize_openai_tool_parameters_schema(v);
+                        }
+                    }
+                    "items" => match v {
+                        serde_json::Value::Array(arr) => {
+                            for child in arr.iter_mut() {
+                                coerce_schema_node(child);
+                            }
+                        }
+                        _ => coerce_schema_node(v),
+                    },
+                    _ => normalize_openai_tool_parameters_schema(v),
+                }
             }
         }
         serde_json::Value::Array(arr) => {

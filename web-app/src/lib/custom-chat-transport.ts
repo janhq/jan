@@ -66,6 +66,34 @@ export type ServiceHub = {
   }
 }
 
+const SCHEMA_PRIMITIVE_TYPES = new Set([
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'null',
+  'array',
+  'object',
+])
+
+const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
+const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
+
+/**
+ * Coerce a schema-node slot into a valid sub-schema. Some tool generators
+ * emit shorthand like `{ "properties": { "foo": "string" } }` instead of
+ * `{ "properties": { "foo": { "type": "string" } } }`. llama.cpp's
+ * json-schema-to-grammar rejects the former with
+ * `Unrecognized schema: "string"`. We expand the shorthand here so the
+ * grammar generator sees a well-formed schema.
+ */
+function coerceSchemaNode(value: unknown): unknown {
+  if (typeof value === 'string' && SCHEMA_PRIMITIVE_TYPES.has(value)) {
+    return normalizeToolInputSchemaValue({ type: value })
+  }
+  return normalizeToolInputSchemaValue(value)
+}
+
 function normalizeToolInputSchemaValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(normalizeToolInputSchemaValue)
@@ -76,10 +104,33 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
   }
 
   const normalized = Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, childValue]) => [
-      key,
-      normalizeToolInputSchemaValue(childValue),
-    ])
+    Object.entries(value as Record<string, unknown>).map(([key, childValue]) => {
+      // Schema-node containers: their direct children are sub-schemas, so a
+      // bare-string primitive type name should expand to `{ type: <name> }`.
+      if (
+        SCHEMA_NODE_MAP_KEYS.has(key) &&
+        childValue &&
+        typeof childValue === 'object' &&
+        !Array.isArray(childValue)
+      ) {
+        return [
+          key,
+          Object.fromEntries(
+            Object.entries(childValue as Record<string, unknown>).map(
+              ([propKey, propVal]) => [propKey, coerceSchemaNode(propVal)]
+            )
+          ),
+        ]
+      }
+      if (SCHEMA_NODE_LIST_KEYS.has(key) && Array.isArray(childValue)) {
+        return [key, childValue.map(coerceSchemaNode)]
+      }
+      if (key === 'items') {
+        if (Array.isArray(childValue)) return [key, childValue.map(coerceSchemaNode)]
+        return [key, coerceSchemaNode(childValue)]
+      }
+      return [key, normalizeToolInputSchemaValue(childValue)]
+    })
   )
 
   const hasDescription = Object.prototype.hasOwnProperty.call(normalized, 'description')

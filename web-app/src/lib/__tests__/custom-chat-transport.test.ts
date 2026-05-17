@@ -32,6 +32,67 @@ describe('normalizeToolInputSchema', () => {
     })
   })
 
+  it('expands bare-string shorthand in properties', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: { name: 'string', count: 'integer' },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        count: { type: 'integer' },
+      },
+    })
+  })
+
+  it('expands bare-string shorthand in items', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: { tags: { type: 'array', items: 'string' } },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+    })
+  })
+
+  it('expands bare-string shorthand in anyOf', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          value: { anyOf: ['string', 'number'] },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        value: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+      },
+    })
+  })
+
+  it('does not coerce enum literal strings that happen to match type names', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          mode: { type: 'string', enum: ['string', 'number', 'fast'] },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: ['string', 'number', 'fast'] },
+      },
+    })
+  })
+
   it('adds string type for description-only leaves', () => {
     expect(
       normalizeToolInputSchema({
