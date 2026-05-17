@@ -1659,17 +1659,13 @@ export default class llamacpp_extension extends AIEngine {
       }
       if (foundDir !== expectedBinDir) {
         try {
-          await fs.mkdir(expectedBinDir)
-          // readdirSync returns absolute paths; move each into expectedBinDir
-          // by basename.
-          const entries = await fs.readdirSync(foundDir)
-          for (const entryPath of entries) {
-            const entryName = await basename(entryPath)
-            await fs.mv(
-              entryPath,
-              await joinPath([expectedBinDir, entryName])
-            )
-          }
+          // Rename the whole directory in one shot — moving entries
+          // individually breaks relative symlinks (libggml.so →
+          // libggml.so.0 → libggml.so.0.10.0) as soon as the first
+          // target is renamed.
+          const buildDir = await joinPath([backendDir, 'build'])
+          await fs.mkdir(buildDir)
+          await fs.mv(foundDir, expectedBinDir)
         } catch (e) {
           await fs.rm(backendDir)
           throw new Error(
