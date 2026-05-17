@@ -103,6 +103,99 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
   return normalized
 }
 
+/**
+ * Returns true when an assistant message carries no content the model would
+ * actually render: no text, no tool call, no file, no reasoning. These appear
+ * when a generation fails before any chunk arrives — the AI SDK leaves a bare
+ * placeholder in the message list with empty parts.
+ */
+function isAssistantMessageEmpty(message: UIMessage): boolean {
+  if (message.role !== 'assistant') return false
+  const parts = Array.isArray(message.parts) ? message.parts : []
+  if (parts.length === 0) return true
+  return parts.every((part) => {
+    const type = (part as { type?: string }).type
+    if (type === 'text' || type === 'reasoning') {
+      const text = (part as { text?: string }).text
+      return typeof text !== 'string' || text.trim().length === 0
+    }
+    return false
+  })
+}
+
+/**
+ * Merge `b`'s parts onto `a`'s parts. When adjacent text parts meet at the
+ * boundary, they're concatenated with a blank-line separator so the merged
+ * message reads as one continuous turn rather than two.
+ */
+function mergeMessageParts(
+  a: UIMessage['parts'],
+  b: UIMessage['parts']
+): UIMessage['parts'] {
+  const aParts = Array.isArray(a) ? [...a] : []
+  const bParts = Array.isArray(b) ? b : []
+  for (const part of bParts) {
+    const last = aParts[aParts.length - 1]
+    if (
+      last &&
+      (last as { type?: string }).type === 'text' &&
+      (part as { type?: string }).type === 'text' &&
+      typeof (last as { text?: string }).text === 'string' &&
+      typeof (part as { text?: string }).text === 'string'
+    ) {
+      aParts[aParts.length - 1] = {
+        ...(last as object),
+        text: `${(last as { text: string }).text}\n\n${(part as { text: string }).text}`,
+      } as (typeof aParts)[number]
+    } else {
+      aParts.push(part)
+    }
+  }
+  return aParts as UIMessage['parts']
+}
+
+/**
+ * Enforce strict user/assistant alternation on the message history before it
+ * goes to the model.
+ *
+ * Most chat templates (Gemma, Mistral, Llama 3, Anthropic Claude API,
+ * tool-calling Qwen variants, etc.) reject two consecutive turns with the
+ * same role — either via a Jinja `raise_exception` or a 400 from the
+ * provider. When a generation fails mid-stream the AI SDK still keeps the
+ * user message in its state but never appends an assistant reply, so the
+ * next send produces `[user, user]` and the next request 500s on the
+ * server side. We fix that here by:
+ *
+ * 1. Dropping assistant placeholders with no content (failed turns).
+ * 2. Merging any remaining adjacent user messages by concatenating their
+ *    text parts and appending their non-text parts. This preserves all of
+ *    the user's content — nothing is silently dropped.
+ *
+ * Adjacent assistant messages are intentionally left alone: the Anthropic
+ * serial-tool-use wave-split in `sendMessages` deliberately produces them.
+ */
+export function coalesceMessagesForAlternation(
+  messages: UIMessage[]
+): UIMessage[] {
+  const filtered = messages.filter((m) => !isAssistantMessageEmpty(m))
+  if (filtered.length <= 1) return filtered
+
+  const out: UIMessage[] = [filtered[0]]
+  for (let i = 1; i < filtered.length; i++) {
+    const prev = out[out.length - 1]
+    const cur = filtered[i]
+    if (prev.role === 'user' && cur.role === 'user') {
+      out[out.length - 1] = {
+        ...prev,
+        parts: mergeMessageParts(prev.parts, cur.parts),
+      }
+    } else {
+      out.push(cur)
+    }
+  }
+  return out
+}
+
 type ToolInputSchema = Record<string, unknown>
 
 // Keep this behavior aligned with `normalize_openai_tool_parameters_schema` in Rust.
@@ -651,7 +744,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     const baseMessages = await convertToModelMessages(
-      this.encodeAudioAttachments(this.mapUserInlineAttachments(effectiveMessages))
+      coalesceMessagesForAlternation(
+        this.encodeAudioAttachments(
+          this.mapUserInlineAttachments(effectiveMessages)
+        )
+      )
     )
 
     // If continuing a truncated response, append the partial assistant content as a

@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
+import type { UIMessage } from '@ai-sdk/react'
 import {
   buildLlamacppReasoningParams,
+  coalesceMessagesForAlternation,
   normalizeToolInputSchema,
 } from '../custom-chat-transport'
+
+const userMsg = (id: string, text: string): UIMessage =>
+  ({
+    id,
+    role: 'user',
+    parts: [{ type: 'text', text }],
+  }) as UIMessage
+
+const assistantMsg = (
+  id: string,
+  parts: UIMessage['parts'] = []
+): UIMessage =>
+  ({
+    id,
+    role: 'assistant',
+    parts,
+  }) as UIMessage
 
 describe('normalizeToolInputSchema', () => {
   it('adds empty properties for object schemas without properties', () => {
@@ -214,5 +233,104 @@ describe('buildLlamacppReasoningParams', () => {
       // value must produce literal `true` / `false`, never quoted strings.
       expect(JSON.stringify(value)).toMatch(/^(true|false)$/)
     }
+  })
+})
+
+describe('coalesceMessagesForAlternation', () => {
+  it('drops an empty assistant placeholder and merges the surrounding users', () => {
+    const input = [
+      userMsg('u1', 'first question'),
+      assistantMsg('a1', []),
+      userMsg('u2', 'retry after error'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(1)
+    expect(out[0].role).toBe('user')
+    expect(out[0].parts).toEqual([
+      { type: 'text', text: 'first question\n\nretry after error' },
+    ])
+  })
+
+  it('merges two consecutive user messages with no intervening assistant', () => {
+    const input = [userMsg('u1', 'hello'), userMsg('u2', 'still hello')]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(1)
+    expect(out[0].parts).toEqual([
+      { type: 'text', text: 'hello\n\nstill hello' },
+    ])
+  })
+
+  it('keeps assistant messages with real content', () => {
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [{ type: 'text', text: 'a' }] as UIMessage['parts']),
+      userMsg('u2', 'q2'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(3)
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+  })
+
+  it('keeps assistant messages that only have non-text content (e.g. tool calls)', () => {
+    const toolPart = { type: 'tool-foo', state: 'output-available' } as unknown as UIMessage['parts'][number]
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [toolPart] as UIMessage['parts']),
+      userMsg('u2', 'q2'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(3)
+  })
+
+  it('drops an assistant placeholder with only whitespace text', () => {
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [{ type: 'text', text: '   \n  ' }] as UIMessage['parts']),
+      userMsg('u2', 'q2'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(1)
+    expect(out[0].role).toBe('user')
+  })
+
+  it('preserves non-text user parts (e.g. file attachments) when merging', () => {
+    const filePart = {
+      type: 'file',
+      mediaType: 'image/png',
+      url: 'data:image/png;base64,AAA',
+    } as unknown as UIMessage['parts'][number]
+    const input: UIMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'first' }, filePart],
+      } as UIMessage,
+      userMsg('u2', 'second'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(1)
+    // Order is preserved: file stays where it was sent, second message's
+    // text is appended after it rather than merged into the first text part.
+    expect(out[0].parts).toEqual([
+      { type: 'text', text: 'first' },
+      filePart,
+      { type: 'text', text: 'second' },
+    ])
+  })
+
+  it('returns the input unchanged when alternation is already valid', () => {
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [{ type: 'text', text: 'a' }] as UIMessage['parts']),
+      userMsg('u2', 'q2'),
+      assistantMsg('a2', [{ type: 'text', text: 'a2' }] as UIMessage['parts']),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(4)
+    expect(out).toEqual(input)
+  })
+
+  it('handles an empty input array', () => {
+    expect(coalesceMessagesForAlternation([])).toEqual([])
   })
 })
