@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ModelFactory } from '../model-factory'
+import { ModelFactory, cleanUpstreamErrorMessage } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
@@ -176,4 +176,31 @@ describe('ModelFactory', () => {
     })
   })
 
+})
+
+describe('cleanUpstreamErrorMessage', () => {
+  it('extracts the final "Error:" line from a Jinja stack trace', () => {
+    const raw =
+      "\n------------\nWhile executing CallExpression at line 1, column 226 in source:\n...op.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user...\n                                           ^\nError: Jinja Exception: Conversation roles must alternate user/assistant/user/assistant/..."
+    expect(cleanUpstreamErrorMessage(raw)).toBe(
+      'Jinja Exception: Conversation roles must alternate user/assistant/user/assistant/...'
+    )
+  })
+
+  it('passes through a clean message unchanged', () => {
+    const raw =
+      'Unable to generate parser for this template. Automatic parser generation failed: JSON schema conversion failed: Unrecognized schema: "string"'
+    expect(cleanUpstreamErrorMessage(raw)).toBe(raw)
+  })
+
+  it('strips a leading rule and "While executing" prelude when no Error: line exists', () => {
+    const raw =
+      '------------\nWhile executing X at line 1:\n bad stuff here\n         ^\nsomething broke'
+    expect(cleanUpstreamErrorMessage(raw)).toBe('something broke')
+  })
+
+  it('returns non-string inputs as-is', () => {
+    // @ts-expect-error intentional misuse
+    expect(cleanUpstreamErrorMessage(null)).toBe(null)
+  })
 })

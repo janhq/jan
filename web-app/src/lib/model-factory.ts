@@ -182,10 +182,47 @@ function filterParameters(
 }
 
 /**
+ * Strip Jinja-stack-trace noise and other diagnostic prelude from upstream
+ * error messages so the UI shows the human-readable cause. Examples:
+ *
+ *   "\n------------\nWhile executing CallExpression at line 1, column 226 in
+ *    source:\n...op.index0 % 2 == 0) %}{{ raise_exception('Conversation roles
+ *    must alternate user...\n      ^\nError: Jinja Exception: Conversation
+ *    roles must alternate user/assistant/user/assistant/..."
+ *
+ * becomes:
+ *
+ *   "Jinja Exception: Conversation roles must alternate user/assistant/..."
+ *
+ * Pure / no I/O so it can be exercised from tests.
+ */
+export function cleanUpstreamErrorMessage(raw: string): string {
+  if (typeof raw !== 'string') return raw
+  let msg = raw.replace(/\r\n/g, '\n').trim()
+
+  // Prefer the final `Error: <…>` line if present — llama.cpp's Jinja runtime
+  // emits "Error: Jinja Exception: <root cause>" after a multi-line trace.
+  const errorLineMatch = msg.match(/(?:^|\n)\s*Error:\s*(.+?)(?:\n|$)/)
+  if (errorLineMatch && errorLineMatch[1]) {
+    return errorLineMatch[1].trim()
+  }
+
+  // Otherwise drop a leading `------------` rule and "While executing …"
+  // prelude that adds noise without explaining the failure.
+  msg = msg.replace(/^-{3,}\s*\n?/, '').trim()
+  msg = msg.replace(/^While executing[\s\S]*?\n\s*\^\s*\n?/, '').trim()
+  return msg
+}
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
  * - client-side-only keys (e.g. `ctx_len`) are stripped
+ *
+ * Also rewrites OpenAI-shape error bodies on non-OK responses so the inner
+ * `error.message` is cleaned of stack-trace noise before the AI SDK surfaces
+ * it to the UI.
  */
 function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
@@ -214,7 +251,32 @@ function createCustomFetch(
       init = { ...init, body: JSON.stringify(merged) }
     }
 
-    return baseFetch(input, init)
+    const res = await baseFetch(input, init)
+    if (res.ok) return res
+
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('json')) return res
+    try {
+      const text = await res.clone().text()
+      const parsed = JSON.parse(text) as {
+        error?: { message?: unknown }
+      }
+      const innerMessage = parsed?.error?.message
+      if (typeof innerMessage !== 'string') return res
+      const cleaned = cleanUpstreamErrorMessage(innerMessage)
+      if (cleaned === innerMessage) return res
+      const nextBody = JSON.stringify({
+        ...parsed,
+        error: { ...parsed.error, message: cleaned },
+      })
+      return new Response(nextBody, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      })
+    } catch {
+      return res
+    }
   }
 }
 
