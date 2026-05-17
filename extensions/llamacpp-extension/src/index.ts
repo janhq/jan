@@ -116,6 +116,8 @@ async function findLlamaServerDir(
   rootDir: string,
   serverName: string
 ): Promise<string | null> {
+  // Note: fs.readdirSync returns absolute child paths (see
+  // src-tauri/src/core/filesystem/commands.rs::readdir_sync), not basenames.
   const queue: string[] = [rootDir]
   while (queue.length > 0) {
     const current = queue.shift() as string
@@ -125,23 +127,20 @@ async function findLlamaServerDir(
     } catch {
       continue
     }
-    if (entries.includes(serverName)) {
-      const candidate = await joinPath([current, serverName])
-      const stat = await fs.fileStat(candidate)
-      if (stat && !stat.isDirectory) {
-        return current
-      }
-    }
-    for (const entry of entries) {
-      const childPath = await joinPath([current, entry])
+    for (const entryPath of entries) {
       let stat
       try {
-        stat = await fs.fileStat(childPath)
+        stat = await fs.fileStat(entryPath)
       } catch {
         continue
       }
-      if (stat?.isDirectory) {
-        queue.push(childPath)
+      if (!stat) continue
+      const entryName = await basename(entryPath)
+      if (!stat.isDirectory && entryName === serverName) {
+        return current
+      }
+      if (stat.isDirectory) {
+        queue.push(entryPath)
       }
     }
   }
@@ -1661,11 +1660,14 @@ export default class llamacpp_extension extends AIEngine {
       if (foundDir !== expectedBinDir) {
         try {
           await fs.mkdir(expectedBinDir)
+          // readdirSync returns absolute paths; move each into expectedBinDir
+          // by basename.
           const entries = await fs.readdirSync(foundDir)
-          for (const entry of entries) {
+          for (const entryPath of entries) {
+            const entryName = await basename(entryPath)
             await fs.mv(
-              await joinPath([foundDir, entry]),
-              await joinPath([expectedBinDir, entry])
+              entryPath,
+              await joinPath([expectedBinDir, entryName])
             )
           }
         } catch (e) {
