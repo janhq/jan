@@ -317,6 +317,8 @@ struct MLXHTTPServer {
             tools: tools
         )
 
+        let startInReasoning = await modelRunner.currentInjectsThinkingOpener()
+
         // Use makeStream so we can create the task externally and register it for cancellation
         let (responseStream, continuation) = AsyncStream<ByteBuffer>.makeStream()
         let activeGenerations = self.activeGenerations
@@ -347,7 +349,7 @@ struct MLXHTTPServer {
                 log("[mlx] Warning: Failed to encode initial chunk")
             }
 
-            var splitter = ReasoningSplitter()
+            var splitter = ReasoningSplitter(startInReasoning: startInReasoning)
 
             func emitDelta(content: String?, reasoning: String?) {
                 if content == nil && reasoning == nil { return }

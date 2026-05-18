@@ -28,6 +28,13 @@ struct ReasoningSplitter {
     private static let closeTag = "</think>"
     private static let resolveWindow = 32
 
+    init(startInReasoning: Bool = false) {
+        if startInReasoning {
+            self.resolved = true
+            self.inReasoning = true
+        }
+    }
+
     /// Feed a streamed token. Returns whatever can now be safely emitted.
     mutating func feed(_ token: String) -> (content: String?, reasoning: String?) {
         buffer += token

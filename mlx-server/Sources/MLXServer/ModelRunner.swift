@@ -7,6 +7,13 @@ import MLXVLM
 /// Manages loading and running inference with MLX models
 actor ModelRunner {
     private var model: ModelContext?
+    /// True when the loaded model's chat template injects `<think>` into the
+    /// assistant turn opening (Qwen3-family, etc.). In that case the streamed
+    /// output begins inside the reasoning block — only `</think>` is emitted —
+    /// and the streaming splitter must start in reasoning mode.
+    private(set) var injectsThinkingOpener: Bool = false
+
+    func currentInjectsThinkingOpener() -> Bool { injectsThinkingOpener }
 
     /// Load a model from the given path
     /// Supports both local directories and HuggingFace model IDs
@@ -46,7 +53,33 @@ actor ModelRunner {
                 from: dir,
                 using: SwiftTransformersTokenizerLoader()
             )
+            self.injectsThinkingOpener = Self.detectInjectsThinkingOpener(in: dir)
+            log("[mlx] injectsThinkingOpener=\(injectsThinkingOpener)")
         }
+    }
+
+    /// Inspect `tokenizer_config.json` to see if the chat template injects
+    /// a `<think>` opener into the assistant turn. Heuristic check — looks
+    /// for the literal `<think>` substring in the template body.
+    private nonisolated static func detectInjectsThinkingOpener(in modelDir: URL) -> Bool {
+        let configURL = modelDir.appendingPathComponent("tokenizer_config.json")
+        guard
+            let data = try? Data(contentsOf: configURL),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+
+        // chat_template may be a string or an array of { name, template } entries.
+        if let template = json["chat_template"] as? String {
+            return template.contains("<think>")
+        }
+        if let entries = json["chat_template"] as? [[String: Any]] {
+            for entry in entries {
+                if let body = entry["template"] as? String, body.contains("<think>") {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Parse ChatMessages into system instructions, conversation history, and the current user message
