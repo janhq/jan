@@ -1,0 +1,12 @@
+{
+  "title": "Richiesta chiamata strumento",
+  "description": "L'assistente vuole utilizzare lo strumento: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Avviso di sicurezza:</strong> strumenti dannosi o il contenuto della conversazione potrebbero ingannare l'assistente spingendolo a compiere azioni nocive. Verifica attentamente ogni chiamata prima di approvarla.",
+  "deny": "Rifiuta",
+  "allowOnce": "Consenti una volta",
+  "alwaysAllow": "Consenti nella conversazione",
+  "permissions": "Autorizzazioni",
+  "approve": "Approva",
+  "reject": "Rifiuta",
+  "parameters": "Parametri dello strumento"
+}
