@@ -656,9 +656,6 @@ export default class mlx_extension extends AIEngine {
         }
       )
 
-      // Emit download success event so DownloadManagement clears the download state
-      events.emit('onFileDownloadSuccess', { modelId, downloadType: 'Model' })
-
       // Detect capabilities after download
       const isVision = await this.isVisionSupported(localPath)
 
@@ -695,6 +692,11 @@ export default class mlx_extension extends AIEngine {
         modelPath: modelConfig.model_path,
         size_bytes: modelConfig.size_bytes,
         capabilities: capabilities,
+      })
+
+      events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+        modelId,
+        downloadType: 'Model',
       })
     } else {
       // Local folder - use absolute folder path directly
