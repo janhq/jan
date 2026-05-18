@@ -281,14 +281,6 @@ export const MessageItem = memo(
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
                 isAnimating={isAnimating}
-                onApplyContentEdit={
-                  onEdit && !hideActions
-                    ? (newContent) => onEdit(message.id, newContent)
-                    : undefined
-                }
-                paragraphEditDisabled={
-                  hideActions || (isStreaming && isLastPart)
-                }
               />
             </>
           )}

@@ -2,7 +2,6 @@
 import { Components } from 'react-markdown'
 import { memo, useMemo } from 'react'
 import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
-import { ParagraphAiEditLayer } from '@/components/ParagraphAiEditLayer'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
@@ -25,10 +24,6 @@ interface MarkdownProps {
   isStreaming?: boolean
   messageId?: string
   isAnimating?: boolean
-  /** When set, user can select text and use "Edit with AI" on assistant messages. */
-  onApplyContentEdit?: (newMarkdown: string) => void
-  /** Disable paragraph AI edit (e.g. while streaming). */
-  paragraphEditDisabled?: boolean
 }
 
 // Cache for normalized LaTeX content
@@ -98,8 +93,6 @@ function RenderMarkdownComponent({
   components,
   messageId,
   isAnimating,
-  onApplyContentEdit,
-  paragraphEditDisabled,
 }: MarkdownProps) {
 
   // Memoize the normalized content to avoid reprocessing on every render
@@ -122,8 +115,17 @@ function RenderMarkdownComponent({
     return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
   }, [components])
 
-  const streamdownEl = (
-    <Streamdown
+  // Render the markdown content
+  return (
+    <div
+      dir="auto"
+      className={cn(
+        'markdown wrap-break-word select-text',
+        isUser && 'is-user',
+        className
+      )}
+    >
+      <Streamdown
         animate={isAnimating ?? true}
         animationDuration={500}
         linkSafety={{
@@ -161,39 +163,10 @@ function RenderMarkdownComponent({
       >
         {normalizedContent}
       </Streamdown>
-  )
-
-  // Render the markdown content
-  return (
-    <div
-      dir="auto"
-      className={cn(
-        'markdown wrap-break-word select-text',
-        isUser && 'is-user',
-        className
-      )}
-    >
-      {onApplyContentEdit ? (
-        <ParagraphAiEditLayer
-          sourceMarkdown={normalizedContent}
-          disabled={paragraphEditDisabled}
-          onApply={onApplyContentEdit}
-        >
-          {streamdownEl}
-        </ParagraphAiEditLayer>
-      ) : (
-        streamdownEl
-      )}
     </div>
   )
 }
 export const RenderMarkdown = memo(
   RenderMarkdownComponent,
-  (prevProps, nextProps) =>
-    prevProps.content === nextProps.content &&
-    prevProps.isStreaming === nextProps.isStreaming &&
-    prevProps.isAnimating === nextProps.isAnimating &&
-    prevProps.messageId === nextProps.messageId &&
-    prevProps.onApplyContentEdit === nextProps.onApplyContentEdit &&
-    prevProps.paragraphEditDisabled === nextProps.paragraphEditDisabled
+  (prevProps, nextProps) => prevProps.content === nextProps.content
 )
