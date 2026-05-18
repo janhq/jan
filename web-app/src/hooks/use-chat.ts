@@ -13,6 +13,8 @@ import {
   type LanguageModelUsage,
 } from 'ai'
 import { useEffect, useMemo, useRef, useCallback } from 'react'
+import { listen } from '@tauri-apps/api/event'
+import { ttftEnabled, ttftMarkFromRust } from '@/lib/ttft-timing'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -120,11 +122,30 @@ export function useChat(
   // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
   useEffect(() => {
     if (transportRef.current) {
-      // Use forceRefreshTools to update the transport's tool cache
-      // This ensures the transport has the latest tools when MCP server status changes
-      transportRef.current.refreshTools()
+      transportRef.current.invalidateToolsCache()
+      void transportRef.current.refreshTools(true)
     }
   }, [mcpToolNames, ragToolNames])
+
+  useEffect(() => {
+    if (!ttftEnabled()) return
+    const unlisten = listen<{ marker: string; ms: number }>(
+      'ttft-timing',
+      (event) => {
+        const marker = event.payload.marker
+        if (
+          marker === 'zetaProxyIn' ||
+          marker === 'zetaUpstreamHeaders' ||
+          marker === 'etaFirstToken'
+        ) {
+          ttftMarkFromRust(marker, event.payload.ms)
+        }
+      }
+    )
+    return () => {
+      void unlisten.then((fn) => fn())
+    }
+  }, [])
 
   const setContinueFromContent = useCallback((content: string) => {
     transportRef.current?.setContinueFromContent(content)

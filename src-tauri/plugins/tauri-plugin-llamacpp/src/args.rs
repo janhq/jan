@@ -503,7 +503,7 @@ mod tests {
             device: String::new(),
             split_mode: "layer".to_string(),
             main_gpu: 0,
-            flash_attn: "auto".to_string(),
+            flash_attn: "on".to_string(),
             cont_batching: false,
             no_mmap: false,
             mlock: false,

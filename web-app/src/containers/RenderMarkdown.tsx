@@ -1,7 +1,8 @@
 
 import { Components } from 'react-markdown'
-import { memo, useMemo } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
+import { ttftEnabled, ttftMark, ttftReport } from '@/lib/ttft-timing'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
@@ -93,10 +94,36 @@ function RenderMarkdownComponent({
   isAnimating
 }: MarkdownProps) {
 
-  // Memoize the normalized content to avoid reprocessing on every render
   const normalizedContent = useMemo(() => normalizeLatex(content), [content])
+  const thetaMarked = useRef(false)
 
-  // Render the markdown content
+  useEffect(() => {
+    thetaMarked.current = false
+  }, [messageId])
+
+  useEffect(() => {
+    if (content.length > 0 && !thetaMarked.current && ttftEnabled()) {
+      thetaMarked.current = true
+      ttftMark('thetaFirstRender')
+      ttftReport('first-visible-render')
+    }
+  }, [content, messageId])
+
+  if (content.length > 0 && content.length < 32) {
+    return (
+      <div
+        dir="auto"
+        className={cn(
+          'markdown wrap-break-word select-text whitespace-pre-wrap',
+          isUser && 'is-user',
+          className
+        )}
+      >
+        {content}
+      </div>
+    )
+  }
+
   return (
     <div
       dir="auto"

@@ -29,10 +29,12 @@ const stripSpecialTokensTransform = () =>
     transform(chunk, controller) {
       if (chunk.type === 'text-delta') {
         const cleaned = chunk.text.replace(SPECIAL_TOKEN_REGEX, '')
-        /// Drop deltas that consisted *only* of a special token —
-        /// emitting empty text-delta chunks would still flicker the
-        /// streaming cursor for a frame.
-        if (cleaned.length === 0) return
+        if (cleaned.length === 0) {
+          /// Emit a whitespace delta so the UI shows streaming state while
+          /// reasoning / special-token-only prefixes are stripped.
+          controller.enqueue({ ...chunk, text: ' ' })
+          return
+        }
         controller.enqueue({ ...chunk, text: cleaned })
         return
       }
@@ -47,8 +49,10 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { ttftMark } from '@/lib/ttft-timing'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -132,6 +136,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private serviceHub: ServiceHub | null
   private threadId?: string
   private continueFromContent: string | null = null
+  private toolsCacheKey = ''
+  private toolsCacheValid = false
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -173,35 +179,75 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
-  async refreshTools() {
+  invalidateToolsCache() {
+    this.toolsCacheValid = false
+  }
+
+  private buildToolsCacheKey(
+    disabledToolKeys: string[],
+    hasDocuments: boolean,
+    ragFeatureAvailable: boolean,
+    modelSupportsTools: boolean
+  ): string {
+    const mcp = [...useAppState.getState().mcpToolNames].sort().join(',')
+    const rag = [...useAppState.getState().ragToolNames].sort().join(',')
+    return [
+      this.threadId ?? '',
+      hasDocuments,
+      ragFeatureAvailable,
+      modelSupportsTools,
+      disabledToolKeys.join(','),
+      mcp,
+      rag,
+    ].join('|')
+  }
+
+  async refreshTools(force = false) {
     if (!this.serviceHub) {
       this.tools = {}
+      this.toolsCacheValid = false
       return
     }
 
-    const toolsRecord: Record<string, Tool> = {}
-
-    // Get disabled tools for this thread
     const getDisabledToolsForThread =
       useToolAvailable.getState().getDisabledToolsForThread
     const disabledToolKeys = this.threadId
       ? getDisabledToolsForThread(this.threadId)
       : useToolAvailable.getState().getDefaultDisabledTools()
-    // Helper to check if a tool is disabled
-    const isToolDisabled = (serverName: string, toolName: string): boolean => {
-      const toolKey = `${serverName}::${toolName}`
-      return disabledToolKeys.includes(toolKey)
-    }
 
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
-    // Only load tools if model supports them
-    if (modelSupportsTools) {
-      let hasDocuments = this.hasDocuments
-      let ragFeatureAvailable = this.ragFeatureAvailable
+    let hasDocuments = this.hasDocuments
+    let ragFeatureAvailable = this.ragFeatureAvailable
 
+    if (!hasDocuments && this.threadId) {
+      const thread = useThreads.getState().threads[this.threadId]
+      hasDocuments = Boolean(thread?.metadata?.hasDocuments)
+    }
+    if (!ragFeatureAvailable) {
+      ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
+    }
+
+    const cacheKey = this.buildToolsCacheKey(
+      disabledToolKeys,
+      hasDocuments,
+      ragFeatureAvailable,
+      modelSupportsTools
+    )
+    if (!force && this.toolsCacheValid && cacheKey === this.toolsCacheKey) {
+      return
+    }
+
+    const toolsRecord: Record<string, Tool> = {}
+
+    const isToolDisabled = (serverName: string, toolName: string): boolean => {
+      const toolKey = `${serverName}::${toolName}`
+      return disabledToolKeys.includes(toolKey)
+    }
+
+    if (modelSupportsTools) {
       if (!hasDocuments && this.threadId) {
         const thread = useThreads.getState().threads[this.threadId]
         const hasThreadDocuments = Boolean(thread?.metadata?.hasDocuments)
@@ -255,9 +301,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       }
 
-      // Load MCP tools (they don't depend on documents)
+      // Read MCP tools from the global store (populated once at app
+      // startup by useTools and refreshed on MCP_UPDATE events). Avoids a
+      // cold ~1.8s round-trip into the MCP service on every new thread's
+      // first sendMessages call.
       try {
-        const mcpTools = await this.serviceHub.mcp().getTools()
+        const mcpTools = useAppState.getState().tools
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
           // Convert MCP tools to AI SDK format, filtering out disabled tools
           // MCP tools added after RAG tools, so they take precedence in case of name conflicts
@@ -279,7 +328,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
-    this.tools = toolsRecord
+    const sortedEntries = Object.entries(toolsRecord).sort(([a], [b]) =>
+      a.localeCompare(b)
+    )
+    this.tools = Object.fromEntries(sortedEntries)
+    this.toolsCacheKey = cacheKey
+    this.toolsCacheValid = true
   }
 
   /**
@@ -307,8 +361,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-    // Ensure tools updated before sending messages
+    ttftMark('gammaStart')
     await this.refreshTools()
+    ttftMark('gammaEnd')
 
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
@@ -335,15 +390,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // The override is kept SEPARATE from `inferenceParams` so local-only
         // fields (top_k, repeat_penalty, …) never leak into cloud-provider
         // request bodies. See ModelFactory for the fetch wiring.
-        const disableReasoning = useGeneralSetting.getState().disableReasoning
+        const { disableReasoning, reasoningBudget } =
+          useGeneralSetting.getState()
         const reasoningOverride: Record<string, unknown> = {}
-        if (disableReasoning) {
+        const reasoningBudgetTokens: Record<
+          typeof reasoningBudget,
+          number | undefined
+        > = {
+          off: 0,
+          low: 256,
+          medium: 1024,
+          high: 4096,
+          unlimited: undefined,
+        }
+        if (disableReasoning || reasoningBudget === 'off') {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'mlx':
               reasoningOverride.chat_template_kwargs = {
                 enable_thinking: false,
               }
+              reasoningOverride.reasoning_budget = 0
               break
             case 'anthropic':
               reasoningOverride.thinking = { type: 'disabled' }
@@ -367,17 +434,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 enable_thinking: false,
               }
           }
+        } else if (
+          (effectiveProviderName === 'llamacpp' ||
+            effectiveProviderName === 'mlx') &&
+          reasoningBudgetTokens[reasoningBudget] !== undefined
+        ) {
+          reasoningOverride.reasoning_budget =
+            reasoningBudgetTokens[reasoningBudget]
         }
         const hasOverride = Object.keys(reasoningOverride).length > 0
 
-        // Create the model using the factory
-        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
+        ttftMark('deltaStart')
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
           inferenceParams ?? {},
           hasOverride ? reasoningOverride : undefined
         )
+        ttftMark('deltaEnd')
       } catch (error) {
         console.error('Failed to create model:', error)
         throw new Error(
@@ -619,25 +693,31 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           : []
         // Tool messages have content as array of ToolResultPart
         if (inlineFileContents.length > 0) {
-          const buildInlineText = (base: string) => {
-            if (!inlineFileContents.length) return base
-            const formatted = inlineFileContents
+          if (message.parts.length > 0) {
+            const inlineBlock = inlineFileContents
               .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
               .join('\n\n')
-            return base ? `${base}\n\n${formatted}` : formatted
-          }
-
-          if (message.parts.length > 0) {
-            const parts = message.parts.map((part) => {
+            const lastTextIdx = message.parts.reduce(
+              (acc, part, index) => (part.type === 'text' ? index : acc),
+              -1
+            )
+            if (lastTextIdx >= 0) {
+              const parts = [...message.parts]
+              const part = parts[lastTextIdx]
               if (part.type === 'text') {
-                return {
+                const base = part.text ?? ''
+                parts[lastTextIdx] = {
                   type: 'text' as const,
-                  text: buildInlineText(part.text ?? ''),
+                  text: base ? `${base}\n\n${inlineBlock}` : inlineBlock,
                 }
               }
-              return part
-            })
-            message.parts = parts
+              message.parts = parts
+            } else {
+              message.parts = [
+                ...message.parts,
+                { type: 'text' as const, text: inlineBlock },
+              ]
+            }
           }
         }
       }

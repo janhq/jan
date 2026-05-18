@@ -280,8 +280,15 @@ function createLocalStreamingFetch(
     let notifyFirst: (() => void) | null = null
 
     const channel = new Channel<{ data: string }>()
+    let firstChunkMarked = false
     channel.onmessage = ({ data }: { data: string }) => {
       chunks.push(data)
+      if (!firstChunkMarked) {
+        firstChunkMarked = true
+        void import('@/lib/ttft-timing').then(({ ttftMark }) =>
+          ttftMark('epsilonFirstChunk')
+        )
+      }
       notifyFirst?.()
       notifyFirst = null
       notifyPull?.()
@@ -295,6 +302,9 @@ function createLocalStreamingFetch(
       notifyPull?.()
       notifyPull = null
     }
+
+    const { ttftMark } = await import('@/lib/ttft-timing')
+    ttftMark('epsilonInvoke')
 
     const cmdPromise = invoke<number>('stream_local_http', {
       url: urlStr,
@@ -391,6 +401,31 @@ function getLocalApiServerBaseURL(): {
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
 export class ModelFactory {
+  private static fmAvailabilityCache: { status: string; at: number } | null =
+    null
+  private static readonly FM_AVAILABILITY_TTL_MS = 30 * 60 * 1000
+
+  static invalidateFoundationModelsAvailabilityCache(): void {
+    ModelFactory.fmAvailabilityCache = null
+  }
+
+  static async getFoundationModelsAvailability(): Promise<string> {
+    const now = Date.now()
+    if (
+      ModelFactory.fmAvailabilityCache &&
+      now - ModelFactory.fmAvailabilityCache.at <
+        ModelFactory.FM_AVAILABILITY_TTL_MS
+    ) {
+      return ModelFactory.fmAvailabilityCache.status
+    }
+    const status = await invoke<string>(
+      'plugin:foundation-models|check_foundation_models_availability',
+      {}
+    )
+    ModelFactory.fmAvailabilityCache = { status, at: now }
+    return status
+  }
+
   /**
    * Create a language model instance based on the provider configuration
    */
@@ -604,10 +639,7 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
-    const availability = await invoke<string>(
-      'plugin:foundation-models|check_foundation_models_availability',
-      {}
-    )
+    const availability = await ModelFactory.getFoundationModelsAvailability()
 
     if (availability !== 'available') {
       const messages: Record<string, string> = {

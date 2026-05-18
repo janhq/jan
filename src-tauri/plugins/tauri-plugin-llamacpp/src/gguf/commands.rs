@@ -121,7 +121,10 @@ pub async fn is_model_supported(
     } else {
         usable_vram
     };
-    log::info!("System RAM: {} bytes", &total_system_memory);
+    log::info!(
+        "System RAM (unified memory mode): {} bytes (folded into Total VRAM when GPUs empty)",
+        &total_system_memory
+    );
     log::info!("Total VRAM: {} bytes", &total_vram);
     log::info!("Usable total memory: {} bytes", &usable_total_memory);
     log::info!("Usable VRAM: {} bytes", &usable_vram);

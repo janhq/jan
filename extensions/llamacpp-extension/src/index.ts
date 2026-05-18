@@ -3339,8 +3339,30 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private sanitizeMessagesForApplyTemplate(
+    messages: chatCompletionRequestMessage[]
+  ): chatCompletionRequestMessage[] {
+    return messages.filter((msg) => {
+      if (!msg?.role) return false
+      if (typeof msg.content === 'string') {
+        return msg.content.trim().length > 0
+      }
+      if (Array.isArray(msg.content)) {
+        return msg.content.length > 0
+      }
+      return false
+    })
+  }
+
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
     if (!opts.messages || opts.messages.length === 0) {
+      return 0
+    }
+
+    const messagesForTemplate = this.sanitizeMessagesForApplyTemplate(
+      opts.messages
+    )
+    if (messagesForTemplate.length === 0) {
       return 0
     }
 
@@ -3381,7 +3403,8 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const tokenizeRequest = {
-      messages: opts.messages,
+      messages: messagesForTemplate,
+      tools: [],
       chat_template_kwargs: opts.chat_template_kwargs || {
         enable_thinking: false,
       },

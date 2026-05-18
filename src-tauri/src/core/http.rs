@@ -1,6 +1,35 @@
 use futures_util::StreamExt;
 use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::Duration;
 use tauri::ipc::Channel;
+
+fn shared_stream_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(600))
+            .timeout(Duration::from_secs(600))
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(30))
+            .tcp_keepalive(Some(Duration::from_secs(30)))
+            .no_proxy()
+            .build()
+            .expect("stream HTTP client")
+    })
+}
+
+fn shared_post_client(timeout_secs: u64) -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(timeout_secs))
+        .timeout(Duration::from_secs(timeout_secs))
+        .pool_max_idle_per_host(10)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .tcp_keepalive(Some(Duration::from_secs(30)))
+        .no_proxy()
+        .build()
+        .expect("post HTTP client")
+}
 
 #[derive(serde::Serialize, Clone)]
 pub struct HttpStreamChunk {
@@ -17,12 +46,7 @@ pub async fn post_local_http(
     body: String,
     timeout_secs: u64,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(timeout_secs))
-        .timeout(std::time::Duration::from_secs(timeout_secs))
-        .no_proxy()
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    let client = shared_post_client(timeout_secs);
 
     let mut req = client.post(&url);
     for (k, v) in &headers {
@@ -49,14 +73,10 @@ pub async fn stream_local_http(
     url: String,
     headers: HashMap<String, String>,
     body: String,
-    timeout_secs: u64,
+    _timeout_secs: u64,
     on_chunk: Channel<HttpStreamChunk>,
 ) -> Result<u16, String> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(timeout_secs))
-        .no_proxy()
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    let client = shared_stream_client();
 
     let mut req = client.post(&url);
     for (k, v) in &headers {
@@ -64,7 +84,10 @@ pub async fn stream_local_http(
     }
     req = req.body(body);
 
-    let response = req.send().await.map_err(|e| format!("Request failed: {e}"))?;
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
     let status = response.status().as_u16();
 
     if !response.status().is_success() {

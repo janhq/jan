@@ -63,6 +63,54 @@ fn emit_api_request_event<R: Runtime>(app: &AppHandle<R>, event: ApiRequestEvent
     }
 }
 
+const TTFT_TIMING_CHANNEL: &str = "ttft-timing";
+
+#[derive(serde::Serialize, Clone)]
+struct TtftTimingEvent {
+    marker: &'static str,
+    ms: u64,
+}
+
+fn emit_ttft_timing<R: Runtime>(app: &AppHandle<R>, marker: &'static str) {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    if let Err(e) = app.emit(
+        TTFT_TIMING_CHANNEL,
+        TtftTimingEvent { marker, ms },
+    ) {
+        log::debug!("Failed to emit ttft-timing event: {e}");
+    }
+}
+
+fn log_ttft_prefix_dump(json_body: &serde_json::Value) {
+    if std::env::var("ATOMIC_TTFT_PREFIX_DUMP").ok().as_deref() != Some("1") {
+        return;
+    }
+    if let Some(messages) = json_body.get("messages") {
+        let snippet = serde_json::to_string(messages).unwrap_or_default();
+        let end = snippet.len().min(800);
+        log::info!("[ttft-prefix] messages snippet ({}B): {}", end, &snippet[..end]);
+    }
+    if let Some(tools) = json_body.get("tools") {
+        let snippet = serde_json::to_string(tools).unwrap_or_default();
+        let end = snippet.len().min(400);
+        log::info!("[ttft-prefix] tools snippet ({}B): {}", end, &snippet[..end]);
+    }
+}
+
+fn sse_chunk_has_visible_content(chunk: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(chunk);
+    if !text.contains("\"content\"") {
+        return false;
+    }
+    !(text.contains("\"content\":null")
+        || text.contains("\"content\": null")
+        || text.contains("\"content\":\"\"")
+        || text.contains("\"content\": \"\""))
+}
+
 /// Normalises the already prefix-stripped destination path into a closed set
 /// of endpoint labels safe for analytics (never the raw path).
 fn endpoint_from_path(path: &str) -> &'static str {
@@ -1562,6 +1610,8 @@ async fn inner_proxy_request<R: Runtime>(
 
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
+                    emit_ttft_timing(&app_handle, "zetaProxyIn");
+                    log_ttft_prefix_dump(&json_body);
                     state.stream = json_body
                         .get("stream")
                         .and_then(|v| v.as_bool())
@@ -2175,6 +2225,7 @@ async fn inner_proxy_request<R: Runtime>(
 
     match outbound_req_with_body.send().await {
         Ok(response) => {
+            emit_ttft_timing(&app_handle, "zetaUpstreamHeaders");
             let status = response.status();
 
             let is_error = !status.is_success();
@@ -2509,6 +2560,8 @@ async fn inner_proxy_request<R: Runtime>(
 
             let mut stream = response.bytes_stream();
             let (mut sender, body) = hyper::Body::channel();
+            let ttft_app = app_handle.clone();
+            let mut eta_emitted = false;
 
             tokio::spawn(async move {
                 // Regular passthrough - when /messages succeeds directly,
@@ -2516,6 +2569,10 @@ async fn inner_proxy_request<R: Runtime>(
                 while let Some(chunk_result) = stream.next().await {
                     match chunk_result {
                         Ok(chunk) => {
+                            if !eta_emitted && sse_chunk_has_visible_content(&chunk) {
+                                eta_emitted = true;
+                                emit_ttft_timing(&ttft_app, "etaFirstToken");
+                            }
                             if sender.send_data(chunk).await.is_err() {
                                 log::debug!("Client disconnected during streaming");
                                 break;

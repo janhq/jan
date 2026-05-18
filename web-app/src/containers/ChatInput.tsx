@@ -95,6 +95,7 @@ import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
+import { ttftPreBegin } from '@/lib/ttft-timing'
 
 type ChatInputProps = {
   className?: string
@@ -495,6 +496,16 @@ const ChatInput = memo(function ChatInput({
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
 
+      // #region agent log
+      ttftPreBegin('home-submit-click', {
+        isTemporaryChat,
+        hasFiles: files.length > 0,
+        hasDocs: docsSnapshot.length > 0,
+        selectedProvider,
+        selectedModelId: selectedModel?.id,
+      })
+      // #endregion
+
       if (isTemporaryChat) {
         // Stash payload in-memory keyed by the temporary thread id; the thread
         // page consumes it on mount. We avoid sessionStorage because base64
@@ -540,6 +551,9 @@ const ChatInput = memo(function ChatInput({
           ? assistants.find((a) => a.id === projectAssistantId)
           : selectedAssistant
 
+        // #region agent log
+        ttftPreBegin('before-createThread')
+        // #endregion
         const newThread = await createThread(
           {
             id: selectedModel?.id ?? defaultModel(selectedProvider),
@@ -549,6 +563,9 @@ const ChatInput = memo(function ChatInput({
           assistant,
           projectMetadata
         )
+        // #region agent log
+        ttftPreBegin('after-createThread', { newThreadId: newThread.id })
+        // #endregion
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
@@ -610,6 +627,9 @@ const ChatInput = memo(function ChatInput({
             .set(newThread.id, optimisticBubble)
         }
 
+        // #region agent log
+        ttftPreBegin('before-navigate', { newThreadId: newThread.id })
+        // #endregion
         router.navigate({
           to: route.threadsDetail,
           params: { threadId: newThread.id },
