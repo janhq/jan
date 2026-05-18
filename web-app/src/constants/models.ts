@@ -104,7 +104,7 @@ export const providerModels = {
     supportsCompletion: true,
     supportsStreaming: true,
     supportsJSON: true,
-    supportsImages: false,
+    supportsImages: [],
     supportsToolCalls: true,
     supportsN: true,
   },

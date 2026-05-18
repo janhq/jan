@@ -24,8 +24,6 @@ import { Settings, Plus } from 'lucide-react'
 
 # Perplexity
 
-## Integrate Perplexity with Jan
-
 [Perplexity](https://www.perplexity.ai/) provides an [Agent API](https://docs.perplexity.ai/docs/agent/quickstart)
 that returns grounded, citation-backed answers from the live web. The Agent API is OpenAI-compatible
 (it speaks both the Chat Completions and Responses API formats), so Jan can talk to it through the same
@@ -70,9 +68,9 @@ Jan calls Perplexity through its OpenAI-compatible interface. The Agent API endp
 (`/v1/chat/completions`) are both reachable from the configured base URL.
 
 **Model Field Settings:**
-- Specify a model ID exactly as it appears in [Perplexity's model directory](https://docs.perplexity.ai/docs/agent/models)
+- Specify a model ID exactly as it appears in [Perplexity's model directory](https://docs.perplexity.ai/models/model-cards)
 - Routed third-party models are also available through the Agent API (e.g. `openai/gpt-5.4`,
-  `anthropic/claude-sonnet-4-6`) — see [Agent API models](https://docs.perplexity.ai/docs/agent/models)
+  `anthropic/claude-sonnet-4-6`) — see [Agent API models](https://docs.perplexity.ai/models/model-cards)
   for the complete and up-to-date list.
 
 ## Using the Search API
@@ -108,7 +106,7 @@ Common issues and solutions:
 - Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
 
 **3. Model Unavailable**
-- Confirm the model is currently listed under [Agent API models](https://docs.perplexity.ai/docs/agent/models)
+- Confirm the model is currently listed under [Agent API models](https://docs.perplexity.ai/models/model-cards)
 - Verify the model ID format matches Perplexity's directory exactly
 
 Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the

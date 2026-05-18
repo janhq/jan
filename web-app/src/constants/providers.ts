@@ -191,7 +191,7 @@ export const predefinedProviders = [
     active: true,
     api_key: '',
     base_url: 'https://api.perplexity.ai',
-    explore_models_url: 'https://docs.perplexity.ai/docs/agent/models',
+    explore_models_url: 'https://docs.perplexity.ai/models/model-cards',
     provider: 'perplexity',
     settings: [
       {
