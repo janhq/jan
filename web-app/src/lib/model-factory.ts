@@ -54,6 +54,7 @@ import {
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
+import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
@@ -315,6 +316,45 @@ export function createCustomFetch(
   }
 }
 
+/**
+ * Drop `reasoning_content` / `reasoning` from assistant turns in the outgoing
+ * request body. The Vercel AI SDK's openai-compatible model attaches
+ * `reasoning_content` whenever a prior assistant message had a reasoning part
+ * (see @ai-sdk/openai-compatible dist/index.js:260). Groq's strict validator
+ * rejects this with `property 'reasoning_content' is unsupported`.
+ */
+export function stripAssistantReasoningInBody(
+  body: Record<string, unknown>
+): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; reasoning_content?: unknown; reasoning?: unknown }
+    if (m.role !== 'assistant') continue
+    if ('reasoning_content' in m) delete m.reasoning_content
+    if ('reasoning' in m) delete m.reasoning
+  }
+}
+
+/** Wraps `inner` to strip reasoning fields from assistant messages before send. */
+function withAssistantReasoningStripped(
+  inner: typeof globalThis.fetch
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    if ((init?.method === 'POST' || !init?.method) && init?.body) {
+      try {
+        const body = JSON.parse(init.body as string)
+        stripAssistantReasoningInBody(body)
+        init = { ...init, body: JSON.stringify(body) }
+      } catch {
+        // non-JSON body; fall through
+      }
+    }
+    return inner(input, init)
+  }
+}
+
 // Rewrites any sentinel-bearing text content (planted by
 // CustomChatTransport.encodeAudioAttachments) back into OpenAI `input_audio`
 // content parts. Mutates `body.messages` in place.
@@ -467,12 +507,14 @@ export class ModelFactory {
       case 'together':
       case 'fireworks':
       case 'deepseek':
-      case 'mistral':
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
         return this.createOpenAICompatibleModel(modelId, provider)
+
+      case 'mistral':
+        return this.createMistralModel(modelId, provider, parameters)
 
       case 'xai':
         return this.createXaiModel(modelId, provider, parameters)
@@ -722,6 +764,45 @@ export class ModelFactory {
   }
 
   /**
+   * Create a Mistral model using the official AI SDK. Needed for magistral-*,
+   * which streams `delta.content` as an array of typed parts (thinking + text);
+   * the generic openai-compatible schema rejects this with a Zod
+   * "expected string, received array" error.
+   */
+  private static createMistralModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
+    const mistral = createMistral({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return mistral(modelId)
+  }
+
+  /**
    * Create an XAI (Grok) model using the official AI SDK
    */
   private static createXaiModel(
@@ -816,7 +897,7 @@ export class ModelFactory {
       headers['Authorization'] = `Bearer ${keyChain[0]}`
     }
 
-    const fetchImpl =
+    let fetchImpl: typeof globalThis.fetch =
       keyChain.length > 1
         ? createApiKeyRotatingFetch(
             getRuntimeFetch(),
@@ -825,6 +906,10 @@ export class ModelFactory {
             'authorization-bearer'
           )
         : createCustomFetch(getRuntimeFetch(), parameters)
+
+    if (provider.provider === 'groq') {
+      fetchImpl = withAssistantReasoningStripped(fetchImpl)
+    }
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,

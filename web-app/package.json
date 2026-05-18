@@ -14,6 +14,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
     "@ai-sdk/google": "^3.0.0",
+    "@ai-sdk/mistral": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
     "@ai-sdk/openai-compatible": "^2.0.0",
     "@ai-sdk/react": "^3.0.0",

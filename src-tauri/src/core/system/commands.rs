@@ -451,7 +451,14 @@ pub struct CliInstallStatus {
     pub path: Option<String>,
 }
 
-/// Check if the `jan` CLI binary is accessible on PATH.
+/// Check if the `jan` CLI binary is accessible on PATH, or — failing that —
+/// at one of the known install destinations.
+///
+/// `which`/`where` only sees what the Tauri process's PATH sees. Linux GUI
+/// launches typically inherit a minimal PATH (no `~/.local/bin`), and on
+/// Windows the registry PATH update from `add_to_path_windows` doesn't apply
+/// to the already-running process. Without the fallback probe, a successful
+/// install reports `installed: false` after the next remount of Settings.
 #[tauri::command]
 pub async fn check_jan_cli_installed() -> CliInstallStatus {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
@@ -464,19 +471,16 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    match tokio::task::spawn_blocking(move || cmd.output()).await {
+    let path_from_which = match tokio::task::spawn_blocking(move || cmd.output()).await {
         Ok(Ok(out)) if out.status.success() => {
             let raw = String::from_utf8_lossy(&out.stdout);
             #[cfg(windows)]
             let path = {
-                // `where` returns one path per line; pick the first that isn't a
-                // dev-build artifact (i.e. skip paths containing \target\)
                 raw.lines()
                     .map(str::trim)
                     .filter(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
                     .next()
                     .map(str::to_string)
-                    // fall back to the raw first line if every path looks like a build dir
                     .or_else(|| {
                         raw.lines()
                             .map(str::trim)
@@ -485,17 +489,61 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
                     })
             };
             #[cfg(not(windows))]
-            let path = Some(raw.trim().to_string());
-            CliInstallStatus {
-                installed: path.is_some(),
-                path,
-            }
+            let path = {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            };
+            path
         }
-        _ => CliInstallStatus {
-            installed: false,
-            path: None,
-        },
+        _ => None,
+    };
+
+    if let Some(p) = path_from_which {
+        return CliInstallStatus {
+            installed: true,
+            path: Some(p),
+        };
     }
+
+    // Fall back to probing the destinations `install_jan_cli_sync` writes to.
+    for candidate in jan_cli_install_candidates() {
+        if candidate.exists() {
+            return CliInstallStatus {
+                installed: true,
+                path: Some(candidate.to_string_lossy().into_owned()),
+            };
+        }
+    }
+
+    CliInstallStatus {
+        installed: false,
+        path: None,
+    }
+}
+
+/// Paths where `install_jan_cli_sync` may have placed the `jan` binary.
+fn jan_cli_install_candidates() -> Vec<PathBuf> {
+    let bin = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let mut out: Vec<PathBuf> = Vec::new();
+
+    #[cfg(unix)]
+    {
+        out.push(PathBuf::from("/usr/local/bin").join(bin));
+        if let Ok(home) = std::env::var("HOME") {
+            out.push(PathBuf::from(home).join(".local").join("bin").join(bin));
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(dir) = jan_cli_bin_dir_windows() {
+            out.push(dir.join(bin));
+        }
+    }
+    out
 }
 
 /// Core install logic — synchronous, no Tauri command overhead.

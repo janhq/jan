@@ -8,23 +8,5 @@
   },
   "sendMessage": "Send Message",
   "newConversation": "New Conversation",
-  "clearHistory": "Clear History",
-  "paragraphEdit": {
-    "editWithAi": "Edit with AI",
-    "title": "Edit selection with AI",
-    "selectionLabel": "Selected text",
-    "instructionLabel": "What should change?",
-    "instructionPlaceholder": "e.g. Make this shorter, fix grammar, simplify…",
-    "previewLabel": "Preview",
-    "preview": "Preview",
-    "regeneratePreview": "Regenerate preview",
-    "hintCtrlEnterPreview": "Ctrl+Enter to preview",
-    "hintCtrlEnterApply": "Ctrl+Enter to apply",
-    "apply": "Apply",
-    "cancel": "Cancel",
-    "running": "Editing…",
-    "errorLocate": "Could not map the selection to this message. Try selecting a longer or more specific passage.",
-    "errorEmpty": "The model returned an empty revision. Try again with a clearer instruction.",
-    "errorModel": "Could not run the edit. Check your model and try again."
-  }
+  "clearHistory": "Clear History"
 }

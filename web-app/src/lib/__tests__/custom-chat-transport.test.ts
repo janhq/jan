@@ -6,6 +6,7 @@ import {
   coalesceMessagesForAlternation,
   extractContextInfoFromError,
   normalizeToolInputSchema,
+  resolveOrphanToolCalls,
   stripRetryErrorWrapper,
   stripUnsupportedImageParts,
   unwrapRetryError,
@@ -397,6 +398,63 @@ describe('coalesceMessagesForAlternation', () => {
 
   it('handles an empty input array', () => {
     expect(coalesceMessagesForAlternation([])).toEqual([])
+  })
+})
+
+describe('resolveOrphanToolCalls', () => {
+  const toolPart = (
+    state: string,
+    extra: Record<string, unknown> = {}
+  ): UIMessage['parts'][number] =>
+    ({
+      type: 'tool-list-events',
+      toolCallId: 'call_1',
+      state,
+      ...extra,
+    }) as unknown as UIMessage['parts'][number]
+
+  it('rewrites an unresolved tool part to output-error', () => {
+    const input = [
+      userMsg('u1', 'list my events'),
+      assistantMsg('a1', [toolPart('input-available', { input: { q: 'x' } })]),
+    ]
+    const out = resolveOrphanToolCalls(input)
+    const part = out[1].parts[0] as { state: string; errorText: string }
+    expect(part.state).toBe('output-error')
+    expect(part.errorText).toMatch(/interrupted/i)
+  })
+
+  it('leaves resolved tool parts untouched', () => {
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [
+        toolPart('output-available', { output: 'ok' }),
+        toolPart('output-error', { errorText: 'denied' }),
+        toolPart('output-denied'),
+      ]),
+    ]
+    const out = resolveOrphanToolCalls(input)
+    expect(out).toEqual(input)
+  })
+
+  it('preserves an existing errorText on an orphan', () => {
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [toolPart('input-streaming', { errorText: 'pre-set' })]),
+    ]
+    const out = resolveOrphanToolCalls(input)
+    const part = out[1].parts[0] as { state: string; errorText: string }
+    expect(part.state).toBe('output-error')
+    expect(part.errorText).toBe('pre-set')
+  })
+
+  it('ignores non-assistant messages and non-tool parts', () => {
+    const input = [
+      userMsg('u1', 'hello'),
+      assistantMsg('a1', [{ type: 'text', text: 'hi' }] as UIMessage['parts']),
+    ]
+    const out = resolveOrphanToolCalls(input)
+    expect(out).toEqual(input)
   })
 })
 
