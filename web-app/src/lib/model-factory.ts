@@ -315,6 +315,45 @@ export function createCustomFetch(
   }
 }
 
+/**
+ * Drop `reasoning_content` / `reasoning` from assistant turns in the outgoing
+ * request body. The Vercel AI SDK's openai-compatible model attaches
+ * `reasoning_content` whenever a prior assistant message had a reasoning part
+ * (see @ai-sdk/openai-compatible dist/index.js:260). Groq's strict validator
+ * rejects this with `property 'reasoning_content' is unsupported`.
+ */
+export function stripAssistantReasoningInBody(
+  body: Record<string, unknown>
+): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; reasoning_content?: unknown; reasoning?: unknown }
+    if (m.role !== 'assistant') continue
+    if ('reasoning_content' in m) delete m.reasoning_content
+    if ('reasoning' in m) delete m.reasoning
+  }
+}
+
+/** Wraps `inner` to strip reasoning fields from assistant messages before send. */
+function withAssistantReasoningStripped(
+  inner: typeof globalThis.fetch
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    if ((init?.method === 'POST' || !init?.method) && init?.body) {
+      try {
+        const body = JSON.parse(init.body as string)
+        stripAssistantReasoningInBody(body)
+        init = { ...init, body: JSON.stringify(body) }
+      } catch {
+        // non-JSON body; fall through
+      }
+    }
+    return inner(input, init)
+  }
+}
+
 // Rewrites any sentinel-bearing text content (planted by
 // CustomChatTransport.encodeAudioAttachments) back into OpenAI `input_audio`
 // content parts. Mutates `body.messages` in place.
@@ -816,7 +855,7 @@ export class ModelFactory {
       headers['Authorization'] = `Bearer ${keyChain[0]}`
     }
 
-    const fetchImpl =
+    let fetchImpl: typeof globalThis.fetch =
       keyChain.length > 1
         ? createApiKeyRotatingFetch(
             getRuntimeFetch(),
@@ -825,6 +864,10 @@ export class ModelFactory {
             'authorization-bearer'
           )
         : createCustomFetch(getRuntimeFetch(), parameters)
+
+    if (provider.provider === 'groq') {
+      fetchImpl = withAssistantReasoningStripped(fetchImpl)
+    }
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
