@@ -319,6 +319,57 @@ export function stripUnsupportedImageParts(
   })
 }
 
+const RESOLVED_TOOL_STATES = new Set([
+  'output-available',
+  'output-error',
+  'output-denied',
+])
+
+/**
+ * Mark unresolved tool-call parts on assistant messages as errored so the
+ * history sent to the next model still satisfies the "every tool call has a
+ * matching tool result" invariant most chat templates enforce.
+ *
+ * Triggered by: a tool-call sequence is interrupted mid-flight (parse error,
+ * abort, network drop). The AI SDK leaves the assistant message with a
+ * tool-* part whose `state` is `input-streaming` / `input-available` — no
+ * result was ever appended. Sending that history back to a strict template
+ * (Gemma, Mistral, alternation-checking Qwen variants) trips a Jinja
+ * `raise_exception` on the next turn.
+ *
+ * We synthesise an `output-error` so the orphan reads as a failed tool call
+ * with a brief explanation, preserving the user's intent and the assistant's
+ * reasoning instead of dropping the whole turn.
+ */
+export function resolveOrphanToolCalls(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message
+    const parts = Array.isArray(message.parts) ? message.parts : []
+    if (parts.length === 0) return message
+
+    let mutated = false
+    const nextParts = parts.map((part) => {
+      const type = (part as { type?: string }).type
+      if (typeof type !== 'string' || !type.startsWith('tool-')) return part
+      const state = (part as { state?: string }).state
+      if (typeof state === 'string' && RESOLVED_TOOL_STATES.has(state)) {
+        return part
+      }
+      mutated = true
+      return {
+        ...(part as object),
+        state: 'output-error',
+        errorText:
+          (part as { errorText?: string }).errorText ??
+          'Tool call did not complete (interrupted by an earlier error).',
+      } as typeof part
+    })
+
+    if (!mutated) return message
+    return { ...message, parts: nextParts }
+  })
+}
+
 export function coalesceMessagesForAlternation(
   messages: UIMessage[]
 ): UIMessage[] {
@@ -898,10 +949,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       selectedModel?.capabilities?.includes('vision') ?? false
     const baseMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
-        this.encodeAudioAttachments(
-          stripUnsupportedImageParts(
-            this.mapUserInlineAttachments(effectiveMessages),
-            modelSupportsVision
+        resolveOrphanToolCalls(
+          this.encodeAudioAttachments(
+            stripUnsupportedImageParts(
+              this.mapUserInlineAttachments(effectiveMessages),
+              modelSupportsVision
+            )
           )
         )
       )
