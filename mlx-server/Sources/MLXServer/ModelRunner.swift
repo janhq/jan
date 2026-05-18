@@ -58,21 +58,45 @@ actor ModelRunner {
         }
     }
 
-    /// Inspect `tokenizer_config.json` to see if the chat template injects
-    /// a `<think>` opener into the assistant turn. Heuristic check — looks
-    /// for the literal `<think>` substring in the template body.
+    /// Inspect the model folder to see if the chat template injects a `<think>`
+    /// opener into the assistant turn. Heuristic — looks for the literal
+    /// `<think>` substring across the conventional template locations:
+    ///   - `chat_template.jinja` (newer split-file convention, Qwen3-VL etc.)
+    ///   - `chat_template.json`  ({ "chat_template": ... } wrapper)
+    ///   - `tokenizer_config.json` → `chat_template` (older inline convention)
     private nonisolated static func detectInjectsThinkingOpener(in modelDir: URL) -> Bool {
-        let configURL = modelDir.appendingPathComponent("tokenizer_config.json")
-        guard
-            let data = try? Data(contentsOf: configURL),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return false }
-
-        // chat_template may be a string or an array of { name, template } entries.
-        if let template = json["chat_template"] as? String {
-            return template.contains("<think>")
+        // 1. Standalone Jinja file.
+        let jinjaURL = modelDir.appendingPathComponent("chat_template.jinja")
+        if let body = try? String(contentsOf: jinjaURL, encoding: .utf8),
+           body.contains("<think>") {
+            return true
         }
-        if let entries = json["chat_template"] as? [[String: Any]] {
+
+        // 2. JSON-wrapped template file.
+        let jsonURL = modelDir.appendingPathComponent("chat_template.json")
+        if let data = try? Data(contentsOf: jsonURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           templateValueContainsThink(json["chat_template"]) {
+            return true
+        }
+
+        // 3. Inline in tokenizer_config.json.
+        let configURL = modelDir.appendingPathComponent("tokenizer_config.json")
+        if let data = try? Data(contentsOf: configURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           templateValueContainsThink(json["chat_template"]) {
+            return true
+        }
+
+        return false
+    }
+
+    /// `chat_template` can be a string or an array of { name, template } entries.
+    private nonisolated static func templateValueContainsThink(_ value: Any?) -> Bool {
+        if let body = value as? String {
+            return body.contains("<think>")
+        }
+        if let entries = value as? [[String: Any]] {
             for entry in entries {
                 if let body = entry["template"] as? String, body.contains("<think>") {
                     return true
