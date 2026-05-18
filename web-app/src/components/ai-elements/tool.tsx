@@ -21,6 +21,7 @@ import {
 } from 'react'
 import { CodeBlock } from './code-block'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
 import { Citations } from '@/components/Citations'
@@ -222,6 +223,7 @@ export const ToolInput = memo(
 )
 
 export const ToolApprovalActions = memo(() => {
+  const { t } = useTranslation()
   const { toolCallId } = useTool()
   const pending = useToolApproval((s) =>
     toolCallId ? s.pending[toolCallId] : undefined
@@ -234,7 +236,7 @@ export const ToolApprovalActions = memo(() => {
     <div className="mt-4 space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
       <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-xs font-medium">
         <ShieldAlertIcon className="size-4" />
-        <span>This tool needs your approval before it runs.</span>
+        <span>{t('tools:toolApproval.needsApproval')}</span>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -242,21 +244,21 @@ export const ToolApprovalActions = memo(() => {
           variant="destructive"
           onClick={() => resolveApproval(toolCallId, 'deny')}
         >
-          Deny
+          {t('tools:toolApproval.deny')}
         </Button>
         <Button
           size="sm"
           variant="outline"
           onClick={() => resolveApproval(toolCallId, 'allow-once')}
         >
-          Allow once
+          {t('tools:toolApproval.allowOnce')}
         </Button>
         <Button
           size="sm"
           autoFocus
           onClick={() => resolveApproval(toolCallId, 'allow-always')}
         >
-          Always allow
+          {t('tools:toolApproval.alwaysAllow')}
         </Button>
       </div>
     </div>

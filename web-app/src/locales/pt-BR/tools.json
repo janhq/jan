@@ -2,6 +2,7 @@
   "toolApproval": {
     "title": "Aprovação de Ferramenta Necessária",
     "description": "O assistente quer usar a ferramenta: <strong>{{toolName}}</strong>",
+    "needsApproval": "Esta ferramenta precisa da sua aprovação antes de ser executada.",
     "securityNotice": "<strong>Aviso de Segurança:</strong> Ferramentas maliciosas ou conteúdo de conversa podem potencialmente enganar o assistente para tentar ações prejudiciais. Revise cada chamada de ferramenta cuidadosamente antes de aprovar.",
     "deny": "Negar",
     "allowOnce": "Permitir Uma Vez",

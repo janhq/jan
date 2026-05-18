@@ -6,6 +6,7 @@
     "allowOnce": "允許一次",
     "alwaysAllow": "在討論串中允許",
     "description": "助理想要使用 <strong>{{toolName}}</strong>",
+    "needsApproval": "此工具需要您的核准才能執行。",
     "parameters": "工具參數",
     "permissionScope": "授予的權限僅適用於此對話。"
   }
