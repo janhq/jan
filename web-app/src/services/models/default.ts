@@ -471,6 +471,8 @@ export class DefaultModelsService implements ModelsService {
     provider?: string
   ): Promise<UnloadResult | undefined> {
     if (provider) {
+      const { ModelFactory } = await import('@/lib/model-factory')
+      ModelFactory.invalidateLocalSessionCache(provider, model)
       return this.getEngine(provider)?.unload(model)
     }
 
@@ -481,6 +483,11 @@ export class DefaultModelsService implements ModelsService {
 
     if (matchingProviders.length === 0) {
       return undefined
+    }
+
+    const { ModelFactory } = await import('@/lib/model-factory')
+    for (const { provider: providerName } of matchingProviders) {
+      ModelFactory.invalidateLocalSessionCache(providerName, model)
     }
 
     const results = await Promise.allSettled(

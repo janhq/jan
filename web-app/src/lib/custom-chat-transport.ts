@@ -392,6 +392,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // request bodies. See ModelFactory for the fetch wiring.
         const { disableReasoning, reasoningBudget } =
           useGeneralSetting.getState()
+        // #region agent log
+        fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': '4aeb88',
+          },
+          body: JSON.stringify({
+            sessionId: '4aeb88',
+            location: 'custom-chat-transport.ts:sendMessages',
+            message: 'reasoning-settings',
+            data: {
+              disableReasoning,
+              reasoningBudget,
+              effectiveProviderName,
+              modelId,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {})
+        // #endregion
         const reasoningOverride: Record<string, unknown> = {}
         const reasoningBudgetTokens: Record<
           typeof reasoningBudget,
@@ -443,6 +464,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             reasoningBudgetTokens[reasoningBudget]
         }
         const hasOverride = Object.keys(reasoningOverride).length > 0
+        // #region agent log
+        fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': '4aeb88',
+          },
+          body: JSON.stringify({
+            sessionId: '4aeb88',
+            location: 'custom-chat-transport.ts:sendMessages',
+            message: 'override-computed',
+            data: { hasOverride, reasoningOverride },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {})
+        // #endregion
 
         ttftMark('deltaStart')
         this.model = await ModelFactory.createModel(
@@ -557,9 +594,39 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     let tokensPerSecond = 0
+    // #region agent log
+    let chunksLogged = 0
+    const debugLogChunk = (part: { type: string } & Record<string, unknown>) => {
+      if (chunksLogged >= 8) return
+      chunksLogged += 1
+      const preview =
+        typeof part.text === 'string'
+          ? (part.text as string).slice(0, 150)
+          : typeof part.delta === 'string'
+            ? (part.delta as string).slice(0, 150)
+            : undefined
+      fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Debug-Session-Id': '4aeb88',
+        },
+        body: JSON.stringify({
+          sessionId: '4aeb88',
+          location: 'custom-chat-transport.ts:uiStream',
+          message: `chunk#${chunksLogged}`,
+          data: { type: part.type, preview, provider: effectiveProviderName },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+    }
+    // #endregion
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
+        // #region agent log
+        debugLogChunk(part as unknown as { type: string } & Record<string, unknown>)
+        // #endregion
         // Start the wall-clock timer on the first generated delta (text or
         // reasoning), NOT on `start` — the latter fires before prefill, so
         // including it would tank the fallback TPS on long prompts.

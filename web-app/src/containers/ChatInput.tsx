@@ -96,6 +96,7 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import ReasoningToggle from '@/containers/ReasoningToggle'
 import { ttftPreBegin } from '@/lib/ttft-timing'
+import { ModelFactory } from '@/lib/model-factory'
 
 type ChatInputProps = {
   className?: string
@@ -505,6 +506,37 @@ const ChatInput = memo(function ChatInput({
         selectedModelId: selectedModel?.id,
       })
       // #endregion
+
+      // Pre-warm the local llama.cpp / MLX session in parallel with
+      // createThread + navigation + ThreadDetail mount. By the time
+      // `CustomChatTransport.sendMessages` calls `ModelFactory.createModel`,
+      // the session-cache entry is already populated and the IPC round-trips
+      // (`startModel` + `find_session_by_model`) are skipped, shaving
+      // ~150–220ms off the critical path. Fire-and-forget — failures fall
+      // back to the regular discovery path inside `createModel`.
+      if (selectedModel?.id) {
+        const prewarmProvider = getProviderByName(selectedProvider)
+        if (prewarmProvider) {
+          // #region agent log
+          ttftPreBegin('prewarm-session-start', {
+            provider: selectedProvider,
+            modelId: selectedModel.id,
+          })
+          // #endregion
+          void ModelFactory.prewarmSession(
+            selectedProvider,
+            selectedModel.id,
+            prewarmProvider
+          ).then(() => {
+            // #region agent log
+            ttftPreBegin('prewarm-session-done', {
+              provider: selectedProvider,
+              modelId: selectedModel.id,
+            })
+            // #endregion
+          })
+        }
+      }
 
       if (isTemporaryChat) {
         // Stash payload in-memory keyed by the temporary thread id; the thread
