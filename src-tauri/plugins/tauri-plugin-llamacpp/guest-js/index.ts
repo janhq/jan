@@ -158,6 +158,10 @@ export async function getLoadedModels(): Promise<string[]> {
   return await invoke('plugin:llamacpp|get_loaded_models')
 }
 
+export async function routerSlotsIdle(modelId?: string): Promise<boolean> {
+  return await invoke('plugin:llamacpp|router_slots_idle', { modelId })
+}
+
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp|read_gguf_metadata', { path })

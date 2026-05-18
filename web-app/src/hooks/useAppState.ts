@@ -23,7 +23,6 @@ type AppState = {
   mcpToolNames: Set<string>
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
-  tokenSpeed?: TokenSpeed
   showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
@@ -33,11 +32,15 @@ type AppState = {
   streamingContents: Record<string, ThreadMessage>
   loadingModels: Record<string, boolean>
   promptProgresses: Record<string, PromptProgress>
-  tokenSpeeds: Record<string, TokenSpeed>
   cancelToolCalls: Record<string, () => void>
   errorMessages: Record<string, AppErrorMessage>
   busyThreads: Record<string, boolean>
   currentStreamThreadId?: string
+  oomError?: string
+  backendError?: string
+
+  setOomError: (line: string | undefined) => void
+  setBackendError: (line: string | undefined) => void
 
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -46,13 +49,6 @@ type AppState = {
   updateRagToolNames: (names: string[]) => void
   updateMcpToolNames: (names: string[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
-  updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
-  setTokenSpeed: (
-    message: ThreadMessage,
-    speed: number,
-    completionTokens: number
-  ) => void
-  resetTokenSpeed: () => void
   clearAppState: () => void
   setOutOfContextDialog: (show: boolean) => void
   setCancelToolCall: (cancel: (() => void) | undefined) => void
@@ -69,18 +65,6 @@ type AppState = {
     threadId: string,
     progress: PromptProgress | undefined
   ) => void
-  updateThreadTokenSpeed: (
-    threadId: string,
-    message: ThreadMessage,
-    increment?: number
-  ) => void
-  setThreadTokenSpeed: (
-    threadId: string,
-    message: ThreadMessage,
-    speed: number,
-    completionTokens: number
-  ) => void
-  resetThreadTokenSpeed: (threadId: string) => void
   setThreadCancelToolCall: (
     threadId: string,
     cancel: (() => void) | undefined
@@ -102,19 +86,19 @@ export const useAppState = create<AppState>()((set) => ({
   mcpToolNames: new Set<string>(),
   serverStatus: 'stopped',
   abortControllers: {},
-  tokenSpeed: undefined,
   promptProgress: undefined,
   cancelToolCall: undefined,
   activeModels: [],
   streamingContents: {},
   loadingModels: {},
   promptProgresses: {},
-  tokenSpeeds: {},
   cancelToolCalls: {},
   errorMessages: {},
   busyThreads: {},
   currentStreamThreadId: undefined,
   setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
+  setOomError: (line) => set({ oomError: line }),
+  setBackendError: (line) => set({ backendError: line }),
   setThreadBusy: (threadId, busy) =>
     set((state) => {
       const next = { ...state.busyThreads }
@@ -153,55 +137,10 @@ export const useAppState = create<AppState>()((set) => ({
       },
     }))
   },
-  setTokenSpeed: (message, speed, completionTokens) => {
-    set((state) => ({
-      tokenSpeed: {
-        ...state.tokenSpeed,
-        lastTimestamp: new Date().getTime(),
-        tokenSpeed: speed,
-        tokenCount: completionTokens,
-        message: message.id,
-      },
-    }))
-  },
-  updateTokenSpeed: (message, increment = 1) =>
-    set((state) => {
-      const currentTimestamp = new Date().getTime() // Get current time in milliseconds
-      if (!state.tokenSpeed) {
-        // If this is the first update, just set the lastTimestamp and return
-        return {
-          tokenSpeed: {
-            lastTimestamp: currentTimestamp,
-            tokenSpeed: 0,
-            tokenCount: increment,
-            message: message.id,
-          },
-        }
-      }
-
-      const timeDiffInSeconds =
-        (currentTimestamp - state.tokenSpeed.lastTimestamp) / 1000 // Time difference in seconds
-      const totalTokenCount = state.tokenSpeed.tokenCount + increment
-      const averageTokenSpeed =
-        totalTokenCount / (timeDiffInSeconds > 0 ? timeDiffInSeconds : 1) // Calculate average token speed
-      return {
-        tokenSpeed: {
-          ...state.tokenSpeed,
-          tokenSpeed: averageTokenSpeed,
-          tokenCount: totalTokenCount,
-          message: message.id,
-        },
-      }
-    }),
-  resetTokenSpeed: () =>
-    set({
-      tokenSpeed: undefined,
-    }),
   clearAppState: () =>
     set({
       streamingContent: undefined,
       abortControllers: {},
-      tokenSpeed: undefined,
       cancelToolCall: undefined,
       errorMessage: undefined,
       showOutOfContextDialog: false,
@@ -259,57 +198,6 @@ export const useAppState = create<AppState>()((set) => ({
       else delete next[threadId]
       return { promptProgresses: next }
     }),
-  setThreadTokenSpeed: (threadId, message, speed, completionTokens) =>
-    set((state) => ({
-      tokenSpeeds: {
-        ...state.tokenSpeeds,
-        [threadId]: {
-          ...state.tokenSpeeds[threadId],
-          lastTimestamp: Date.now(),
-          tokenSpeed: speed,
-          tokenCount: completionTokens,
-          message: message.id,
-        },
-      },
-    })),
-  updateThreadTokenSpeed: (threadId, message, increment = 1) =>
-    set((state) => {
-      const now = Date.now()
-      const prev = state.tokenSpeeds[threadId]
-      if (!prev) {
-        return {
-          tokenSpeeds: {
-            ...state.tokenSpeeds,
-            [threadId]: {
-              lastTimestamp: now,
-              tokenSpeed: 0,
-              tokenCount: increment,
-              message: message.id,
-            },
-          },
-        }
-      }
-      const elapsed = (now - prev.lastTimestamp) / 1000
-      const total = prev.tokenCount + increment
-      return {
-        tokenSpeeds: {
-          ...state.tokenSpeeds,
-          [threadId]: {
-            ...prev,
-            tokenSpeed: total / (elapsed > 0 ? elapsed : 1),
-            tokenCount: total,
-            message: message.id,
-          },
-        },
-      }
-    }),
-  resetThreadTokenSpeed: (threadId) =>
-    set((state) => {
-      if (!(threadId in state.tokenSpeeds)) return state
-      const next = { ...state.tokenSpeeds }
-      delete next[threadId]
-      return { tokenSpeeds: next }
-    }),
   setThreadCancelToolCall: (threadId, cancel) =>
     set((state) => {
       const next = { ...state.cancelToolCalls }
@@ -329,14 +217,12 @@ export const useAppState = create<AppState>()((set) => ({
       const streamingContents = { ...state.streamingContents }
       const loadingModels = { ...state.loadingModels }
       const promptProgresses = { ...state.promptProgresses }
-      const tokenSpeeds = { ...state.tokenSpeeds }
       const cancelToolCalls = { ...state.cancelToolCalls }
       const errorMessages = { ...state.errorMessages }
       const busyThreads = { ...state.busyThreads }
       delete streamingContents[threadId]
       delete loadingModels[threadId]
       delete promptProgresses[threadId]
-      delete tokenSpeeds[threadId]
       delete cancelToolCalls[threadId]
       delete errorMessages[threadId]
       delete busyThreads[threadId]
@@ -344,7 +230,6 @@ export const useAppState = create<AppState>()((set) => ({
         streamingContents,
         loadingModels,
         promptProgresses,
-        tokenSpeeds,
         cancelToolCalls,
         errorMessages,
         busyThreads,

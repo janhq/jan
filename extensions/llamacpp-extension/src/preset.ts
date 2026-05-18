@@ -26,7 +26,14 @@ type ModelYaml = ModelConfig & {
   pooling?: 'none' | 'mean' | 'cls' | 'last' | 'rank'
   ubatch_size?: number
   batch_size?: number
+  mtp_layers?: number
+  mtp?: boolean
+  spec_draft_n_max?: number
+  spec_draft_n_min?: number
+  spec_draft_p_min?: number
 }
+
+export const MTP_MIN_BUILD = 9193
 
 const DEFAULT_EMBEDDING_UBATCH = 2048
 
@@ -44,8 +51,10 @@ function escapeIniValue(v: string): string {
 export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
-  config: LlamacppConfig
+  config: LlamacppConfig,
+  opts: { supportsMtp?: boolean } = {}
 ): Promise<{ path: string; embeddingCount: number }> {
+  const supportsMtp = opts.supportsMtp === true
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -182,6 +191,34 @@ export async function generatePreset(
     }
     if (typeof mc.cont_batching === 'boolean') {
       lines.push(`cont-batching = ${mc.cont_batching}`)
+    }
+
+    if (
+      mc.mtp === true &&
+      typeof mc.mtp_layers === 'number' &&
+      mc.mtp_layers > 0 &&
+      supportsMtp
+    ) {
+      lines.push('spec-type = draft-mtp')
+      if (
+        typeof mc.spec_draft_n_max === 'number' &&
+        mc.spec_draft_n_max > 0
+      ) {
+        lines.push(`spec-draft-n-max = ${Math.floor(mc.spec_draft_n_max)}`)
+      }
+      if (
+        typeof mc.spec_draft_n_min === 'number' &&
+        mc.spec_draft_n_min >= 0
+      ) {
+        lines.push(`spec-draft-n-min = ${Math.floor(mc.spec_draft_n_min)}`)
+      }
+      if (
+        typeof mc.spec_draft_p_min === 'number' &&
+        mc.spec_draft_p_min >= 0 &&
+        mc.spec_draft_p_min <= 1
+      ) {
+        lines.push(`spec-draft-p-min = ${mc.spec_draft_p_min}`)
+      }
     }
 
     if (mc.embedding === true) {

@@ -10,6 +10,7 @@ import { AccentColorPicker } from '@/containers/AccentColorPicker'
 import { NotificationPositionSwitcher } from '@/containers/NotificationPositionSwitcher'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,7 +20,8 @@ export const Route = createFileRoute(route.settings.interface as any)({
 
 function InterfaceSettings() {
   const { t } = useTranslation()
-  const { resetInterface } = useInterfaceSettings()
+  const { resetInterface, showTokenSpeed, setShowTokenSpeed } =
+    useInterfaceSettings()
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -54,6 +56,16 @@ function InterfaceSettings() {
                 title={t('settings:interface.notificationPosition')}
                 description={t('settings:interface.notificationPositionDesc')}
                 actions={<NotificationPositionSwitcher />}
+              />
+              <CardItem
+                title={t('settings:interface.showTokenSpeed')}
+                description={t('settings:interface.showTokenSpeedDesc')}
+                actions={
+                  <Switch
+                    checked={showTokenSpeed}
+                    onCheckedChange={setShowTokenSpeed}
+                  />
+                }
               />
               <CardItem
                 title={t('settings:interface.resetToDefault')}

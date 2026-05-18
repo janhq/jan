@@ -11,6 +11,7 @@ const COMMANDS: &[&str] = &[
     "force_kill_router_tree",
     "force_stop_model",
     "get_router_info",
+    "router_slots_idle",
     "get_devices",
     "generate_api_key",
     "is_process_running",

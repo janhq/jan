@@ -1022,6 +1022,7 @@ async fn ensure_router_and_load(
             0,
             Vec::new(),
             router_envs,
+            None,
         )
         .await
         .map_err(|e| format!("{e:?}"))?;

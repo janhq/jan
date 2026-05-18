@@ -1,4 +1,5 @@
 {
+  "limitedSupport": "This provider may not be fully supported. Capabilities (tools, vision, audio) are not auto-detected - add models manually and configure capabilities per model.",
   "refreshModelsError": "Provider must have base URL and at least one API key configured to fetch models.",
   "refreshModelsSuccess": "Added {{count}} new model(s) from {{provider}}.",
   "noNewModels": "No new models found. All available models are already added.",
@@ -21,6 +22,7 @@
   "start": "Start",
   "noModelFound": "No model found",
   "noModelFoundDesc": "Available models will be listed here. If you don't have any models yet, visit the Hub to download.",
+  "noModelFoundRemoteDesc": "Available models will be listed here. Use the refresh button above to fetch models from the provider, or add one manually with the + button.",
   "configuration": "Configuration",
   "apiEndpoint": "API Endpoint",
   "testConnection": "Test Connection",
@@ -71,6 +73,7 @@
     "capabilities": "Capabilities",
     "tools": "Tools",
     "vision": "Vision",
+    "audio": "Audio",
     "proactive": "Proactive (Experimental)",
     "embeddings": "Embeddings",
     "notAvailable": "Not available yet",

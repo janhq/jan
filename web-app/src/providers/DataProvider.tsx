@@ -181,7 +181,7 @@ export function DataProvider() {
   }, [serviceHub, setThreads])
 
   // Sync remote providers with backend when providers change
-  const providers = useModelProvider.getState().providers
+  const providers = useModelProvider((s) => s.providers)
   useEffect(() => {
     syncRemoteProviders()
   }, [providers])

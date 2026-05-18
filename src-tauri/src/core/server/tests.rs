@@ -387,6 +387,73 @@ mod tests {
     }
 
     #[test]
+    fn expands_bare_string_shorthand_in_properties() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "name": "string",
+                "count": "integer",
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["name"], json!({"type": "string"}));
+        assert_eq!(schema["properties"]["count"], json!({"type": "integer"}));
+    }
+
+    #[test]
+    fn expands_bare_string_shorthand_in_array_items() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "tags": { "type": "array", "items": "string" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["tags"]["items"],
+            json!({"type": "string"})
+        );
+    }
+
+    #[test]
+    fn expands_bare_string_shorthand_in_any_of() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "value": { "anyOf": ["string", "number"] }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["value"]["anyOf"],
+            json!([{"type": "string"}, {"type": "number"}])
+        );
+    }
+
+    #[test]
+    fn does_not_coerce_enum_literal_strings() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string", "enum": ["string", "number", "fast"] }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["mode"]["enum"],
+            json!(["string", "number", "fast"])
+        );
+    }
+
+    #[test]
     fn leaves_existing_valid_object_schema_unchanged() {
         let mut schema = json!({
             "type": "object",

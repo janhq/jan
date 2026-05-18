@@ -53,8 +53,8 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createXai } from '@ai-sdk/xai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
@@ -182,15 +182,53 @@ function filterParameters(
 }
 
 /**
+ * Strip Jinja-stack-trace noise and other diagnostic prelude from upstream
+ * error messages so the UI shows the human-readable cause. Examples:
+ *
+ *   "\n------------\nWhile executing CallExpression at line 1, column 226 in
+ *    source:\n...op.index0 % 2 == 0) %}{{ raise_exception('Conversation roles
+ *    must alternate user...\n      ^\nError: Jinja Exception: Conversation
+ *    roles must alternate user/assistant/user/assistant/..."
+ *
+ * becomes:
+ *
+ *   "Jinja Exception: Conversation roles must alternate user/assistant/..."
+ *
+ * Pure / no I/O so it can be exercised from tests.
+ */
+export function cleanUpstreamErrorMessage(raw: string): string {
+  if (typeof raw !== 'string') return raw
+  let msg = raw.replace(/\r\n/g, '\n').trim()
+
+  // Prefer the final `Error: <…>` line if present — llama.cpp's Jinja runtime
+  // emits "Error: Jinja Exception: <root cause>" after a multi-line trace.
+  const errorLineMatch = msg.match(/(?:^|\n)\s*Error:\s*(.+?)(?:\n|$)/)
+  if (errorLineMatch && errorLineMatch[1]) {
+    return errorLineMatch[1].trim()
+  }
+
+  // Otherwise drop a leading `------------` rule and "While executing …"
+  // prelude that adds noise without explaining the failure.
+  msg = msg.replace(/^-{3,}\s*\n?/, '').trim()
+  msg = msg.replace(/^While executing[\s\S]*?\n\s*\^\s*\n?/, '').trim()
+  return msg
+}
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
  * - client-side-only keys (e.g. `ctx_len`) are stripped
+ *
+ * Also rewrites OpenAI-shape error bodies on non-OK responses so the inner
+ * `error.message` is cleaned of stack-trace noise before the AI SDK surfaces
+ * it to the UI.
  */
-function createCustomFetch(
+export function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
   parameters: Record<string, unknown>,
-  keepLlamacppOnly = false
+  keepLlamacppOnly = false,
+  onLlamacppServerError?: () => void
 ): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (init?.method === 'POST' || !init?.method) {
@@ -210,11 +248,70 @@ function createCustomFetch(
       if (keepLlamacppOnly && merged.stream === true) {
         merged.return_progress = true
       }
+      // llama-server convention: max_tokens = -1 means "unlimited". Users who
+      // set max_output_tokens = 0 in assistant params mean "no cap", not
+      // "produce zero tokens" — coerce here, gated to llamacpp only because
+      // OpenAI/Anthropic reject negative values.
+      if (keepLlamacppOnly && merged.max_tokens === 0) {
+        merged.max_tokens = -1
+      }
       decodeAudioSentinelsInBody(merged)
       init = { ...init, body: JSON.stringify(merged) }
     }
 
-    return baseFetch(input, init)
+    const res = await baseFetch(input, init)
+    if (res.ok) return res
+
+    const isLlamacpp500 = keepLlamacppOnly && res.status === 500
+    if (isLlamacpp500) {
+      onLlamacppServerError?.()
+    }
+
+    let parsed: { error?: { message?: unknown; [k: string]: unknown } } | null =
+      null
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('json')) {
+      try {
+        parsed = JSON.parse(await res.clone().text())
+      } catch {
+        parsed = null
+      }
+    }
+
+    const innerMessage =
+      typeof parsed?.error?.message === 'string'
+        ? (parsed.error.message as string)
+        : null
+
+    if (isLlamacpp500 && !innerMessage) {
+      const synthMessage =
+        'The model crashed and is being reloaded. Please retry.'
+      const nextBody = JSON.stringify({
+        error: {
+          message: synthMessage,
+          code: 500,
+          type: 'llamacpp_server_error',
+        },
+      })
+      return new Response(nextBody, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+
+    if (!innerMessage) return res
+    const cleaned = cleanUpstreamErrorMessage(innerMessage)
+    if (cleaned === innerMessage) return res
+    const nextBody = JSON.stringify({
+      ...parsed,
+      error: { ...parsed!.error, message: cleaned },
+    })
+    return new Response(nextBody, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    })
   }
 }
 
@@ -420,9 +517,27 @@ export class ModelFactory {
       throw new Error(`No running session found for model: ${modelId}`)
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters, true)
+    const onLlamacppServerError = provider
+      ? () => {
+          void (async () => {
+            try {
+              const { useServiceStore } = await import('@/hooks/useServiceHub')
+              const hub = useServiceStore.getState().serviceHub
+              await hub?.models().startModel(provider, modelId)
+            } catch (e) {
+              console.warn('[llamacpp] reload after 500 failed:', e)
+            }
+          })()
+        }
+      : undefined
+    const customFetch = createCustomFetch(
+      httpFetch,
+      parameters,
+      true,
+      onLlamacppServerError
+    )
 
-    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+    return new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
@@ -435,14 +550,6 @@ export class ModelFactory {
       includeUsage: true,
       fetch: customFetch,
       metadataExtractor: providerMetadataExtractor,
-    })
-
-    return wrapLanguageModel({
-      model,
-      middleware: extractReasoningMiddleware({
-        tagName: getReasoningTagName(modelId),
-        separator: '\n',
-      }),
     })
   }
 
@@ -575,43 +682,6 @@ export class ModelFactory {
     return anthropic(modelId)
   }
 
-  /**
-   * Create a Google/Gemini model using the official AI SDK
-   */
-  private static createGoogleModel(
-    modelId: string,
-    provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
-  ): LanguageModel {
-    const headers: Record<string, string> = {}
-
-    // Add custom headers if specified
-    if (provider.custom_header) {
-      provider.custom_header.forEach((customHeader) => {
-        headers[customHeader.header] = customHeader.value
-      })
-    }
-
-    const keyChain = providerRemoteApiKeyChain(provider)
-    const fetchImpl =
-      keyChain.length > 1
-        ? createApiKeyRotatingFetch(
-            getRuntimeFetch(),
-            keyChain,
-            parameters,
-            'x-api-key'
-          )
-        : createCustomFetch(getRuntimeFetch(), parameters)
-
-    const google = createGoogleGenerativeAI({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
-      baseURL: provider.base_url,
-      headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: fetchImpl,
-    })
-
-    return google(modelId)
-  }
 
   /**
    * Create an OpenAI model using the official AI SDK
@@ -648,7 +718,7 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return openai(modelId)
+    return openai.chat(modelId)
   }
 
   /**
@@ -687,6 +757,41 @@ export class ModelFactory {
     })
 
     return xai(modelId)
+  }
+
+  // Native Google provider. Gemini 3 preview models require a
+  // `thought_signature` to be round-tripped on tool-call replays, which
+  // Google's /v1beta/openai compat layer does not surface — so we go native.
+  // Stored base_url points at …/v1beta/openai for the compat path; the native
+  // client wants the bare …/v1beta base.
+  private static createGoogleModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl = createCustomFetch(getRuntimeFetch(), parameters)
+
+    const rawBase = provider.base_url?.trim()
+    const baseURL = rawBase
+      ? rawBase.replace(/\/openai\/?$/, '').replace(/\/$/, '')
+      : 'https://generativelanguage.googleapis.com/v1beta'
+
+    const google = createGoogleGenerativeAI({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return google(modelId)
   }
 
   /**

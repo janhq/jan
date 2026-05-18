@@ -415,6 +415,30 @@
           "markdownDescription": "Denies the find_session_by_model command without any pre-configured scope."
         },
         {
+          "description": "Enables the force_kill_router_tree command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-force-kill-router-tree",
+          "markdownDescription": "Enables the force_kill_router_tree command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the force_kill_router_tree command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-force-kill-router-tree",
+          "markdownDescription": "Denies the force_kill_router_tree command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the force_stop_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-force-stop-model",
+          "markdownDescription": "Enables the force_stop_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the force_stop_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-force-stop-model",
+          "markdownDescription": "Denies the force_stop_model command without any pre-configured scope."
+        },
+        {
           "description": "Enables the generate_api_key command without any pre-configured scope.",
           "type": "string",
           "const": "allow-generate-api-key",
@@ -799,6 +823,18 @@
           "markdownDescription": "Denies the remove_old_backend_versions command without any pre-configured scope."
         },
         {
+          "description": "Enables the router_slots_idle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-router-slots-idle",
+          "markdownDescription": "Enables the router_slots_idle command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the router_slots_idle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-router-slots-idle",
+          "markdownDescription": "Denies the router_slots_idle command without any pre-configured scope."
+        },
+        {
           "description": "Enables the should_migrate_backend command without any pre-configured scope.",
           "type": "string",
           "const": "allow-should-migrate-backend",
@@ -833,6 +869,18 @@
           "type": "string",
           "const": "deny-stop-router",
           "markdownDescription": "Denies the stop_router command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the try_graceful_stop_router command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-try-graceful-stop-router",
+          "markdownDescription": "Enables the try_graceful_stop_router command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the try_graceful_stop_router command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-try-graceful-stop-router",
+          "markdownDescription": "Denies the try_graceful_stop_router command without any pre-configured scope."
         },
         {
           "description": "Enables the unload_llama_model command without any pre-configured scope.",
@@ -871,10 +919,10 @@
           "markdownDescription": "Denies the verify_backend_installation command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-start-router`\n- `allow-stop-router`\n- `allow-get-router-info`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`",
+          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-start-router`\n- `allow-stop-router`\n- `allow-try-graceful-stop-router`\n- `allow-force-kill-router-tree`\n- `allow-force-stop-model`\n- `allow-get-router-info`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-start-router`\n- `allow-stop-router`\n- `allow-get-router-info`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`"
+          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-start-router`\n- `allow-stop-router`\n- `allow-try-graceful-stop-router`\n- `allow-force-kill-router-tree`\n- `allow-force-stop-model`\n- `allow-get-router-info`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-verify-backend-installation`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`"
         }
       ]
     }

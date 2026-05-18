@@ -49,9 +49,6 @@ export type OnFinishCallback = (params: {
   message: UIMessage
   isAbort?: boolean
 }) => void
-export type OnToolCallCallback = (params: {
-  toolCall: { toolCallId: string; toolName: string; input: unknown }
-}) => void
 export type ServiceHub = {
   rag(): {
     getTools(): Promise<
@@ -69,6 +66,34 @@ export type ServiceHub = {
   }
 }
 
+const SCHEMA_PRIMITIVE_TYPES = new Set([
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'null',
+  'array',
+  'object',
+])
+
+const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
+const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
+
+/**
+ * Coerce a schema-node slot into a valid sub-schema. Some tool generators
+ * emit shorthand like `{ "properties": { "foo": "string" } }` instead of
+ * `{ "properties": { "foo": { "type": "string" } } }`. llama.cpp's
+ * json-schema-to-grammar rejects the former with
+ * `Unrecognized schema: "string"`. We expand the shorthand here so the
+ * grammar generator sees a well-formed schema.
+ */
+function coerceSchemaNode(value: unknown): unknown {
+  if (typeof value === 'string' && SCHEMA_PRIMITIVE_TYPES.has(value)) {
+    return normalizeToolInputSchemaValue({ type: value })
+  }
+  return normalizeToolInputSchemaValue(value)
+}
+
 function normalizeToolInputSchemaValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(normalizeToolInputSchemaValue)
@@ -79,10 +104,33 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
   }
 
   const normalized = Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, childValue]) => [
-      key,
-      normalizeToolInputSchemaValue(childValue),
-    ])
+    Object.entries(value as Record<string, unknown>).map(([key, childValue]) => {
+      // Schema-node containers: their direct children are sub-schemas, so a
+      // bare-string primitive type name should expand to `{ type: <name> }`.
+      if (
+        SCHEMA_NODE_MAP_KEYS.has(key) &&
+        childValue &&
+        typeof childValue === 'object' &&
+        !Array.isArray(childValue)
+      ) {
+        return [
+          key,
+          Object.fromEntries(
+            Object.entries(childValue as Record<string, unknown>).map(
+              ([propKey, propVal]) => [propKey, coerceSchemaNode(propVal)]
+            )
+          ),
+        ]
+      }
+      if (SCHEMA_NODE_LIST_KEYS.has(key) && Array.isArray(childValue)) {
+        return [key, childValue.map(coerceSchemaNode)]
+      }
+      if (key === 'items') {
+        if (Array.isArray(childValue)) return [key, childValue.map(coerceSchemaNode)]
+        return [key, coerceSchemaNode(childValue)]
+      }
+      return [key, normalizeToolInputSchemaValue(childValue)]
+    })
   )
 
   const hasDescription = Object.prototype.hasOwnProperty.call(normalized, 'description')
@@ -104,6 +152,193 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
   }
 
   return normalized
+}
+
+/**
+ * Returns true when an assistant message carries no content the model would
+ * actually render: no text, no tool call, no file, no reasoning. These appear
+ * when a generation fails before any chunk arrives — the AI SDK leaves a bare
+ * placeholder in the message list with empty parts.
+ */
+function isAssistantMessageEmpty(message: UIMessage): boolean {
+  if (message.role !== 'assistant') return false
+  const parts = Array.isArray(message.parts) ? message.parts : []
+  if (parts.length === 0) return true
+  return parts.every((part) => {
+    const type = (part as { type?: string }).type
+    if (type === 'text' || type === 'reasoning') {
+      const text = (part as { text?: string }).text
+      return typeof text !== 'string' || text.trim().length === 0
+    }
+    return false
+  })
+}
+
+/**
+ * Merge `b`'s parts onto `a`'s parts. When adjacent text parts meet at the
+ * boundary, they're concatenated with a blank-line separator so the merged
+ * message reads as one continuous turn rather than two.
+ */
+function mergeMessageParts(
+  a: UIMessage['parts'],
+  b: UIMessage['parts']
+): UIMessage['parts'] {
+  const aParts = Array.isArray(a) ? [...a] : []
+  const bParts = Array.isArray(b) ? b : []
+  for (const part of bParts) {
+    const last = aParts[aParts.length - 1]
+    if (
+      last &&
+      (last as { type?: string }).type === 'text' &&
+      (part as { type?: string }).type === 'text' &&
+      typeof (last as { text?: string }).text === 'string' &&
+      typeof (part as { text?: string }).text === 'string'
+    ) {
+      aParts[aParts.length - 1] = {
+        ...(last as object),
+        text: `${(last as { text: string }).text}\n\n${(part as { text: string }).text}`,
+      } as (typeof aParts)[number]
+    } else {
+      aParts.push(part)
+    }
+  }
+  return aParts as UIMessage['parts']
+}
+
+/**
+ * Enforce strict user/assistant alternation on the message history before it
+ * goes to the model.
+ *
+ * Most chat templates (Gemma, Mistral, Llama 3, Anthropic Claude API,
+ * tool-calling Qwen variants, etc.) reject two consecutive turns with the
+ * same role — either via a Jinja `raise_exception` or a 400 from the
+ * provider. When a generation fails mid-stream the AI SDK still keeps the
+ * user message in its state but never appends an assistant reply, so the
+ * next send produces `[user, user]` and the next request 500s on the
+ * server side. We fix that here by:
+ *
+ * 1. Dropping assistant placeholders with no content (failed turns).
+ * 2. Merging any remaining adjacent user messages by concatenating their
+ *    text parts and appending their non-text parts. This preserves all of
+ *    the user's content — nothing is silently dropped.
+ *
+ * Adjacent assistant messages are intentionally left alone: the Anthropic
+ * serial-tool-use wave-split in `sendMessages` deliberately produces them.
+ */
+/**
+ * Drop image parts (and AI-SDK `image` parts) from the history when the
+ * active model lacks the `vision` capability. Without this, switching from
+ * a vision-capable model to a text-only model mid-thread sends `file` parts
+ * the new model can't interpret — most OpenAI-compatible providers 400 on
+ * unsupported content types, and llama-server with a non-vision template
+ * either errors or silently strips the content (depending on template).
+ *
+ * Audio sentinels (planted by `encodeAudioAttachments`) are not file parts
+ * at this point yet — they're still `file` parts with `audio/*` mediaType —
+ * so this only matches `image/*`. Files inlined via `mapUserInlineAttachments`
+ * are already text and not affected.
+ */
+/**
+ * Pull llama-server's structured context-overflow fields out of an
+ * APICallError. The AI SDK's OpenAI-compatible provider zod-parses the
+ * error body and strips unknown keys from `error.data`, but the raw text
+ * survives on `error.responseBody`. Parse that to recover the original
+ * `n_prompt_tokens` / `n_ctx` siblings so the UI can render an actionable
+ * "Used X of Y context tokens" line instead of just the keyword-based
+ * banner.
+ *
+ * Returns null unless both fields are present and numeric.
+ */
+export function extractContextInfoFromError(
+  error: unknown
+): { nPromptTokens: number; nCtx: number } | null {
+  if (!error || typeof error !== 'object') return null
+  const responseBody = (error as { responseBody?: unknown }).responseBody
+  if (typeof responseBody !== 'string' || responseBody.length === 0) return null
+  try {
+    const parsed = JSON.parse(responseBody) as {
+      error?: { n_prompt_tokens?: unknown; n_ctx?: unknown }
+    }
+    const inner = parsed?.error
+    if (!inner || typeof inner !== 'object') return null
+    const nPromptTokens = (inner as Record<string, unknown>).n_prompt_tokens
+    const nCtx = (inner as Record<string, unknown>).n_ctx
+    if (typeof nPromptTokens !== 'number' || typeof nCtx !== 'number') return null
+    return { nPromptTokens, nCtx }
+  } catch {
+    return null
+  }
+}
+
+export function unwrapRetryError(error: unknown): unknown {
+  if (!error || typeof error !== 'object') return error
+  const errors = (error as { errors?: unknown }).errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    return errors[errors.length - 1] ?? error
+  }
+  return error
+}
+
+const RETRY_PREFIX_RE = /^Failed after \d+ attempts\. Last error: /
+const RETRY_NONRETRYABLE_RE = /^Failed after \d+ attempts with non-retryable error: '(.+)'$/s
+
+export function stripRetryErrorWrapper(message: string): string {
+  if (typeof message !== 'string') return message
+  const m = message.match(RETRY_NONRETRYABLE_RE)
+  if (m) return m[1]
+  return message.replace(RETRY_PREFIX_RE, '')
+}
+
+export function stripUnsupportedImageParts(
+  messages: UIMessage[],
+  modelSupportsVision: boolean
+): UIMessage[] {
+  if (modelSupportsVision) return messages
+  return messages.map((message) => {
+    if (!Array.isArray(message.parts) || message.parts.length === 0) {
+      return message
+    }
+    let touched = false
+    const nextParts = message.parts.filter((part) => {
+      const type = (part as { type?: string }).type
+      if (type === 'image') {
+        touched = true
+        return false
+      }
+      if (type === 'file') {
+        const mediaType = (part as { mediaType?: string }).mediaType
+        if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+          touched = true
+          return false
+        }
+      }
+      return true
+    })
+    if (!touched) return message
+    return { ...message, parts: nextParts } as UIMessage
+  })
+}
+
+export function coalesceMessagesForAlternation(
+  messages: UIMessage[]
+): UIMessage[] {
+  const filtered = messages.filter((m) => !isAssistantMessageEmpty(m))
+  if (filtered.length <= 1) return filtered
+
+  const out: UIMessage[] = [filtered[0]]
+  for (let i = 1; i < filtered.length; i++) {
+    const prev = out[out.length - 1]
+    const cur = filtered[i]
+    if (prev.role === 'user' && cur.role === 'user') {
+      out[out.length - 1] = {
+        ...prev,
+        parts: mergeMessageParts(prev.parts, cur.parts),
+      }
+    } else {
+      out.push(cur)
+    }
+  }
+  return out
 }
 
 type ToolInputSchema = Record<string, unknown>
@@ -367,17 +602,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
 
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          // MCP tools added after RAG tools, so they take precedence on name conflicts
+          const seenBy = new Map<string, string>()
           mcpTools.forEach((tool) => {
             const serverName = tool.server || 'unknown'
-            if (!isToolDisabled(serverName, tool.name)) {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                inputSchema: jsonSchema(
-                  normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
-                ),
-              } as Tool
+            if (isToolDisabled(serverName, tool.name)) return
+            const prevServer = seenBy.get(tool.name)
+            if (prevServer && prevServer !== serverName) {
+              console.warn(
+                `[tools] MCP tool name collision: "${tool.name}" exposed by both "${prevServer}" and "${serverName}". Using "${serverName}".`
+              )
             }
+            seenBy.set(tool.name, serverName)
+            toolsRecord[tool.name] = {
+              description: tool.description,
+              inputSchema: jsonSchema(
+                normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+              ),
+            } as Tool
           })
         }
       } catch (error) {
@@ -584,11 +825,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       this.extractFileMetadataForSystem(messagesToConvert)
     messagesToConvert = strippedMessages
     const filesAddendum = this.buildFilesSystemAddendum(attachedFiles)
-    const effectiveSystem = filesAddendum
+    const rawSystem = filesAddendum
       ? this.systemMessage
         ? `${this.systemMessage}\n\n${filesAddendum}`
         : filesAddendum
       : this.systemMessage
+    // Drop whitespace-only system prompts so we don't send a useless system
+    // turn that some chat templates still wrap into special tokens.
+    const effectiveSystem =
+      typeof rawSystem === 'string' && rawSystem.trim().length > 0
+        ? rawSystem
+        : undefined
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
@@ -647,8 +894,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
-    const baseMessages = convertToModelMessages(
-      this.encodeAudioAttachments(this.mapUserInlineAttachments(effectiveMessages))
+    const modelSupportsVision =
+      selectedModel?.capabilities?.includes('vision') ?? false
+    const baseMessages = await convertToModelMessages(
+      coalesceMessagesForAlternation(
+        this.encodeAudioAttachments(
+          stripUnsupportedImageParts(
+            this.mapUserInlineAttachments(effectiveMessages),
+            modelSupportsVision
+          )
+        )
+      )
     )
 
     // If continuing a truncated response, append the partial assistant content as a
@@ -679,11 +935,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     let tokensPerSecond = 0
+    let promptPerSecond = 0
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-        // Track stream start time on start
-        if (part.type === 'start' && !streamStartTime) {
+        if (
+          !streamStartTime &&
+          (part.type === 'text-start' || part.type === 'reasoning-start')
+        ) {
           streamStartTime = Date.now()
         }
 
@@ -691,6 +950,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           tokensPerSecond =
             (part.providerMetadata?.providerMetadata
               ?.tokensPerSecond as number) || 0
+          promptPerSecond =
+            (part.providerMetadata?.providerMetadata
+              ?.promptPerSecond as number) || 0
         }
 
         // Add usage and token speed to metadata on finish
@@ -726,7 +988,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
             },
             tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
+              tokenSpeed: Math.round(tokenSpeed * 100) / 100,
+              promptSpeed: promptPerSecond
+                ? Math.round(promptPerSecond * 100) / 100
+                : undefined,
               tokenCount: outputTokens,
               durationMs,
             },
@@ -743,15 +1008,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         if (useAppState.getState().currentStreamThreadId === threadId) {
           useAppState.getState().setCurrentStreamThreadId(undefined)
         }
-        const errorMessage = error == null
+        const unwrapped = unwrapRetryError(error)
+        const rawMessage = unwrapped == null
           ? 'Unknown error'
-          : typeof error === 'string'
-            ? error
-            : error instanceof Error
-              ? error.message
-              : JSON.stringify(error)
+          : typeof unwrapped === 'string'
+            ? unwrapped
+            : unwrapped instanceof Error
+              ? unwrapped.message
+              : JSON.stringify(unwrapped)
+        const baseMessage = stripRetryErrorWrapper(rawMessage)
 
-        return errorMessage
+        const contextInfo = extractContextInfoFromError(unwrapped)
+        if (contextInfo) {
+          return `${baseMessage}\n\n(Used ${contextInfo.nPromptTokens.toLocaleString()} of ${contextInfo.nCtx.toLocaleString()} context tokens.)`
+        }
+        return baseMessage
       },
       onFinish: ({ responseMessage }) => {
         useAppState.getState().updatePromptProgress(undefined)

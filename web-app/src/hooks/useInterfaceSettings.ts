@@ -108,9 +108,11 @@ interface InterfaceSettingsState {
   fontSize: FontSize
   accentColor: AccentColorValue
   notificationPosition: NotificationPosition
+  showTokenSpeed: boolean
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
   setNotificationPosition: (position: NotificationPosition) => void
+  setShowTokenSpeed: (show: boolean) => void
   resetInterface: () => void
 }
 
@@ -120,6 +122,7 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setFontSize'
   | 'setAccentColor'
   | 'setNotificationPosition'
+  | 'setShowTokenSpeed'
 >
 
 export const fontSizeOptions = [
@@ -137,6 +140,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     fontSize: defaultFontSize,
     accentColor: DEFAULT_ACCENT_COLOR,
     notificationPosition: getDefaultNotificationPosition(),
+    showTokenSpeed: true,
   }
 }
 
@@ -172,6 +176,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             fontSize: defaultFontSize,
             accentColor: DEFAULT_ACCENT_COLOR,
             notificationPosition: getDefaultNotificationPosition(),
+            showTokenSpeed: true,
           })
         },
 
@@ -195,6 +200,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           if (!isNotificationPosition(position)) return
           set({ notificationPosition: position })
         },
+
+        setShowTokenSpeed: (show) => {
+          set({ showTokenSpeed: show })
+        },
       }
     },
     {
@@ -204,6 +213,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         fontSize: state.fontSize,
         accentColor: state.accentColor,
         notificationPosition: state.notificationPosition,
+        showTokenSpeed: state.showTokenSpeed,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
@@ -231,6 +241,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             !isNotificationPosition(state.notificationPosition)
           ) {
             state.notificationPosition = getDefaultNotificationPosition()
+          }
+
+          if (typeof state.showTokenSpeed !== 'boolean') {
+            state.showTokenSpeed = true
           }
         }
 

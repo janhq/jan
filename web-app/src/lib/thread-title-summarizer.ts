@@ -3,14 +3,14 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 const MAX_TITLE_WORDS = 10
-const MAX_PROMPT_LENGTH = 500
+const MAX_PROMPT_LENGTH = 1500
 
-function buildSummarizePrompt(message: string): string {
+function buildSummarizePrompt(transcript: string): string {
   const truncated =
-    message.length > MAX_PROMPT_LENGTH
-      ? message.slice(0, MAX_PROMPT_LENGTH) + '...'
-      : message
-  return `Summarize in a ${MAX_TITLE_WORDS}-word Title. Give the title only. Here is the message: "${truncated}"`
+    transcript.length > MAX_PROMPT_LENGTH
+      ? transcript.slice(0, MAX_PROMPT_LENGTH) + '...'
+      : transcript
+  return `Summarize the following conversation into a concise title of at most ${MAX_TITLE_WORDS} words. Capture the overall topic, not just the latest turn. Output the title only, no quotes, no explanation.\n\nConversation:\n${truncated}`
 }
 
 /**
@@ -53,7 +53,7 @@ export function cleanTitle(raw: string): string | null {
  * Returns null on failure or if the signal is aborted.
  */
 export async function generateThreadTitle(
-  firstMessage: string,
+  transcript: string,
   abortSignal: AbortSignal
 ): Promise<string | null> {
   try {
@@ -71,12 +71,21 @@ export async function generateThreadTitle(
     }
 
     console.log('[ThreadTitle] Creating model:', selectedModel.id, 'provider:', selectedProvider)
-    const model = await ModelFactory.createModel(selectedModel.id, provider, {})
+    const params: Record<string, unknown> =
+      selectedProvider === 'llamacpp'
+        ? { chat_template_kwargs: { enable_thinking: false } }
+        : {}
+    const model = await ModelFactory.createModel(
+      selectedModel.id,
+      provider,
+      params
+    )
 
     console.log('[ThreadTitle] Calling generateText...')
     const { text } = await generateText({
       model,
-      messages: [{ role: 'user', content: buildSummarizePrompt(firstMessage) }],
+      messages: [{ role: 'user', content: buildSummarizePrompt(transcript) }],
+      maxOutputTokens: 128,
       abortSignal,
     })
 

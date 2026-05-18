@@ -40,11 +40,12 @@ import {
   buildEmbedBatches,
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
+  detectMtpLayersFromGgufMeta,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
-import { generatePreset } from './preset'
+import { generatePreset, MTP_MIN_BUILD } from './preset'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -68,6 +69,7 @@ import {
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
+const MTP_CHECK_VERSION = 1
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -101,6 +103,48 @@ const logger = {
 function parseBuildNumber(version: string): number | null {
   const match = version.match(/^b(\d+)$/)
   return match ? parseInt(match[1], 10) : null
+}
+
+/**
+ * Breadth-first search of `rootDir` for the directory directly containing
+ * a file named `serverName`. Returns the absolute path of that directory,
+ * or null if not found. Used by manual backend install to tolerate
+ * different archive layouts (Jan-built `build/bin/...` vs upstream
+ * llama.cpp's flat `llama-bXXXX/...`).
+ */
+async function findLlamaServerDir(
+  rootDir: string,
+  serverName: string
+): Promise<string | null> {
+  // Note: fs.readdirSync returns absolute child paths (see
+  // src-tauri/src/core/filesystem/commands.rs::readdir_sync), not basenames.
+  const queue: string[] = [rootDir]
+  while (queue.length > 0) {
+    const current = queue.shift() as string
+    let entries: string[]
+    try {
+      entries = await fs.readdirSync(current)
+    } catch {
+      continue
+    }
+    for (const entryPath of entries) {
+      let stat
+      try {
+        stat = await fs.fileStat(entryPath)
+      } catch {
+        continue
+      }
+      if (!stat) continue
+      const entryName = await basename(entryPath)
+      if (!stat.isDirectory && entryName === serverName) {
+        return current
+      }
+      if (stat.isDirectory) {
+        queue.push(entryPath)
+      }
+    }
+  }
+  return null
 }
 
 // Folder structure for llamacpp extension:
@@ -225,10 +269,13 @@ export default class llamacpp_extension extends AIEngine {
 
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
+    const build = parseBuildNumber(version)
+    const supportsMtp = build !== null && build >= MTP_MIN_BUILD
     const { path: presetPath, embeddingCount } = await generatePreset(
       providerPath,
       janDataFolderPath,
-      this.config
+      this.config,
+      { supportsMtp }
     )
 
     const backendExe = await getBackendExePath(backend, version)
@@ -780,6 +827,83 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /*
+   * Narrow refresh of the `version_backend` setting's options dropdown.
+   *
+   * Re-scans installed + remote backends and rewrites
+   * `controllerProps.options` on the persisted setting without re-running
+   * the heavy `configureBackends` flow (no autoupdate, no initial
+   * download, no dep verification). The user's current selection is
+   * preserved unless it disappeared from the list.
+   *
+   * Used by the manual "Install from file" flow so the just-extracted
+   * backend shows up in the dropdown immediately.
+   */
+  async refreshBackendOptions(): Promise<void> {
+    let version_backends: { version: string; backend: string }[] = []
+    try {
+      version_backends = await listSupportedBackends()
+    } catch (e) {
+      logger.error(
+        `refreshBackendOptions: failed to list supported backends: ${String(e)}`
+      )
+      return
+    }
+    if (version_backends.length === 0) {
+      logger.warn('refreshBackendOptions: no supported backends found')
+      return
+    }
+    version_backends.sort((a, b) => b.version.localeCompare(a.version))
+
+    const settings = await this.getSettings()
+    const backendSetting = settings.find(
+      (item) => item.key === 'version_backend'
+    )
+    if (!backendSetting) {
+      logger.error(
+        'refreshBackendOptions: version_backend setting not found in persisted settings'
+      )
+      return
+    }
+
+    const newOptions = version_backends.map((b) => {
+      const key = `${b.version}/${b.backend}`
+      return { value: key, name: key }
+    })
+
+    backendSetting.controllerProps.options = newOptions
+
+    // Preserve current selection if still present; otherwise fall back to
+    // the best available so the UI stays consistent.
+    const currentValue = backendSetting.controllerProps.value as
+      | string
+      | undefined
+    const stillPresent =
+      typeof currentValue === 'string' &&
+      newOptions.some((o) => o.value === currentValue)
+    if (!stillPresent) {
+      const best = await this.determineBestBackend(version_backends)
+      if (best) {
+        backendSetting.controllerProps.value = best
+        this.config.version_backend = best
+      }
+    }
+
+    // registerSettings overwrites the persisted settings (including the
+    // new options array). updateSettings only copies `value`, which would
+    // silently drop our options change.
+    await this.registerSettings(settings)
+
+    // Tell the rest of the app (GlobalEventHandler) to refetch providers
+    // so the dropdown re-renders with the new options.
+    if (events && typeof events.emit === 'function') {
+      events.emit('settingsChanged', {
+        key: 'version_backend',
+        value: backendSetting.controllerProps.value,
+      })
+    }
+  }
+
   private async determineBestBackend(
     version_backends: { version: string; backend: string }[]
   ): Promise<string> {
@@ -1152,6 +1276,7 @@ export default class llamacpp_extension extends AIEngine {
     })
 
     const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+    await this.resolveMtpLayersConfig(modelId, modelConfig)
 
     return {
       id: modelId,
@@ -1231,6 +1356,57 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     return isEmbedding
+  }
+
+  private async resolveMtpLayersConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<number> {
+    const cfg = modelConfig as ModelConfig & {
+      mtp_layers?: number
+      mtp_check_v?: number
+    }
+    if (
+      typeof cfg.mtp_layers === 'number' &&
+      cfg.mtp_check_v === MTP_CHECK_VERSION
+    ) {
+      return cfg.mtp_layers
+    }
+
+    let mtpLayers = 0
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        mtpLayers = detectMtpLayersFromGgufMeta(metadata.metadata)
+      }
+    } catch (e) {
+      logger.warn(`Failed to check MTP metadata for ${modelId}`, e)
+      return cfg.mtp_layers ?? 0
+    }
+
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      cfg.mtp_layers = mtpLayers
+      cfg.mtp_check_v = MTP_CHECK_VERSION
+      await invoke<void>('write_yaml', {
+        data: cfg,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to persist MTP layers for ${modelId}`, e)
+    }
+
+    return mtpLayers
   }
 
   // Implement the required LocalProvider interface methods
@@ -1462,12 +1638,44 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Failed to decompress archive: ${String(e)}`)
     }
 
-    const binPath =
-      platformName === 'win'
-        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
-        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+    const serverName =
+      platformName === 'win' ? 'llama-server.exe' : 'llama-server'
+    const expectedBinDir = await joinPath([backendDir, 'build', 'bin'])
+    const expectedBinPath = await joinPath([expectedBinDir, serverName])
 
-    if (!fs.existsSync(binPath)) {
+    // Archive layouts vary: Jan-published tarballs expand to
+    // `<backendDir>/build/bin/llama-server`, while upstream llama.cpp
+    // GitHub release tarballs (e.g. `llama-b9193-bin-...`) expand to
+    // a flat `<backendDir>/llama-bXXXX/llama-server`. If the binary is
+    // not at the expected path, scan the extracted tree for it and
+    // relocate its containing directory into `build/bin/`.
+    if (!(await fs.existsSync(expectedBinPath))) {
+      const foundDir = await findLlamaServerDir(backendDir, serverName)
+      if (!foundDir) {
+        await fs.rm(backendDir)
+        throw new Error(
+          'Not a supported backend archive! Missing llama-server binary.'
+        )
+      }
+      if (foundDir !== expectedBinDir) {
+        try {
+          // Rename the whole directory in one shot — moving entries
+          // individually breaks relative symlinks (libggml.so →
+          // libggml.so.0 → libggml.so.0.10.0) as soon as the first
+          // target is renamed.
+          const buildDir = await joinPath([backendDir, 'build'])
+          await fs.mkdir(buildDir)
+          await fs.mv(foundDir, expectedBinDir)
+        } catch (e) {
+          await fs.rm(backendDir)
+          throw new Error(
+            `Failed to normalize backend layout: ${String(e)}`
+          )
+        }
+      }
+    }
+
+    if (!(await fs.existsSync(expectedBinPath))) {
       await fs.rm(backendDir)
       throw new Error(
         'Not a supported backend archive! Missing llama-server binary.'
@@ -1475,7 +1683,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      await this.configureBackends()
+      await this.refreshBackendOptions()
       logger.info(
         `Backend ${backendIdentifier}/${version} installed and UI refreshed`
       )
@@ -1674,6 +1882,7 @@ export default class llamacpp_extension extends AIEngine {
     const janDataFolderPath = await getJanDataFolderPath()
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
+    let mtpLayers = 0
 
     try {
       // Validate main model file
@@ -1685,6 +1894,7 @@ export default class llamacpp_extension extends AIEngine {
       if (detectEmbeddingFromGgufMeta(modelMetadata.metadata)) {
         isEmbedding = true
       }
+      mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -1724,6 +1934,8 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
       embedding_check_v: EMBEDDING_CHECK_VERSION,
+      mtp_layers: mtpLayers,
+      mtp_check_v: MTP_CHECK_VERSION,
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),
@@ -2232,6 +2444,87 @@ export default class llamacpp_extension extends AIEngine {
     } catch (e) {
       logger.error(`Error checking mmproj.gguf for model ${modelId}:`, e)
       return false
+    }
+  }
+
+  async getMtpInfo(modelId: string): Promise<{
+    mtp_layers: number
+    mtp: boolean
+    spec_draft_n_max?: number
+    spec_draft_n_min?: number
+    spec_draft_p_min?: number
+  }> {
+    const path = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    if (!(await fs.existsSync(path))) {
+      return { mtp_layers: 0, mtp: false }
+    }
+    const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
+      mtp_layers?: number
+      mtp?: boolean
+      spec_draft_n_max?: number
+      spec_draft_n_min?: number
+      spec_draft_p_min?: number
+    }
+    return {
+      mtp_layers: typeof cfg.mtp_layers === 'number' ? cfg.mtp_layers : 0,
+      mtp: cfg.mtp === true,
+      spec_draft_n_max: cfg.spec_draft_n_max,
+      spec_draft_n_min: cfg.spec_draft_n_min,
+      spec_draft_p_min: cfg.spec_draft_p_min,
+    }
+  }
+
+  async updateMtpSettings(
+    modelId: string,
+    patch: {
+      mtp?: boolean
+      spec_draft_n_max?: number | null
+      spec_draft_n_min?: number | null
+      spec_draft_p_min?: number | null
+    }
+  ): Promise<void> {
+    const configPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    if (!(await fs.existsSync(configPath))) {
+      throw new Error(`model.yml not found for ${modelId}`)
+    }
+    const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
+      mtp?: boolean
+      spec_draft_n_max?: number
+      spec_draft_n_min?: number
+      spec_draft_p_min?: number
+    }
+
+    if (typeof patch.mtp === 'boolean') cfg.mtp = patch.mtp
+    const assignNumeric = (
+      key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
+      value: number | null | undefined
+    ) => {
+      if (value === null) {
+        delete cfg[key]
+      } else if (typeof value === 'number' && Number.isFinite(value)) {
+        cfg[key] = value
+      }
+    }
+    if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
+    if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
+    if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
+
+    await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
     }
   }
 

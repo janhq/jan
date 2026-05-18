@@ -17,6 +17,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconAtom: () => <div data-testid="icon-atom">Atom Icon</div>,
   IconWorld: () => <div data-testid="icon-world">World Icon</div>,
   IconCodeCircle2: () => <div data-testid="icon-code">Code Icon</div>,
+  IconHeadphones: () => <div data-testid="icon-headphones">Headphones Icon</div>,
 }))
 
 describe('Capabilities', () => {
@@ -32,6 +33,13 @@ describe('Capabilities', () => {
 
     const toolIcon = screen.getByTestId('icon-tool')
     expect(toolIcon).toBeInTheDocument()
+  })
+
+  it('should render audio capability with headphones icon', () => {
+    render(<Capabilities capabilities={['audio']} />)
+
+    const audioIcon = screen.getByTestId('icon-headphones')
+    expect(audioIcon).toBeInTheDocument()
   })
 
   it('should render reasoning capability with atom icon', () => {

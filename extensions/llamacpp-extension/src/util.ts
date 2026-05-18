@@ -185,6 +185,33 @@ export function detectEmbeddingFromGgufMeta(
   return Number.isFinite(n) && n > 0
 }
 
+export function detectMtpLayersFromGgufMeta(
+  meta: Record<string, unknown> | undefined
+): number {
+  if (!meta) return 0
+  const tryParse = (raw: unknown): number => {
+    const n =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && raw.length > 0
+          ? Number(raw)
+          : NaN
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+  }
+  const arch = meta['general.architecture']
+  if (typeof arch === 'string' && arch.length > 0) {
+    const n = tryParse(meta[`${arch}.nextn_predict_layers`])
+    if (n > 0) return n
+  }
+  for (const [key, value] of Object.entries(meta)) {
+    if (key.endsWith('.nextn_predict_layers')) {
+      const n = tryParse(value)
+      if (n > 0) return n
+    }
+  }
+  return 0
+}
+
 export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {
   return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
 }

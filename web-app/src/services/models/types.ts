@@ -149,6 +149,22 @@ export interface ModelsService {
     getProviderByName?: (providerName: string) => ModelProvider | undefined
   ): Promise<{ exists: boolean; settingsUpdated: boolean }>
   checkMmprojExists(modelId: string): Promise<boolean>
+  getMtpInfo(modelId: string): Promise<{
+    mtp_layers: number
+    mtp: boolean
+    spec_draft_n_max?: number
+    spec_draft_n_min?: number
+    spec_draft_p_min?: number
+  }>
+  updateMtpSettings(
+    modelId: string,
+    patch: {
+      mtp?: boolean
+      spec_draft_n_max?: number | null
+      spec_draft_n_min?: number | null
+      spec_draft_p_min?: number | null
+    }
+  ): Promise<void>
   isModelSupported(
     modelPath: string,
     ctxSize?: number

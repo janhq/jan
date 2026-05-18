@@ -119,7 +119,6 @@ const getStatusText = (
   awaitingApproval: boolean
 ) => {
   const isRunning = status === 'input-streaming' || status === 'input-available'
-  // @ts-expect-error state only available in AI SDK v6
   const hasError = status === 'output-error' || status === 'output-denied'
 
   if (awaitingApproval) {

@@ -646,7 +646,7 @@ function HubContent() {
                                 0 && (
                                 <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-foreground/80">
                                   <IconEye size={13} />
-                                  {t('vision')}
+                                  {t('multimodal')}
                                 </span>
                               )}
                               {filteredModels[virtualItem.index].tools && (

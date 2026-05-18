@@ -4,7 +4,7 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{Manager, Runtime, State};
+use tauri::{Emitter, Manager, Runtime, State};
 
 use crate::device::{get_devices_from_backend, DeviceInfo};
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
@@ -241,6 +241,50 @@ async fn wait_until_unloaded(
     }
 }
 
+async fn unload_busy_router_models(port: u16, api_key: &str) -> Result<(), String> {
+    let client = http_client().await;
+    let list_url = format!("http://127.0.0.1:{}/models", port);
+    let resp = client
+        .get(&list_url)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let data = json
+        .get("data")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let unload_url = format!("http://127.0.0.1:{}/models/unload", port);
+    for m in &data {
+        let Some(id) = m.get("id").and_then(|v| v.as_str()) else { continue };
+        let status = m
+            .get("status")
+            .and_then(|s| s.get("value"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unloaded");
+        if status.eq_ignore_ascii_case("unloaded") {
+            continue;
+        }
+        let body = serde_json::json!({ "model": id });
+        match client
+            .post(&unload_url)
+            .bearer_auth(api_key)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => {
+                log::info!("OOM unload: {} ({})", id, status);
+            }
+            Ok(r) => log::warn!("OOM unload {} returned {}", id, r.status()),
+            Err(e) => log::warn!("OOM unload {} failed: {}", id, e),
+        }
+    }
+    Ok(())
+}
+
 async fn router_loaded_model_ids(port: u16, api_key: &str) -> Result<Vec<String>, String> {
     // Router-aware listing: `/models` (not `/v1/models`, which is OAI-compat
     // and returns a single element). Each entry has a `status` object whose
@@ -413,6 +457,26 @@ pub async fn start_router<R: Runtime>(
         return Err("Router is already running.".to_string());
     }
 
+    let on_error: Option<crate::router::ErrorCallback> = {
+        let app = app_handle.clone();
+        let err_port = port;
+        let err_api_key = api_key.clone();
+        Some(Arc::new(move |kind: &'static str, line: String| {
+            let event = match kind {
+                "oom" => "llamacpp-router-oom",
+                _ => "llamacpp-router-backend-error",
+            };
+            let _ = app.emit(event, line);
+            let port = err_port;
+            let api_key = err_api_key.clone();
+            tokio::spawn(async move {
+                if let Err(e) = unload_busy_router_models(port, &api_key).await {
+                    log::warn!("router error unload sweep failed: {}", e);
+                }
+            });
+        }))
+    };
+
     let handle = crate::router::start_router(
         std::path::PathBuf::from(backend_exe),
         std::path::PathBuf::from(preset_path),
@@ -421,6 +485,7 @@ pub async fn start_router<R: Runtime>(
         models_max,
         default_args,
         envs,
+        on_error,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -462,6 +527,42 @@ pub async fn get_router_info<R: Runtime>(
         port: h.port,
         api_key: h.api_key.clone(),
         pid: h.pid,
+    }))
+}
+
+/// Best-effort idle check; returns `Ok(true)` on any error so callers
+/// never block on a transient `/slots` failure.
+#[tauri::command]
+pub async fn router_slots_idle<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: Option<String>,
+) -> Result<bool, String> {
+    let (port, api_key, _pid) = match router_endpoint(&app_handle).await {
+        Ok(r) => r,
+        Err(_) => return Ok(true),
+    };
+    let client = http_client().await;
+    let url = format!("http://127.0.0.1:{}/slots", port);
+    let mut req = client.get(&url).bearer_auth(&api_key);
+    if let Some(m) = model_id.as_deref() {
+        req = req.query(&[("model", m)]);
+    }
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(_) => return Ok(true),
+    };
+    if !resp.status().is_success() {
+        return Ok(true);
+    }
+    let slots: Vec<serde_json::Value> = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return Ok(true),
+    };
+    Ok(slots.iter().all(|s| {
+        s.get("is_processing")
+            .and_then(|v| v.as_bool())
+            .map(|b| !b)
+            .unwrap_or(true)
     }))
 }
 
