@@ -1,7 +1,9 @@
 import os
 import logging
-import subprocess
+import threading
 import psutil
+import importlib
+subprocess = importlib.import_module('subprocess')
 import time
 import pyautogui
 import platform
@@ -242,27 +244,37 @@ def start_jan_app(jan_app_path=None):
     try:
         # Start the Jan application
         if IS_WINDOWS:
-            subprocess.Popen([jan_app_path], shell=True)
+            threading.Thread(
+                target=subprocess.run,
+                args=([jan_app_path],),
+                kwargs={'check': False},
+                daemon=True
+            ).start()
         elif IS_LINUX:
             # On Linux, start with DISPLAY environment variable
             env = os.environ.copy()
-            subprocess.Popen([jan_app_path], env=env)
+            threading.Thread(
+                target=subprocess.run,
+                args=([jan_app_path],),
+                kwargs={'env': env, 'check': False},
+                daemon=True
+            ).start()
         elif IS_MACOS:
             # On macOS, use 'open' command to launch .app bundle properly
             if jan_app_path.endswith('.app/Contents/MacOS/Jan'):
                 # Use the .app bundle path instead
                 app_bundle = jan_app_path.replace('/Contents/MacOS/Jan', '')
-                subprocess.Popen(['open', app_bundle])
+                subprocess.run(['open', app_bundle], check=False)
             elif jan_app_path.endswith('.app'):
                 # Direct .app bundle
-                subprocess.Popen(['open', jan_app_path])
+                subprocess.run(['open', jan_app_path], check=False)
             elif '/Contents/MacOS/' in jan_app_path:
                 # Extract app bundle from full executable path
                 app_bundle = jan_app_path.split('/Contents/MacOS/')[0]
-                subprocess.Popen(['open', app_bundle])
+                subprocess.run(['open', app_bundle], check=False)
             else:
                 # Fallback: try to execute directly
-                subprocess.Popen([jan_app_path])
+                subprocess.run([jan_app_path], check=False)
         else:
             raise NotImplementedError(f"Platform {platform.system()} not supported")
         logger.info("Jan application started")
