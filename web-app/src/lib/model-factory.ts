@@ -54,6 +54,7 @@ import {
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
+import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
@@ -506,12 +507,14 @@ export class ModelFactory {
       case 'together':
       case 'fireworks':
       case 'deepseek':
-      case 'mistral':
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
         return this.createOpenAICompatibleModel(modelId, provider)
+
+      case 'mistral':
+        return this.createMistralModel(modelId, provider, parameters)
 
       case 'xai':
         return this.createXaiModel(modelId, provider, parameters)
@@ -758,6 +761,45 @@ export class ModelFactory {
     })
 
     return openai.chat(modelId)
+  }
+
+  /**
+   * Create a Mistral model using the official AI SDK. Needed for magistral-*,
+   * which streams `delta.content` as an array of typed parts (thinking + text);
+   * the generic openai-compatible schema rejects this with a Zod
+   * "expected string, received array" error.
+   */
+  private static createMistralModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
+    const mistral = createMistral({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return mistral(modelId)
   }
 
   /**

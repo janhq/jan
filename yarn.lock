@@ -62,6 +62,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@ai-sdk/mistral@npm:^3.0.0":
+  version: 3.0.37
+  resolution: "@ai-sdk/mistral@npm:3.0.37"
+  dependencies:
+    "@ai-sdk/provider": "npm:3.0.10"
+    "@ai-sdk/provider-utils": "npm:4.0.27"
+  peerDependencies:
+    zod: ^3.25.76 || ^4.1.8
+  checksum: 10c0/268b413bc838eb2feeee2df9778681e631e6967a082d392283c9fb72eb2f938d625319637255184875e80e34220ee46cd231dc3c3a47918a00c17c72acd78573
+  languageName: node
+  linkType: hard
+
 "@ai-sdk/openai-compatible@npm:2.0.47, @ai-sdk/openai-compatible@npm:^2.0.0":
   version: 2.0.47
   resolution: "@ai-sdk/openai-compatible@npm:2.0.47"
@@ -2783,6 +2795,7 @@ __metadata:
   dependencies:
     "@ai-sdk/anthropic": "npm:^3.0.0"
     "@ai-sdk/google": "npm:^3.0.0"
+    "@ai-sdk/mistral": "npm:^3.0.0"
     "@ai-sdk/openai": "npm:^3.0.0"
     "@ai-sdk/openai-compatible": "npm:^2.0.0"
     "@ai-sdk/react": "npm:^3.0.0"
