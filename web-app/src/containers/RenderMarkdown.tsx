@@ -15,6 +15,7 @@ import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { MermaidError } from '@/components/MermaidError'
 import { CitationLink } from '@/components/CitationLink'
+import { MarkdownTable } from '@/components/MarkdownTable'
 
 interface MarkdownProps {
   content: string
@@ -118,7 +119,7 @@ function RenderMarkdownComponent({
       }
       return <a {...props}>{children}</a>
     }
-    return { a: Anchor, ...(components ?? {}) } as Components
+    return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
   }, [components])
 
   const streamdownEl = (
