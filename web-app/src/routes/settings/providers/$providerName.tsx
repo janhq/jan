@@ -737,6 +737,18 @@ function ProviderDetail() {
                 </div>
               )}
 
+            {provider?.provider === 'mlx' && (
+              <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
+                <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  {t('providers:mlxExperimental', {
+                    defaultValue:
+                      'MLX support is experimental. Embeddings are unavailable, the reasoning toggle is not yet wired through, and some newer model architectures may fail to load. Report issues on GitHub so we can prioritize them.',
+                  })}
+                </span>
+              </div>
+            )}
+
             <div
               className={cn(
                 'flex flex-col gap-3',
