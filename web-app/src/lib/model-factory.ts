@@ -307,6 +307,42 @@ function createLocalStreamingFetch(
     const { ttftMark } = await import('@/lib/ttft-timing')
     ttftMark('epsilonInvoke')
 
+    // #region agent log
+    // Diagnostic probe: dump the FINAL outgoing body for /chat/completions
+    // straight to console.info so it appears in the Web Inspector log.
+    // We log the reasoning-relevant fields explicitly + a list of all
+    // top-level keys, so we can verify whether the disable-reasoning
+    // override survived all the way to the wire.
+    try {
+      if (urlStr.includes('/chat/completions')) {
+        let parsed: Record<string, unknown> = {}
+        try {
+          parsed = JSON.parse(bodyStr) as Record<string, unknown>
+        } catch {
+          /* non-JSON */
+        }
+        console.info('[final-body-payload]', {
+          url: urlStr,
+          bodyLen: bodyStr.length,
+          messagesCount: Array.isArray(parsed.messages)
+            ? (parsed.messages as Array<unknown>).length
+            : null,
+          model: parsed.model,
+          stream: parsed.stream,
+          enable_thinking_top: parsed.enable_thinking ?? '<absent>',
+          chat_template_kwargs: parsed.chat_template_kwargs ?? '<absent>',
+          reasoning_budget: parsed.reasoning_budget ?? '<absent>',
+          thinking_budget: parsed.thinking_budget ?? '<absent>',
+          thinking: parsed.thinking ?? '<absent>',
+          reasoning_effort: parsed.reasoning_effort ?? '<absent>',
+          topLevelKeys: Object.keys(parsed),
+        })
+      }
+    } catch {
+      /* probe must never throw */
+    }
+    // #endregion
+
     const cmdPromise = invoke<number>('stream_local_http', {
       url: urlStr,
       headers: hdrs,
