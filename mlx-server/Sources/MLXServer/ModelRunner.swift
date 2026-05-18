@@ -42,7 +42,10 @@ actor ModelRunner {
         }
 
         if let dir = modelDir {
-            self.model = try await loadModel(directory: dir)
+            self.model = try await loadModel(
+                from: dir,
+                using: SwiftTransformersTokenizerLoader()
+            )
         }
     }
 
