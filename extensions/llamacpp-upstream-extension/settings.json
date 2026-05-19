@@ -13,7 +13,7 @@
   {
     "key": "mtp",
     "title": "Enable MTP (Multi-Token Prediction)",
-    "description": "Speculative decoding via the model's built-in MTP head. Only works with MTP-capable GGUFs (e.g. ggml-org/Qwen3.6-27B-MTP-GGUF).",
+    "description": "Speculative decoding via the model's built-in MTP head. Only works with MTP-capable GGUFs (e.g. [ggml-org/Qwen3.6-27B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-27B-MTP-GGUF), [ggml-org/Qwen3.6-35B-A3B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-35B-A3B-MTP-GGUF)).",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false

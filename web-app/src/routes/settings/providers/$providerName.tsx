@@ -19,6 +19,7 @@ import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelD
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedDialog'
 import { MtpUnsupportedDialog } from '@/containers/dialogs/MtpUnsupportedDialog'
+import { LlamacppMtpUnsupportedDialog } from '@/containers/dialogs/LlamacppMtpUnsupportedDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
@@ -163,6 +164,12 @@ function ProviderDetail() {
   const [mtpUnsupportedModel, setMtpUnsupportedModel] = useState<string | null>(
     null
   )
+  /// Upstream-llama MTP toggle state. Mirrors the MLX MTP shape but
+  /// targets `llamacpp-upstream`'s `mtp` setting key (no separate downloader
+  /// — the MTP head ships inside the same GGUF as the target).
+  const [isTogglingLlamacppMtp, setIsTogglingLlamacppMtp] = useState(false)
+  const [llamacppMtpUnsupportedModel, setLlamacppMtpUnsupportedModel] =
+    useState<string | null>(null)
   const {
     installBackend,
     recheckOptimalBackend,
@@ -805,6 +812,119 @@ function ProviderDetail() {
     ]
   )
 
+  /// Toggle the upstream-llama MTP flag (`--spec-type draft-mtp`). Unlike
+  /// the MLX MTP/DFlash toggles, there is no companion download — the MTP
+  /// head ships inside the same GGUF as the target. Capability is decided
+  /// by a simple substring check on the model id ("...MTP..."), matching
+  /// the ggml-org/Qwen3.6-*-MTP-GGUF naming convention.
+  ///
+  /// On enable, if a model is already running, we stop it and reload with
+  /// the new args so the toggle takes effect immediately (parity with the
+  /// MLX dflash UX). On disable, we do the same so the spec flags are
+  /// dropped from the live process.
+  const handleToggleLlamacppMtp = useCallback(
+    async (nextEnabled: boolean) => {
+      if (provider?.provider !== 'llamacpp-upstream' || !provider) return
+      if (isTogglingLlamacppMtp) return
+
+      const writeSetting = (key: string, value: unknown) => {
+        const next = provider.settings.map((s) =>
+          s.key === key
+            ? {
+                ...s,
+                controller_props: {
+                  ...s.controller_props,
+                  value: value as never,
+                },
+              }
+            : s
+        )
+        serviceHub.providers().updateSettings(providerName, next)
+        updateProvider(providerName, { ...provider, settings: next })
+      }
+
+      const errTitle = t('settings:llamacppMtpToggleFailed', {
+        defaultValue: 'Failed to toggle MTP',
+      })
+
+      const engine: any = EngineManager.instance().get('llamacpp-upstream')
+      if (!engine) {
+        toast.error(errTitle, {
+          description: t('settings:llamacppMtpEngineMissing', {
+            defaultValue: 'Llama.cpp engine is unavailable.',
+          }),
+        })
+        return
+      }
+
+      const loadedModels: string[] = (await engine.getLoadedModels?.()) ?? []
+      const activeModel = loadedModels[0]
+
+      setIsTogglingLlamacppMtp(true)
+      try {
+        if (nextEnabled) {
+          /// Capability check: the ggml-org collection always includes
+          /// "MTP" in the repo / file name. If the loaded model id doesn't
+          /// look MTP-capable, refuse the toggle and surface the popup —
+          /// don't write the setting (the Switch stays off).
+          if (activeModel && !activeModel.toLowerCase().includes('mtp')) {
+            setLlamacppMtpUnsupportedModel(activeModel)
+            return
+          }
+          writeSetting('mtp', true)
+        } else {
+          writeSetting('mtp', false)
+        }
+
+        /// Auto-restart the live session so the new --spec-type draft-mtp
+        /// flag is actually applied (or removed). Skipped if nothing is
+        /// running — the next manual start will pick up the flag.
+        if (activeModel) {
+          try {
+            await engine.unload?.(activeModel)
+          } catch (e) {
+            console.warn('Failed to unload before MTP restart:', e)
+          }
+          try {
+            await engine.load?.(activeModel)
+          } catch (e) {
+            console.error('Failed to reload after MTP toggle:', e)
+            toast.error(errTitle, {
+              description:
+                e instanceof Error ? e.message : 'Failed to restart model.',
+            })
+            return
+          }
+        }
+
+        toast.success(
+          nextEnabled
+            ? t('settings:llamacppMtpEnableSuccess', {
+                defaultValue: 'MTP enabled',
+              })
+            : t('settings:llamacppMtpDisableSuccess', {
+                defaultValue: 'MTP disabled',
+              })
+        )
+      } catch (error) {
+        console.error('Failed to toggle Llamacpp MTP:', error)
+        toast.error(errTitle, {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setIsTogglingLlamacppMtp(false)
+      }
+    },
+    [
+      provider,
+      providerName,
+      serviceHub,
+      updateProvider,
+      t,
+      isTogglingLlamacppMtp,
+    ]
+  )
+
   const handleInstallBackendFromFile = useCallback(async () => {
     if (provider?.provider !== 'llamacpp' && provider?.provider !== 'mlx')
       return
@@ -998,6 +1118,14 @@ function ProviderDetail() {
                   // path for them.
                   const isDflashToggle = setting.key === 'dflash_enabled'
                   const isMtpToggle = setting.key === 'mtp_enabled'
+                  /// Upstream llama.cpp uses the bare key `mtp` (set in
+                  /// extensions/llamacpp-upstream-extension/settings.json).
+                  /// The MLX MTP key is `mtp_enabled`, so the two never
+                  /// collide; we additionally gate by provider id for
+                  /// defence-in-depth.
+                  const isLlamacppMtpToggle =
+                    setting.key === 'mtp' &&
+                    provider?.provider === 'llamacpp-upstream'
 
                   // Use the DynamicController component
                   const actionComponent = (
@@ -1064,6 +1192,28 @@ function ProviderDetail() {
                             }}
                           />
                           {isTogglingMtp && (
+                            <IconLoader
+                              size={14}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          )}
+                        </div>
+                      ) : isLlamacppMtpToggle ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={
+                              !!(
+                                setting.controller_props as {
+                                  value?: boolean
+                                }
+                              ).value
+                            }
+                            disabled={isTogglingLlamacppMtp}
+                            onCheckedChange={(checked) => {
+                              handleToggleLlamacppMtp(checked)
+                            }}
+                          />
+                          {isTogglingLlamacppMtp && (
                             <IconLoader
                               size={14}
                               className="animate-spin text-muted-foreground"
@@ -1654,6 +1804,13 @@ function ProviderDetail() {
           if (!open) setMtpUnsupportedModel(null)
         }}
         modelId={mtpUnsupportedModel ?? ''}
+      />
+      <LlamacppMtpUnsupportedDialog
+        open={llamacppMtpUnsupportedModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setLlamacppMtpUnsupportedModel(null)
+        }}
+        modelId={llamacppMtpUnsupportedModel ?? ''}
       />
     </div>
   )
