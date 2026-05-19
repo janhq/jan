@@ -95,6 +95,7 @@ zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
+tauri-plugin-llamacpp-upstream = { path = "./plugins/tauri-plugin-llamacpp-upstream" }
 tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-models", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }

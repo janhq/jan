@@ -16,6 +16,7 @@
     "core:window:allow-set-focus",
     "hardware:default",
     "llamacpp:default",
+    "llamacpp-upstream:default",
     "mlx:default",
     "foundation-models:default",
     "store:default",

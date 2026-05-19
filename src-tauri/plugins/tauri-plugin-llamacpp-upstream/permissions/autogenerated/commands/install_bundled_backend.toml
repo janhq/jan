@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-install-bundled-backend"
+description = "Enables the install_bundled_backend command without any pre-configured scope."
+commands.allow = ["install_bundled_backend"]
+
+[[permission]]
+identifier = "deny-install-bundled-backend"
+description = "Denies the install_bundled_backend command without any pre-configured scope."
+commands.deny = ["install_bundled_backend"]

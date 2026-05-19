@@ -67,6 +67,7 @@ import { renderInstructions } from '@/lib/instructionTemplate'
 const LOCAL_PROVIDERS_FOR_REASONING_STRIP = new Set<string>([
   'mlx',
   'llamacpp',
+  'llamacpp-upstream',
   'foundation-models',
 ])
 
@@ -429,6 +430,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         if (disableReasoning || reasoningBudget === 'off') {
           switch (effectiveProviderName) {
             case 'llamacpp':
+            case 'llamacpp-upstream':
             case 'mlx':
               reasoningOverride.chat_template_kwargs = {
                 enable_thinking: false,
@@ -459,6 +461,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           }
         } else if (
           (effectiveProviderName === 'llamacpp' ||
+            effectiveProviderName === 'llamacpp-upstream' ||
             effectiveProviderName === 'mlx') &&
           reasoningBudgetTokens[reasoningBudget] !== undefined
         ) {

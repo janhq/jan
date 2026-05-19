@@ -94,6 +94,7 @@ jobs:
           CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
           PREV_TAG: ${{ steps.prev.outputs.prev_tag }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           python3 scripts/release-notes/generate.py > /tmp/release-notes.md
@@ -199,6 +200,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-backend
+
+      - name: Download upstream llama.cpp backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make download-llamacpp-upstream-backend
 
       - name: Download MLX server (mlx-vlm)
         env:

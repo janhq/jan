@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-parse-backend-version"
+description = "Enables the parse_backend_version command without any pre-configured scope."
+commands.allow = ["parse_backend_version"]
+
+[[permission]]
+identifier = "deny-parse-backend-version"
+description = "Denies the parse_backend_version command without any pre-configured scope."
+commands.deny = ["parse_backend_version"]

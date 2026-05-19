@@ -400,6 +400,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fllamacpp-upstream-extension%40workspace%3Allamacpp-upstream-extension":
+  version: 0.1.10
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=640bab&locator=%40janhq%2Fllamacpp-upstream-extension%40workspace%3Allamacpp-upstream-extension"
+  dependencies:
+    rxjs: "npm:^7.8.1"
+    ulidx: "npm:^2.3.0"
+  peerDependencies:
+    react: 19.0.0
+  checksum: 10c0/82081257aac2474252ae27ca4963f20ca21af5401af844a7141fecb39716baf68ec5f16e8dce5748a8b458f20a25543bed8cb47a5f11925a48ca7ac08f7f9dec
+  languageName: node
+  linkType: hard
+
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension":
   version: 0.1.10
   resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=640bab&locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
@@ -490,6 +502,29 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@janhq/llamacpp-upstream-extension@workspace:llamacpp-upstream-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/llamacpp-upstream-extension@workspace:llamacpp-upstream-extension"
+  dependencies:
+    "@janhq/core": ../../core/package.tgz
+    "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware"
+    "@janhq/tauri-plugin-llamacpp-upstream-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp-upstream"
+    "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-http": "npm:2.5.0"
+    "@tauri-apps/plugin-log": "npm:^2.6.0"
+    "@vitest/ui": "npm:2.1.9"
+    cpx: "npm:1.5.0"
+    fetch-retry: "npm:^5.0.6"
+    jsdom: "npm:26.1.0"
+    rimraf: "npm:3.0.2"
+    rolldown: "npm:1.0.0-beta.1"
+    ts-loader: "npm:^9.5.0"
+    typescript: "npm:5.9.2"
+    ulidx: "npm:2.4.1"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/mlx-extension@workspace:mlx-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/mlx-extension@workspace:mlx-extension"
@@ -535,6 +570,12 @@ __metadata:
   languageName: node
   linkType: soft
 
+"@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-upstream-extension%40workspace%3Allamacpp-upstream-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-upstream-extension%40workspace%3Allamacpp-upstream-extension"
+  languageName: node
+  linkType: soft
+
 "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
@@ -544,6 +585,12 @@ __metadata:
 "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-llamacpp-upstream-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp-upstream::locator=%40janhq%2Fllamacpp-upstream-extension%40workspace%3Allamacpp-upstream-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-llamacpp-upstream-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp-upstream::locator=%40janhq%2Fllamacpp-upstream-extension%40workspace%3Allamacpp-upstream-extension"
   languageName: node
   linkType: soft
 

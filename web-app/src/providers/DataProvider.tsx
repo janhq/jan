@@ -440,7 +440,12 @@ export function DataProvider() {
         setProviders(fetchedProviders)
         const allProviders = useModelProvider.getState().providers
         const localModels = allProviders
-          .filter((p) => p.provider === 'llamacpp' || p.provider === 'mlx')
+          .filter(
+            (p) =>
+              p.provider === 'llamacpp' ||
+              p.provider === 'llamacpp-upstream' ||
+              p.provider === 'mlx'
+          )
           .flatMap((p) => p.models)
           .filter((m) => m.id !== EMBEDDING_MODEL_ID)
 
@@ -449,7 +454,9 @@ export function DataProvider() {
         type CandidateModel = { model: string; provider: string }
 
         const isLocalProviderName = (name: string) =>
-          name === 'llamacpp' || name === 'mlx'
+          name === 'llamacpp' ||
+          name === 'llamacpp-upstream' ||
+          name === 'mlx'
 
         const readLastUsedFromStorage = (): CandidateModel | null => {
           try {

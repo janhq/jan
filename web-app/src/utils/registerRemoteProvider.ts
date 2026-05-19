@@ -13,7 +13,7 @@ type RegisterProviderRequest = {
   models: string[]
 }
 
-export const LOCAL_PROVIDER_NAMES = ['llamacpp', 'mlx', 'foundation-models'] as const
+export const LOCAL_PROVIDER_NAMES = ['llamacpp', 'llamacpp-upstream', 'mlx', 'foundation-models'] as const
 export type LocalProviderName = (typeof LOCAL_PROVIDER_NAMES)[number]
 
 export function isLocalProvider(providerName: string | undefined | null): boolean {
