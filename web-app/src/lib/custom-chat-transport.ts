@@ -53,6 +53,29 @@ import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
+import { renderInstructions } from '@/lib/instructionTemplate'
+
+/// Local inference backends for which we apply the "thinking-off ergonomics":
+/// when the user toggles reasoning off we strip the assistant system prompt
+/// down to a minimal identity stub AND drop tools entirely. Rationale:
+/// gemma-4 (and similar local models) reliably auto-emit a chain-of-thought
+/// block whenever the rendered prompt contains BOTH a system message and
+/// tools, even with `chat_template_kwargs.enable_thinking=false`. Without
+/// the strip, TTFT regresses and the model dumps CoT into either
+/// `delta.reasoning` (hidden by the UI -> long blank screen) or worse,
+/// straight into `delta.content`.
+const LOCAL_PROVIDERS_FOR_REASONING_STRIP = new Set<string>([
+  'mlx',
+  'llamacpp',
+  'foundation-models',
+])
+
+/// Minimal system prompt used when the assistant + tools strip is active.
+/// Keeps Atomic Chat's identity and the current date, drops all CoT /
+/// tool-calling instructions that would otherwise re-trigger the chain-
+/// of-thought heuristic on local models.
+const MINIMAL_SYSTEM_PROMPT_TEMPLATE =
+  'You are Atomic Chat, a helpful assistant. Current date: {{current_date}}.'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -392,27 +415,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // request bodies. See ModelFactory for the fetch wiring.
         const { disableReasoning, reasoningBudget } =
           useGeneralSetting.getState()
-        // #region agent log
-        fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': '4aeb88',
-          },
-          body: JSON.stringify({
-            sessionId: '4aeb88',
-            location: 'custom-chat-transport.ts:sendMessages',
-            message: 'reasoning-settings',
-            data: {
-              disableReasoning,
-              reasoningBudget,
-              effectiveProviderName,
-              modelId,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {})
-        // #endregion
         const reasoningOverride: Record<string, unknown> = {}
         const reasoningBudgetTokens: Record<
           typeof reasoningBudget,
@@ -464,22 +466,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             reasoningBudgetTokens[reasoningBudget]
         }
         const hasOverride = Object.keys(reasoningOverride).length > 0
-        // #region agent log
-        fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': '4aeb88',
-          },
-          body: JSON.stringify({
-            sessionId: '4aeb88',
-            location: 'custom-chat-transport.ts:sendMessages',
-            message: 'override-computed',
-            data: { hasOverride, reasoningOverride },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {})
-        // #endregion
 
         ttftMark('deltaStart')
         this.model = await ModelFactory.createModel(
@@ -564,12 +550,30 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ]
       : baseMessages
 
+    // Local-providers thinking-off ergonomics: when reasoning is OFF on a
+    // local backend (mlx, llamacpp, foundation-models), strip the assistant
+    // system prompt to a minimal identity stub AND drop tools entirely.
+    // Without this, gemma-4 auto-emits CoT whenever (system + tools) are
+    // present, even with `chat_template_kwargs.enable_thinking=false`,
+    // which tanks TTFT and pollutes the visible content stream.
+    const { disableReasoning, reasoningBudget } = useGeneralSetting.getState()
+    const reasoningDisabled = disableReasoning || reasoningBudget === 'off'
+    const shouldStripLocalContext =
+      reasoningDisabled &&
+      LOCAL_PROVIDERS_FOR_REASONING_STRIP.has(effectiveProviderName)
+
+    const effectiveSystemMessage = shouldStripLocalContext
+      ? renderInstructions(MINIMAL_SYSTEM_PROMPT_TEMPLATE)
+      : this.systemMessage
+
     // Include tools only if we have tools loaded AND model supports them
+    // AND we're not in the local thinking-off strip mode.
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = hasTools && modelSupportsTools
+    const shouldEnableTools =
+      !shouldStripLocalContext && hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),
@@ -588,37 +592,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       abortSignal: options.abortSignal,
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
-      system: this.systemMessage,
+      system: effectiveSystemMessage,
       maxOutputTokens,
       experimental_transform: stripSpecialTokensTransform,
     })
 
     let tokensPerSecond = 0
     // #region agent log
-    let chunksLogged = 0
-    const debugLogChunk = (part: { type: string } & Record<string, unknown>) => {
-      if (chunksLogged >= 8) return
-      chunksLogged += 1
-      const preview =
-        typeof part.text === 'string'
-          ? (part.text as string).slice(0, 150)
-          : typeof part.delta === 'string'
-            ? (part.delta as string).slice(0, 150)
-            : undefined
-      fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Debug-Session-Id': '4aeb88',
-        },
-        body: JSON.stringify({
-          sessionId: '4aeb88',
-          location: 'custom-chat-transport.ts:uiStream',
-          message: `chunk#${chunksLogged}`,
-          data: { type: part.type, preview, provider: effectiveProviderName },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
+    const debugLogChunk = (
+      _part: { type: string } & Record<string, unknown>
+    ): void => {
+      /* no-op */
     }
     // #endregion
 

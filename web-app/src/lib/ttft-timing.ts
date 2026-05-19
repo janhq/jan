@@ -47,28 +47,11 @@ let active: TtftTimings | null = null
 
 // #region agent log
 function ttftDebugLog(
-  location: string,
-  message: string,
-  data?: Record<string, unknown>
+  _location: string,
+  _message: string,
+  _data?: Record<string, unknown>
 ): void {
-  try {
-    fetch('http://127.0.0.1:7576/ingest/349dbbed-26a7-42bf-b66c-4a6027726691', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Debug-Session-Id': '4aeb88',
-      },
-      body: JSON.stringify({
-        sessionId: '4aeb88',
-        location,
-        message,
-        data,
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  } catch {
-    /* no-op */
-  }
+  /* no-op */
 }
 
 export function ttftPreBegin(label: string, data?: Record<string, unknown>): void {
