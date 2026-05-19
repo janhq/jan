@@ -1,4 +1,5 @@
 import type { HardwareData } from '@/hooks/useHardware'
+import type { CatalogModel } from '@/services/models/types'
 
 export type FitTier = 'green' | 'yellow' | 'red' | 'unknown'
 
@@ -40,6 +41,15 @@ export function parseFileSize(input?: string | number | null): number | null {
   const multiplier = UNIT_BYTES[unitKey]
   if (multiplier === undefined) return null
   return value * multiplier
+}
+
+// MLX models are split across multiple safetensors shards; sum them to get
+// the on-device weight footprint that should be fed into estimateModelFit.
+export function sumMlxModelBytes(model: CatalogModel): number {
+  return (model.safetensors_files ?? []).reduce(
+    (acc, f) => acc + (parseFileSize(f.file_size) ?? 0),
+    0
+  )
 }
 
 export function estimateKvCacheBytes(
