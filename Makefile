@@ -796,8 +796,8 @@ ifeq ($(shell uname -s),Darwin)
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing upstream llamacpp backend binaries..."; \
-		find src-tauri/resources/llamacpp-backend-upstream -type f \( -name "llama-*" -o -name "*.dylib" -o -name "*.so" \) | while read bin; do \
-			if file "$$bin" | grep -q "Mach-O"; then \
+		for bin in src-tauri/resources/llamacpp-backend-upstream/build/bin/*; do \
+			if [ -f "$$bin" ] && file "$$bin" | grep -q "Mach-O"; then \
 				codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.plist --sign "$$SIGNING_IDENTITY" "$$bin"; \
 			fi; \
 		done; \

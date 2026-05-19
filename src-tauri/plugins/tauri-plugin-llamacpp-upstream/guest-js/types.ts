@@ -52,6 +52,7 @@ export type LlamacppConfig = {
   main_gpu: number
   flash_attn: string
   cont_batching: boolean
+  mtp: boolean
   no_mmap: boolean
   mlock: boolean
   no_kv_offload: boolean

@@ -11,6 +11,15 @@
     }
   },
   {
+    "key": "mtp",
+    "title": "Enable MTP (Multi-Token Prediction)",
+    "description": "Speculative decoding via the model's built-in MTP head. Only works with MTP-capable GGUFs (e.g. ggml-org/Qwen3.6-27B-MTP-GGUF).",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
     "key": "concurrent_mode",
     "title": "Concurrent Mode",
     "description": "Run the model as a multi-slot server: serves multiple chat requests in parallel on one loaded model. Overrides Parallel Sequences and Continuous Batching and exposes Prometheus /metrics.",

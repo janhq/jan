@@ -64,6 +64,7 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
 
     flash_attn: asString(config.flash_attn),
     cont_batching: asBool(config.cont_batching),
+    mtp: asBool(config.mtp),
 
     no_mmap: asBool(config.no_mmap),
     mlock: asBool(config.mlock),

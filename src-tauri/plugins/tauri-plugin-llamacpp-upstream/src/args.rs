@@ -59,11 +59,22 @@ pub struct LlamacppConfig {
     /// Independent switch; also implicitly enabled by `concurrent_mode`.
     #[serde(default)]
     pub expose_metrics: bool,
+    /// Enable Multi-Token Prediction speculative decoding via the model's
+    /// built-in MTP head (upstream PR #22673, `--spec-type draft-mtp`).
+    /// Only meaningful for MTP-capable GGUFs (e.g. Qwen3.6-*-MTP-GGUF) and
+    /// only honored on backend builds >= `MTP_MIN_BUILD`.
+    #[serde(default)]
+    pub mtp: bool,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
 /// flag to a string argument accepting auto|on|off (upstream PR #15434).
 const FLASH_ATTN_STRING_ARG_MIN_BUILD: u32 = 6325;
+
+/// Minimum upstream build number that contains the MTP speculative-decoding
+/// merge (PR #22673, commit 2555826, merged 2026-05-16, first tagged release
+/// b9180). On earlier builds the toggle is silently ignored.
+const MTP_MIN_BUILD: u32 = 9180;
 
 pub struct ArgumentBuilder {
     args: Vec<String>,
@@ -188,6 +199,10 @@ impl ArgumentBuilder {
 
         // Parallel sequences
         self.add_parallel_settings();
+
+        // MTP speculative decoding (must come before embedding/text branch
+        // so the toggle is honored uniformly; method itself skips embedding).
+        self.add_mtp_args();
 
         // Prometheus /metrics endpoint
         self.add_metrics_flag();
@@ -355,6 +370,39 @@ impl ArgumentBuilder {
         }
     }
 
+    /// Emits MTP speculative-decoding flags when the user enabled the
+    /// provider-level toggle AND the backend build is recent enough to
+    /// understand them. `--spec-draft-n-max 2` is the recommended default
+    /// from upstream PR #22673 (acceptance rate ~83% on Qwen3.6).
+    ///
+    /// Skipped for embedding servers (speculative decoding is a text-gen
+    /// concept) and for backend builds older than `MTP_MIN_BUILD` (we warn
+    /// once instead of letting llama-server reject the flag).
+    fn add_mtp_args(&mut self) {
+        if !self.config.mtp {
+            return;
+        }
+        if self.is_embedding {
+            return;
+        }
+        let build_ok = self
+            .parse_build_number()
+            .is_some_and(|b| b >= MTP_MIN_BUILD);
+        if !build_ok {
+            log::warn!(
+                "MTP requested but backend build {}/{} predates upstream MTP merge (b{}); skipping --spec-type draft-mtp",
+                self.version,
+                self.backend,
+                MTP_MIN_BUILD
+            );
+            return;
+        }
+        self.args.push("--spec-type".to_string());
+        self.args.push("draft-mtp".to_string());
+        self.args.push("--spec-draft-n-max".to_string());
+        self.args.push("2".to_string());
+    }
+
     /// Emits `--metrics` when the user explicitly requested Prometheus
     /// metrics (directly or via Concurrent Mode).
     fn add_metrics_flag(&mut self) {
@@ -520,6 +568,7 @@ mod tests {
             concurrent_mode: false,
             concurrent_slots: 8,
             expose_metrics: false,
+            mtp: false,
         }
     }
 
@@ -1293,5 +1342,57 @@ mod tests {
         assert_has_flag(&args, "--metrics");
         assert_arg_pair(&args, "--parallel", "1");
         assert_no_flag(&args, "--cont-batching");
+    }
+
+    #[test]
+    fn test_mtp_off_no_spec_flags() {
+        let mut config = default_config();
+        config.version_backend = "b9180/standard".to_string();
+        config.mtp = false;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_mtp_on_emits_spec_flags() {
+        let mut config = default_config();
+        config.version_backend = "b9180/standard".to_string();
+        config.mtp = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--spec-type", "draft-mtp");
+        assert_arg_pair(&args, "--spec-draft-n-max", "2");
+    }
+
+    #[test]
+    fn test_mtp_skipped_on_old_build() {
+        let mut config = default_config();
+        config.version_backend = "b9179/standard".to_string();
+        config.mtp = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_mtp_skipped_in_embedding_mode() {
+        let mut config = default_config();
+        config.version_backend = "b9180/standard".to_string();
+        config.mtp = true;
+
+        let builder = ArgumentBuilder::new(config, true).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
     }
 }
