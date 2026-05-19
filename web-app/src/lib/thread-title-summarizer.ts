@@ -20,10 +20,16 @@ function buildSummarizePrompt(transcript: string): string {
 export function cleanTitle(raw: string): string | null {
   let text = raw.trim()
 
-  // Strip reasoning blocks like <think>...</think>
-  const thinkMatch = text.match(/<\/think>\s*(.*)$/s)
-  if (thinkMatch) {
-    text = thinkMatch[1].trim()
+  // Strip complete reasoning blocks like <think>...</think> (any tag name)
+  text = text.replace(/<(think|thinking|reasoning|analysis)[^>]*>[\s\S]*?<\/\1>/gi, '').trim()
+
+  // If a reasoning opener remains without a close, the output is all reasoning — unusable
+  if (/<(think|thinking|reasoning|analysis)[^>]*>/i.test(text)) return null
+
+  // If only a closing tag is present, take what's after the last one
+  const lastClose = text.match(/<\/(?:think|thinking|reasoning|analysis)>\s*([\s\S]*)$/i)
+  if (lastClose) {
+    text = lastClose[1].trim()
   }
 
   // Remove leftover XML-like tags
@@ -63,6 +69,9 @@ export async function generateThreadTitle(
       console.warn('[ThreadTitle] No model/provider selected')
       return null
     }
+
+    // MLX models often emit reasoning that can't be reliably suppressed; fall back to default title.
+    if (selectedProvider === 'mlx') return null
 
     const provider = getProviderByName(selectedProvider)
     if (!provider) {
