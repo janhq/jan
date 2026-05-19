@@ -56,6 +56,7 @@ import { invoke, Channel } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { ttftPreBegin } from '@/lib/ttft-timing'
 
 /**
  * Legacy llama.cpp / dflash timings structure (kept for backward
@@ -280,8 +281,15 @@ function createLocalStreamingFetch(
     let notifyFirst: (() => void) | null = null
 
     const channel = new Channel<{ data: string }>()
+    let firstChunkMarked = false
     channel.onmessage = ({ data }: { data: string }) => {
       chunks.push(data)
+      if (!firstChunkMarked) {
+        firstChunkMarked = true
+        void import('@/lib/ttft-timing').then(({ ttftMark }) =>
+          ttftMark('epsilonFirstChunk')
+        )
+      }
       notifyFirst?.()
       notifyFirst = null
       notifyPull?.()
@@ -295,6 +303,45 @@ function createLocalStreamingFetch(
       notifyPull?.()
       notifyPull = null
     }
+
+    const { ttftMark } = await import('@/lib/ttft-timing')
+    ttftMark('epsilonInvoke')
+
+    // #region agent log
+    // Diagnostic probe: dump the FINAL outgoing body for /chat/completions
+    // straight to console.info so it appears in the Web Inspector log.
+    // We log the reasoning-relevant fields explicitly + a list of all
+    // top-level keys, so we can verify whether the disable-reasoning
+    // override survived all the way to the wire.
+    try {
+      if (urlStr.includes('/chat/completions')) {
+        let parsed: Record<string, unknown> = {}
+        try {
+          parsed = JSON.parse(bodyStr) as Record<string, unknown>
+        } catch {
+          /* non-JSON */
+        }
+        console.info('[final-body-payload]', {
+          url: urlStr,
+          bodyLen: bodyStr.length,
+          messagesCount: Array.isArray(parsed.messages)
+            ? (parsed.messages as Array<unknown>).length
+            : null,
+          model: parsed.model,
+          stream: parsed.stream,
+          enable_thinking_top: parsed.enable_thinking ?? '<absent>',
+          chat_template_kwargs: parsed.chat_template_kwargs ?? '<absent>',
+          reasoning_budget: parsed.reasoning_budget ?? '<absent>',
+          thinking_budget: parsed.thinking_budget ?? '<absent>',
+          thinking: parsed.thinking ?? '<absent>',
+          reasoning_effort: parsed.reasoning_effort ?? '<absent>',
+          topLevelKeys: Object.keys(parsed),
+        })
+      }
+    } catch {
+      /* probe must never throw */
+    }
+    // #endregion
 
     const cmdPromise = invoke<number>('stream_local_http', {
       url: urlStr,
@@ -390,7 +437,185 @@ function getLocalApiServerBaseURL(): {
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
+/**
+ * Cached `SessionInfo` (port + api_key) for an already-warm local
+ * llama.cpp / MLX session, keyed by `providerName::modelId`. Avoids paying
+ * 100–200ms of redundant IPC (`startModel` + `find_session_by_model`) on
+ * every `sendMessages` for a session that is clearly still alive.
+ *
+ * TTL is short so that if the user stops/restarts the model the cache
+ * naturally expires and the next request re-discovers the new session.
+ */
+interface CachedSession {
+  sessionInfo: SessionInfo
+  expiresAt: number
+  inFlight?: Promise<SessionInfo>
+}
+
+const LOCAL_SESSION_CACHE_TTL_MS = 10_000
+
 export class ModelFactory {
+  private static fmAvailabilityCache: { status: string; at: number } | null =
+    null
+  private static readonly FM_AVAILABILITY_TTL_MS = 30 * 60 * 1000
+  private static localSessionCache: Map<string, CachedSession> = new Map()
+
+  private static sessionCacheKey(providerName: string, modelId: string): string {
+    return `${providerName}::${modelId}`
+  }
+
+  /**
+   * Invalidate the cached `SessionInfo` for the given local provider/model.
+   * Call this when the model is explicitly stopped or restarted so the next
+   * request rediscovers the new port/api_key.
+   */
+  static invalidateLocalSessionCache(
+    providerName: string,
+    modelId?: string
+  ): void {
+    if (modelId) {
+      ModelFactory.localSessionCache.delete(
+        ModelFactory.sessionCacheKey(providerName, modelId)
+      )
+    } else {
+      for (const key of Array.from(ModelFactory.localSessionCache.keys())) {
+        if (key.startsWith(`${providerName}::`)) {
+          ModelFactory.localSessionCache.delete(key)
+        }
+      }
+    }
+  }
+
+  /**
+   * Resolve `SessionInfo` for a llama.cpp or MLX model, reusing a cached
+   * entry when fresh, otherwise calling `startModel` + the appropriate
+   * `find_session_by_model` IPC and populating the cache. Concurrent
+   * resolves for the same key share a single in-flight promise so the
+   * pre-warm from the chat input and the real send don't both hit IPC.
+   */
+  private static async resolveLocalSession(
+    providerName: 'llamacpp' | 'mlx',
+    modelId: string,
+    provider: ProviderObject | undefined
+  ): Promise<SessionInfo> {
+    const key = ModelFactory.sessionCacheKey(providerName, modelId)
+    const now = Date.now()
+    const cached = ModelFactory.localSessionCache.get(key)
+    if (cached && cached.expiresAt > now) {
+      // #region agent log
+      ttftPreBegin('resolveLocalSession-cacheHit', { key })
+      // #endregion
+      return cached.sessionInfo
+    }
+    if (cached?.inFlight) {
+      // #region agent log
+      ttftPreBegin('resolveLocalSession-awaitInflight', { key })
+      // #endregion
+      return cached.inFlight
+    }
+
+    // #region agent log
+    ttftPreBegin('resolveLocalSession-cacheMiss', { key })
+    // #endregion
+    const inFlight = (async () => {
+      if (provider) {
+        try {
+          const { useServiceStore } = await import('@/hooks/useServiceHub')
+          const serviceHub = useServiceStore.getState().serviceHub
+          if (serviceHub) {
+            await serviceHub.models().startModel(provider, modelId)
+          }
+        } catch (error) {
+          console.error(`Failed to start ${providerName} model:`, error)
+          throw new Error(
+            `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          )
+        }
+      }
+
+      const ipcName =
+        providerName === 'llamacpp'
+          ? 'plugin:llamacpp|find_session_by_model'
+          : 'plugin:mlx|find_mlx_session_by_model'
+      const sessionInfo = await invoke<SessionInfo | null>(ipcName, { modelId })
+      if (!sessionInfo) {
+        throw new Error(
+          `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
+        )
+      }
+      ModelFactory.localSessionCache.set(key, {
+        sessionInfo,
+        expiresAt: Date.now() + LOCAL_SESSION_CACHE_TTL_MS,
+      })
+      // #region agent log
+      ttftPreBegin('resolveLocalSession-cached', { key })
+      // #endregion
+      return sessionInfo
+    })()
+
+    ModelFactory.localSessionCache.set(key, {
+      sessionInfo: cached?.sessionInfo ?? ({} as SessionInfo),
+      expiresAt: cached?.expiresAt ?? 0,
+      inFlight,
+    })
+
+    try {
+      return await inFlight
+    } finally {
+      const entry = ModelFactory.localSessionCache.get(key)
+      if (entry && entry.inFlight === inFlight) {
+        entry.inFlight = undefined
+      }
+    }
+  }
+
+  /**
+   * Fire-and-forget pre-warm of a local session. Designed to be called from
+   * the chat input the moment the user hits Send on the home screen, so that
+   * `startModel` + session discovery happen in parallel with thread
+   * creation, navigation, and route mounting. Safe to call repeatedly: the
+   * in-flight de-duplication in `resolveLocalSession` keeps it to a single
+   * IPC round-trip.
+   */
+  static async prewarmSession(
+    providerName: string,
+    modelId: string,
+    provider: ProviderObject
+  ): Promise<void> {
+    const lower = providerName.toLowerCase()
+    if (lower !== 'llamacpp' && lower !== 'mlx') return
+    try {
+      await ModelFactory.resolveLocalSession(
+        lower,
+        modelId,
+        provider
+      )
+    } catch (error) {
+      console.debug('[ModelFactory] prewarmSession failed:', error)
+    }
+  }
+
+  static invalidateFoundationModelsAvailabilityCache(): void {
+    ModelFactory.fmAvailabilityCache = null
+  }
+
+  static async getFoundationModelsAvailability(): Promise<string> {
+    const now = Date.now()
+    if (
+      ModelFactory.fmAvailabilityCache &&
+      now - ModelFactory.fmAvailabilityCache.at <
+        ModelFactory.FM_AVAILABILITY_TTL_MS
+    ) {
+      return ModelFactory.fmAvailabilityCache.status
+    }
+    const status = await invoke<string>(
+      'plugin:foundation-models|check_foundation_models_availability',
+      {}
+    )
+    ModelFactory.fmAvailabilityCache = { status, at: now }
+    return status
+  }
+
   /**
    * Create a language model instance based on the provider configuration
    */
@@ -470,32 +695,11 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
-    // Start the model first if provider is available
-    if (provider) {
-      try {
-        const { useServiceStore } = await import('@/hooks/useServiceHub')
-        const serviceHub = useServiceStore.getState().serviceHub
-
-        if (serviceHub) {
-          await serviceHub.models().startModel(provider, modelId)
-        }
-      } catch (error) {
-        console.error('Failed to start llamacpp model:', error)
-        throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
-      }
-    }
-
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:llamacpp|find_session_by_model',
-      { modelId }
+    const sessionInfo = await ModelFactory.resolveLocalSession(
+      'llamacpp',
+      modelId,
+      provider
     )
-
-    if (!sessionInfo) {
-      throw new Error(`No running session found for model: ${modelId}`)
-    }
 
     const customFetch = createLocalStreamingFetch(httpFetch, parameters)
 
@@ -532,32 +736,11 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
-    // Start the model first if provider is available
-    if (provider) {
-      try {
-        const { useServiceStore } = await import('@/hooks/useServiceHub')
-        const serviceHub = useServiceStore.getState().serviceHub
-
-        if (serviceHub) {
-          await serviceHub.models().startModel(provider, modelId)
-        }
-      } catch (error) {
-        console.error('Failed to start MLX model:', error)
-        throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
-      }
-    }
-
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:mlx|find_mlx_session_by_model',
-      { modelId }
+    const sessionInfo = await ModelFactory.resolveLocalSession(
+      'mlx',
+      modelId,
+      provider
     )
-
-    if (!sessionInfo) {
-      throw new Error(`No running MLX session found for model: ${modelId}`)
-    }
 
     const baseUrl = `http://localhost:${sessionInfo.port}`
     const authHeaders = {
@@ -604,10 +787,7 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
-    const availability = await invoke<string>(
-      'plugin:foundation-models|check_foundation_models_availability',
-      {}
-    )
+    const availability = await ModelFactory.getFoundationModelsAvailability()
 
     if (availability !== 'available') {
       const messages: Record<string, string> = {

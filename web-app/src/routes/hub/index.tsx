@@ -1001,22 +1001,11 @@ function HubContent() {
                             </div>
                           }
                         >
-                          <div
-                            className="mt-3 text-muted-foreground text-sm cursor-pointer"
-                            onClick={goToModel}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                goToModel()
-                              }
-                            }}
-                            role="button"
-                            tabIndex={0}
-                          >
-                            {t(rec.descriptionKey)}
-                          </div>
+                          {/* fallback-карточка появляется, пока модель не разрешилась
+                              из catalog/HF; описание из README ещё недоступно — не
+                              дублируем сюда t(rec.descriptionKey), он уже в чипе. */}
                           <p
-                            className="mt-2 text-xs text-muted-foreground cursor-pointer"
+                            className="mt-3 text-xs text-muted-foreground cursor-pointer"
                             onClick={goToModel}
                           >
                             {t('hub:by')} {rec.modelName.split('/')[0]}

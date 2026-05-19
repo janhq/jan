@@ -51,8 +51,6 @@ pub async fn load_llama_model_impl(
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
-    let mut process_map = process_map_arc.lock().await;
-
     log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using configuration: {:?}", config);
 
@@ -263,14 +261,16 @@ pub async fn load_llama_model_impl(
         mmproj_path: mmproj_path_string,
     };
 
-    // Insert session info to process_map
-    process_map.insert(
-        pid.clone(),
-        LLamaBackendSession {
-            child,
-            info: session_info.clone(),
-        },
-    );
+    {
+        let mut process_map = process_map_arc.lock().await;
+        process_map.insert(
+            pid.clone(),
+            LLamaBackendSession {
+                child,
+                info: session_info.clone(),
+            },
+        );
+    }
 
     Ok(session_info)
 }

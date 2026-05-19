@@ -270,6 +270,18 @@ pub async fn get_foundation_models_all_sessions<R: Runtime>(
 pub async fn check_foundation_models_availability<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<String, String> {
+    use std::time::{Duration, Instant};
+
+    let state: tauri::State<crate::state::FoundationModelsState> = app_handle.state();
+    {
+        let cache = state.availability_cache.lock().await;
+        if let Some((status, at)) = cache.as_ref() {
+            if at.elapsed() < Duration::from_secs(30 * 60) {
+                return Ok(status.clone());
+            }
+        }
+    }
+
     let resource_dir = app_handle
         .path()
         .resource_dir()
@@ -290,9 +302,16 @@ pub async fn check_foundation_models_availability<R: Runtime>(
         .trim()
         .to_string();
 
-    if status.is_empty() {
-        Ok("unavailable".to_string())
+    let resolved = if status.is_empty() {
+        "unavailable".to_string()
     } else {
-        Ok(status)
+        status
+    };
+
+    {
+        let mut cache = state.availability_cache.lock().await;
+        *cache = Some((resolved.clone(), Instant::now()));
     }
+
+    Ok(resolved)
 }

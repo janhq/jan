@@ -412,6 +412,16 @@ export function DataProvider() {
   useEffect(() => {
     const autoStartServer = async () => {
       try {
+        const { preloadModelOnStartup } = (
+          await import('@/hooks/useGeneralSetting')
+        ).useGeneralSetting.getState()
+        if (!preloadModelOnStartup) {
+          console.log(
+            '[LocalAPI:startup] Model preload disabled in settings; skipping auto-start'
+          )
+          return
+        }
+
         const isRunning = await serviceHub.app().getServerStatus()
         if (isRunning) {
           console.log('[LocalAPI:startup] Server already running')

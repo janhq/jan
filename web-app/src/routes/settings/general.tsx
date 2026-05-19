@@ -47,6 +47,10 @@ function General() {
     setSpellCheckChatInput,
     huggingfaceToken,
     setHuggingfaceToken,
+    preloadModelOnStartup,
+    setPreloadModelOnStartup,
+    reasoningBudget,
+    setReasoningBudget,
   } = useGeneralSetting()
   const allowAllMCPPermissions = useToolApproval(
     (state) => state.allowAllMCPPermissions
@@ -597,6 +601,37 @@ function General() {
                     checked={spellCheckChatInput}
                     onCheckedChange={(e) => setSpellCheckChatInput(e)}
                   />
+                }
+              />
+              <CardItem
+                title="Preload last used model on startup"
+                description="Start the local inference server with your last model when the app opens."
+                actions={
+                  <Switch
+                    checked={preloadModelOnStartup}
+                    onCheckedChange={setPreloadModelOnStartup}
+                  />
+                }
+              />
+              <CardItem
+                title="Reasoning budget (local models)"
+                description="Limits thinking tokens for llama.cpp / MLX. Off disables reasoning entirely."
+                actions={
+                  <select
+                    className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+                    value={reasoningBudget}
+                    onChange={(e) =>
+                      setReasoningBudget(
+                        e.target.value as typeof reasoningBudget
+                      )
+                    }
+                  >
+                    <option value="off">Off</option>
+                    <option value="low">Low (256)</option>
+                    <option value="medium">Medium (1024)</option>
+                    <option value="high">High (4096)</option>
+                    <option value="unlimited">Unlimited</option>
+                  </select>
                 }
               />
               <CardItem

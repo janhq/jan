@@ -471,6 +471,8 @@ export class DefaultModelsService implements ModelsService {
     provider?: string
   ): Promise<UnloadResult | undefined> {
     if (provider) {
+      const { ModelFactory } = await import('@/lib/model-factory')
+      ModelFactory.invalidateLocalSessionCache(provider, model)
       return this.getEngine(provider)?.unload(model)
     }
 
@@ -481,6 +483,11 @@ export class DefaultModelsService implements ModelsService {
 
     if (matchingProviders.length === 0) {
       return undefined
+    }
+
+    const { ModelFactory } = await import('@/lib/model-factory')
+    for (const { provider: providerName } of matchingProviders) {
+      ModelFactory.invalidateLocalSessionCache(providerName, model)
     }
 
     const results = await Promise.allSettled(
@@ -693,10 +700,30 @@ export class DefaultModelsService implements ModelsService {
     return false
   }
 
+  private static modelSupportCache = new Map<
+    string,
+    { status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'; at: number }
+  >()
+  private static readonly MODEL_SUPPORT_CACHE_TTL_MS = 5 * 60 * 1000
+
+  static invalidateModelSupportCache(): void {
+    DefaultModelsService.modelSupportCache.clear()
+  }
+
   async isModelSupported(
     modelPath: string,
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'> {
+    const cacheKey = `${modelPath}::${ctxSize ?? 'default'}`
+    const cached = DefaultModelsService.modelSupportCache.get(cacheKey)
+    const now = Date.now()
+    if (
+      cached &&
+      now - cached.at < DefaultModelsService.MODEL_SUPPORT_CACHE_TTL_MS
+    ) {
+      return cached.status
+    }
+
     try {
       const engine = this.getEngine('llamacpp') as AIEngine & {
         isModelSupported?: (
@@ -705,7 +732,12 @@ export class DefaultModelsService implements ModelsService {
         ) => Promise<'RED' | 'YELLOW' | 'GREEN'>
       }
       if (engine && typeof engine.isModelSupported === 'function') {
-        return await engine.isModelSupported(modelPath, ctxSize)
+        const status = await engine.isModelSupported(modelPath, ctxSize)
+        DefaultModelsService.modelSupportCache.set(cacheKey, {
+          status,
+          at: now,
+        })
+        return status
       }
       // Fallback if method is not available
       console.warn('isModelSupported method not available in llamacpp engine')
@@ -844,6 +876,10 @@ export class DefaultModelsService implements ModelsService {
               ? msg.content.trim() !== ''
               : Array.isArray(msg.content) && msg.content.length > 0
           ) // Filter out empty messages
+
+        if (transformedMessages.length === 0) {
+          return 0
+        }
 
         console.debug(
           '[TokenCounter:service] calling engine.getTokensCount with',

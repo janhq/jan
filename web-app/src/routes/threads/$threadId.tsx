@@ -32,6 +32,7 @@ import {
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
+import { ttftBegin, ttftMark, ttftPreBegin } from '@/lib/ttft-timing'
 import {
   ThreadMessage,
   MessageStatus,
@@ -192,7 +193,7 @@ function ThreadDetail() {
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
-    experimental_throttle: 50,
+    experimental_throttle: 16,
     onFinish: ({ message, isAbort }) => {
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
@@ -517,6 +518,9 @@ function ThreadDetail() {
       files?: Array<{ type: string; mediaType: string; url: string }>,
       documentsFromPayload?: Attachment[]
     ) => {
+      ttftBegin()
+      const persistReady =
+        useThreads.getState().awaitThreadPersistence(threadId)
       // Documents may be passed explicitly via the initial-message payload
       // (home → new thread flow). In that case the store has already been
       // cleared synchronously on send to avoid the chip lingering in the
@@ -609,13 +613,11 @@ function ThreadDetail() {
           return
         }
       }
+      ttftMark('beta')
 
-      // The thread row is created optimistically in the local store on
-      // home → new-thread navigation; backend persistence happens in the
-      // background. Wait for it to land before issuing message-related
-      // backend ops that depend on the thread FK existing. Resolves
-      // immediately for already-persisted threads (in-thread sends).
-      await useThreads.getState().awaitThreadPersistence(threadId)
+      // Thread row is optimistic on home → new-thread; persistence may still
+      // be in flight. Resolves immediately for in-thread sends.
+      await persistReady
 
       // Create and persist the user message to the backend with all processed attachments
       const userMessage = newUserThreadContent(
@@ -697,11 +699,22 @@ function ThreadDetail() {
   const initialMessageSentRef = useRef(false)
 
   useEffect(() => {
+    // #region agent log
+    ttftPreBegin('threadDetail-mount-or-effect', {
+      threadId,
+      hasInitialMessage:
+        useInitialMessage.getState().byThread[threadId] !== undefined,
+      alreadySent: initialMessageSentRef.current,
+    })
+    // #endregion
     if (initialMessageSentRef.current) return
 
     const message = useInitialMessage.getState().consume(threadId)
     if (!message) return
 
+    // #region agent log
+    ttftPreBegin('consume-initial-message', { threadId })
+    // #endregion
     initialMessageSentRef.current = true
     ;(async () => {
       try {
@@ -930,6 +943,9 @@ function ThreadDetail() {
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // #region agent log
+    ttftPreBegin('chat-status-change', { threadId, status })
+    // #endregion
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
     }
