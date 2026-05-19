@@ -298,10 +298,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     // NOTE: v2 turbo3 KV-cache migration is intentionally skipped for the
     // upstream provider — vanilla ggml-org/llama.cpp does not implement the
-    // turboquant KV types. The default settings already use q8_0.
+    // turboquant KV types.
 
     // Migration v3: disable fit by default
     await this.migrateFitDefault()
+
+    // Migration v4: stop overriding KV cache types in the upstream
+    // provider. Earlier we forced `q8_0` to mirror the TurboQuant fork,
+    // but vanilla `llama-server` performs best with its own default
+    // (`f16`). We drop the obsolete `cache_type_k` / `cache_type_v`
+    // entries from the persisted settings list and clear the in-memory
+    // config so `args.rs` skips emitting `--cache-type-k/-v` entirely.
+    await this.clearLegacyKvCacheSettings()
 
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
@@ -410,6 +418,41 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async clearLegacyKvCacheSettings(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_upstream_kv_cache_cleared_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    const obsoleteKeys = ['cache_type_k', 'cache_type_v'] as const
+
+    try {
+      const settings = await this.getSettings()
+      const filtered = settings.filter(
+        (item) =>
+          !(obsoleteKeys as readonly string[]).includes(item.key as string)
+      )
+      if (filtered.length !== settings.length) {
+        await this.updateSettings(filtered)
+      }
+    } catch (err) {
+      logger.warn(
+        'clearLegacyKvCacheSettings: failed to prune settings list:',
+        err
+      )
+    }
+
+    const cfg = this.config as Record<string, unknown>
+    for (const k of obsoleteKeys) {
+      if (cfg[k] !== undefined && cfg[k] !== '') {
+        cfg[k] = ''
+      }
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
+    logger.info(
+      'Cleared legacy KV cache type overrides; falling back to llama.cpp defaults'
+    )
   }
 
   private async migrateKvCacheToTurbo3(): Promise<void> {
