@@ -27,7 +27,7 @@ import type {
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
 const HUGGING_FACE_SEARCH_LIMIT = 10
-const localProviders = ['llamacpp', 'mlx'] as const
+const localProviders = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 type LocalProviderName = (typeof localProviders)[number]
 
 type HuggingFaceRepoSearchResult = Pick<

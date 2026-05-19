@@ -8,6 +8,8 @@ Reads env vars:
     CURR_TAG         required, e.g. "v1.1.64"
     PREV_TAG         optional, resolved from git history if absent
     REPO             optional, e.g. "AtomicBot-ai/Atomic-Chat"
+    GH_TOKEN         optional; enables GitHub API lookups for PR authors
+                     (used to build the Contributors section).
 
 Writes the produced markdown to stdout.
 Exit 0 on success; non-zero on any failure (caller treats as "skip enrichment").
@@ -18,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -85,6 +88,122 @@ def _resolve_prev_tag(curr_tag: str) -> str | None:
 def _collect_commits(prev_tag: str | None, curr_tag: str) -> str:
     rng = f"{prev_tag}..{curr_tag}" if prev_tag else curr_tag
     return _run(["git", "log", "--no-merges", "--pretty=format:- %s", rng])
+
+
+_PR_NUMBER_RE = re.compile(r"\(#(\d+)\)")
+
+
+def _gh_api(url: str, token: str | None) -> dict | list | None:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "atomic-chat-release-notes",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url=url, method="GET", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        logger.warning("GitHub API HTTP %s for %s: %s", exc.code, url, exc.reason)
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+        logger.warning("GitHub API request failed for %s: %s", url, exc)
+    return None
+
+
+def _collect_commit_log(prev_tag: str | None, curr_tag: str) -> str:
+    """Return raw "<sha>\\t<subject>" lines for every non-merge commit in range.
+
+    Uses local git history (CI checks out with fetch-depth: 0 + fetch-tags:
+    true), so the full prev_tag..curr_tag range is covered — unlike GitHub's
+    /compare endpoint which caps at 250 commits per response.
+    """
+    rng = f"{prev_tag}..{curr_tag}" if prev_tag else curr_tag
+    return _run(["git", "log", "--no-merges", "--pretty=format:%H%x09%s", rng])
+
+
+def _collect_contributors(
+    repo: str,
+    prev_tag: str | None,
+    curr_tag: str,
+    token: str | None,
+) -> list[str]:
+    """Return GitHub logins (in first-seen order) credited for changes in range.
+
+    Strategy:
+    - Enumerate every non-merge commit between prev_tag and curr_tag via local
+      git log (no GitHub /compare 250-commit cap).
+    - Parse "(#NNN)" PR refs from each commit subject and resolve the PR
+      author through the GitHub API (cached per PR number).
+    - For commits without a PR ref, fall back to the commit's GitHub-author
+      login. Bots are kept as-is per project preference.
+    """
+    if not repo:
+        logger.warning("REPO not set — skipping Contributors section")
+        return []
+
+    try:
+        log = _collect_commit_log(prev_tag, curr_tag)
+    except subprocess.CalledProcessError as exc:
+        logger.warning("git log for contributors failed: %s", exc.stderr)
+        return []
+
+    if not log:
+        return []
+
+    pr_numbers: list[str] = []
+    seen_prs: set[str] = set()
+    shas_without_pr: list[str] = []
+
+    for line in log.splitlines():
+        if "\t" not in line:
+            continue
+        sha, subject = line.split("\t", 1)
+        prs_in_subject = _PR_NUMBER_RE.findall(subject)
+        if prs_in_subject:
+            for pr_num in prs_in_subject:
+                if pr_num not in seen_prs:
+                    seen_prs.add(pr_num)
+                    pr_numbers.append(pr_num)
+        elif sha:
+            shas_without_pr.append(sha)
+
+    logger.info(
+        "Contributor scan: %d PR ref(s), %d commit(s) without PR ref",
+        len(pr_numbers),
+        len(shas_without_pr),
+    )
+
+    logins: dict[str, None] = {}
+
+    for pr_num in pr_numbers:
+        payload = _gh_api(
+            f"https://api.github.com/repos/{repo}/pulls/{pr_num}", token
+        )
+        login = ((payload or {}).get("user") or {}).get("login")
+        if login and login not in logins:
+            logins[login] = None
+
+    for sha in shas_without_pr:
+        payload = _gh_api(
+            f"https://api.github.com/repos/{repo}/commits/{sha}", token
+        )
+        login = ((payload or {}).get("author") or {}).get("login")
+        if login and login not in logins:
+            logins[login] = None
+
+    return list(logins.keys())
+
+
+def _render_contributors_section(logins: list[str]) -> str:
+    if not logins:
+        return ""
+    mentions = ", ".join(f"@{login}" for login in logins)
+    return (
+        "\n\n## 🙏 Contributors\n\n"
+        f"Thanks to {mentions} for their contributions to this release!"
+    )
 
 
 def _call_openai(api_key: str, base_url: str, model: str, user_content: str) -> str:
@@ -166,7 +285,13 @@ def main() -> int:
         logger.error("OpenAI returned empty content")
         return 1
 
-    sys.stdout.write(notes + "\n")
+    gh_token = os.environ.get("GH_TOKEN", "").strip() or None
+    contributors = _collect_contributors(repo, prev_tag, curr_tag, gh_token)
+    if contributors:
+        logger.info("Contributors resolved: %s", ", ".join(contributors))
+    contributors_md = _render_contributors_section(contributors)
+
+    sys.stdout.write(notes + contributors_md + "\n")
     return 0
 
 

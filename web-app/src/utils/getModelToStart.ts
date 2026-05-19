@@ -2,7 +2,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import type { ModelInfo } from '@janhq/core'
 
-const localProviderNames = ['llamacpp', 'mlx'] as const
+const localProviderNames = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 
 export const getLastUsedModel = (): {
   provider: string

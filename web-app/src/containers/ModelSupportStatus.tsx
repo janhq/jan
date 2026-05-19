@@ -142,10 +142,17 @@ export const ModelSupportStatus = ({
     }
   }
 
-  // Check model support when model changes (llamacpp hardware compatibility)
+  // Check model support when model changes (llama.cpp hardware compatibility).
+  // Both the TurboQuant fork ('llamacpp') and the upstream build
+  // ('llamacpp-upstream') consume the same GGUF tree under
+  // <jan>/llamacpp/models/ — see `getModelsRootPath()` in the
+  // llamacpp-upstream extension — so the same probe applies to both.
   useEffect(() => {
     const checkModelSupport = async () => {
-      if (modelId && provider === 'llamacpp') {
+      if (
+        modelId &&
+        (provider === 'llamacpp' || provider === 'llamacpp-upstream')
+      ) {
         setModelSupportStatus('LOADING')
         try {
           const supportStatus = await checkModelSupportWithPath(
@@ -179,7 +186,12 @@ export const ModelSupportStatus = ({
     }
   }, [provider, modelId, loadingModel, activeModels])
 
-  if (!modelSupportStatus || (provider !== 'llamacpp' && provider !== 'mlx')) {
+  if (
+    !modelSupportStatus ||
+    (provider !== 'llamacpp' &&
+      provider !== 'llamacpp-upstream' &&
+      provider !== 'mlx')
+  ) {
     return null
   }
 

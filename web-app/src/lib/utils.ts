@@ -77,6 +77,7 @@ export function getProviderLogo(provider: string) {
     case 'jan':
       return '/images/model-provider/jan.png'
     case 'llamacpp':
+    case 'llamacpp-upstream':
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
@@ -115,6 +116,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Atomic Chat'
     case 'llamacpp':
       return IS_WINDOWS ? 'Llama.cpp' : 'Llama.cpp + TurboQuant'
+    case 'llamacpp-upstream':
+      return 'Llama.cpp'
     case 'mlx':
       return 'MLX'
     case 'openai':

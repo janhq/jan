@@ -19,6 +19,7 @@
     "rag:default",
     "hardware:default",
     "llamacpp:default",
+    "llamacpp-upstream:default",
     "mlx:default",
     "foundation-models:default",
     "deep-link:default",

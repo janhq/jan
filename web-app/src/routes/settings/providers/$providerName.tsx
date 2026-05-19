@@ -179,7 +179,9 @@ function ProviderDetail() {
 
   // Check if llamacpp/mlx provider needs backend configuration
   const needsBackendConfig =
-    (provider?.provider === 'llamacpp' || provider?.provider === 'mlx') &&
+    (provider?.provider === 'llamacpp' ||
+      provider?.provider === 'llamacpp-upstream' ||
+      provider?.provider === 'mlx') &&
     provider.settings?.some(
       (setting) =>
         setting.key === 'version_backend' &&
@@ -947,6 +949,7 @@ function ProviderDetail() {
                 'flex flex-col gap-3',
                 provider &&
                   (provider.provider === 'llamacpp' ||
+                    provider.provider === 'llamacpp-upstream' ||
                     provider.provider === 'mlx') &&
                   'flex-col-reverse'
               )}
@@ -1244,6 +1247,7 @@ function ProviderDetail() {
                             )}
                           {setting.key === 'version_backend' &&
                             (provider?.provider === 'llamacpp' ||
+                              provider?.provider === 'llamacpp-upstream' ||
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">
                                 <Button
@@ -1366,6 +1370,7 @@ function ProviderDetail() {
                     <div className="flex items-center gap-2">
                       {provider &&
                         provider.provider !== 'llamacpp' &&
+                        provider.provider !== 'llamacpp-upstream' &&
                         provider.provider !== 'mlx' && (
                           <>
                             <Button
@@ -1391,6 +1396,7 @@ function ProviderDetail() {
                         )}
                       {provider &&
                         (provider.provider === 'llamacpp' ||
+                          provider.provider === 'llamacpp-upstream' ||
                           provider.provider === 'mlx') &&
                         !hasDownloadedModels && (
                           <Button
@@ -1413,7 +1419,9 @@ function ProviderDetail() {
                             <span>{t('providers:findModel')}</span>
                           </Button>
                         )}
-                      {provider && provider.provider === 'llamacpp' && (
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'llamacpp-upstream') && (
                         <ImportVisionModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
@@ -1525,6 +1533,7 @@ function ProviderDetail() {
                                 (() => {
                                   const isLocalEngine =
                                     provider.provider === 'llamacpp' ||
+                                    provider.provider === 'llamacpp-upstream' ||
                                     provider.provider === 'mlx'
                                   // Cloud providers need an API key before
                                   // they can be "started" (registered with the

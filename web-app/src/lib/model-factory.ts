@@ -494,7 +494,7 @@ export class ModelFactory {
    * pre-warm from the chat input and the real send don't both hit IPC.
    */
   private static async resolveLocalSession(
-    providerName: 'llamacpp' | 'mlx',
+    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
     modelId: string,
     provider: ProviderObject | undefined
   ): Promise<SessionInfo> {
@@ -536,7 +536,9 @@ export class ModelFactory {
       const ipcName =
         providerName === 'llamacpp'
           ? 'plugin:llamacpp|find_session_by_model'
-          : 'plugin:mlx|find_mlx_session_by_model'
+          : providerName === 'llamacpp-upstream'
+            ? 'plugin:llamacpp-upstream|find_session_by_model'
+            : 'plugin:mlx|find_mlx_session_by_model'
       const sessionInfo = await invoke<SessionInfo | null>(ipcName, { modelId })
       if (!sessionInfo) {
         throw new Error(
@@ -583,10 +585,16 @@ export class ModelFactory {
     provider: ProviderObject
   ): Promise<void> {
     const lower = providerName.toLowerCase()
-    if (lower !== 'llamacpp' && lower !== 'mlx') return
+    if (
+      lower !== 'llamacpp' &&
+      lower !== 'llamacpp-upstream' &&
+      lower !== 'mlx'
+    ) {
+      return
+    }
     try {
       await ModelFactory.resolveLocalSession(
-        lower,
+        lower as 'llamacpp' | 'llamacpp-upstream' | 'mlx',
         modelId,
         provider
       )
@@ -639,7 +647,13 @@ export class ModelFactory {
 
     switch (providerName) {
       case 'llamacpp':
-        return this.createLlamaCppModel(modelId, provider, localInjected)
+      case 'llamacpp-upstream':
+        return this.createLlamaCppModel(
+          modelId,
+          provider,
+          localInjected,
+          providerName
+        )
 
       case 'mlx':
         return this.createMlxModel(modelId, provider, localInjected)
@@ -688,15 +702,20 @@ export class ModelFactory {
   }
 
   /**
-   * Create a llamacpp model by starting the model and finding the running session
+   * Create a llamacpp model by starting the model and finding the running session.
+   * The `engineName` selects which Tauri plugin to talk to: `'llamacpp'` (our
+   * TurboQuant fork) or `'llamacpp-upstream'` (official ggml-org/llama.cpp).
+   * Both expose an OpenAI-compatible HTTP surface, so the rest of the factory
+   * is identical — only the session-discovery IPC differs.
    */
   private static async createLlamaCppModel(
     modelId: string,
     provider?: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    engineName: 'llamacpp' | 'llamacpp-upstream' = 'llamacpp'
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
-      'llamacpp',
+      engineName,
       modelId,
       provider
     )
@@ -704,7 +723,7 @@ export class ModelFactory {
     const customFetch = createLocalStreamingFetch(httpFetch, parameters)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
-      provider: 'llamacpp',
+      provider: engineName,
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',

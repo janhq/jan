@@ -30,6 +30,7 @@
     "hardware:default",
     "deep-link:default",
     "llamacpp:default",
+    "llamacpp-upstream:default",
     "mlx:default",
     "foundation-models:default",
     "updater:default",

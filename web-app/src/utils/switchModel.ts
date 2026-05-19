@@ -10,10 +10,11 @@ import type { ServiceHub } from '@/services'
 import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
-// Local providers whose models are served by on-device engines (llamacpp / mlx).
-// Foundation Models is deliberately excluded here because it has its own
-// lifecycle plumbing and does not participate in the generic start/stop flow.
-const LOCAL_PROVIDERS = ['llamacpp', 'mlx'] as const
+// Local providers whose models are served by on-device engines (llamacpp /
+// llamacpp-upstream / mlx). Foundation Models is deliberately excluded here
+// because it has its own lifecycle plumbing and does not participate in the
+// generic start/stop flow.
+const LOCAL_PROVIDERS = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
 
 function isLocalEngineProvider(providerName: string): boolean {

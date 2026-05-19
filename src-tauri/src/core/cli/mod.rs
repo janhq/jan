@@ -14,6 +14,7 @@ use crate::core::threads::{
     utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
 };
 use tauri_plugin_llamacpp::state::LlamacppState;
+use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 use tauri_plugin_mlx::state::MlxState;
 
 // Re-export impl functions and config types so the binary can call them directly
@@ -25,6 +26,10 @@ pub use tauri_plugin_mlx::state::SessionInfo;
 
 pub fn init_llamacpp_state() -> LlamacppState {
     LlamacppState::new()
+}
+
+pub fn init_llamacpp_upstream_state() -> LlamacppUpstreamState {
+    LlamacppUpstreamState::new()
 }
 
 pub fn init_mlx_state() -> MlxState {
@@ -105,6 +110,7 @@ pub async fn cli_start_server<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     app_state: Arc<AppState>,
     llama_state: Arc<LlamacppState>,
+    llama_upstream_state: Arc<LlamacppUpstreamState>,
     mlx_state: Arc<MlxState>,
     host: String,
     port: u16,
@@ -116,6 +122,7 @@ pub async fn cli_start_server<R: tauri::Runtime>(
         app_handle,
         app_state.server_handle.clone(),
         llama_state.llama_server_process.clone(),
+        llama_upstream_state.llama_server_process.clone(),
         mlx_state.mlx_server_process.clone(),
         host,
         port,

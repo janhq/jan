@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::state::LlamacppState;
+use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
@@ -34,6 +35,9 @@ pub async fn start_server<R: Runtime>(
     let llama_state: State<LlamacppState> = app_handle.state();
     let sessions = llama_state.llama_server_process.clone();
 
+    let llama_upstream_state: State<LlamacppUpstreamState> = app_handle.state();
+    let sessions_upstream = llama_upstream_state.llama_server_process.clone();
+
     let mlx_state: State<MlxState> = app_handle.state();
     let mlx_sessions = mlx_state.mlx_server_process.clone();
 
@@ -41,6 +45,7 @@ pub async fn start_server<R: Runtime>(
         app_handle.clone(),
         server_handle,
         sessions,
+        sessions_upstream,
         mlx_sessions,
         host,
         port,

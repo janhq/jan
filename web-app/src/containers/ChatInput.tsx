@@ -202,7 +202,9 @@ const ChatInput = memo(function ChatInput({
   // activeModels and is serialised, so no manual state juggling is needed here.
   useEffect(() => {
     const isLocal =
-      selectedProvider === 'mlx' || selectedProvider === 'llamacpp'
+      selectedProvider === 'mlx' ||
+      selectedProvider === 'llamacpp' ||
+      selectedProvider === 'llamacpp-upstream'
     if (
       !isLocal ||
       !selectedModel?.id ||
@@ -260,7 +262,9 @@ const ChatInput = memo(function ChatInput({
   ])
 
   const isLocalModelNotReady =
-    (selectedProvider === 'mlx' || selectedProvider === 'llamacpp') &&
+    (selectedProvider === 'mlx' ||
+      selectedProvider === 'llamacpp' ||
+      selectedProvider === 'llamacpp-upstream') &&
     !!selectedModel?.id &&
     !activeModels.includes(selectedModel.id)
 
@@ -747,7 +751,9 @@ const ChatInput = memo(function ChatInput({
           if (!selectedModel?.id) return false
           if (activeModels.includes(selectedModel.id)) return true
           const isLocal =
-            selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
+            selectedProvider === 'llamacpp' ||
+            selectedProvider === 'llamacpp-upstream' ||
+            selectedProvider === 'mlx'
           if (!isLocal) return false
           try {
             const { switchToModel } = await import('@/utils/switchModel')

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Listener, Runtime};
 use tauri_plugin_llamacpp::LLamaBackendSession;
+use tauri_plugin_llamacpp_upstream::LLamaBackendSession as LLamaUpstreamBackendSession;
 use tokio::sync::Mutex;
 
 use crate::core::state::{
@@ -873,11 +874,20 @@ async fn is_embedding_session(
     backend: &str,
     model_id: &str,
     sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: &Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> bool {
     match backend {
         "llamacpp" => {
             let guard = sessions.lock().await;
+            guard
+                .values()
+                .find(|s| model_ids_match(&s.info.model_id, model_id))
+                .map(|s| s.info.is_embedding)
+                .unwrap_or(false)
+        }
+        "llamacpp-upstream" => {
+            let guard = sessions_upstream.lock().await;
             guard
                 .values()
                 .find(|s| model_ids_match(&s.info.model_id, model_id))
@@ -904,11 +914,19 @@ async fn resolve_local_session(
     backend: &str,
     model_id: &str,
     sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: &Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> Option<(i32, String)> {
     match backend {
         "llamacpp" => {
             let guard = sessions.lock().await;
+            guard
+                .values()
+                .find(|s| model_ids_match(&s.info.model_id, model_id))
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        }
+        "llamacpp-upstream" => {
+            let guard = sessions_upstream.lock().await;
             guard
                 .values()
                 .find(|s| model_ids_match(&s.info.model_id, model_id))
@@ -1016,13 +1034,14 @@ async fn maybe_auto_increase_and_retry<R: Runtime>(
     backend: &str,
     model_id: &str,
     sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: &Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     trigger: &str,
 ) -> Option<(i32, String)> {
-    if backend != "llamacpp" && backend != "mlx" {
+    if backend != "llamacpp" && backend != "llamacpp-upstream" && backend != "mlx" {
         return None;
     }
-    if is_embedding_session(backend, model_id, sessions, mlx_sessions).await {
+    if is_embedding_session(backend, model_id, sessions, sessions_upstream, mlx_sessions).await {
         log::debug!(
             "auto_increase_ctx: skipping embedding session backend={backend} model_id={model_id}"
         );
@@ -1047,7 +1066,14 @@ async fn maybe_auto_increase_and_retry<R: Runtime>(
         }
         match read_auto_increase_outcome(auto_state, model_id).await {
             Some(o) if o.ok => {
-                return resolve_local_session(backend, model_id, sessions, mlx_sessions).await;
+                return resolve_local_session(
+                    backend,
+                    model_id,
+                    sessions,
+                    sessions_upstream,
+                    mlx_sessions,
+                )
+                .await;
             }
             _ => return None,
         }
@@ -1079,7 +1105,14 @@ async fn maybe_auto_increase_and_retry<R: Runtime>(
         outcome.new_ctx_len
     );
 
-    resolve_local_session(backend, model_id, sessions, mlx_sessions).await
+    resolve_local_session(
+        backend,
+        model_id,
+        sessions,
+        sessions_upstream,
+        mlx_sessions,
+    )
+    .await
 }
 
 /// Wraps `inner_proxy_request` to emit a single analytics event per proxied
@@ -1096,6 +1129,7 @@ async fn proxy_request<R: Runtime>(
     local_client: Client,
     config: ProxyConfig,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
@@ -1115,6 +1149,7 @@ async fn proxy_request<R: Runtime>(
         local_client,
         config,
         sessions,
+        sessions_upstream,
         mlx_sessions,
         provider_configs,
         auto_increase_state,
@@ -1156,6 +1191,7 @@ async fn inner_proxy_request<R: Runtime>(
     local_client: Client,
     config: ProxyConfig,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
@@ -1511,7 +1547,19 @@ async fn inner_proxy_request<R: Runtime>(
                             let sessions_guard = sessions.lock().await;
                             let llama_session = sessions_guard
                                 .values()
-                                .find(|s| model_ids_match(&s.info.model_id, model_id));
+                                .find(|s| model_ids_match(&s.info.model_id, model_id))
+                                .map(|s| (s.info.port, s.info.api_key.clone()));
+                            drop(sessions_guard);
+
+                            let llama_upstream_session = if llama_session.is_none() {
+                                let guard = sessions_upstream.lock().await;
+                                guard
+                                    .values()
+                                    .find(|s| model_ids_match(&s.info.model_id, model_id))
+                                    .map(|s| (s.info.port, s.info.api_key.clone()))
+                            } else {
+                                None
+                            };
 
                             let mlx_session_info = {
                                 let mlx_guard = mlx_sessions.lock().await;
@@ -1521,10 +1569,14 @@ async fn inner_proxy_request<R: Runtime>(
                                     .map(|s| s.info.clone())
                             };
 
-                            if let Some(session) = llama_session {
+                            if let Some((target_port, api_key)) = llama_session {
                                 state.backend = "llamacpp";
-                                let target_port = session.info.port;
-                                session_api_key = Some(session.info.api_key.clone());
+                                session_api_key = Some(api_key);
+                                target_base_url =
+                                    Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
+                            } else if let Some((target_port, api_key)) = llama_upstream_session {
+                                state.backend = "llamacpp-upstream";
+                                session_api_key = Some(api_key);
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some(info) = mlx_session_info {
@@ -1684,10 +1736,24 @@ async fn inner_proxy_request<R: Runtime>(
                             // Use original model_id for local session lookup
                             let sessions_find_model = model_id;
 
-                            // Check both llama.cpp and MLX sessions
+                            // Check both llama.cpp variants and MLX sessions
                             let llama_session = sessions_guard
                                 .values()
-                                .find(|s| model_ids_match(&s.info.model_id, sessions_find_model));
+                                .find(|s| model_ids_match(&s.info.model_id, sessions_find_model))
+                                .map(|s| (s.info.port, s.info.api_key.clone()));
+                            let llama_count = sessions_guard.len();
+                            drop(sessions_guard);
+
+                            let (llama_upstream_session, llama_upstream_count) = {
+                                let guard = sessions_upstream.lock().await;
+                                let info = guard
+                                    .values()
+                                    .find(|s| {
+                                        model_ids_match(&s.info.model_id, sessions_find_model)
+                                    })
+                                    .map(|s| (s.info.port, s.info.api_key.clone()));
+                                (info, guard.len())
+                            };
 
                             let (mlx_session_info, mlx_count) = {
                                 let mut mlx_session_info: Option<SessionInfo> = None;
@@ -1704,7 +1770,7 @@ async fn inner_proxy_request<R: Runtime>(
                                 (mlx_session_info, mlx_count)
                             };
 
-                            let total_sessions = sessions_guard.len() + mlx_count;
+                            let total_sessions = llama_count + llama_upstream_count + mlx_count;
 
                             // mlx_session_info is Option<SessionInfo>, use as_ref to get Option<&SessionInfo>
                             let mlx_session = mlx_session_info.as_ref();
@@ -1727,11 +1793,19 @@ async fn inner_proxy_request<R: Runtime>(
                                     .unwrap());
                             }
 
-                            if let Some(session) = llama_session {
+                            if let Some((target_port, api_key)) = llama_session {
                                 state.backend = "llamacpp";
-                                let target_port = session.info.port;
-                                session_api_key = Some(session.info.api_key.clone());
+                                session_api_key = Some(api_key);
                                 log::debug!("Found llama.cpp session for model_id {model_id}");
+                                target_base_url = Some(format!(
+                                    "http://127.0.0.1:{target_port}/v1{destination_path}"
+                                ));
+                            } else if let Some((target_port, api_key)) = llama_upstream_session {
+                                state.backend = "llamacpp-upstream";
+                                session_api_key = Some(api_key);
+                                log::debug!(
+                                    "Found upstream llama.cpp session for model_id {model_id}"
+                                );
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
@@ -1797,9 +1871,9 @@ async fn inner_proxy_request<R: Runtime>(
             state.endpoint = Some("models");
             log::debug!("Handling GET /v1/models request");
 
-            // Get local llama.cpp sessions
+            // Get local llama.cpp (turboquant) sessions
             let sessions_guard = sessions.lock().await;
-            let local_models: Vec<_> = sessions_guard
+            let mut local_models: Vec<_> = sessions_guard
                 .values()
                 .map(|session| {
                     serde_json::json!({
@@ -1811,6 +1885,22 @@ async fn inner_proxy_request<R: Runtime>(
                 })
                 .collect();
             drop(sessions_guard);
+
+            // Get upstream llama.cpp sessions
+            let sessions_upstream_guard = sessions_upstream.lock().await;
+            let upstream_models: Vec<_> = sessions_upstream_guard
+                .values()
+                .map(|session| {
+                    serde_json::json!({
+                        "id": session.info.model_id,
+                        "object": "model",
+                        "created": 1,
+                        "owned_by": "llama.cpp-upstream"
+                    })
+                })
+                .collect();
+            drop(sessions_upstream_guard);
+            local_models.extend(upstream_models);
 
             // Get MLX sessions
             let mlx_models: Vec<_> = {
@@ -1928,18 +2018,29 @@ async fn inner_proxy_request<R: Runtime>(
                 }
             };
 
-            // llama.cpp is the only backend exposing a Prometheus /metrics
-            // endpoint. MLX has no slot-pool metrics so we deliberately do
-            // not fall back to mlx_sessions here.
+            // llama.cpp (both turboquant and upstream variants) is the only
+            // backend family exposing a Prometheus /metrics endpoint. MLX has
+            // no slot-pool metrics so we deliberately do not fall back to
+            // mlx_sessions here.
             let target_session = {
                 let sessions_guard = sessions.lock().await;
-                sessions_guard
+                let found = sessions_guard
                     .values()
                     .find(|s| model_ids_match(&s.info.model_id, &metrics_model_id))
-                    .map(|s| (s.info.port, s.info.api_key.clone()))
+                    .map(|s| (s.info.port, s.info.api_key.clone(), "llamacpp"));
+                drop(sessions_guard);
+                if found.is_some() {
+                    found
+                } else {
+                    let upstream_guard = sessions_upstream.lock().await;
+                    upstream_guard
+                        .values()
+                        .find(|s| model_ids_match(&s.info.model_id, &metrics_model_id))
+                        .map(|s| (s.info.port, s.info.api_key.clone(), "llamacpp-upstream"))
+                }
             };
 
-            let (port, upstream_api_key) = match target_session {
+            let (port, upstream_api_key, backend_label) = match target_session {
                 Some(v) => v,
                 None => {
                     state.error_kind = Some("not_found");
@@ -1966,7 +2067,7 @@ async fn inner_proxy_request<R: Runtime>(
             // under /v1, so we must not reuse the standard `/v1{path}`
             // upstream URL pattern here.
             let upstream = format!("http://127.0.0.1:{port}/metrics");
-            state.backend = "llamacpp";
+            state.backend = backend_label;
 
             // Atomic-Chat boots llama-server with a per-session `--api-key`,
             // so even the bundled `/metrics` endpoint expects a Bearer token.
@@ -2379,7 +2480,9 @@ async fn inner_proxy_request<R: Runtime>(
                 // inside `maybe_auto_increase_and_retry`. We keep the original
                 // body/headers so the retry is byte-identical apart from the
                 // rewritten upstream URL + Authorization header.
-                let can_retry_local = (state.backend == "llamacpp" || state.backend == "mlx")
+                let can_retry_local = (state.backend == "llamacpp"
+                    || state.backend == "llamacpp-upstream"
+                    || state.backend == "mlx")
                     && state.model_id.is_some()
                     && buffered_body.is_some();
 
@@ -2395,6 +2498,7 @@ async fn inner_proxy_request<R: Runtime>(
                         backend,
                         &model_id,
                         &sessions,
+                        &sessions_upstream,
                         &mlx_sessions,
                         "error",
                     )
@@ -2458,7 +2562,9 @@ async fn inner_proxy_request<R: Runtime>(
             // trigger a reload and retry once. Streaming responses remain
             // pass-through (can't retry after chunks have been emitted).
             let can_inspect_finish = !state.stream
-                && (state.backend == "llamacpp" || state.backend == "mlx")
+                && (state.backend == "llamacpp"
+                    || state.backend == "llamacpp-upstream"
+                    || state.backend == "mlx")
                 && state.model_id.is_some()
                 && buffered_body.is_some();
 
@@ -2485,6 +2591,7 @@ async fn inner_proxy_request<R: Runtime>(
                         backend,
                         &model_id,
                         &sessions,
+                        &sessions_upstream,
                         &mlx_sessions,
                         "finish_length",
                     )
@@ -2646,6 +2753,7 @@ pub async fn start_server<R: Runtime>(
     app_handle: AppHandle<R>,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     host: String,
     port: u16,
@@ -2660,6 +2768,7 @@ pub async fn start_server<R: Runtime>(
         app_handle,
         server_handle,
         sessions,
+        sessions_upstream,
         mlx_sessions,
         host,
         port,
@@ -2678,6 +2787,7 @@ async fn start_server_internal<R: Runtime>(
     app_handle: AppHandle<R>,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     host: String,
     port: u16,
@@ -2723,6 +2833,7 @@ async fn start_server_internal<R: Runtime>(
         let local_client = local_client.clone();
         let config = config.clone();
         let sessions = sessions.clone();
+        let sessions_upstream = sessions_upstream.clone();
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
         let auto_increase_state = auto_increase_state.clone();
@@ -2736,6 +2847,7 @@ async fn start_server_internal<R: Runtime>(
                     local_client.clone(),
                     config.clone(),
                     sessions.clone(),
+                    sessions_upstream.clone(),
                     mlx_sessions.clone(),
                     provider_configs.clone(),
                     auto_increase_state.clone(),
