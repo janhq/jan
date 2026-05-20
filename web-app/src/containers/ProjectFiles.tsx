@@ -22,6 +22,79 @@ type ProjectFilesProps = {
   lng: string
 }
 
+function extractRagErrorMessage(error: unknown): {
+  kind: 'parse' | 'unsupported' | 'io' | 'unknown'
+  message: string
+} {
+  if (error && typeof error === 'object') {
+    const obj = error as Record<string, unknown>
+    if (typeof obj.ParseError === 'string')
+      return { kind: 'parse', message: obj.ParseError }
+    if (typeof obj.UnsupportedFileType === 'string')
+      return { kind: 'unsupported', message: obj.UnsupportedFileType }
+    if (typeof obj.IoError === 'string')
+      return { kind: 'io', message: obj.IoError }
+    if (error instanceof Error)
+      return { kind: 'unknown', message: error.message }
+  }
+  if (typeof error === 'string') return { kind: 'unknown', message: error }
+  return { kind: 'unknown', message: '' }
+}
+
+type TFn = (key: string, opts?: Record<string, unknown>) => string
+
+function humanizeUploadError(
+  t: TFn,
+  error: unknown,
+  fileName?: string
+): string {
+  const { kind, message } = extractRagErrorMessage(error)
+  const subject = fileName
+    ? `"${fileName}"`
+    : (t('common:toast.uploadFailed.subjectThisFile') ?? 'This file')
+  const lower = message.toLowerCase()
+
+  if (kind === 'parse' && lower.includes('pdf')) {
+    if (
+      lower.includes('cross-reference') ||
+      lower.includes('xref') ||
+      lower.includes('invalid start value')
+    ) {
+      return t('common:toast.uploadFailed.pdfMalformedXref', { subject })
+    }
+    if (lower.includes('image-based') || lower.includes('scanned')) {
+      return t('common:toast.uploadFailed.pdfScanned', { subject })
+    }
+    if (lower.includes('file too large')) {
+      return t('common:toast.uploadFailed.fileTooLarge', { subject, message })
+    }
+    if (lower.includes('encrypted') || lower.includes('password')) {
+      return t('common:toast.uploadFailed.pdfEncrypted', { subject })
+    }
+    return t('common:toast.uploadFailed.pdfGeneric', { subject })
+  }
+
+  if (kind === 'parse' && lower.includes('file too large')) {
+    return t('common:toast.uploadFailed.fileTooLarge', { subject, message })
+  }
+
+  if (kind === 'unsupported') {
+    return t('common:toast.uploadFailed.unsupportedType', { type: message })
+  }
+
+  if (kind === 'io') {
+    return t('common:toast.uploadFailed.ioError', { subject, message })
+  }
+
+  if (kind === 'parse') {
+    return t('common:toast.uploadFailed.parseGeneric', { subject, message })
+  }
+
+  return (
+    message || t('common:toast.uploadFailed.fallback', { subject })
+  )
+}
+
 type ProjectFile = {
   id: string
   name?: string
@@ -340,9 +413,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       const total = newAttachments.length
       setUploading(true)
       setUploadProgress({ current: 0, total })
+      let currentFileName: string | undefined
       try {
         for (let i = 0; i < newAttachments.length; i++) {
           const att = newAttachments[i]
+          currentFileName = att.name
           const result = await serviceHub
             .uploads()
             .ingestFileAttachmentForProject(projectId, att)
@@ -360,8 +435,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         toast.error(
           t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
           {
-            description:
-              error instanceof Error ? error.message : JSON.stringify(error),
+            description: humanizeUploadError(t, error, currentFileName),
           }
         )
       } finally {
@@ -401,12 +475,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       await processFilePaths(paths)
     } catch (error) {
       console.error('Failed to open file dialog:', error)
-      const desc =
-        error instanceof Error ? error.message : JSON.stringify(error)
       toast.error(
         t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
         {
-          description: desc,
+          description: humanizeUploadError(t, error),
         }
       )
     }

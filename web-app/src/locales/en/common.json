@@ -464,7 +464,17 @@
     },
     "uploadFailed": {
       "title": "Upload Failed",
-      "description": "Failed to upload file"
+      "description": "Failed to upload file",
+      "subjectThisFile": "This file",
+      "pdfMalformedXref": "{{subject}} has a malformed PDF cross-reference table and could not be parsed. Try opening it in a PDF viewer and re-saving it (File → Print → Save as PDF), then upload again.",
+      "pdfScanned": "{{subject}} appears to be a scanned or image-based PDF. OCR isn't supported yet — please upload a text-based PDF.",
+      "pdfEncrypted": "{{subject}} is password-protected. Remove the password and try again.",
+      "pdfGeneric": "{{subject}} could not be parsed as a PDF. The file may be corrupted or uses an unsupported PDF feature.",
+      "fileTooLarge": "{{subject}} is too large. {{message}}.",
+      "unsupportedType": "File type \"{{type}}\" is not supported.",
+      "ioError": "Could not read {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} could not be parsed: {{message}}",
+      "fallback": "Failed to upload {{subject}}."
     },
     "fileDeleted": {
       "title": "File Deleted",
