@@ -1,0 +1,17 @@
+{
+  "sortNewest": "नवीनतम के अनुसार क्रमबद्ध करें",
+  "sortMostDownloaded": "सबसे अधिक डाउनलोड के अनुसार क्रमबद्ध करें",
+  "newChat": "नई चैट",
+  "download": "डाउनलोड",
+  "downloaded": "डाउनलोड किया गया",
+  "loadingModels": "मॉडल लोड हो रहे हैं...",
+  "noModels": "कोई मॉडल नहीं मिला",
+  "by": "द्वारा",
+  "downloads": "डाउनलोड",
+  "variants": "विकल्प",
+  "showVariants": "विकल्प दिखाएं",
+  "useModel": "इस मॉडल का उपयोग करें",
+  "downloadModel": "मॉडल डाउनलोड करें",
+  "tools": "उपकरण",
+  "searchPlaceholder": "Hugging Face पर मॉडल खोजें..."
+}

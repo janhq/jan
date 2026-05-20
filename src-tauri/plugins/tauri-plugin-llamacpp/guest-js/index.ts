@@ -31,8 +31,8 @@ function asI32(v: any, defaultValue = 0): number {
   return n
 }
 
-function asBool(v: any): boolean {
-  if (v === '' || v === null || v === undefined) return false
+function asBool(v: any, defaultValue = false): boolean {
+  if (v === '' || v === null || v === undefined) return defaultValue
   return v === true || v === 'true' || v === 1 || v === '1'
 }
 
@@ -46,7 +46,10 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     version_backend: asString(config.version_backend),
     auto_update_engine: asBool(config.auto_update_engine),
     auto_unload: asBool(config.auto_unload),
-    auto_restart_on_crash: asBool(config.auto_restart_on_crash),
+    models_max:
+      typeof config.models_max === 'number'
+        ? config.models_max
+        : asI32(config.models_max, 1),
     timeout: asI32(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
@@ -92,37 +95,37 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
 
     ctx_shift: asBool(config.ctx_shift),
     parallel: asI32(config.parallel, 1),
+
+    reasoning: asString(config.reasoning, 'auto'),
+    cache_ram: asI32(config.cache_ram, -1),
+    cache_reuse: asI32(config.cache_reuse, 0),
+    swa_full: asBool(config.swa_full),
+    keep: asI32(config.keep, 0),
   }
 }
 
-// LlamaCpp server commands
 export async function loadLlamaModel(
-  backendPath: string,
   modelId: string,
-  modelPath: string,
-  port: number,
-  cfg: LlamacppConfig,
-  envs: Record<string, string>,
-  mmprojPath?: string,
-  isEmbedding: boolean = false,
-  timeout: number = 600
+  isEmbedding: boolean = false
 ): Promise<SessionInfo> {
-  const config = normalizeLlamacppConfig(cfg)
   return await invoke('plugin:llamacpp|load_llama_model', {
-    backendPath,
     modelId,
-    modelPath,
-    port,
-    config,
-    envs,
-    mmprojPath,
     isEmbedding,
-    timeout,
   })
 }
 
-export async function unloadLlamaModel(pid: number): Promise<UnloadResult> {
-  return await invoke('plugin:llamacpp|unload_llama_model', { pid })
+export async function unloadLlamaModel(modelId: string): Promise<UnloadResult> {
+  return await invoke('plugin:llamacpp|unload_llama_model', { modelId })
+}
+
+export async function ensureSessionReady(
+  modelId: string,
+  isEmbedding: boolean = false
+): Promise<SessionInfo> {
+  return await invoke('plugin:llamacpp|ensure_session_ready', {
+    modelId,
+    isEmbedding,
+  })
 }
 
 export async function getDevices(
@@ -145,14 +148,6 @@ export async function generateApiKey(
   })
 }
 
-export async function isProcessRunning(pid: number): Promise<boolean> {
-  return await invoke('plugin:llamacpp|is_process_running', { pid })
-}
-
-export async function getRandomPort(): Promise<number> {
-  return await invoke('plugin:llamacpp|get_random_port')
-}
-
 export async function findSessionByModel(
   modelId: string
 ): Promise<SessionInfo | null> {
@@ -163,14 +158,8 @@ export async function getLoadedModels(): Promise<string[]> {
   return await invoke('plugin:llamacpp|get_loaded_models')
 }
 
-export async function getAllSessions(): Promise<SessionInfo[]> {
-  return await invoke('plugin:llamacpp|get_all_sessions')
-}
-
-export async function getSessionByModel(
-  modelId: string
-): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp|get_session_by_model', { modelId })
+export async function routerSlotsIdle(modelId?: string): Promise<boolean> {
+  return await invoke('plugin:llamacpp|router_slots_idle', { modelId })
 }
 
 // GGUF commands

@@ -17,6 +17,7 @@ import {
   IconTool,
   IconAlertTriangle,
   IconLoader2,
+  IconHeadphones,
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -45,6 +46,7 @@ export const DialogEditModel = ({
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
     vision: false,
     tools: false,
+    audio: false,
   })
 
   // Initialize with the provided model ID or the first model if available
@@ -67,6 +69,7 @@ export const DialogEditModel = ({
   const capabilitiesToObject = (capabilitiesList: string[]) => ({
     vision: capabilitiesList.includes('vision'),
     tools: capabilitiesList.includes('tools'),
+    audio: capabilitiesList.includes('audio'),
   })
 
   // Initialize capabilities and display name from selected model
@@ -264,6 +267,23 @@ export const DialogEditModel = ({
                 checked={capabilities.vision}
                 onCheckedChange={(checked) =>
                   handleCapabilityChange('vision', checked)
+                }
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconHeadphones className="size-4 text-muted-foreground" />
+                <span className="text-sm">
+                  {t('providers:editModel.audio')}
+                </span>
+              </div>
+              <Switch
+                id="audio-capability"
+                checked={capabilities.audio}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('audio', checked)
                 }
                 disabled={isLoading}
               />

@@ -4,6 +4,14 @@ const COMMANDS: &[&str] = &[
     // LlamaCpp server commands
     "load_llama_model",
     "unload_llama_model",
+    // Router-mode commands (Phase 1)
+    "start_router",
+    "stop_router",
+    "try_graceful_stop_router",
+    "force_kill_router_tree",
+    "force_stop_model",
+    "get_router_info",
+    "router_slots_idle",
     "get_devices",
     "generate_api_key",
     "is_process_running",
@@ -33,6 +41,13 @@ const COMMANDS: &[&str] = &[
     "validate_backend_string",
     "should_migrate_backend",
     "handle_setting_update",
+    // Backend path & download commands
+    "get_backend_dir",
+    "get_backend_exe_path",
+    "check_backend_installed",
+    "verify_backend_installation",
+    "fetch_remote_supported_backends",
+    "build_backend_download_items",
 ];
 
 fn main() {

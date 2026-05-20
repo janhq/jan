@@ -21,6 +21,177 @@ use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
 #[cfg(not(feature = "cli"))]
+macro_rules! invoke_commands_with_extras {
+    ($($extra:path),* $(,)?) => {
+        tauri::generate_handler![
+        // FS commands - Deperecate soon
+        core::filesystem::commands::join_path,
+        core::filesystem::commands::mkdir,
+        core::filesystem::commands::exists_sync,
+        core::filesystem::commands::readdir_sync,
+        core::filesystem::commands::read_file_sync,
+        core::filesystem::commands::rm,
+        core::filesystem::commands::mv,
+        core::filesystem::commands::file_stat,
+        core::filesystem::commands::write_file_sync,
+        core::filesystem::commands::write_yaml,
+        core::filesystem::commands::read_yaml,
+        core::filesystem::commands::decompress,
+        core::filesystem::commands::open_dialog,
+        core::filesystem::commands::save_dialog,
+        // App configuration commands
+        core::app::commands::get_app_configurations,
+        core::app::commands::get_user_home_path,
+        core::app::commands::update_app_configuration,
+        core::app::commands::get_jan_data_folder_path,
+        core::app::commands::get_configuration_file_path,
+        core::app::commands::default_data_folder_path,
+        core::app::commands::change_app_data_folder,
+        core::app::commands::app_token,
+        // Extension commands
+        core::extensions::commands::get_jan_extensions_path,
+        core::extensions::commands::install_extensions,
+        core::extensions::commands::get_active_extensions,
+        // System commands
+        core::system::commands::relaunch,
+        core::system::commands::open_app_directory,
+        core::system::commands::open_file_explorer,
+        core::system::commands::factory_reset,
+        core::system::commands::read_logs,
+        core::system::commands::is_library_available,
+        core::system::commands::launch_claude_code_with_config,
+        core::system::commands::check_jan_cli_installed,
+        core::system::commands::install_jan_cli,
+        core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
+        // Server commands
+        core::server::commands::start_server,
+        core::server::commands::stop_server,
+        core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
+        // MCP commands
+        core::mcp::commands::get_tools,
+        core::mcp::commands::get_tools_for_servers,
+        core::mcp::commands::get_server_summaries,
+        core::mcp::commands::call_tool,
+        core::mcp::commands::cancel_tool_call,
+        core::mcp::commands::restart_mcp_servers,
+        core::mcp::commands::get_connected_servers,
+        core::mcp::commands::save_mcp_configs,
+        core::mcp::commands::get_mcp_configs,
+        core::mcp::commands::activate_mcp_server,
+        core::mcp::commands::deactivate_mcp_server,
+        core::mcp::commands::check_jan_browser_extension_connected,
+        // Threads
+        core::threads::commands::list_threads,
+        core::threads::commands::create_thread,
+        core::threads::commands::modify_thread,
+        core::threads::commands::delete_thread,
+        core::threads::commands::list_messages,
+        core::threads::commands::create_message,
+        core::threads::commands::modify_message,
+        core::threads::commands::delete_message,
+        core::threads::commands::get_thread_assistant,
+        core::threads::commands::create_thread_assistant,
+        core::threads::commands::modify_thread_assistant,
+        // Download
+        core::downloads::commands::download_files,
+        core::downloads::commands::cancel_download_task,
+        // App lifecycle
+        confirm_exit,
+        $(
+            $extra,
+        )*
+    ]
+    };
+}
+
+#[cfg(not(feature = "cli"))]
+static SHUTTING_DOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+static GRACEFUL_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(feature = "cli"))]
+static BUSY_MODELS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(not(feature = "cli"))]
+#[tauri::command]
+async fn confirm_exit<R: tauri::Runtime>(_app_handle: tauri::AppHandle<R>) {
+    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        std::process::exit(0);
+    });
+}
+
+#[cfg(not(feature = "cli"))]
+fn is_llamacpp_router_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    app.try_state::<std::sync::Arc<tauri_plugin_llamacpp::LlamacppState>>()
+        .map(|s| s.router_pid.load(std::sync::atomic::Ordering::SeqCst) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(feature = "cli"))]
+fn reemit_busy_if_any<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) {
+    let busy = BUSY_MODELS.lock().map(|g| g.clone()).unwrap_or_default();
+    if !busy.is_empty() {
+        let _ = app_handle.emit("llamacpp-busy-on-exit", &busy);
+    }
+}
+
+#[cfg(not(feature = "cli"))]
+async fn handle_graceful_exit<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    source: &'static str,
+    exit_code: i32,
+) {
+    use std::sync::atomic::Ordering;
+    let mut emitted = false;
+    loop {
+        if SHUTTING_DOWN.load(Ordering::SeqCst) {
+            return;
+        }
+        match tauri_plugin_llamacpp::try_graceful_stop_router(app_handle.clone(), 1).await {
+            Ok(None) => {
+                if let Ok(mut g) = BUSY_MODELS.lock() {
+                    g.clear();
+                }
+                SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                app_handle.exit(exit_code);
+                return;
+            }
+            Ok(Some(busy)) => {
+                if let Ok(mut g) = BUSY_MODELS.lock() {
+                    *g = busy.clone();
+                }
+                if !emitted {
+                    log::warn!("{}: {} model(s) busy: {:?}", source, busy.len(), busy);
+                    if let Err(e) = app_handle.emit("llamacpp-busy-on-exit", &busy) {
+                        log::warn!("emit llamacpp-busy-on-exit failed: {}", e);
+                        SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                        app_handle.exit(exit_code);
+                        return;
+                    }
+                    emitted = true;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            Err(e) => {
+                log::warn!("{}: try_graceful_stop_router failed: {}", source, e);
+                SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                app_handle.exit(exit_code);
+                return;
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
@@ -55,11 +226,6 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_mlx::init());
     }
 
-    #[cfg(feature = "foundation-models")]
-    {
-        app_builder = app_builder.plugin(tauri_plugin_foundation_models::init());
-    }
-
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
@@ -67,84 +233,7 @@ pub fn run() {
 
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let app_builder = app_builder.invoke_handler(tauri::generate_handler![
-        // FS commands - Deperecate soon
-        core::filesystem::commands::join_path,
-        core::filesystem::commands::mkdir,
-        core::filesystem::commands::exists_sync,
-        core::filesystem::commands::readdir_sync,
-        core::filesystem::commands::read_file_sync,
-        core::filesystem::commands::rm,
-        core::filesystem::commands::mv,
-        core::filesystem::commands::file_stat,
-        core::filesystem::commands::write_file_sync,
-        core::filesystem::commands::write_yaml,
-        core::filesystem::commands::read_yaml,
-        core::filesystem::commands::decompress,
-        core::filesystem::commands::open_dialog,
-        core::filesystem::commands::save_dialog,
-        // App configuration commands
-        core::app::commands::get_app_configurations,
-        core::app::commands::get_user_home_path,
-        core::app::commands::update_app_configuration,
-        core::app::commands::get_jan_data_folder_path,
-        core::app::commands::get_configuration_file_path,
-        core::app::commands::default_data_folder_path,
-        core::app::commands::change_app_data_folder,
-        core::app::commands::app_token,
-        // Extension commands
-        core::extensions::commands::get_jan_extensions_path,
-        core::extensions::commands::install_extensions,
-        core::extensions::commands::get_active_extensions,
-        // System commands
-        core::system::commands::relaunch,
-        core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
-        core::system::commands::factory_reset,
-        core::system::commands::read_logs,
-        core::system::commands::is_library_available,
-        core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
-        core::system::commands::clear_claude_code_env,
-        // Server commands
-        core::server::commands::start_server,
-        core::server::commands::stop_server,
-        core::server::commands::get_server_status,
-        // Remote provider commands
-        core::server::remote_provider_commands::register_provider_config,
-        core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
-        // MCP commands
-        core::mcp::commands::get_tools,
-        core::mcp::commands::get_tools_for_servers,
-        core::mcp::commands::get_server_summaries,
-        core::mcp::commands::call_tool,
-        core::mcp::commands::cancel_tool_call,
-        core::mcp::commands::restart_mcp_servers,
-        core::mcp::commands::get_connected_servers,
-        core::mcp::commands::save_mcp_configs,
-        core::mcp::commands::get_mcp_configs,
-        core::mcp::commands::activate_mcp_server,
-        core::mcp::commands::deactivate_mcp_server,
-        core::mcp::commands::check_jan_browser_extension_connected,
-        // Threads
-        core::threads::commands::list_threads,
-        core::threads::commands::create_thread,
-        core::threads::commands::modify_thread,
-        core::threads::commands::delete_thread,
-        core::threads::commands::list_messages,
-        core::threads::commands::create_message,
-        core::threads::commands::modify_message,
-        core::threads::commands::delete_message,
-        core::threads::commands::get_thread_assistant,
-        core::threads::commands::create_thread_assistant,
-        core::threads::commands::modify_thread_assistant,
-        // Download
-        core::downloads::commands::download_files,
-        core::downloads::commands::cancel_download_task,
+    let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -152,85 +241,9 @@ pub fn run() {
 
     // Mobile: no updater commands
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    let app_builder = app_builder.invoke_handler(tauri::generate_handler![
-        // FS commands - Deperecate soon
-        core::filesystem::commands::join_path,
-        core::filesystem::commands::mkdir,
-        core::filesystem::commands::exists_sync,
-        core::filesystem::commands::readdir_sync,
-        core::filesystem::commands::read_file_sync,
-        core::filesystem::commands::rm,
-        core::filesystem::commands::mv,
-        core::filesystem::commands::file_stat,
-        core::filesystem::commands::write_file_sync,
-        core::filesystem::commands::write_yaml,
-        core::filesystem::commands::read_yaml,
-        core::filesystem::commands::decompress,
-        core::filesystem::commands::open_dialog,
-        core::filesystem::commands::save_dialog,
-        // App configuration commands
-        core::app::commands::get_app_configurations,
-        core::app::commands::get_user_home_path,
-        core::app::commands::update_app_configuration,
-        core::app::commands::get_jan_data_folder_path,
-        core::app::commands::get_configuration_file_path,
-        core::app::commands::default_data_folder_path,
-        core::app::commands::change_app_data_folder,
-        core::app::commands::app_token,
-        // Extension commands
-        core::extensions::commands::get_jan_extensions_path,
-        core::extensions::commands::install_extensions,
-        core::extensions::commands::get_active_extensions,
-        // System commands
-        core::system::commands::relaunch,
-        core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
-        core::system::commands::factory_reset,
-        core::system::commands::read_logs,
-        core::system::commands::is_library_available,
-        core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
-        core::system::commands::clear_claude_code_env,
-        // Server commands
-        core::server::commands::start_server,
-        core::server::commands::stop_server,
-        core::server::commands::get_server_status,
-        // Remote provider commands
-        core::server::remote_provider_commands::register_provider_config,
-        core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
+    let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![
+        // Mobile-specific remote provider commands
         core::server::remote_provider_commands::abort_remote_stream,
-        // MCP commands
-        core::mcp::commands::get_tools,
-        core::mcp::commands::get_tools_for_servers,
-        core::mcp::commands::get_server_summaries,
-        core::mcp::commands::call_tool,
-        core::mcp::commands::cancel_tool_call,
-        core::mcp::commands::restart_mcp_servers,
-        core::mcp::commands::get_connected_servers,
-        core::mcp::commands::save_mcp_configs,
-        core::mcp::commands::get_mcp_configs,
-        core::mcp::commands::activate_mcp_server,
-        core::mcp::commands::deactivate_mcp_server,
-        core::mcp::commands::check_jan_browser_extension_connected,
-        // Threads
-        core::threads::commands::list_threads,
-        core::threads::commands::create_thread,
-        core::threads::commands::modify_thread,
-        core::threads::commands::delete_thread,
-        core::threads::commands::list_messages,
-        core::threads::commands::create_message,
-        core::threads::commands::modify_message,
-        core::threads::commands::delete_message,
-        core::threads::commands::get_thread_assistant,
-        core::threads::commands::create_thread_assistant,
-        core::threads::commands::modify_thread_assistant,
-        // Download
-        core::downloads::commands::download_files,
-        core::downloads::commands::cancel_download_task,
     ]);
 
     let app = app_builder
@@ -329,6 +342,49 @@ pub fn run() {
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {
+        use std::sync::atomic::Ordering;
+        if let RunEvent::WindowEvent {
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            label,
+            ..
+        } = &event
+        {
+            if label == "main"
+                && !SHUTTING_DOWN.load(Ordering::SeqCst)
+                && is_llamacpp_router_running(app)
+            {
+                api.prevent_close();
+                let _ = app.emit("llamacpp-close-attempt", ());
+                if GRACEFUL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                    reemit_busy_if_any(app);
+                    return;
+                }
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    handle_graceful_exit(app_handle, "CloseRequested", 0).await;
+                    GRACEFUL_IN_PROGRESS.store(false, Ordering::SeqCst);
+                });
+                return;
+            }
+        }
+        if let RunEvent::ExitRequested { api, code, .. } = &event {
+            if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_router_running(app) {
+                return;
+            }
+            api.prevent_exit();
+            let _ = app.emit("llamacpp-close-attempt", ());
+            if GRACEFUL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                reemit_busy_if_any(app);
+                return;
+            }
+            let app_handle = app.clone();
+            let exit_code = code.unwrap_or(0);
+            tauri::async_runtime::spawn(async move {
+                handle_graceful_exit(app_handle, "ExitRequested", exit_code).await;
+                GRACEFUL_IN_PROGRESS.store(false, Ordering::SeqCst);
+            });
+            return;
+        }
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 
@@ -372,9 +428,9 @@ pub fn run() {
                     }
 
                     if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to cleanup llama processes: {}", e);
+                        log::warn!("Failed to shut down llama-server router: {}", e);
                     } else {
-                        log::info!("Llama processes cleaned up successfully");
+                        log::info!("Llama-server router shut down successfully");
                     }
 
                     #[cfg(feature = "mlx")]
@@ -387,13 +443,6 @@ pub fn run() {
                         }
                     }
 
-
-                    #[cfg(feature = "foundation-models")]
-                    {
-                        use tauri_plugin_foundation_models::cleanup_processes;
-                        cleanup_processes(&app_handle).await;
-                        log::info!("Foundation Models state cleaned up successfully");
-                    }
 
                     log::info!("App cleanup completed");
                 });

@@ -14,6 +14,8 @@
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
+  "localProviders": "Local",
+  "remoteProviders": "Remote",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "hideProvider": "Hide provider",
@@ -57,6 +59,7 @@
   "clearRecent": "Clear",
   "name": "Name",
   "cancel": "Cancel",
+  "dismiss": "Dismiss",
   "create": "Create",
   "save": "Save",
   "edit": "Edit",
@@ -96,6 +99,7 @@
   "completed": "Completed",
   "image": "Image",
   "vision": "Vision",
+  "multimodal": "Multimodal",
   "embeddings": "Embeddings",
   "tools": "Tools",
   "webSearch": "Web Search",
@@ -233,7 +237,19 @@
   },
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
-    "description": "Configure model settings to optimize performance and behavior."
+    "description": "Configure model settings to optimize performance and behavior.",
+    "mtp": {
+      "section": "Multi-Token Prediction (MTP)",
+      "enable": "Enable MTP",
+      "enableDescription": "Use the model's built-in MTP heads to draft multiple tokens per step. Speeds up generation when the model has MTP weights (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
+      "needsUpgrade": "Update the llama.cpp backend to build b9193 or newer to enable MTP.",
+      "nMax": "Max draft tokens",
+      "nMaxDescription": "Maximum number of tokens to draft per step. Default 16.",
+      "nMin": "Min draft tokens",
+      "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
+      "pMin": "Min draft probability",
+      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+    }
   },
   "dialogs": {
     "changeDataFolder": {
@@ -265,6 +281,15 @@
   "errorDialog": {
     "titleFallback": "Something went wrong",
     "details": "Details"
+  },
+  "missingDependenciesDialog": {
+    "title": "Missing System Libraries",
+    "description": "The {{backend}} was installed but some required system libraries could not be found. It may fall back to CPU or not run correctly.",
+    "installLabel": "To fix this, install the following:",
+    "download": "Download",
+    "additionalLibraries": "Additional missing libraries:",
+    "missingLibraries": "Missing libraries:",
+    "showRawLibraries": "Show {{count}} missing library names"
   },
   "projects": {
     "title": "Projects",
@@ -468,5 +493,12 @@
   },
   "files": {
     "chunksCount": "{{count}} chunks"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

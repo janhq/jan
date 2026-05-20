@@ -1,0 +1,10 @@
+{
+  "addProvider": "Aggiungi provider",
+  "addOpenAIProvider": "Aggiungi provider compatibile con OpenAI",
+  "enterNameForProvider": "Nome del provider (es. mio-server-llm)",
+  "baseUrlLabel": "URL di base",
+  "baseUrlPlaceholder": "https://il-tuo-endpoint/v1",
+  "apiKeyLabel": "Chiave API (opzionale)",
+  "apiKeyPlaceholder": "Incolla la tua chiave API",
+  "invalidBaseUrl": "L'URL di base deve essere un URL http(s) valido"
+}

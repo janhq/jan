@@ -19,7 +19,7 @@ import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { getProviderTitle } from '@/lib/utils'
+import { getProviderTitle, isLocalProvider } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { openAIProviderSettings } from '@/constants/providers'
@@ -37,20 +37,28 @@ const SettingsMenu = () => {
   const { providers, addProvider } = useModelProvider()
 
   const createProvider = useCallback(
-    (name: string) => {
+    (name: string, baseUrl: string, apiKey: string) => {
       if (
         providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
       ) {
         toast.error(t('provider:providerAlreadyExists', { name }))
         return
       }
+      const settings = cloneDeep(openAIProviderSettings) as ProviderSetting[]
+      for (const s of settings) {
+        if (s.key === 'base-url') {
+          (s.controller_props as { value: string }).value = baseUrl
+        } else if (s.key === 'api-key') {
+          (s.controller_props as { value: string }).value = apiKey
+        }
+      }
       const newProvider: ProviderObject = {
         provider: name,
         active: true,
         models: [],
-        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
-        api_key: '',
-        base_url: 'https://api.openai.com/v1',
+        settings,
+        api_key: apiKey,
+        base_url: baseUrl,
       }
       addProvider(newProvider)
       setTimeout(() => {
@@ -66,16 +74,56 @@ const SettingsMenu = () => {
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
     if (!IS_MACOS && provider.provider === 'mlx') return false
-    if (provider.provider === 'foundation-models') return false
     return true
   })
+
+  const activeLocalProviders = activeProviders.filter((p) =>
+    isLocalProvider(p.provider)
+  )
+  const activeRemoteProviders = activeProviders.filter(
+    (p) => !isLocalProvider(p.provider)
+  )
 
   const hiddenProviders = providers.filter((provider) => {
     if (provider.active) return false
     if (!IS_MACOS && provider.provider === 'mlx') return false
-    if (provider.provider === 'foundation-models') return false
     return true
   })
+
+  const renderActiveProvider = (provider: ProviderObject) => {
+    const isRouteActive = matches.some(
+      (match) =>
+        match.routeId === '/settings/providers/$providerName' &&
+        'providerName' in match.params &&
+        match.params.providerName === provider.provider
+    )
+    return (
+      <div
+        key={provider.provider}
+        className={cn(
+          'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
+          isRouteActive && 'bg-secondary',
+          provider.provider === 'llama.cpp' &&
+            stepSetupRemoteProvider &&
+            'hidden'
+        )}
+        onClick={() =>
+          navigate({
+            to: route.settings.providers,
+            params: { providerName: provider.provider },
+            ...(stepSetupRemoteProvider
+              ? { search: { step: 'setup_remote_provider' } }
+              : {}),
+          })
+        }
+      >
+        <ProvidersAvatar provider={provider} />
+        <div className="truncate flex-1">
+          <span>{getProviderTitle(provider.provider)}</span>
+        </div>
+      </div>
+    )
+  }
 
   // Check if current route has a providerName parameter and expand providers submenu
   useEffect(() => {
@@ -203,40 +251,28 @@ const SettingsMenu = () => {
               </AddProviderDialog>
             </div>
             <div className="mt-1 flex flex-col gap-0.5">
-              {activeProviders.map((provider) => {
-                const isRouteActive = matches.some(
-                  (match) =>
-                    match.routeId === '/settings/providers/$providerName' &&
-                    'providerName' in match.params &&
-                    match.params.providerName === provider.provider
-                )
-                return (
-                  <div
-                    key={provider.provider}
+              {activeLocalProviders.length > 0 && (
+                <>
+                  <span className="px-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                    {t('common:localProviders')}
+                  </span>
+                  {activeLocalProviders.map(renderActiveProvider)}
+                </>
+              )}
+
+              {activeRemoteProviders.length > 0 && (
+                <>
+                  <span
                     className={cn(
-                      'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
-                      isRouteActive && 'bg-secondary',
-                      provider.provider === 'llama.cpp' &&
-                        stepSetupRemoteProvider &&
-                        'hidden'
+                      'px-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70',
+                      activeLocalProviders.length > 0 && 'mt-2'
                     )}
-                    onClick={() =>
-                      navigate({
-                        to: route.settings.providers,
-                        params: { providerName: provider.provider },
-                        ...(stepSetupRemoteProvider
-                          ? { search: { step: 'setup_remote_provider' } }
-                          : {}),
-                      })
-                    }
                   >
-                    <ProvidersAvatar provider={provider} />
-                    <div className="truncate flex-1">
-                      <span>{getProviderTitle(provider.provider)}</span>
-                    </div>
-                  </div>
-                )
-              })}
+                    {t('common:remoteProviders')}
+                  </span>
+                  {activeRemoteProviders.map(renderActiveProvider)}
+                </>
+              )}
 
               {hiddenProviders.length > 0 && (
                 <>

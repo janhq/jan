@@ -8,9 +8,6 @@ export const THREAD_SCROLL_BEHAVIOR = {
 export type ThreadScrollBehavior =
   (typeof THREAD_SCROLL_BEHAVIOR)[keyof typeof THREAD_SCROLL_BEHAVIOR]
 
-export const DEFAULT_THREAD_SCROLL_BEHAVIOR =
-  THREAD_SCROLL_BEHAVIOR.FLOW
-
 export const threadScrollBehaviorOptions: Array<{
   value: ThreadScrollBehavior
   translationKey: string
@@ -24,10 +21,4 @@ export const threadScrollBehaviorOptions: Array<{
     translationKey: 'settings:interface.threadScrollStickyTitle',
   },
 ]
-
-export const isThreadScrollBehavior = (
-  value: unknown
-): value is ThreadScrollBehavior =>
-  value === THREAD_SCROLL_BEHAVIOR.FLOW ||
-  value === THREAD_SCROLL_BEHAVIOR.STICKY
 

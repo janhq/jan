@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('ai', () => ({
-  generateObject: vi.fn(),
+  generateText: vi.fn(),
+  Output: { object: vi.fn(() => ({})) },
 }))
 
 vi.mock('../mcp-orchestrator/intent-classifier', () => ({
   MAX_ROUTED_SERVERS: 3,
 }))
 
-import { generateObject } from 'ai'
+import { generateText } from 'ai'
 import {
   selectServersWithLlm,
   MCP_ROUTER_TIMEOUT_MS,
@@ -31,8 +32,8 @@ describe('selectServersWithLlm', () => {
   })
 
   it('returns matched server names on success', async () => {
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { selectedServers: ['weather', 'calendar'] },
+    vi.mocked(generateText).mockResolvedValue({
+      output: { selectedServers: ['weather', 'calendar'] },
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     } as any)
 
@@ -45,8 +46,8 @@ describe('selectServersWithLlm', () => {
   })
 
   it('filters out server names not in allow list', async () => {
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { selectedServers: ['weather', 'nonexistent'] },
+    vi.mocked(generateText).mockResolvedValue({
+      output: { selectedServers: ['weather', 'nonexistent'] },
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     } as any)
 
@@ -56,8 +57,8 @@ describe('selectServersWithLlm', () => {
   })
 
   it('sets emptyValidatedSelection when model returns names not in allow list', async () => {
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { selectedServers: ['unknown1', 'unknown2'] },
+    vi.mocked(generateText).mockResolvedValue({
+      output: { selectedServers: ['unknown1', 'unknown2'] },
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     } as any)
 
@@ -67,8 +68,8 @@ describe('selectServersWithLlm', () => {
   })
 
   it('deduplicates server names', async () => {
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { selectedServers: ['weather', 'weather', 'weather'] },
+    vi.mocked(generateText).mockResolvedValue({
+      output: { selectedServers: ['weather', 'weather', 'weather'] },
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     } as any)
 
@@ -77,8 +78,8 @@ describe('selectServersWithLlm', () => {
   })
 
   it('returns empty names with no error when model returns empty array', async () => {
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { selectedServers: [] },
+    vi.mocked(generateText).mockResolvedValue({
+      output: { selectedServers: [] },
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
     } as any)
 
@@ -92,7 +93,7 @@ describe('selectServersWithLlm', () => {
     const controller = new AbortController()
     controller.abort()
 
-    vi.mocked(generateObject).mockRejectedValue(
+    vi.mocked(generateText).mockRejectedValue(
       Object.assign(new Error('aborted'), { name: 'AbortError' })
     )
 
@@ -104,7 +105,7 @@ describe('selectServersWithLlm', () => {
   it('returns abort errorKind when parent aborts during call', async () => {
     const controller = new AbortController()
 
-    vi.mocked(generateObject).mockImplementation(async () => {
+    vi.mocked(generateText).mockImplementation(async () => {
       controller.abort()
       throw Object.assign(new Error('aborted'), { name: 'AbortError' })
     })
@@ -116,7 +117,7 @@ describe('selectServersWithLlm', () => {
   it('returns timeout errorKind when timeout fires', async () => {
     vi.useFakeTimers()
 
-    vi.mocked(generateObject).mockImplementation(
+    vi.mocked(generateText).mockImplementation(
       () =>
         new Promise((_, reject) => {
           setTimeout(() => {
@@ -133,7 +134,7 @@ describe('selectServersWithLlm', () => {
   })
 
   it('returns error errorKind for non-abort errors', async () => {
-    vi.mocked(generateObject).mockRejectedValue(new Error('network failure'))
+    vi.mocked(generateText).mockRejectedValue(new Error('network failure'))
 
     const result = await selectServersWithLlm('test', summaries, mockModel)
     expect(result.errorKind).toBe('error')
@@ -141,8 +142,8 @@ describe('selectServersWithLlm', () => {
   })
 
   it('handles summaries with empty description and capabilities', async () => {
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { selectedServers: ['email'] },
+    vi.mocked(generateText).mockResolvedValue({
+      output: { selectedServers: ['email'] },
       usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 },
     } as any)
 
@@ -157,7 +158,7 @@ describe('selectServersWithLlm', () => {
         this.name = 'AbortError'
       }
     }
-    vi.mocked(generateObject).mockRejectedValue(new AbortError())
+    vi.mocked(generateText).mockRejectedValue(new AbortError())
 
     const result = await selectServersWithLlm('test', summaries, mockModel)
     // No parent signal, no timeout -> falls through to generic abort

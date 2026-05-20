@@ -75,8 +75,9 @@ describe('TokenCounter', () => {
     render(<TokenCounter />)
     const percentElements = screen.getAllByText('50.0%')
     const span = percentElements[0]
-    expect(span.className).toContain('text-primary')
+    expect(span.className).toContain('text-foreground')
     expect(span.className).not.toContain('text-destructive')
+    expect(span.className).not.toContain('text-amber-500')
   })
 
   it('calls calculateTokens when clicked', async () => {
@@ -97,10 +98,16 @@ describe('TokenCounter', () => {
     expect(circles.length).toBe(2)
   })
 
-  it('shows 0.0% when maxTokens is 0 (no model selected)', () => {
+  it('renders nothing when maxTokens is unavailable', () => {
+    mockTokens({ tokenCount: 0, maxTokens: undefined })
+    const { container } = render(<TokenCounter />)
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('renders nothing when maxTokens is 0', () => {
     mockTokens({ tokenCount: 0, maxTokens: 0 })
-    render(<TokenCounter />)
-    expect(screen.getAllByText('0.0%').length).toBeGreaterThanOrEqual(1)
+    const { container } = render(<TokenCounter />)
+    expect(container.firstChild).toBeNull()
   })
 
   describe('formatNumber helper (via rendered output)', () => {
@@ -123,12 +130,20 @@ describe('TokenCounter', () => {
     })
   })
 
-  it('shows token breakdown with Text and Remaining labels', () => {
+  it('shows token breakdown with Used and Remaining labels', () => {
     mockTokens({ tokenCount: 500, maxTokens: 1000 })
-    const { container } = render(<TokenCounter />)
+    render(<TokenCounter />)
     const tooltipContent = screen.getByTestId('tooltip-content')
-    expect(tooltipContent.textContent).toContain('Text')
+    expect(tooltipContent.textContent).toContain('Used')
     expect(tooltipContent.textContent).toContain('Remaining')
+  })
+
+  it('shows Context window header', () => {
+    mockTokens({ tokenCount: 500, maxTokens: 1000 })
+    render(<TokenCounter />)
+    expect(
+      screen.getByTestId('tooltip-content').textContent
+    ).toContain('Context window')
   })
 
   it('shows correct remaining tokens', () => {

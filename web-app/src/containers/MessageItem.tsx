@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { memo, useState, useCallback } from 'react'
+import { memo, useState, useCallback, useEffect } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,7 @@ import {
 import { Streamdown } from 'streamdown'
 import {
   Tool,
+  ToolApprovalActions,
   ToolContent,
   ToolHeader,
   ToolInput,
@@ -27,6 +28,12 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
+import { PromptProgress } from '@/components/PromptProgress'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
+import type { RagCitation } from '@/components/Citations'
+import { useGroundingStore } from '@/stores/grounding-store'
+import { injectCitationMarkers } from '@/lib/grounding'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -107,7 +114,73 @@ export const MessageItem = memo(
         .map((part) => (part as { url: string }).url)
     }, [message.parts])
 
-    const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    // A tool part is "pending" until it reaches a terminal state. While any
+    // tool on the last assistant message is still pending the turn isn't
+    // done — the model will resume once the tool result arrives, even if the
+    // SDK briefly reports status as 'ready' between the tool-call stream and
+    // the follow-up request.
+    const hasPendingToolCall = useMemo(() => {
+      if (!isLastMessage || message.role !== 'assistant') return false
+      return message.parts.some((part) => {
+        if (!part.type?.startsWith('tool-')) return false
+        const state = (part as { state?: string }).state
+        return (
+          state !== 'output-available' &&
+          state !== 'output-error' &&
+          state !== 'output-denied'
+        )
+      })
+    }, [isLastMessage, message.role, message.parts])
+
+    const isStreaming =
+      (isLastMessage &&
+        (status === CHAT_STATUS.STREAMING ||
+          status === CHAT_STATUS.SUBMITTED)) ||
+      hasPendingToolCall
+
+    const ragCitations = useMemo<RagCitation[]>(() => {
+      if (message.role !== 'assistant') return []
+      const out: RagCitation[] = []
+      for (const part of message.parts as any[]) {
+        if (!part.type?.startsWith('tool-')) continue
+        if (part.state !== 'output-available') continue
+        const parsed = parseCitationsFromToolOutput(part.output)
+        if (parsed?.kind === 'rag') out.push(...parsed.citations)
+      }
+      return out
+    }, [message.parts, message.role])
+
+    const serviceHub = useServiceHub()
+    const grounding = useGroundingStore((s) => s.byMessageId[message.id])
+    const ensureGrounding = useGroundingStore((s) => s.ensure)
+
+    const assistantText = useMemo(() => {
+      if (message.role !== 'assistant') return ''
+      return (message.parts as any[])
+        .filter((p) => p.type === CONTENT_TYPE.TEXT && p.text)
+        .map((p) => p.text)
+        .join('\n')
+    }, [message.parts, message.role])
+
+    useEffect(() => {
+      if (isStreaming) return
+      if (!assistantText || !ragCitations.length) return
+      const rag = serviceHub.rag()
+      if (!rag.embed) return
+      ensureGrounding(
+        message.id,
+        assistantText,
+        ragCitations,
+        rag.embed.bind(rag)
+      )
+    }, [
+      isStreaming,
+      assistantText,
+      ragCitations,
+      message.id,
+      ensureGrounding,
+      serviceHub,
+    ])
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -196,18 +269,18 @@ export const MessageItem = memo(
           ) : (
             <>
               <RenderMarkdown
-                content={part.text}
+                content={
+                  grounding && !isStreaming
+                    ? injectCitationMarkers(
+                        part.text,
+                        grounding.sentenceCitations,
+                        `cite-${message.id}`
+                      )
+                    : part.text
+                }
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
                 isAnimating={isAnimating}
-                onApplyContentEdit={
-                  onEdit && !hideActions
-                    ? (newContent) => onEdit(message.id, newContent)
-                    : undefined
-                }
-                paragraphEditDisabled={
-                  hideActions || (isStreaming && isLastPart)
-                }
               />
             </>
           )}
@@ -225,6 +298,25 @@ export const MessageItem = memo(
       partIndex: number
     ) => {
       const isImage = part.mediaType?.startsWith('image/')
+      const isAudio =
+        part.mediaType === 'audio/wav' || part.mediaType === 'audio/mpeg'
+
+      if (isAudio && part.url) {
+        const justify =
+          message.role === 'user' ? 'justify-end' : 'justify-start'
+        return (
+          <div
+            key={`${message.id}-${partIndex}`}
+            className={`flex ${justify} w-full my-2`}
+          >
+            <audio
+              controls
+              src={part.url}
+              className="max-w-[80%] rounded-md"
+            />
+          </div>
+        )
+      }
 
       if (message.role === 'user' && isImage && part.url) {
         return (
@@ -276,7 +368,9 @@ export const MessageItem = memo(
         <Tool
           key={`${message.id}-${partIndex}`}
           state={part.state}
-          className="mb-2"
+          toolCallId={part.toolCallId}
+          messageId={message.id}
+          className="mb-1"
         >
           <ToolHeader
             title={toolName}
@@ -284,15 +378,8 @@ export const MessageItem = memo(
             state={part.state}
           />
           <ToolContent title={toolName}>
-            {part.input && (
-              <ToolInput
-                input={
-                  typeof part.input === 'string'
-                    ? part.input
-                    : JSON.stringify(part.input)
-                }
-              />
-            )}
+            {part.input && <ToolInput input={part.input} />}
+            <ToolApprovalActions />
             {part.output && (
               <ToolOutput
                 output={part.output}
@@ -444,7 +531,7 @@ export const MessageItem = memo(
 
       return elements
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [message.parts, isStreaming, isReasoningAtBottom])
+    }, [message.parts, isStreaming, isReasoningAtBottom, grounding])
 
     return (
       <div className="w-full mb-4">
@@ -452,15 +539,22 @@ export const MessageItem = memo(
         {/* Render message parts */}
         {renderedParts}
 
+        {isLastMessage &&
+          message.role === 'assistant' &&
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+            <PromptProgress />
+          )}
+
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
-          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
+          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs">
             <span className="text-muted-foreground">
               {formatDate(createdAt)}
             </span>
             <CopyButton text={getFullTextContent()} />
 
-            {onEdit && status !== CHAT_STATUS.STREAMING && (
+            {onEdit && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <EditMessageDialog
                 message={getFullTextContent()}
                 imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
@@ -468,7 +562,8 @@ export const MessageItem = memo(
               />
             )}
 
-            {onDelete && status !== CHAT_STATUS.STREAMING && (
+            {onDelete && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
               <DeleteMessageDialog onDelete={handleDelete} />
             )}
           </div>
@@ -476,7 +571,7 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs">
               {!isStreaming && (
                 <span className="text-muted-foreground">
                   {formatDate(createdAt)}
@@ -538,8 +633,12 @@ export const MessageItem = memo(
     )
   },
   (prevProps, nextProps) => {
-    // Always re-render if streaming and this is the last message
-    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
+    // Always re-render if the last message is in-flight (streaming or submitted)
+    if (
+      nextProps.isLastMessage &&
+      (nextProps.status === CHAT_STATUS.STREAMING ||
+        nextProps.status === CHAT_STATUS.SUBMITTED)
+    ) {
       return false
     }
 

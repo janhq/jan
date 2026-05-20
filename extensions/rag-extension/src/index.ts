@@ -518,6 +518,11 @@ export default class RagExtension extends RAGExtension {
     return await ragApi.parseDocument(path, type || 'application/octet-stream')
   }
 
+  async embed(texts: string[]): Promise<number[][]> {
+    if (!texts || texts.length === 0) return []
+    return this.embedTexts(texts)
+  }
+
   // Locally implement embedding logic (previously in embeddings-extension)
   private async embedTexts(texts: string[]): Promise<number[][]> {
     const llm = window.core?.extensionManager.getByName(

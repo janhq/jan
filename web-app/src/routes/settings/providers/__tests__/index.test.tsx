@@ -208,7 +208,7 @@ describe('Providers Settings Route', () => {
     const Component = ProvidersRoute.component as React.ComponentType
     render(<Component />)
 
-    const input = screen.getByTestId('input')
+    const input = screen.getAllByTestId('input')[0]
     expect(input).toBeInTheDocument()
     expect(input).toHaveValue('')
   })
@@ -217,7 +217,7 @@ describe('Providers Settings Route', () => {
     const Component = ProvidersRoute.component as React.ComponentType
     render(<Component />)
 
-    const input = screen.getByTestId('input')
+    const input = screen.getAllByTestId('input')[0]
     fireEvent.change(input, { target: { value: 'new-provider' } })
     expect(input).toBeInTheDocument()
   })
@@ -234,7 +234,7 @@ describe('Providers Settings Route', () => {
     const Component = ProvidersRoute.component as React.ComponentType
     render(<Component />)
 
-    const input = screen.getByTestId('input')
+    const input = screen.getAllByTestId('input')[0]
     fireEvent.change(input, { target: { value: 'new-provider' } })
 
     const buttons = screen.getAllByTestId('button')
@@ -249,7 +249,7 @@ describe('Providers Settings Route', () => {
     const Component = ProvidersRoute.component as React.ComponentType
     render(<Component />)
 
-    const input = screen.getByTestId('input')
+    const input = screen.getAllByTestId('input')[0]
     fireEvent.change(input, { target: { value: 'openai' } })
 
     const buttons = screen.getAllByTestId('button')

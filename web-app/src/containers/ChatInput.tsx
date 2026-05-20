@@ -1,5 +1,6 @@
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn } from '@/lib/utils'
+import { invoke } from '@tauri-apps/api/core'
+import { cn, formatBytes } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -21,7 +22,8 @@ import {
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
-  IconAtom,
+  IconMusic,
+  IconBrain,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -51,7 +53,6 @@ import {
   SESSION_STORAGE_KEY,
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
-import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -82,10 +83,10 @@ import {
   Attachment,
   createImageAttachment,
   createDocumentAttachment,
+  createAudioAttachment,
 } from '@/types/attachment'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
-import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
 
@@ -126,9 +127,6 @@ const ChatInput = memo(function ChatInput({
   const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadAssistant = useThreads(
     (state) => state.updateCurrentThreadAssistant
-  )
-  const updateCurrentThreadModel = useThreads(
-    (state) => state.updateCurrentThreadModel
   )
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
@@ -184,7 +182,6 @@ const ChatInput = memo(function ChatInput({
   >(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
-  const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
   const wasPointerDown = useRef(false)
 
@@ -208,27 +205,6 @@ const ChatInput = memo(function ChatInput({
 
   const assistantCount = assistants?.length || 0
 
-  // Tool schemas sent to the model are not part of ThreadMessage[]; add them here only.
-  // Do not include system instructions — they are already present in messages and counted by useTokensCount.
-  const tokenCounterAdditionalContext = useMemo(() => {
-    const toolsText = tools
-      .map((tool) => {
-        const schema = (() => {
-          try {
-            return JSON.stringify(tool.inputSchema ?? {})
-          } catch {
-            return '{}'
-          }
-        })()
-        return `Tool ${tool.server}::${tool.name}\nDescription: ${tool.description}\nSchema: ${schema}`
-      })
-      .join('\n\n')
-
-    if (!toolsText) return ''
-    return `Available tools:\n${toolsText}`
-  }, [tools])
-
-  // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
   const {
@@ -374,14 +350,21 @@ const ChatInput = memo(function ChatInput({
 
       const assistant = currentThread?.assistants?.[0]
       setCurrentAssistant(assistant)
-      // Build file parts for AI SDK
-      const files = attachments
+      const imageFiles = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
         .map((att) => ({
           type: 'file',
           mediaType: att.mimeType ?? 'image/jpeg',
           url: att.dataUrl!,
         }))
+      const audioFiles = attachments
+        .filter((att) => att.type === 'audio' && att.dataUrl)
+        .map((att) => ({
+          type: 'file',
+          mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+          url: att.dataUrl!,
+        }))
+      const files = [...imageFiles, ...audioFiles]
 
       onSubmit(prompt, files.length > 0 ? files : undefined)
       setPrompt('')
@@ -393,14 +376,21 @@ const ChatInput = memo(function ChatInput({
         `${TEMPORARY_CHAT_QUERY_ID}=true`
       )
 
-      // Build message payload with attachments
-      const files = attachments
+      const imageFiles = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
         .map((att) => ({
           type: 'file',
           mediaType: att.mimeType ?? 'image/jpeg',
           url: att.dataUrl!,
         }))
+      const audioFiles = attachments
+        .filter((att) => att.type === 'audio' && att.dataUrl)
+        .map((att) => ({
+          type: 'file',
+          mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+          url: att.dataUrl!,
+        }))
+      const files = [...imageFiles, ...audioFiles]
 
       const messagePayload = {
         text: prompt,
@@ -554,11 +544,23 @@ const ChatInput = memo(function ChatInput({
         abortControllers[threadId]?.abort()
       }
       cancelToolCall?.()
+      // Escalate: if the llama.cpp model is still processing after the HTTP
+      // abort, force-unload it so generation actually stops. KV cache is lost.
+      const modelId = selectedModel?.id
+      if (selectedProvider === 'llamacpp' && modelId) {
+        setTimeout(() => {
+          invoke('plugin:llamacpp|force_stop_model', { modelId }).catch((e) => {
+            console.warn('force_stop_model failed:', e)
+          })
+        }, 500)
+      }
     },
-    [abortControllers, cancelToolCall, onStop]
+    [abortControllers, cancelToolCall, onStop, selectedModel?.id, selectedProvider]
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
+  const audioSupported = !!selectedModel?.capabilities?.includes('audio')
 
   const processNewDocumentAttachments = useCallback(
     async (docs: Attachment[]) => {
@@ -910,18 +912,6 @@ const ChatInput = memo(function ChatInput({
     }
   }
 
-  const formatBytes = (bytes?: number): string => {
-    if (!bytes || bytes <= 0) return ''
-    const units = ['B', 'KB', 'MB', 'GB']
-    let i = 0
-    let val = bytes
-    while (val >= 1024 && i < units.length - 1) {
-      val /= 1024
-      i++
-    }
-    return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-  }
-
   const hashBase64 = async (base64: string): Promise<string> => {
     const binary = atob(base64)
     const bytes = new Uint8Array(binary.length)
@@ -1133,7 +1123,6 @@ const ChatInput = memo(function ChatInput({
     if (files && files.length > 0) {
       void processImageFiles(Array.from(files))
 
-      // Reset the file input value to allow re-uploading the same file
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -1143,6 +1132,159 @@ const ChatInput = memo(function ChatInput({
       textareaRef.current.focus()
     }
   }
+
+  const decodeAudioDuration = (dataUrl: string): Promise<number | undefined> =>
+    new Promise((resolve) => {
+      try {
+        const audio = new Audio()
+        audio.preload = 'metadata'
+        audio.onloadedmetadata = () => {
+          const d = audio.duration
+          resolve(Number.isFinite(d) && d > 0 ? d : undefined)
+        }
+        audio.onerror = () => resolve(undefined)
+        audio.src = dataUrl
+      } catch {
+        resolve(undefined)
+      }
+    })
+
+  const processAudioFiles = useCallback(
+    async (files: File[]) => {
+      const maxBytes = 25 * 1024 * 1024
+      const oversized: string[] = []
+      const invalid: string[] = []
+      const prepared: Attachment[] = []
+
+      for (const file of Array.from(files)) {
+        const lower = file.name.toLowerCase()
+        const ext = lower.split('.').pop()
+        const isWav = file.type === 'audio/wav' || file.type === 'audio/x-wav' || ext === 'wav'
+        const isMp3 = file.type === 'audio/mpeg' || file.type === 'audio/mp3' || ext === 'mp3'
+        if (!isWav && !isMp3) {
+          invalid.push(file.name)
+          continue
+        }
+        if (file.size > maxBytes) {
+          oversized.push(file.name)
+          continue
+        }
+        const fmt: 'wav' | 'mp3' = isWav ? 'wav' : 'mp3'
+        const mimeType = fmt === 'wav' ? 'audio/wav' : 'audio/mpeg'
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const r = reader.result
+            if (typeof r === 'string') resolve(r)
+            else reject(new Error('read failed'))
+          }
+          reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+          reader.readAsDataURL(file)
+        })
+        const base64 = dataUrl.split(',')[1] ?? ''
+        const durationSec = await decodeAudioDuration(dataUrl)
+        prepared.push(
+          createAudioAttachment({
+            name: file.name,
+            base64,
+            dataUrl,
+            mimeType,
+            audioFormat: fmt,
+            size: file.size,
+            durationSec,
+          })
+        )
+      }
+
+      const current = useChatAttachments.getState().getAttachments(attachmentsKey)
+      const existingNames = new Set(
+        current.filter((a) => a.type === 'audio').map((a) => a.name)
+      )
+      const duplicates: string[] = []
+      const newOnes: Attachment[] = []
+      for (const att of prepared) {
+        if (existingNames.has(att.name)) {
+          duplicates.push(att.name)
+          continue
+        }
+        newOnes.push(att)
+      }
+
+      if (newOnes.length > 0) {
+        setAttachmentsForThread(attachmentsKey, (prev) => [...prev, ...newOnes])
+      }
+
+      if (duplicates.length > 0) {
+        toast.warning('Some audio files already attached', {
+          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+        })
+      }
+      const errors: string[] = []
+      if (oversized.length > 0) {
+        errors.push(
+          `Audio file${oversized.length > 1 ? 's' : ''} too large (max 25MB): ${oversized.join(', ')}`
+        )
+      }
+      if (invalid.length > 0) {
+        errors.push(
+          `Invalid audio type${invalid.length > 1 ? 's' : ''} (only WAV, MP3 allowed): ${invalid.join(', ')}`
+        )
+      }
+      if (errors.length > 0) {
+        setMessage(errors.join(' | '))
+        if (audioInputRef.current) audioInputRef.current.value = ''
+      }
+    },
+    [attachmentsKey, setAttachmentsForThread]
+  )
+
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      void processAudioFiles(Array.from(files))
+      if (audioInputRef.current) audioInputRef.current.value = ''
+    }
+    if (textareaRef.current) textareaRef.current.focus()
+  }
+
+  const openAudioPicker = useCallback(async () => {
+    if (isPlatformTauri()) {
+      try {
+        const selected = await serviceHub.dialog().open({
+          multiple: true,
+          filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }],
+        })
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected]
+          const files: File[] = []
+          for (const path of paths) {
+            try {
+              const { convertFileSrc } = await import('@tauri-apps/api/core')
+              const fileUrl = convertFileSrc(path)
+              const response = await fetch(fileUrl)
+              if (!response.ok) throw new Error(response.statusText)
+              const blob = await response.blob()
+              const fileName = path.split(/[\\/]/).filter(Boolean).pop() || 'audio'
+              const ext = fileName.toLowerCase().split('.').pop()
+              const mimeType = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav'
+              files.push(new File([blob], fileName, { type: mimeType }))
+            } catch (error) {
+              console.error('Failed to read audio file:', error)
+              toast.error('Failed to read audio file', {
+                description: error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+          if (files.length > 0) await processAudioFiles(files)
+        }
+      } catch (error) {
+        console.error('Failed to open audio dialog:', error)
+      }
+      if (textareaRef.current) textareaRef.current.focus()
+    } else {
+      audioInputRef.current?.click()
+    }
+  }, [serviceHub, processAudioFiles])
 
   // Open the image picker dialog (extracted for reuse)
   const openImagePicker = useCallback(async () => {
@@ -1213,63 +1355,12 @@ const ChatInput = memo(function ChatInput({
     }
   }, [serviceHub, processImageFiles])
 
-  const handleImagePickerClick = async () => {
-    if (hasMmproj) {
-      await openImagePicker()
-      return
-    }
-    setShowVisionModelPrompt(true)
-  }
-
-  const handleVisionModelDownloadComplete = useCallback(
-    (modelId: string) => {
-      setShowVisionModelPrompt(false)
-
-      try {
-        localStorage.setItem(
-          localStorageKey.lastUsedModel,
-          JSON.stringify({ provider: 'llamacpp', model: modelId })
-        )
-      } catch {
-        // Ignore localStorage errors
-      }
-
-      setTimeout(() => {
-        const provider = getProviderByName('llamacpp')
-        if (provider) {
-          const modelIndex = provider.models.findIndex((m) => m.id === modelId)
-          if (modelIndex !== -1) {
-            const model = provider.models[modelIndex]
-            const capabilities = model.capabilities || []
-
-            if (!capabilities.includes('vision')) {
-              const updatedModels = [...provider.models]
-              updatedModels[modelIndex] = {
-                ...model,
-                capabilities: [...capabilities, 'vision'],
-              }
-              updateProvider('llamacpp', { models: updatedModels })
-            }
-          }
-        }
-
-        selectModelProvider('llamacpp', modelId)
-        updateCurrentThreadModel({ id: modelId, provider: 'llamacpp' })
-      }, 500)
-    },
-    [
-      selectModelProvider,
-      getProviderByName,
-      updateProvider,
-      updateCurrentThreadModel,
-    ]
-  )
+  const dropAcceptsAnything = hasMmproj || audioSupported
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only allow drag if model supports mmproj
-    if (hasMmproj) {
+    if (dropAcceptsAnything) {
       setIsDragOver(true)
     }
   }
@@ -1288,8 +1379,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Ensure drag state is maintained during drag over
-    if (hasMmproj) {
+    if (dropAcceptsAnything) {
       setIsDragOver(true)
     }
   }
@@ -1299,32 +1389,67 @@ const ChatInput = memo(function ChatInput({
     e.stopPropagation()
     setIsDragOver(false)
 
-    // Only allow drop if model supports mmproj
-    if (!hasMmproj) {
-      return
-    }
-
-    // Check if dataTransfer exists (it might not in some Tauri scenarios)
+    if (!dropAcceptsAnything) return
     if (!e.dataTransfer) {
       console.warn('No dataTransfer available in drop event')
       return
     }
 
-    const files = e.dataTransfer.files
-    if (files && files.length > 0) {
-      // Create a synthetic event to reuse existing file handling logic
-      const syntheticEvent = {
-        target: {
-          files: files,
-        },
-      } as React.ChangeEvent<HTMLInputElement>
+    const dropped = Array.from(e.dataTransfer.files ?? [])
+    if (dropped.length === 0) return
 
+    const isAudioFile = (f: File) => {
+      const ext = f.name.toLowerCase().split('.').pop()
+      return (
+        f.type === 'audio/wav' ||
+        f.type === 'audio/x-wav' ||
+        f.type === 'audio/mpeg' ||
+        f.type === 'audio/mp3' ||
+        ext === 'wav' ||
+        ext === 'mp3'
+      )
+    }
+
+    const audioOnes = audioSupported ? dropped.filter(isAudioFile) : []
+    const otherOnes = dropped.filter((f) => !audioOnes.includes(f))
+
+    if (otherOnes.length > 0 && hasMmproj) {
+      const dt = new DataTransfer()
+      otherOnes.forEach((f) => dt.items.add(f))
+      const syntheticEvent = {
+        target: { files: dt.files },
+      } as React.ChangeEvent<HTMLInputElement>
       handleFileChange(syntheticEvent)
+    }
+    if (audioOnes.length > 0) {
+      void processAudioFiles(audioOnes)
     }
   }
 
   const handlePaste = async (e: React.ClipboardEvent) => {
-    // Only process images if model supports mmproj
+    if (audioSupported) {
+      const clipboardItems = e.clipboardData?.items
+      if (clipboardItems && clipboardItems.length > 0) {
+        const audioFiles: File[] = []
+        for (const item of Array.from(clipboardItems)) {
+          if (
+            item.type === 'audio/wav' ||
+            item.type === 'audio/x-wav' ||
+            item.type === 'audio/mpeg' ||
+            item.type === 'audio/mp3'
+          ) {
+            const f = item.getAsFile()
+            if (f) audioFiles.push(f)
+          }
+        }
+        if (audioFiles.length > 0) {
+          e.preventDefault()
+          await processAudioFiles(audioFiles)
+          return
+        }
+      }
+    }
+
     if (hasMmproj) {
       const clipboardItems = e.clipboardData?.items
       let hasProcessedImage = false
@@ -1456,11 +1581,11 @@ const ChatInput = memo(function ChatInput({
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
-            data-drop-zone={hasMmproj ? 'true' : undefined}
-            onDragEnter={hasMmproj ? handleDragEnter : undefined}
-            onDragLeave={hasMmproj ? handleDragLeave : undefined}
-            onDragOver={hasMmproj ? handleDragOver : undefined}
-            onDrop={hasMmproj ? handleDrop : undefined}
+            data-drop-zone={dropAcceptsAnything ? 'true' : undefined}
+            onDragEnter={dropAcceptsAnything ? handleDragEnter : undefined}
+            onDragLeave={dropAcceptsAnything ? handleDragLeave : undefined}
+            onDragOver={dropAcceptsAnything ? handleDragOver : undefined}
+            onDrop={dropAcceptsAnything ? handleDrop : undefined}
           >
             {attachments.length > 0 && (
               <div className="flex flex-col gap-2 p-2 pb-0">
@@ -1469,7 +1594,14 @@ const ChatInput = memo(function ChatInput({
                     .map((att, idx) => ({ att, idx }))
                     .map(({ att, idx }) => {
                       const isImage = att.type === 'image'
+                      const isAudio = att.type === 'audio'
                       const ext = att.fileType || att.mimeType?.split('/')[1]
+                      const durLabel =
+                        isAudio && typeof att.durationSec === 'number'
+                          ? `${Math.floor(att.durationSec / 60)}:${Math.floor(att.durationSec % 60)
+                              .toString()
+                              .padStart(2, '0')}`
+                          : undefined
                       return (
                         <div
                           key={`${att.type}-${idx}-${att.name}`}
@@ -1483,13 +1615,21 @@ const ChatInput = memo(function ChatInput({
                                   'flex items-center justify-center'
                                 )}
                               >
-                                {/* Inner content by state */}
                                 {isImage && att.dataUrl ? (
                                   <img
                                     className="object-cover w-full h-full"
                                     src={att.dataUrl}
                                     alt={`${att.name}`}
                                   />
+                                ) : isAudio ? (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconMusic size={20} />
+                                    {durLabel && (
+                                      <span className="text-[10px] leading-none mt-0.5 tabular-nums opacity-70">
+                                        {durLabel}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : (
                                   <div className="flex flex-col items-center justify-center text-muted-foreground">
                                     <IconPaperclip size={18} />
@@ -1513,13 +1653,27 @@ const ChatInput = memo(function ChatInput({
                                 <div className="opacity-70">
                                   {isImage
                                     ? att.mimeType || 'image'
-                                    : ext
-                                      ? `.${ext}`
-                                      : 'document'}
+                                    : isAudio
+                                      ? att.audioFormat
+                                        ? `.${att.audioFormat}${durLabel ? ` · ${durLabel}` : ''}`
+                                        : 'audio'
+                                      : ext
+                                        ? `.${ext}`
+                                        : 'document'}
                                   {att.size
-                                    ? ` · ${formatBytes(att.size)}`
+                                    ? ` · ${formatBytes(att.size, {
+                                        decimals: (_, unit) =>
+                                          unit === 'B' ? 0 : 1,
+                                      })}`
                                     : ''}
                                 </div>
+                                {isAudio && att.dataUrl && (
+                                  <audio
+                                    controls
+                                    src={att.dataUrl}
+                                    className="mt-1 w-56"
+                                  />
+                                )}
                               </div>
                             </TooltipContent>
                           </Tooltip>
@@ -1642,18 +1796,33 @@ const ChatInput = memo(function ChatInput({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                    <DropdownMenuItem onClick={handleImagePickerClick}>
-                      <IconPhoto size={18} className="text-muted-foreground" />
-                      <span>Add Images</span>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        multiple
-                        onChange={handleFileChange}
-                      />
-                    </DropdownMenuItem>
+                    {hasMmproj && (
+                      <DropdownMenuItem onClick={() => void openImagePicker()}>
+                        <IconPhoto size={18} className="text-muted-foreground" />
+                        <span>Add Images</span>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          multiple
+                          onChange={handleFileChange}
+                        />
+                      </DropdownMenuItem>
+                    )}
+                    {audioSupported && (
+                      <DropdownMenuItem onClick={() => void openAudioPicker()}>
+                        <IconMusic size={18} className="text-muted-foreground" />
+                        <span>Add Audio</span>
+                        <input
+                          type="file"
+                          ref={audioInputRef}
+                          className="hidden"
+                          multiple
+                          accept="audio/wav,audio/mpeg,.wav,.mp3"
+                          onChange={handleAudioFileChange}
+                        />
+                      </DropdownMenuItem>
+                    )}
                     {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                     <DropdownMenuItem
                       onClick={handleAttachDocsIngest}
@@ -1943,21 +2112,120 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <IconAtom
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('reasoning')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode &&
+                  selectedProvider === 'llamacpp' &&
+                  (() => {
+                    const reasoningValue =
+                      (selectedModel?.settings?.reasoning?.controller_props
+                        ?.value as 'auto' | 'on' | 'off' | undefined) ?? 'auto'
+                    const setReasoning = (value: 'auto' | 'on' | 'off') => {
+                      if (!selectedProvider || !selectedModel) return
+                      const providerObj = getProviderByName(selectedProvider)
+                      if (!providerObj) return
+                      const modelIndex = providerObj.models.findIndex(
+                        (m) => m.id === selectedModel.id
+                      )
+                      if (modelIndex === -1) return
+                      const existing =
+                        selectedModel.settings?.reasoning ?? {
+                          key: 'reasoning',
+                          title: 'Reasoning',
+                          description: '',
+                          controller_type: 'dropdown',
+                          controller_props: { value },
+                        }
+                      const updatedModel = {
+                        ...selectedModel,
+                        settings: {
+                          ...selectedModel.settings,
+                          reasoning: {
+                            ...existing,
+                            controller_props: {
+                              ...(existing.controller_props ?? {}),
+                              value,
+                            },
+                          },
+                        },
+                      } as Model
+                      const updatedModels = [...providerObj.models]
+                      updatedModels[modelIndex] = updatedModel
+                      updateProvider(selectedProvider, {
+                        models: updatedModels,
+                      })
+                      // selectedModel is a snapshot, not a live derivation —
+                      // re-select to refresh it so the dropdown UI and the
+                      // chat transport both observe the new value.
+                      selectModelProvider(selectedProvider, selectedModel.id)
+                    }
+                    const label =
+                      reasoningValue === 'on'
+                        ? 'On'
+                        : reasoningValue === 'off'
+                          ? 'Off'
+                          : 'Auto'
+                    const tooltipText =
+                      reasoningValue === 'on'
+                        ? 'Reasoning forced on for every request.'
+                        : reasoningValue === 'off'
+                          ? 'Reasoning disabled for every request.'
+                          : "Reasoning auto-detected from the model's chat template."
+                    return (
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1 px-1.5"
+                              >
+                                <IconBrain
+                                  size={18}
+                                  className={cn(
+                                    'text-muted-foreground',
+                                    reasoningValue === 'on' && 'text-primary',
+                                    reasoningValue === 'off' && 'opacity-50'
+                                  )}
+                                />
+                                <span className="text-xs text-muted-foreground lowercase">
+                                  {label}
+                                </span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{tooltipText}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onClick={() => setReasoning('auto')}>
+                            Auto
+                            {reasoningValue === 'auto' && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ✓
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setReasoning('on')}>
+                            On
+                            {reasoningValue === 'on' && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ✓
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setReasoning('off')}>
+                            Off
+                            {reasoningValue === 'off' && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ✓
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )
+                  })()}
               </div>
             </div>
 
@@ -1971,16 +2239,6 @@ const ChatInput = memo(function ChatInput({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
-                      additionalContextText={tokenCounterAdditionalContext}
-                      uploadedFiles={attachments
-                        .filter((a) => a.type === 'image' && a.dataUrl)
-                        .map((a) => ({
-                          name: a.name,
-                          type: a.mimeType || getFileTypeFromExtension(a.name),
-                          size: a.size || 0,
-                          base64: a.base64 || '',
-                          dataUrl: a.dataUrl!,
-                        }))}
                     />
                   </div>
                 )}
@@ -2051,19 +2309,7 @@ const ChatInput = memo(function ChatInput({
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
           <div className="flex-1 w-full flex justify-start px-2">
-            <TokenCounter
-              messages={threadMessages || []}
-              additionalContextText={tokenCounterAdditionalContext}
-              uploadedFiles={attachments
-                .filter((a) => a.type === 'image' && a.dataUrl)
-                .map((a) => ({
-                  name: a.name,
-                  type: a.mimeType || getFileTypeFromExtension(a.name),
-                  size: a.size || 0,
-                  base64: a.base64 || '',
-                  dataUrl: a.dataUrl!,
-                }))}
-            />
+            <TokenCounter messages={threadMessages || []} />
           </div>
         )}
 
@@ -2072,13 +2318,6 @@ const ChatInput = memo(function ChatInput({
         onOpenChange={setExtensionDialogOpen}
         state={extensionDialogState}
         onCancel={handleExtensionDialogCancel}
-      />
-
-      {/* Vision Model Download Prompt */}
-      <PromptVisionModel
-        open={showVisionModelPrompt}
-        onClose={() => setShowVisionModelPrompt(false)}
-        onDownloadComplete={handleVisionModelDownloadComplete}
       />
     </div>
   )

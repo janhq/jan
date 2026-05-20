@@ -1,0 +1,13 @@
+{
+  "toolApproval": {
+    "title": "Approvazione strumento richiesta",
+    "description": "L'assistente vuole utilizzare",
+    "needsApproval": "Questo strumento richiede la tua approvazione prima di essere eseguito.",
+    "securityNotice": "Strumenti dannosi o il contenuto della conversazione potrebbero ingannare l'assistente spingendolo a compiere azioni nocive. Verifica attentamente ogni chiamata prima di approvarla.",
+    "deny": "Rifiuta",
+    "allowOnce": "Consenti una volta",
+    "alwaysAllow": "Consenti nella conversazione",
+    "parameters": "Parametri dello strumento",
+    "permissionScope": "Le autorizzazioni concesse si applicano solo a questa conversazione."
+  }
+}

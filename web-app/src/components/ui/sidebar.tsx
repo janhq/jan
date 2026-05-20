@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-refresh/only-export-components */
 
 import { Slot } from "@radix-ui/react-slot";
 import { type VariantProps, cva } from "class-variance-authority";
@@ -30,7 +31,7 @@ const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 //* new constants for sidebar resizing
 const MIN_SIDEBAR_WIDTH = "14rem";
-const MAX_SIDEBAR_WIDTH = "40rem";
+const MAX_SIDEBAR_WIDTH = "20rem";
 
 type SidebarContext = {
 	state: "expanded" | "collapsed";

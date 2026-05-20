@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getProxyConfig } from './util'
+import {
+  buildEmbedBatches,
+  detectMtpLayersFromGgufMeta,
+  estimateTokensFromText,
+  getProxyConfig,
+  truncateToTokenBudget,
+} from './util'
 
 // Mock console.log and console.error to avoid noise in tests
 const mockConsole = {
@@ -522,5 +528,117 @@ describe('getProxyConfig', () => {
       verify_peer_ssl: true,
       verify_host_ssl: true,
     })
+  })
+})
+
+describe('truncateToTokenBudget', () => {
+  it('returns input unchanged when under the budget', () => {
+    expect(truncateToTokenBudget('hello world', 100, 3)).toBe('hello world')
+  })
+
+  it('slices to maxTokens * charsPerToken when over the budget', () => {
+    const long = 'a'.repeat(1000)
+    const out = truncateToTokenBudget(long, 10, 3)
+    expect(out.length).toBe(30)
+  })
+})
+
+describe('buildEmbedBatches', () => {
+  it('packs small inputs into a single batch', () => {
+    const batches = buildEmbedBatches(['hi', 'there'], 512, 3)
+    expect(batches).toHaveLength(1)
+    expect(batches[0]).toEqual({ batch: ['hi', 'there'], offset: 0 })
+  })
+
+  it('splits inputs across batches when token budget is exceeded', () => {
+    const oneSafeChunk = 'a'.repeat(3 * 200)
+    const batches = buildEmbedBatches(
+      [oneSafeChunk, oneSafeChunk, oneSafeChunk],
+      512,
+      3
+    )
+    expect(batches.length).toBeGreaterThanOrEqual(2)
+    const flat = batches.flatMap((b) => b.batch)
+    expect(flat).toHaveLength(3)
+    const offsets = batches.map((b) => b.offset)
+    expect(offsets).toEqual([...offsets].sort((a, b) => a - b))
+  })
+
+  it('truncates oversize inputs instead of forwarding them whole', () => {
+    const huge = 'x'.repeat(20000)
+    const batches = buildEmbedBatches([huge], 512, 3)
+    expect(batches).toHaveLength(1)
+    const sent = batches[0].batch[0]
+    expect(sent.length).toBeLessThan(huge.length)
+    expect(estimateTokensFromText(sent, 3)).toBeLessThanOrEqual(
+      Math.floor(512 * 0.5)
+    )
+  })
+
+  it('throws on ubatch_size too small to satisfy the safety margin', () => {
+    expect(() => buildEmbedBatches(['hi'], 1, 3)).toThrow(/too small/)
+  })
+})
+
+describe('detectMtpLayersFromGgufMeta', () => {
+  it('returns 0 for undefined or empty meta', () => {
+    expect(detectMtpLayersFromGgufMeta(undefined)).toBe(0)
+    expect(detectMtpLayersFromGgufMeta({})).toBe(0)
+  })
+
+  it('reads {arch}.nextn_predict_layers when general.architecture is set', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '1',
+      })
+    ).toBe(1)
+  })
+
+  it('accepts numeric values', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'mimo',
+        'mimo.nextn_predict_layers': 2,
+      })
+    ).toBe(2)
+  })
+
+  it('falls back to suffix scan when arch key is missing', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'some_new_arch.nextn_predict_layers': '3',
+      })
+    ).toBe(3)
+  })
+
+  it('returns 0 when value is zero, negative, or unparseable', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '0',
+      })
+    ).toBe(0)
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '-1',
+      })
+    ).toBe(0)
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': 'abc',
+      })
+    ).toBe(0)
+  })
+
+  it('floors non-integer values', () => {
+    expect(
+      detectMtpLayersFromGgufMeta({
+        'general.architecture': 'glm',
+        'glm.nextn_predict_layers': '2.7',
+      })
+    ).toBe(2)
   })
 })

@@ -11,6 +11,8 @@
   "general": "Allgemein",
   "settings": "Einstellungen",
   "modelProviders": "Modell Anbieter",
+  "localProviders": "Lokal",
+  "remoteProviders": "Remote",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Erscheinung",
@@ -396,5 +398,12 @@
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

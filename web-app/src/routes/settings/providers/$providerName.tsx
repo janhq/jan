@@ -3,17 +3,18 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import { cn, getProviderTitle, getModelDisplayName, isLocalProvider } from '@/lib/utils'
 import { createFileRoute, Link, useParams } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
-import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
+import { ImportLlamacppModelDialog } from '@/containers/dialogs/ImportLlamacppModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
+import { DialogDeleteAllModels } from '@/containers/dialogs/DeleteAllModels'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
@@ -22,13 +23,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
+  IconCircleCheck,
+  IconCircle,
   IconFolderPlus,
+  IconInfoCircle,
   IconLoader,
   IconRefresh,
   IconUpload,
 } from '@tabler/icons-react'
+import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { toast } from 'sonner'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
@@ -40,8 +45,14 @@ import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
+  API_KEY_FALLBACKS_SETTING_KEY,
+  serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
 import { getProviderRefreshErrorMessage } from '@/services/providers/errors'
+import {
+  supportsRemoteCatalog,
+  fetchTopRemoteModels,
+} from '@/lib/remoteModelCatalog'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -75,8 +86,69 @@ function ProviderDetail() {
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
-  const { getProviderByName, setProviders, updateProvider } = useModelProvider()
+  const { getProviderByName, setProviders, updateProvider, addDeletedModels } =
+    useModelProvider()
   const provider = getProviderByName(providerName)
+  const isLlamacpp = provider?.provider === 'llamacpp'
+  const isPredefinedProvider = useMemo(
+    () => predefinedProviders.some((p) => p.provider === providerName),
+    [providerName]
+  )
+  const allModels = useMemo(() => provider?.models ?? [], [provider?.models])
+  const embeddingModels = useMemo(
+    () =>
+      isLlamacpp
+        ? allModels.filter((m) => (m as any).embedding === true)
+        : [],
+    [isLlamacpp, allModels]
+  )
+  const chatModels = useMemo(
+    () =>
+      isLlamacpp
+        ? allModels.filter((m) => (m as any).embedding !== true)
+        : allModels,
+    [isLlamacpp, allModels]
+  )
+  const defaultEmbeddingModelId = useDefaultEmbeddingModel((s) =>
+    isLlamacpp ? s.getDefault('llamacpp') : undefined
+  )
+  const setDefaultEmbeddingModel = useDefaultEmbeddingModel((s) => s.setDefault)
+  const clearDefaultEmbeddingModel = useDefaultEmbeddingModel(
+    (s) => s.clearDefault
+  )
+
+  useEffect(() => {
+    if (!isLlamacpp) return
+    const hasMini = allModels.some(
+      (m) => m.id === 'sentence-transformer-mini'
+    )
+    if (
+      !defaultEmbeddingModelId &&
+      embeddingModels.length === 1 &&
+      !hasMini
+    ) {
+      setDefaultEmbeddingModel('llamacpp', embeddingModels[0].id)
+      return
+    }
+    if (
+      defaultEmbeddingModelId &&
+      embeddingModels.length > 0 &&
+      !embeddingModels.some((m) => m.id === defaultEmbeddingModelId)
+    ) {
+      clearDefaultEmbeddingModel('llamacpp')
+      return
+    }
+    if (defaultEmbeddingModelId && embeddingModels.length === 0) {
+      clearDefaultEmbeddingModel('llamacpp')
+    }
+  }, [
+    isLlamacpp,
+    defaultEmbeddingModelId,
+    embeddingModels,
+    allModels,
+    setDefaultEmbeddingModel,
+    clearDefaultEmbeddingModel,
+  ])
 
   // Check if llamacpp/mlx provider needs backend configuration
   const needsBackendConfig =
@@ -193,6 +265,20 @@ function ProviderDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
 
+  const autoCatalogAttempted = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!provider) return
+    if (!supportsRemoteCatalog(provider.provider)) return
+    if (provider.models.length > 0) return
+    if (!providerHasRemoteApiKeys(provider)) return
+    if (autoCatalogAttempted.current.has(provider.provider)) return
+    autoCatalogAttempted.current.add(provider.provider)
+    handleRefreshModels()
+    // handleRefreshModels closes over the latest provider; only watch the
+    // signals that decide whether auto-fetch should fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider?.provider, provider?.api_key, provider?.models.length])
+
   const commitApiKeysDraft = useCallback(() => {
     if (!provider) return
     const lines = apiKeysDraft
@@ -216,6 +302,29 @@ function ProviderDetail() {
         value: string | boolean | number
       }
       apiKeyProps.value = nextPrimary
+    }
+
+    const fallbacksValue = serializeApiKeyFallbacks(nextFallbacks)
+    const fallbacksIndex = newSettings.findIndex(
+      (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+    )
+    if (fallbacksIndex !== -1) {
+      const props = newSettings[fallbacksIndex].controller_props as {
+        value: string | boolean | number
+      }
+      props.value = fallbacksValue
+    } else if (fallbacksValue.length > 0) {
+      newSettings.push({
+        key: API_KEY_FALLBACKS_SETTING_KEY,
+        title: 'API Key Fallbacks',
+        description: '',
+        controller_type: 'input',
+        controller_props: {
+          value: fallbacksValue,
+          type: 'password',
+          placeholder: '',
+        },
+      } as (typeof newSettings)[number])
     }
 
     serviceHub.providers().updateSettings(providerName, newSettings)
@@ -395,27 +504,64 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      const modelIds = await serviceHub
-        .providers()
-        .fetchModelsFromProvider(provider)
+      let newModels: Model[]
+      if (supportsRemoteCatalog(provider.provider)) {
+        const catalog = await fetchTopRemoteModels(provider, serviceHub.providers().fetch())
+        newModels = catalog.map((m) => ({
+          id: m.id,
+          model: m.id,
+          name: m.id,
+          capabilities: m.capabilities,
+          version: '1.0',
+        }))
+      } else {
+        const modelIds = await serviceHub
+          .providers()
+          .fetchModelsFromProvider(provider)
+        newModels = modelIds.map((id) => ({
+          id,
+          model: id,
+          name: id,
+          capabilities: ['completion'],
+          version: '1.0',
+        }))
+      }
 
-      // Create new models from the fetched IDs
-      const newModels: Model[] = modelIds.map((id) => ({
-        id,
-        model: id,
-        name: id,
-        capabilities: ['completion'], // Default capability
-        version: '1.0',
-      }))
+      if (supportsRemoteCatalog(provider.provider)) {
+        const importedModels = provider.models.filter((m) => m.imported)
+        const importedIds = new Set(importedModels.map((m) => m.id))
+        const fresh = newModels.filter((m) => !importedIds.has(m.id))
+        if (fresh.length === 0) {
+          toast.success(t('providers:models'), {
+            description: t('providers:noNewModels'),
+          })
+          return
+        }
+        const updatedModels = [...importedModels, ...fresh]
+        const keepIds = new Set(updatedModels.map((m) => m.id))
+        const removedIds = provider.models
+          .filter((m) => !m.imported && !keepIds.has(m.id))
+          .map((m) => m.id)
+        addDeletedModels(removedIds)
+        updateProvider(providerName, {
+          ...provider,
+          models: updatedModels,
+        })
+        toast.success(t('providers:models'), {
+          description: t('providers:refreshModelsSuccess', {
+            count: fresh.length,
+            provider: provider.provider,
+          }),
+        })
+        return
+      }
 
-      // Filter out models that already exist
       const existingModelIds = provider.models.map((m) => m.id)
       const modelsToAdd = newModels.filter(
         (model) => !existingModelIds.includes(model.id)
       )
 
       if (modelsToAdd.length > 0) {
-        // Update the provider with new models
         const updatedModels = [...provider.models, ...modelsToAdd]
         updateProvider(providerName, {
           ...provider,
@@ -583,6 +729,20 @@ function ProviderDetail() {
               />
             </div>
 
+            {provider &&
+              !isLocalProvider(provider.provider) &&
+              !supportsRemoteCatalog(provider.provider) && (
+                <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
+                  <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    {t('providers:limitedSupport', {
+                      defaultValue:
+                        'This provider may not be fully supported. Capabilities (tools, vision, audio) are not auto-detected - add models manually and configure capabilities per model.',
+                    })}
+                  </span>
+                </div>
+              )}
+
             <div
               className={cn(
                 'flex flex-col gap-3',
@@ -592,13 +752,26 @@ function ProviderDetail() {
                   'flex-col-reverse'
               )}
             >
-              {/* Settings */}
+              {/* Settings — hidden for predefined remote providers since
+                  api-key + base-url are both surfaced elsewhere / hidden. */}
+              {!(
+                isPredefinedProvider &&
+                provider?.provider !== 'llamacpp' &&
+                provider?.provider !== 'mlx'
+              ) && (
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
                   if (
                     setting.key === 'api-key' &&
                     provider?.provider !== 'llamacpp' &&
                     provider?.provider !== 'mlx'
+                  ) {
+                    return null
+                  }
+
+                  if (
+                    provider?.provider === 'llamacpp' &&
+                    setting.key === 'fit_ctx'
                   ) {
                     return null
                   }
@@ -696,6 +869,10 @@ function ProviderDetail() {
                       )}
                     </div>
                   )
+
+                  if (isPredefinedProvider && setting.key === 'base-url') {
+                    return null
+                  }
 
                   return (
                     <CardItem
@@ -797,6 +974,7 @@ function ProviderDetail() {
 
                 <DeleteProvider provider={provider} />
               </Card>
+              )}
 
               {provider &&
                 provider.provider !== 'llamacpp' &&
@@ -814,6 +992,7 @@ function ProviderDetail() {
                       {!showAdvancedApiKeys && (
                         <div className="flex flex-col gap-2">
                           <Input
+                            type="password"
                             className="font-mono"
                             placeholder={t('providers:apiKeys.primaryPlaceholder')}
                             value={primaryKeyDraft}
@@ -1004,8 +1183,13 @@ function ProviderDetail() {
                           <DialogAddModel provider={provider} />
                         </>
                       )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'mlx') && (
+                          <DialogDeleteAllModels provider={provider} />
+                        )}
                       {provider && provider.provider === 'llamacpp' && (
-                        <ImportVisionModelDialog
+                        <ImportLlamacppModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
@@ -1044,7 +1228,20 @@ function ProviderDetail() {
                 }
               >
                 {provider?.models.length ? (
-                  provider?.models.map((model, modelIndex) => {
+                  <>
+                  {isLlamacpp && embeddingModels.length > 0 && chatModels.length > 0 && (
+                    <div
+                      role="separator"
+                      aria-label={t('providers:chatModels')}
+                      className="mt-1 mb-3 flex items-center gap-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t('providers:chatModels')}
+                      </span>
+                      <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
+                    </div>
+                  )}
+                  {(isLlamacpp ? chatModels : allModels).map((model, modelIndex) => {
                     const capabilities = model.capabilities || []
                     return (
                       <CardItem
@@ -1058,6 +1255,14 @@ function ProviderDetail() {
                               {getModelDisplayName(model)}
                             </h1>
                             <Capabilities capabilities={capabilities} />
+                            {model.imported && (
+                              <span
+                                className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                                title={t('providers:importedTooltip')}
+                              >
+                                {t('providers:imported')}
+                              </span>
+                            )}
                           </div>
                         }
                         actions={
@@ -1125,7 +1330,8 @@ function ProviderDetail() {
                         }
                       />
                     )
-                  })
+                  })}
+                  </>
                 ) : (
                   <div className="-mt-2">
                     <div className="flex items-center gap-2">
@@ -1134,9 +1340,15 @@ function ProviderDetail() {
                       </h6>
                     </div>
                     <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                      {t('providers:noModelFoundDesc')}
-                      &nbsp;
-                      <Link to={route.hub.index}>{t('common:hub')}</Link>
+                      {provider && !isLocalProvider(provider.provider) ? (
+                        t('providers:noModelFoundRemoteDesc')
+                      ) : (
+                        <>
+                          {t('providers:noModelFoundDesc')}
+                          &nbsp;
+                          <Link to={route.hub.index}>{t('common:hub')}</Link>
+                        </>
+                      )}
                     </p>
                   </div>
                 )}
@@ -1161,6 +1373,105 @@ function ProviderDetail() {
                       </div>
                     }
                   />
+                )}
+
+                {isLlamacpp && provider && embeddingModels.length > 0 && (
+                  <>
+                    <div
+                      role="separator"
+                      aria-label={t('providers:embeddingModels')}
+                      className="mt-5 mb-3 flex items-center gap-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t('providers:embeddingModels')}
+                      </span>
+                      <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
+                    </div>
+                    {embeddingModels.map((model, modelIndex) => {
+                      const isDefault = defaultEmbeddingModelId === model.id
+                      return (
+                        <CardItem
+                          key={`embedding-${modelIndex}`}
+                          title={
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDefaultEmbeddingModel(
+                                    'llamacpp',
+                                    model.id
+                                  )
+                                }
+                                aria-label={
+                                  isDefault
+                                    ? t('providers:embeddingModelIsDefault')
+                                    : t('providers:embeddingModelSetDefault')
+                                }
+                                title={
+                                  isDefault
+                                    ? t('providers:embeddingModelIsDefault')
+                                    : t('providers:embeddingModelSetDefault')
+                                }
+                                className="size-6 flex items-center justify-center rounded transition-all hover:bg-main-view-fg/8"
+                              >
+                                {isDefault ? (
+                                  <IconCircleCheck
+                                    size={18}
+                                    className="text-muted-foreground"
+                                  />
+                                ) : (
+                                  <IconCircle
+                                    size={18}
+                                    className="text-muted-foreground"
+                                  />
+                                )}
+                              </button>
+                              <h1
+                                className="font-medium line-clamp-1"
+                                title={model.id}
+                              >
+                                {getModelDisplayName(model)}
+                              </h1>
+                              <Capabilities
+                                capabilities={model.capabilities || []}
+                              />
+                              {isDefault && (
+                                <span className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                  {t('providers:embeddingModelDefault')}
+                                </span>
+                              )}
+                              {model.imported && (
+                                <span
+                                  className="shrink-0 rounded-sm bg-main-view-fg/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                                  title={t('providers:importedTooltip')}
+                                >
+                                  {t('providers:imported')}
+                                </span>
+                              )}
+                            </div>
+                          }
+                          actions={
+                            <div className="flex items-center gap-0.5">
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {model.settings && (
+                                <ModelSetting
+                                  provider={provider}
+                                  model={model}
+                                />
+                              )}
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                            </div>
+                          }
+                        />
+                      )
+                    })}
+                  </>
                 )}
               </Card>
             </div>

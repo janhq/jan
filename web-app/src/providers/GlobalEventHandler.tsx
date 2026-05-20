@@ -14,9 +14,21 @@ export function GlobalEventHandler() {
   const serviceHub = useServiceHub()
   const setHardwareData = useHardware((state) => state.setHardwareData)
 
-  // Re-detect GPU when app becomes visible again (e.g. after system sleep on Linux - #6447)
+  // Probe hardware on mount so Hub fit-status renders before the user
+  // visits Settings → Hardware. Re-detect on visibility return (post-sleep, #6447).
   useEffect(() => {
     if (!isPlatformTauri()) return
+
+    const probe = async () => {
+      try {
+        const data = await serviceHub.hardware().getHardwareInfo()
+        if (data) setHardwareData(data)
+      } catch (e) {
+        console.error('Failed to fetch hardware info:', e)
+      }
+    }
+
+    void probe()
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return

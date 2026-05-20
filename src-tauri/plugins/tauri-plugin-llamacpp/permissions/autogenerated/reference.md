@@ -7,6 +7,12 @@ Default permissions for the llamacpp plugin
 - `allow-cleanup-llama-processes`
 - `allow-load-llama-model`
 - `allow-unload-llama-model`
+- `allow-start-router`
+- `allow-stop-router`
+- `allow-try-graceful-stop-router`
+- `allow-force-kill-router-tree`
+- `allow-force-stop-model`
+- `allow-get-router-info`
 - `allow-get-devices`
 - `allow-generate-api-key`
 - `allow-is-process-running`
@@ -35,6 +41,12 @@ Default permissions for the llamacpp plugin
 - `allow-validate-backend-string`
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
+- `allow-get-backend-dir`
+- `allow-get-backend-exe-path`
+- `allow-check-backend-installed`
+- `allow-verify-backend-installation`
+- `allow-fetch-remote-supported-backends`
+- `allow-build-backend-download-items`
 
 ## Permission Table
 
@@ -44,6 +56,32 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp:allow-build-backend-download-items`
+
+</td>
+<td>
+
+Enables the build_backend_download_items command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-build-backend-download-items`
+
+</td>
+<td>
+
+Denies the build_backend_download_items command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -67,6 +105,32 @@ Enables the check_backend_for_updates command without any pre-configured scope.
 <td>
 
 Denies the check_backend_for_updates command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-check-backend-installed`
+
+</td>
+<td>
+
+Enables the check_backend_installed command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-check-backend-installed`
+
+</td>
+<td>
+
+Denies the check_backend_installed command without any pre-configured scope.
 
 </td>
 </tr>
@@ -178,6 +242,32 @@ Denies the estimate_kv_cache_size command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-fetch-remote-supported-backends`
+
+</td>
+<td>
+
+Enables the fetch_remote_supported_backends command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-fetch-remote-supported-backends`
+
+</td>
+<td>
+
+Denies the fetch_remote_supported_backends command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-find-latest-version-for-backend`
 
 </td>
@@ -230,6 +320,58 @@ Denies the find_session_by_model command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-force-kill-router-tree`
+
+</td>
+<td>
+
+Enables the force_kill_router_tree command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-force-kill-router-tree`
+
+</td>
+<td>
+
+Denies the force_kill_router_tree command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-force-stop-model`
+
+</td>
+<td>
+
+Enables the force_stop_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-force-stop-model`
+
+</td>
+<td>
+
+Denies the force_stop_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-generate-api-key`
 
 </td>
@@ -275,6 +417,58 @@ Enables the get_all_sessions command without any pre-configured scope.
 <td>
 
 Denies the get_all_sessions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-backend-dir`
+
+</td>
+<td>
+
+Enables the get_backend_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-backend-dir`
+
+</td>
+<td>
+
+Denies the get_backend_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-backend-exe-path`
+
+</td>
+<td>
+
+Enables the get_backend_exe_path command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-backend-exe-path`
+
+</td>
+<td>
+
+Denies the get_backend_exe_path command without any pre-configured scope.
 
 </td>
 </tr>
@@ -405,6 +599,32 @@ Enables the get_random_port command without any pre-configured scope.
 <td>
 
 Denies the get_random_port command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-router-info`
+
+</td>
+<td>
+
+Enables the get_router_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-router-info`
+
+</td>
+<td>
+
+Denies the get_router_info command without any pre-configured scope.
 
 </td>
 </tr>
@@ -984,6 +1204,32 @@ Denies the remove_old_backend_versions command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-router-slots-idle`
+
+</td>
+<td>
+
+Enables the router_slots_idle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-router-slots-idle`
+
+</td>
+<td>
+
+Denies the router_slots_idle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-should-migrate-backend`
 
 </td>
@@ -1003,6 +1249,84 @@ Enables the should_migrate_backend command without any pre-configured scope.
 <td>
 
 Denies the should_migrate_backend command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-start-router`
+
+</td>
+<td>
+
+Enables the start_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-start-router`
+
+</td>
+<td>
+
+Denies the start_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-stop-router`
+
+</td>
+<td>
+
+Enables the stop_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-stop-router`
+
+</td>
+<td>
+
+Denies the stop_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-try-graceful-stop-router`
+
+</td>
+<td>
+
+Enables the try_graceful_stop_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-try-graceful-stop-router`
+
+</td>
+<td>
+
+Denies the try_graceful_stop_router command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1055,6 +1379,32 @@ Enables the validate_backend_string command without any pre-configured scope.
 <td>
 
 Denies the validate_backend_string command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-verify-backend-installation`
+
+</td>
+<td>
+
+Enables the verify_backend_installation command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-verify-backend-installation`
+
+</td>
+<td>
+
+Denies the verify_backend_installation command without any pre-configured scope.
 
 </td>
 </tr>

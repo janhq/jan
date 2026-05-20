@@ -14,6 +14,8 @@
   "general": "일반",
   "settings": "설정",
   "modelProviders": "모델 제공자",
+  "localProviders": "로컬",
+  "remoteProviders": "원격",
   "manageProviders": "제공자 관리",
   "hiddenProviders": "{{count}}개 비활성화됨",
   "hideProvider": "제공자 숨기기",
@@ -464,5 +466,12 @@
   },
   "files": {
     "chunksCount": "청크 {{count}}개"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

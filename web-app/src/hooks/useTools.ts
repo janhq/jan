@@ -29,9 +29,17 @@ export const useTools = () => {
         // Update MCP tools
         updateTools(mcpTools)
 
-        // Update cached tool names for fast synchronous access
-        updateMcpToolNames(mcpTools.map((t) => t.name))
-        updateRagToolNames(ragToolNames)
+        const mcpNames = mcpTools.map((t) => t.name)
+        const mcpNameSet = new Set(mcpNames)
+        const ragOnly = ragToolNames.filter((n) => !mcpNameSet.has(n))
+        if (ragOnly.length !== ragToolNames.length) {
+          const shadowed = ragToolNames.filter((n) => mcpNameSet.has(n))
+          console.warn(
+            `[tools] RAG tool(s) shadowed by MCP and routed to MCP: ${shadowed.join(', ')}`
+          )
+        }
+        updateMcpToolNames(mcpNames)
+        updateRagToolNames(ragOnly)
 
         // Initialize default disabled tools for new users (only once)
         if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {

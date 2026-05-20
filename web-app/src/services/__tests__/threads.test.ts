@@ -101,6 +101,19 @@ describe('DefaultThreadsService', () => {
       })
     })
 
+    it('should default provider to llamacpp when engine is missing in stored thread', async () => {
+      mockConversationalExtension.listThreads.mockResolvedValue([
+        {
+          id: '1',
+          title: 'T',
+          updated: 0,
+          assistants: [{ model: { id: 'my-model' } }],
+        },
+      ])
+      const result = await threadsService.fetchThreads()
+      expect(result[0].model).toEqual({ id: 'my-model', provider: 'llamacpp' })
+    })
+
     it('should handle empty threads array', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue([])
 

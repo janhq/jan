@@ -1,28 +1,39 @@
 import { useAppState } from '@/hooks/useAppState'
 import { Loader } from 'lucide-react'
+import { useParams } from '@tanstack/react-router'
 
 export function PromptProgress() {
-  const promptProgress = useAppState((state) => state.promptProgress)
+  const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
+  const threadId = params?.threadId
+  const promptProgress = useAppState((state) =>
+    (threadId ? state.promptProgresses[threadId] : undefined) ??
+    state.promptProgress
+  )
+  const loadingModel = useAppState((state) =>
+    (threadId ? state.loadingModels[threadId] : undefined) ??
+    state.loadingModel
+  )
 
   const percentage =
     promptProgress && promptProgress.total > 0
       ? Math.round((promptProgress.processed / promptProgress.total) * 100)
       : 0
 
-  // Show progress only when promptProgress exists and has valid data, and not completed
-  if (
-    !promptProgress ||
-    !promptProgress.total ||
-    promptProgress.total <= 0 ||
-    percentage >= 100
-  ) {
-    return <Loader className="animate-spin w-4 h-4" />
-  }
+  const showReading =
+    promptProgress &&
+    promptProgress.total > 0 &&
+    percentage < 100
+
+  const label = loadingModel
+    ? 'Loading model…'
+    : showReading
+      ? `Reading: ${percentage}%`
+      : 'Working…'
 
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-      <span>Reading: {percentage}%</span>
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader className="animate-spin w-4 h-4" />
+      <span>{label}</span>
     </div>
   )
 }

@@ -14,6 +14,7 @@ const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' },
   { value: 'fr', label: 'Français' },
+  { value: 'hi', label: 'हिंदी' },
   { value: 'id', label: 'Bahasa' },
   { value: 'pl', label: 'Polski' },
   { value: 'vn', label: 'Tiếng Việt' },

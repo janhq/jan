@@ -1,5 +1,10 @@
 {
   "addProvider": "Add Provider",
-  "addOpenAIProvider": "Add OpenAI Provider",
-  "enterNameForProvider": "Enter name for provider"
+  "addOpenAIProvider": "Add OpenAI-compatible Provider",
+  "enterNameForProvider": "Provider name (e.g. my-llm-server)",
+  "baseUrlLabel": "Base URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "apiKeyLabel": "API key (optional)",
+  "apiKeyPlaceholder": "Paste your API key",
+  "invalidBaseUrl": "Base URL must be a valid http(s) URL"
 }

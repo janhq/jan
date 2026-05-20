@@ -1,0 +1,10 @@
+{
+  "newVersion": "Nuova versione {{version}}",
+  "updateAvailable": "Aggiornamento disponibile",
+  "nightlyBuild": "Versione Nightly",
+  "showReleaseNotes": "Mostra note di rilascio",
+  "hideReleaseNotes": "Nascondi note di rilascio",
+  "remindMeLater": "Ricordamelo più tardi",
+  "downloading": "Download in corso...",
+  "updateNow": "Aggiorna ora"
+}

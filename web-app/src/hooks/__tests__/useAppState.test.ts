@@ -14,7 +14,6 @@ describe('useAppState', () => {
         tools: [],
         serverStatus: 'stopped',
         abortControllers: {},
-        tokenSpeed: undefined,
         currentToolCall: undefined,
         showOutOfContextDialog: false
       })
@@ -29,7 +28,6 @@ describe('useAppState', () => {
     expect(result.current.tools).toEqual([])
     expect(result.current.serverStatus).toBe('stopped')
     expect(result.current.abortControllers).toEqual({})
-    expect(result.current.tokenSpeed).toBeUndefined()
     expect(result.current.currentToolCall).toBeUndefined()
     expect(result.current.showOutOfContextDialog).toBe(false)
   })
@@ -125,46 +123,4 @@ describe('useAppState', () => {
     expect(result.current.showOutOfContextDialog).toBe(false)
   })
 
-  it('should update token speed', () => {
-    const { result } = renderHook(() => useAppState())
-
-    const message = {
-      id: 'msg-1',
-      content: 'Hello world',
-      role: 'assistant',
-      created_at: Date.now(),
-      thread_id: 'thread-123'
-    }
-
-    act(() => {
-      result.current.updateTokenSpeed(message)
-    })
-
-    // Token speed calculation depends on implementation
-    expect(result.current.tokenSpeed).toBeDefined()
-  })
-
-  it('should reset token speed', () => {
-    const { result } = renderHook(() => useAppState())
-
-    const message = {
-      id: 'msg-1',
-      content: 'Hello world',
-      role: 'assistant',
-      created_at: Date.now(),
-      thread_id: 'thread-123'
-    }
-
-    act(() => {
-      result.current.updateTokenSpeed(message)
-    })
-
-    expect(result.current.tokenSpeed).toBeDefined()
-
-    act(() => {
-      result.current.resetTokenSpeed()
-    })
-
-    expect(result.current.tokenSpeed).toBeUndefined()
-  })
 })

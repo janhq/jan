@@ -11,6 +11,8 @@
   "general": "Geral",
   "settings": "Configurações",
   "modelProviders": "Provedores de Modelo",
+  "localProviders": "Local",
+  "remoteProviders": "Remoto",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "appearance": "Aparência",
@@ -397,5 +399,12 @@
   "attachmentInjectedIndicator": "Injetado no chat",
   "attachmentEmbeddedIndicator": "Incorporado para RAG",
   "viewInjectedContent": "Ver conteúdo injetado",
-  "injectedContentTitle": "Conteúdo de arquivo injetado"
+  "injectedContentTitle": "Conteúdo de arquivo injetado",
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
+  }
 }

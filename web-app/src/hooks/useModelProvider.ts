@@ -1,9 +1,15 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { fileStorage } from '@/lib/fileStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import {
+  API_KEY_FALLBACKS_SETTING_KEY,
+  parseApiKeyFallbacks,
+  serializeApiKeyFallbacks,
+} from '@/lib/provider-api-keys'
+
+const API_KEY_FALLBACKS_MIGRATION_FLAG = 'api_key_fallbacks_migrated_to_settings'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -21,6 +27,7 @@ type ModelProviderState = {
   addProvider: (provider: ModelProvider) => void
   deleteProvider: (providerName: string) => void
   deleteModel: (modelId: string) => void
+  addDeletedModels: (modelIds: string[]) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -39,7 +46,13 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
+          // MLX is Apple-Silicon only; drop it on every other platform so it
+          // can't be reactivated, queried, or shown anywhere in the UI.
+          providers = IS_MACOS
+            ? providers
+            : providers.filter((e) => e.provider !== 'mlx')
           const existingProviders = state.providers
+            .filter((e) => IS_MACOS || e.provider !== 'mlx')
             // Filter out legacy llama.cpp provider for migration
             // Can remove after a couple of releases
             .filter((e) => e.provider !== 'llama.cpp')
@@ -108,15 +121,17 @@ export const useModelProvider = create<ModelProviderState>()(
                   }
                 )?._userConfiguredCapabilities === true
 
-              // When the user set tools/vision in Edit Model, honor that list on every
-              // refresh from the engine; otherwise fresh engine data would re-add defaults.
+              const engineOwnedCaps = new Set(['vision', 'audio', 'embeddings'])
+              const engineCaps = model.capabilities || []
+              const existingCaps = existingModel?.capabilities || []
               const mergedCapabilities = userConfiguredCapabilities
-                ? [...(existingModel?.capabilities || [])]
+                ? [
+                    ...existingCaps.filter((c) => !engineOwnedCaps.has(c)),
+                    ...engineCaps.filter((c) => engineOwnedCaps.has(c)),
+                  ]
                 : [
-                    ...(model.capabilities || []),
-                    ...(existingModel?.capabilities || []).filter(
-                      (cap) => !(model.capabilities || []).includes(cap)
-                    ),
+                    ...engineCaps,
+                    ...existingCaps.filter((c) => !engineCaps.includes(c)),
                   ]
               return {
                 ...model,
@@ -130,39 +145,128 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             })
 
+            const mergedSettings = provider.settings.map((setting) => {
+              const existingSetting = provider.persist
+                ? undefined
+                : existingProvider?.settings?.find(
+                    (x) => x.key === setting.key
+                  )
+              return {
+                ...setting,
+                controller_props: {
+                  ...setting.controller_props,
+                  ...(existingSetting?.controller_props || {}),
+                },
+              }
+            })
+
+            // Preserve a zustand-only api-key-fallbacks setting when the
+            // backend doesn't return it, so disk-persisted fallbacks survive
+            // localStorage clears once they round-trip through updateSettings.
+            if (
+              !provider.persist &&
+              !mergedSettings.some((s) => s.key === API_KEY_FALLBACKS_SETTING_KEY)
+            ) {
+              const existingFallbacksSetting = existingProvider?.settings?.find(
+                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+              )
+              if (existingFallbacksSetting) {
+                mergedSettings.push(existingFallbacksSetting)
+              }
+            }
+
+            const fallbacksSetting = mergedSettings.find(
+              (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+            )
+            const fallbacksFromSetting = fallbacksSetting
+              ? parseApiKeyFallbacks(
+                  (
+                    fallbacksSetting.controller_props as {
+                      value?: unknown
+                    }
+                  )?.value
+                )
+              : undefined
+
             return {
               ...provider,
               models: provider.persist ? updatedModels : mergedModels,
-              settings: provider.settings.map((setting) => {
-                const existingSetting = provider.persist
-                  ? undefined
-                  : existingProvider?.settings?.find(
-                      (x) => x.key === setting.key
-                    )
-                return {
-                  ...setting,
-                  controller_props: {
-                    ...setting.controller_props,
-                    ...(existingSetting?.controller_props || {}),
-                  },
-                }
-              }),
+              settings: mergedSettings,
               api_key: existingProvider?.api_key || provider.api_key,
               api_key_fallbacks:
                 existingProvider?.api_key_fallbacks ??
+                fallbacksFromSetting ??
                 provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,
             }
           })
-          return {
-            providers: [
-              ...updatedProviders,
-              ...existingProviders.filter(
-                (e) => !updatedProviders.some((p) => p.provider === e.provider)
-              ),
-            ],
+          const nextProviders = [
+            ...updatedProviders,
+            ...existingProviders.filter(
+              (e) => !updatedProviders.some((p) => p.provider === e.provider)
+            ),
+          ]
+
+          // One-shot migration: persist zustand-only fallback keys to disk
+          // via the providers extension so they survive localStorage clears.
+          if (
+            typeof localStorage !== 'undefined' &&
+            localStorage.getItem(API_KEY_FALLBACKS_MIGRATION_FLAG) !== 'true'
+          ) {
+            const toMigrate = nextProviders.filter((p) => {
+              const fallbacks = p.api_key_fallbacks ?? []
+              if (fallbacks.length === 0) return false
+              const setting = p.settings?.find(
+                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+              )
+              const persistedValue = setting
+                ? (setting.controller_props as { value?: unknown })?.value
+                : undefined
+              return (
+                typeof persistedValue !== 'string' || persistedValue.length === 0
+              )
+            })
+            localStorage.setItem(API_KEY_FALLBACKS_MIGRATION_FLAG, 'true')
+            if (toMigrate.length > 0) {
+              queueMicrotask(() => {
+                const svc = getServiceHub().providers()
+                for (const p of toMigrate) {
+                  const value = serializeApiKeyFallbacks(p.api_key_fallbacks ?? [])
+                  const settings = [...(p.settings ?? [])]
+                  const idx = settings.findIndex(
+                    (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+                  )
+                  if (idx !== -1) {
+                    const props = settings[idx].controller_props as {
+                      value: string | boolean | number
+                    }
+                    props.value = value
+                  } else {
+                    settings.push({
+                      key: API_KEY_FALLBACKS_SETTING_KEY,
+                      title: 'API Key Fallbacks',
+                      description: '',
+                      controller_type: 'input',
+                      controller_props: {
+                        value,
+                        type: 'password',
+                        placeholder: '',
+                      },
+                    } as (typeof settings)[number])
+                  }
+                  svc.updateSettings(p.provider, settings).catch((err) => {
+                    console.warn(
+                      `[api-key-fallbacks] migration failed for ${p.provider}:`,
+                      err
+                    )
+                  })
+                }
+              })
+            }
           }
+
+          return { providers: nextProviders }
         }),
       updateProvider: (providerName, data) => {
         set((state) => ({
@@ -225,6 +329,18 @@ export const useModelProvider = create<ModelProviderState>()(
           }
         })
       },
+      addDeletedModels: (modelIds: string[]) => {
+        if (modelIds.length === 0) return
+        set((state) => {
+          const current = Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+          const next = new Set(current)
+          modelIds.forEach((id) => next.add(id))
+          if (next.size === current.length) return state
+          return { deletedModels: Array.from(next) }
+        })
+      },
       addProvider: (provider: ModelProvider) => {
         set((state) => ({
           providers: [...state.providers, provider],
@@ -240,7 +356,7 @@ export const useModelProvider = create<ModelProviderState>()(
     }),
     {
       name: localStorageKey.modelProvider,
-      storage: createJSONStorage(() => fileStorage),
+      storage: createJSONStorage(() => localStorage),
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as ModelProviderState & {
           providers: Array<
@@ -539,9 +655,55 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
+
+        if (version <= 11 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp') return
+
+            // Reasoning moved from extension-level to per-model settings —
+            // strip any stale entry from the provider settings panel.
+            if (provider.settings) {
+              provider.settings = provider.settings.filter(
+                (s) => s.key !== 'reasoning'
+              )
+            }
+
+            if (provider.models) {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.reasoning) {
+                  model.settings.reasoning = {
+                    ...modelSettings.reasoning,
+                    controller_props: {
+                      ...modelSettings.reasoning.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
+        if (version <= 12 && state?.providers) {
+          // Reset ctx_len from the prior 8192 default to '' so llama.cpp picks
+          // (auto-fit when enabled, model default otherwise). Preserve any
+          // user-customised value.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              const ctx = model.settings?.ctx_len as
+                | { controller_props?: { value?: unknown } }
+                | undefined
+              if (ctx?.controller_props?.value === 8192) {
+                ctx.controller_props.value = ''
+              }
+            })
+          })
+        }
         return state
       },
-      version: 11,
+      version: 13,
     }
   )
 )

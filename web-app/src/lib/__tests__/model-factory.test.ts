@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ModelFactory } from '../model-factory'
+import {
+  ModelFactory,
+  cleanUpstreamErrorMessage,
+  createCustomFetch,
+} from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 const mockGlobalFetch = vi.fn()
@@ -20,7 +23,7 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 // Mock the AI SDK providers
 vi.mock('@ai-sdk/openai-compatible', () => {
   const MockChatModel = vi.fn().mockImplementation(() => ({
-    type: 'foundation-models',
+    type: 'openai-compatible-chat',
     modelId: 'apple/on-device',
   }))
   return {
@@ -37,7 +40,10 @@ vi.mock('@ai-sdk/anthropic', () => ({
 }))
 
 vi.mock('@ai-sdk/google', () => ({
-  createGoogleGenerativeAI: vi.fn(() => vi.fn(() => ({ type: 'google' }))),
+  createGoogleGenerativeAI: vi.fn((cfg: any) => {
+    ;(globalThis as any).__capturedGoogleCfg = cfg
+    return vi.fn(() => ({ type: 'google' }))
+  }),
 }))
 
 vi.mock('ai', () => ({
@@ -58,7 +64,6 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 
 const mockedInvoke = vi.mocked(invoke)
-const mockedCreateGoogleGenerativeAI = vi.mocked(createGoogleGenerativeAI)
 const mockedCreateOpenAICompatible = vi.mocked(createOpenAICompatible)
 
 describe('ModelFactory', () => {
@@ -88,85 +93,28 @@ describe('ModelFactory', () => {
       expect(model.type).toBe('anthropic')
     })
 
-    it('should create a Google model for google provider', async () => {
-      const provider: ProviderObject = {
-        provider: 'google',
-        api_key: 'test-api-key',
-        base_url: 'https://generativelanguage.googleapis.com/v1',
-        models: [],
-        settings: [],
-        active: true,
-      }
-
-      const model = await ModelFactory.createModel('gemini-pro', provider)
-      expect(model).toBeDefined()
-      expect(model.type).toBe('google')
-      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
-        apiKey: 'test-api-key',
-        baseURL: 'https://generativelanguage.googleapis.com/v1',
-        headers: undefined,
-        fetch: expect.any(Function),
-      })
-      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
-    })
-
-    it('should create a Google model for gemini provider', async () => {
-      const provider: ProviderObject = {
-        provider: 'gemini',
-        api_key: 'test-api-key',
-        base_url: 'https://generativelanguage.googleapis.com/v1',
-        models: [],
-        settings: [],
-        active: true,
-      }
-
-      const model = await ModelFactory.createModel('gemini-pro', provider)
-      expect(model).toBeDefined()
-      expect(model.type).toBe('google')
-      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
-        apiKey: 'test-api-key',
-        baseURL: 'https://generativelanguage.googleapis.com/v1',
-        headers: undefined,
-        fetch: expect.any(Function),
-      })
-      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
-    })
-
-    it('should forward Gemini parameters through the injected fetch', async () => {
-      const provider: ProviderObject = {
-        provider: 'gemini',
-        api_key: 'test-api-key',
-        base_url: 'https://generativelanguage.googleapis.com/v1',
-        models: [],
-        settings: [],
-        active: true,
-      }
-
-      await ModelFactory.createModel('gemini-pro', provider, {
-        temperature: 0.2,
-        max_output_tokens: 256,
-        ctx_len: 4096,
-      })
-
-      const googleConfig = mockedCreateGoogleGenerativeAI.mock.calls[0]?.[0]
-      expect(googleConfig).toBeDefined()
-      expect(googleConfig?.fetch).toEqual(expect.any(Function))
-
-      await googleConfig!.fetch!(
-        'https://example.com/v1/chat/completions',
-        {
-          method: 'POST',
-          body: JSON.stringify({ prompt: 'hello' }),
+    it('routes google and gemini through the native @ai-sdk/google client and strips the /openai suffix', async () => {
+      const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
+      for (const name of ['google', 'gemini'] as const) {
+        vi.mocked(createGoogleGenerativeAI).mockClear()
+        const provider: ProviderObject = {
+          provider: name,
+          api_key: 'test-api-key',
+          base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+          models: [],
+          settings: [],
+          active: true,
         }
-      )
 
-      expect(mockGlobalFetch).toHaveBeenCalledTimes(1)
-      const [, requestInit] = mockGlobalFetch.mock.calls[0]!
-      expect(JSON.parse(String(requestInit?.body))).toEqual({
-        prompt: 'hello',
-        temperature: 0.2,
-        max_tokens: 256,
-      })
+        const model = await ModelFactory.createModel('gemini-2.5-flash', provider)
+        expect(model).toEqual({ type: 'google' })
+        expect(createGoogleGenerativeAI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            apiKey: 'test-api-key',
+            baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+          })
+        )
+      }
     })
 
     it('should create an OpenAI-compatible model for openai provider', async () => {
@@ -232,117 +180,156 @@ describe('ModelFactory', () => {
     })
   })
 
-  describe('foundation-models provider', () => {
-    const foundationModelsProvider: ProviderObject = {
-      provider: 'foundation-models',
-      models: [],
-      settings: [],
-      active: true,
-    }
+})
 
-    it('should throw with notEligible message when device is not eligible', async () => {
-      mockedInvoke.mockResolvedValueOnce('notEligible')
+describe('cleanUpstreamErrorMessage', () => {
+  it('extracts the final "Error:" line from a Jinja stack trace', () => {
+    const raw =
+      "\n------------\nWhile executing CallExpression at line 1, column 226 in source:\n...op.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user...\n                                           ^\nError: Jinja Exception: Conversation roles must alternate user/assistant/user/assistant/..."
+    expect(cleanUpstreamErrorMessage(raw)).toBe(
+      'Jinja Exception: Conversation roles must alternate user/assistant/user/assistant/...'
+    )
+  })
 
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Intelligence is not supported on this device. An Apple Silicon Mac (M1 or later) with macOS 26+ is required.'
-      )
+  it('passes through a clean message unchanged', () => {
+    const raw =
+      'Unable to generate parser for this template. Automatic parser generation failed: JSON schema conversion failed: Unrecognized schema: "string"'
+    expect(cleanUpstreamErrorMessage(raw)).toBe(raw)
+  })
 
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|check_foundation_models_availability',
-        {}
-      )
+  it('strips a leading rule and "While executing" prelude when no Error: line exists', () => {
+    const raw =
+      '------------\nWhile executing X at line 1:\n bad stuff here\n         ^\nsomething broke'
+    expect(cleanUpstreamErrorMessage(raw)).toBe('something broke')
+  })
+
+  it('returns non-string inputs as-is', () => {
+    // @ts-expect-error intentional misuse
+    expect(cleanUpstreamErrorMessage(null)).toBe(null)
+  })
+})
+
+describe('createCustomFetch — max_tokens coercion', () => {
+  async function captureSentBody(
+    parameters: Record<string, unknown>,
+    keepLlamacppOnly: boolean,
+    bodyIn: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const seen: { body?: string } = {}
+    const baseFetch: typeof globalThis.fetch = (async (
+      _input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      seen.body = typeof init?.body === 'string' ? init.body : ''
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as typeof globalThis.fetch
+    const wrapped = createCustomFetch(baseFetch, parameters, keepLlamacppOnly)
+    await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify(bodyIn),
     })
+    return JSON.parse(seen.body ?? '{}') as Record<string, unknown>
+  }
 
-    it('should throw when Apple Intelligence is not enabled', async () => {
-      mockedInvoke.mockResolvedValueOnce('appleIntelligenceNotEnabled')
+  it('coerces max_tokens=0 to -1 when keepLlamacppOnly is true', async () => {
+    const sent = await captureSentBody({}, true, { max_tokens: 0 })
+    expect(sent.max_tokens).toBe(-1)
+  })
 
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.'
-      )
+  it('does not coerce when keepLlamacppOnly is false (non-llamacpp providers)', async () => {
+    const sent = await captureSentBody({}, false, { max_tokens: 0 })
+    expect(sent.max_tokens).toBe(0)
+  })
+
+  it('leaves non-zero max_tokens alone', async () => {
+    const sent = await captureSentBody({}, true, { max_tokens: 512 })
+    expect(sent.max_tokens).toBe(512)
+  })
+
+  it('coerces max_tokens=0 even when it comes from injected parameters via max_output_tokens', async () => {
+    const sent = await captureSentBody(
+      { max_output_tokens: 0 },
+      true,
+      { messages: [] }
+    )
+    expect(sent.max_tokens).toBe(-1)
+  })
+})
+
+describe('createCustomFetch — llamacpp 500 handling', () => {
+  function fetchReturning(
+    status: number,
+    body: string,
+    contentType = 'application/json'
+  ): typeof globalThis.fetch {
+    return (async () =>
+      new Response(body, {
+        status,
+        statusText: status === 500 ? 'Internal Server Error' : 'OK',
+        headers: { 'content-type': contentType },
+      })) as typeof globalThis.fetch
+  }
+
+  it('synthesizes an llamacpp error body when llamacpp returns 500 with empty body', async () => {
+    const onErr = vi.fn()
+    const wrapped = createCustomFetch(
+      fetchReturning(500, '', 'text/plain'),
+      {},
+      true,
+      onErr
+    )
+    const res = await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
     })
+    expect(res.status).toBe(500)
+    expect(res.headers.get('content-type')).toBe('application/json')
+    const parsed = await res.json()
+    expect(parsed.error.message).toMatch(/model crashed and is being reloaded/i)
+    expect(parsed.error.message).not.toMatch(/500|Internal Server Error|llama-server/i)
+    expect(parsed.error.type).toBe('llamacpp_server_error')
+    expect(onErr).toHaveBeenCalledTimes(1)
+  })
 
-    it('should throw when the model is not ready', async () => {
-      mockedInvoke.mockResolvedValueOnce('modelNotReady')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'The Apple on-device model is still preparing. Please wait and try again shortly.'
-      )
+  it('triggers the reload callback on llamacpp 500 even when the body parses', async () => {
+    const onErr = vi.fn()
+    const body = JSON.stringify({
+      error: { code: 500, message: 'some inner crash', type: 'server_error' },
     })
-
-    it('should throw when the server binary is missing', async () => {
-      mockedInvoke.mockResolvedValueOnce('binaryNotFound')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Foundation Models are currently unavailable on this device.'
-      )
+    const wrapped = createCustomFetch(fetchReturning(500, body), {}, true, onErr)
+    await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
     })
+    expect(onErr).toHaveBeenCalledTimes(1)
+  })
 
-    it('should throw with generic unavailable message for unknown status', async () => {
-      mockedInvoke.mockResolvedValueOnce('unavailable')
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'Apple Foundation Models are currently unavailable on this device.'
-      )
+  it('does not trigger the reload callback or synthesize a body for non-llamacpp 500', async () => {
+    const onErr = vi.fn()
+    const wrapped = createCustomFetch(
+      fetchReturning(500, '', 'text/plain'),
+      {},
+      false,
+      onErr
+    )
+    const res = await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
     })
+    expect(onErr).not.toHaveBeenCalled()
+    expect(res.headers.get('content-type')).toBe('text/plain')
+  })
 
-    it('should throw when available but model is not loaded after start', async () => {
-      mockedInvoke
-        .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(false)       // is_foundation_models_loaded
-
-      await expect(
-        ModelFactory.createModel('apple/on-device', foundationModelsProvider)
-      ).rejects.toThrow(
-        'No running Foundation Models session. The model may have failed to load — please check the logs.'
-      )
-
-      expect(mockStartModel).toHaveBeenCalledWith(
-        foundationModelsProvider,
-        'apple/on-device'
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|check_foundation_models_availability',
-        {}
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|is_foundation_models_loaded',
-        {}
-      )
+  it('does not trigger the reload callback on llamacpp non-500 errors (e.g. 400)', async () => {
+    const onErr = vi.fn()
+    const body = JSON.stringify({
+      error: { code: 400, message: 'bad request', type: 'invalid_request' },
     })
-
-    it('should create a model when available and model is loaded', async () => {
-      mockedInvoke
-        .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(true)        // is_foundation_models_loaded
-
-      const model = await ModelFactory.createModel(
-        'apple/on-device',
-        foundationModelsProvider
-      )
-
-      expect(model).toBeDefined()
-      expect(mockStartModel).toHaveBeenCalledWith(
-        foundationModelsProvider,
-        'apple/on-device'
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|check_foundation_models_availability',
-        {}
-      )
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|is_foundation_models_loaded',
-        {}
-      )
+    const wrapped = createCustomFetch(fetchReturning(400, body), {}, true, onErr)
+    await wrapped('http://test/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
     })
+    expect(onErr).not.toHaveBeenCalled()
   })
 })

@@ -3,10 +3,8 @@ export interface SessionInfo {
   pid: number
   port: number
   model_id: string
-  model_path: string
   is_embedding: boolean
   api_key: string
-  mmproj_path?: string
 }
 
 export interface UnloadResult {
@@ -20,6 +18,13 @@ export interface DeviceInfo {
   memory: number
 }
 
+export interface ModelProps {
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  isSleeping?: boolean
+}
+
 export interface GgufMetadata {
   version: number
   tensor_count: number
@@ -31,7 +36,7 @@ export type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
   auto_unload: boolean
-  auto_restart_on_crash: boolean
+  models_max: string | number
   timeout: number
   llamacpp_env: string
   fit: boolean
@@ -66,6 +71,11 @@ export type LlamacppConfig = {
   rope_freq_scale: number
   ctx_shift: boolean
   parallel: number
+  reasoning: string
+  cache_ram: number
+  cache_reuse: number
+  swa_full: boolean
+  keep: number
 }
 
 export type ModelPlan = {

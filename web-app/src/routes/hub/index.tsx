@@ -15,7 +15,11 @@ import {
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
-import { extractModelName, extractDescription } from '@/lib/models'
+import {
+  extractModelName,
+  extractDescription,
+  selectDefaultQuant,
+} from '@/lib/models'
 import {
   IconChevronDown,
   IconChevronUp,
@@ -55,6 +59,36 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
   repo: string
+}
+
+type QuantTier = {
+  label: string
+  className: string
+}
+
+function getQuantTier(modelId: string): QuantTier | null {
+  const id = modelId.toLowerCase()
+  if (/(^|[-_.])(f32|bf16|f16|q8|q6)([-_.]|$)/.test(id)) {
+    return {
+      label: 'Large',
+      className:
+        'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    }
+  }
+  if (/(^|[-_.])(q5|q4_k|iq4)/.test(id)) {
+    return {
+      label: 'Balanced',
+      className:
+        'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    }
+  }
+  if (/(^|[-_.])(iq2|iq3|q2|q3|q4_0|q4_1)/.test(id)) {
+    return {
+      label: 'Small',
+      className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    }
+  }
+  return null
 }
 
 export const Route = createFileRoute(route.hub.index as any)({
@@ -109,9 +143,6 @@ function HubContent() {
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
-  >({})
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -330,44 +361,6 @@ function HubContent() {
     [navigate]
   )
 
-  const checkModelSupport = useCallback(
-    async (variant: any) => {
-      const modelKey = variant.model_id
-
-      // Don't check again if already checking or checked
-      if (modelSupportStatus[modelKey]) {
-        return
-      }
-
-      // Set loading state
-      setModelSupportStatus((prev) => ({
-        ...prev,
-        [modelKey]: 'LOADING',
-      }))
-
-      try {
-        // Use the HuggingFace path for the model
-        const modelPath = variant.path
-        const supportStatus = await serviceHub
-          .models()
-          .isModelSupported(modelPath, 8192)
-
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: supportStatus,
-        }))
-      } catch (error) {
-        console.error('Error checking model support:', error)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: 'RED',
-        }))
-      }
-    },
-    [modelSupportStatus, serviceHub]
-  )
-
-  // Check if we're on the last step
   const renderFilter = () => {
     return (
       <>
@@ -514,9 +507,9 @@ function HubContent() {
                     >
                       <Card
                         header={
-                          <div className="flex items-center justify-between gap-x-2">
+                          <div className="flex items-start justify-between gap-x-3">
                             <div
-                              className="cursor-pointer"
+                              className="cursor-pointer min-w-0 flex-1"
                               onClick={() => {
                                 navigate({
                                   to: route.hub.model,
@@ -550,43 +543,29 @@ function HubContent() {
                                 ) || ''}
                               </h1>
                             </div>
-                            <div className="shrink-0 space-x-3 flex items-center">
-                              <span className="text-muted-foreground font-medium text-xs">
-                                {filteredModels[virtualItem.index].is_mlx
-                                  ? filteredModels[virtualItem.index]
-                                      .safetensors_files?.[0]?.file_size
-                                  : (
-                                      filteredModels[
-                                        virtualItem.index
-                                      ].quants?.find((m) =>
-                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                          m.model_id.toLowerCase().includes(e)
-                                        )
-                                      ) ??
-                                      filteredModels[virtualItem.index]
-                                        .quants?.[0]
-                                    )?.file_size}
-                              </span>
-                              <ModelInfoHoverCard
-                                model={filteredModels[virtualItem.index]}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
-                                }
-                                variant={
-                                  filteredModels[
-                                    virtualItem.index
-                                  ].quants?.find((m) =>
-                                    DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                      m.model_id.toLowerCase().includes(e)
-                                    )
-                                  ) ??
-                                  filteredModels[virtualItem.index]
-                                    .quants?.[0]
-                                }
-                                isDefaultVariant={true}
-                                modelSupportStatus={modelSupportStatus}
-                                onCheckModelSupport={checkModelSupport}
-                              />
+                            <div className="shrink-0 flex flex-col items-end gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground font-medium text-xs">
+                                  {filteredModels[virtualItem.index].is_mlx
+                                    ? filteredModels[virtualItem.index]
+                                        .safetensors_files?.[0]?.file_size
+                                    : selectDefaultQuant(
+                                        filteredModels[virtualItem.index].quants,
+                                        DEFAULT_MODEL_QUANTIZATIONS
+                                      )?.file_size}
+                                </span>
+                                <ModelInfoHoverCard
+                                  model={filteredModels[virtualItem.index]}
+                                  defaultModelQuantizations={
+                                    DEFAULT_MODEL_QUANTIZATIONS
+                                  }
+                                  variant={selectDefaultQuant(
+                                    filteredModels[virtualItem.index].quants,
+                                    DEFAULT_MODEL_QUANTIZATIONS
+                                  )}
+                                  isDefaultVariant={true}
+                                />
+                              </div>
                               {filteredModels[virtualItem.index].is_mlx ? (
                                 <MlxModelDownloadAction
                                   model={filteredModels[virtualItem.index]}
@@ -665,38 +644,16 @@ function HubContent() {
                             <div className="flex gap-1.5 items-center">
                               {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
                                 0 && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconEye
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('vision')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
+                                <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-foreground/80">
+                                  <IconEye size={13} />
+                                  {t('multimodal')}
+                                </span>
                               )}
                               {filteredModels[virtualItem.index].tools && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconTool
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('tools')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
+                                <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-foreground/80">
+                                  <IconTool size={13} />
+                                  {t('tools')}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -734,55 +691,44 @@ function HubContent() {
                           filteredModels[virtualItem.index].model_name
                         ] &&
                           (filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            0 && (
+                            0 &&
+                          (() => {
+                            const quants =
+                              filteredModels[virtualItem.index].quants ?? []
+                            const recommendedId = selectDefaultQuant(
+                              quants,
+                              DEFAULT_MODEL_QUANTIZATIONS
+                            )?.model_id
+                            return (
                             <div className="mt-5">
-                              {filteredModels[virtualItem.index].quants?.map(
+                              {quants.map(
                                 (variant) => (
                                   <CardItem
                                     key={variant.model_id}
                                     title={
-                                      <>
-                                        <div className="flex items-center gap-1">
-                                          <span className="mr-2">
-                                            {variant.model_id}
+                                      <div className="flex items-center gap-2">
+                                        <span>{variant.model_id}</span>
+                                        {(() => {
+                                          const tier = getQuantTier(
+                                            variant.model_id
+                                          )
+                                          return tier ? (
+                                            <span
+                                              className={cn(
+                                                'text-xs font-medium px-1.5 py-0.5 rounded',
+                                                tier.className
+                                              )}
+                                            >
+                                              {tier.label}
+                                            </span>
+                                          ) : null
+                                        })()}
+                                        {variant.model_id === recommendedId && (
+                                          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                                            Recommended
                                           </span>
-                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconEye
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('vision')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                          {filteredModels[virtualItem.index]
-                                            .tools && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconTool
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('tools')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </>
+                                        )}
+                                      </div>
                                     }
                                     actions={
                                       <div className="flex items-center gap-2">
@@ -796,12 +742,6 @@ function HubContent() {
                                           variant={variant}
                                           defaultModelQuantizations={
                                             DEFAULT_MODEL_QUANTIZATIONS
-                                          }
-                                          modelSupportStatus={
-                                            modelSupportStatus
-                                          }
-                                          onCheckModelSupport={
-                                            checkModelSupport
                                           }
                                         />
                                         {filteredModels[virtualItem.index]
@@ -825,7 +765,8 @@ function HubContent() {
                                 )
                               )}
                             </div>
-                          )}
+                            )
+                          })()}
                       </Card>
                     </div>
                   ))}
