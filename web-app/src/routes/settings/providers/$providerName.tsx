@@ -876,10 +876,6 @@ function ProviderDetail() {
                     </div>
                   )
 
-                  if (isPredefinedProvider && setting.key === 'base-url') {
-                    return null
-                  }
-
                   return (
                     <CardItem
                       key={settingIndex}
