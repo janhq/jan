@@ -2,7 +2,6 @@
   "assistants": "Trợ lý",
   "hardware": "Phần cứng",
   "mcp-servers": "Máy chủ MCP",
-  "connectors": "Máy chủ MCP",
   "local_api_server": "Máy chủ API cục bộ",
   "https_proxy": "Proxy HTTPS",
   "extensions": "Tiện ích mở rộng",

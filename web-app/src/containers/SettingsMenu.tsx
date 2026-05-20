@@ -184,7 +184,7 @@ const SettingsMenu = () => {
 
   const integrationSettings = [
     {
-      title: 'common:connectors',
+      title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
       icon: IconTopologyStar3,
     },

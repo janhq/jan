@@ -2,7 +2,6 @@
   "assistants": "助手",
   "hardware": "硬件",
   "mcp-servers": "MCP 服务",
-  "connectors": "MCP 服务",
   "local_api_server": "本地 API 服务",
   "https_proxy": "HTTPS 代理",
   "extensions": "扩展",
