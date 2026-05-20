@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
@@ -55,6 +56,7 @@ export default function AddEditAssistant({
     initialData?.instructions || ''
   )
   const { isDark } = useTheme()
+  const spellCheckChatInput = useGeneralSetting((s) => s.spellCheckChatInput)
   const [paramsKeys, setParamsKeys] = useState<string[]>([''])
   const [paramsValues, setParamsValues] = useState<unknown[]>([''])
   const [paramsTypes, setParamsTypes] = useState<string[]>(['string'])
@@ -323,6 +325,10 @@ export default function AddEditAssistant({
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t('assistants:enterDescription')}
               className="resize-none"
+              spellCheck={spellCheckChatInput}
+              data-gramm={spellCheckChatInput}
+              data-gramm_editor={spellCheckChatInput}
+              data-gramm_grammarly={spellCheckChatInput}
             />
           </div>
 
@@ -336,6 +342,10 @@ export default function AddEditAssistant({
               placeholder={t('assistants:enterInstructions')}
               className="resize-none"
               rows={4}
+              spellCheck={spellCheckChatInput}
+              data-gramm={spellCheckChatInput}
+              data-gramm_editor={spellCheckChatInput}
+              data-gramm_grammarly={spellCheckChatInput}
             />
             <div className="text-xs text-muted-foreground">
               {t('assistants:instructionsDateHint')}
