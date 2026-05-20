@@ -90,7 +90,11 @@ export const DialogDeleteModel = ({
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <div className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out">
+        <div
+          className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out"
+          title={t('providers:deleteModel.delete')}
+          aria-label={t('providers:deleteModel.delete')}
+        >
           <IconTrash size={18} className="text-muted-foreground" />
         </div>
       </DialogTrigger>
@@ -111,7 +115,12 @@ export const DialogDeleteModel = ({
             </Button>
           </DialogClose>
           <DialogClose asChild>
-            <Button variant="destructive" size="sm" onClick={removeModel} autoFocus>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={removeModel}
+              autoFocus
+            >
               {t('providers:deleteModel.delete')}
             </Button>
           </DialogClose>
