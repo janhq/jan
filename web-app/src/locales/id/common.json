@@ -397,7 +397,8 @@
     "searchProjects": "Cari proyek...",
     "noProjectsFound": "Tidak ada proyek ditemukan",
     "tryDifferentSearch": "Coba kata kunci pencarian lain",
-    "uploadingFiles": "Mengunggah file…"
+    "uploadingFiles": "Memproses file…",
+    "processButton": "Tambah"
   },
   "llamacppBusyOnExit": {
     "title": "llama.cpp is still busy",

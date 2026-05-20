@@ -256,7 +256,8 @@
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
-    "uploadingFiles": "Đang tải lên tệp…",
+    "uploadingFiles": "Đang xử lý tệp…",
+    "processButton": "Thêm",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
       "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",

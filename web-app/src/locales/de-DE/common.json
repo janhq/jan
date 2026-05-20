@@ -303,7 +303,8 @@
     "searchProjects": "Projekte durchsuchen...",
     "noProjectsFound": "Keine Projekte gefunden",
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
-    "uploadingFiles": "Dateien werden hochgeladen…"
+    "uploadingFiles": "Dateien werden verarbeitet…",
+    "processButton": "Hinzufügen"
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",

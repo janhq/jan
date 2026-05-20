@@ -294,7 +294,8 @@
     "collapseThreads": "スレッドを折りたたむ",
     "expandThreads": "スレッドを展開する",
     "update": "更新",
-    "uploadingFiles": "ファイルをアップロードしています…"
+    "uploadingFiles": "ファイルを処理しています…",
+    "processButton": "追加"
   },
   "errorDialog": {
     "titleFallback": "問題が発生しました",

@@ -297,7 +297,8 @@
     "searchProjects": "Szukaj projektów...",
     "noProjectsFound": "Nie znaleziono projektów",
     "tryDifferentSearch": "Spróbuj innego wyszukiwania",
-    "uploadingFiles": "Przesyłanie plików…"
+    "uploadingFiles": "Przetwarzanie plików…",
+    "processButton": "Dodaj"
   },
   "errorDialog": {
     "titleFallback": "Coś poszło nie tak",
