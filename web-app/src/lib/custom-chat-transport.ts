@@ -151,8 +151,30 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
     normalized.type = 'string'
   }
 
+  // llama.cpp's json-schema-to-grammar emits PCRE `\d` for these formats,
+  // which GBNF rejects; the failed grammar silently disables tool-call JSON.
+  if (
+    typeof normalized.format === 'string' &&
+    LLAMACPP_BROKEN_STRING_FORMATS.has(normalized.format as string)
+  ) {
+    delete normalized.format
+  }
+
+  // `pattern` is the same PCRE-to-GBNF trap as `format`: any pattern that
+  // uses `\d`, `\w`, or `\s` (extremely common in date/time/uuid regexes)
+  // fails GBNF compilation. The model still has `type` and `description`.
+  if (
+    typeof normalized.pattern === 'string' &&
+    PCRE_SHORTHAND.test(normalized.pattern as string)
+  ) {
+    delete normalized.pattern
+  }
+
   return normalized
 }
+
+const LLAMACPP_BROKEN_STRING_FORMATS = new Set(['date', 'time', 'date-time'])
+const PCRE_SHORTHAND = /\\[dDwWsS]/
 
 /**
  * Returns true when an assistant message carries no content the model would

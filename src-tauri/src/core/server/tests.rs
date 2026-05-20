@@ -502,6 +502,74 @@ mod tests {
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
     }
 
+    #[test]
+    fn strips_broken_string_formats_for_llamacpp_grammar() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "start": { "type": "string", "format": "date-time" },
+                "stop":  { "type": "string", "format": "date" },
+                "at":    { "type": "string", "format": "time" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert!(schema["properties"]["start"].get("format").is_none());
+        assert!(schema["properties"]["stop"].get("format").is_none());
+        assert!(schema["properties"]["at"].get("format").is_none());
+        assert_eq!(schema["properties"]["start"]["type"], json!("string"));
+    }
+
+    #[test]
+    fn preserves_harmless_string_formats() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "id":  { "type": "string", "format": "uuid" },
+                "url": { "type": "string", "format": "uri" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["id"]["format"], json!("uuid"));
+        assert_eq!(schema["properties"]["url"]["format"], json!("uri"));
+    }
+
+    #[test]
+    fn strips_pcre_shorthand_patterns() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "when":  { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+                "alpha": { "type": "string", "pattern": "^[A-Z]+$" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert!(schema["properties"]["when"].get("pattern").is_none());
+        assert_eq!(schema["properties"]["alpha"]["pattern"], json!("^[A-Z]+$"));
+    }
+
+    #[test]
+    fn strips_broken_format_when_type_missing_or_non_string() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "until":    { "format": "date-time", "description": "iso end" },
+                "nullable": { "type": ["string", "null"], "format": "date" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert!(schema["properties"]["until"].get("format").is_none());
+        assert_eq!(schema["properties"]["until"]["type"], json!("string"));
+        assert!(schema["properties"]["nullable"].get("format").is_none());
+    }
+
     // ── Pure helper coverage ───────────────────────────────────────────────
 
     #[test]

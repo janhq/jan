@@ -23,6 +23,22 @@ const SCHEMA_PRIMITIVE_TYPES: &[&str] = &[
     "string", "number", "integer", "boolean", "null", "array", "object",
 ];
 
+// llama.cpp's json-schema-to-grammar emits PCRE `\d` for these formats,
+// which GBNF rejects; the failed grammar silently disables tool-call JSON.
+const LLAMACPP_BROKEN_STRING_FORMATS: &[&str] = &["date", "time", "date-time"];
+
+fn pattern_has_pcre_shorthand(pattern: &str) -> bool {
+    let bytes = pattern.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'\\' && matches!(bytes[i + 1], b'd' | b'D' | b'w' | b'W' | b's' | b'S') {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
 /// If `value` is a bare string naming a JSON-schema primitive type (e.g.
 /// `"string"`), expand it to `{ "type": <that> }`. Some tool generators emit
 /// shorthand like `{ "properties": { "foo": "string" } }`; llama.cpp's
@@ -75,6 +91,24 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
                     "type".to_string(),
                     serde_json::Value::String("string".to_string()),
                 );
+            }
+
+            let drop_format = map
+                .get("format")
+                .and_then(|v| v.as_str())
+                .map(|f| LLAMACPP_BROKEN_STRING_FORMATS.contains(&f))
+                .unwrap_or(false);
+            if drop_format {
+                map.remove("format");
+            }
+
+            let drop_pattern = map
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .map(pattern_has_pcre_shorthand)
+                .unwrap_or(false);
+            if drop_pattern {
+                map.remove("pattern");
             }
 
             // Recurse, with shorthand expansion for keys whose direct children

@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import { predefinedProviders } from '@/constants/providers'
 import {
   API_KEY_FALLBACKS_SETTING_KEY,
   parseApiKeyFallbacks,
@@ -685,6 +686,25 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 13 && state?.providers) {
+          // Predefined providers no longer carry a user-editable base-url
+          // setting. Force their base_url back to the canonical constant and
+          // strip any leftover base-url entry from persisted settings[].
+          const canonicalByName = new Map(
+            predefinedProviders.map((p) => [p.provider, p.base_url])
+          )
+          state.providers.forEach((provider) => {
+            const canonical = canonicalByName.get(provider.provider)
+            if (!canonical) return
+            provider.base_url = canonical
+            if (provider.settings) {
+              provider.settings = provider.settings.filter(
+                (s) => s.key !== 'base-url'
+              )
+            }
+          })
+        }
+
         if (version <= 12 && state?.providers) {
           // Reset ctx_len from the prior 8192 default to '' so llama.cpp picks
           // (auto-fit when enabled, model default otherwise). Preserve any
@@ -703,7 +723,7 @@ export const useModelProvider = create<ModelProviderState>()(
         }
         return state
       },
-      version: 13,
+      version: 14,
     }
   )
 )

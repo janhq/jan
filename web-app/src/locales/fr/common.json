@@ -2,7 +2,6 @@
   "assistants": "Assistants",
   "hardware": "Matériel",
   "mcp-servers": "Serveurs MCP",
-  "connectors": "Serveurs MCP",
   "local_api_server": "Serveur Local API",
   "https_proxy": "Mandataire Proxy HTTPS",
   "extensions": "Extensions",

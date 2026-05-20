@@ -2,7 +2,6 @@
   "assistants": "アシスタント",
   "hardware": "ハードウェア",
   "mcp-servers": "MCPサーバー",
-  "connectors": "MCPサーバー",
   "local_api_server": "ローカルAPIサーバー",
   "https_proxy": "HTTPSプロキシ",
   "extensions": "拡張機能",

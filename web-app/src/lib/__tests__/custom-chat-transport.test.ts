@@ -172,6 +172,96 @@ describe('normalizeToolInputSchema', () => {
     expect(normalizeToolInputSchema(schema)).toEqual(schema)
   })
 
+  it('strips date/time/date-time format from string leaves', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          start: { type: 'string', format: 'date-time' },
+          stop: { type: 'string', format: 'date' },
+          at: { type: 'string', format: 'time' },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        start: { type: 'string' },
+        stop: { type: 'string' },
+        at: { type: 'string' },
+      },
+    })
+  })
+
+  it('preserves harmless string formats', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          url: { type: 'string', format: 'uri' },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        url: { type: 'string', format: 'uri' },
+      },
+    })
+  })
+
+  it('strips pattern that uses PCRE shorthand escapes', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          when: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+          digit_class: { type: 'string', pattern: '[\\w]+' },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        when: { type: 'string' },
+        digit_class: { type: 'string' },
+      },
+    })
+  })
+
+  it('preserves patterns without PCRE shorthand', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          alpha: { type: 'string', pattern: '^[A-Z]+$' },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        alpha: { type: 'string', pattern: '^[A-Z]+$' },
+      },
+    })
+  })
+
+  it('strips broken format even when type is missing or non-string', () => {
+    expect(
+      normalizeToolInputSchema({
+        type: 'object',
+        properties: {
+          until: { format: 'date-time', description: 'iso end' },
+          nullable: { type: ['string', 'null'], format: 'date' },
+        },
+      })
+    ).toEqual({
+      type: 'object',
+      properties: {
+        until: { type: 'string', description: 'iso end' },
+        nullable: { type: ['string', 'null'] },
+      },
+    })
+  })
+
   it('patches only underspecified nodes in mixed schemas', () => {
     expect(
       normalizeToolInputSchema({
