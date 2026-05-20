@@ -303,7 +303,8 @@
     "searchProjects": "Hledat projekty...",
     "noProjectsFound": "Nebyly nalezeny žádné projekty",
     "tryDifferentSearch": "Zkuste jiný vyhledávací výraz",
-    "uploadingFiles": "Nahrávání souborů…"
+    "uploadingFiles": "Zpracování souborů…",
+    "processButton": "Přidat"
   },
   "errorDialog": {
     "titleFallback": "Něco se pokazilo",

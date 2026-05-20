@@ -294,7 +294,8 @@
     "searchProjects": "Cerca projectes...",
     "noProjectsFound": "No s’han trobat projectes",
     "tryDifferentSearch": "Prova amb un terme de cerca diferent",
-    "uploadingFiles": "S’estan pujant els fitxers…"
+    "uploadingFiles": "S’estan processant els fitxers…",
+    "processButton": "Afegeix"
   },
   "attachmentsIngestion": {
     "title": "Tria com ingerir els adjunts",

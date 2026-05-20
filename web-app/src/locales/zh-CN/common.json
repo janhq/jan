@@ -255,7 +255,8 @@
     "searchProjects": "搜索项目...",
     "noProjectsFound": "未找到项目",
     "tryDifferentSearch": "尝试不同的搜索词",
-    "uploadingFiles": "正在上传文件…",
+    "uploadingFiles": "正在处理文件…",
+    "processButton": "添加",
     "createNewProject": "创建新项目",
     "deleteProjectDialog": {
       "title": "删除项目",

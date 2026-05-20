@@ -302,7 +302,8 @@
     "searchProjects": "Rechercher des projets...",
     "noProjectsFound": "Aucun projet trouvé",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
-    "uploadingFiles": "Téléversement des fichiers…"
+    "uploadingFiles": "Traitement des fichiers…",
+    "processButton": "Ajouter"
   },
   "errorDialog": {
     "titleFallback": "Une erreur s'est produite",

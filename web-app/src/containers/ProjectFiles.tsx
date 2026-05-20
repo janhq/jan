@@ -16,6 +16,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { useProjectUploads } from '@/stores/project-uploads-store'
 
 type ProjectFilesProps = {
   projectId: string
@@ -298,12 +299,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<{
-    current: number
-    total: number
-  } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  const uploadProgress = useProjectUploads((s) => s.progress[projectId])
+  const completedTick = useProjectUploads(
+    (s) => s.completedTick[projectId] ?? 0,
+  )
+  const ingestFiles = useProjectUploads((s) => s.ingest)
+  const uploading = !!uploadProgress
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
@@ -326,7 +329,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   useEffect(() => {
     loadProjectFiles()
-  }, [loadProjectFiles])
+  }, [loadProjectFiles, completedTick])
 
   const processFilePaths = useCallback(
     async (paths: string[]) => {
@@ -410,40 +413,31 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
-      const total = newAttachments.length
-      setUploading(true)
-      setUploadProgress({ current: 0, total })
-      let currentFileName: string | undefined
-      try {
-        for (let i = 0; i < newAttachments.length; i++) {
-          const att = newAttachments[i]
-          currentFileName = att.name
-          const result = await serviceHub
-            .uploads()
-            .ingestFileAttachmentForProject(projectId, att)
-          if (!result.id) {
-            throw new Error('Failed to ingest file')
-          }
-          setUploadProgress({ current: i + 1, total })
-        }
-        toast.success(
-          t('common:toast.fileUploaded.title') ?? 'File uploaded successfully'
-        )
-        await loadProjectFiles()
-      } catch (error) {
-        console.error('Failed to upload file:', error)
-        toast.error(
-          t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
-          {
-            description: humanizeUploadError(t, error, currentFileName),
-          }
-        )
-      } finally {
-        setUploadProgress(null)
-        setUploading(false)
-      }
+      await ingestFiles(
+        projectId,
+        newAttachments,
+        (pid, att) =>
+          serviceHub.uploads().ingestFileAttachmentForProject(pid, att),
+        {
+          onSuccess: () => {
+            toast.success(
+              t('common:toast.fileUploaded.title') ??
+                'File processed successfully',
+            )
+          },
+          onError: (error, fileName) => {
+            console.error('Failed to process file:', error)
+            toast.error(
+              t('common:toast.uploadFailed.title') ?? 'Failed to process file',
+              {
+                description: humanizeUploadError(t, error, fileName),
+              },
+            )
+          },
+        },
+      )
     },
-    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
+    [files, ingestFiles, maxFileSizeMB, projectId, serviceHub, t]
   )
 
   const handleUpload = async () => {
@@ -476,7 +470,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     } catch (error) {
       console.error('Failed to open file dialog:', error)
       toast.error(
-        t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
+        t('common:toast.uploadFailed.title') ?? 'Failed to process file',
         {
           description: humanizeUploadError(t, error),
         }
@@ -581,7 +575,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ) : (
             <UploadIcon className="size-4" />
           )}
-          <span>Upload</span>
+          <span>{t('common:projects.processButton')}</span>
         </Button>
       </div>
 

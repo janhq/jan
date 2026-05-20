@@ -303,7 +303,8 @@
     "searchProjects": "Поиск проектов...",
     "noProjectsFound": "Проекты не найдены",
     "tryDifferentSearch": "Попробуйте другой поисковый запрос",
-    "uploadingFiles": "Загрузка файлов…"
+    "uploadingFiles": "Обработка файлов…",
+    "processButton": "Добавить"
   },
   "attachmentsIngestion": {
     "title": "Выберите способ обработки вложений",
