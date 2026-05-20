@@ -17,7 +17,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { CodeBlock } from './code-block'
+import { CodeBlock } from '../code-block'
 
 type ToolContextValue = {
   isOpen: boolean
@@ -80,6 +80,7 @@ export const Tool = memo(
 
 export type ToolHeaderProps = {
   title?: string
+  subtitle?: string
   state: ToolUIPart['state']
   type: ToolUIPart['type']
   className?: string
@@ -100,7 +101,7 @@ const getStatusText = (status: ToolUIPart['state'], toolName: string) => {
 }
 
 export const ToolHeader = memo(
-  ({ className, title, state, type }: ToolHeaderProps) => {
+  ({ className, title, subtitle, state, type }: ToolHeaderProps) => {
     const { isOpen } = useTool()
     const toolName = title ?? type.split('-').slice(1).join('-')
     const isRunning = state === 'input-streaming' || state === 'input-available'
@@ -109,15 +110,26 @@ export const ToolHeader = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors capitalize',
+          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors text-left',
           className
         )}
       >
-        <Icon className={cn('size-4', isRunning && 'animate-spin')} />
-        <span>{getStatusText(state, toolName)}</span>
+        <Icon className={cn('size-4 shrink-0', isRunning && 'animate-spin')} />
+
+        <div className="flex-1 min-w-0">
+          <div className="break-words">
+            {title ?? getStatusText(state, toolName)}
+          </div>
+          {subtitle && (
+            <div className="text-xs text-muted-foreground/70 truncate mt-0.5">
+              {subtitle}
+            </div>
+          )}
+        </div>
+
         <ChevronDownIcon
           className={cn(
-            'size-4 transition-transform',
+            'size-4 shrink-0 transition-transform',
             isOpen ? 'rotate-180' : 'rotate-0'
           )}
         />
@@ -144,7 +156,7 @@ export const ToolContent = memo(
 )
 
 export type ToolInputProps = ComponentProps<'div'> & {
-  input: ToolUIPart['input']
+  input: unknown
 }
 
 export const ToolInput = memo(
@@ -210,8 +222,8 @@ const ToolImage = memo(({ data, index }: ToolImageProps) => {
 })
 
 export type ToolOutputProps = ComponentProps<'div'> & {
-  output: ToolUIPart['output']
-  errorText: ToolUIPart['errorText']
+  output?: unknown
+  errorText?: string
   resolver: (input: string) => Promise<string>
 }
 

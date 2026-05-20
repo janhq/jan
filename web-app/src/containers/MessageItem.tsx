@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { memo, useState, useCallback } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
@@ -9,13 +8,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning'
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from '@/components/ai-elements/tool'
+import { Tool } from '@/components/ai-elements/tools/tool'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -29,6 +22,9 @@ import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { buildTraceBlocks } from '@/lib/tools/message-trace-parts'
+import { ToolRenderer } from '@/components/ai-elements/tools/tool-renderer'
+import { TraceBlock } from '@/lib/tools/types'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -40,6 +36,10 @@ const CONTENT_TYPE = {
   FILE: 'file',
   REASONING: 'reasoning',
 } as const
+
+type TextTraceBlock = Extract<TraceBlock, { kind: 'text' }>
+type ReasoningTraceBlock = Extract<TraceBlock, { kind: 'reasoning' }>
+type ToolTraceBlock = Extract<TraceBlock, { kind: 'tool' }>
 
 export type MessageItemProps = {
   message: UIMessage
@@ -162,21 +162,12 @@ export const MessageItem = memo(
         .join('\n')
     }, [message.parts])
 
-    const renderTextPart = (
-      part: { type: 'text'; text: string },
-      partIndex: number
-    ) => {
-      if (!part.text || part.text.trim() === '') {
-        return null
-      }
-
-      const isLastPart = partIndex === message.parts.length - 1
-
-      // For user messages, extract and clean the text from file metadata
+    const renderTextBlock = (block: TextTraceBlock, index: number) => {
+      const isLastBlock = index === traceBlocks.length - 1
       const displayText =
         message.role === 'user'
-          ? extractFilesFromPrompt(part.text).cleanPrompt
-          : part.text
+          ? extractFilesFromPrompt(block.text).cleanPrompt
+          : block.text
 
       if (
         !displayText.trim() &&
@@ -187,11 +178,10 @@ export const MessageItem = memo(
       }
 
       return (
-        <div key={`${message.id}-${partIndex}`} className="w-full">
+        <div key={block.key} className="w-full">
           {message.role === 'user' ? (
             <div className="flex justify-end w-full h-full text-start wrap-break-word whitespace-normal">
               <div className="bg-secondary relative text-foreground p-2 rounded-md inline-block max-w-[80%]">
-                {/* Show attached files if any */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {attachedFiles.map((file: FileMetadata, idx: number) => (
@@ -212,82 +202,29 @@ export const MessageItem = memo(
               </div>
             </div>
           ) : (
-            <>
-              <RenderMarkdown
-                content={part.text}
-                isStreaming={isStreaming && isLastPart}
-                messageId={message.id}
-                isAnimating={isAnimating}
-              />
-            </>
+            <RenderMarkdown
+              content={block.text}
+              isStreaming={isStreaming && isLastBlock}
+              messageId={message.id}
+              isAnimating={isAnimating}
+            />
           )}
         </div>
       )
     }
 
-    const renderFilePart = (
-      part: {
-        type: 'file'
-        filename?: string
-        url?: string
-        mediaType?: string
-      },
-      partIndex: number
+    const renderReasoningBlock = (
+      block: ReasoningTraceBlock,
+      index: number
     ) => {
-      const isImage = part.mediaType?.startsWith('image/')
-
-      if (message.role === 'user' && isImage && part.url) {
-        return (
-          <div
-            key={`${message.id}-${partIndex}`}
-            className="flex justify-end w-full my-2"
-          >
-            <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-              <div className="relative">
-                <img
-                  src={part.url}
-                  alt={part.filename || 'Uploaded attachment'}
-                  className="size-20 rounded-lg object-cover border cursor-pointer"
-                  onClick={() =>
-                    setPreviewImage({ url: part.url!, filename: part.filename })
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        )
-      }
-
-      if (message.role === 'assistant' && isImage && part.url) {
-        return (
-          <div key={`${message.id}-${partIndex}`} className="my-2">
-            <img
-              src={part.url}
-              alt={part.filename || 'Generated image'}
-              className="max-w-full rounded-md cursor-pointer"
-              onClick={() =>
-                setPreviewImage({ url: part.url!, filename: part.filename })
-              }
-            />
-          </div>
-        )
-      }
-
-      return null
-    }
-
-    const renderReasoningPart = (
-      part: { type: 'reasoning'; text: string },
-      partIndex: number
-    ) => {
-      const isLastPart = partIndex === message.parts.length - 1
-      const shouldBeOpen = isStreaming && isLastPart
+      const isLastBlock = index === traceBlocks.length - 1
+      const shouldBeOpen = isStreaming && isLastBlock
 
       return (
         <Reasoning
-          key={`${message.id}-${partIndex}`}
+          key={block.key}
           className="w-full text-muted-foreground"
-          isStreaming={isStreaming && isLastPart}
+          isStreaming={isStreaming && isLastBlock}
           defaultOpen={shouldBeOpen}
         >
           <ReasoningTrigger />
@@ -304,78 +241,43 @@ export const MessageItem = memo(
                   : 'h-auto opacity-100'
               )}
             >
-              <ReasoningContent>{part.text}</ReasoningContent>
+              <ReasoningContent>{block.text}</ReasoningContent>
             </div>
           </div>
         </Reasoning>
       )
     }
 
-    const renderToolPart = (part: any, partIndex: number) => {
-      if (!part.type.startsWith('tool-') || !('state' in part)) {
-        return null
-      }
-
-      const toolName = part.type.split('-').slice(1).join('-')
+    const renderToolBlock = (block: ToolTraceBlock) => {
       return (
         <Tool
-          key={`${message.id}-${partIndex}`}
-          state={part.state}
-          className="mb-4"
+          key={block.key}
+          state={block.state}
+          className="mb-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
         >
-          <ToolHeader
-            title={toolName}
-            type={`tool-${toolName}` as `tool-${string}`}
-            state={part.state}
-          />
-          <ToolContent title={toolName}>
-            {part.input && (
-              <ToolInput
-                input={
-                  typeof part.input === 'string'
-                    ? part.input
-                    : JSON.stringify(part.input)
-                }
-              />
-            )}
-            {part.output && (
-              <ToolOutput
-                output={part.output}
-                resolver={(input) => Promise.resolve(input)}
-                errorText={undefined}
-              />
-            )}
-            {part.state === 'output-error' && (
-              <ToolOutput
-                output={undefined}
-                errorText={
-                  part.error || part.errorText || 'Tool execution failed'
-                }
-                resolver={(input) => Promise.resolve(input)}
-              />
-            )}
-          </ToolContent>
+          <ToolRenderer presentation={block.presentation} state={block.state} />
         </Tool>
       )
     }
 
+    const traceBlocks = useMemo(
+      () => buildTraceBlocks(message, disableReasoning),
+      [message, disableReasoning]
+    )
+
     return (
       <div className="w-full mb-4">
         {/* Render message parts */}
-        {message.parts.map((part, i) => {
-          switch (part.type) {
-            case CONTENT_TYPE.TEXT:
-              return renderTextPart(part as { type: 'text'; text: string }, i)
-            case CONTENT_TYPE.FILE:
-              return renderFilePart(part as any, i)
-            case CONTENT_TYPE.REASONING:
-              if (disableReasoning) return null
-              return renderReasoningPart(
-                part as { type: 'reasoning'; text: string },
-                i
-              )
+        {traceBlocks.map((block, index) => {
+          switch (block.kind) {
+            case 'text':
+              return renderTextBlock(block, index)
+            case 'reasoning':
+              return renderReasoningBlock(block, index)
+            case 'tool':
+              return renderToolBlock(block)
             default:
-              return renderToolPart(part, i)
+              return null
           }
         })}
 
