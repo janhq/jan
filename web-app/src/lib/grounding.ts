@@ -1,6 +1,11 @@
 import type { RagCitation } from '@/components/Citations'
 
-const SENTENCE_BOUNDARY = /([^.!?\n]+[.!?]+(?:["')\]]+)?|\S[^\n]*$)/g
+// Sentence boundary: a run of non-terminator chars (or terminators not
+// followed by whitespace/end — e.g. the periods inside "e.g."), ending in a
+// terminator that IS followed by whitespace/end. Fallback alternative
+// catches trailing sentences with no closing terminator.
+const SENTENCE_BOUNDARY =
+  /((?:[^.!?\n]|[.!?](?!\s|$))+[.!?]+(?:["')\]]+)?(?=\s|$)|\S[^\n]*$)/g
 
 const stripMarkdown = (s: string): string =>
   s

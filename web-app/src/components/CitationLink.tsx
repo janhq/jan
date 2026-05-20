@@ -53,7 +53,7 @@ export const CitationLink = memo(
           <button
             type="button"
             className={cn(
-              'no-underline text-primary hover:text-primary/80 mx-0.5 align-super text-[0.7em] cursor-pointer',
+              'no-underline text-primary hover:text-primary/80 mx-0.5 align-super text-[0.85em] font-medium cursor-pointer',
               className
             )}
           >
