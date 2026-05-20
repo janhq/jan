@@ -44,47 +44,50 @@ cd %APPDATA%/Jan/data
 # Mac
 cd ~/Library/Application\ Support/Jan/data
 
-# Linux
-cd $XDG_CONFIG_HOME/Jan/data  # Custom install
-cd ~/.config/Jan/data         # Default install
+# Linux (default — resolves via XDG_DATA_HOME)
+cd ~/.local/share/Jan/data
 ```
+
+<Callout type="info">
+The data folder location can be customised from **Settings > General > Jan Data Folder**. Once changed, the path above no longer applies — check the Settings page for the active location.
+</Callout>
 
 ## Directory Structure
 
-<Callout type="info">
-Root directory: `~/jan`
-</Callout>
+Inside the data folder you will typically find:
 
 ```sh
 /assistants/
   /jan/
     assistant.json
-/engines/
-  /llama.cpp/
 /extensions/
   extensions.json
-/@janhq/
-  /assistant-extension/
+  /@janhq/
+    /assistant-extension/
     /conversational-extension/
     /download-extension/
-    /engine-management-extension/
-    /hardware-management-extension/
-    /inference-cortex-extension/
-    /model-extension/
+    /llamacpp-extension/
+    /mlx-extension/
+    /rag-extension/
+    /vector-db-extension/
 /files/
 /logs/
   app.log
-/models/
-  /huggingface.co/
-    /Model_Provider_A/
-      /Model_A
-        model_A.gguf
-        model_A.yaml
+/llamacpp/
+  router.preset.ini
+  /backends/<version>/<backend>/    # downloaded llama.cpp builds
+  /models/
+    <org>/<repo>/
+      model.yml
+      model.gguf
+/mlx/
+  /models/
+    <model_id>/
+      model.yml
 /threads/
-  /thread_A/
+  /<thread_id>/
     messages.jsonl
     thread.json
-
 ```
 
 ### `assistants/`
@@ -144,13 +147,13 @@ Parameters:
 Add-on central. Organization extensions live in `@janhq/`, solo ones in root.
 
 ### `logs/`
-Debugging headquarters (`/logs/app.txt`):
+Debugging headquarters (`/logs/app.log`):
 - **[APP]**: Core logs
 - **[SERVER]**: API drama
 - **[SPECS]**: Hardware confessions
 
-### `models/`
-The silicon brain collection. Each model has its own `model.yml`:
+### `llamacpp/models/` and `mlx/models/`
+Installed models, organised per engine. Each model has its own `model.yml`:
 
 ```yaml
 model_path: llamacpp/models/janhq/Jan-v3-4B-base-instruct-gguf/Jan-v3-4b-base-instruct-Q4_K_XL.gguf

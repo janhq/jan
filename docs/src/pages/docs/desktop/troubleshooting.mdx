@@ -42,14 +42,12 @@ Error logs are essential for troubleshooting issues and getting help from Jan te
 <br/>
 
 #### Through Terminal
-**Application Logs**
+**Application Logs (macOS)**
 ```bash
 tail -n 50 ~/Library/Application\ Support/Jan/data/logs/app.log
 ```
-**Server Logs**
-```bash
-tail -n 50 ~/Library/Application\ Support/Jan/data/logs/cortex.log
-```
+
+App, server, and engine messages are all written to the same `logs/app.log` file (look for the `[APP]` / `[SERVER]` / `[SPECS]` tags).
 
 <Callout type="warning">
 Ensure to redact any private or sensitive information when sharing logs or error details. We retain your logs for only 24 hours.
@@ -117,10 +115,10 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       2. Delete Application Data, Cache, and User Data:
 
       ```bash
-      # Default dir
+      # Default data folder (XDG_DATA_HOME)
+      ~/.local/share/Jan
+      # Per-user app config (data folder location, etc.)
       ~/.config/Jan
-      # Custom installation directory
-      $XDG_CONFIG_HOME = /home/username/custom_config/Jan
       ```
 
       3. If you are using a version before `0.4.2`, you need to run the following commands:
@@ -324,30 +322,32 @@ When you start a chat with a model and encounter a **Failed to Fetch** or **Some
 
 **3. Port Conflicts**
 
-If you check your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs) & see "Bind address failed at 127.0.0.1:39291", check port availability:
+If you check your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs) & see "Address already in use" or a bind failure on `127.0.0.1:1337` (Jan's default Local API Server port), check port availability:
 ```
 # Mac
-netstat -an | grep 39291
+netstat -an | grep 1337
 
 # Windows
-netstat -ano | find "39291"
-tasklist /fi "PID eq 39291"
+netstat -ano | find "1337"
+tasklist /fi "PID eq 1337"
 
 # Linux
-netstat -anpe | grep "39291"
+netstat -anpe | grep "1337"
 ```
+
+If port `1337` is occupied, change it under **Settings** > **Local API Server** > **Configuration** > **Server Port**.
 <Callout type="info">
   `Netstat` displays the contents of various network-related data structures for active connections.
 </Callout>
 
 Default Jan ports:
-- Jan and Cortex API Server: `1337`
+- Jan Local API Server: `1337`
 - Jan Documentation: `3001`
 
 **4. Factory Reset**
 
 A factory reset can resolve persistent issues by returning Jan to its original state. This will remove all custom settings, downloaded models, and chat history.
-1. Go to **Settings** > **Advanced Settings**
+1. Go to **Settings** > **General**
 2. At **Reset To Factory Settings**, click **Reset**
 
 <Callout type="warning">
@@ -408,7 +408,7 @@ To fix this, add the CLI binary directory to your `Path` environment variable:
    C:\Users\<username>\AppData\Local\Programs\Jan\resources\bin
    ```
    Replace `<username>` with your Windows username.
-4. Click **OK** to save, then open a new terminal window and try `jan-cli` instead.
+4. Click **OK** to save, then open a new terminal window and try `jan` again. The CLI binary is installed as `jan.exe` inside that directory.
 
 ## Need Further Support?
 

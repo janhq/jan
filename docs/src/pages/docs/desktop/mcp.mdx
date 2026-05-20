@@ -110,8 +110,10 @@ While powerful, MCP is an evolving standard, and its use requires careful consid
 
 * **Security:** Granting a model access to external tools is a significant security consideration. A compromised
 tool or a malicious prompt could potentially lead to unintended actions or data exposure. Jan's implementation
-focuses on user-managed permissions to mitigate this risk, meaning, you have to turn on the permission for each
-tool individually.
+focuses on user-managed permissions to mitigate this risk — you must approve each tool call individually. Approval
+panels appear **inline inside the tool card** in the chat, showing the exact arguments the model wants to pass
+before you accept or deny. You can also enable **Allow All MCP Tool Permission** in Settings to pre-approve all
+tools (**Allow All MCP Tool Permissions** in Settings → MCP Servers).
 * **Standard Maturity:** As a relatively new protocol, best practices or sensible defaults are still being
 established. Users should be aware of potential issues like prompt injection, where an input could be crafted to
 misuse a tool's capabilities.
@@ -124,8 +126,7 @@ you will need to wait for a response). Efficient management of tools and their o
 
 To illustrate how MCPs can be used within Jan, we will walk through an example using the [Browser MCP](https://browsermcp.io/).
 
-Before we begin, you will need to enable experimental features at `General` > `Advanced`. Next, go to `Settings` > `MCP Servers`, and toggle
-the `Allow All MCP Tool Permission` switch ON.
+Before we begin, go to `Settings` > `MCP Servers` and toggle the `Allow All MCP Tool Permissions` switch ON if you want to pre-approve tool calls.
 
 ![Turn on the MCP Host](./_assets/mcp-on.png)
 
