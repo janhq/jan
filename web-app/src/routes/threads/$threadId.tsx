@@ -38,7 +38,11 @@ import {
   MessageStatus,
   ChatCompletionRole,
   ContentType,
+  computeNextCtxLen,
+  EngineManager,
+  type AIEngine,
 } from '@janhq/core'
+import { toast } from 'sonner'
 import { Attachment, createImageAttachment } from '@/types/attachment'
 import {
   useChatAttachments,
@@ -55,7 +59,7 @@ import {
   isModelAccessError,
 } from '@/utils/error'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle } from '@tabler/icons-react'
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -872,16 +876,36 @@ function ThreadDetail() {
 
     const model = provider.models[modelIndex]
 
-    // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
     const currentCtxLen =
       (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
-    let newCtxLen: number
-    if (currentCtxLen < 8192) {
-      newCtxLen = 8192
-    } else if (currentCtxLen < 32768) {
-      newCtxLen = 32768
-    } else {
-      newCtxLen = Math.round(currentCtxLen * 1.5)
+
+    /// Ask the owning local-provider engine for the model's training-max
+    /// context. Duck-typed so non-local providers (or extensions that
+    /// haven't been updated yet) gracefully fall back to the open-ended
+    /// ladder instead of crashing. The shared `computeNextCtxLen` ladder
+    /// then clamps the next step so we never push past what the model's
+    /// positional embeddings actually support.
+    let maxCtxLen: number | undefined
+    try {
+      const engine = EngineManager.instance().get(selectedProvider) as
+        | (AIEngine & { getMaxCtxTrain?: (id: string) => Promise<number | undefined> })
+        | undefined
+      if (engine && typeof engine.getMaxCtxTrain === 'function') {
+        maxCtxLen = await engine.getMaxCtxTrain(selectedModel.id)
+      }
+    } catch (e) {
+      console.warn(
+        `[auto-expand-ctx] getMaxCtxTrain failed for ${selectedProvider}/${selectedModel.id}:`,
+        e
+      )
+    }
+
+    const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
+    if (newCtxLen <= currentCtxLen) {
+      toast.error('Model reached its maximum context, auto-expand stopped', {
+        id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
+      })
+      return
     }
 
     const updatedModel = {
@@ -1088,7 +1112,17 @@ function ThreadDetail() {
                               <IconAlertCircle className="size-4 mr-2" />
                               Increase Context Size
                             </Button>
-                          ) : null}
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-3"
+                              onClick={() => handleRegenerate()}
+                            >
+                              <IconRefresh className="size-4 mr-2" />
+                              Retry
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>

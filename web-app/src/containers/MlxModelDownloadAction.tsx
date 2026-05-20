@@ -9,6 +9,7 @@ import { useTranslation } from '@/i18n'
 import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { CatalogModel } from '@/services/models/types'
 import { cn } from '@/lib/utils'
+import { switchToModel } from '@/utils/switchModel'
 import { IconX } from '@tabler/icons-react'
 import { DownloadEvent, EngineManager, events } from '@janhq/core'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
@@ -101,6 +102,14 @@ export const MlxModelDownloadAction = memo(
     }, [modelId])
 
     const handleUseModel = useCallback(() => {
+      useModelProvider.getState().selectModelProvider('mlx', downloadedModelId)
+      switchToModel({
+        modelId: downloadedModelId,
+        providerName: 'mlx',
+        serviceHub,
+      }).catch((error) => {
+        console.error('[MlxModelDownloadAction] switchToModel failed:', error)
+      })
       navigate({
         to: route.home,
         params: {},
@@ -111,7 +120,7 @@ export const MlxModelDownloadAction = memo(
           },
         },
       })
-    }, [navigate, downloadedModelId])
+    }, [navigate, downloadedModelId, serviceHub])
 
     const handleDownloadMlxModel = useCallback(async () => {
       clearResumableDownload(modelId)

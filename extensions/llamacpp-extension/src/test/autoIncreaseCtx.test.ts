@@ -239,6 +239,47 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
     expect(String((body as any).reason)).toContain('OOM')
   })
 
+  it('stops at the model max ctx_train and emits at_max event', async () => {
+    const unloadSpy = vi.spyOn(ext, 'unload').mockResolvedValue({
+      success: true,
+    })
+    const loadSpy = vi
+      .spyOn(ext, 'load')
+      .mockResolvedValue({ pid: 1, port: 1, api_key: '', model_id: 'm' } as any)
+
+    ;(ext as any).modelCtxSize.set('m', 32768)
+    ;(ext as any).modelMaxCtxTrain.set('m', 32768)
+
+    await invokeHandler({
+      request_id: 'req-max',
+      backend: 'llamacpp',
+      model_id: 'm',
+      trigger: 'error',
+    })
+
+    expect(unloadSpy).not.toHaveBeenCalled()
+    expect(loadSpy).not.toHaveBeenCalled()
+
+    const channels = emitMock.mock.calls.map(([ch]) => ch)
+    expect(channels).toContain('local_backend://auto_increase_ctx_done/req-max')
+    expect(channels).toContain('local_backend://auto_increase_ctx_at_max')
+
+    const doneCall = emitMock.mock.calls.find(
+      ([ch]) => ch === 'local_backend://auto_increase_ctx_done/req-max'
+    )
+    expect(doneCall?.[1]).toEqual({ ok: false, reason: 'at_max' })
+
+    const atMaxCall = emitMock.mock.calls.find(
+      ([ch]) => ch === 'local_backend://auto_increase_ctx_at_max'
+    )
+    expect(atMaxCall?.[1]).toMatchObject({
+      provider: 'llamacpp',
+      modelId: 'm',
+      maxCtxLen: 32768,
+      currentCtxLen: 32768,
+    })
+  })
+
   it('still proceeds with load when unload throws (stale session)', async () => {
     vi.spyOn(ext, 'unload').mockRejectedValue(
       new Error('No session')

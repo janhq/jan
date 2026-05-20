@@ -453,8 +453,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 google: { thinking_config: { thinking_budget: 0 } },
               }
               break
+            case 'moonshot':
+              // Moonshot (Kimi) accepts only high|low|medium|max|xhigh; rejects
+              // `minimal`. `low` is the closest analogue to "skip thinking".
+              reasoningOverride.reasoning_effort = 'low'
+              break
             default:
-              reasoningOverride.reasoning_effort = 'minimal'
+              // Unknown / user-added custom providers: do NOT inject
+              // `reasoning_effort` — strict OpenAI-compatible schemas
+              // (e.g. Moonshot, some self-hosted gateways) reject unknown
+              // variants like `minimal`. The chat_template_kwargs hint is
+              // safe: most servers ignore unknown keys.
               reasoningOverride.chat_template_kwargs = {
                 enable_thinking: false,
               }

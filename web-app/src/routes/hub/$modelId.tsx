@@ -37,6 +37,7 @@ import {
   RECOMMENDED_MODEL_FALLBACKS,
 } from '@/constants/models'
 import { useTranslation } from '@/i18n'
+import { switchToModel } from '@/utils/switchModel'
 
 type SearchParams = {
   repo: string
@@ -126,18 +127,56 @@ function HubModelDetailContent() {
   // Handle model use
   const handleUseModel = useCallback(
     (modelId: string) => {
+      const allProviders = useModelProvider.getState().providers
+      const upstream = allProviders.find(
+        (p) => p.provider === 'llamacpp-upstream'
+      )
+      const fork = allProviders.find((p) => p.provider === 'llamacpp')
+      const upstreamHasModel = upstream?.models.some((m) => m.id === modelId)
+      const forkHasModel = fork?.models.some((m) => m.id === modelId)
+      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
+        upstreamHasModel
+          ? 'llamacpp-upstream'
+          : forkHasModel
+            ? 'llamacpp'
+            : upstream
+              ? 'llamacpp-upstream'
+              : 'llamacpp'
+
+      console.log(
+        '[hub/$modelId] handleUseModel:',
+        modelId,
+        '→ provider:',
+        targetLlamaProvider,
+        '(upstreamHasModel:',
+        upstreamHasModel,
+        'forkHasModel:',
+        forkHasModel,
+        ')'
+      )
+
+      useModelProvider
+        .getState()
+        .selectModelProvider(targetLlamaProvider, modelId)
+      switchToModel({
+        modelId,
+        providerName: targetLlamaProvider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[hub/$modelId] switchToModel failed:', error)
+      })
       navigate({
         to: route.home,
         params: {},
         search: {
           threadModel: {
             id: modelId,
-            provider: 'llamacpp',
+            provider: targetLlamaProvider,
           },
         },
       })
     },
-    [navigate]
+    [navigate, serviceHub]
   )
 
   // Format the date

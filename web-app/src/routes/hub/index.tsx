@@ -57,6 +57,7 @@ import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
+import { switchToModel } from '@/utils/switchModel'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
@@ -523,18 +524,56 @@ function HubContent() {
 
   const handleUseModel = useCallback(
     (modelId: string) => {
+      const allProviders = useModelProvider.getState().providers
+      const upstream = allProviders.find(
+        (p) => p.provider === 'llamacpp-upstream'
+      )
+      const fork = allProviders.find((p) => p.provider === 'llamacpp')
+      const upstreamHasModel = upstream?.models.some((m) => m.id === modelId)
+      const forkHasModel = fork?.models.some((m) => m.id === modelId)
+      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
+        upstreamHasModel
+          ? 'llamacpp-upstream'
+          : forkHasModel
+            ? 'llamacpp'
+            : upstream
+              ? 'llamacpp-upstream'
+              : 'llamacpp'
+
+      console.log(
+        '[hub/index] handleUseModel:',
+        modelId,
+        '→ provider:',
+        targetLlamaProvider,
+        '(upstreamHasModel:',
+        upstreamHasModel,
+        'forkHasModel:',
+        forkHasModel,
+        ')'
+      )
+
+      useModelProvider
+        .getState()
+        .selectModelProvider(targetLlamaProvider, modelId)
+      switchToModel({
+        modelId,
+        providerName: targetLlamaProvider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[hub/index] switchToModel failed:', error)
+      })
       navigate({
         to: route.home,
         params: {},
         search: {
           threadModel: {
             id: modelId,
-            provider: 'llamacpp',
+            provider: targetLlamaProvider,
           },
         },
       })
     },
-    [navigate]
+    [navigate, serviceHub]
   )
 
   const checkModelSupport = useCallback(
