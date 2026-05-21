@@ -715,12 +715,13 @@ export const useModelProvider = create<ModelProviderState>()(
               const ctx = model.settings?.ctx_len as
                 | { controller_props?: { value?: unknown } }
                 | undefined
+              const controllerProps = ctx?.controller_props
               const ctxValue =
-                typeof ctx?.controller_props?.value === 'string'
-                  ? Number(ctx.controller_props.value)
-                  : ctx?.controller_props?.value
-              if (ctxValue === 8192) {
-                ctx.controller_props.value = ''
+                typeof controllerProps?.value === 'string'
+                  ? Number(controllerProps.value)
+                  : controllerProps?.value
+              if (ctxValue === 8192 && controllerProps) {
+                controllerProps.value = ''
               }
             })
           })
