@@ -117,6 +117,12 @@ Failed assistant responses now show a regenerate button instead of leaving the c
 - Left sidebar maximum width reduced so content no longer cramps
 - Chat input and new-chat buttons are disabled during engine downloads
 
+# Known Issues
+
+- **KV cache type is no longer auto-migrated.** A prior release temporarily defaulted the llama.cpp KV cache to `q8_0`, which broke loading for some models that require flash attention. v0.8.0 reverts the default to `f16` and removes the previous `f16 → q8_0` migration code. Existing installs are **not** migrated automatically — if a model fails to load after updating, go to **Settings > Llama.cpp > KV Cache K Type / V Type** and switch both back to `f16` manually.
+- **Migration glitches when upgrading from an older release.** If the app behaves oddly after upgrade (settings not applying, model lists looking wrong, etc.), open **Settings > General > Factory Reset** and run the reset with **Keep models and configs** enabled. This clears stale app state without deleting your downloaded models or provider configuration.
+- **MLX support is experimental.** The MLX engine is still under active development on Apple Silicon and may exhibit instability or compatibility gaps compared to the llama.cpp engine.
+
 ---
 
 Update your Jan or [download the latest](https://jan.ai/).
