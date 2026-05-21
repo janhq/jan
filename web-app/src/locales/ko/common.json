@@ -468,10 +468,10 @@
     "chunksCount": "청크 {{count}}개"
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp is still busy",
-    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
-    "forceQuit": "Force quit",
-    "forcing": "Force quitting…",
-    "shuttingDown": "Shutting down…"
+    "title": "llama.cpp가 여전히 작업 중입니다",
+    "description": "하나 이상의 모델이 제시간에 언로드되지 않았습니다. 강제 종료하면 llama.cpp가 즉시 종료되며, 진행 중인 응답이 중단될 수 있습니다.",
+    "forceQuit": "강제 종료",
+    "forcing": "강제 종료 중…",
+    "shuttingDown": "종료 중…"
   }
 }
