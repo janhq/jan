@@ -1,5 +1,5 @@
 ---
-title: "Jan v0.8.0: Multi-Token Prediction, LLaMA.cpp Router Mode & Inline MCP Approval"
+title: "Jan v0.8.0: Multi-Token Prediction, llama.cpp Router Mode & Inline MCP Approval"
 version: 0.8.0
 description: "Jan v0.8.0 ships Multi-Token Prediction for compatible llama.cpp models, a unified llama.cpp router process, inline MCP tool approval with citation cards, per-model fit labels, bulk model deletion, per-thread activity indicators, and a backend dependency checker."
 date: 2026-05-20
@@ -8,7 +8,7 @@ date: 2026-05-20
 import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
 
 <ChangelogHeader
-  title="Jan v0.8.0: Multi-Token Prediction, LLaMA.cpp Router Mode & Inline MCP Approval"
+  title="Jan v0.8.0: Multi-Token Prediction, llama.cpp Router Mode & Inline MCP Approval"
   date="2026-05-20"
 />
 
@@ -18,7 +18,7 @@ import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
 
 Jan now supports llama.cpp's Multi-Token Prediction for compatible models (e.g. GLM 4.5/4.6 and other architectures with MTP heads). Jan detects MTP-capable models from GGUF metadata (`{arch}.nextn_predict_layers`) at import time and exposes a per-model toggle plus draft tunables (`spec-draft-n-max`, `spec-draft-n-min`, `spec-draft-p-min`) in Model Settings. When enabled, `spec-type = draft-mtp` is emitted into the router preset, letting the model draft multiple tokens per step for faster generation. Requires the bundled llama.cpp build b9193 or newer; older backends disable the toggle with an upgrade hint.
 
-**LLaMA.cpp Router Mode**
+**llama.cpp Router Mode**
 
 Jan's local inference engine now runs as a single unified router process instead of spawning a separate server for every model. The router loads and unloads models on demand, so switching between them is faster and uses less memory. This release also adds:
 
@@ -57,7 +57,7 @@ After installing a llama.cpp backend, Jan scans for required libraries (CUDA, Vu
 
 **KV Cache Default Reverted to f16**
 
-The default KV cache type was temporarily changed to `q8_0` in a prior release and has been reverted to `f16` as a safer default. This change is not automatically migrated — if your models fail to load after updating, go to **Settings > Llama.cpp > KV Cache K Type / V Type** and set both back to `f16`.
+The default KV cache type was temporarily changed to `q8_0` in a prior release and has been reverted to `f16` as a safer default. This change is not automatically migrated — if your models fail to load after updating, go to **Settings > llama.cpp > KV Cache K Type / V Type** and set both back to `f16`.
 
 **Vercel AI SDK v6**
 
@@ -101,7 +101,7 @@ Failed assistant responses now show a regenerate button instead of leaving the c
 
 **Bug Fixes**
 
-- Llama.cpp context meter now accounts for tool-heavy chats, and `ctx_size` overflow no longer breaks reloading a chat
+- llama.cpp context meter now accounts for tool-heavy chats, and `ctx_size` overflow no longer breaks reloading a chat
 - CUDA backend is skipped when the GPU has insufficient memory, and CUDA library paths are no longer overwritten by other library setup
 - Flatpak builds discover CUDA libraries and GL extensions for NVIDIA GPUs
 - PDF parser panics are caught and a file size limit is enforced on uploads
@@ -119,7 +119,7 @@ Failed assistant responses now show a regenerate button instead of leaving the c
 
 # Known Issues
 
-- **KV cache type is no longer auto-migrated.** A prior release temporarily defaulted the llama.cpp KV cache to `q8_0`, which broke loading for some models that require flash attention. v0.8.0 reverts the default to `f16` and removes the previous `f16 → q8_0` migration code. Existing installs are **not** migrated automatically — if a model fails to load after updating, go to **Settings > Llama.cpp > KV Cache K Type / V Type** and switch both back to `f16` manually.
+- **KV cache type is no longer auto-migrated.** A prior release temporarily defaulted the llama.cpp KV cache to `q8_0`, which broke loading for some models that require flash attention. v0.8.0 reverts the default to `f16` and removes the previous `f16 → q8_0` migration code. Existing installs are **not** migrated automatically — if a model fails to load after updating, go to **Settings > llama.cpp > KV Cache K Type / V Type** and switch both back to `f16` manually.
 - **Migration glitches when upgrading from an older release.** If the app behaves oddly after upgrade (settings not applying, model lists looking wrong, etc.), open **Settings > General > Factory Reset** and run the reset with **Keep models and configs** enabled. This clears stale app state without deleting your downloaded models or provider configuration.
 - **MLX support is experimental.** The MLX engine is still under active development on Apple Silicon and may exhibit instability or compatibility gaps compared to the llama.cpp engine.
 
