@@ -140,6 +140,111 @@ function parseBuildNumber(version: string): number | null {
   return match ? parseInt(match[1], 10) : null
 }
 
+type YamlSettingValue = string | number | boolean | null
+
+type PersistedProviderSetting = {
+  controller_props?: {
+    value?: unknown
+  }
+}
+
+type PersistedModelState = {
+  id?: unknown
+  settings?: Record<string, PersistedProviderSetting>
+}
+
+const MODEL_PROVIDER_LOCAL_STORAGE_KEY = 'model-provider'
+const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
+  'llamacpp_model_yaml_backfill_v1'
+
+const MODEL_SETTINGS_YAML_MAPPING: Record<
+  string,
+  {
+    yamlKey: string
+    coerce: (v: unknown) => YamlSettingValue
+  }
+> = {
+  ctx_len: {
+    yamlKey: 'ctx_size',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  ngl: {
+    yamlKey: 'n_gpu_layers',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+    },
+  },
+  chat_template: {
+    yamlKey: 'chat_template',
+    coerce: (v) =>
+      typeof v === 'string' && v.trim().length > 0 ? v : null,
+  },
+  batch_size: {
+    yamlKey: 'batch_size',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  ubatch_size: {
+    yamlKey: 'ubatch_size',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  cpu_moe: {
+    yamlKey: 'cpu_moe',
+    coerce: (v) => (v === true ? true : null),
+  },
+  n_cpu_moe: {
+    yamlKey: 'n_cpu_moe',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  no_kv_offload: {
+    yamlKey: 'no_kv_offload',
+    coerce: (v) => (v === true ? true : null),
+  },
+  override_tensor_buffer_t: {
+    yamlKey: 'override_tensor',
+    coerce: (v) =>
+      typeof v === 'string' && v.trim().length > 0 ? v.trim() : null,
+  },
+  offload_mmproj: {
+    yamlKey: 'mmproj_offload',
+    coerce: (v) => (v === false ? false : null),
+  },
+}
+
+function readPersistedLlamacppModels(): PersistedModelState[] {
+  try {
+    const raw = localStorage.getItem(MODEL_PROVIDER_LOCAL_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    const providers = parsed?.state?.providers
+    if (!Array.isArray(providers)) return []
+    const llamacpp = providers.find(
+      (provider: { provider?: unknown }) => provider?.provider === 'llamacpp'
+    )
+    return Array.isArray(llamacpp?.models) ? llamacpp.models : []
+  } catch (error) {
+    logger.warn('Failed to read persisted llamacpp model settings:', error)
+    return []
+  }
+}
+
 /**
  * Breadth-first search of `rootDir` for the directory directly containing
  * a file named `serverName`. Returns the absolute path of that directory,
@@ -253,6 +358,8 @@ export default class llamacpp_extension extends AIEngine {
 
     // This sets the base directory where model files for this provider are stored.
     await this.getProviderPath()
+
+    await this.migratePersistedModelSettingsToYaml()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -582,6 +689,58 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migratePersistedModelSettingsToYaml(): Promise<void> {
+    if (localStorage.getItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY)) return
+
+    const persistedModels = readPersistedLlamacppModels()
+    if (persistedModels.length === 0) {
+      localStorage.setItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
+      return
+    }
+
+    const providerPath = await this.getProviderPath()
+
+    for (const persistedModel of persistedModels) {
+      const modelId =
+        typeof persistedModel.id === 'string' ? persistedModel.id : undefined
+      if (!modelId || !persistedModel.settings) continue
+
+      const configPath = await joinPath([
+        providerPath,
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      if (!(await fs.existsSync(configPath))) continue
+
+      const cfg = (await invoke<ModelConfig>('read_yaml', {
+        path: configPath,
+      })) as ModelConfig & Record<string, unknown>
+
+      let touched = false
+      for (const [sidebarKey, persistedSetting] of Object.entries(
+        persistedModel.settings
+      )) {
+        const mapping = MODEL_SETTINGS_YAML_MAPPING[sidebarKey]
+        if (!mapping) continue
+
+        if (mapping.yamlKey in cfg) continue
+
+        const next = mapping.coerce(persistedSetting?.controller_props?.value)
+        if (next === null) continue
+
+        ;(cfg as Record<string, unknown>)[mapping.yamlKey] = next
+        touched = true
+      }
+
+      if (touched) {
+        await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+      }
+    }
+
+    localStorage.setItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
   }
 
   async configureBackends(): Promise<void> {
@@ -2587,85 +2746,9 @@ export default class llamacpp_extension extends AIEngine {
       path: configPath,
     })) as ModelConfig & Record<string, unknown>
 
-    // sidebar key -> { yamlKey, coerce }. coerce returns the value to write,
-    // or `null` to delete the field (so the global [*] preset applies).
-    const mapping: Record<
-      string,
-      {
-        yamlKey: string
-        coerce: (v: unknown) => string | number | boolean | null
-      }
-    > = {
-      ctx_len: {
-        yamlKey: 'ctx_size',
-        coerce: (v) => {
-          if (v === '' || v == null) return null
-          const n = typeof v === 'number' ? v : Number(v)
-          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
-        },
-      },
-      ngl: {
-        yamlKey: 'n_gpu_layers',
-        coerce: (v) => {
-          if (v === '' || v == null) return null
-          const n = typeof v === 'number' ? v : Number(v)
-          return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
-        },
-      },
-      chat_template: {
-        yamlKey: 'chat_template',
-        coerce: (v) =>
-          typeof v === 'string' && v.trim().length > 0 ? v : null,
-      },
-      batch_size: {
-        yamlKey: 'batch_size',
-        coerce: (v) => {
-          if (v === '' || v == null) return null
-          const n = typeof v === 'number' ? v : Number(v)
-          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
-        },
-      },
-      ubatch_size: {
-        yamlKey: 'ubatch_size',
-        coerce: (v) => {
-          if (v === '' || v == null) return null
-          const n = typeof v === 'number' ? v : Number(v)
-          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
-        },
-      },
-      cpu_moe: {
-        yamlKey: 'cpu_moe',
-        // Only persist when true — false is the default and shouldn't clutter yaml.
-        coerce: (v) => (v === true ? true : null),
-      },
-      n_cpu_moe: {
-        yamlKey: 'n_cpu_moe',
-        coerce: (v) => {
-          if (v === '' || v == null) return null
-          const n = typeof v === 'number' ? v : Number(v)
-          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
-        },
-      },
-      no_kv_offload: {
-        yamlKey: 'no_kv_offload',
-        coerce: (v) => (v === true ? true : null),
-      },
-      override_tensor_buffer_t: {
-        yamlKey: 'override_tensor',
-        coerce: (v) =>
-          typeof v === 'string' && v.trim().length > 0 ? v.trim() : null,
-      },
-      offload_mmproj: {
-        yamlKey: 'mmproj_offload',
-        // Sidebar default is true (offload on = llama.cpp default). Only persist
-        // the explicit-off case so the preset stays minimal.
-        coerce: (v) => (v === false ? false : null),
-      },
-    }
-
     let touched = false
     for (const [sidebarKey, value] of Object.entries(patch)) {
-      const m = mapping[sidebarKey]
+      const m = MODEL_SETTINGS_YAML_MAPPING[sidebarKey]
       if (!m) continue
       const next = m.coerce(value)
       if (next === null) {
