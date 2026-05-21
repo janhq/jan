@@ -54,9 +54,10 @@ Jan runs natively on Apple Silicon Macs. Intel-based Macs are not supported.
 ### Minimum Requirements
 - **Operating System:** macOS 13.6 or higher
 - **Memory:**
-  - 8GB → up to 3B parameter models
-  - 16GB → up to 7B parameter models
-  - 32GB → up to 13B parameter models
+  - Model fit depends heavily on **quantization**, context length, and how much memory macOS is already using.
+  - 8GB → typically up to **3B** models comfortably; some **7B** models may fit only at aggressive low-bit quantizations
+  - 16GB → typically up to **7B** models comfortably; some **13B** models may fit at lower quantizations
+  - 32GB → typically up to **13B** models comfortably, with more headroom for higher quantizations, larger context windows, or multitasking
 - **Storage:** 10GB+ free space
 
 ### Mac Performance Guide

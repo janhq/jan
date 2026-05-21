@@ -99,7 +99,7 @@ making your workflows more modular and adaptable over time.
 
 <Callout type="info">
   To use MCP effectively, ensure your AI model supports tool calling capabilities:
-  - For cloud models (like Claude or GPT-4): Verify tool calling is enabled in your API settings
+  - For cloud models (like Claude or GPT-4): Choose a model in Jan that includes **tools** capability. For built-in providers like Anthropic, Jan reads the provider's model capabilities automatically after you add your API key.
   - For local models: Enable tool calling in the model parameters [click the edit button in Model Capabilities](/docs/desktop/model-parameters#model-capabilities-edit-button)
   - Check the model's documentation to confirm MCP compatibility
 </Callout>
@@ -168,9 +168,7 @@ already logged into in your regular browser session, it is best to give it a cle
 
 ![Browser MCP Extension](./_assets/mcp-setup-8.png)
 
-- Go back to Jan and pick a model with good tool use capabilities, for example, Claude 3.7 and 4 Sonnet, or Claude 4 Opus,
-and make sure to enable tool calling via the UI by going to **Model Providers > Anthropic** and, after you have entered your
-API key, enable tool from the **+** button.
+- Go back to Jan and pick a model with strong tool-use capabilities, such as a Claude Sonnet or Opus model. After you enter your API key in **Model Providers > Anthropic**, Jan will list the available Anthropic models automatically. Choose one that shows **tools** capability in the model picker. No separate Anthropic tool toggle is required.
 
 ![Browser MCP Extension](./_assets/mcp-setup-9.png)
 
