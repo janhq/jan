@@ -226,15 +226,8 @@ export function ModelSetting({
           {(() => {
             return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
-            if (entry[0] === 'auto_increase_ctx_len') return acc
             if (entry[0] === 'reasoning') return acc
             if (fitEnabled && entry[0] === 'ctx_len') return acc
-            if (entry[0] === 'ctx_len') {
-              const autoIncrease = Object.entries(model.settings || {}).find(
-                ([k]) => k === 'auto_increase_ctx_len'
-              )
-              if (autoIncrease) acc.push(autoIncrease)
-            }
             acc.push(entry)
             return acc
           }, [])

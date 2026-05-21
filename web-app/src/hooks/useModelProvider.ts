@@ -638,24 +638,9 @@ export const useModelProvider = create<ModelProviderState>()(
           )
         }
 
-        if (version <= 10 && state?.providers) {
-          state.providers.forEach((provider) => {
-            if (provider.models && provider.provider === 'llamacpp') {
-              provider.models.forEach((model) => {
-                if (!model.settings) model.settings = {}
-
-                if (!model.settings.auto_increase_ctx_len) {
-                  model.settings.auto_increase_ctx_len = {
-                    ...modelSettings.auto_increase_ctx_len,
-                    controller_props: {
-                      ...modelSettings.auto_increase_ctx_len.controller_props,
-                    },
-                  }
-                }
-              })
-            }
-          })
-        }
+        // Migration v10 historically inserted `auto_increase_ctx_len`. The
+        // setting was removed in v15, so v10 is now a no-op for any user
+        // still passing through this point.
 
         if (version <= 11 && state?.providers) {
           state.providers.forEach((provider) => {
@@ -733,9 +718,25 @@ export const useModelProvider = create<ModelProviderState>()(
             )
           })
         }
+
+        if (version <= 14 && state?.providers) {
+          // Auto-increase context was removed — the manual "Increase Context
+          // Size" button in the error banner now owns this. Strip the per-model
+          // setting entry from llamacpp models so the sidebar doesn't render a
+          // dead control.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              if (model.settings?.auto_increase_ctx_len) {
+                delete (model.settings as Record<string, unknown>)
+                  .auto_increase_ctx_len
+              }
+            })
+          })
+        }
         return state
       },
-      version: 14,
+      version: 15,
     }
   )
 )

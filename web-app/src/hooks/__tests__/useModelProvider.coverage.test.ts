@@ -256,11 +256,25 @@ describe('useModelProvider - coverage', () => {
         expect(migrated.providers.find((p: any) => p.provider === 'cohere')).toBeUndefined()
         expect(migrated.providers.find((p: any) => p.provider === 'openai')).toBeDefined()
       }],
-      [10, 'adding auto_increase_ctx_len', {
+      [10, 'v10 is now a no-op (auto_increase_ctx_len removed in v15)', {
         providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {}, capabilities: [] }], settings: [] }],
         deletedModels: [],
       }, (migrated: any) => {
-        expect(migrated.providers[0].models[0].settings.auto_increase_ctx_len).toBeDefined()
+        expect(migrated.providers[0].models[0].settings.auto_increase_ctx_len).toBeUndefined()
+      }],
+      [14, 'v14 → v15 strips orphan auto_increase_ctx_len', {
+        providers: [{
+          provider: 'llamacpp',
+          models: [{
+            id: 'm1',
+            settings: { auto_increase_ctx_len: { controller_props: { value: true } } },
+            capabilities: [],
+          }],
+          settings: [],
+        }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        expect(migrated.providers[0].models[0].settings.auto_increase_ctx_len).toBeUndefined()
       }],
       [3, 'Anthropic provider migration', {
         providers: [{
