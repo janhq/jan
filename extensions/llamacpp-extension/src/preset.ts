@@ -131,7 +131,14 @@ export async function generatePreset(
     lines.push(`fit-ctx = ${fitCtxNum}`)
   }
   // ctx-size default = 0 (loaded from model); any positive user value is intent.
-  if (typeof config.ctx_size === 'number' && config.ctx_size > 0) {
+  // Skip when auto-fit is enabled — fit owns context sizing and an explicit
+  // ctx-size would override it.
+  const fitEnabled = config.fit !== false
+  if (
+    !fitEnabled &&
+    typeof config.ctx_size === 'number' &&
+    config.ctx_size > 0
+  ) {
     lines.push(`ctx-size = ${config.ctx_size}`)
   }
   // n-gpu-layers default = 0 / auto; emit any non-negative explicit value.
@@ -323,7 +330,12 @@ export async function generatePreset(
     }
 
     // Per-model overrides — same default-skipping rules as the [*] block.
-    if (typeof mc.ctx_size === 'number' && mc.ctx_size > 0) {
+    // ctx-size is skipped when auto-fit is on so fit can size the context.
+    if (
+      !fitEnabled &&
+      typeof mc.ctx_size === 'number' &&
+      mc.ctx_size > 0
+    ) {
       lines.push(`ctx-size = ${mc.ctx_size}`)
     }
     if (typeof mc.n_gpu_layers === 'number' && mc.n_gpu_layers >= 0) {
