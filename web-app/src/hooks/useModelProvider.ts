@@ -270,8 +270,8 @@ export const useModelProvider = create<ModelProviderState>()(
           return { providers: nextProviders }
         }),
       updateProvider: (providerName, data) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
+        set((state) => {
+          const providers = state.providers.map((provider) => {
             if (provider.provider === providerName) {
               return {
                 ...provider,
@@ -279,8 +279,23 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             }
             return provider
-          }),
-        }))
+          })
+
+          let selectedModel = state.selectedModel
+          if (
+            selectedModel &&
+            state.selectedProvider === providerName &&
+            Array.isArray(data.models)
+          ) {
+            selectedModel =
+              data.models.find((model) => model.id === selectedModel?.id) ?? null
+          }
+
+          return {
+            providers,
+            selectedModel,
+          }
+        })
       },
       getProviderByName: (providerName: string) => {
         const provider = get().providers.find(
@@ -700,7 +715,11 @@ export const useModelProvider = create<ModelProviderState>()(
               const ctx = model.settings?.ctx_len as
                 | { controller_props?: { value?: unknown } }
                 | undefined
-              if (ctx?.controller_props?.value === 8192) {
+              const ctxValue =
+                typeof ctx?.controller_props?.value === 'string'
+                  ? Number(ctx.controller_props.value)
+                  : ctx?.controller_props?.value
+              if (ctxValue === 8192) {
                 ctx.controller_props.value = ''
               }
             })

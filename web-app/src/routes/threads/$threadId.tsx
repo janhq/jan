@@ -993,7 +993,12 @@ function ThreadDetail() {
           .models()
           .updateModelSettings(selectedModel.id, { ctx_len: newCtxLen })
       } catch (e) {
+        updateProvider(provider.provider, {
+          models: provider.models,
+        })
         console.error('Failed to persist increased ctx_len', e)
+        setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+        return
       }
     } else {
       await serviceHub.models().stopModel(selectedModel.id)

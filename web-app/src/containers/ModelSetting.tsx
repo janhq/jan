@@ -63,6 +63,9 @@ export function ModelSetting({
   const pendingPatchesRef = useRef<
     Map<string, Record<string, string | number | boolean | null | undefined>>
   >(new Map())
+  const rollbackSettingsRef = useRef<Map<string, Model['settings'] | undefined>>(
+    new Map()
+  )
   const flushPendingPatches = useMemo(
     () =>
       debounce(() => {
@@ -72,19 +75,55 @@ export function ModelSetting({
           serviceHub
             .models()
             .updateModelSettings(modelId, patch)
-            .catch((e) => console.error('Failed to persist model settings', e))
+            .then(() => {
+              rollbackSettingsRef.current.delete(modelId)
+            })
+            .catch((e) => {
+              const previousSettings = rollbackSettingsRef.current.get(modelId)
+              rollbackSettingsRef.current.delete(modelId)
+              const latestProvider = useModelProvider
+                .getState()
+                .getProviderByName(provider.provider)
+              if (latestProvider) {
+                const modelIndex = latestProvider.models.findIndex(
+                  (m) => m.id === modelId
+                )
+                if (modelIndex !== -1) {
+                  const revertedModels = [...latestProvider.models]
+                  revertedModels[modelIndex] = {
+                    ...revertedModels[modelIndex],
+                    settings: previousSettings,
+                  } as Model
+                  useModelProvider.getState().updateProvider(provider.provider, {
+                    models: revertedModels,
+                  })
+                }
+              }
+              console.error('Failed to persist model settings', e)
+            })
         }
       }, 600),
-    [serviceHub]
+    [provider.provider, serviceHub]
   )
   const debouncedPersistModelSettings = (
     modelId: string,
-    patch: Record<string, string | number | boolean | null | undefined>
+    patch: Record<string, string | number | boolean | null | undefined>,
+    previousSettings: Model['settings'] | undefined
   ) => {
+    if (!rollbackSettingsRef.current.has(modelId)) {
+      rollbackSettingsRef.current.set(modelId, previousSettings)
+    }
     const existing = pendingPatchesRef.current.get(modelId) ?? {}
     pendingPatchesRef.current.set(modelId, { ...existing, ...patch })
     flushPendingPatches()
   }
+
+  useEffect(() => {
+    return () => {
+      flushPendingPatches.cancel()
+      debouncedStopModel.cancel()
+    }
+  }, [debouncedStopModel, flushPendingPatches])
 
   const handleSettingChange = (
     key: string,
@@ -149,7 +188,7 @@ export function ModelSetting({
       // mappable keys to disk + restart the router so the next load uses the
       // new args. Non-mappable keys are filtered inside the extension.
       if (provider.provider === 'llamacpp') {
-        debouncedPersistModelSettings(model.id, { [key]: value })
+        debouncedPersistModelSettings(model.id, { [key]: value }, model.settings)
       }
     }
   }
