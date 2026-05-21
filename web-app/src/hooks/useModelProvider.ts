@@ -721,6 +721,18 @@ export const useModelProvider = create<ModelProviderState>()(
             })
           })
         }
+
+        if (version <= 13 && state?.providers) {
+          // `defrag-thold` was deprecated upstream and the control was deleted
+          // from settings.json. Strip the orphan entry from the persisted
+          // provider settings array so localStorage doesn't carry it forever.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.settings) return
+            provider.settings = provider.settings.filter(
+              (s) => s.key !== 'defrag_thold'
+            )
+          })
+        }
         return state
       },
       version: 14,
