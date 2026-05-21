@@ -238,6 +238,7 @@
     "changeLocation": "위치 변경",
     "openLogs": "로그 열기",
     "revealLogs": "로그 표시",
+    "factoryResetTitle": "초기 설정으로 재설정",
     "factoryResetDesc": "모든 앱 설정이 기본값으로 재설정됩니다. 이 작업은 실행 취소할 수 없습니다. 앱이 손상된 경우에만 권장합니다.",
     "keepAppData": "앱 데이터 유지",
     "keepAppDataDesc": "채팅 기록 및 대화 내용이 보존됩니다.",
