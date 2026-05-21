@@ -227,6 +227,9 @@ export function ModelSetting({
             return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'reasoning') return acc
+            // Removed in v15 migration; defend against any pre-migration
+            // localStorage state that still carries the orphan entry.
+            if (entry[0] === 'auto_increase_ctx_len') return acc
             if (fitEnabled && entry[0] === 'ctx_len') return acc
             acc.push(entry)
             return acc
