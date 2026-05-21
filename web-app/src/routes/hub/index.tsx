@@ -57,9 +57,11 @@ import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
+import { switchToModel } from '@/utils/switchModel'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 
 type SearchParams = {
   repo: string
@@ -162,6 +164,7 @@ function HubContent() {
     Record<string, CatalogModel>
   >({})
   const enrichedOrphansFetchedRef = useRef<Set<string>>(new Set())
+  const providers = useModelProvider((state) => state.providers)
 
   const toggleModelExpansion = useCallback((modelId: string) => {
     setExpandedModels((prev) => ({
@@ -523,18 +526,101 @@ function HubContent() {
 
   const handleUseModel = useCallback(
     (modelId: string) => {
+      const allProviders = useModelProvider.getState().providers
+      const upstream = allProviders.find(
+        (p) => p.provider === 'llamacpp-upstream'
+      )
+      const fork = allProviders.find((p) => p.provider === 'llamacpp')
+      const upstreamHasModel = upstream?.models.some((m) => m.id === modelId)
+      const forkHasModel = fork?.models.some((m) => m.id === modelId)
+      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
+        upstreamHasModel
+          ? 'llamacpp-upstream'
+          : forkHasModel
+            ? 'llamacpp'
+            : upstream
+              ? 'llamacpp-upstream'
+              : 'llamacpp'
+
+      console.log(
+        '[hub/index] handleUseModel:',
+        modelId,
+        '→ provider:',
+        targetLlamaProvider,
+        '(upstreamHasModel:',
+        upstreamHasModel,
+        'forkHasModel:',
+        forkHasModel,
+        ')'
+      )
+
+      useModelProvider
+        .getState()
+        .selectModelProvider(targetLlamaProvider, modelId)
+      switchToModel({
+        modelId,
+        providerName: targetLlamaProvider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[hub/index] switchToModel failed:', error)
+      })
       navigate({
         to: route.home,
         params: {},
         search: {
           threadModel: {
             id: modelId,
-            provider: 'llamacpp',
+            provider: targetLlamaProvider,
           },
         },
       })
     },
-    [navigate]
+    [navigate, serviceHub]
+  )
+
+  const getDownloadedModel = useCallback(
+    (model: CatalogModel, variant?: { model_id: string }) => {
+      const mlxProvider = providers.find((p) => p.provider === 'mlx')
+      const llamaProvider = providers.find((p) => p.provider === 'llamacpp')
+      const upstreamProvider = providers.find(
+        (p) => p.provider === 'llamacpp-upstream'
+      )
+
+      if (model.is_mlx) {
+        const modelName = model.model_name.split('/').pop() ?? model.model_name
+        const mlxModelId = modelName
+          .replace(/\s+/g, '-')
+          .replace(/[^a-zA-Z0-9\-_./]/g, '')
+        const downloaded = mlxProvider?.models.find(
+          (m: { id: string }) =>
+            m.id === mlxModelId || m.id === `${model.developer}/${mlxModelId}`
+        )
+
+        return downloaded && mlxProvider
+          ? { provider: mlxProvider, modelId: downloaded.id }
+          : undefined
+      }
+
+      const modelId =
+        variant?.model_id ??
+        pickDefaultQuant(model)?.model_id ??
+        model.model_name
+      const prefixedModelId = `${model.developer}/${sanitizeModelId(modelId)}`
+      const llamaMatch = llamaProvider?.models.find(
+        (m: { id: string }) => m.id === modelId || m.id === prefixedModelId
+      )
+      if (llamaMatch && llamaProvider) {
+        return { provider: llamaProvider, modelId: llamaMatch.id }
+      }
+
+      const upstreamMatch = upstreamProvider?.models.find(
+        (m: { id: string }) => m.id === modelId || m.id === prefixedModelId
+      )
+      return upstreamMatch && upstreamProvider
+        ? { provider: upstreamProvider, modelId: upstreamMatch.id }
+        : undefined
+    },
+    [providers]
   )
 
   const checkModelSupport = useCallback(
@@ -700,6 +786,9 @@ function HubContent() {
                         ? getMlxTotalFileSize(model)
                         : getTotalDownloadFileSize(model, defaultVariant)
                       : undefined
+                    const downloadedModel = model
+                      ? getDownloadedModel(model, defaultVariant)
+                      : undefined
                     return model ? (
                       <div key={`${rec.modelName}-${rec.descriptionKey}`}>
                         <Card
@@ -728,6 +817,12 @@ function HubContent() {
                                 <span className="text-muted-foreground font-medium text-xs whitespace-nowrap">
                                   {downloadSize}
                                 </span>
+                                {downloadedModel && (
+                                  <DialogDeleteModel
+                                    provider={downloadedModel.provider}
+                                    modelId={downloadedModel.modelId}
+                                  />
+                                )}
                                 <ModelInfoHoverCard
                                   model={model}
                                   defaultModelQuantizations={
@@ -952,6 +1047,19 @@ function HubContent() {
                                             variant
                                           )}
                                         </p>
+                                        {(() => {
+                                          const downloadedModel =
+                                            getDownloadedModel(model, variant)
+
+                                          return downloadedModel ? (
+                                            <DialogDeleteModel
+                                              provider={
+                                                downloadedModel.provider
+                                              }
+                                              modelId={downloadedModel.modelId}
+                                            />
+                                          ) : null
+                                        })()}
                                         <ModelInfoHoverCard
                                           model={model}
                                           variant={variant}
@@ -1139,6 +1247,22 @@ function HubContent() {
                                       )
                                     )}
                               </span>
+                              {(() => {
+                                const defaultVariant = pickDefaultQuant(
+                                  virtualListModels[virtualItem.index]
+                                )
+                                const downloadedModel = getDownloadedModel(
+                                  virtualListModels[virtualItem.index],
+                                  defaultVariant
+                                )
+
+                                return downloadedModel ? (
+                                  <DialogDeleteModel
+                                    provider={downloadedModel.provider}
+                                    modelId={downloadedModel.modelId}
+                                  />
+                                ) : null
+                              })()}
                               <ModelInfoHoverCard
                                 model={virtualListModels[virtualItem.index]}
                                 defaultModelQuantizations={
@@ -1369,6 +1493,24 @@ function HubContent() {
                                             variant
                                           )}
                                         </p>
+                                        {(() => {
+                                          const downloadedModel =
+                                            getDownloadedModel(
+                                              virtualListModels[
+                                                virtualItem.index
+                                              ],
+                                              variant
+                                            )
+
+                                          return downloadedModel ? (
+                                            <DialogDeleteModel
+                                              provider={
+                                                downloadedModel.provider
+                                              }
+                                              modelId={downloadedModel.modelId}
+                                            />
+                                          ) : null
+                                        })()}
                                         <ModelInfoHoverCard
                                           model={
                                             virtualListModels[virtualItem.index]

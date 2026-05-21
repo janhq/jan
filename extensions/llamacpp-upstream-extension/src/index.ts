@@ -92,6 +92,11 @@ const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
 /// losing UI-sync when the web-app happens to bundle a different `events`
 /// singleton than the extension does.
 const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
+/// Broadcast channel emitted when auto-expand hits the model's true
+/// training-max context (or when the next ladder step doesn't grow the
+/// window further). The web-app uses this to show a one-shot toast and
+/// stop driving further regeneration attempts.
+const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -205,6 +210,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /// `this.config.ctx_size` is only a default and doesn't reflect UI-level
   /// per-model overrides.
   private modelCtxSize = new Map<string, number>()
+  /// Cached upper bound for a model's context window, read from the GGUF
+  /// metadata key `{general.architecture}.context_length`. Acts as the hard
+  /// ceiling for the auto-expand-ctx ladder so we don't keep trying to grow
+  /// past what the model's positional embeddings actually support.
+  private modelMaxCtxTrain = new Map<string, number>()
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
 
@@ -2453,6 +2463,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
       mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
 
+    if (!this.modelMaxCtxTrain.has(modelId)) {
+      const max = await this.resolveModelMaxCtxTrain(modelPath)
+      if (typeof max === 'number') {
+        this.modelMaxCtxTrain.set(modelId, max)
+      }
+    }
+
     // Migrate old env vars
     if (typeof cfg.fit === 'string') cfg.fit = true
 
@@ -2485,6 +2502,67 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
+  /// Read `{general.architecture}.context_length` from a GGUF file. Returns
+  /// `undefined` (with a warning logged) if the file is unreadable or the
+  /// key is missing — callers must treat the absence of a bound as "no
+  /// hard cap known" and fall back to the open-ended ladder.
+  private async resolveModelMaxCtxTrain(
+    modelPath: string
+  ): Promise<number | undefined> {
+    try {
+      const metadata = await readGgufMetadata(modelPath)
+      const arch = metadata.metadata?.['general.architecture']
+      if (typeof arch !== 'string' || !arch) return undefined
+      const raw = metadata.metadata?.[`${arch}.context_length`]
+      const parsed =
+        typeof raw === 'number'
+          ? raw
+          : raw != null
+            ? parseInt(String(raw), 10)
+            : NaN
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+    } catch (e) {
+      logger.warn(
+        `Failed to resolve max ctx_train from GGUF at ${modelPath}: ${e}`
+      )
+      return undefined
+    }
+  }
+
+  /// Public lookup used by the web-app UI (via duck-typed engine call) so
+  /// the in-app "Increase Context" path can clamp at the model's true
+  /// training-max ctx and avoid an infinite regenerate→error→bump cycle.
+  /// Resolves the value lazily from GGUF metadata on first request and
+  /// caches it in-memory for the lifetime of the extension.
+  async getMaxCtxTrain(modelId: string): Promise<number | undefined> {
+    const cached = this.modelMaxCtxTrain.get(modelId)
+    if (typeof cached === 'number') return cached
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const modelConfigPath = await joinPath([
+        this.providerPath,
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      const modelConfig = await invoke<ModelConfig>('read_yaml', {
+        path: modelConfigPath,
+      })
+      const modelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      const max = await this.resolveModelMaxCtxTrain(modelPath)
+      if (typeof max === 'number') {
+        this.modelMaxCtxTrain.set(modelId, max)
+      }
+      return max
+    } catch (e) {
+      logger.warn(`getMaxCtxTrain failed for ${modelId}: ${e}`)
+      return undefined
+    }
+  }
+
   /// Bridge from the Local API Server proxy (Rust) back to the extension
   /// when a forwarded request exhausts the model's context window. We
   /// unload + reload the model with a larger ctx_size, inform the proxy via
@@ -2514,15 +2592,29 @@ export default class llamacpp_upstream_extension extends AIEngine {
     try {
       const currentCtxLen =
         this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 8192
-      const newCtxLen = computeNextCtxLen(currentCtxLen)
+      const maxCtxLen = this.modelMaxCtxTrain.get(model_id)
+      const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
 
       if (newCtxLen <= currentCtxLen) {
         await sendDone({ ok: false, reason: 'at_max' })
+        try {
+          await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
+            provider: this.provider,
+            modelId: model_id,
+            maxCtxLen: maxCtxLen ?? currentCtxLen,
+            currentCtxLen,
+          })
+        } catch (e) {
+          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+        }
+        logger.info(
+          `auto_increase_ctx (llamacpp-upstream) at_max model=${model_id} currentCtxLen=${currentCtxLen} maxCtxLen=${maxCtxLen ?? 'unknown'}`
+        )
         return
       }
 
       logger.info(
-        `auto_increase_ctx (llamacpp) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen}`
+        `auto_increase_ctx (llamacpp-upstream) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen} (max=${maxCtxLen ?? 'unknown'})`
       )
 
       // Unload may throw if the session is gone; treat that as a reload

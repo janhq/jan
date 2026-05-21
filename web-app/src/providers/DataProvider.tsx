@@ -15,6 +15,7 @@ import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { switchToModel } from '@/utils/switchModel'
 import { isDev } from '@/lib/utils'
 import { AppEvent, events, ModelEvent } from '@janhq/core'
+import { toast } from 'sonner'
 import { SystemEvent } from '@/types/events'
 import {
   parseAtomicChatDeepLink,
@@ -358,6 +359,7 @@ export function DataProvider() {
 
     // Parallel native Tauri bus listener (extensions emit both channels).
     let unlistenTauri: (() => void) | undefined
+    let unlistenAtMax: (() => void) | undefined
     let cancelled = false
     ;(async () => {
       try {
@@ -390,6 +392,44 @@ export function DataProvider() {
         console.log(
           '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_notify'
         )
+
+        /// Parallel subscription for the hard-stop signal: when an extension
+        /// detects that the next ladder step would exceed (or equal) the
+        /// model's training-max context, it emits this event so the UI can
+        /// inform the user that auto-expand is done. The toast id is keyed
+        /// on `provider/modelId` so consecutive overflows on the same model
+        /// don't stack up multiple identical toasts.
+        const unsubAtMax = await listen<{
+          provider?: string
+          modelId?: string
+          maxCtxLen?: number
+          currentCtxLen?: number
+        }>('local_backend://auto_increase_ctx_at_max', (event) => {
+          const { provider, modelId } = event.payload ?? {}
+          console.log(
+            '[LocalAPI] auto_increase_ctx_at_max received (tauri)',
+            event.payload
+          )
+          if (!provider || !modelId) {
+            console.warn(
+              '[LocalAPI] auto_increase_ctx_at_max (tauri): invalid payload',
+              event.payload
+            )
+            return
+          }
+          toast.error(
+            'Model reached its maximum context, auto-expand stopped',
+            { id: `ctx-at-max-${provider}-${modelId}` }
+          )
+        })
+        if (cancelled) {
+          unsubAtMax()
+        } else {
+          unlistenAtMax = unsubAtMax
+          console.log(
+            '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_at_max'
+          )
+        }
       } catch (e) {
         console.warn(
           '[LocalAPI] Failed to subscribe to Tauri auto_increase_ctx_notify:',
@@ -402,6 +442,7 @@ export function DataProvider() {
       cancelled = true
       events.off(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
       if (unlistenTauri) unlistenTauri()
+      if (unlistenAtMax) unlistenAtMax()
     }
   }, [])
 

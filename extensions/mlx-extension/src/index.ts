@@ -50,6 +50,11 @@ const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
 /// Parallel Tauri-level broadcast so the web-app can subscribe without
 /// routing through the `@janhq/core` in-process EventEmitter.
 const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
+/// Broadcast channel emitted when auto-expand hits the model's true
+/// training-max context (or when the next ladder step doesn't grow the
+/// window further). The web-app uses this to show a one-shot toast and
+/// stop driving further regeneration attempts.
+const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
 
 interface AutoIncreaseCtxRequest {
   request_id: string
@@ -88,6 +93,12 @@ export default class mlx_extension extends AIEngine {
   /// live session (e.g. after a prior auto-increase), so we cannot rely on
   /// `this.config.ctx_size` when computing the next window.
   private modelCtxSize = new Map<string, number>()
+
+  /// Cached upper bound for a model's context window, read from the MLX
+  /// model's `config.json` (`max_position_embeddings`, falling back to
+  /// `text_config.max_position_embeddings` for VLM/omni configs). Acts as
+  /// the hard ceiling for the auto-expand-ctx ladder.
+  private modelMaxCtxTrain = new Map<string, number>()
 
   /// Last model that was loaded or received a chat completion. Used by the
   /// `block_size` / `mtp_block_size` auto-reload path in `onSettingUpdate`
@@ -480,6 +491,13 @@ export default class mlx_extension extends AIEngine {
       modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }
 
+    if (!this.modelMaxCtxTrain.has(modelId)) {
+      const max = await this.resolveModelMaxCtxTrain(modelPath)
+      if (typeof max === 'number') {
+        this.modelMaxCtxTrain.set(modelId, max)
+      }
+    }
+
     /// Speculative decoding has two mutually exclusive families:
     /// DFlash (`z-lab/*`) and MTP (`mlx-community/gemma-4-*-assistant-*`).
     /// The UI guarantees only one toggle is on at a time, but we
@@ -583,6 +601,78 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
+  /// Read `max_position_embeddings` (or the nested
+  /// `text_config.max_position_embeddings` used by Hugging Face VLM/omni
+  /// configs) from an MLX model's `config.json`. Returns `undefined` (with a
+  /// warning logged) if the file is unreadable or the key is missing.
+  private async resolveModelMaxCtxTrain(
+    modelPath: string
+  ): Promise<number | undefined> {
+    try {
+      const stat = await fs.fileStat(modelPath).catch(() => null)
+      const modelDir =
+        stat && stat.isDirectory
+          ? modelPath
+          : modelPath.substring(0, modelPath.lastIndexOf('/'))
+      const configPath = await joinPath([modelDir, 'config.json'])
+      if (!(await fs.existsSync(configPath))) return undefined
+      const configContent = await invoke<string>('read_file_sync', {
+        args: [configPath],
+      })
+      const config = JSON.parse(configContent)
+      const candidate =
+        config?.max_position_embeddings ??
+        config?.text_config?.max_position_embeddings
+      const parsed =
+        typeof candidate === 'number'
+          ? candidate
+          : candidate != null
+            ? parseInt(String(candidate), 10)
+            : NaN
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+    } catch (e) {
+      logger.warn(
+        `Failed to resolve max ctx_train from MLX config at ${modelPath}: ${e}`
+      )
+      return undefined
+    }
+  }
+
+  /// Public lookup used by the web-app UI (via duck-typed engine call) so
+  /// the in-app "Increase Context" path can clamp at the model's true
+  /// training-max ctx and avoid an infinite regenerate→error→bump cycle.
+  /// Resolves the value lazily from `config.json` on first request and
+  /// caches it in-memory for the lifetime of the extension.
+  async getMaxCtxTrain(modelId: string): Promise<number | undefined> {
+    const cached = this.modelMaxCtxTrain.get(modelId)
+    if (typeof cached === 'number') return cached
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const modelConfigPath = await joinPath([
+        this.providerPath,
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      const modelConfig = await invoke<ModelConfig>('read_yaml', {
+        path: modelConfigPath,
+      })
+      const modelPath =
+        modelConfig.model_path.startsWith('/') ||
+        modelConfig.model_path.includes(':')
+          ? modelConfig.model_path
+          : await joinPath([janDataFolderPath, modelConfig.model_path])
+      const max = await this.resolveModelMaxCtxTrain(modelPath)
+      if (typeof max === 'number') {
+        this.modelMaxCtxTrain.set(modelId, max)
+      }
+      return max
+    } catch (e) {
+      logger.warn(`getMaxCtxTrain failed for ${modelId}: ${e}`)
+      return undefined
+    }
+  }
+
   /// Bridge from the Local API Server proxy (Rust) back to the MLX extension
   /// when a forwarded request exhausts the model's context window. Mirrors
   /// the llamacpp-extension implementation: unload + reload with a larger
@@ -611,15 +701,29 @@ export default class mlx_extension extends AIEngine {
     try {
       const currentCtxLen =
         this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 4096
-      const newCtxLen = computeNextCtxLen(currentCtxLen)
+      const maxCtxLen = this.modelMaxCtxTrain.get(model_id)
+      const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
 
       if (newCtxLen <= currentCtxLen) {
         await sendDone({ ok: false, reason: 'at_max' })
+        try {
+          await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
+            provider: this.provider,
+            modelId: model_id,
+            maxCtxLen: maxCtxLen ?? currentCtxLen,
+            currentCtxLen,
+          })
+        } catch (e) {
+          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+        }
+        logger.info(
+          `auto_increase_ctx (mlx) at_max model=${model_id} currentCtxLen=${currentCtxLen} maxCtxLen=${maxCtxLen ?? 'unknown'}`
+        )
         return
       }
 
       logger.info(
-        `auto_increase_ctx (mlx) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen}`
+        `auto_increase_ctx (mlx) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen} (max=${maxCtxLen ?? 'unknown'})`
       )
 
       try {

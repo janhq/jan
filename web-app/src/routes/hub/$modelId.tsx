@@ -32,11 +32,13 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
+import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import {
   DEFAULT_MODEL_QUANTIZATIONS,
   RECOMMENDED_MODEL_FALLBACKS,
 } from '@/constants/models'
 import { useTranslation } from '@/i18n'
+import { switchToModel } from '@/utils/switchModel'
 
 type SearchParams = {
   repo: string
@@ -59,6 +61,7 @@ function HubModelDetailContent() {
   const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
+  const upstreamLlamaProvider = getProviderByName('llamacpp-upstream')
   const {
     downloads,
     localDownloadingModels,
@@ -126,18 +129,56 @@ function HubModelDetailContent() {
   // Handle model use
   const handleUseModel = useCallback(
     (modelId: string) => {
+      const allProviders = useModelProvider.getState().providers
+      const upstream = allProviders.find(
+        (p) => p.provider === 'llamacpp-upstream'
+      )
+      const fork = allProviders.find((p) => p.provider === 'llamacpp')
+      const upstreamHasModel = upstream?.models.some((m) => m.id === modelId)
+      const forkHasModel = fork?.models.some((m) => m.id === modelId)
+      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
+        upstreamHasModel
+          ? 'llamacpp-upstream'
+          : forkHasModel
+            ? 'llamacpp'
+            : upstream
+              ? 'llamacpp-upstream'
+              : 'llamacpp'
+
+      console.log(
+        '[hub/$modelId] handleUseModel:',
+        modelId,
+        '→ provider:',
+        targetLlamaProvider,
+        '(upstreamHasModel:',
+        upstreamHasModel,
+        'forkHasModel:',
+        forkHasModel,
+        ')'
+      )
+
+      useModelProvider
+        .getState()
+        .selectModelProvider(targetLlamaProvider, modelId)
+      switchToModel({
+        modelId,
+        providerName: targetLlamaProvider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[hub/$modelId] switchToModel failed:', error)
+      })
       navigate({
         to: route.home,
         params: {},
         search: {
           threadModel: {
             id: modelId,
-            provider: 'llamacpp',
+            provider: targetLlamaProvider,
           },
         },
       })
     },
-    [navigate]
+    [navigate, serviceHub]
   )
 
   // Format the date
@@ -397,9 +438,16 @@ function HubModelDetailContent() {
                           downloadProcesses.find(
                             (e) => e.id === variant.model_id
                           )?.progress || 0
-                        const isDownloaded = llamaProvider?.models.some(
+                        const downloadedProvider = llamaProvider?.models.some(
                           (m: { id: string }) => m.id === variant.model_id
                         )
+                          ? llamaProvider
+                          : upstreamLlamaProvider?.models.some(
+                                (m: { id: string }) => m.id === variant.model_id
+                              )
+                            ? upstreamLlamaProvider
+                            : undefined
+                        const isDownloaded = Boolean(downloadedProvider)
 
                         // Extract format from model_id
                         const format = variant.model_id
@@ -431,9 +479,17 @@ function HubModelDetailContent() {
                               </span>
                             </td>
                             <td className="py-3 px-2">
-                              <span className="text-sm text-muted-foreground">
-                                {getTotalDownloadFileSize(modelData, variant)}
-                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm text-muted-foreground">
+                                  {getTotalDownloadFileSize(modelData, variant)}
+                                </span>
+                                {downloadedProvider && (
+                                  <DialogDeleteModel
+                                    provider={downloadedProvider}
+                                    modelId={variant.model_id}
+                                  />
+                                )}
+                              </div>
                             </td>
                             <td>
                               <ModelInfoHoverCard

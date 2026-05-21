@@ -8,6 +8,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { CatalogModel } from '@/services/models/types'
+import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
@@ -47,18 +48,64 @@ export const ModelDownloadAction = ({
 
   const handleUseModel = useCallback(
     (modelId: string) => {
+      // Resolve the target provider at click-time so we always see the
+      // freshest providers/models snapshot — not whatever was captured at
+      // render. Prefer the vanilla upstream `llama.cpp` provider when it
+      // both exists AND has the model registered (currently macOS-only —
+      // see AGENTS.md ADR 2026-05-19). If the model is not yet in the
+      // upstream provider's list (e.g. its `list()` hasn't been refreshed
+      // since download), fall back to `llamacpp` so the dropdown selection
+      // and ChatInput auto-start effect on the home route can pick it up.
+      const allProviders = useModelProvider.getState().providers
+      const upstream = allProviders.find(
+        (p) => p.provider === 'llamacpp-upstream'
+      )
+      const fork = allProviders.find((p) => p.provider === 'llamacpp')
+      const upstreamHasModel = upstream?.models.some((m) => m.id === modelId)
+      const forkHasModel = fork?.models.some((m) => m.id === modelId)
+      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
+        upstreamHasModel
+          ? 'llamacpp-upstream'
+          : forkHasModel
+            ? 'llamacpp'
+            : upstream
+              ? 'llamacpp-upstream'
+              : 'llamacpp'
+
+      console.log(
+        '[ModelDownloadAction] handleUseModel:',
+        modelId,
+        '→ provider:',
+        targetLlamaProvider,
+        '(upstreamHasModel:',
+        upstreamHasModel,
+        'forkHasModel:',
+        forkHasModel,
+        ')'
+      )
+
+      useModelProvider
+        .getState()
+        .selectModelProvider(targetLlamaProvider, modelId)
+      switchToModel({
+        modelId,
+        providerName: targetLlamaProvider,
+        serviceHub,
+      }).catch((error) => {
+        console.error('[ModelDownloadAction] switchToModel failed:', error)
+      })
       navigate({
         to: route.home,
         params: {},
         search: {
           threadModel: {
             id: modelId,
-            provider: 'llamacpp',
+            provider: targetLlamaProvider,
           },
         },
       })
     },
-    [navigate]
+    [navigate, serviceHub]
   )
 
   const handleDownloadModel = useCallback(async () => {

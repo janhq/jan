@@ -7,6 +7,7 @@ import { routeTree } from './routeTree.gen'
 
 import './index.css'
 import './i18n'
+import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
@@ -123,6 +124,12 @@ preventDefaultFileDrop()
 
 // Prevent user-initiated zoom across the app
 disablePageZoom()
+
+// Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
+// code-block download button needs to go through Tauri's save dialog.
+if (IS_TAURI) {
+  installCodeBlockDownloadHandler()
+}
 
 // Create a new router instance
 const router = createRouter({ routeTree })
