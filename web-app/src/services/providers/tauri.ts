@@ -105,15 +105,10 @@ export class TauriProvidersService extends DefaultProvidersService {
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
-                    let value = setting.controller_props.value
-                    if (setting.key === 'ctx_len') {
-                      value = 8192 // Default context length for Llama.cpp models
-                    }
                     acc[setting.key] = {
                       ...setting,
                       controller_props: {
                         ...setting.controller_props,
-                        value: value,
                       },
                     }
                     return acc
