@@ -593,6 +593,21 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
+  async updateModelSettings(
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ): Promise<void> {
+    const engine = this.getEngine('llamacpp') as AIEngine & {
+      updateModelSettings?: (
+        id: string,
+        patch: Record<string, string | number | boolean | null | undefined>
+      ) => Promise<void>
+    }
+    if (engine && typeof engine.updateModelSettings === 'function') {
+      await engine.updateModelSettings(modelId, patch)
+    }
+  }
+
   async isModelSupported(
     modelPath: string,
     ctxSize?: number

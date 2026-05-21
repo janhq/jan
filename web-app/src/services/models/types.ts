@@ -165,6 +165,10 @@ export interface ModelsService {
       spec_draft_p_min?: number | null
     }
   ): Promise<void>
+  updateModelSettings(
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ): Promise<void>
   isModelSupported(
     modelPath: string,
     ctxSize?: number

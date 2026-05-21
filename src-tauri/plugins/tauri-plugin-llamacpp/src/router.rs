@@ -77,8 +77,10 @@ pub fn router_args(
         port.to_string(),
         "--api-key".to_string(),
         api_key.to_string(),
-        "--no-webui".to_string(),
     ];
+    // Web-UI disable flag (`--no-webui` pre-b9222, `--no-ui` from b9222) is
+    // appended by the TS caller via `default_args` because the spelling
+    // depends on the backend build number.
     args.extend(default_args.iter().cloned());
     args
 }
@@ -588,7 +590,11 @@ mod tests {
         assert!(joined.contains("--host 127.0.0.1"));
         assert!(joined.contains("--port 1337"));
         assert!(joined.contains("--api-key secret-key"));
-        assert!(args.iter().any(|a| a == "--no-webui"));
+        // Web-UI disable flag is now appended by the caller (it's
+        // build-number-dependent: --no-webui vs --no-ui), so it must NOT be
+        // baked into the base argv.
+        assert!(!args.iter().any(|a| a == "--no-webui"));
+        assert!(!args.iter().any(|a| a == "--no-ui"));
     }
 
     #[test]

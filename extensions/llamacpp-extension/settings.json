@@ -275,19 +275,6 @@
     }
   },
   {
-    "key": "defrag_thold",
-    "title": "KV Cache Defragmentation Threshold",
-    "description": "Threshold for KV cache defragmentation (< 0 to disable).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.1,
-      "placeholder": "0.1",
-      "type": "number",
-      "textAlign": "right",
-      "step": 0.01
-    }
-  },
-  {
     "key": "rope_scaling",
     "title": "RoPE Scaling Method",
     "description": "RoPE frequency scaling method.",

@@ -71,6 +71,41 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
 
+// Provider settings that end up in `router.preset.ini` (`[*]` global section
+// in preset.ts). Mutating any of these requires a router restart so the new
+// preset is read; cosmetic / process-only keys (auto_update_engine, models_max,
+// timeout, llamacpp_env, version_backend) are handled separately or not at all.
+const PRESET_AFFECTING_KEYS = new Set<string>([
+  'fit',
+  'fit_target',
+  'fit_ctx',
+  'ctx_size',
+  'n_gpu_layers',
+  'flash_attn',
+  'cache_type_k',
+  'cache_type_v',
+  'parallel',
+  'cont_batching',
+  'threads',
+  'threads_batch',
+  'n_predict',
+  'ubatch_size',
+  'device',
+  'split_mode',
+  'main_gpu',
+  'no_mmap',
+  'mlock',
+  'rope_scaling',
+  'rope_scale',
+  'rope_freq_base',
+  'rope_freq_scale',
+  'ctx_shift',
+  'cache_ram',
+  'cache_reuse',
+  'swa_full',
+  'keep',
+])
+
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -314,6 +349,13 @@ export default class llamacpp_extension extends AIEngine {
       /* ignore probe failures */
     }
 
+    // --no-webui was renamed to --no-ui in upstream b9222. Keep the legacy
+    // flag for older backends; the deprecated form still works on newer ones
+    // but emits a warning, so prefer the new spelling when available.
+    const NO_UI_RENAME_BUILD = 9222
+    const noUiFlag =
+      build !== null && build >= NO_UI_RENAME_BUILD ? '--no-ui' : '--no-webui'
+
     const info = await invoke<{ port: number; api_key: string; pid: number }>(
       'plugin:llamacpp|start_router',
       {
@@ -322,7 +364,7 @@ export default class llamacpp_extension extends AIEngine {
         port,
         apiKey,
         modelsMax,
-        defaultArgs: [] as string[],
+        defaultArgs: [noUiFlag],
         envs,
       }
     )
@@ -1216,7 +1258,23 @@ export default class llamacpp_extension extends AIEngine {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
       this.timeout = value as number
+    } else if (PRESET_AFFECTING_KEYS.has(key)) {
+      // A live router was started with the previous preset; without a restart
+      // the new value is invisible to inference. Debounced so a flurry of
+      // slider/dropdown updates collapses into one bounce.
+      this.scheduleRouterRestart()
     }
+  }
+
+  private routerRestartTimer: ReturnType<typeof setTimeout> | null = null
+  private scheduleRouterRestart(): void {
+    if (this.routerRestartTimer) clearTimeout(this.routerRestartTimer)
+    this.routerRestartTimer = setTimeout(() => {
+      this.routerRestartTimer = null
+      this.startRouter().catch((e) =>
+        logger.warn('Router restart after settings update failed:', e)
+      )
+    }, 600)
   }
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
@@ -2003,9 +2061,8 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(
     modelId: string,
-    _overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false,
-    _bypassAutoUnload: boolean = false
+    _settings?: unknown,
+    isEmbedding: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -2491,6 +2548,140 @@ export default class llamacpp_extension extends AIEngine {
       await this.startRouter()
     } catch (e) {
       logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
+    }
+  }
+
+  /**
+   * Persist a per-model setting from the sidebar into `model.yml`, regenerate
+   * the router preset, and restart the router so the next inference picks up
+   * the new args. In router mode the router reads args exclusively from
+   * `router.preset.ini`, so updating Zustand alone has no effect on inference.
+   *
+   * Sidebar keys are mapped to the canonical `model.yml` / preset keys here.
+   * Keys not in the mapping are silently ignored — they're either Jan-side
+   * concerns (`reasoning`, `auto_increase_ctx_len`) or not yet emitted by
+   * `preset.ts` (deferred to phase b).
+   */
+  async updateModelSettings(
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ): Promise<void> {
+    const configPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    if (!(await fs.existsSync(configPath))) {
+      throw new Error(`model.yml not found for ${modelId}`)
+    }
+    const cfg = (await invoke<ModelConfig>('read_yaml', {
+      path: configPath,
+    })) as ModelConfig & Record<string, unknown>
+
+    // sidebar key -> { yamlKey, coerce }. coerce returns the value to write,
+    // or `null` to delete the field (so the global [*] preset applies).
+    const mapping: Record<
+      string,
+      {
+        yamlKey: string
+        coerce: (v: unknown) => string | number | boolean | null
+      }
+    > = {
+      ctx_len: {
+        yamlKey: 'ctx_size',
+        coerce: (v) => {
+          if (v === '' || v == null) return null
+          const n = typeof v === 'number' ? v : Number(v)
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+        },
+      },
+      ngl: {
+        yamlKey: 'n_gpu_layers',
+        coerce: (v) => {
+          if (v === '' || v == null) return null
+          const n = typeof v === 'number' ? v : Number(v)
+          return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+        },
+      },
+      chat_template: {
+        yamlKey: 'chat_template',
+        coerce: (v) =>
+          typeof v === 'string' && v.trim().length > 0 ? v : null,
+      },
+      batch_size: {
+        yamlKey: 'batch_size',
+        coerce: (v) => {
+          if (v === '' || v == null) return null
+          const n = typeof v === 'number' ? v : Number(v)
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+        },
+      },
+      ubatch_size: {
+        yamlKey: 'ubatch_size',
+        coerce: (v) => {
+          if (v === '' || v == null) return null
+          const n = typeof v === 'number' ? v : Number(v)
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+        },
+      },
+      cpu_moe: {
+        yamlKey: 'cpu_moe',
+        // Only persist when true — false is the default and shouldn't clutter yaml.
+        coerce: (v) => (v === true ? true : null),
+      },
+      n_cpu_moe: {
+        yamlKey: 'n_cpu_moe',
+        coerce: (v) => {
+          if (v === '' || v == null) return null
+          const n = typeof v === 'number' ? v : Number(v)
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+        },
+      },
+      no_kv_offload: {
+        yamlKey: 'no_kv_offload',
+        coerce: (v) => (v === true ? true : null),
+      },
+      override_tensor_buffer_t: {
+        yamlKey: 'override_tensor',
+        coerce: (v) =>
+          typeof v === 'string' && v.trim().length > 0 ? v.trim() : null,
+      },
+      offload_mmproj: {
+        yamlKey: 'mmproj_offload',
+        // Sidebar default is true (offload on = llama.cpp default). Only persist
+        // the explicit-off case so the preset stays minimal.
+        coerce: (v) => (v === false ? false : null),
+      },
+    }
+
+    let touched = false
+    for (const [sidebarKey, value] of Object.entries(patch)) {
+      const m = mapping[sidebarKey]
+      if (!m) continue
+      const next = m.coerce(value)
+      if (next === null) {
+        if (m.yamlKey in cfg) {
+          delete (cfg as Record<string, unknown>)[m.yamlKey]
+          touched = true
+        }
+      } else {
+        ;(cfg as Record<string, unknown>)[m.yamlKey] = next
+        touched = true
+      }
+    }
+
+    if (!touched) return
+
+    await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(
+        `Failed to restart router after model settings update for ${modelId}`,
+        e
+      )
     }
   }
 

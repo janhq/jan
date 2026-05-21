@@ -1,6 +1,6 @@
 import { IconSettings } from '@tabler/icons-react'
 import debounce from 'lodash.debounce'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   Sheet,
@@ -55,6 +55,36 @@ export function ModelSetting({
           .then((models) => setActiveModels(models || []))
       })
   }, 500)
+
+  // Coalesce rapid sidebar edits into a single yaml-write + router-restart.
+  // Each call merges into a per-model accumulator; the debounced flush writes
+  // and clears it. Avoids a flurry of slider drags rewriting model.yml + bouncing
+  // the router on every keystroke.
+  const pendingPatchesRef = useRef<
+    Map<string, Record<string, string | number | boolean | null | undefined>>
+  >(new Map())
+  const flushPendingPatches = useMemo(
+    () =>
+      debounce(() => {
+        const patches = pendingPatchesRef.current
+        pendingPatchesRef.current = new Map()
+        for (const [modelId, patch] of patches) {
+          serviceHub
+            .models()
+            .updateModelSettings(modelId, patch)
+            .catch((e) => console.error('Failed to persist model settings', e))
+        }
+      }, 600),
+    [serviceHub]
+  )
+  const debouncedPersistModelSettings = (
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ) => {
+    const existing = pendingPatchesRef.current.get(modelId) ?? {}
+    pendingPatchesRef.current.set(modelId, { ...existing, ...patch })
+    flushPendingPatches()
+  }
 
   const handleSettingChange = (
     key: string,
@@ -112,6 +142,14 @@ export function ModelSetting({
               debouncedStopModel(model.id)
             }
           })
+      }
+
+      // In router mode the router reads args from `router.preset.ini` (built
+      // from `model.yml`) — Zustand alone has no effect on inference. Persist
+      // mappable keys to disk + restart the router so the next load uses the
+      // new args. Non-mappable keys are filtered inside the extension.
+      if (provider.provider === 'llamacpp') {
+        debouncedPersistModelSettings(model.id, { [key]: value })
       }
     }
   }

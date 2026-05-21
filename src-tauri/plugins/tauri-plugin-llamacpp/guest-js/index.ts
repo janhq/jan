@@ -86,8 +86,6 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     cache_type_k: asString(config.cache_type_k),
     cache_type_v: asString(config.cache_type_v),
 
-    defrag_thold: asNumber(config.defrag_thold, 0.0),
-
     rope_scaling: asString(config.rope_scaling),
     rope_scale: asNumber(config.rope_scale, 1.0),
     rope_freq_base: asNumber(config.rope_freq_base, 0.0),
