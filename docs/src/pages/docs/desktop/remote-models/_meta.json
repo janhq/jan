@@ -20,6 +20,9 @@
   "openrouter": {
     "title": "OpenRouter"
   },
+  "nearai": {
+    "title": "NEAR AI Cloud"
+  },
   "huggingface": {
     "title": "Hugging Face"
   }

@@ -38,11 +38,21 @@ function mkGeminiProvider(extra: Record<string, unknown> = {}) {
   } as any
 }
 
+function mkNearAIProvider(extra: Record<string, unknown> = {}) {
+  return {
+    provider: 'nearai',
+    base_url: 'https://cloud-api.near.ai/v1',
+    api_key: 'near-test',
+    ...extra,
+  } as any
+}
+
 describe('supportsRemoteCatalog', () => {
-  it('supports openai, anthropic and gemini', () => {
+  it('supports openai, anthropic, gemini and nearai', () => {
     expect(supportsRemoteCatalog('openai')).toBe(true)
     expect(supportsRemoteCatalog('anthropic')).toBe(true)
     expect(supportsRemoteCatalog('gemini')).toBe(true)
+    expect(supportsRemoteCatalog('nearai')).toBe(true)
     expect(supportsRemoteCatalog('groq')).toBe(false)
     expect(supportsRemoteCatalog('mistral')).toBe(false)
   })
@@ -170,6 +180,146 @@ describe('fetchTopRemoteModels openai', () => {
     await expect(
       fetchTopRemoteModels(mkOpenAIProvider(), fetchImpl)
     ).rejects.toThrow(/Failed to fetch models from openai/)
+  })
+})
+
+describe('fetchTopRemoteModels nearai', () => {
+  it('uses the NEAR model catalog and filters non-chat utility models', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        models: [
+          {
+            modelId: 'anthropic/claude-haiku-4-5',
+            metadata: {
+              verifiable: false,
+              attestationSupported: false,
+              architecture: {
+                inputModalities: ['text', 'image'],
+                outputModalities: ['text'],
+              },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3.6-35B-A3B-FP8',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['text'],
+                outputModalities: ['text'],
+              },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3-VL-30B-A3B-Instruct',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['text', 'image'],
+                outputModalities: ['text'],
+              },
+            },
+          },
+          {
+            modelId: 'black-forest-labs/FLUX.2-klein-4B',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['text'],
+                outputModalities: ['image'],
+              },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3-Embedding-0.6B',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['text'],
+                outputModalities: ['embedding'],
+              },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3-Reranker-0.6B',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['text'],
+                outputModalities: ['text'],
+              },
+            },
+          },
+          {
+            modelId: 'openai/privacy-filter',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['text'],
+                outputModalities: ['text'],
+              },
+            },
+          },
+          {
+            modelId: 'openai/whisper-large-v3',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: ['audio'],
+                outputModalities: ['text'],
+              },
+            },
+          },
+          {
+            modelId: 'missing-modalities',
+            metadata: {
+              verifiable: true,
+              attestationSupported: true,
+              architecture: {
+                inputModalities: [],
+                outputModalities: [],
+              },
+            },
+          },
+        ],
+      })
+    )
+
+    const result = await fetchTopRemoteModels(mkNearAIProvider(), fetchImpl)
+    const ids = result.map((m) => m.id)
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://cloud-api.near.ai/v1/model/list',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer near-test',
+        }),
+      })
+    )
+    expect(ids).toContain('Qwen/Qwen3.6-35B-A3B-FP8')
+    expect(ids).toContain('Qwen/Qwen3-VL-30B-A3B-Instruct')
+    expect(ids).toContain('anthropic/claude-haiku-4-5')
+    expect(ids).not.toContain('black-forest-labs/FLUX.2-klein-4B')
+    expect(ids).not.toContain('Qwen/Qwen3-Embedding-0.6B')
+    expect(ids).not.toContain('Qwen/Qwen3-Reranker-0.6B')
+    expect(ids).not.toContain('openai/privacy-filter')
+    expect(ids).not.toContain('openai/whisper-large-v3')
+    expect(ids).not.toContain('missing-modalities')
+
+    expect(
+      result.find((m) => m.id === 'Qwen/Qwen3-VL-30B-A3B-Instruct')
+        ?.capabilities
+    ).toEqual(['completion', 'tools', 'vision'])
+    expect(
+      result.find((m) => m.id === 'Qwen/Qwen3.6-35B-A3B-FP8')?.capabilities
+    ).toEqual(['completion', 'tools'])
   })
 })
 

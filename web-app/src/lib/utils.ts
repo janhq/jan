@@ -121,6 +121,8 @@ export const getProviderTitle = (provider: string) => {
       return 'xAI'
     case 'minimax':
       return 'MiniMax'
+    case 'nearai':
+      return 'NEAR AI'
     case 'nvidia':
       return 'NVIDIA NIM'
     default:

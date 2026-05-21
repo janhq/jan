@@ -451,6 +451,40 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://cloud-api.near.ai/v1',
+    explore_models_url: 'https://cloud-api.near.ai/v1/model/list',
+    provider: 'nearai',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The NEAR AI Cloud API uses API keys for authentication. Visit [NEAR AI Cloud](https://cloud.near.ai) to create the API key you'll use for TEE-backed private inference.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The NEAR AI Cloud OpenAI-compatible endpoint to use. See the [NEAR AI Cloud model catalog](https://cloud-api.near.ai/v1/model/list) for available model IDs.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://cloud-api.near.ai/v1',
+          value: 'https://cloud-api.near.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://integrate.api.nvidia.com/v1',
     explore_models_url: 'https://build.nvidia.com/models',
     provider: 'nvidia',

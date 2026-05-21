@@ -161,6 +161,30 @@ describe('ModelFactory', () => {
       expect(model.type).toBe('openai-compatible')
     })
 
+    it('should create an OpenAI-compatible model for NEAR AI provider', async () => {
+      const provider: ProviderObject = {
+        provider: 'nearai',
+        api_key: 'test-api-key',
+        base_url: 'https://cloud-api.near.ai/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      const model = await ModelFactory.createModel(
+        'Qwen/Qwen3.6-35B-A3B-FP8',
+        provider
+      )
+      expect(model).toBeDefined()
+      expect(model.type).toBe('openai-compatible')
+      expect(mockedCreateOpenAICompatible).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          name: 'nearai',
+          baseURL: 'https://cloud-api.near.ai/v1',
+        })
+      )
+    })
+
     it('should handle custom headers for OpenAI-compatible providers', async () => {
       const provider: ProviderObject = {
         provider: 'custom',
