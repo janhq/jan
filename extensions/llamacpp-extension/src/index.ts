@@ -1760,6 +1760,14 @@ export default class llamacpp_extension extends AIEngine {
         savePath: newModelConfigPath,
       })
     )
+
+    // The router's preset still references the old model id until we
+    // regenerate; without this a `POST /models/load <new-id>` would 404.
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
+    }
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
