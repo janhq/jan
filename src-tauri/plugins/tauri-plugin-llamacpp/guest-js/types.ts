@@ -64,7 +64,6 @@ export type LlamacppConfig = {
   no_kv_offload: boolean
   cache_type_k: string
   cache_type_v: string
-  defrag_thold: number
   rope_scaling: string
   rope_scale: number
   rope_freq_base: number

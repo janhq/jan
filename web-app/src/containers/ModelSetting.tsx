@@ -1,6 +1,6 @@
 import { IconSettings } from '@tabler/icons-react'
 import debounce from 'lodash.debounce'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   Sheet,
@@ -42,19 +42,95 @@ export function ModelSetting({
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
-  // Create a debounced version of stopModel that waits 500ms after the last call
-  const debouncedStopModel = debounce((modelId: string) => {
-    serviceHub
-      .models()
-      .stopModel(modelId)
-      .then(() => {
-        // Refresh active models after stopping
+  // Debounced stopModel — memoized so the timer survives across renders.
+  // Without useMemo a fresh debounce is created every keystroke and the
+  // cleanup effect below cancels the previous timer before it can fire.
+  const debouncedStopModel = useMemo(
+    () =>
+      debounce((modelId: string) => {
         serviceHub
           .models()
-          .getActiveModels()
-          .then((models) => setActiveModels(models || []))
-      })
-  }, 500)
+          .stopModel(modelId)
+          .then(() => {
+            serviceHub
+              .models()
+              .getActiveModels()
+              .then((models) => setActiveModels(models || []))
+          })
+      }, 500),
+    [serviceHub, setActiveModels]
+  )
+
+  // Coalesce rapid sidebar edits into a single yaml-write + router-restart.
+  // Each call merges into a per-model accumulator; the debounced flush writes
+  // and clears it. Avoids a flurry of slider drags rewriting model.yml + bouncing
+  // the router on every keystroke.
+  const pendingPatchesRef = useRef<
+    Map<string, Record<string, string | number | boolean | null | undefined>>
+  >(new Map())
+  const rollbackSettingsRef = useRef<Map<string, Model['settings'] | undefined>>(
+    new Map()
+  )
+  const flushPendingPatches = useMemo(
+    () =>
+      debounce(() => {
+        const patches = pendingPatchesRef.current
+        pendingPatchesRef.current = new Map()
+        for (const [modelId, patch] of patches) {
+          serviceHub
+            .models()
+            .updateModelSettings(modelId, patch)
+            .then(() => {
+              rollbackSettingsRef.current.delete(modelId)
+            })
+            .catch((e) => {
+              const previousSettings = rollbackSettingsRef.current.get(modelId)
+              rollbackSettingsRef.current.delete(modelId)
+              const latestProvider = useModelProvider
+                .getState()
+                .getProviderByName(provider.provider)
+              if (latestProvider) {
+                const modelIndex = latestProvider.models.findIndex(
+                  (m) => m.id === modelId
+                )
+                if (modelIndex !== -1) {
+                  const revertedModels = [...latestProvider.models]
+                  revertedModels[modelIndex] = {
+                    ...revertedModels[modelIndex],
+                    settings: previousSettings,
+                  } as Model
+                  useModelProvider.getState().updateProvider(provider.provider, {
+                    models: revertedModels,
+                  })
+                }
+              }
+              console.error('Failed to persist model settings', e)
+            })
+        }
+      }, 1500),
+    [provider.provider, serviceHub]
+  )
+  const debouncedPersistModelSettings = (
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>,
+    previousSettings: Model['settings'] | undefined
+  ) => {
+    if (!rollbackSettingsRef.current.has(modelId)) {
+      rollbackSettingsRef.current.set(modelId, previousSettings)
+    }
+    const existing = pendingPatchesRef.current.get(modelId) ?? {}
+    pendingPatchesRef.current.set(modelId, { ...existing, ...patch })
+    flushPendingPatches()
+  }
+
+  useEffect(() => {
+    return () => {
+      // Flush — not cancel — so a pending ctx_len/ngl edit still gets
+      // written to model.yml and the router restarted after the sheet closes.
+      flushPendingPatches.flush()
+      debouncedStopModel.flush()
+    }
+  }, [debouncedStopModel, flushPendingPatches])
 
   const handleSettingChange = (
     key: string,
@@ -112,6 +188,14 @@ export function ModelSetting({
               debouncedStopModel(model.id)
             }
           })
+      }
+
+      // In router mode the router reads args from `router.preset.ini` (built
+      // from `model.yml`) — Zustand alone has no effect on inference. Persist
+      // mappable keys to disk + restart the router so the next load uses the
+      // new args. Non-mappable keys are filtered inside the extension.
+      if (provider.provider === 'llamacpp') {
+        debouncedPersistModelSettings(model.id, { [key]: value }, model.settings)
       }
     }
   }
@@ -188,15 +272,11 @@ export function ModelSetting({
           {(() => {
             return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
-            if (entry[0] === 'auto_increase_ctx_len') return acc
             if (entry[0] === 'reasoning') return acc
+            // Removed in v15 migration; defend against any pre-migration
+            // localStorage state that still carries the orphan entry.
+            if (entry[0] === 'auto_increase_ctx_len') return acc
             if (fitEnabled && entry[0] === 'ctx_len') return acc
-            if (entry[0] === 'ctx_len') {
-              const autoIncrease = Object.entries(model.settings || {}).find(
-                ([k]) => k === 'auto_increase_ctx_len'
-              )
-              if (autoIncrease) acc.push(autoIncrease)
-            }
             acc.push(entry)
             return acc
           }, [])

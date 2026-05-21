@@ -79,6 +79,42 @@ const SCHEMA_PRIMITIVE_TYPES = new Set([
 const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
 const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
 
+// Per-model sidebar keys whose values should be forwarded into each chat-
+// completion request body as defaults. In router mode these can't be CLI args
+// — the router is one process serving every model — so they have to ride
+// along on each call. Assistant `parameters` override these in the merge.
+const MODEL_SAMPLING_SETTING_KEYS = [
+  'temperature',
+  'top_k',
+  'top_p',
+  'min_p',
+  'repeat_last_n',
+  'repeat_penalty',
+  'presence_penalty',
+  'frequency_penalty',
+] as const
+
+function extractModelSamplingDefaults(
+  model: Model | null | undefined
+): Record<string, unknown> {
+  if (!model?.settings) return {}
+  const out: Record<string, unknown> = {}
+  for (const key of MODEL_SAMPLING_SETTING_KEYS) {
+    const raw = model.settings[key]?.controller_props?.value
+    if (raw === undefined || raw === null || raw === '') continue
+    // Sidebar inputs are string-typed even when controller_props.type is
+    // 'number'; coerce so the request body matches the OpenAI schema.
+    if (typeof raw === 'string') {
+      const n = Number(raw)
+      if (!Number.isFinite(n)) continue
+      out[key] = n
+    } else {
+      out[key] = raw
+    }
+  }
+  return out
+}
+
 /**
  * Coerce a schema-node slot into a valid sub-schema. Some tool generators
  * emit shorthand like `{ "properties": { "foo": "string" } }` instead of
@@ -821,12 +857,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       }
 
+      // Per-model sidebar sampling defaults flow through as request-body
+      // overrides (router mode can't bake them into CLI args). Assistant
+      // params still win — they're the explicit per-conversation override.
+      const modelSamplingDefaults = extractModelSamplingDefaults(selectedModel)
+
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
       this.model = await ModelFactory.createModel(
         modelId,
         updatedProvider ?? provider,
-        { ...(inferenceParams ?? {}), ...reasoningParams }
+        {
+          ...modelSamplingDefaults,
+          ...(inferenceParams ?? {}),
+          ...reasoningParams,
+        }
       )
       useAppState.getState().updateLoadingModel(false)
       useAppState.getState().updateThreadLoadingModel(threadId, false)
