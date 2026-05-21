@@ -42,19 +42,24 @@ export function ModelSetting({
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
-  // Create a debounced version of stopModel that waits 500ms after the last call
-  const debouncedStopModel = debounce((modelId: string) => {
-    serviceHub
-      .models()
-      .stopModel(modelId)
-      .then(() => {
-        // Refresh active models after stopping
+  // Debounced stopModel — memoized so the timer survives across renders.
+  // Without useMemo a fresh debounce is created every keystroke and the
+  // cleanup effect below cancels the previous timer before it can fire.
+  const debouncedStopModel = useMemo(
+    () =>
+      debounce((modelId: string) => {
         serviceHub
           .models()
-          .getActiveModels()
-          .then((models) => setActiveModels(models || []))
-      })
-  }, 500)
+          .stopModel(modelId)
+          .then(() => {
+            serviceHub
+              .models()
+              .getActiveModels()
+              .then((models) => setActiveModels(models || []))
+          })
+      }, 500),
+    [serviceHub, setActiveModels]
+  )
 
   // Coalesce rapid sidebar edits into a single yaml-write + router-restart.
   // Each call merges into a per-model accumulator; the debounced flush writes
@@ -102,7 +107,7 @@ export function ModelSetting({
               console.error('Failed to persist model settings', e)
             })
         }
-      }, 600),
+      }, 1500),
     [provider.provider, serviceHub]
   )
   const debouncedPersistModelSettings = (
@@ -120,8 +125,10 @@ export function ModelSetting({
 
   useEffect(() => {
     return () => {
-      flushPendingPatches.cancel()
-      debouncedStopModel.cancel()
+      // Flush — not cancel — so a pending ctx_len/ngl edit still gets
+      // written to model.yml and the router restarted after the sheet closes.
+      flushPendingPatches.flush()
+      debouncedStopModel.flush()
     }
   }, [debouncedStopModel, flushPendingPatches])
 
