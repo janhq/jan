@@ -165,6 +165,14 @@ function ThreadDetail() {
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
     null
   )
+  // Holds the partial assistant output captured when the model stops with
+  // `finishReason === 'length'`. Consumed by `handleContextSizeIncrease` so
+  // the manual "Increase Context Size" button resumes from where the stream
+  // stopped rather than regenerating from scratch.
+  const pendingContinuationRef = useRef<{
+    message: UIMessage
+    text: string
+  } | null>(null)
 
   // Use the AI SDK chat hook
   const {
@@ -203,23 +211,17 @@ function ThreadDetail() {
         const isContextLimit = totalTokens >= ctxLen * 0.9
 
         if (isContextLimit) {
-          const autoIncrease =
-            selectedModelState?.settings?.auto_increase_ctx_len
-              ?.controller_props?.value ?? true
-          if (autoIncrease) {
-            const partialText = message.parts
-              .filter((p) => p.type === 'text')
-              .map((p) => (p as { type: 'text'; text: string }).text)
-              .join('')
-            if (partialText) {
-              setContinueFromContentRef.current?.(partialText)
-              // Keep the partial message visible while the model reloads
-              setPendingContinueMessage(message)
-            }
-            handleContextSizeIncreaseRef.current?.()
-          } else {
-            setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+          // Stash the partial so the manual "Increase Context Size" button can
+          // resume from here. Surface the standard banner with the manual
+          // button — auto-increase was removed; the user explicitly opts in.
+          const partialText = message.parts
+            .filter((p) => p.type === 'text')
+            .map((p) => (p as { type: 'text'; text: string }).text)
+            .join('')
+          if (partialText) {
+            pendingContinuationRef.current = { message, text: partialText }
           }
+          setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
         }
         return
       }
@@ -997,6 +999,16 @@ function ThreadDetail() {
       await serviceHub.models().stopModel(selectedModel.id)
     }
 
+    // Consume any pending partial captured at the `finishReason === 'length'`
+    // event so the regenerate resumes from where the stream stopped, and the
+    // "Growing the Mind…" shimmer renders while the model reloads.
+    const pending = pendingContinuationRef.current
+    pendingContinuationRef.current = null
+    if (pending) {
+      setContinueFromContentRef.current?.(pending.text)
+      setPendingContinueMessage(pending.message)
+    }
+
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
@@ -1025,6 +1037,11 @@ function ThreadDetail() {
   useEffect(() => {
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
+    }
+    if (status === 'streaming' && pendingContinuationRef.current) {
+      // The new turn is now flowing; drop the saved partial so it can't be
+      // consumed by a later, unrelated "Increase Context Size" click.
+      pendingContinuationRef.current = null
     }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
