@@ -169,7 +169,7 @@
     "proxySsl": "SSL Proxy",
     "proxySslDesc": "Convalida il certificato SSL durante la connessione al proxy.",
     "proxyHostSsl": "SSL Host Proxy",
-    "proxyHostSslDesc": "Convalida il certificato SSL del proxy"
+    "proxyHostSslDesc": "Convalida il certificato SSL del proxy",
     "hostSsl": "SSL Host",
     "hostSslDesc": "Convalida i certificati SSL degli host di destinazione."
   },
