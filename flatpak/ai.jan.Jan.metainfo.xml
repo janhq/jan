@@ -104,6 +104,11 @@
   </keywords>
 
   <releases>
+    <release version="0.8.0" date="2026-05-22">
+      <description>
+        <p>Multi-Token Prediction, a unified llama.cpp router process, inline MCP tool approval with citation cards, model fit labels, and audio attachments</p>
+      </description>
+    </release>
     <release version="0.7.9" date="2026-03-23">
       <description>
         <p>Smarter context management, fixed CLI on Windows, and safer data location handling</p>
