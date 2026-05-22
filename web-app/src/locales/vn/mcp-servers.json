@@ -59,5 +59,14 @@
     "description": "Cấu hình cách Atomic Bot quản lý và thử lại các máy chủ MCP.",
     "toolCallTimeout": "Thời gian chờ lệnh (giây)",
     "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
+  },
+  "tabs": {
+    "servers": "Servers",
+    "logs": "Logs"
+  },
+  "logs": {
+    "allServers": "All servers",
+    "serverFilterLabel": "Filter by server",
+    "noLogs": "No MCP logs yet"
   }
 }

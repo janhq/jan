@@ -59,5 +59,14 @@
     "description": "Настройте, как Atomic Bot управляет и перезапускает серверы MCP.",
     "toolCallTimeout": "Время ожидания вызова инструмента (секунды)",
     "toolCallTimeoutDesc": "Максимальное время ожидания ответа от инструмента MCP."
+  },
+  "tabs": {
+    "servers": "Серверы",
+    "logs": "Логи"
+  },
+  "logs": {
+    "allServers": "Все серверы",
+    "serverFilterLabel": "Фильтр по серверу",
+    "noLogs": "Логи MCP отсутствуют"
   }
 }

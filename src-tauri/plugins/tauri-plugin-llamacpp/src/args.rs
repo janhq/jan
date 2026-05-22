@@ -300,9 +300,15 @@ impl ArgumentBuilder {
             return;
         }
 
-        let supports_string_arg = self
-            .parse_build_number()
-            .is_some_and(|b| b >= FLASH_ATTN_STRING_ARG_MIN_BUILD);
+        // Turboquant fork is rebased on recent ggml-org/llama.cpp (>> b6325)
+        // but its version string is `turboquant-<arch>-<sha>`, which has no
+        // build number. Treat it as string-arg-capable unconditionally so we
+        // don't fall back to the legacy boolean form (which the modern parser
+        // misreads, eating the next argv entry as the value).
+        let supports_string_arg = self.is_turboquant()
+            || self
+                .parse_build_number()
+                .is_some_and(|b| b >= FLASH_ATTN_STRING_ARG_MIN_BUILD);
 
         if supports_string_arg {
             // b6325+: --flash-attn accepts auto|on|off as a value
@@ -503,7 +509,7 @@ mod tests {
             device: String::new(),
             split_mode: "layer".to_string(),
             main_gpu: 0,
-            flash_attn: "on".to_string(),
+            flash_attn: "auto".to_string(),
             cont_batching: false,
             no_mmap: false,
             mlock: false,
@@ -738,6 +744,47 @@ mod tests {
         let args = builder.build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--flash-attn");
+    }
+
+    // Regression: turboquant builds carry a non-`b<N>` version string
+    // (`turboquant-<arch>-<sha>`) so `parse_build_number` returns None.
+    // Before the fix, all three flash_attn values fell into the legacy
+    // boolean branch — `flash_attn=on` produced a bare `--flash-attn`
+    // which modern llama-server misreads as consuming the next argv.
+    #[test]
+    fn test_turboquant_flash_attention_on_uses_string_form() {
+        let mut config = default_config();
+        config.version_backend = "turboquant-macos-arm64-0a635dc/macos-arm64".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "on");
+    }
+
+    #[test]
+    fn test_turboquant_flash_attention_off_uses_string_form() {
+        let mut config = default_config();
+        config.version_backend = "turboquant-macos-arm64-0a635dc/macos-arm64".to_string();
+        config.flash_attn = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "off");
+    }
+
+    #[test]
+    fn test_turboquant_flash_attention_auto_uses_string_form() {
+        let mut config = default_config();
+        config.version_backend = "turboquant-macos-arm64-0a635dc/macos-arm64".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "auto");
     }
 
     #[test]

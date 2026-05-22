@@ -226,7 +226,17 @@ pub async fn call_tool(
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
     let timeout_duration = tool_call_timeout(&state).await;
-    // Set up cancellation if token is provided
+    match server_name.as_deref() {
+        Some(server) => log::info!(
+            "MCP server {server}: calling tool {tool_name} (timeout {}s)",
+            timeout_duration.as_secs()
+        ),
+        None => log::info!(
+            "MCP: calling tool {tool_name} (server unspecified, timeout {}s)",
+            timeout_duration.as_secs()
+        ),
+    }
+
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 
     if let Some(token) = &cancellation_token {
@@ -246,6 +256,7 @@ pub async fn call_tool(
 
     if servers_to_check.is_empty() {
         if let Some(server) = server_name {
+            log::error!("MCP server {server} not connected, cannot call tool {tool_name}");
             return Err(format!("Server '{server}' not found"));
         }
     }
@@ -254,16 +265,18 @@ pub async fn call_tool(
     for (srv_name, service) in servers_to_check.iter() {
         let tools = match service.list_all_tools().await {
             Ok(tools) => tools,
-            Err(_) => continue, // Skip this server if we can't list tools
+            Err(e) => {
+                log::warn!("MCP server {srv_name}: failed to list tools while resolving {tool_name}: {e}");
+                continue;
+            }
         };
 
         if !tools.iter().any(|t| t.name == tool_name) {
-            continue; // Tool not found in this server, try next
+            continue;
         }
 
-        println!("Found tool {tool_name} in server {srv_name}");
+        log::info!("MCP server {srv_name}: dispatching tool {tool_name}");
 
-        // Call the tool with timeout and cancellation support
         let tool_call = service.call_tool(CallToolRequestParam {
             name: tool_name.clone().into(),
             arguments,
@@ -295,15 +308,24 @@ pub async fn call_tool(
             }
         };
 
-        // Clean up cancellation token
         if let Some(token) = &cancellation_token {
             let mut cancellations = state.tool_call_cancellations.lock().await;
             cancellations.remove(token);
         }
 
+        match &result {
+            Ok(_) => {
+                log::info!("MCP server {srv_name}: tool {tool_name} completed");
+            }
+            Err(e) => {
+                log::error!("MCP server {srv_name}: tool {tool_name} failed: {e}");
+            }
+        }
+
         return result;
     }
 
+    log::warn!("MCP: tool {tool_name} not found on any connected server");
     Err(format!("Tool {tool_name} not found"))
 }
 
@@ -323,11 +345,11 @@ pub async fn cancel_tool_call(
     let mut cancellations = state.tool_call_cancellations.lock().await;
 
     if let Some(cancel_tx) = cancellations.remove(&cancellation_token) {
-        // Send cancellation signal - ignore if receiver is already dropped
         let _ = cancel_tx.send(());
-        println!("Tool call with token {cancellation_token} cancelled");
+        log::info!("MCP: tool call cancelled (token {cancellation_token})");
         Ok(())
     } else {
+        log::warn!("MCP: cancellation token {cancellation_token} not found");
         Err(format!("Cancellation token {cancellation_token} not found"))
     }
 }

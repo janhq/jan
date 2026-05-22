@@ -31,6 +31,7 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { MCPLogViewer } from '@/components/MCPLogViewer'
 
 //! Совпадает с useJanBrowserExtension; скрыто вместе с кнопкой Browse в чате
 const JAN_BROWSER_MCP_SERVER_KEY = 'Jan Browser MCP'
@@ -137,6 +138,11 @@ function MCPServersDesktop() {
     [key: string]: boolean
   }>({})
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
+
+  const [activeTab, setActiveTab] = useState<'servers' | 'logs'>('servers')
+  const [selectedLogServer, setSelectedLogServer] = useState<string | undefined>(
+    undefined
+  )
 
   const visibleMcpServerEntries = useMemo(
     () =>
@@ -383,20 +389,49 @@ function MCPServersDesktop() {
             <span className="font-medium text-base font-studio">
               {t('common:settings')}
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleOpenDialog()}
-              className="relative z-50"
-            >
-              <IconPlus size={18} className="text-muted-foreground" />
-              {t('mcp-servers:addServer')}
-            </Button>
+            {activeTab === 'servers' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenDialog()}
+                className="relative z-50"
+              >
+                <IconPlus size={18} className="text-muted-foreground" />
+                {t('mcp-servers:addServer')}
+              </Button>
+            )}
           </div>
         </HeaderPage>
         <div className="flex h-[calc(100%-60px)]">
           <SettingsMenu />
-          <div className="p-4 pt-0 w-full overflow-y-auto">
+          <div className="p-4 pt-0 w-full overflow-y-auto flex flex-col">
+            <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg mb-4 mt-4 sticky top-0 z-10">
+              <button
+                type="button"
+                onClick={() => setActiveTab('servers')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
+                  activeTab === 'servers'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {t('mcp-servers:tabs.servers')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('logs')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
+                  activeTab === 'logs'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {t('mcp-servers:tabs.logs')}
+              </button>
+            </div>
+            {activeTab === 'servers' && (
             <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
               <Card
                 header={
@@ -626,6 +661,41 @@ function MCPServersDesktop() {
                 ))
               )}
             </div>
+            )}
+            {activeTab === 'logs' && (
+              <div className="flex flex-col gap-3 w-full flex-1 min-h-0">
+                <Card>
+                  <CardItem
+                    title={t('mcp-servers:logs.serverFilterLabel')}
+                    actions={
+                      <select
+                        value={selectedLogServer ?? ''}
+                        onChange={(event) =>
+                          setSelectedLogServer(
+                            event.target.value === ''
+                              ? undefined
+                              : event.target.value
+                          )
+                        }
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="">
+                          {t('mcp-servers:logs.allServers')}
+                        </option>
+                        {visibleMcpServerEntries.map(([key]) => (
+                          <option key={key} value={key}>
+                            {key}
+                          </option>
+                        ))}
+                      </select>
+                    }
+                  />
+                </Card>
+                <div className="flex-1 min-h-[300px]">
+                  <MCPLogViewer serverName={selectedLogServer} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

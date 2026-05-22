@@ -59,5 +59,14 @@
     "description": "Configura cómo Atomic Bot administra y reintenta los servidores MCP.",
     "toolCallTimeout": "Tiempo de espera de llamada a herramienta (segundos)",
     "toolCallTimeoutDesc": "Tiempo máximo de espera para una respuesta de herramienta MCP antes de expirar."
+  },
+  "tabs": {
+    "servers": "Servers",
+    "logs": "Logs"
+  },
+  "logs": {
+    "allServers": "All servers",
+    "serverFilterLabel": "Filter by server",
+    "noLogs": "No MCP logs yet"
   }
 }

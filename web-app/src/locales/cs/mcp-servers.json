@@ -59,5 +59,14 @@
     "description": "Nakonfigurujte, jak Atomic Bot spravuje a opakuje pokusy se servery MCP.",
     "toolCallTimeout": "Časový limit volání nástroje (sekundy)",
     "toolCallTimeoutDesc": "Maximální doba čekání na odpověď nástroje MCP před vypršením časového limitu."
+  },
+  "tabs": {
+    "servers": "Servers",
+    "logs": "Logs"
+  },
+  "logs": {
+    "allServers": "All servers",
+    "serverFilterLabel": "Filter by server",
+    "noLogs": "No MCP logs yet"
   }
 }

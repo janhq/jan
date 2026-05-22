@@ -59,5 +59,14 @@
     "description": "配置 Atomic Bot 如何管理和重试 MCP 服务器。",
     "toolCallTimeout": "工具调用超时时间（秒）",
     "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。"
+  },
+  "tabs": {
+    "servers": "Servers",
+    "logs": "Logs"
+  },
+  "logs": {
+    "allServers": "All servers",
+    "serverFilterLabel": "Filter by server",
+    "noLogs": "No MCP logs yet"
   }
 }

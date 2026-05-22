@@ -59,5 +59,14 @@
     "description": "Konfiguriere, wie Atomic Bot MCP-Server verwaltet und erneut versucht.",
     "toolCallTimeout": "Zeitlimit für Tool-Aufruf (Sekunden)",
     "toolCallTimeoutDesc": "Maximale Wartezeit auf eine Antwort eines MCP-Tools, bevor abgebrochen wird."
+  },
+  "tabs": {
+    "servers": "Servers",
+    "logs": "Logs"
+  },
+  "logs": {
+    "allServers": "All servers",
+    "serverFilterLabel": "Filter by server",
+    "noLogs": "No MCP logs yet"
   }
 }
