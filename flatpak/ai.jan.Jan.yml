@@ -84,6 +84,18 @@ modules:
       - type: patch
         path: patches/fix-cstdint.patch
 
+  - name: nccl
+    buildsystem: simple
+    sources:
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/redist/nccl/v2.27.7/nccl_2.27.7-1+cuda12.4_x86_64.txz
+        sha256: 944e1ba3a5ca9bbd449bbaed9796626122670e58dea3031837a3910a90ffd5ee
+        only-arches: [x86_64]
+    build-commands:
+      - install -Dm755 nccl_2.27.7-1+cuda12.4_x86_64/lib/libnccl.so /app/lib/libnccl.so
+      - install -Dm755 nccl_2.27.7-1+cuda12.4_x86_64/lib/libnccl.so.2 /app/lib/libnccl.so.2
+      - install -Dm755 nccl_2.27.7-1+cuda12.4_x86_64/lib/libnccl.so.2.27.7 /app/lib/libnccl.so.2.27.7
+
   - name: jan-binary
     buildsystem: simple
     sources:
