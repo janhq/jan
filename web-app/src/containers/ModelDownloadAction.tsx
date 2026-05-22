@@ -12,6 +12,7 @@ import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 
 export const ModelDownloadAction = ({
   variant,
@@ -29,6 +30,7 @@ export const ModelDownloadAction = ({
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
+    removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
   } = useDownloadStore()
@@ -111,20 +113,32 @@ export const ModelDownloadAction = ({
   const handleDownloadModel = useCallback(async () => {
     clearResumableDownload(variant.model_id)
     addLocalDownloadingModel(variant.model_id)
-    serviceHub
-      .models()
-      .pullModelWithMetadata(
-        variant.model_id,
-        variant.path,
-        (
-          model.mmproj_models?.find(
-            (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-          ) || model.mmproj_models?.[0]
-        )?.path,
-        huggingfaceToken,
-        true,
-        resumableDownloads.has(variant.model_id)
-      )
+    try {
+      await serviceHub
+        .models()
+        .pullModelWithMetadata(
+          variant.model_id,
+          variant.path,
+          (
+            model.mmproj_models?.find(
+              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+            ) || model.mmproj_models?.[0]
+          )?.path,
+          huggingfaceToken,
+          true,
+          resumableDownloads.has(variant.model_id)
+        )
+    } catch (error) {
+      // If pull rejects before any DownloadEvent fires, the global listener in
+      // DownloadManegement.tsx never clears localDownloadingModels and the row
+      // is stuck in a permanent "downloading" state. Clear it ourselves.
+      console.error('[ModelDownloadAction] pullModelWithMetadata failed:', error)
+      removeLocalDownloadingModel(variant.model_id)
+      markResumableDownload(variant.model_id)
+      toast.error(t('hub:downloadFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }, [
     serviceHub,
     variant.path,
@@ -132,8 +146,11 @@ export const ModelDownloadAction = ({
     huggingfaceToken,
     model.mmproj_models,
     addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+    markResumableDownload,
     clearResumableDownload,
     resumableDownloads,
+    t,
   ])
 
   const handleCancelDownload = useCallback(() => {

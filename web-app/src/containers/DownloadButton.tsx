@@ -12,6 +12,7 @@ import { CatalogModel } from '@/services/models/types'
 import { IconX } from '@tabler/icons-react'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { useShallow } from 'zustand/shallow'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
@@ -29,6 +30,7 @@ export function DownloadButtonPlaceholder({
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
+    removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
   } = useDownloadStore(
@@ -37,6 +39,7 @@ export function DownloadButtonPlaceholder({
       localDownloadingModels: state.localDownloadingModels,
       resumableDownloads: state.resumableDownloads,
       addLocalDownloadingModel: state.addLocalDownloadingModel,
+      removeLocalDownloadingModel: state.removeLocalDownloadingModel,
       markResumableDownload: state.markResumableDownload,
       clearResumableDownload: state.clearResumableDownload,
     }))
@@ -127,16 +130,28 @@ export function DownloadButtonPlaceholder({
         (e) => e.model_id.toLowerCase() === 'mmproj-f16'
       ) || model.mmproj_models?.[0]
     )?.path
-    serviceHub
-      .models()
-      .pullModelWithMetadata(
-        modelId,
-        modelUrl,
-        mmprojPath,
-        huggingfaceToken,
-        true,
-        shouldResume
-      )
+    try {
+      await serviceHub
+        .models()
+        .pullModelWithMetadata(
+          modelId,
+          modelUrl,
+          mmprojPath,
+          huggingfaceToken,
+          true,
+          shouldResume
+        )
+    } catch (error) {
+      // If pull rejects before any DownloadEvent fires, the global listener in
+      // DownloadManegement.tsx never clears localDownloadingModels and the
+      // button is stuck. Clear it ourselves.
+      console.error('[DownloadButton] pullModelWithMetadata failed:', error)
+      removeLocalDownloadingModel(modelId)
+      markResumableDownload(modelId)
+      toast.error(t('hub:downloadFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const handleCancelDownload = useCallback(() => {

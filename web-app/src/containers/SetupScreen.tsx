@@ -11,7 +11,7 @@ import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { cn, sanitizeModelId } from '@/lib/utils'
+import { cn, sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   extractModelName,
   getMlxTotalFileSize,
@@ -111,7 +111,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     clearResumableDownload,
   } = useDownloadStore()
   const serviceHub = useServiceHub()
-  const llamaProvider = getProviderByName('llamacpp')
+  // Use the platform-active llama.cpp provider id. Windows only exposes
+  // `llamacpp-upstream` after the upstream-only consolidation; macOS/Linux
+  // still default to the turboquant `llamacpp` provider.
+  const llamaProvider = getProviderByName(LOCAL_LLAMACPP_PROVIDER)
   const mlxProvider = getProviderByName('mlx')
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
@@ -127,8 +130,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }))
   )
 
-  //* id → провайдер, чтобы после import-события знать, куда навигировать (llamacpp vs mlx)
-  const trackedImportIdsRef = useRef<Map<string, 'llamacpp' | 'mlx'>>(new Map())
+  //* id → провайдер, чтобы после import-события знать, куда навигировать.
+  //* На Windows у нас только `llamacpp-upstream`; на macOS/Linux — `llamacpp`.
+  type LocalLlamacppProvider = 'llamacpp' | 'llamacpp-upstream'
+  const trackedImportIdsRef = useRef<
+    Map<string, LocalLlamacppProvider | 'mlx'>
+  >(new Map())
   const hasNavigatedRef = useRef(false)
 
   useEffect(() => {
@@ -192,7 +199,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
   const startDownload = useCallback(
     (catalog: CatalogModel, variant: ModelQuant) => {
-      trackedImportIdsRef.current.set(variant.model_id, 'llamacpp')
+      trackedImportIdsRef.current.set(
+        variant.model_id,
+        LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
+      )
       clearResumableDownload(variant.model_id)
       addLocalDownloadingModel(variant.model_id)
       serviceHub
@@ -283,7 +293,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   useEffect(() => {
     const handleImportedId = async (
       importedId: string,
-      providerName: 'llamacpp' | 'mlx'
+      providerName: LocalLlamacppProvider | 'mlx'
     ) => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true

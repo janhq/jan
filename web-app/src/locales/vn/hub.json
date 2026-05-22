@@ -13,6 +13,7 @@
   "useModel": "Sử dụng mô hình này",
   "downloadModel": "Tải xuống mô hình",
   "modelInfo": "Model information",
+  "downloadFailed": "Failed to start download",
   "tools": "Công cụ",
   "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face...",
   "recTitle": "Đề xuất",

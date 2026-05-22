@@ -13,7 +13,7 @@ import { ExtensionManager } from '@/lib/extension'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
-import { cn } from '@/lib/utils'
+import { cn, LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
 
 /// Mirrors the public `recheckOptimalBackend()` method on
 /// `extensions/llamacpp-extension/src/index.ts`. We only depend on the public
@@ -48,7 +48,12 @@ interface SetupBackendStepProps {
 }
 
 function getLlamacppExtension(): LlamacppLikeExtension | null {
-  const direct = ExtensionManager.getInstance().getByName('llamacpp-extension')
+  // The platform-active llama.cpp extension. On Windows the turboquant
+  // extension is excluded from the build, so we resolve the upstream
+  // extension instead. macOS/Linux still look up the turboquant primary.
+  const direct = ExtensionManager.getInstance().getByName(
+    LOCAL_LLAMACPP_EXTENSION_NAME
+  )
   if (direct) {
     return direct as unknown as LlamacppLikeExtension
   }

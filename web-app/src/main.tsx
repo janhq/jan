@@ -8,6 +8,7 @@ import { routeTree } from './routeTree.gen'
 import './index.css'
 import './i18n'
 import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
+import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
@@ -124,6 +125,13 @@ preventDefaultFileDrop()
 
 // Prevent user-initiated zoom across the app
 disablePageZoom()
+
+// One-time, Windows-only migration of localStorage entries that point at
+// the now-excised turboquant `llamacpp` provider (ADR 2026-05-22). Must
+// run BEFORE React mounts so the very first paint of `DataProvider` /
+// `ChatInput` / `SetupScreen` sees the rewritten `'llamacpp-upstream'`
+// value in `lastUsedModel`. No-op on macOS / Linux and on second launch.
+runWindowsLlamacppProviderMigration()
 
 // Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
 // code-block download button needs to go through Tauri's save dialog.

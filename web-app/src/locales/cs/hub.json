@@ -13,6 +13,7 @@
   "useModel": "Použít tento model",
   "downloadModel": "Stáhnout model",
   "modelInfo": "Model information",
+  "downloadFailed": "Failed to start download",
   "tools": "Nástroje",
   "searchPlaceholder": "Hledat modely na Hugging Face...",
   "recTitle": "Doporučené",

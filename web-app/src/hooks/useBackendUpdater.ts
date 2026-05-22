@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { localStorageKey } from '@/constants/localStorage'
+import { LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
+import { WINDOWS_RECHECK_PENDING_KEY } from '@/lib/windowsProviderMigration'
 
 /// Maximum time we wait for a `app:backend-hotswapped` window event after the
 /// backend archive download finishes. If the extension's `applyBackendLive()`
@@ -340,7 +342,7 @@ export const useBackendUpdater = () => {
 
       try {
         const llamacppExtension =
-          ExtensionManager.getInstance().getByName('llamacpp-extension')
+          ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
         let extensionToUse = llamacppExtension
 
         if (!llamacppExtension) {
@@ -377,18 +379,31 @@ export const useBackendUpdater = () => {
     [recommendation]
   )
 
+  /// Tracks whether the post-upgrade auto-recheck has been attempted this
+  /// session. Used as a process-local guard on top of the
+  /// `WINDOWS_RECHECK_PENDING_KEY` localStorage flag — multiple
+  /// `useBackendUpdater()` consumers must not all fire detection in
+  /// parallel even within a single tick.
+  const postUpgradeRecheckAttemptedRef = useRef(false)
+
   /// Manual trigger that re-runs hardware detection on the extension side
   /// and surfaces the recommendation dialog when a better backend exists.
   /// Returns the recommendation payload, or `null` when the device is
   /// already on the optimal backend (callers typically toast in that case).
   const recheckOptimalBackend = useCallback(async () => {
     const allExtensions = ExtensionManager.getInstance().listExtensions()
-    const llamacppExtension =
-      ExtensionManager.getInstance().getByName('llamacpp-extension')
+    // Resolve the platform-active llama.cpp extension: Windows ships only
+    // the upstream extension, macOS/Linux ship the turboquant fork as the
+    // primary. The fallback class-name scan below catches the
+    // bundled-from-tarball flow where extensions are registered under
+    // their JS class name instead of the npm package id.
+    const primary = ExtensionManager.getInstance().getByName(
+      LOCAL_LLAMACPP_EXTENSION_NAME
+    )
 
-    let extensionToUse = llamacppExtension
+    let extensionToUse = primary
 
-    if (!llamacppExtension) {
+    if (!primary) {
       const possibleExtension = allExtensions.find(
         (ext) =>
           ext.constructor.name.toLowerCase().includes('llamacpp') ||
@@ -419,6 +434,78 @@ export const useBackendUpdater = () => {
     return result ?? null
   }, [])
 
+  // Post-upgrade Windows auto-recheck.
+  //
+  // When `windowsProviderMigration` runs in `main.tsx` and detects
+  // legacy turboquant footprint on disk (zustand store or
+  // `last-used-model` referencing the old `'llamacpp'` provider), it
+  // sets the `WINDOWS_RECHECK_PENDING_KEY` flag. We consume that flag
+  // here exactly once: poll for the upstream extension to finish its
+  // `onLoad()` (extension load happens after React mount, so the
+  // extension may not be registered yet on first paint), then call
+  // `recheckOptimalBackend()`. The upstream extension's own
+  // implementation handles the rest: detect GPU, emit
+  // `onBetterBackendDetected`, persist the recommendation; the global
+  // `<BackendUpdater />` mounted in `__root.tsx` listens for that
+  // event and surfaces the standard download / hot-swap dialog.
+  //
+  // No-op outside Windows. The flag is cleared even on detection
+  // failure to avoid re-prompting on every launch.
+  useEffect(() => {
+    if (!IS_WINDOWS) return
+    if (postUpgradeRecheckAttemptedRef.current) return
+    let cancelled = false
+
+    const tryRun = async () => {
+      try {
+        if (localStorage.getItem(WINDOWS_RECHECK_PENDING_KEY) !== '1') return
+        postUpgradeRecheckAttemptedRef.current = true
+        // Claim the flag immediately so any parallel `useBackendUpdater`
+        // instance mounted in the same paint sees a cleared key and
+        // bails out on its own read. Without this, multiple components
+        // would each run detection on cold boot.
+        try {
+          localStorage.removeItem(WINDOWS_RECHECK_PENDING_KEY)
+        } catch {
+          // Non-fatal — second-best scenario is a duplicate prompt.
+        }
+
+        // Wait up to ~10s for the extension to register itself with the
+        // extension manager. The extension's `onLoad()` is async and
+        // can take a noticeable moment on a cold WebView2 boot.
+        const start = Date.now()
+        while (!cancelled && Date.now() - start < 10_000) {
+          const ext = ExtensionManager.getInstance().getByName(
+            LOCAL_LLAMACPP_EXTENSION_NAME
+          )
+          if (ext && 'recheckOptimalBackend' in ext) break
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+        if (cancelled) return
+
+        try {
+          await recheckOptimalBackend()
+        } catch (err) {
+          console.warn(
+            '[useBackendUpdater] post-upgrade recheckOptimalBackend failed:',
+            err
+          )
+        }
+      } catch (err) {
+        console.warn(
+          '[useBackendUpdater] post-upgrade auto-recheck setup failed:',
+          err
+        )
+      }
+    }
+
+    void tryRun()
+
+    return () => {
+      cancelled = true
+    }
+  }, [recheckOptimalBackend])
+
   const checkForUpdate = useCallback(
     async (resetRemindMeLater = false) => {
       try {
@@ -436,7 +523,7 @@ export const useBackendUpdater = () => {
         const allExtensions = ExtensionManager.getInstance().listExtensions()
 
         const llamacppExtension =
-          ExtensionManager.getInstance().getByName('llamacpp-extension')
+          ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
 
         let extensionToUse = llamacppExtension
 
@@ -537,7 +624,7 @@ export const useBackendUpdater = () => {
 
       const allExtensions = ExtensionManager.getInstance().listExtensions()
       const llamacppExtension =
-        ExtensionManager.getInstance().getByName('llamacpp-extension')
+        ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
 
       let extensionToUse = llamacppExtension
 
@@ -636,7 +723,7 @@ export const useBackendUpdater = () => {
     try {
       const allExtensions = ExtensionManager.getInstance().listExtensions()
       const llamacppExtension =
-        ExtensionManager.getInstance().getByName('llamacpp-extension')
+        ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
 
       let extensionToUse = llamacppExtension
 

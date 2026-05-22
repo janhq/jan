@@ -6,6 +6,16 @@ use tauri::{Manager, Runtime};
 
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
+    // Upstream provider serves two platforms with different naming streams:
+    //   - macOS keeps the existing `macos-{arm64,x64}` ggml-org tarball names.
+    //   - Windows uses ggml-org native zip names: `win-cpu-x64`,
+    //     `win-cuda-12.4-x64`, `win-cuda-13.1-x64`, `win-vulkan-x64`.
+    //
+    // This function exists mainly for legacy janhq-mirror entries that may
+    // have been persisted in user settings before the Windows switch to
+    // upstream. It maps any historical Windows backend id to its closest
+    // ggml-org equivalent so old settings still resolve to something we can
+    // actually download.
     let is_windows = old_backend.starts_with("win-");
     let is_linux = old_backend.starts_with("linux-");
     let os_prefix = if is_windows {
@@ -23,52 +33,72 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         "x64"
     };
     let is_x64 = arch_suffix == "x64";
+    let arch = if is_x64 { "x64" } else { arch_suffix };
 
-    // Handle GPU backends
+    // Windows ggml-org native names: already correct, return as-is.
+    if is_windows
+        && (old_backend == "win-cpu-x64"
+            || old_backend.contains("cuda-12.4")
+            || old_backend.contains("cuda-13.1")
+            || old_backend == "win-vulkan-x64")
+    {
+        return old_backend;
+    }
+
+    // Legacy janhq Windows CUDA → nearest ggml-org tier. Two janhq naming
+    // generations exist on disk in the wild:
+    //   - `win-cuda-{11,12,13}-common_cpus-x64` (contains `cuda-{11,12,13}`)
+    //   - `win-noavx-cuda-cu{11.7,12.0,13.0}-x64` (contains `cu{11,12,13}`)
+    // Match both, mapping each to its closest ggml-org tier.
+    if is_windows && (old_backend.contains("cuda-13") || old_backend.contains("cu13")) {
+        return format!("win-cuda-13.1-{}", arch);
+    }
+    if is_windows && (old_backend.contains("cuda-12") || old_backend.contains("cu12")) {
+        return format!("win-cuda-12.4-{}", arch);
+    }
+    // CUDA 11 is dropped on ggml-org — surface as CUDA 12.4 (the lowest tier
+    // ggml-org ships). Driver detection in `get_supported_features` will
+    // refuse to enable it on machines whose drivers are too old.
+    if is_windows && (old_backend.contains("cuda-11") || old_backend.contains("cu11")) {
+        return format!("win-cuda-12.4-{}", arch);
+    }
+    if is_windows && old_backend.contains("vulkan") {
+        return format!("win-vulkan-{}", arch);
+    }
+    if is_windows
+        && (old_backend.contains("common_cpus")
+            || old_backend.contains("avx512")
+            || old_backend.contains("avx2")
+            || old_backend.contains("avx-x64")
+            || old_backend.contains("noavx-x64"))
+    {
+        return format!("win-cpu-{}", arch);
+    }
+
+    // Linux legacy mappings — preserved verbatim for callers that still
+    // pass the upstream plugin a janhq-mirror linux name. The upstream
+    // extension is not used on Linux today, but keeping this path lets
+    // unit tests stay valid and avoids surprises if it ever is.
     if old_backend.contains("cuda-cu12.0") {
-        // Migration from e.g., 'linux-avx2-cuda-cu12.0-x64' to 'linux-cuda-12-common_cpus-x64'
-        return format!(
-            "{}cuda-12-common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
+        return format!("{}cuda-12-common_cpus-{}", os_prefix, arch);
     } else if old_backend.contains("cuda-cu11.7") {
-        // Migration from e.g., 'win-noavx-cuda-cu11.7-x64' to 'win-cuda-11-common_cpus-x64'
-        return format!(
-            "{}cuda-11-common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
+        return format!("{}cuda-11-common_cpus-{}", os_prefix, arch);
     } else if old_backend.contains("vulkan") {
-        // If it's already the new name, return it
         if old_backend.contains("vulkan-common_cpus") {
             return old_backend;
         }
-
-        // Migration from e.g., 'linux-vulkan-x64' to 'linux-vulkan-common_cpus-x64'
-        return format!(
-            "{}vulkan-common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
+        return format!("{}vulkan-common_cpus-{}", os_prefix, arch);
     }
 
-    // Handle CPU-only backends (avx, avx2, avx512, noavx)
     let is_old_cpu_backend = old_backend.contains("avx512")
         || old_backend.contains("avx2")
-        || old_backend.contains("avx-x64") // Check for 'avx' but not as part of 'avx2' or 'avx512'
+        || old_backend.contains("avx-x64")
         || old_backend.contains("noavx-x64");
 
     if is_old_cpu_backend {
-        // Migration from e.g., 'win-avx512-x64' to 'win-common_cpus-x64'
-        return format!(
-            "{}common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
+        return format!("{}common_cpus-{}", os_prefix, arch);
     }
 
-    // Return original if it doesn't match a pattern that needs migration
     old_backend
 }
 
@@ -175,6 +205,13 @@ pub struct BackendInfo {
 
 #[derive(Deserialize)]
 pub struct SystemFeatures {
+    // `cuda11` is kept in the wire format for backwards compatibility with
+    // the shared TS `SystemFeatures` shape. Upstream / ggml-org dropped
+    // CUDA 11 release artifacts (the lowest tier shipped is CUDA 12.4),
+    // so the field is accepted but never expanded into a supported backend
+    // on the upstream Windows matrix.
+    #[allow(dead_code)]
+    #[serde(default)]
     cuda11: bool,
     cuda12: bool,
     cuda13: bool,
@@ -199,22 +236,22 @@ pub fn determine_supported_backends(
     // Determine supported backends based on system type and features
     match sys_type.as_str() {
         "windows-x86_64" => {
-            supported_backends.push("win-common_cpus-x64".to_string());
-            if features.cuda11 {
-                supported_backends.push("win-cuda-11-common_cpus-x64".to_string());
-            }
+            // ggml-org/llama.cpp Windows release naming. Asset ids follow
+            // the pattern `llama-{tag}-bin-{backend}.zip` — these strings
+            // are also the on-disk backend folder names.
+            supported_backends.push("win-cpu-x64".to_string());
             if features.cuda12 {
-                supported_backends.push("win-cuda-12-common_cpus-x64".to_string());
+                supported_backends.push("win-cuda-12.4-x64".to_string());
             }
             if features.cuda13 {
-                supported_backends.push("win-cuda-13-common_cpus-x64".to_string());
+                supported_backends.push("win-cuda-13.1-x64".to_string());
             }
             if features.vulkan {
-                supported_backends.push("win-vulkan-common_cpus-x64".to_string());
+                supported_backends.push("win-vulkan-x64".to_string());
             }
         }
         "windows-aarch64" | "windows-arm64" => {
-            supported_backends.push("win-arm64".to_string());
+            supported_backends.push("win-cpu-arm64".to_string());
         }
         "linux-x86_64" | "linux-x86" => {
             supported_backends.push("linux-common_cpus-x64".to_string());
@@ -364,10 +401,17 @@ pub fn get_supported_features(
         vulkan: false,
     };
 
-    // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
+    // https://docs.nvidia.com/deploy/cuda-compatibility/
+    //
+    // Windows thresholds were bumped when the upstream provider switched
+    // from janhq mirror (CUDA 11.7 / 12.0 / 13.0) to ggml-org native
+    // releases (CUDA 12.4 / 13.1) — see ADR 2026-05-22 "Windows ships only
+    // `llamacpp-upstream`". Linux thresholds are kept aligned with the
+    // primary turboquant plugin so the upstream plugin's Linux matrix
+    // (currently unused) stays consistent.
     let (min_cuda11_driver, min_cuda12_driver, min_cuda13_driver) = match os_type.as_str() {
         "linux" => ("450.80.02", "525.60.13", "580"),
-        "windows" => ("452.39", "527.41", "580"),
+        "windows" => ("452.39", "551.61", "581"),
         _ => return Ok(features), // Other OS types don't support CUDA
     };
 
@@ -432,11 +476,15 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // Define library name lookup table
+    // Define library name lookup table. ggml-org publishes Windows cudart
+    // archives for CUDA 12.4 and 13.1 only; legacy CUDA 11 entries are
+    // retained for callers that may still pass an old toolkit version.
     let mut libname_lookup: HashMap<String, &str> = HashMap::new();
     libname_lookup.insert("windows-11.7".to_string(), "cudart64_110.dll");
     libname_lookup.insert("windows-12.0".to_string(), "cudart64_12.dll");
+    libname_lookup.insert("windows-12.4".to_string(), "cudart64_12.dll");
     libname_lookup.insert("windows-13.0".to_string(), "cudart64_13.dll");
+    libname_lookup.insert("windows-13.1".to_string(), "cudart64_13.dll");
     libname_lookup.insert("linux-11.7".to_string(), "libcudart.so.11.0");
     libname_lookup.insert("linux-12.0".to_string(), "libcudart.so.12");
     libname_lookup.insert("linux-13.0".to_string(), "libcudart.so.13");
@@ -544,14 +592,22 @@ pub async fn prioritize_backends(
         return Err("No backends available".to_string());
     }
 
-    // Priority list based on GPU memory
+    // Priority list based on GPU memory. The upstream provider sees
+    // ggml-org native backend names on Windows (`cuda-cu13.1`,
+    // `cuda-cu12.4`, `vulkan`, `cpu`) and janhq/macos-style names on the
+    // older code paths (`cuda-cu12.0`, `common_cpus`). Both forms are
+    // listed so `get_backend_category` matches work regardless of which
+    // generation of backend ids ended up in the version_backends slice.
     let backend_priorities: Vec<&str> = if has_enough_gpu_memory {
         vec![
+            "cuda-cu13.1",
             "cuda-cu13.0",
+            "cuda-cu12.4",
             "cuda-cu12.0",
             "cuda-cu11.7",
             "vulkan",
             "common_cpus",
+            "cpu",
             "avx512",
             "avx2",
             "avx",
@@ -561,10 +617,13 @@ pub async fn prioritize_backends(
         ]
     } else {
         vec![
+            "cuda-cu13.1",
             "cuda-cu13.0",
+            "cuda-cu12.4",
             "cuda-cu12.0",
             "cuda-cu11.7",
             "common_cpus",
+            "cpu",
             "avx512",
             "avx2",
             "avx",
@@ -617,7 +676,16 @@ pub async fn prioritize_backends(
 }
 
 fn get_backend_category(backend_string: &str) -> Option<String> {
-    if backend_string.contains("cuda-13-common_cpus") {
+    // ggml-org native Windows names (matched before legacy janhq patterns
+    // to avoid `cu13.1`/`cu12.4` falling through to the older categories):
+    if backend_string.contains("cuda-13.1") {
+        return Some("cuda-cu13.1".to_string());
+    }
+    if backend_string.contains("cuda-12.4") {
+        return Some("cuda-cu12.4".to_string());
+    }
+    // Legacy janhq mirror / linux turboquant names.
+    if backend_string.contains("cuda-13-common_cpus") || backend_string.contains("cu13.0") {
         return Some("cuda-cu13.0".to_string());
     }
     if backend_string.contains("cuda-12-common_cpus") || backend_string.contains("cu12.0") {
@@ -628,6 +696,15 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
+    }
+    // ggml-org native Windows CPU name `win-cpu-x64` (and arm64 variant).
+    // Matched as a dedicated category before falling back to the legacy
+    // common_cpus / micro-arch buckets.
+    if backend_string == "win-cpu-x64"
+        || backend_string == "win-cpu-arm64"
+        || backend_string.starts_with("win-cpu-")
+    {
+        return Some("cpu".to_string());
     }
     if backend_string.contains("common_cpus") {
         return Some("common_cpus".to_string());
@@ -1078,40 +1155,77 @@ mod tests {
 
     #[test]
     fn test_map_old_backend_to_new_cuda() {
-        // Linux CUDA 12
+        // Linux CUDA 12 — preserved legacy path (upstream Linux unused).
         assert_eq!(
             map_old_backend_to_new("linux-avx2-cuda-cu12.0-x64".to_string()),
             "linux-cuda-12-common_cpus-x64"
         );
-        // Windows CUDA 11 (noavx)
+        // Legacy janhq-mirror Windows CUDA 11 → folded into ggml-org's
+        // lowest CUDA tier (12.4) because ggml-org dropped CUDA 11 builds.
+        // Driver checks in `get_supported_features` block enablement when
+        // the host's NVIDIA driver is too old for CUDA 12.4.
         assert_eq!(
             map_old_backend_to_new("win-noavx-cuda-cu11.7-x64".to_string()),
-            "win-cuda-11-common_cpus-x64"
+            "win-cuda-12.4-x64"
+        );
+        // Legacy janhq CUDA 12 → ggml-org CUDA 12.4.
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-12-common_cpus-x64".to_string()),
+            "win-cuda-12.4-x64"
+        );
+        // Legacy janhq CUDA 13 → ggml-org CUDA 13.1.
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-13-common_cpus-x64".to_string()),
+            "win-cuda-13.1-x64"
+        );
+        // Already-new ggml-org names round-trip unchanged.
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-12.4-x64".to_string()),
+            "win-cuda-12.4-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-13.1-x64".to_string()),
+            "win-cuda-13.1-x64"
         );
     }
 
     #[test]
     fn test_map_old_backend_to_new_vulkan() {
-        // Linux Vulkan
+        // Linux Vulkan — legacy path (upstream Linux unused).
         assert_eq!(
             map_old_backend_to_new("linux-vulkan-x64".to_string()),
             "linux-vulkan-common_cpus-x64"
         );
-        // Already new format
+        // Legacy janhq Windows Vulkan → ggml-org Windows Vulkan.
         assert_eq!(
             map_old_backend_to_new("win-vulkan-common_cpus-x64".to_string()),
-            "win-vulkan-common_cpus-x64"
+            "win-vulkan-x64"
+        );
+        // Already-new format round-trip.
+        assert_eq!(
+            map_old_backend_to_new("win-vulkan-x64".to_string()),
+            "win-vulkan-x64"
         );
     }
 
     #[test]
     fn test_map_old_backend_to_new_cpu() {
-        // AVX512 migration
+        // Legacy janhq Windows AVX-tier CPU id → ggml-org Windows CPU.
         assert_eq!(
             map_old_backend_to_new("win-avx512-x64".to_string()),
-            "win-common_cpus-x64"
+            "win-cpu-x64"
         );
-        // AVX2 migration
+        // Legacy janhq Windows common_cpus → ggml-org Windows CPU.
+        assert_eq!(
+            map_old_backend_to_new("win-common_cpus-x64".to_string()),
+            "win-cpu-x64"
+        );
+        // Already-new ggml-org name.
+        assert_eq!(
+            map_old_backend_to_new("win-cpu-x64".to_string()),
+            "win-cpu-x64"
+        );
+        // Linux AVX2 — legacy path.
         assert_eq!(
             map_old_backend_to_new("linux-avx2-x64".to_string()),
             "linux-common_cpus-x64"
@@ -1194,8 +1308,11 @@ mod tests {
 
     #[test]
     fn test_determine_supported_backends_windows_all() {
+        // Upstream Windows uses ggml-org native release names; CUDA 11
+        // is intentionally not in the supported set (ggml-org doesn't
+        // publish a Windows CUDA 11 build).
         let features = SystemFeatures {
-            cuda11: true,
+            cuda11: true, // accepted on wire, ignored on Windows
             cuda12: true,
             cuda13: false,
             vulkan: true,
@@ -1205,11 +1322,11 @@ mod tests {
             determine_supported_backends("windows".to_string(), "x86_64".to_string(), features)
                 .unwrap();
 
-        assert!(result.contains(&"win-common_cpus-x64".to_string()));
-        assert!(result.contains(&"win-cuda-11-common_cpus-x64".to_string()));
-        assert!(result.contains(&"win-cuda-12-common_cpus-x64".to_string()));
-        assert!(result.contains(&"win-vulkan-common_cpus-x64".to_string()));
-        assert!(!result.contains(&"win-cuda-13-common_cpus-x64".to_string()));
+        assert!(result.contains(&"win-cpu-x64".to_string()));
+        assert!(result.contains(&"win-cuda-12.4-x64".to_string()));
+        assert!(result.contains(&"win-vulkan-x64".to_string()));
+        assert!(!result.contains(&"win-cuda-13.1-x64".to_string()));
+        assert!(!result.iter().any(|b| b.contains("cuda-11")));
     }
 
     #[test]
@@ -1462,22 +1579,25 @@ mod tests {
 
     #[test]
     fn test_find_latest_version_for_windows_backend_uses_version_not_order() {
+        // Both fixture entries carry the ggml-org native Windows CUDA
+        // backend name. `find_latest_version_for_backend` is expected to
+        // be called with the already-normalised (ggml-org) name.
         let backends = vec![
             BackendInfo {
                 version: "b7524".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "win-cuda-12.4-x64".into(),
                 order: 1_800_000_000,
             },
             BackendInfo {
                 version: "b7525".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "win-cuda-12.4-x64".into(),
                 order: 0,
             },
         ];
 
         let result =
-            find_latest_version_for_backend(backends, "win-cuda-12-common_cpus-x64".to_string());
-        assert_eq!(result, Some("b7525/win-cuda-12-common_cpus-x64".to_string()));
+            find_latest_version_for_backend(backends, "win-cuda-12.4-x64".to_string());
+        assert_eq!(result, Some("b7525/win-cuda-12.4-x64".to_string()));
     }
 
     #[test]
@@ -1552,16 +1672,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_backend_for_updates_windows_uses_version_not_order() {
-        let current = "b7524/win-cuda-12-common_cpus-x64".to_string();
+        // Current and available use the ggml-org native Windows CUDA name.
+        let current = "b7524/win-cuda-12.4-x64".to_string();
         let available = vec![
             BackendInfo {
                 version: "b7524".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "win-cuda-12.4-x64".into(),
                 order: 1_800_000_000,
             },
             BackendInfo {
                 version: "b7525".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "win-cuda-12.4-x64".into(),
                 order: 0,
             },
         ];
@@ -1572,7 +1693,7 @@ mod tests {
         assert_eq!(result.new_version, "b7525");
         assert_eq!(
             result.target_backend,
-            Some("b7525/win-cuda-12-common_cpus-x64".to_string())
+            Some("b7525/win-cuda-12.4-x64".to_string())
         );
     }
 

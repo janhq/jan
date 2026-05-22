@@ -114,11 +114,43 @@ export function getProviderLogo(provider: string) {
   }
 }
 
+/**
+ * The local llama.cpp provider id for THIS platform. Windows ships only
+ * the upstream provider (see ADR 2026-05-22 "Windows ships only
+ * `llamacpp-upstream`"); macOS and Linux keep the turboquant fork
+ * provider id `llamacpp`. macOS additionally exposes `llamacpp-upstream`
+ * as a parallel provider, but `llamacpp` remains the default there.
+ *
+ * Use this whenever the UI needs to address "the local llama.cpp engine
+ * that runs models" without forking call sites per OS.
+ */
+export const LOCAL_LLAMACPP_PROVIDER = IS_WINDOWS
+  ? 'llamacpp-upstream'
+  : 'llamacpp'
+
+/**
+ * Extension name (`@janhq/...`) that drives the active llama.cpp
+ * provider on THIS platform. Mirrors `LOCAL_LLAMACPP_PROVIDER` — when
+ * the extension manager is queried directly, Windows must look up the
+ * upstream extension because the turboquant one is excluded from the
+ * Windows build.
+ */
+export const LOCAL_LLAMACPP_EXTENSION_NAME = IS_WINDOWS
+  ? '@janhq/llamacpp-upstream-extension'
+  : '@janhq/llamacpp-extension'
+
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
     case 'jan':
       return 'Atomic Chat'
     case 'llamacpp':
+      // Per ADR 2026-05-22 *Windows ships only `llamacpp-upstream`*, the
+      // `llamacpp` provider is excluded from the Windows build. Lingering
+      // references in zustand-persisted state from a pre-update install
+      // would otherwise render as "Atomic Llama.cpp Turboquant" until the
+      // one-time migration in `useModelProvider` purges them — fall back
+      // to the upstream display name here so the UI never flashes the
+      // Turboquant branding on Windows.
       return IS_WINDOWS ? 'Llama.cpp' : 'Atomic Llama.cpp Turboquant'
     case 'llamacpp-upstream':
       return 'Llama.cpp'

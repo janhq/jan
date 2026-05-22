@@ -3,6 +3,28 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+
+/**
+ * Provider id that the Windows build *removed* (the turboquant `llamacpp`
+ * extension is excluded from the Windows installer per ADR 2026-05-22).
+ * Used here only for the one-time migration / runtime alias logic; outside
+ * Windows, both ids continue to coexist and this constant is harmless.
+ */
+const LEGACY_LLAMACPP_PROVIDER = 'llamacpp'
+
+/**
+ * Returns the canonical local llama.cpp provider id for THIS platform.
+ * On Windows this collapses both `'llamacpp'` and `'llamacpp-upstream'`
+ * to `'llamacpp-upstream'`; on macOS/Linux it returns the input
+ * unchanged. Keeps call sites that took `'llamacpp'` from persisted
+ * state, thread history, `lastUsedModel`, etc. transparently working
+ * after the upstream-only consolidation.
+ */
+const aliasLocalLlamacppProvider = (providerName: string): string =>
+  IS_WINDOWS && providerName === LEGACY_LLAMACPP_PROVIDER
+    ? LOCAL_LLAMACPP_PROVIDER
+    : providerName
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -26,7 +48,11 @@ export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
-      selectedProvider: 'llamacpp',
+      // Windows ships only `llamacpp-upstream`; macOS/Linux keep the
+      // turboquant `llamacpp` provider as the default. The migration
+      // below also rewrites this field if a pre-update install had
+      // `'llamacpp'` persisted as the active provider.
+      selectedProvider: LOCAL_LLAMACPP_PROVIDER,
       selectedModel: null,
       deletedModels: [],
       getModelBy: (modelId: string) => {
@@ -38,10 +64,26 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
+          // On Windows the turboquant `llamacpp` provider was excised from
+          // the build (ADR 2026-05-22). The zustand `migrate` block below
+          // purges any persisted instance once, but `setProviders` is also
+          // called every time the engine list is refreshed — so guard the
+          // merge path here too, otherwise a single stale entry in
+          // localStorage would resurrect the "Atomic Llama.cpp Turboquant"
+          // row in Settings → Model Providers every time the user
+          // navigated there.
+          const incoming = IS_WINDOWS
+            ? providers.filter((p) => p.provider !== LEGACY_LLAMACPP_PROVIDER)
+            : providers
           const existingProviders = state.providers
             // Filter out legacy llama.cpp provider for migration
             // Can remove after a couple of releases
             .filter((e) => e.provider !== 'llama.cpp')
+            // Filter out the (now Windows-excluded) turboquant provider —
+            // see the comment on `incoming` above. No-op on macOS/Linux.
+            .filter(
+              (e) => !IS_WINDOWS || e.provider !== LEGACY_LLAMACPP_PROVIDER
+            )
             .map((provider) => {
               return {
                 ...provider,
@@ -68,7 +110,7 @@ export const useModelProvider = create<ModelProviderState>()(
             ? state.deletedModels
             : []
 
-          const updatedProviders = providers.map((provider) => {
+          const updatedProviders = incoming.map((provider) => {
             const existingProvider = existingProviders.find(
               (x) => x.provider === provider.provider
             )
@@ -195,16 +237,22 @@ export const useModelProvider = create<ModelProviderState>()(
         })
       },
       getProviderByName: (providerName: string) => {
+        // Windows-only alias: any legacy `'llamacpp'` lookup transparently
+        // resolves to `'llamacpp-upstream'`. Covers leftover references in
+        // thread history, lastUsedModel, route params, etc. that escaped
+        // the one-time migration.
+        const resolvedName = aliasLocalLlamacppProvider(providerName)
         const provider = get().providers.find(
-          (provider) => provider.provider === providerName
+          (provider) => provider.provider === resolvedName
         )
 
         return provider
       },
       selectModelProvider: (providerName: string, modelName: string) => {
+        const resolvedName = aliasLocalLlamacppProvider(providerName)
         // Find the model object
         const provider = get().providers.find(
-          (provider) => provider.provider === providerName
+          (provider) => provider.provider === resolvedName
         )
 
         let modelObject: Model | undefined = undefined
@@ -213,9 +261,11 @@ export const useModelProvider = create<ModelProviderState>()(
           modelObject = provider.models.find((model) => model.id === modelName)
         }
 
-        // Update state with provider name and model object
+        // Persist the *resolved* provider id so subsequent reads (e.g.
+        // `selectedProvider` rendering, model lookups) see the canonical
+        // local llama.cpp provider for this OS, not the legacy alias.
         set({
-          selectedProvider: providerName,
+          selectedProvider: resolvedName,
           selectedModel: modelObject || null,
         })
 
@@ -581,9 +631,40 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        // v13 — Windows-only: the upstream-only consolidation
+        // (ADR 2026-05-22) removed the turboquant `llamacpp` provider
+        // from the Windows build. Existing installs upgrading into this
+        // version still have a `llamacpp` ModelProvider object in
+        // zustand-persisted state — drop it, and redirect any active
+        // selection to `'llamacpp-upstream'` so the model picker / Settings
+        // → Providers page render cleanly on first launch after the
+        // update. Models on disk (under `<data>/llamacpp/models/`) are
+        // shared between both providers via `MODELS_PROVIDER_ROOT =
+        // 'llamacpp'` in the upstream extension, so no model-level data
+        // migration is necessary.
+        if (version <= 12 && state?.providers && IS_WINDOWS) {
+          state.providers = state.providers.filter(
+            (provider) => provider.provider !== LEGACY_LLAMACPP_PROVIDER
+          )
+          if (state.selectedProvider === LEGACY_LLAMACPP_PROVIDER) {
+            state.selectedProvider = LOCAL_LLAMACPP_PROVIDER
+            // INTENTIONALLY do NOT null `selectedModel` here. The on-disk
+            // GGUFs are shared between providers (both extensions point at
+            // `<data>/llamacpp/models/`), so the upstream extension will
+            // re-register the same model id at `setProviders` time. The
+            // re-resolve block at the bottom of `setProviders`
+            // (`nextSelectedModel = nextSelectedProvider?.models.find(...)`)
+            // then rebinds `selectedModel` to the upstream provider's copy
+            // of the same model on first paint — without that, the user
+            // would have to manually re-pick the active model in the
+            // dropdown after every update, even though the same model is
+            // still on disk.
+          }
+        }
+
         return state
       },
-      version: 12,
+      version: 13,
     }
   )
 )

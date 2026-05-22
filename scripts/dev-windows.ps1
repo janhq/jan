@@ -9,9 +9,9 @@
 #   make dev-windows
 #
 # Flags:
-#   -SkipBackendDownload  Reuse the llamacpp backend already present under
-#                         src-tauri/resources/llamacpp-backend (used by
-#                         `make dev-windows-fast` for quick iteration).
+#   -SkipBackendDownload  Reuse the llama.cpp backend already present under
+#                         src-tauri/resources/llamacpp-backend-upstream
+#                         (used by `make dev-windows-fast` for quick iteration).
 
 param(
     [switch]$SkipBackendDownload
@@ -249,18 +249,18 @@ $cudaTier = $null
 if ($nvidiaDriver) {
     Write-Host "  NVIDIA GPU detected, driver version: $nvidiaDriver" -ForegroundColor Green
 
-    # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp/src/backend.rs
-    if ((Compare-VersionStrings $nvidiaDriver '580') -ge 0) {
-        $cudaTier = 13
-        Write-Host "  CUDA tier: 13 (driver >= 580)" -ForegroundColor Green
-    } elseif ((Compare-VersionStrings $nvidiaDriver '527.41') -ge 0) {
-        $cudaTier = 12
-        Write-Host "  CUDA tier: 12 (driver >= 527.41)" -ForegroundColor Green
-    } elseif ((Compare-VersionStrings $nvidiaDriver '452.39') -ge 0) {
-        $cudaTier = 11
-        Write-Host "  CUDA tier: 11 (driver >= 452.39)" -ForegroundColor Green
+    # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs
+    # ggml-org publishes CUDA 12.4 and 13.1 Windows builds; CUDA 11 is no longer
+    # produced upstream and is therefore unsupported on Windows after the
+    # llamacpp-upstream consolidation (ADR 2026-05-22).
+    if ((Compare-VersionStrings $nvidiaDriver '581') -ge 0) {
+        $cudaTier = 131
+        Write-Host "  CUDA tier: 13.1 (driver >= 581)" -ForegroundColor Green
+    } elseif ((Compare-VersionStrings $nvidiaDriver '551.61') -ge 0) {
+        $cudaTier = 124
+        Write-Host "  CUDA tier: 12.4 (driver >= 551.61)" -ForegroundColor Green
     } else {
-        Write-Host "  NVIDIA driver too old for CUDA ($nvidiaDriver < 452.39)" -ForegroundColor Yellow
+        Write-Host "  NVIDIA driver too old for upstream CUDA ($nvidiaDriver < 551.61)" -ForegroundColor Yellow
     }
 } else {
     Write-Host '  No NVIDIA GPU detected' -ForegroundColor Yellow
@@ -301,19 +301,18 @@ if ($gpuVramMiB -eq 0) {
 $hasEnoughVram = $gpuVramMiB -ge 6144
 Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVram)"
 
-# Priority order matches prioritize_backends() in backend.rs:
-#   With enough VRAM: cuda13 → cuda12 → cuda11 → vulkan → cpu
-#   Without enough VRAM: cuda13 → cuda12 → cuda11 → cpu → vulkan
-if ($cudaTier -ge 13) {
-    $backend = 'win-cuda-13-common_cpus-x64'
-} elseif ($cudaTier -ge 12) {
-    $backend = 'win-cuda-12-common_cpus-x64'
-} elseif ($cudaTier -ge 11) {
-    $backend = 'win-cuda-11-common_cpus-x64'
+# Priority order matches prioritize_backends() in
+# src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
+#   With enough VRAM: cuda-13.1 → cuda-12.4 → vulkan → cpu
+#   Without enough VRAM: cuda-13.1 → cuda-12.4 → cpu → vulkan
+if ($cudaTier -ge 131) {
+    $backend = 'win-cuda-13.1-x64'
+} elseif ($cudaTier -ge 124) {
+    $backend = 'win-cuda-12.4-x64'
 } elseif ($hasVulkan -and $hasEnoughVram) {
-    $backend = 'win-vulkan-common_cpus-x64'
+    $backend = 'win-vulkan-x64'
 } else {
-    $backend = 'win-common_cpus-x64'
+    $backend = 'win-cpu-x64'
 }
 
 # Allow manual override via LLAMACPP_BACKEND env var
@@ -325,9 +324,11 @@ if ($env:LLAMACPP_BACKEND) {
 Write-Host ''
 Write-Host "  Selected backend: $backend" -ForegroundColor Cyan
 
-# ── Download llamacpp backend from janhq/llama.cpp ────────────
-Write-Step "Download llamacpp backend: $backend"
-$llamacppDir = 'src-tauri/resources/llamacpp-backend'
+# ── Download llamacpp backend from ggml-org/llama.cpp ─────────
+# Per ADR 2026-05-22, Windows ships only the upstream provider, so the
+# dev-windows backend resource dir is `llamacpp-backend-upstream/`.
+Write-Step "Download upstream llamacpp backend: $backend"
+$llamacppDir = 'src-tauri/resources/llamacpp-backend-upstream'
 $llamaServerExe = "$llamacppDir/build/bin/llama-server.exe"
 $backendTxtPath = "$llamacppDir/backend.txt"
 
@@ -363,7 +364,7 @@ if ($skipDownload) {
         New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
     }
 
-    $apiUrl = 'https://api.github.com/repos/janhq/llama.cpp/releases/latest'
+    $apiUrl = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
     $headers = @{ 'User-Agent' = 'atomic-chat-dev' }
     if ($env:GH_TOKEN) {
         $headers['Authorization'] = "Bearer $env:GH_TOKEN"
@@ -377,8 +378,10 @@ if ($skipDownload) {
         exit 1
     }
 
-    $archiveUrl = "https://github.com/janhq/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.tar.gz"
-    $archivePath = Join-Path $env:TEMP 'llamacpp-backend.tar.gz'
+    # ggml-org publishes Windows binaries as .zip (not .tar.gz like the
+    # legacy janhq mirror), so use Expand-Archive instead of tar.
+    $archiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.zip"
+    $archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
 
     Write-Host "  Release: $tag  Backend: $backend"
     Write-Host "  Downloading: $archiveUrl"
@@ -389,7 +392,7 @@ if ($skipDownload) {
     Set-Content -Path "$llamacppDir/backend.txt" -Value $backend -NoNewline
 
     Write-Host '  Extracting...'
-    tar -xzf $archivePath -C $llamacppDir
+    Expand-Archive -Path $archivePath -DestinationPath $llamacppDir -Force
     Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
 
     # Relocate flat-extracted binaries into build/bin/ (matches CI logic)

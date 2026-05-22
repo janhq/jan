@@ -3,7 +3,12 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import {
+  cn,
+  getProviderTitle,
+  getModelDisplayName,
+  LOCAL_LLAMACPP_PROVIDER,
+} from '@/lib/utils'
 import {
   createFileRoute,
   Link,
@@ -992,7 +997,11 @@ function ProviderDetail() {
   /// the macOS turboquant pipeline doesn't expose alternate backend
   /// types here.
   const handleFindOptimalBackend = useCallback(async () => {
-    if (provider?.provider !== 'llamacpp') return
+    // The optimal-backend matrix exists for the local llama.cpp engine
+    // only — on Windows that's `llamacpp-upstream`, on macOS/Linux it's
+    // `llamacpp`. Anything else is a remote provider with no per-host
+    // backend variants.
+    if (provider?.provider !== LOCAL_LLAMACPP_PROVIDER) return
     setIsRecheckingBackend(true)
     try {
       const result = await recheckOptimalBackend()
@@ -1432,8 +1441,15 @@ function ProviderDetail() {
                                     uses the separate turboquant
                                     pipeline with no alternate backend
                                     matrix. */}
-                                {provider?.provider === 'llamacpp' &&
-                                  (IS_WINDOWS || IS_LINUX) && (
+                                {/* On Windows the local llama.cpp provider is
+                                    `llamacpp-upstream` (sole survivor of the
+                                    upstream-only consolidation). On Linux it
+                                    is still the turboquant `llamacpp`. macOS
+                                    has no alternate-backend matrix here. */}
+                                {((IS_WINDOWS &&
+                                  provider?.provider === 'llamacpp-upstream') ||
+                                  (IS_LINUX &&
+                                    provider?.provider === 'llamacpp')) && (
                                     <Button
                                       variant="outline"
                                       size="sm"

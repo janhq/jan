@@ -17,7 +17,7 @@ use tauri::{Emitter, Manager, RunEvent};
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
 #[cfg(all(not(feature = "cli"), target_os = "windows"))]
-use tauri_plugin_llamacpp::install_bundled_backend;
+use tauri_plugin_llamacpp_upstream::install_bundled_backend;
 #[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
@@ -288,8 +288,12 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             {
+                // Windows installs the bundled upstream backend on startup
+                // (turboquant fork is not shipped on Windows — see ADR
+                // 2026-05-22 "Windows ships only `llamacpp-upstream`"). The
+                // upstream extension reads from `llamacpp-upstream/backends/`.
                 let backends_dir = get_jan_data_folder_path(app.handle().clone())
-                    .join("llamacpp")
+                    .join("llamacpp-upstream")
                     .join("backends");
                 match tauri::async_runtime::block_on(install_bundled_backend(
                     app.handle().clone(),

@@ -67,7 +67,8 @@ Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **
 
 | Path | Contents | Cleared by |
 |---|---|---|
-| `%APPDATA%\Atomic Chat\data\llamacpp\backends\` | Downloaded llama.cpp backend builds (CPU / CUDA / Vulkan) | `make dev-windows-cpu`, `make clean-windows-all`, uninstaller (Delete app data) |
+| `%APPDATA%\Atomic Chat\data\llamacpp-upstream\backends\` | Downloaded llama.cpp backend builds (CPU / CUDA 12.4 / CUDA 13.1 / Vulkan), sourced from `ggml-org/llama.cpp`. Active path on Windows since ADR 2026-05-22 *Windows ships only `llamacpp-upstream`*. | `make dev-windows-cpu`, `make clean-windows-all`, uninstaller (Delete app data) |
+| `%APPDATA%\Atomic Chat\data\llamacpp\backends\` | **Legacy** (pre-2026-05-22) turboquant `llamacpp` backends. Left orphaned on existing installs and ignored by the Windows app; safe to delete manually. Models under `data\llamacpp\models\` are still active (shared root). | manual delete, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\models\` | Downloaded GGUF / MLX models | factory reset (UI), `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\threads\` | Chat history | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\extensions\` | Installed extensions (`@janhq/*`, `llamacpp-extension`, …) | factory reset, `make clean-windows-all`, uninstaller |

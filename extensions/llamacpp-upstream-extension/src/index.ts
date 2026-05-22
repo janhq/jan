@@ -35,6 +35,9 @@ import {
   getBackendDir,
   getLocalInstalledBackends,
   getBackendDownloadUrl,
+  getCudartDownloadUrl,
+  getCudartArchiveName,
+  getCudaToolkitVersion,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -67,6 +70,7 @@ import {
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
   getSupportedFeaturesFromRust,
   normalizeFeatures,
+  isCudaInstalledFromRust,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -138,7 +142,9 @@ function stripBom(s: string): string {
 
 function backendCategoryToLabel(category: string): string {
   switch (category) {
+    case 'cuda-cu13.1': return 'CUDA 13'
     case 'cuda-cu13.0': return 'CUDA 13'
+    case 'cuda-cu12.4': return 'CUDA 12'
     case 'cuda-cu12.0': return 'CUDA 12'
     case 'cuda-cu11.7': return 'CUDA 11'
     case 'vulkan': return 'Vulkan'
@@ -147,12 +153,18 @@ function backendCategoryToLabel(category: string): string {
 }
 
 function get_backend_category(backend: string): string {
+  // ggml-org native Windows names (matched first so `cu13.1` / `cu12.4`
+  // don't fall through to the legacy janhq categories).
+  if (backend.includes('cuda-13.1')) return 'cuda-cu13.1'
+  if (backend.includes('cuda-12.4')) return 'cuda-cu12.4'
+  // Legacy janhq mirror names.
   if (backend.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
   if (backend.includes('cuda-12-common_cpus') || backend.includes('cu12.0'))
     return 'cuda-cu12.0'
   if (backend.includes('cuda-11-common_cpus') || backend.includes('cu11.7'))
     return 'cuda-cu11.7'
   if (backend.includes('vulkan')) return 'vulkan'
+  if (backend === 'win-cpu-x64' || backend === 'win-cpu-arm64') return 'cpu'
   if (backend.includes('common_cpus')) return 'common_cpus'
   if (backend.includes('avx512')) return 'avx512'
   if (backend.includes('avx2')) return 'avx2'
@@ -1096,7 +1108,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /**
    * Uses hardware detection (CUDA/Vulkan driver info) to determine the ideal
    * backend type for this machine. Returns the backend name string
-   * (e.g. "win-cuda-13-common_cpus-x64") or null if CPU is already optimal.
+   * (e.g. "win-cuda-13.1-x64") or null if CPU is already optimal.
+   *
+   * Naming differs by platform — Windows uses ggml-org native ids
+   * (`win-cuda-{12.4,13.1}-x64`, `win-vulkan-x64`); Linux still uses the
+   * janhq-mirror names (`linux-cuda-{12,13}-common_cpus-x64`) because the
+   * upstream extension is currently only wired on macOS and Windows.
    */
   private async detectIdealBackendType(): Promise<string | null> {
     try {
@@ -1119,8 +1136,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const arch = sysInfo.cpu.arch
       const archSuffix =
         arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
-      const prefix = sysInfo.os_type === 'windows' ? 'win' : 'linux'
 
+      if (sysInfo.os_type === 'windows') {
+        // ggml-org publishes Windows CUDA builds for 13.1 and 12.4 only —
+        // CUDA 11 has been dropped upstream. Hosts with driver too old
+        // for CUDA 12.4 (~551.61) fall through to Vulkan/CPU below via
+        // the feature-flag gating in `get_supported_features`.
+        if (features.cuda13) return `win-cuda-13.1-${archSuffix}`
+        if (features.cuda12) return `win-cuda-12.4-${archSuffix}`
+        if (features.vulkan && hasEnoughVram) return `win-vulkan-${archSuffix}`
+        return null
+      }
+
+      // Linux fallthrough — preserved for future Linux wiring; matches the
+      // primary turboquant extension's naming.
+      const prefix = 'linux'
       if (features.cuda13) return `${prefix}-cuda-13-common_cpus-${archSuffix}`
       if (features.cuda12) return `${prefix}-cuda-12-common_cpus-${archSuffix}`
       if (features.cuda11) return `${prefix}-cuda-11-common_cpus-${archSuffix}`
@@ -2708,6 +2738,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
     return `${this.provider}/${cleanModelId}`
   }
 
+  /**
+   * Sanitize a taskId so the downstream `download-extension` (which wraps
+   * it in `download-${taskId}` and feeds it to Tauri's `listen()`) does
+   * not get rejected by Tauri's event-name validator. Tauri restricts
+   * event names to `[A-Za-z0-9_/:-]`. ggml-org Windows backends contain
+   * `.` (`win-cuda-12.4-x64`, `win-cuda-13.1-x64`), so we must strip dots
+   * out of the backend / version portion before constructing a taskId.
+   *
+   * The taskId is opaque to downstream consumers — nothing parses it
+   * back into `version` / `backend`, so collapsing `.` to `_` is safe.
+   * Other forbidden characters get the same treatment for defense in
+   * depth.
+   */
+  private sanitizeForTauriEvent(value: string): string {
+    return value.replace(/[^A-Za-z0-9_-]/g, '_')
+  }
+
   private async ensureBackendReady(
     backend: string,
     version: string
@@ -2716,12 +2763,30 @@ export default class llamacpp_upstream_extension extends AIEngine {
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
     if (await isBackendInstalled(backend, version)) {
+      // Backend exe is present, but on Windows CUDA variants the cudart
+      // runtime DLLs may still be missing (e.g. for users that installed
+      // a backend through an older build, or for the bundled CPU build
+      // which carries no cudart). Patch them in place idempotently
+      // without re-downloading the full backend archive.
+      if (IS_WINDOWS) {
+        const targetDir = await getBackendDir(backend, version)
+        try {
+          await this.ensureCudartReady(version, backend, targetDir, backendKey)
+        } catch (cudartErr) {
+          logger.warn(
+            `cudart pre-flight for ${backendKey} failed: ${
+              cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+            }`
+          )
+        }
+      }
       return
     }
 
-    // Upstream extension targets macOS. Both bundled and runtime-downloaded
-    // backends come from the same ggml-org/llama.cpp release stream, so
-    // attempting a download is always valid here.
+    // Both bundled (re-codesigned macOS / GPU-detected Windows) and
+    // runtime-downloaded backends come from the same ggml-org/llama.cpp
+    // release stream, so attempting a download is valid on every
+    // platform served by this extension.
     logger.info(
       `Backend ${backendKey} not installed locally, attempting download from upstream releases...`
     )
@@ -2741,8 +2806,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
-   * Downloads a backend archive from janhq/llama.cpp GitHub releases and
-   * extracts it into the local backends directory.
+   * Downloads a backend archive from ggml-org/llama.cpp GitHub releases
+   * and extracts it into the local backends directory.
+   *
+   * ggml-org publishes Windows and macOS backends as `.zip` archives
+   * (not `.tar.gz`). The Tauri `decompress` command handles both formats,
+   * so the extension change here is transparent to the extraction path.
    */
   private async downloadAndInstallBackend(
     backendString: string
@@ -2763,13 +2832,43 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     const url = getBackendDownloadUrl(version, backend)
     const janDataFolderPath = await getJanDataFolderPath()
-    const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
+    // Temp staging shares the upstream root with the rest of the
+    // extension's on-disk state (`llamacpp-upstream/tmp`) so partial
+    // downloads can't leak into the turboquant provider's tree.
+    const tempDir = await joinPath([janDataFolderPath, 'llamacpp-upstream', 'tmp'])
     if (!(await fs.existsSync(tempDir))) {
       await fs.mkdir(tempDir)
     }
-    const archiveName = `llama-${version}-bin-${backend}.tar.gz`
+    const archiveName = `llama-${version}-bin-${backend}.zip`
     const archivePath = await joinPath([tempDir, archiveName])
     const targetDir = await getBackendDir(backend, version)
+
+    // Route the file transfer through `download-extension` so the
+    // standard top-left download manager picks it up via the same
+    // `DownloadEvent.onFileDownloadUpdate` channel that model
+    // downloads use. The legacy `AppEvent.onBackendDownload*`
+    // events are still emitted because the BackendUpdater dialog
+    // listens to them for the recommend → downloading →
+    // restart-required state machine.
+    //
+    // Prefix the taskId with `llamacpp-backend-` so the cancel
+    // button in the standard UI takes the
+    // `download.id.startsWith('llamacpp')` branch and can call
+    // `cancelDownload(taskId)` instead of the model-abort path.
+    //
+    // Sanitize `version`/`backend` separately because both can now
+    // carry dots after the ggml-org switch (e.g. `win-cuda-13.1-x64`),
+    // and Tauri's `listen()` — invoked under the hood by
+    // `download-extension` with `download-${taskId}` — rejects dots.
+    //
+    // IMPORTANT: declared outside the try block so the catch / finally
+    // can reference it. A previous version had this inside `try {`
+    // which produced a `ReferenceError: taskId is not defined` when
+    // any sub-operation (extract / relocate / install verification)
+    // failed and the catch block tried to emit a cleanup event.
+    const taskId = `llamacpp-backend-${this.sanitizeForTauriEvent(
+      version
+    )}/${this.sanitizeForTauriEvent(backend)}`
 
     logger.info(`Downloading backend ${backendString} from ${url}`)
 
@@ -2781,19 +2880,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     try {
-      // Route the file transfer through `download-extension` so the
-      // standard top-left download manager picks it up via the same
-      // `DownloadEvent.onFileDownloadUpdate` channel that model
-      // downloads use. The legacy `AppEvent.onBackendDownload*`
-      // events are still emitted because the BackendUpdater dialog
-      // listens to them for the recommend → downloading →
-      // restart-required state machine.
-      //
-      // Prefix the taskId with `llamacpp-backend-` so the cancel
-      // button in the standard UI takes the
-      // `download.id.startsWith('llamacpp')` branch and can call
-      // `cancelDownload(taskId)` instead of the model-abort path.
-      const taskId = `llamacpp-backend-${version}/${backend}`
       const downloadManager = window.core?.extensionManager?.getByName(
         '@janhq/download-extension'
       ) as
@@ -2852,15 +2938,37 @@ export default class llamacpp_upstream_extension extends AIEngine {
       if (!(await fs.existsSync(expectedBin))) {
         const flatBin = await joinPath([targetDir, exeName])
         if (await fs.existsSync(flatBin)) {
+          // ggml-org Windows zips extract with a flat layout
+          // (llama-server.exe + DLLs at the archive root), while the
+          // janhq turboquant tarballs already contain `build/bin/`.
+          // Move (not copy) each top-level entry into `build/bin/`
+          // so layouts converge. `fs.mv` is the only file-relocation
+          // primitive currently exposed by the Tauri shell — there is
+          // no `copy_file` command on the Rust side, and trying to
+          // use `fs.copyFile` here throws "Command copy_file not
+          // found" on Windows.
+          //
+          // CAREFUL: the Tauri `readdir_sync` command returns FULL
+          // absolute paths (Rust's `entry.path().to_string_lossy()`),
+          // not basenames. Treating them as basenames here previously
+          // produced a silent loop where `joinPath([targetDir, fullPath])`
+          // resolved to `fullPath` itself (Path::join replaces the
+          // base when the second arg is absolute), giving `mv(x, x)`
+          // — every iteration was a no-op and the final
+          // `isBackendInstalled` check rightly failed with
+          // "llama-server binary not found at expected path". Strip
+          // to the basename before joining and before the `build`
+          // skip check.
           logger.info('Relocating flat-extracted binaries into build/bin/')
           const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
           await fs.mkdir(buildBinDir)
-          const entries = await fs.readdirSync(targetDir)
-          for (const entry of entries) {
-            if (entry === 'build') continue
-            const src = await joinPath([targetDir, entry])
-            const dst = await joinPath([buildBinDir, entry])
-            await fs.copyFile(src, dst)
+          const entries = (await fs.readdirSync(targetDir)) as string[]
+          for (const rawEntry of entries) {
+            const baseName = rawEntry.split(/[/\\]/).filter(Boolean).pop()
+            if (!baseName || baseName === 'build') continue
+            const src = await joinPath([targetDir, baseName])
+            const dst = await joinPath([buildBinDir, baseName])
+            await fs.mv(src, dst)
           }
         }
       }
@@ -2871,12 +2979,36 @@ export default class llamacpp_upstream_extension extends AIEngine {
         )
       }
 
+      // Windows CUDA backends ship without the CUDA Toolkit runtime DLLs;
+      // those live in a sibling `cudart-llama-bin-win-cuda-{X.Y}-x64.zip`
+      // archive on the same ggml-org release. Merge them into build/bin/
+      // here so that `llama-server.exe --list-devices` can enumerate GPUs
+      // on machines without a system-wide CUDA Toolkit install
+      // (AtomicBot-ai/Atomic-Chat#14).
+      if (IS_WINDOWS) {
+        try {
+          await this.ensureCudartReady(version, backend, targetDir, backendString)
+        } catch (cudartErr) {
+          // Do not fail the whole install — the backend exe is in place,
+          // it's just GPU enumeration that will be missing. Surface a
+          // warning so the user sees what happened in logs.
+          logger.warn(
+            `Backend ${backendString} installed, but cudart DLL merge failed: ${
+              cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+            }`
+          )
+        }
+      }
+
       logger.info(`Backend ${backendString} installed successfully`)
 
       if (events && typeof events.emit === 'function') {
         // Clear from the standard download manager UI.
+        // Use the same sanitized taskId the progress events were emitted
+        // with — the download manager UI keys rows by `modelId`, and an
+        // unsanitized id would create a phantom row that never clears.
         events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
-          modelId: `llamacpp-backend-${backendString}`,
+          modelId: taskId,
           downloadType: 'Backend',
         })
         events.emit(AppEvent.onBackendDownloadFinished, {
@@ -2891,8 +3023,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
           : String(downloadErr)
       if (events && typeof events.emit === 'function') {
         // Clear the standard download manager row on failure too.
+        // Same modelId rule as the success path above.
         events.emit(DownloadEvent.onFileDownloadError, {
-          modelId: `llamacpp-backend-${backendString}`,
+          modelId: taskId,
           error: errorMessage,
           downloadType: 'Backend',
         })
@@ -2907,6 +3040,211 @@ export default class llamacpp_upstream_extension extends AIEngine {
       try {
         if (await fs.existsSync(archivePath)) {
           await fs.rm(archivePath)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
+  /**
+   * Downloads the matching `cudart-llama-bin-win-cuda-{X.Y}-x64.zip` for a
+   * Windows CUDA backend variant and copies every `*.dll` it contains into
+   * `<targetDir>/build/bin/`.
+   *
+   * No-op (returns immediately) when:
+   *   - `backend` is not a Windows CUDA backend (`win-cuda-{12.4,13.1}-x64`)
+   *   - cudart DLLs are already present (checked via the Rust
+   *     `plugin:llamacpp-upstream|is_cuda_installed` command, which also
+   *     handles a legacy `<jan>/llamacpp/lib/` -> `build/bin/` migration).
+   *
+   * Idempotent — safe to call from both the post-extract path inside
+   * `downloadAndInstallBackend` and the pre-flight inside
+   * `ensureBackendReady`.
+   */
+  private async ensureCudartReady(
+    version: string,
+    backend: string,
+    targetDir: string,
+    backendString: string
+  ): Promise<void> {
+    if (!IS_WINDOWS) return
+
+    const cudartUrl = getCudartDownloadUrl(version, backend)
+    const cudartName = getCudartArchiveName(backend)
+    const toolkitVersion = getCudaToolkitVersion(backend)
+    if (!cudartUrl || !cudartName || !toolkitVersion) {
+      return
+    }
+
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    try {
+      const alreadyInstalled = await isCudaInstalledFromRust(
+        targetDir,
+        toolkitVersion,
+        'windows',
+        janDataFolderPath
+      )
+      if (alreadyInstalled) {
+        logger.info(
+          `cudart for ${backendString} already present, skipping download`
+        )
+        return
+      }
+    } catch (probeErr) {
+      logger.warn(
+        `is_cuda_installed probe failed for ${backendString}, will attempt cudart download anyway: ${
+          probeErr instanceof Error ? probeErr.message : String(probeErr)
+        }`
+      )
+    }
+
+    const tempDir = await joinPath([janDataFolderPath, 'llamacpp-upstream', 'tmp'])
+    if (!(await fs.existsSync(tempDir))) {
+      await fs.mkdir(tempDir)
+    }
+    const cudartArchivePath = await joinPath([tempDir, cudartName])
+    const cudartExtractDir = await joinPath([
+      tempDir,
+      `cudart-${backend}-${version}`,
+    ])
+
+    logger.info(
+      `Downloading cudart for ${backendString} from ${cudartUrl}`
+    )
+
+    // Same Tauri event-name sanitization as the backend download path —
+    // ggml-org CUDA backends carry dots (e.g. `win-cuda-13.1-x64`) which
+    // `listen('download-${taskId}', …)` in `download-extension` rejects
+    // with "Event name must include only alphanumeric characters, …".
+    const taskId = `llamacpp-cudart-${this.sanitizeForTauriEvent(
+      version
+    )}/${this.sanitizeForTauriEvent(backend)}`
+    const downloadManager = window.core?.extensionManager?.getByName(
+      '@janhq/download-extension'
+    ) as
+      | {
+          downloadFiles?: (
+            items: { url: string; save_path: string }[],
+            taskId: string,
+            onProgress?: (transferred: number, total: number) => void,
+            resume?: boolean
+          ) => Promise<void>
+        }
+      | undefined
+
+    const onProgress = (transferred: number, total: number) => {
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadUpdate, {
+          modelId: taskId,
+          percent: total > 0 ? transferred / total : 0,
+          size: { transferred, total },
+          downloadType: 'Backend',
+        })
+      }
+    }
+
+    try {
+      if (downloadManager?.downloadFiles) {
+        await downloadManager.downloadFiles(
+          [{ url: cudartUrl, save_path: cudartArchivePath }],
+          taskId,
+          onProgress,
+          false
+        )
+      } else {
+        logger.warn(
+          'download-extension not available, falling back to raw download_files invoke for cudart'
+        )
+        await invoke<void>('download_files', {
+          items: [{ url: cudartUrl, save_path: cudartArchivePath }],
+          taskId,
+          headers: {},
+          resume: false,
+        })
+      }
+
+      if (!(await fs.existsSync(cudartExtractDir))) {
+        await fs.mkdir(cudartExtractDir)
+      }
+
+      logger.info(`Extracting cudart archive to ${cudartExtractDir}`)
+      await invoke('decompress', {
+        path: cudartArchivePath,
+        outputDir: cudartExtractDir,
+      })
+
+      const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
+      if (!(await fs.existsSync(buildBinDir))) {
+        await fs.mkdir(buildBinDir)
+      }
+
+      // Recursively walk every entry under `cudartExtractDir` and move
+      // each *.dll into build/bin/. Most ggml-org cudart archives are
+      // flat (DLLs at the root), but we walk just in case a future
+      // build introduces a subfolder.
+      //
+      // The Tauri `readdir_sync` command returns FULL absolute paths
+      // (Rust's `entry.path().to_string_lossy()`), so:
+      //   - `entry` IS already the full path; no `joinPath` rebuild.
+      //   - `joinPath([buildBinDir, entry])` would resolve to `entry`
+      //     itself (Path::join replaces the base when the second arg
+      //     is absolute), giving `mv(x, x)` and silently dropping
+      //     every DLL move. Always derive the basename via splitting
+      //     on path separators before composing the destination.
+      let copied = 0
+      const stack: string[] = [cudartExtractDir]
+      while (stack.length > 0) {
+        const currentDir = stack.pop() as string
+        const entries = (await fs.readdirSync(currentDir)) as string[]
+        for (const entryPath of entries) {
+          let stat: { isDirectory?: boolean } | undefined
+          try {
+            stat = await fs.fileStat(entryPath)
+          } catch {
+            stat = undefined
+          }
+          if (stat?.isDirectory) {
+            stack.push(entryPath)
+            continue
+          }
+          const baseName = entryPath.split(/[/\\]/).filter(Boolean).pop()
+          if (!baseName) continue
+          if (baseName.toLowerCase().endsWith('.dll')) {
+            const dst = await joinPath([buildBinDir, baseName])
+            // `fs.mv` is the only file relocation primitive exposed by
+            // the Tauri shell — `fs.copyFile` resolves to a missing
+            // `copy_file` Rust command. Moving (not copying) is fine
+            // here: the entire `cudartExtractDir` gets removed in the
+            // `finally` block below, so we'd lose the source either
+            // way.
+            await fs.mv(entryPath, dst)
+            copied += 1
+          }
+        }
+      }
+
+      logger.info(
+        `Merged ${copied} cudart DLL(s) into ${buildBinDir} for ${backendString}`
+      )
+
+      if (copied === 0) {
+        throw new Error(
+          `cudart archive for ${backendString} contained no DLLs`
+        )
+      }
+    } finally {
+      try {
+        if (await fs.existsSync(cudartArchivePath)) {
+          await fs.rm(cudartArchivePath)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+      try {
+        if (await fs.existsSync(cudartExtractDir)) {
+          await fs.rm(cudartExtractDir)
         }
       } catch {
         // best-effort cleanup

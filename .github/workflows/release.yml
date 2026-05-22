@@ -446,14 +446,15 @@ jobs:
       - name: Download binaries (bun, uv)
         run: yarn download:bin
 
-      - name: Download llamacpp backend (janhq/llama.cpp)
+      - name: Download upstream llamacpp backend (ggml-org/llama.cpp)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p src-tauri/resources/llamacpp-backend
+          # Per ADR 2026-05-22, Windows ships only the upstream provider.
+          mkdir -p src-tauri/resources/llamacpp-backend-upstream
           TMPREL=$(mktemp /tmp/llamacpp-latest-XXXXXX.json)
-          API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"
+          API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
           _gh_get() {
             # $1=use_token (1/0), $2=output, $3=url
             if [ "$1" = "1" ] && [ -n "$GH_TOKEN" ]; then
@@ -509,24 +510,26 @@ jobs:
             rm -f "$TMPREL"; exit 1
           fi
           rm -f "$TMPREL"
-          BACKEND="win-common_cpus-x64"
-          URL="https://github.com/janhq/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-${BACKEND}.tar.gz"
-          echo "$TAG" > src-tauri/resources/llamacpp-backend/version.txt
-          echo "$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt
+          BACKEND="win-cpu-x64"
+          # ggml-org publishes Windows binaries as .zip (not .tar.gz like
+          # the legacy janhq mirror).
+          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/llama-${TAG}-bin-${BACKEND}.zip"
+          echo "$TAG" > src-tauri/resources/llamacpp-backend-upstream/version.txt
+          echo "$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt
           echo "Release: $TAG  Backend: $BACKEND"
           echo "Downloading: $URL"
-          curl -fSL "$URL" -o /tmp/llamacpp-backend.tar.gz
-          tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/
-          rm -f /tmp/llamacpp-backend.tar.gz
-          if [ ! -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server.exe" ]; then
-            if [ -f "src-tauri/resources/llamacpp-backend/llama-server.exe" ]; then
-              mkdir -p src-tauri/resources/llamacpp-backend/build/bin
-              mv src-tauri/resources/llamacpp-backend/*.exe src-tauri/resources/llamacpp-backend/build/bin/
-              mv src-tauri/resources/llamacpp-backend/*.dll src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || true
+          curl -fSL "$URL" -o /tmp/llamacpp-upstream-backend.zip
+          unzip -o /tmp/llamacpp-upstream-backend.zip -d src-tauri/resources/llamacpp-backend-upstream/
+          rm -f /tmp/llamacpp-upstream-backend.zip
+          if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe" ]; then
+            if [ -f "src-tauri/resources/llamacpp-backend-upstream/llama-server.exe" ]; then
+              mkdir -p src-tauri/resources/llamacpp-backend-upstream/build/bin
+              mv src-tauri/resources/llamacpp-backend-upstream/*.exe src-tauri/resources/llamacpp-backend-upstream/build/bin/
+              mv src-tauri/resources/llamacpp-backend-upstream/*.dll src-tauri/resources/llamacpp-backend-upstream/build/bin/ 2>/dev/null || true
             fi
           fi
-          ls -la src-tauri/resources/llamacpp-backend/
-          ls -la src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || echo "build/bin not found"
+          ls -la src-tauri/resources/llamacpp-backend-upstream/
+          ls -la src-tauri/resources/llamacpp-backend-upstream/build/bin/ 2>/dev/null || echo "build/bin not found"
 
       - name: Build web app and generate icons
         env:

@@ -170,15 +170,17 @@ Write-Step 'yarn download:bin'
 yarn download:bin
 if ($LASTEXITCODE -ne 0) { Write-Host 'download:bin failed' -ForegroundColor Red; exit 1 }
 
-# ── Download CPU-only llamacpp backend (matches CI) ───────────
-Write-Step 'Download llamacpp CPU backend (win-common_cpus-x64)'
-$llamacppDir = 'src-tauri/resources/llamacpp-backend'
-$backend = 'win-common_cpus-x64'
+# ── Download CPU-only upstream llamacpp backend (matches CI) ──
+# Per ADR 2026-05-22, Windows release artifacts ship only the
+# `llamacpp-upstream` provider, sourced from ggml-org/llama.cpp.
+Write-Step 'Download upstream llamacpp CPU backend (win-cpu-x64)'
+$llamacppDir = 'src-tauri/resources/llamacpp-backend-upstream'
+$backend = 'win-cpu-x64'
 
 if (Test-Path $llamacppDir) { Remove-Item $llamacppDir -Recurse -Force }
 New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
 
-$apiUrl = 'https://api.github.com/repos/janhq/llama.cpp/releases/latest'
+$apiUrl = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
 $headers = @{ 'User-Agent' = 'atomic-chat-build' }
 if ($env:GH_TOKEN) {
     $headers['Authorization'] = "Bearer $env:GH_TOKEN"
@@ -192,8 +194,10 @@ if (-not $tag) {
     exit 1
 }
 
-$archiveUrl = "https://github.com/janhq/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.tar.gz"
-$archivePath = Join-Path $env:TEMP 'llamacpp-backend.tar.gz'
+# ggml-org publishes Windows binaries as .zip (not .tar.gz like the
+# legacy janhq mirror).
+$archiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.zip"
+$archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
 
 Write-Host "  Release: $tag  Backend: $backend"
 Write-Host "  Downloading: $archiveUrl"
@@ -204,7 +208,7 @@ Set-Content -Path "$llamacppDir/version.txt" -Value $tag -NoNewline
 Set-Content -Path "$llamacppDir/backend.txt" -Value $backend -NoNewline
 
 Write-Host '  Extracting...'
-tar -xzf $archivePath -C $llamacppDir
+Expand-Archive -Path $archivePath -DestinationPath $llamacppDir -Force
 Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
 
 if (-not (Test-Path "$llamacppDir/build/bin/llama-server.exe")) {

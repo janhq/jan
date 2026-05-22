@@ -13,6 +13,7 @@
   "useModel": "Usar este modelo",
   "downloadModel": "Baixar modelo",
   "modelInfo": "Model information",
+  "downloadFailed": "Failed to start download",
   "tools": "Ferramentas",
   "searchPlaceholder": "Buscar modelos no Hugging Face...",
   "recTitle": "Recomendados",

@@ -101,10 +101,10 @@ else
 	@echo "This target is for Windows only. Use 'make dev' instead."
 endif
 
-# Same as `dev-windows`, but reuses the llamacpp backend already downloaded
-# under src-tauri/resources/llamacpp-backend (analogue of `dev-fast` for macOS).
-# Skips the GitHub release fetch — fast iteration on the currently installed
-# backend without re-downloading.
+# Same as `dev-windows`, but reuses the llama.cpp backend already downloaded
+# under src-tauri/resources/llamacpp-backend-upstream (analogue of `dev-fast`
+# for macOS). Skips the GitHub release fetch — fast iteration on the currently
+# installed backend without re-downloading.
 dev-windows-fast:
 ifeq ($(OS),Windows_NT)
 	powershell -ExecutionPolicy Bypass -File scripts/dev-windows.ps1 -SkipBackendDownload
@@ -113,9 +113,11 @@ else
 endif
 
 # Dev workflow with CPU-only backend to test runtime GPU auto-download.
-# Clears downloaded backends from the Jan data folder, starts with
-# win-common_cpus-x64, then the app detects GPU and downloads the optimal
-# backend (CUDA/Vulkan) in the background — shows the UI popup.
+# Clears downloaded backends from the Atomic Chat data folder
+# (data\llamacpp-upstream\backends), starts with the upstream `win-cpu-x64`
+# build, then the llamacpp-upstream extension detects the GPU and downloads
+# the optimal backend (CUDA 12.4 / 13.1 / Vulkan) in the background — and
+# shows the UI popup.
 dev-windows-cpu:
 ifeq ($(OS),Windows_NT)
 	powershell -ExecutionPolicy Bypass -Command "\
@@ -130,7 +132,7 @@ ifeq ($(OS),Windows_NT)
 			$$dataDir = $$s.data_folder; \
 		}; \
 		if (-not $$dataDir) { $$dataDir = Join-Path $$env:APPDATA 'Atomic Chat\data' }; \
-		$$backendsDir = Join-Path $$dataDir 'llamacpp\backends'; \
+		$$backendsDir = Join-Path $$dataDir 'llamacpp-upstream\backends'; \
 		if (Test-Path $$backendsDir) { \
 			Write-Host ('Clearing downloaded backends from ' + $$backendsDir) -ForegroundColor Yellow; \
 			Remove-Item $$backendsDir -Recurse -Force; \
@@ -150,7 +152,7 @@ ifeq ($(OS),Windows_NT)
 			} \
 		}; \
 		if (-not $$wiped) { Write-Host 'No WebView2 Local Storage was cleared (paths missing or locked).' -ForegroundColor Gray }; \
-		$$env:LLAMACPP_BACKEND = 'win-common_cpus-x64'; \
+		$$env:LLAMACPP_BACKEND = 'win-cpu-x64'; \
 		Write-Host ''; \
 		Write-Host 'Tip: for a full wipe (all data, models, settings, WebView2 cache) run:' -ForegroundColor Cyan; \
 		Write-Host '  make clean-windows-all CONFIRM=1' -ForegroundColor Cyan; \
@@ -553,131 +555,40 @@ ifeq ($(shell uname -s),Darwin)
 		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
 	fi
 else ifeq ($(OS),Windows_NT)
-	@mkdir -p src-tauri/resources/llamacpp-backend
-	@echo "Detecting GPU and selecting best backend for Windows..."; \
-	BACKEND=""; \
-	if [ -n "$(LLAMACPP_BACKEND)" ]; then \
-		BACKEND="$(LLAMACPP_BACKEND)"; \
-		echo "Using manually specified backend: $$BACKEND"; \
-	else \
-		NV_DRIVER=$$(powershell -NoProfile -Command "try { $$g = Get-CimInstance Win32_VideoController -EA Stop | Where-Object { $$_.Name -match 'NVIDIA' } | Select-Object -First 1; if($$g -and $$g.DriverVersion){ $$r = $$g.DriverVersion -replace '\\.','' ; if($$r.Length -ge 5){ $$nv=$$r.Substring($$r.Length-5); $$maj=$$nv.Substring(0,3).TrimStart('0'); $$min=$$nv.Substring(3,2); if(-not $$maj){$$maj='0'}; Write-Output \"$$maj.$$min\" } } } catch {}" 2>/dev/null); \
-		HAS_VULKAN=$$(powershell -NoProfile -Command "if(Test-Path \"$$env:SystemRoot\\System32\\vulkan-1.dll\"){'true'}else{'false'}" 2>/dev/null); \
-		VRAM_MIB=$$(powershell -NoProfile -Command "try{ $$v=(Get-CimInstance Win32_VideoController -EA Stop | ForEach-Object { $$_.AdapterRAM } | Sort-Object -Descending | Select-Object -First 1); if($$v -gt 0){[math]::Floor($$v/1048576)}else{0} } catch { 0 }" 2>/dev/null); \
-		echo "NVIDIA driver: $${NV_DRIVER:-none}  Vulkan: $$HAS_VULKAN  VRAM: $${VRAM_MIB:-0} MiB"; \
-		if [ -n "$$NV_DRIVER" ]; then \
-			NV_MAJOR=$$(echo "$$NV_DRIVER" | cut -d. -f1); \
-			NV_MINOR=$$(echo "$$NV_DRIVER" | cut -d. -f2); \
-			NV_VAL=$$((NV_MAJOR * 100 + NV_MINOR)); \
-			if [ $$NV_VAL -ge 58000 ]; then \
-				BACKEND="win-cuda-13-common_cpus-x64"; \
-			elif [ $$NV_VAL -ge 52741 ]; then \
-				BACKEND="win-cuda-12-common_cpus-x64"; \
-			elif [ $$NV_VAL -ge 45239 ]; then \
-				BACKEND="win-cuda-11-common_cpus-x64"; \
-			fi; \
-		fi; \
-		if [ -z "$$BACKEND" ] && [ "$$HAS_VULKAN" = "true" ] && [ "$${VRAM_MIB:-0}" -ge 6144 ]; then \
-			BACKEND="win-vulkan-common_cpus-x64"; \
-		fi; \
-		if [ -z "$$BACKEND" ]; then \
-			BACKEND="win-common_cpus-x64"; \
-		fi; \
-		echo "Auto-selected backend: $$BACKEND"; \
-	fi; \
-	echo "Fetching latest llamacpp release from janhq/llama.cpp..."; \
-	TMPREL=$$(mktemp /tmp/llamacpp-latest-XXXXXX.json); \
-	API_URL="https://api.github.com/repos/janhq/llama.cpp/releases/latest"; \
-	_gh_get() { \
-		if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
-			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-		else \
-			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-		fi; \
-	}; \
-	_gh_fetch() { \
-		HTTP_CODE=""; \
-		for attempt in 1 2 3 4 5; do \
-			HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
-			case "$$HTTP_CODE" in \
-				2*) return 0 ;; \
-				403|429|5*|000) \
-					echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-					sleep $$((attempt * 2)) ;; \
-				*) return 1 ;; \
-			esac; \
-		done; \
-		return 1; \
-	}; \
-	_tag_ok() { \
-		[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
-	}; \
-	USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
-	_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
-	FIRST_CODE="$$HTTP_CODE"; \
-	if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
-		echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
-		_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
-	fi; \
-	case "$$HTTP_CODE" in \
-		2*) ;; \
-		*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
-		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-		   rm -f "$$TMPREL"; exit 1 ;; \
-	esac; \
-	TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
-	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-		echo "Error: Failed to extract tag_name from response (HTTP $$HTTP_CODE):"; \
-		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-		rm -f "$$TMPREL"; exit 1; \
-	fi; \
-	rm -f "$$TMPREL"; \
-	URL="https://github.com/janhq/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.tar.gz"; \
-	echo "$$TAG" > src-tauri/resources/llamacpp-backend/version.txt; \
-	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend/backend.txt; \
-	echo "Release: $$TAG  Backend: $$BACKEND"; \
-	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/llamacpp-backend.tar.gz; \
-	tar -xzf /tmp/llamacpp-backend.tar.gz -C src-tauri/resources/llamacpp-backend/; \
-	rm -f /tmp/llamacpp-backend.tar.gz; \
-	if [ ! -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server.exe" ]; then \
-		if [ -f "src-tauri/resources/llamacpp-backend/llama-server.exe" ]; then \
-			echo "Relocating flat-extracted binaries into build/bin/..."; \
-			mkdir -p src-tauri/resources/llamacpp-backend/build/bin; \
-			mv src-tauri/resources/llamacpp-backend/*.exe src-tauri/resources/llamacpp-backend/build/bin/; \
-			mv src-tauri/resources/llamacpp-backend/*.dll src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || true; \
-		fi; \
-	fi; \
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/download-llamacpp-cudart-windows.ps1 \
-		-BackendDir src-tauri/resources/llamacpp-backend -Backend "$$BACKEND" -Tag "$$TAG" || \
-		echo "Warning: cudart merge failed for $$BACKEND (GPU detection may not work)"; \
-	echo "Downloaded and extracted llamacpp backend ($$BACKEND) for Windows successfully"
+	@echo "download-llamacpp-backend is a no-op on Windows."
+	@echo "Per ADR 2026-05-22, Windows ships only the upstream llama.cpp"
+	@echo "provider; run 'make download-llamacpp-upstream-backend' instead."
 else
 	@echo "Skipping llamacpp backend download (unsupported platform)"
 endif
 
 # Download CPU fallback backend for Windows (pure PowerShell, no bash needed).
-# The app will auto-detect GPU and download optimal backend (CUDA/Vulkan) at runtime.
-download-llamacpp-backend-win-cpu:
+# Sources the official upstream ggml-org/llama.cpp release into the upstream
+# backend resource dir. The app will auto-detect GPU and download the optimal
+# backend (CUDA/Vulkan) at runtime via the llamacpp-upstream extension.
+# Per ADR 2026-05-22, Windows ships only `llamacpp-upstream` — this target is
+# the canonical CPU bundle source for that pipeline.
+download-llamacpp-upstream-backend-win-cpu:
 	powershell -NoProfile -Command " \
 		$$ErrorActionPreference = 'Stop'; \
-		$$dir = 'src-tauri/resources/llamacpp-backend'; \
+		$$dir = 'src-tauri/resources/llamacpp-backend-upstream'; \
 		if (Test-Path $$dir) { Remove-Item $$dir -Recurse -Force }; \
 		New-Item -ItemType Directory -Path $$dir -Force | Out-Null; \
-		Write-Host 'Fetching latest release tag from janhq/llama.cpp...'; \
+		Write-Host 'Fetching latest release tag from ggml-org/llama.cpp...'; \
 		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
 		if ($$env:GH_TOKEN) { $$headers['Authorization'] = \"Bearer $$env:GH_TOKEN\" }; \
-		$$release = Invoke-RestMethod -Uri 'https://api.github.com/repos/janhq/llama.cpp/releases/latest' -Headers $$headers; \
+		$$release = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers $$headers; \
 		$$tag = $$release.tag_name; \
 		if (-not $$tag) { throw 'Failed to fetch release tag' }; \
-		$$backend = 'win-common_cpus-x64'; \
-		$$url = \"https://github.com/janhq/llama.cpp/releases/download/$$tag/llama-$${tag}-bin-$${backend}.tar.gz\"; \
+		$$backend = 'win-cpu-x64'; \
+		$$url = \"https://github.com/ggml-org/llama.cpp/releases/download/$$tag/llama-$${tag}-bin-$${backend}.zip\"; \
 		[System.IO.File]::WriteAllText(\"$$dir/version.txt\", $$tag); \
 		[System.IO.File]::WriteAllText(\"$$dir/backend.txt\", $$backend); \
 		Write-Host \"Release: $$tag  Backend: $$backend\"; \
 		Write-Host \"Downloading: $$url\"; \
-		$$tmp = \"$$env:TEMP\\llamacpp-backend.tar.gz\"; \
+		$$tmp = \"$$env:TEMP\\llamacpp-upstream-backend.zip\"; \
 		Invoke-WebRequest -Uri $$url -OutFile $$tmp -UseBasicParsing; \
-		tar -xzf $$tmp -C $$dir; \
+		Expand-Archive -Path $$tmp -DestinationPath $$dir -Force; \
 		Remove-Item $$tmp -Force -ErrorAction SilentlyContinue; \
 		if (-not (Test-Path \"$$dir/build/bin/llama-server.exe\")) { \
 			if (Test-Path \"$$dir/llama-server.exe\") { \
@@ -688,6 +599,12 @@ download-llamacpp-backend-win-cpu:
 		}; \
 		Write-Host \"CPU backend ($$backend) downloaded successfully. App will auto-download GPU backend at runtime.\"; \
 	"
+
+# Backwards-compatible alias. CI scripts and earlier dev recipes that still
+# call `download-llamacpp-backend-win-cpu` keep working by delegating to the
+# new upstream target. Remove after every consumer has migrated.
+download-llamacpp-backend-win-cpu: download-llamacpp-upstream-backend-win-cpu
+	@echo "[deprecated] download-llamacpp-backend-win-cpu now delegates to download-llamacpp-upstream-backend-win-cpu."
 
 # Full Windows release build (local, no code signing).
 # Mirrors CI pipeline from release.yml: CPU-only backend, NSIS + MSI installers.
@@ -808,8 +725,105 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
 	fi
+else ifeq ($(OS),Windows_NT)
+	@mkdir -p src-tauri/resources/llamacpp-backend-upstream
+	@echo "Detecting GPU and selecting best upstream backend for Windows..."; \
+	BACKEND=""; \
+	if [ -n "$(LLAMACPP_BACKEND)" ]; then \
+		BACKEND="$(LLAMACPP_BACKEND)"; \
+		echo "Using manually specified backend: $$BACKEND"; \
+	else \
+		NV_DRIVER=$$(powershell -NoProfile -Command "try { $$g = Get-CimInstance Win32_VideoController -EA Stop | Where-Object { $$_.Name -match 'NVIDIA' } | Select-Object -First 1; if($$g -and $$g.DriverVersion){ $$r = $$g.DriverVersion -replace '\\.','' ; if($$r.Length -ge 5){ $$nv=$$r.Substring($$r.Length-5); $$maj=$$nv.Substring(0,3).TrimStart('0'); $$min=$$nv.Substring(3,2); if(-not $$maj){$$maj='0'}; Write-Output \"$$maj.$$min\" } } } catch {}" 2>/dev/null); \
+		HAS_VULKAN=$$(powershell -NoProfile -Command "if(Test-Path \"$$env:SystemRoot\\System32\\vulkan-1.dll\"){'true'}else{'false'}" 2>/dev/null); \
+		VRAM_MIB=$$(powershell -NoProfile -Command "try{ $$v=(Get-CimInstance Win32_VideoController -EA Stop | ForEach-Object { $$_.AdapterRAM } | Sort-Object -Descending | Select-Object -First 1); if($$v -gt 0){[math]::Floor($$v/1048576)}else{0} } catch { 0 }" 2>/dev/null); \
+		echo "NVIDIA driver: $${NV_DRIVER:-none}  Vulkan: $$HAS_VULKAN  VRAM: $${VRAM_MIB:-0} MiB"; \
+		if [ -n "$$NV_DRIVER" ]; then \
+			NV_MAJOR=$$(echo "$$NV_DRIVER" | cut -d. -f1); \
+			NV_MINOR=$$(echo "$$NV_DRIVER" | cut -d. -f2); \
+			NV_VAL=$$((NV_MAJOR * 100 + NV_MINOR)); \
+			if [ $$NV_VAL -ge 58100 ]; then \
+				BACKEND="win-cuda-13.1-x64"; \
+			elif [ $$NV_VAL -ge 55161 ]; then \
+				BACKEND="win-cuda-12.4-x64"; \
+			fi; \
+		fi; \
+		if [ -z "$$BACKEND" ] && [ "$$HAS_VULKAN" = "true" ] && [ "$${VRAM_MIB:-0}" -ge 6144 ]; then \
+			BACKEND="win-vulkan-x64"; \
+		fi; \
+		if [ -z "$$BACKEND" ]; then \
+			BACKEND="win-cpu-x64"; \
+		fi; \
+		echo "Auto-selected backend: $$BACKEND"; \
+	fi; \
+	echo "Fetching latest llama.cpp release from ggml-org/llama.cpp..."; \
+	TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
+	API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"; \
+	_gh_get() { \
+		if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+		else \
+			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+		fi; \
+	}; \
+	_gh_fetch() { \
+		HTTP_CODE=""; \
+		for attempt in 1 2 3 4 5; do \
+			HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+			case "$$HTTP_CODE" in \
+				2*) return 0 ;; \
+				403|429|5*|000) \
+					echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+					sleep $$((attempt * 2)) ;; \
+				*) return 1 ;; \
+			esac; \
+		done; \
+		return 1; \
+	}; \
+	_tag_ok() { \
+		[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+	}; \
+	USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+	_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+	FIRST_CODE="$$HTTP_CODE"; \
+	if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+		echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+		_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+	fi; \
+	case "$$HTTP_CODE" in \
+		2*) ;; \
+		*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
+		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		   rm -f "$$TMPREL"; exit 1 ;; \
+	esac; \
+	TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
+		echo "Error: Failed to extract tag_name from upstream release response:"; \
+		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		rm -f "$$TMPREL"; exit 1; \
+	fi; \
+	rm -f "$$TMPREL"; \
+	URL="https://github.com/ggml-org/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$BACKEND.zip"; \
+	echo "$$TAG" > src-tauri/resources/llamacpp-backend-upstream/version.txt; \
+	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
+	echo "Release: $$TAG  Backend: $$BACKEND"; \
+	echo "Downloading: $$URL"; \
+	curl -fSL "$$URL" -o /tmp/llamacpp-upstream-backend.zip; \
+	unzip -o /tmp/llamacpp-upstream-backend.zip -d src-tauri/resources/llamacpp-backend-upstream/; \
+	rm -f /tmp/llamacpp-upstream-backend.zip; \
+	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe" ]; then \
+		if [ -f "src-tauri/resources/llamacpp-backend-upstream/llama-server.exe" ]; then \
+			echo "Relocating flat-extracted binaries into build/bin/..."; \
+			mkdir -p src-tauri/resources/llamacpp-backend-upstream/build/bin; \
+			mv src-tauri/resources/llamacpp-backend-upstream/*.exe src-tauri/resources/llamacpp-backend-upstream/build/bin/; \
+			mv src-tauri/resources/llamacpp-backend-upstream/*.dll src-tauri/resources/llamacpp-backend-upstream/build/bin/ 2>/dev/null || true; \
+		fi; \
+	fi; \
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/download-llamacpp-cudart-windows.ps1 \
+		-BackendDir src-tauri/resources/llamacpp-backend-upstream -Backend "$$BACKEND" -Tag "$$TAG" || \
+		echo "Warning: cudart merge failed for $$BACKEND (GPU detection may not work)"; \
+	echo "Downloaded and extracted upstream llamacpp backend ($$BACKEND) for Windows successfully"
 else
-	@echo "Skipping upstream llamacpp backend download (macOS only)"
+	@echo "Skipping upstream llamacpp backend download (macOS / Windows only)"
 endif
 
 # Download upstream llamacpp backend only if not already present (for dev)
@@ -820,8 +834,14 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		$(MAKE) download-llamacpp-upstream-backend; \
 	fi
+else ifeq ($(OS),Windows_NT)
+	@if [ -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe" ]; then \
+		echo "upstream llamacpp backend already exists, skipping download..."; \
+	else \
+		$(MAKE) download-llamacpp-upstream-backend; \
+	fi
 else
-	@echo "Skipping upstream llamacpp backend (macOS only)"
+	@echo "Skipping upstream llamacpp backend (macOS / Windows only)"
 endif
 
 # Download llamacpp backend only if not already present (for dev)
@@ -833,11 +853,8 @@ ifeq ($(shell uname -s),Darwin)
 		$(MAKE) download-llamacpp-backend; \
 	fi
 else ifeq ($(OS),Windows_NT)
-	@if [ -f "src-tauri/resources/llamacpp-backend/build/bin/llama-server.exe" ]; then \
-		echo "llamacpp backend already exists, skipping download..."; \
-	else \
-		$(MAKE) download-llamacpp-backend; \
-	fi
+	@echo "download-llamacpp-backend-if-exists is a no-op on Windows."
+	@echo "Run download-llamacpp-upstream-backend-if-exists instead (Windows ships only the upstream provider)."
 else
 	@echo "Skipping llamacpp backend (unsupported platform)"
 endif
