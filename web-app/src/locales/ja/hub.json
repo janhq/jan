@@ -12,6 +12,7 @@
   "showVariants": "バリアントを表示",
   "useModel": "このモデルを使用",
   "downloadModel": "モデルをダウンロード",
+  "modelInfo": "Model information",
   "tools": "ツール",
   "searchPlaceholder": "Hugging Faceでモデルを検索...",
   "recTitle": "おすすめ",

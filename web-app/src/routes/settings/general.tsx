@@ -34,6 +34,16 @@ import { isRootDir } from '@/utils/path'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
+const ATOMIC_CLI_COMMAND = 'atomic-chat-cli'
+
+function formatAtomicCliDisplayPath(path: string): string {
+  if (/[/\\]jan\.exe$/i.test(path)) {
+    return path.replace(/jan\.exe$/i, 'atomic-chat-cli.exe')
+  }
+  return path.replace(/[/\\]jan$/, (segment) =>
+    segment.replace(/jan$/, ATOMIC_CLI_COMMAND)
+  )
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -117,7 +127,11 @@ function General() {
       )
       setCliInstalled(s.installed)
       setCliPath(s.path)
-      toast.success(`Atomic Bot CLI installed to ${s.path}`)
+      toast.success(
+        t('settings:general.atomicBotCliInstalledToast', {
+          path: s.path ? formatAtomicCliDisplayPath(s.path) : ATOMIC_CLI_COMMAND,
+        })
+      )
     } catch (e) {
       toast.error('Install failed', { description: String(e) })
     } finally {
@@ -541,11 +555,13 @@ function General() {
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
-                  title="Atomic Bot CLI"
+                  title={t('settings:general.atomicBotCliTitle')}
                   description={
                     cliInstalled && cliPath
-                      ? `Installed at ${cliPath.replace('/jan', '/atomic_chat')} — run atomic-chat-cli from your terminal to serve models.`
-                      : 'Run atomic-chat-cli from your terminal to serve models without opening the app.'
+                      ? t('settings:general.atomicBotCliInstalled', {
+                          path: formatAtomicCliDisplayPath(cliPath),
+                        })
+                      : t('settings:general.atomicBotCliNotInstalled')
                   }
                   actions={
                     cliInstalled ? (

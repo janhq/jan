@@ -12,6 +12,7 @@
   "showVariants": "Hiển thị biến thể",
   "useModel": "Sử dụng mô hình này",
   "downloadModel": "Tải xuống mô hình",
+  "modelInfo": "Model information",
   "tools": "Công cụ",
   "searchPlaceholder": "Tìm kiếm các mô hình trên Hugging Face...",
   "recTitle": "Đề xuất",

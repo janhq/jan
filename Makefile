@@ -647,6 +647,9 @@ else ifeq ($(OS),Windows_NT)
 			mv src-tauri/resources/llamacpp-backend/*.dll src-tauri/resources/llamacpp-backend/build/bin/ 2>/dev/null || true; \
 		fi; \
 	fi; \
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/download-llamacpp-cudart-windows.ps1 \
+		-BackendDir src-tauri/resources/llamacpp-backend -Backend "$$BACKEND" -Tag "$$TAG" || \
+		echo "Warning: cudart merge failed for $$BACKEND (GPU detection may not work)"; \
 	echo "Downloaded and extracted llamacpp backend ($$BACKEND) for Windows successfully"
 else
 	@echo "Skipping llamacpp backend download (unsupported platform)"

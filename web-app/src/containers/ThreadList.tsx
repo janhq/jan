@@ -19,6 +19,8 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -40,10 +42,12 @@ const ThreadItem = memo(
     thread,
     isMobile,
     currentProjectId,
+    subItem,
   }: {
     thread: Thread
     isMobile: boolean
     currentProjectId?: string
+    subItem?: boolean
   }) => {
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
@@ -142,8 +146,11 @@ const ThreadItem = memo(
       }
     }
 
+    const MenuItemWrapper = subItem ? SidebarMenuSubItem : SidebarMenuItem
+    const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
+
     return (
-      <SidebarMenuItem>
+      <MenuItemWrapper>
         {currentProjectId ? (
           <Link
             to="/threads/$threadId"
@@ -158,11 +165,11 @@ const ThreadItem = memo(
             )}
           </Link>
         ) : (
-          <SidebarMenuButton asChild>
+          <MenuButtonWrapper asChild>
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
               <span>{thread.title || t('common:newThread')}</span>
             </Link>
-          </SidebarMenuButton>
+          </MenuButtonWrapper>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -170,7 +177,8 @@ const ThreadItem = memo(
               showOnHover
               className={cn(
                 'hover:bg-sidebar-foreground/8',
-                currentProjectId && 'mt-4 mr-2'
+                currentProjectId && 'mt-4 mr-2',
+                subItem && 'top-1'
               )}
             >
               <MoreHorizontal />
@@ -277,7 +285,7 @@ const ThreadItem = memo(
           onOpenChange={setDeleteConfirmOpen}
           withoutTrigger
         />
-      </SidebarMenuItem>
+      </MenuItemWrapper>
     )
   }
 )
@@ -285,9 +293,10 @@ const ThreadItem = memo(
 type ThreadListProps = {
   threads: Thread[]
   currentProjectId?: string
+  subItem?: boolean
 }
 
-function ThreadList({ threads, currentProjectId }: ThreadListProps) {
+function ThreadList({ threads, currentProjectId, subItem }: ThreadListProps) {
   const { isMobile } = useSidebar()
 
   const sortedThreads = useMemo(() => {
@@ -304,6 +313,7 @@ function ThreadList({ threads, currentProjectId }: ThreadListProps) {
           thread={thread}
           isMobile={isMobile}
           currentProjectId={currentProjectId}
+          subItem={subItem}
         />
       ))}
     </>

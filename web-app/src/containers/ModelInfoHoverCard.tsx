@@ -3,8 +3,10 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
+import { Button } from '@/components/ui/button'
 import { IconInfoCircle } from '@tabler/icons-react'
 import { CatalogModel, ModelQuant } from '@/services/models/types'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface ModelInfoHoverCardProps {
   model: CatalogModel
@@ -25,6 +27,7 @@ export const ModelInfoHoverCard = ({
   onCheckModelSupport,
   children,
 }: ModelInfoHoverCardProps) => {
+  const { t } = useTranslation()
   const displayVariant =
     variant ||
     model.quants?.find((m: ModelQuant) =>
@@ -34,7 +37,7 @@ export const ModelInfoHoverCard = ({
     ) ||
     model.quants?.[0]
 
-  const handleMouseEnter = () => {
+  const handleTriggerFocus = () => {
     if (displayVariant) {
       onCheckModelSupport(displayVariant)
     }
@@ -102,14 +105,24 @@ export const ModelInfoHoverCard = ({
 
   return (
     <HoverCard>
-      <HoverCardTrigger asChild onMouseEnter={handleMouseEnter}>
+      <HoverCardTrigger
+        asChild
+        onMouseEnter={handleTriggerFocus}
+        onFocus={handleTriggerFocus}
+      >
         {children || (
-          <div className="cursor-pointer">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('hub:modelInfo')}
+            className="mt-0.5"
+          >
             <IconInfoCircle
               size={isDefaultVariant ? 20 : 14}
-              className="mt-0.5 text-muted-foreground transition-colors"
+              className="text-muted-foreground transition-colors"
             />
-          </div>
+          </Button>
         )}
       </HoverCardTrigger>
       <HoverCardContent className="w-80 p-4" side="left">

@@ -4,6 +4,8 @@ import { events, AppEvent } from '@janhq/core'
 import type { UpdateInfo } from '@/services/updater/types'
 import { SystemEvent } from '@/types/events'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -16,6 +18,7 @@ export interface UpdateState {
 }
 
 export const useAppUpdater = () => {
+  const { t } = useTranslation()
   const [updateState, setUpdateState] = useState<UpdateState>({
     isUpdateAvailable: false,
     updateInfo: null,
@@ -222,6 +225,13 @@ export const useAppUpdater = () => {
         }
       })
 
+      if (IS_WINDOWS) {
+        // NSIS .onInstSuccess (RunAsUser) is the sole relauncher on Windows.
+        // Calling relaunch() here races the installer and can leave a blank shell.
+        toast.info(t('updater:relaunchingWindows'))
+        return
+      }
+
       await window.core?.api?.relaunch()
 
       console.log('Update installed')
@@ -237,7 +247,7 @@ export const useAppUpdater = () => {
         message: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [updateState.updateInfo])
+  }, [updateState.updateInfo, t])
 
 
   return {

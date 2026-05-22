@@ -1,9 +1,26 @@
 import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { useCallback, useEffect, useState } from 'react'
 
 export const WindowControls = () => {
   const appWindow = getCurrentWebviewWindow()
+  const [isMaximized, setIsMaximized] = useState(false)
+
+  const refreshMaximized = useCallback(async () => {
+    setIsMaximized(await appWindow.isMaximized())
+  }, [appWindow])
+
+  useEffect(() => {
+    void refreshMaximized()
+    const unlisten = appWindow.onResized(() => {
+      void refreshMaximized()
+    })
+    return () => {
+      void unlisten.then((fn) => fn())
+    }
+  }, [appWindow, refreshMaximized])
 
   const handleMinimize = async () => {
     await appWindow.minimize()
@@ -11,6 +28,7 @@ export const WindowControls = () => {
 
   const handleMaximize = async () => {
     await appWindow.toggleMaximize()
+    await refreshMaximized()
   }
 
   const handleClose = async () => {
@@ -18,7 +36,12 @@ export const WindowControls = () => {
   }
 
   return (
-    <div className="absolute top-0 z-50 right-4 h-15">
+    <div
+      className={cn(
+        'absolute top-0 z-50 h-15',
+        isMaximized ? 'right-0' : 'right-4'
+      )}
+    >
       <div className="flex items-center h-full">
         <Button
           onClick={handleMinimize}
@@ -41,6 +64,7 @@ export const WindowControls = () => {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
+          className={cn(isMaximized && 'rounded-none hover:rounded-none')}
         >
           <X className="size-4" />
         </Button>

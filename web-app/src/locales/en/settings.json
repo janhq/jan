@@ -275,7 +275,11 @@
     "reportIssue": "Report Issue",
     "credits": "Credits",
     "creditsDesc1": "👋 Atomic Bot is built with ❤️ by the Atomic Chat team.",
-    "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community."
+    "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community.",
+    "atomicBotCliTitle": "Atomic Bot CLI",
+    "atomicBotCliInstalled": "Installed at {{path}} — run atomic-chat-cli from your terminal to serve models.",
+    "atomicBotCliNotInstalled": "Run atomic-chat-cli from your terminal to serve models without opening the app.",
+    "atomicBotCliInstalledToast": "Atomic Bot CLI installed at {{path}}"
   },
   "extensions": {
     "title": "Extensions"

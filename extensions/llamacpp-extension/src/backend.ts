@@ -119,6 +119,86 @@ export function getBackendDownloadUrl(
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.tar.gz`
 }
 
+/**
+ * Maps a Windows CUDA backend variant id (e.g. `win-cuda-13-common_cpus-x64`)
+ * to the matching cudart asset on the same janhq/llama.cpp release.
+ *
+ * The main `llama-*-bin-win-cuda-{11,12,13}-*.tar.gz` archives ship only the
+ * llama-server executable and its direct deps; the CUDA Toolkit runtime
+ * DLLs (cudart64_*.dll, cublas64_*.dll, cublasLt64_*.dll, …) live in a
+ * sibling `cudart-llama-bin-win-cu{X.Y}-x64.tar.gz`. Without those DLLs,
+ * `llama-server.exe --list-devices` returns an empty device list on
+ * machines that don't have the CUDA Toolkit installed system-wide
+ * (GitHub issue AtomicBot-ai/Atomic-Chat#14).
+ *
+ * The mapping has been stable across janhq releases since the CUDA-13
+ * variant was introduced.
+ */
+const WINDOWS_CUDART_FILENAME: Record<'cuda-11' | 'cuda-12' | 'cuda-13', string> = {
+  'cuda-11': 'cudart-llama-bin-win-cu11.7-x64.tar.gz',
+  'cuda-12': 'cudart-llama-bin-win-cu12.0-x64.tar.gz',
+  'cuda-13': 'cudart-llama-bin-win-cu13.0-x64.tar.gz',
+}
+
+/**
+ * Same mapping in CUDA-toolkit version form, for callers that need to
+ * talk to `plugin:llamacpp|is_cuda_installed` (which keys on the cudart
+ * version string, e.g. `11.7` / `12.0` / `13.0`) rather than the
+ * backend variant id.
+ */
+const WINDOWS_CUDA_TOOLKIT_VERSION: Record<'cuda-11' | 'cuda-12' | 'cuda-13', string> = {
+  'cuda-11': '11.7',
+  'cuda-12': '12.0',
+  'cuda-13': '13.0',
+}
+
+const WINDOWS_CUDA_BACKEND_RE = /^win-(cuda-(?:11|12|13))-/
+
+function matchWindowsCudaBackend(
+  backend: string
+): 'cuda-11' | 'cuda-12' | 'cuda-13' | null {
+  const match = WINDOWS_CUDA_BACKEND_RE.exec(backend.replace(/\uFEFF/g, '').trim())
+  if (!match) return null
+  return match[1] as 'cuda-11' | 'cuda-12' | 'cuda-13'
+}
+
+/**
+ * Returns the download URL for the cudart companion archive that must be
+ * merged into `<backendDir>/build/bin/` for a Windows CUDA backend, or
+ * `null` if `backend` is not one of the Windows CUDA variants.
+ */
+export function getCudartDownloadUrl(
+  version: string,
+  backend: string
+): string | null {
+  const cudaKey = matchWindowsCudaBackend(backend)
+  if (!cudaKey) return null
+  const filename = WINDOWS_CUDART_FILENAME[cudaKey]
+  const cleanVersion = version.replace(/\uFEFF/g, '').trim()
+  return `${LLAMACPP_DOWNLOAD_BASE}/${cleanVersion}/${filename}`
+}
+
+/**
+ * Returns the cudart filename (without URL) for a Windows CUDA backend,
+ * or `null` if the backend is not a Windows CUDA variant.
+ */
+export function getCudartArchiveName(backend: string): string | null {
+  const cudaKey = matchWindowsCudaBackend(backend)
+  if (!cudaKey) return null
+  return WINDOWS_CUDART_FILENAME[cudaKey]
+}
+
+/**
+ * Returns the CUDA Toolkit version string (e.g. `13.0`) that the Rust
+ * `is_cuda_installed` command expects for a given Windows CUDA backend.
+ * `null` for non-CUDA backends.
+ */
+export function getCudaToolkitVersion(backend: string): string | null {
+  const cudaKey = matchWindowsCudaBackend(backend)
+  if (!cudaKey) return null
+  return WINDOWS_CUDA_TOOLKIT_VERSION[cudaKey]
+}
+
 export async function listSupportedBackends(): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const osType = sysInfo.os_type

@@ -6,5 +6,6 @@
   "hideReleaseNotes": "Hide Release Notes",
   "remindMeLater": "Remind Me Later",
   "downloading": "Downloading...",
-  "updateNow": "Update Now"
+  "updateNow": "Update Now",
+  "relaunchingWindows": "Update installed. The app will restart automatically."
 }

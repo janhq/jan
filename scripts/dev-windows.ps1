@@ -404,6 +404,14 @@ if ($skipDownload) {
         }
     }
 
+    # Merge CUDA Toolkit runtime DLLs from the matching cudart archive
+    # (AtomicBot-ai/Atomic-Chat#14). No-op for non-CUDA backends.
+    & (Join-Path $PSScriptRoot 'download-llamacpp-cudart-windows.ps1') `
+        -BackendDir $llamacppDir -Backend $backend -Tag $tag
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host '  cudart merge failed (continuing — GPU detection may not work)' -ForegroundColor Yellow
+    }
+
     Write-Host "  llamacpp backend ($backend) downloaded successfully" -ForegroundColor Green
 }
 

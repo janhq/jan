@@ -514,6 +514,12 @@ pub fn install_jan_cli_sync<R: Runtime>(
                 log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
             }
         }
+        if dest.exists() {
+            let alias = resource_bin_dir.join("atomic-chat-cli.exe");
+            if let Err(e) = std::fs::copy(&dest, &alias) {
+                log::warn!("Could not copy jan.exe to atomic-chat-cli.exe: {}", e);
+            }
+        }
         add_to_path_windows(&resource_bin_dir)?;
         return Ok(CliInstallStatus {
             installed: true,
@@ -555,6 +561,14 @@ pub fn uninstall_jan_cli() -> Result<(), String> {
     #[cfg(windows)]
     {
         let bin_dir = jan_cli_bin_dir_windows()?;
+        for name in ["jan.exe", "atomic-chat-cli.exe"] {
+            let path = bin_dir.join(name);
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    log::warn!("Could not remove {}: {}", path.display(), e);
+                }
+            }
+        }
         remove_from_path_windows(&bin_dir)?;
         return Ok(());
     }

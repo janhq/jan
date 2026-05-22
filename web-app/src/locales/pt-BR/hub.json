@@ -12,6 +12,7 @@
   "showVariants": "Mostrar variantes",
   "useModel": "Usar este modelo",
   "downloadModel": "Baixar modelo",
+  "modelInfo": "Model information",
   "tools": "Ferramentas",
   "searchPlaceholder": "Buscar modelos no Hugging Face...",
   "recTitle": "Recomendados",

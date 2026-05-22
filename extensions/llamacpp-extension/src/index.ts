@@ -35,6 +35,9 @@ import {
   getBackendDir,
   getLocalInstalledBackends,
   getBackendDownloadUrl,
+  getCudartDownloadUrl,
+  getCudartArchiveName,
+  getCudaToolkitVersion,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -67,6 +70,7 @@ import {
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
   getSupportedFeaturesFromRust,
   normalizeFeatures,
+  isCudaInstalledFromRust,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
@@ -2662,6 +2666,22 @@ export default class llamacpp_extension extends AIEngine {
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
     if (await isBackendInstalled(backend, version)) {
+      // Backend exe is present, but on Windows CUDA variants the cudart
+      // runtime DLLs may still be missing (e.g. for users installed
+      // before AtomicBot-ai/Atomic-Chat#14 was fixed). Patch them in
+      // place without re-downloading the full 300 MB backend tarball.
+      if (IS_WINDOWS) {
+        const targetDir = await getBackendDir(backend, version)
+        try {
+          await this.ensureCudartReady(version, backend, targetDir, backendKey)
+        } catch (cudartErr) {
+          logger.warn(
+            `cudart pre-flight for ${backendKey} failed: ${
+              cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+            }`
+          )
+        }
+      }
       return
     }
 
@@ -2818,6 +2838,27 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
+      // Windows CUDA backends ship without the CUDA Toolkit runtime DLLs;
+      // those live in a sibling `cudart-llama-bin-win-cu{X.Y}-x64.tar.gz`
+      // archive on the same release. Merge them into build/bin/ here so
+      // that `llama-server.exe --list-devices` can enumerate GPUs on
+      // machines without a system-wide CUDA Toolkit install
+      // (AtomicBot-ai/Atomic-Chat#14).
+      if (IS_WINDOWS) {
+        try {
+          await this.ensureCudartReady(version, backend, targetDir, backendString)
+        } catch (cudartErr) {
+          // Do not fail the whole install — the backend exe is in place,
+          // it's just GPU enumeration that will be missing. Surface a
+          // warning so the user sees what happened in logs.
+          logger.warn(
+            `Backend ${backendString} installed, but cudart DLL merge failed: ${
+              cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
+            }`
+          )
+        }
+      }
+
       logger.info(`Backend ${backendString} installed successfully`)
 
       if (events && typeof events.emit === 'function') {
@@ -2854,6 +2895,189 @@ export default class llamacpp_extension extends AIEngine {
       try {
         if (await fs.existsSync(archivePath)) {
           await fs.rm(archivePath)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
+  /**
+   * Downloads the matching `cudart-llama-bin-win-cu{X.Y}-x64.tar.gz` for a
+   * Windows CUDA backend variant and copies every `*.dll` it contains into
+   * `<targetDir>/build/bin/`.
+   *
+   * No-op (returns immediately) when:
+   *   - `backend` is not a Windows CUDA backend (`win-cuda-{11,12,13}-*`)
+   *   - cudart DLLs are already present (checked via the Rust
+   *     `plugin:llamacpp|is_cuda_installed` command, which also handles a
+   *     legacy `<jan>/llamacpp/lib/` -> `build/bin/` migration).
+   *
+   * Idempotent — safe to call from both the post-extract path inside
+   * `downloadAndInstallBackend` and the pre-flight inside
+   * `ensureBackendReady`.
+   */
+  private async ensureCudartReady(
+    version: string,
+    backend: string,
+    targetDir: string,
+    backendString: string
+  ): Promise<void> {
+    if (!IS_WINDOWS) return
+
+    const cudartUrl = getCudartDownloadUrl(version, backend)
+    const cudartName = getCudartArchiveName(backend)
+    const toolkitVersion = getCudaToolkitVersion(backend)
+    if (!cudartUrl || !cudartName || !toolkitVersion) {
+      return
+    }
+
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    try {
+      const alreadyInstalled = await isCudaInstalledFromRust(
+        targetDir,
+        toolkitVersion,
+        'windows',
+        janDataFolderPath
+      )
+      if (alreadyInstalled) {
+        logger.info(
+          `cudart for ${backendString} already present, skipping download`
+        )
+        return
+      }
+    } catch (probeErr) {
+      logger.warn(
+        `is_cuda_installed probe failed for ${backendString}, will attempt cudart download anyway: ${
+          probeErr instanceof Error ? probeErr.message : String(probeErr)
+        }`
+      )
+    }
+
+    const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
+    if (!(await fs.existsSync(tempDir))) {
+      await fs.mkdir(tempDir)
+    }
+    const cudartArchivePath = await joinPath([tempDir, cudartName])
+    const cudartExtractDir = await joinPath([
+      tempDir,
+      `cudart-${backend}-${version}`,
+    ])
+
+    logger.info(
+      `Downloading cudart for ${backendString} from ${cudartUrl}`
+    )
+
+    const taskId = `llamacpp-cudart-${version}/${backend}`
+    const downloadManager = window.core?.extensionManager?.getByName(
+      '@janhq/download-extension'
+    ) as
+      | {
+          downloadFiles?: (
+            items: { url: string; save_path: string }[],
+            taskId: string,
+            onProgress?: (transferred: number, total: number) => void,
+            resume?: boolean
+          ) => Promise<void>
+        }
+      | undefined
+
+    const onProgress = (transferred: number, total: number) => {
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadUpdate, {
+          modelId: taskId,
+          percent: total > 0 ? transferred / total : 0,
+          size: { transferred, total },
+          downloadType: 'Backend',
+        })
+      }
+    }
+
+    try {
+      if (downloadManager?.downloadFiles) {
+        await downloadManager.downloadFiles(
+          [{ url: cudartUrl, save_path: cudartArchivePath }],
+          taskId,
+          onProgress,
+          false
+        )
+      } else {
+        logger.warn(
+          'download-extension not available, falling back to raw download_files invoke for cudart'
+        )
+        await invoke<void>('download_files', {
+          items: [{ url: cudartUrl, save_path: cudartArchivePath }],
+          taskId,
+          headers: {},
+          resume: false,
+        })
+      }
+
+      if (!(await fs.existsSync(cudartExtractDir))) {
+        await fs.mkdir(cudartExtractDir)
+      }
+
+      logger.info(`Extracting cudart archive to ${cudartExtractDir}`)
+      await invoke('decompress', {
+        path: cudartArchivePath,
+        outputDir: cudartExtractDir,
+      })
+
+      const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
+      if (!(await fs.existsSync(buildBinDir))) {
+        await fs.mkdir(buildBinDir)
+      }
+
+      // Recursively copy every *.dll out of the extracted archive into
+      // build/bin/. Most janhq cudart archives are flat (DLLs at the
+      // root), but we walk just in case a future build introduces a
+      // subfolder.
+      let copied = 0
+      const stack: string[] = [cudartExtractDir]
+      while (stack.length > 0) {
+        const currentDir = stack.pop() as string
+        const entries = (await fs.readdirSync(currentDir)) as string[]
+        for (const entry of entries) {
+          const entryPath = await joinPath([currentDir, entry])
+          let stat: { isDirectory?: boolean } | undefined
+          try {
+            stat = await fs.fileStat(entryPath)
+          } catch {
+            stat = undefined
+          }
+          if (stat?.isDirectory) {
+            stack.push(entryPath)
+            continue
+          }
+          if (entry.toLowerCase().endsWith('.dll')) {
+            const dst = await joinPath([buildBinDir, entry])
+            await fs.copyFile(entryPath, dst)
+            copied += 1
+          }
+        }
+      }
+
+      logger.info(
+        `Merged ${copied} cudart DLL(s) into ${buildBinDir} for ${backendString}`
+      )
+
+      if (copied === 0) {
+        throw new Error(
+          `cudart archive for ${backendString} contained no DLLs`
+        )
+      }
+    } finally {
+      try {
+        if (await fs.existsSync(cudartArchivePath)) {
+          await fs.rm(cudartArchivePath)
+        }
+      } catch {
+        // best-effort cleanup
+      }
+      try {
+        if (await fs.existsSync(cudartExtractDir)) {
+          await fs.rm(cudartExtractDir)
         }
       } catch {
         // best-effort cleanup

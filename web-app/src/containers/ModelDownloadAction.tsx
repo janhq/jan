@@ -191,12 +191,16 @@ export const ModelDownloadAction = ({
   }
 
   return (
-    <div
-      className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out"
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label={t('hub:downloadModel')}
       title={t('hub:downloadModel')}
       onClick={handleDownloadModel}
+      className="size-6"
     >
       <IconDownload size={16} className="text-muted-foreground" />
-    </div>
+    </Button>
   )
 }

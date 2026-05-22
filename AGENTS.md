@@ -280,6 +280,133 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-05-22 — Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades
+- **Context:** Installing a newer Atomic Chat MSI on top of an existing Jan
+  MSI (or, transitively, on top of an older Atomic Chat MSI built before this
+  change) produced a side-by-side install instead of an in-place upgrade
+  ([GitHub issue #11](https://github.com/AtomicBot-ai/Atomic-Chat/issues/11)).
+  Root cause: Tauri 2 derives the WiX `UpgradeCode` from `productName` as
+  `UUIDv5("<productName>.exe.app.x64")`. The Jan → Atomic Chat rebrand
+  changed `productName` from `"Jan"` to `"Atomic Chat"`, which silently
+  switched the derived UpgradeCode from `b75dd42f-800c-57cb-8c5c-ed7fcbef13a0`
+  to `e66a76fe-8004-5158-ab35-98fc7d71e98d`, breaking Windows Installer's
+  `MajorUpgrade` match.
+- **Decision:** Set `bundle.windows.wix.upgradeCode =
+  "b75dd42f-800c-57cb-8c5c-ed7fcbef13a0"` in `src-tauri/tauri.windows.conf.json`
+  — the legacy Jan UUIDv5. From now on every Atomic Chat MSI carries this
+  pinned UpgradeCode and is independent of any future `productName` rename.
+  Verified via `npx tauri inspect wix-upgrade-code`:
+  `Application Upgrade Code override: b75dd42f-…`.
+- **Consequences:**
+  - **Jan MSI → Atomic Chat MSI** now upgrades in place (Windows Installer
+    sees the matching `UpgradeCode`, runs `MajorUpgrade`, removes Jan, and
+    installs Atomic Chat into the same slot). Fixes #11 for that path.
+  - **Atomic Chat MSI v_N → v_{N+1}**, both built after this ADR, upgrades
+    in place forever, regardless of future rebrands.
+  - **Atomic Chat MSI built before this ADR** (already shipped with the
+    derived `e66a76fe-…` UpgradeCode) → Atomic Chat MSI built after this
+    ADR will install side-by-side **once**. Users on those MSI builds must
+    manually uninstall the old "Atomic Chat" entry from Programs & Features
+    before the new MSI takes its place. The README and the auto-updater
+    both use the NSIS channel, so the MSI install base is small.
+  - NSIS channel and auto-updater are unaffected (NSIS detects previous
+    installs via `Software\…\Uninstall\{ProductName}`, which is governed by
+    `productName`, not `UpgradeCode`).
+  - If the one-time side-by-side proves painful, a follow-up ADR may add a
+    custom WiX fragment via `wix.fragmentPaths` containing an extra
+    `<Upgrade Id="e66a76fe-8004-5158-ab35-98fc7d71e98d">` block that also
+    detects and removes the old derived-UpgradeCode product. Not in this ADR.
+- **Owner:** team.
+- **Links:** [GitHub issue #11](https://github.com/AtomicBot-ai/Atomic-Chat/issues/11),
+  `src-tauri/tauri.windows.conf.json`.
+
+### 2026-05-22 — Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend
+- **Context:** On Windows, `llama-server.exe --list-devices` from a freshly
+  installed `win-cuda-{11,12,13}-common_cpus-x64` backend returned an empty
+  device list, so GPU detection failed even on machines with a working
+  NVIDIA driver
+  ([GitHub issue #14](https://github.com/AtomicBot-ai/Atomic-Chat/issues/14)).
+  Root cause: the `llama-{tag}-bin-win-cuda-*-common_cpus-x64.tar.gz` archive
+  the app downloads ships `llama-server.exe` and direct deps only; the CUDA
+  Toolkit runtime DLLs (`cudart64_*.dll`, `cublas64_*.dll`,
+  `cublasLt64_*.dll`, …) live in a sibling
+  `cudart-llama-bin-win-cu{X.Y}-x64.tar.gz` on the same `janhq/llama.cpp`
+  release. Without those DLLs, llama-server's CUDA backend loader silently
+  fails on hosts that don't have the CUDA Toolkit installed system-wide.
+- **Decision:** Always merge the matching cudart DLLs into
+  `<backendDir>/build/bin/` immediately after the main backend archive is
+  extracted. Source is the **same** `janhq/llama.cpp` release as the main
+  tarball — never `ggml-org`. Hard-coded mapping:
+  - `win-cuda-11-common_cpus-x64` → `cudart-llama-bin-win-cu11.7-x64.tar.gz`
+  - `win-cuda-12-common_cpus-x64` → `cudart-llama-bin-win-cu12.0-x64.tar.gz`
+  - `win-cuda-13-common_cpus-x64` → `cudart-llama-bin-win-cu13.0-x64.tar.gz`
+
+  Implemented at **two layers**, both idempotent:
+  1. **Runtime** in `extensions/llamacpp-extension/`:
+     - `getCudartDownloadUrl` / `getCudartArchiveName` / `getCudaToolkitVersion`
+       helpers in `backend.ts`.
+     - `ensureCudartReady` private method in `index.ts` that downloads
+       through `@janhq/download-extension` (so the standard download UI
+       tracks progress), extracts to a temp dir, and copies every `*.dll`
+       into `build/bin/`. Probes `plugin:llamacpp|is_cuda_installed` first
+       and is a no-op when DLLs are already present.
+     - Wired into `downloadAndInstallBackend` (after main extract) and
+       `ensureBackendReady` (pre-flight for users already on `b8892`
+       without DLLs — they get the DLLs without re-downloading the 300 MB
+       main tarball).
+  2. **Build time** in `scripts/download-llamacpp-cudart-windows.ps1`
+     (small reusable PowerShell helper), called from:
+     - `Makefile :: download-llamacpp-backend` (Windows branch).
+     - `scripts/dev-windows.ps1` after the main backend extract.
+- **Consequences:**
+  - GPU enumeration works out of the box on Windows for the CUDA-11/12/13
+    backends, whether the backend was bundled in the installer
+    (`make build-windows-release` with a CUDA backend env-var) or downloaded
+    at runtime from janhq.
+  - Already-installed users (e.g. the issue #14 reporter on `b8892`) are
+    fixed on next backend interaction without forcing a full re-download.
+  - +50–110 MB on disk per CUDA variant (per-user, after extract).
+  - No new external host, no new dependency. Still no change to CI's
+    bundled backend choice (Windows CI still ships CPU-only by default);
+    the helper is available the moment CI flips to a CUDA bundle.
+- **Owner:** team.
+- **Links:** [GitHub issue #14](https://github.com/AtomicBot-ai/Atomic-Chat/issues/14),
+  `extensions/llamacpp-extension/src/backend.ts`,
+  `extensions/llamacpp-extension/src/index.ts`,
+  `scripts/download-llamacpp-cudart-windows.ps1`,
+  `Makefile` (`download-llamacpp-backend` Windows branch),
+  `scripts/dev-windows.ps1`.
+
+### 2026-05-22 — Windows auto-updater uses NSIS as sole relauncher
+- **Context:** After a passive NSIS update on Windows 11, users saw a blank
+  window until a manual restart. NSIS `.onInstSuccess` already launches the
+  new binary via `RunAsUser`, while the frontend also called `relaunch()` →
+  `app.restart()`, racing two processes.
+- **Decision:** On Windows, skip `window.core.api.relaunch()` after
+  `downloadAndInstallWithProgress()` completes. Let NSIS be the only
+  relauncher. macOS/Linux keep the existing `relaunch()` path.
+- **Consequences:** Eliminates the double-relaunch race on Win11. The old
+  process may exit without an explicit `app.restart()`; users see a brief
+  toast that the app will restart. No NSIS template changes required.
+- **Owner:** team.
+- **Links:** `web-app/src/hooks/useAppUpdater.ts`,
+  `src-tauri/tauri.bundle.windows.nsis.template` (`.onInstSuccess`).
+
+### 2026-05-22 — Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`
+- **Context:** Settings UI told users to run `atomic-chat-cli`, but only
+  `jan.exe` existed after install (renamed from bundled `jan-cli.exe`). Unix
+  was unchanged and still exposes `jan` only.
+- **Decision:** On Windows only, after `install_jan_cli` renames to `jan.exe`,
+  copy `jan.exe` → `atomic-chat-cli.exe` in the same `resources/bin` directory
+  (already on user PATH). Uninstall removes both binaries. Settings copy on
+  Windows mentions both names; non-Windows copy says `jan` only.
+- **Consequences:** `atomic-chat-cli` works on Windows without renaming legacy
+  `jan-cli` / `jan.exe` artefacts. Two copies on disk (~small overhead).
+  macOS/Linux unchanged.
+- **Owner:** team.
+- **Links:** `src-tauri/src/core/system/commands.rs`,
+  `web-app/src/routes/settings/general.tsx`.
+
 ### 2026-05-19 — Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork
 - **Context:** Some users prefer (or need) the vanilla upstream
  `ggml-org/llama.cpp` build on macOS — for compatibility testing, parity

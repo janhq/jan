@@ -12,6 +12,7 @@
   "showVariants": "显示变体",
   "useModel": "使用此模型",
   "downloadModel": "下载模型",
+  "modelInfo": "Model information",
   "tools": "工具",
   "searchPlaceholder": "在 Hugging Face 上搜索模型...",
   "recTitle": "推荐",
