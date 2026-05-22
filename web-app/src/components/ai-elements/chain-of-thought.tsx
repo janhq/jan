@@ -117,7 +117,7 @@ export const ChainOfThought = memo(
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
         <Collapsible
-          className={cn('not-prose mb-4', className)}
+          className={cn('not-prose', className)}
           onOpenChange={handleOpenChange}
           open={isOpen}
           {...props}

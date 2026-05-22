@@ -71,6 +71,41 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
 
+// Provider settings that end up in `router.preset.ini` (`[*]` global section
+// in preset.ts). Mutating any of these requires a router restart so the new
+// preset is read; cosmetic / process-only keys (auto_update_engine, models_max,
+// timeout, llamacpp_env, version_backend) are handled separately or not at all.
+const PRESET_AFFECTING_KEYS = new Set<string>([
+  'fit',
+  'fit_target',
+  'fit_ctx',
+  'ctx_size',
+  'n_gpu_layers',
+  'flash_attn',
+  'cache_type_k',
+  'cache_type_v',
+  'parallel',
+  'cont_batching',
+  'threads',
+  'threads_batch',
+  'n_predict',
+  'ubatch_size',
+  'device',
+  'split_mode',
+  'main_gpu',
+  'no_mmap',
+  'mlock',
+  'rope_scaling',
+  'rope_scale',
+  'rope_freq_base',
+  'rope_freq_scale',
+  'ctx_shift',
+  'cache_ram',
+  'cache_reuse',
+  'swa_full',
+  'keep',
+])
+
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -103,6 +138,111 @@ const logger = {
 function parseBuildNumber(version: string): number | null {
   const match = version.match(/^b(\d+)$/)
   return match ? parseInt(match[1], 10) : null
+}
+
+type YamlSettingValue = string | number | boolean | null
+
+type PersistedProviderSetting = {
+  controller_props?: {
+    value?: unknown
+  }
+}
+
+type PersistedModelState = {
+  id?: unknown
+  settings?: Record<string, PersistedProviderSetting>
+}
+
+const MODEL_PROVIDER_LOCAL_STORAGE_KEY = 'model-provider'
+const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
+  'llamacpp_model_yaml_backfill_v1'
+
+const MODEL_SETTINGS_YAML_MAPPING: Record<
+  string,
+  {
+    yamlKey: string
+    coerce: (v: unknown) => YamlSettingValue
+  }
+> = {
+  ctx_len: {
+    yamlKey: 'ctx_size',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  ngl: {
+    yamlKey: 'n_gpu_layers',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+    },
+  },
+  chat_template: {
+    yamlKey: 'chat_template',
+    coerce: (v) =>
+      typeof v === 'string' && v.trim().length > 0 ? v : null,
+  },
+  batch_size: {
+    yamlKey: 'batch_size',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  ubatch_size: {
+    yamlKey: 'ubatch_size',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  cpu_moe: {
+    yamlKey: 'cpu_moe',
+    coerce: (v) => (v === true ? true : null),
+  },
+  n_cpu_moe: {
+    yamlKey: 'n_cpu_moe',
+    coerce: (v) => {
+      if (v === '' || v == null) return null
+      const n = typeof v === 'number' ? v : Number(v)
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+    },
+  },
+  no_kv_offload: {
+    yamlKey: 'no_kv_offload',
+    coerce: (v) => (v === true ? true : null),
+  },
+  override_tensor_buffer_t: {
+    yamlKey: 'override_tensor',
+    coerce: (v) =>
+      typeof v === 'string' && v.trim().length > 0 ? v.trim() : null,
+  },
+  offload_mmproj: {
+    yamlKey: 'mmproj_offload',
+    coerce: (v) => (v === false ? false : null),
+  },
+}
+
+function readPersistedLlamacppModels(): PersistedModelState[] {
+  try {
+    const raw = localStorage.getItem(MODEL_PROVIDER_LOCAL_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    const providers = parsed?.state?.providers
+    if (!Array.isArray(providers)) return []
+    const llamacpp = providers.find(
+      (provider: { provider?: unknown }) => provider?.provider === 'llamacpp'
+    )
+    return Array.isArray(llamacpp?.models) ? llamacpp.models : []
+  } catch (error) {
+    logger.warn('Failed to read persisted llamacpp model settings:', error)
+    return []
+  }
 }
 
 /**
@@ -205,9 +345,6 @@ export default class llamacpp_extension extends AIEngine {
     }
     this.config = loadedConfig as LlamacppConfig
 
-    // Migration v1: upgrade f16 KV cache defaults to q8_0
-    await this.migrateKvCacheDefaults()
-
     // Migration v2: disable fit by default
     await this.migrateFitDefault()
 
@@ -221,6 +358,8 @@ export default class llamacpp_extension extends AIEngine {
 
     // This sets the base directory where model files for this provider are stored.
     await this.getProviderPath()
+
+    await this.migratePersistedModelSettingsToYaml()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -317,6 +456,13 @@ export default class llamacpp_extension extends AIEngine {
       /* ignore probe failures */
     }
 
+    // --no-webui was renamed to --no-ui in upstream b9222. Keep the legacy
+    // flag for older backends; the deprecated form still works on newer ones
+    // but emits a warning, so prefer the new spelling when available.
+    const NO_UI_RENAME_BUILD = 9222
+    const noUiFlag =
+      build !== null && build >= NO_UI_RENAME_BUILD ? '--no-ui' : '--no-webui'
+
     const info = await invoke<{ port: number; api_key: string; pid: number }>(
       'plugin:llamacpp|start_router',
       {
@@ -325,7 +471,7 @@ export default class llamacpp_extension extends AIEngine {
         port,
         apiKey,
         modelsMax,
-        defaultArgs: [] as string[],
+        defaultArgs: [noUiFlag],
         envs,
       }
     )
@@ -483,37 +629,6 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async migrateKvCacheDefaults(): Promise<void> {
-    const MIGRATION_KEY = 'llamacpp_kv_cache_migrated_v1'
-    if (localStorage.getItem(MIGRATION_KEY)) return
-
-    const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
-    const needsMigration = keysToMigrate.some(
-      (k) => this.config[k] === 'f16'
-    )
-
-    if (needsMigration) {
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (
-            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
-            item.controllerProps.value === 'f16'
-          ) {
-            item.controllerProps.value = 'q8_0'
-          }
-          return item
-        })
-      )
-      for (const k of keysToMigrate) {
-        if (this.config[k] === 'f16') this.config[k] = 'q8_0'
-      }
-      logger.info('Migrated KV cache types from f16 to q8_0')
-    }
-
-    localStorage.setItem(MIGRATION_KEY, '1')
-  }
-
   private async migrateFitDefault(): Promise<void> {
     const MIGRATION_KEY = 'llamacpp_fit_disabled_v1'
     if (localStorage.getItem(MIGRATION_KEY)) return
@@ -574,6 +689,58 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migratePersistedModelSettingsToYaml(): Promise<void> {
+    if (localStorage.getItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY)) return
+
+    const persistedModels = readPersistedLlamacppModels()
+    if (persistedModels.length === 0) {
+      localStorage.setItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
+      return
+    }
+
+    const providerPath = await this.getProviderPath()
+
+    for (const persistedModel of persistedModels) {
+      const modelId =
+        typeof persistedModel.id === 'string' ? persistedModel.id : undefined
+      if (!modelId || !persistedModel.settings) continue
+
+      const configPath = await joinPath([
+        providerPath,
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      if (!(await fs.existsSync(configPath))) continue
+
+      const cfg = (await invoke<ModelConfig>('read_yaml', {
+        path: configPath,
+      })) as ModelConfig & Record<string, unknown>
+
+      let touched = false
+      for (const [sidebarKey, persistedSetting] of Object.entries(
+        persistedModel.settings
+      )) {
+        const mapping = MODEL_SETTINGS_YAML_MAPPING[sidebarKey]
+        if (!mapping) continue
+
+        if (mapping.yamlKey in cfg) continue
+
+        const next = mapping.coerce(persistedSetting?.controller_props?.value)
+        if (next === null) continue
+
+        ;(cfg as Record<string, unknown>)[mapping.yamlKey] = next
+        touched = true
+      }
+
+      if (touched) {
+        await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+      }
+    }
+
+    localStorage.setItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
   }
 
   async configureBackends(): Promise<void> {
@@ -1250,7 +1417,23 @@ export default class llamacpp_extension extends AIEngine {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
       this.timeout = value as number
+    } else if (PRESET_AFFECTING_KEYS.has(key)) {
+      // A live router was started with the previous preset; without a restart
+      // the new value is invisible to inference. Debounced so a flurry of
+      // slider/dropdown updates collapses into one bounce.
+      this.scheduleRouterRestart()
     }
+  }
+
+  private routerRestartTimer: ReturnType<typeof setTimeout> | null = null
+  private scheduleRouterRestart(): void {
+    if (this.routerRestartTimer) clearTimeout(this.routerRestartTimer)
+    this.routerRestartTimer = setTimeout(() => {
+      this.routerRestartTimer = null
+      this.startRouter().catch((e) =>
+        logger.warn('Router restart after settings update failed:', e)
+      )
+    }, 600)
   }
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
@@ -1736,6 +1919,14 @@ export default class llamacpp_extension extends AIEngine {
         savePath: newModelConfigPath,
       })
     )
+
+    // The router's preset still references the old model id until we
+    // regenerate; without this a `POST /models/load <new-id>` would 404.
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
+    }
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
@@ -2037,9 +2228,8 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(
     modelId: string,
-    _overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false,
-    _bypassAutoUnload: boolean = false
+    _settings?: unknown,
+    isEmbedding: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -2525,6 +2715,64 @@ export default class llamacpp_extension extends AIEngine {
       await this.startRouter()
     } catch (e) {
       logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
+    }
+  }
+
+  /**
+   * Persist a per-model setting from the sidebar into `model.yml`, regenerate
+   * the router preset, and restart the router so the next inference picks up
+   * the new args. In router mode the router reads args exclusively from
+   * `router.preset.ini`, so updating Zustand alone has no effect on inference.
+   *
+   * Sidebar keys are mapped to the canonical `model.yml` / preset keys here.
+   * Keys not in the mapping are silently ignored — they're either Jan-side
+   * concerns (`reasoning`, `auto_increase_ctx_len`) or not yet emitted by
+   * `preset.ts` (deferred to phase b).
+   */
+  async updateModelSettings(
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ): Promise<void> {
+    const configPath = await joinPath([
+      await this.getProviderPath(),
+      'models',
+      modelId,
+      'model.yml',
+    ])
+    if (!(await fs.existsSync(configPath))) {
+      throw new Error(`model.yml not found for ${modelId}`)
+    }
+    const cfg = (await invoke<ModelConfig>('read_yaml', {
+      path: configPath,
+    })) as ModelConfig & Record<string, unknown>
+
+    let touched = false
+    for (const [sidebarKey, value] of Object.entries(patch)) {
+      const m = MODEL_SETTINGS_YAML_MAPPING[sidebarKey]
+      if (!m) continue
+      const next = m.coerce(value)
+      if (next === null) {
+        if (m.yamlKey in cfg) {
+          delete (cfg as Record<string, unknown>)[m.yamlKey]
+          touched = true
+        }
+      } else {
+        ;(cfg as Record<string, unknown>)[m.yamlKey] = next
+        touched = true
+      }
+    }
+
+    if (!touched) return
+
+    await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.warn(
+        `Failed to restart router after model settings update for ${modelId}`,
+        e
+      )
     }
   }
 

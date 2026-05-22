@@ -13,6 +13,7 @@ Default permissions for the llamacpp plugin
 - `allow-force-kill-router-tree`
 - `allow-force-stop-model`
 - `allow-get-router-info`
+- `allow-router-slots-idle`
 - `allow-get-devices`
 - `allow-generate-api-key`
 - `allow-is-process-running`
@@ -26,7 +27,6 @@ Default permissions for the llamacpp plugin
 - `allow-estimate-kv-cache-size`
 - `allow-get-model-size`
 - `allow-is-model-supported`
-- `allow-plan-model-load`
 - `allow-map-old-backend-to-new`
 - `allow-get-local-installed-backends`
 - `allow-list-supported-backends`
@@ -1093,32 +1093,6 @@ Enables the parse_backend_version command without any pre-configured scope.
 <td>
 
 Denies the parse_backend_version command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-plan-model-load`
-
-</td>
-<td>
-
-Enables the plan_model_load command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-plan-model-load`
-
-</td>
-<td>
-
-Denies the plan_model_load command without any pre-configured scope.
 
 </td>
 </tr>

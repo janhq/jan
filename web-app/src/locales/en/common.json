@@ -2,7 +2,6 @@
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
-  "connectors": "Connectors",
   "local_api_server": "Local API Server",
   "remote_access": "Remote Access",
   "integrations": "Integrations",
@@ -311,7 +310,8 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
-    "uploadingFiles": "Uploading files…",
+    "uploadingFiles": "Processing files…",
+    "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -459,12 +459,22 @@
       "description": "Thread removed from \"{{projectName}}\" successfully"
     },
     "fileUploaded": {
-      "title": "File Uploaded",
-      "description": "File has been uploaded and indexed successfully"
+      "title": "File Processed",
+      "description": "File has been processed and indexed successfully"
     },
     "uploadFailed": {
-      "title": "Upload Failed",
-      "description": "Failed to upload file"
+      "title": "Processing Failed",
+      "description": "Failed to process file",
+      "subjectThisFile": "This file",
+      "pdfMalformedXref": "{{subject}} has a malformed PDF cross-reference table and could not be parsed. Try opening it in a PDF viewer and re-saving it (File → Print → Save as PDF), then upload again.",
+      "pdfScanned": "{{subject}} appears to be a scanned or image-based PDF. OCR isn't supported yet — please upload a text-based PDF.",
+      "pdfEncrypted": "{{subject}} is password-protected. Remove the password and try again.",
+      "pdfGeneric": "{{subject}} could not be parsed as a PDF. The file may be corrupted or uses an unsupported PDF feature.",
+      "fileTooLarge": "{{subject}} is too large. {{message}}.",
+      "unsupportedType": "File type \"{{type}}\" is not supported.",
+      "ioError": "Could not read {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} could not be parsed: {{message}}",
+      "fallback": "Failed to process {{subject}}."
     },
     "fileDeleted": {
       "title": "File Deleted",

@@ -2,7 +2,6 @@
   "assistants": "Assistants",
   "hardware": "Matériel",
   "mcp-servers": "Serveurs MCP",
-  "connectors": "Serveurs MCP",
   "local_api_server": "Serveur Local API",
   "https_proxy": "Mandataire Proxy HTTPS",
   "extensions": "Extensions",
@@ -302,7 +301,8 @@
     "searchProjects": "Rechercher des projets...",
     "noProjectsFound": "Aucun projet trouvé",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
-    "uploadingFiles": "Téléversement des fichiers…"
+    "uploadingFiles": "Traitement des fichiers…",
+    "processButton": "Ajouter"
   },
   "errorDialog": {
     "titleFallback": "Une erreur s'est produite",

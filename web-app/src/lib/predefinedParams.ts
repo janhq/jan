@@ -85,6 +85,72 @@ export const paramsSettings = {
     title: 'JSON Schema',
     description: `JSON schema string to constrain generations as valid JSON (llama.cpp only).`,
   },
+  typical_p: {
+    key: 'typical_p',
+    value: 1.0,
+    title: 'Typical P',
+    description: `Locally-typical sampling (llama.cpp only). 1.0 = disabled. Lower values bias toward tokens whose probability is close to the conditional entropy.`,
+  },
+  top_n_sigma: {
+    key: 'top_n_sigma',
+    value: -1.0,
+    title: 'Top N Sigma',
+    description: `Top-n-sigma sampling (llama.cpp only). -1 = disabled. Filters tokens by standard deviations above the max logit.`,
+  },
+  dynatemp_range: {
+    key: 'dynatemp_range',
+    value: 0.0,
+    title: 'Dynamic Temperature Range',
+    description: `Dynamic temperature range (llama.cpp only). 0 = disabled. The effective temperature is sampled in [temperature - range, temperature + range].`,
+  },
+  dynatemp_exp: {
+    key: 'dynatemp_exp',
+    value: 1.0,
+    title: 'Dynamic Temperature Exponent',
+    description: `Dynamic temperature exponent (llama.cpp only). Shapes the temperature distribution within the dynamic range.`,
+  },
+  xtc_probability: {
+    key: 'xtc_probability',
+    value: 0.0,
+    title: 'XTC Probability',
+    description: `Probability of activating the XTC (Exclude Top Choices) sampler (llama.cpp only). 0 = disabled.`,
+  },
+  xtc_threshold: {
+    key: 'xtc_threshold',
+    value: 0.1,
+    title: 'XTC Threshold',
+    description: `Minimum probability of a token to be considered for XTC exclusion (llama.cpp only). Only used when XTC probability > 0.`,
+  },
+  dry_multiplier: {
+    key: 'dry_multiplier',
+    value: 0.0,
+    title: 'DRY Multiplier',
+    description: `DRY (Don't Repeat Yourself) penalty multiplier (llama.cpp only). 0 = disabled. Penalizes sequences that have appeared before in the context.`,
+  },
+  dry_base: {
+    key: 'dry_base',
+    value: 1.75,
+    title: 'DRY Base',
+    description: `DRY penalty base (llama.cpp only). Exponential base for penalty growth as repeated-sequence length increases.`,
+  },
+  dry_allowed_length: {
+    key: 'dry_allowed_length',
+    value: 2,
+    title: 'DRY Allowed Length',
+    description: `Minimum repeated-sequence length before DRY starts penalizing (llama.cpp only).`,
+  },
+  dry_penalty_last_n: {
+    key: 'dry_penalty_last_n',
+    value: -1,
+    title: 'DRY Penalty Window',
+    description: `Window of recent tokens DRY scans for repetitions (llama.cpp only). 0 = disabled, -1 = full context.`,
+  },
+  ignore_eos: {
+    key: 'ignore_eos',
+    value: false,
+    title: 'Ignore EOS',
+    description: `Continue generating past the end-of-sequence token (llama.cpp only). Useful for forcing the model to fill a token budget.`,
+  },
 }
 
 export const LLAMACPP_ONLY_PARAM_KEYS: ReadonlySet<string> = new Set([
@@ -93,4 +159,15 @@ export const LLAMACPP_ONLY_PARAM_KEYS: ReadonlySet<string> = new Set([
   'mirostat_eta',
   'grammar',
   'json_schema',
+  'typical_p',
+  'top_n_sigma',
+  'dynatemp_range',
+  'dynatemp_exp',
+  'xtc_probability',
+  'xtc_threshold',
+  'dry_multiplier',
+  'dry_base',
+  'dry_allowed_length',
+  'dry_penalty_last_n',
+  'ignore_eos',
 ])

@@ -2,7 +2,6 @@
   "assistants": "Trợ lý",
   "hardware": "Phần cứng",
   "mcp-servers": "Máy chủ MCP",
-  "connectors": "Máy chủ MCP",
   "local_api_server": "Máy chủ API cục bộ",
   "https_proxy": "Proxy HTTPS",
   "extensions": "Tiện ích mở rộng",
@@ -256,7 +255,8 @@
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
-    "uploadingFiles": "Đang tải lên tệp…",
+    "uploadingFiles": "Đang xử lý tệp…",
+    "processButton": "Thêm",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
       "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",

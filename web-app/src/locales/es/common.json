@@ -2,7 +2,6 @@
   "assistants": "Asistentes",
   "hardware": "Hardware",
   "mcp-servers": "Servidores MCP",
-  "connectors": "Servidores MCP",
   "local_api_server": "Servidor API local",
   "remote_access": "Acceso remoto",
   "integrations": "Integraciones",
@@ -286,7 +285,8 @@
     "noAssistantAssigned": "No hay asistente asignado a este proyecto",
     "files": "Archivos",
     "filesDescription": "Agrega PDFs, documentos u otros textos para usar como referencia en este proyecto.",
-    "uploadingFiles": "Subiendo archivos…",
+    "uploadingFiles": "Procesando archivos…",
+    "processButton": "Añadir",
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
       "permanentDelete": "Esto eliminará permanentemente todos los hilos.",
@@ -438,12 +438,12 @@
       "description": "Hilo removido de \"{{projectName}}\" correctamente"
     },
     "fileUploaded": {
-      "title": "Archivo subido",
-      "description": "El archivo se ha subido e indexado correctamente"
+      "title": "Archivo procesado",
+      "description": "El archivo se ha procesado e indexado correctamente"
     },
     "uploadFailed": {
-      "title": "Error al subir",
-      "description": "Error al subir el archivo"
+      "title": "Error de procesamiento",
+      "description": "Error al procesar el archivo"
     },
     "fileDeleted": {
       "title": "Archivo eliminado",

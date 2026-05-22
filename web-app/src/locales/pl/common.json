@@ -2,7 +2,6 @@
   "assistants": "Asystenci",
   "hardware": "Sprzęt",
   "mcp-servers": "Serwery MCP",
-  "connectors": "Serwery MCP",
   "local_api_server": "Lokalny Serwer API",
   "https_proxy": "Pośrednik HTTPS",
   "extensions": "Rozszerzenia",
@@ -297,7 +296,8 @@
     "searchProjects": "Szukaj projektów...",
     "noProjectsFound": "Nie znaleziono projektów",
     "tryDifferentSearch": "Spróbuj innego wyszukiwania",
-    "uploadingFiles": "Przesyłanie plików…"
+    "uploadingFiles": "Przetwarzanie plików…",
+    "processButton": "Dodaj"
   },
   "errorDialog": {
     "titleFallback": "Coś poszło nie tak",

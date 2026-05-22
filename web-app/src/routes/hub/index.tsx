@@ -3,7 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn, sanitizeModelId } from '@/lib/utils'
+import { cn, formatBytes, sanitizeModelId } from '@/lib/utils'
+import { sumMlxModelBytes } from '@/lib/modelCompatibility'
 import {
   useState,
   useMemo,
@@ -547,8 +548,11 @@ function HubContent() {
                               <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground font-medium text-xs">
                                   {filteredModels[virtualItem.index].is_mlx
-                                    ? filteredModels[virtualItem.index]
-                                        .safetensors_files?.[0]?.file_size
+                                    ? formatBytes(
+                                        sumMlxModelBytes(
+                                          filteredModels[virtualItem.index]
+                                        ) || undefined
+                                      )
                                     : selectDefaultQuant(
                                         filteredModels[virtualItem.index].quants,
                                         DEFAULT_MODEL_QUANTIZATIONS

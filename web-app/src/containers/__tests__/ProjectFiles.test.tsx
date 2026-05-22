@@ -146,8 +146,8 @@ describe('ProjectFiles', () => {
   it('shows an info toast when upload is clicked while attachments are disabled', async () => {
     attachmentsStateRef.attachmentsState = { enabled: false, maxFileSizeMB: 10 }
     render(<ProjectFiles projectId="p1" lng="en" />)
-    await waitFor(() => expect(screen.getByText('Upload')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Upload'))
+    await waitFor(() => expect(screen.getByText('common:projects.processButton')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('common:projects.processButton'))
     await waitFor(() => expect(toastMock.info).toHaveBeenCalled())
     expect(dialogOpenMock).not.toHaveBeenCalled()
   })
@@ -155,16 +155,16 @@ describe('ProjectFiles', () => {
   it('opens the file dialog when upload is clicked', async () => {
     dialogOpenMock.mockResolvedValue(null)
     render(<ProjectFiles projectId="p1" lng="en" />)
-    await waitFor(() => expect(screen.getByText('Upload')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Upload'))
+    await waitFor(() => expect(screen.getByText('common:projects.processButton')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('common:projects.processButton'))
     await waitFor(() => expect(dialogOpenMock).toHaveBeenCalled())
   })
 
   it('toasts error when opening the dialog throws', async () => {
     dialogOpenMock.mockRejectedValue(new Error('dialog broken'))
     render(<ProjectFiles projectId="p1" lng="en" />)
-    await waitFor(() => expect(screen.getByText('Upload')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Upload'))
+    await waitFor(() => expect(screen.getByText('common:projects.processButton')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('common:projects.processButton'))
     await waitFor(() => expect(toastMock.error).toHaveBeenCalled())
   })
 

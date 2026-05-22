@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import { predefinedProviders } from '@/constants/providers'
 import {
   API_KEY_FALLBACKS_SETTING_KEY,
   parseApiKeyFallbacks,
@@ -269,8 +270,8 @@ export const useModelProvider = create<ModelProviderState>()(
           return { providers: nextProviders }
         }),
       updateProvider: (providerName, data) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
+        set((state) => {
+          const providers = state.providers.map((provider) => {
             if (provider.provider === providerName) {
               return {
                 ...provider,
@@ -278,8 +279,23 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             }
             return provider
-          }),
-        }))
+          })
+
+          let selectedModel = state.selectedModel
+          if (
+            selectedModel &&
+            state.selectedProvider === providerName &&
+            Array.isArray(data.models)
+          ) {
+            selectedModel =
+              data.models.find((model) => model.id === selectedModel?.id) ?? null
+          }
+
+          return {
+            providers,
+            selectedModel,
+          }
+        })
       },
       getProviderByName: (providerName: string) => {
         const provider = get().providers.find(
@@ -637,24 +653,9 @@ export const useModelProvider = create<ModelProviderState>()(
           )
         }
 
-        if (version <= 10 && state?.providers) {
-          state.providers.forEach((provider) => {
-            if (provider.models && provider.provider === 'llamacpp') {
-              provider.models.forEach((model) => {
-                if (!model.settings) model.settings = {}
-
-                if (!model.settings.auto_increase_ctx_len) {
-                  model.settings.auto_increase_ctx_len = {
-                    ...modelSettings.auto_increase_ctx_len,
-                    controller_props: {
-                      ...modelSettings.auto_increase_ctx_len.controller_props,
-                    },
-                  }
-                }
-              })
-            }
-          })
-        }
+        // Migration v10 historically inserted `auto_increase_ctx_len`. The
+        // setting was removed in v15, so v10 is now a no-op for any user
+        // still passing through this point.
 
         if (version <= 11 && state?.providers) {
           state.providers.forEach((provider) => {
@@ -685,6 +686,25 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 13 && state?.providers) {
+          // Predefined providers no longer carry a user-editable base-url
+          // setting. Force their base_url back to the canonical constant and
+          // strip any leftover base-url entry from persisted settings[].
+          const canonicalByName = new Map(
+            predefinedProviders.map((p) => [p.provider, p.base_url])
+          )
+          state.providers.forEach((provider) => {
+            const canonical = canonicalByName.get(provider.provider)
+            if (!canonical) return
+            provider.base_url = canonical
+            if (provider.settings) {
+              provider.settings = provider.settings.filter(
+                (s) => s.key !== 'base-url'
+              )
+            }
+          })
+        }
+
         if (version <= 12 && state?.providers) {
           // Reset ctx_len from the prior 8192 default to '' so llama.cpp picks
           // (auto-fit when enabled, model default otherwise). Preserve any
@@ -695,15 +715,48 @@ export const useModelProvider = create<ModelProviderState>()(
               const ctx = model.settings?.ctx_len as
                 | { controller_props?: { value?: unknown } }
                 | undefined
-              if (ctx?.controller_props?.value === 8192) {
-                ctx.controller_props.value = ''
+              const controllerProps = ctx?.controller_props
+              const ctxValue =
+                typeof controllerProps?.value === 'string'
+                  ? Number(controllerProps.value)
+                  : controllerProps?.value
+              if (ctxValue === 8192 && controllerProps) {
+                controllerProps.value = ''
+              }
+            })
+          })
+        }
+
+        if (version <= 13 && state?.providers) {
+          // `defrag-thold` was deprecated upstream and the control was deleted
+          // from settings.json. Strip the orphan entry from the persisted
+          // provider settings array so localStorage doesn't carry it forever.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.settings) return
+            provider.settings = provider.settings.filter(
+              (s) => s.key !== 'defrag_thold'
+            )
+          })
+        }
+
+        if (version <= 14 && state?.providers) {
+          // Auto-increase context was removed — the manual "Increase Context
+          // Size" button in the error banner now owns this. Strip the per-model
+          // setting entry from llamacpp models so the sidebar doesn't render a
+          // dead control.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              if (model.settings?.auto_increase_ctx_len) {
+                delete (model.settings as Record<string, unknown>)
+                  .auto_increase_ctx_len
               }
             })
           })
         }
         return state
       },
-      version: 13,
+      version: 15,
     }
   )
 )
