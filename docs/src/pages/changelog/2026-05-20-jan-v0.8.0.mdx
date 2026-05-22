@@ -1,0 +1,130 @@
+---
+title: "Jan v0.8.0: Multi-Token Prediction, llama.cpp Router Mode & Inline MCP Approval"
+version: 0.8.0
+description: "Jan v0.8.0 ships Multi-Token Prediction for compatible llama.cpp models, a unified llama.cpp router process, inline MCP tool approval with citation cards, per-model fit labels, bulk model deletion, per-thread activity indicators, and a backend dependency checker."
+date: 2026-05-20
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.0: Multi-Token Prediction, llama.cpp Router Mode & Inline MCP Approval"
+  date="2026-05-20"
+/>
+
+# Highlights
+
+**Multi-Token Prediction (MTP)**
+
+Jan now supports llama.cpp's Multi-Token Prediction for compatible models (e.g. GLM 4.5/4.6 and other architectures with MTP heads). Jan detects MTP-capable models from GGUF metadata (`{arch}.nextn_predict_layers`) at import time and exposes a per-model toggle plus draft tunables (`spec-draft-n-max`, `spec-draft-n-min`, `spec-draft-p-min`) in Model Settings. When enabled, `spec-type = draft-mtp` is emitted into the router preset, letting the model draft multiple tokens per step for faster generation. Requires the bundled llama.cpp build b9193 or newer; older backends disable the toggle with an upgrade hint.
+
+**llama.cpp Router Mode**
+
+Jan's local inference engine now runs as a single unified router process instead of spawning a separate server for every model. The router loads and unloads models on demand, so switching between them is faster and uses less memory. This release also adds:
+
+- A reasoning toggle (brain icon in the chat input) to switch thinking mode — auto / on / off — per model without reloading; only available when using the llama.cpp provider
+- Live prompt-processing progress so you see a percentage while the model processes your input rather than a bare spinner
+- A "Loading model…" indicator when the router cold-starts a model
+- A dialog prompting you to confirm or cancel when you close Jan while a model is still working
+
+**Inline MCP Tool Approval & Citation Cards**
+
+MCP tool calls no longer interrupt the conversation with a blocking dialog. Approval panels now appear inline inside each tool card, showing the exact arguments before you accept or deny. RAG results are displayed as numbered citation cards with source previews inside the tool output, and assistant responses include superscript markers linking back to each matched source (cosine similarity ≥ 0.65). Web search results show citation cards in the tool output but do not inject superscript markers into the response text.
+
+**Model Fit Labels & Bulk Delete**
+
+The Hub and provider model lists now show a colored fit pill — **Fits**, **May be slow**, or **Won't fit** — based on your hardware, without downloading anything. Model quantizations are grouped as **Small**, **Balanced**, or **Large** with a Recommended tag on the default download. A new **Delete All** button removes every managed model download at once and shows the total disk space to be freed (imported models are left untouched). Failed downloads no longer get stuck — they are cleared from the queue and a toast is shown. To retry, restart the download from the Hub or provider list.
+
+**Provider List Redesign**
+
+The provider list in Settings is now split into **Local** (llama.cpp, MLX) and **Remote** (OpenAI, Anthropic, Google, Groq, and others) sections so it is immediately clear which providers run on your device and which send data to the cloud.
+
+**Per-Thread Activity Indicators & Navigation**
+
+The thread sidebar now shows a small spinner next to each thread that is actively generating, loading a model, or running tools. Navigating away from an active thread no longer interrupts it — the work keeps running and the UI restores the correct state when you return. Deleting a thread properly stops all in-flight activity.
+
+**Audio Attachments**
+
+You can now attach audio files (WAV, MP3) directly in the chat input alongside images and documents. The **Add Audio** option appears when the active model supports audio input. Attached files show a preview chip with the filename and duration before sending.
+
+**File Attachment Progress Bar**
+
+File uploads now display a progress bar so you can see how much has transferred before sending your message.
+
+**Backend Dependency Checker**
+
+After installing a llama.cpp backend, Jan scans for required libraries (CUDA, Vulkan, cuDNN) and displays a checklist of anything missing with links to the official installers.
+
+**KV Cache Default Reverted to f16**
+
+The default KV cache type was temporarily changed to `q8_0` in a prior release and has been reverted to `f16` as a safer default. This change is not automatically migrated — if your models fail to load after updating, go to **Settings > llama.cpp > KV Cache K Type / V Type** and set both back to `f16`.
+
+**Vercel AI SDK v6**
+
+OpenAI, Anthropic, and Gemini model lists are now auto-populated when you enter an API key, with capabilities (tools, vision, audio) inferred from model IDs. Fallback API keys persist across restarts. Gemini 3.0 models route through Google's native SDK for correct tool-calling behavior. Error messages for context overflows and template errors are clearer and more actionable.
+
+**Server-Side MCP Tool Execution**
+
+A new `/v1/orchestrations` endpoint runs MCP tool calls server-side on `localhost:1337`, and a Settings toggle lets you enable the same orchestrator on `/v1/chat/completions`. An optional lightweight router model can be configured to pre-select which MCP servers a request needs, keeping the tool list short for the main model.
+
+**Message Queue & Editable Pending Chips**
+
+You can now keep typing while a response is streaming. Queued messages appear as editable chips in the input area, send automatically as soon as the current turn finishes, and the Stop button uses a two-stage interaction so you can cancel either the queue or the active generation.
+
+**Auto-Summarized Thread Titles**
+
+After your first response, Jan summarizes the thread title in the background using a cheap inference pass that can be cancelled if you rename the thread yourself.
+
+**Chain of Thought, Regenerate & Edit Improvements**
+
+Failed assistant responses now show a regenerate button instead of leaving the conversation stuck. A new Chain of Thought rendering surfaces step-by-step reasoning more cleanly, and you can scroll through streaming thinking content without being auto-interrupted.
+
+**Settings, Assistants & UX**
+
+- Settings navigation has been reorganized and the MCP section is now called **Connectors**
+- A **Default Assistant** setting and a chat-bar assistant picker (shown only when you have more than one assistant) make it easier to switch personas
+- Audio, vision, and document attachment options are now hidden when the active model doesn't support them
+- Document attachments accept many more file extensions
+- Toast placement is configurable, and message timestamps render in your local timezone
+- Hindi, Korean, and Catalan locales were added; existing locales were updated for the new strings
+- Up Arrow in an empty input restores your last sent message
+- Factory Reset offers options to preserve user data
+- All user settings are now stored in local files instead of browser localStorage, preventing data loss on reload
+
+**Remote Provider Improvements**
+
+- **MiniMax** has been added as a built-in cloud provider, defaulting to M2.7
+- Configurable token limits and auto-compact behavior for remote providers
+- Restored Gemini SDK adapter for MCP tool calls, and Groq no longer breaks on follow-up turns after a reasoning response
+- Mistral Magistral models stream through a dedicated adapter that understands their thinking part shape
+- Gemma's `<thought>` reasoning tags are recognized by the parser and rendered as a collapsible reasoning block instead of appearing as raw text in the response
+
+**Bug Fixes**
+
+- llama.cpp context meter now accounts for tool-heavy chats, and `ctx_size` overflow no longer breaks reloading a chat
+- CUDA backend is skipped when the GPU has insufficient memory, and CUDA library paths are no longer overwritten by other library setup
+- Flatpak builds discover CUDA libraries and GL extensions for NVIDIA GPUs
+- PDF parser panics are caught and a file size limit is enforced on uploads
+- Stdio MCP transports verify `tools/list` before signalling ready, and reconnect automatically on disconnect; tool parameter schemas missing `type` are normalized for strict providers
+- The MCP startup error dialog is shown again when servers fail to launch
+- Internal RAG tools used for embedded documents are auto-approved
+- Project file ingestion progress now persists across navigation, file upload errors are surfaced in plain language, and long URLs no longer overflow the project view
+- The Hub fit badge and MLX download UI no longer get stuck after a failed download
+- Spell check setting is honored in the Assistant editor's Instructions and Description fields
+- Assistant identity preamble is stripped on upgrade from the older v2 default prompt
+- Jan CLI install detection now works even when the install destination isn't on the app's PATH
+- App config persists in the Tauri app data directory, and Windows extended-length paths open correctly in File Explorer
+- Left sidebar maximum width reduced so content no longer cramps
+- Chat input and new-chat buttons are disabled during engine downloads
+
+# Known Issues
+
+- **KV cache type is no longer auto-migrated.** A prior release temporarily defaulted the llama.cpp KV cache to `q8_0`, which broke loading for some models that require flash attention. v0.8.0 reverts the default to `f16` and removes the previous `f16 → q8_0` migration code. Existing installs are **not** migrated automatically — if a model fails to load after updating, go to **Settings > llama.cpp > KV Cache K Type / V Type** and switch both back to `f16` manually.
+- **Migration glitches when upgrading from an older release.** If the app behaves oddly after upgrade (settings not applying, model lists looking wrong, etc.), open **Settings > General > Factory Reset** and run the reset with **Keep models and configs** enabled. This clears stale app state without deleting your downloaded models or provider configuration.
+- **MLX support is experimental.** The MLX engine is still under active development on Apple Silicon and may exhibit instability or compatibility gaps compared to the llama.cpp engine.
+
+---
+
+Update your Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.0)
