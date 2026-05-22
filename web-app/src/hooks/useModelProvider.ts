@@ -4,6 +4,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 import { predefinedProviders } from '@/constants/providers'
+import { isLocalProvider } from '@/lib/utils'
 import {
   API_KEY_FALLBACKS_SETTING_KEY,
   parseApiKeyFallbacks,
@@ -83,6 +84,24 @@ export const useModelProvider = create<ModelProviderState>()(
             ? state.deletedModels
             : []
 
+          // For local providers (llamacpp, mlx) the engine's list() is the
+          // source of truth: a model only appears here if it is on disk. If
+          // an id was previously soft-deleted but reappears in a fresh local
+          // listing, the user has re-downloaded/re-imported it and the
+          // tombstone must be cleared — otherwise the merge below filters it
+          // out forever.
+          const locallyPresentIds = new Set<string>()
+          for (const p of providers) {
+            if (!isLocalProvider(p.provider)) continue
+            for (const m of p.models ?? []) {
+              if (m?.id) locallyPresentIds.add(m.id)
+            }
+          }
+          const effectiveDeletedModels =
+            locallyPresentIds.size === 0
+              ? currentDeletedModels
+              : currentDeletedModels.filter((id) => !locallyPresentIds.has(id))
+
           const updatedProviders = providers.map((provider) => {
             const existingProvider = existingProviders.find(
               (x) => x.provider === provider.provider
@@ -98,7 +117,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   ('id' in e || 'model' in e) &&
                   typeof (e.id ?? e.model) === 'string' &&
                   !models.some((m) => m.id === e.id) &&
-                  !currentDeletedModels.includes(e.id)
+                  !effectiveDeletedModels.includes(e.id)
               ),
               ...models,
             ]
@@ -267,7 +286,12 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           }
 
-          return { providers: nextProviders }
+          return effectiveDeletedModels === currentDeletedModels
+            ? { providers: nextProviders }
+            : {
+                providers: nextProviders,
+                deletedModels: effectiveDeletedModels,
+              }
         }),
       updateProvider: (providerName, data) => {
         set((state) => {
