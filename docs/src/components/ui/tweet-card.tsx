@@ -224,7 +224,23 @@ export const MagicTweet = ({
   components?: TwitterComponents
   className?: string
 }) => {
-  const enrichedTweet = enrichTweet(tweet)
+  const normalizeEntities = <T extends { entities?: Tweet['entities'] }>(t: T): T => ({
+    ...t,
+    entities: {
+      hashtags: t.entities?.hashtags ?? [],
+      urls: t.entities?.urls ?? [],
+      user_mentions: t.entities?.user_mentions ?? [],
+      symbols: t.entities?.symbols ?? [],
+      ...(t.entities?.media?.length ? { media: t.entities.media } : {}),
+    },
+  })
+  const safeTweet = {
+    ...normalizeEntities(tweet),
+    ...(tweet.quoted_tweet
+      ? { quoted_tweet: normalizeEntities(tweet.quoted_tweet) }
+      : {}),
+  } as Tweet
+  const enrichedTweet = enrichTweet(safeTweet)
   return (
     <div
       className={cn(
