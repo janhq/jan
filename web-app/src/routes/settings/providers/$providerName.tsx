@@ -657,16 +657,26 @@ function ProviderDetail() {
 
     setIsInstallingBackend(true)
     try {
-      // Open file dialog with filter for .tar.gz and .zip files
+      // macOS NSOpenPanel maps filter strings to UTTypes via
+      // typeWithFilenameExtension:, which only accepts single-component
+      // extensions. `.tar.gz` resolves to org.gnu.gnu-zip-tar-archive,
+      // which is a sibling — not a child — of `.gz`'s UTType, so neither
+      // a `tar.gz` nor `gz` filter enables `.tar.gz` files in the picker.
+      // Skip the filter on macOS and revalidate after the pick.
+      const isMac =
+        typeof navigator !== 'undefined' &&
+        navigator.userAgent.toUpperCase().includes('MAC')
       const selectedFile = await serviceHub.dialog().open({
         multiple: false,
         directory: false,
-        filters: [
-          {
-            name: 'Backend Archives',
-            extensions: ['tar.gz', 'zip', 'gz'],
-          },
-        ],
+        filters: isMac
+          ? undefined
+          : [
+              {
+                name: 'Backend Archives',
+                extensions: ['tar.gz', 'zip'],
+              },
+            ],
       })
 
       if (selectedFile && typeof selectedFile === 'string') {
