@@ -35,11 +35,17 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       return
     }
 
-    // Register extensions - same pattern for both platforms
-    await ExtensionManager.getInstance()
-      .registerActive()
-      .then(() => ExtensionManager.getInstance().load())
-      .then(() => setFinishedSetup(true))
+    // Register extensions - same pattern for both platforms.
+    // Always finish setup even if registration/load throws so a single
+    // faulty extension can't gate the entire UI.
+    try {
+      await ExtensionManager.getInstance().registerActive()
+      await ExtensionManager.getInstance().load()
+    } catch (e) {
+      console.error('Extension setup failed:', e)
+    } finally {
+      setFinishedSetup(true)
+    }
   }, [])
 
   useEffect(() => {
