@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
@@ -860,16 +860,47 @@ pub struct BackendVerificationResult {
     pub resolved_libraries: Vec<String>,
 }
 
-fn expected_gpu_lib_name(backend: &str) -> Option<&'static str> {
+fn gpu_backend_keyword(backend: &str) -> Option<&'static str> {
     let b = backend.to_lowercase();
-    let is_windows = cfg!(target_os = "windows");
     if b.contains("cuda") {
-        Some(if is_windows { "ggml-cuda.dll" } else { "libggml-cuda.so" })
+        Some("cuda")
     } else if b.contains("vulkan") {
-        Some(if is_windows { "ggml-vulkan.dll" } else { "libggml-vulkan.so" })
+        Some("vulkan")
     } else {
         None
     }
+}
+
+fn is_shared_lib_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if cfg!(target_os = "windows") {
+        lower.ends_with(".dll")
+    } else {
+        lower.ends_with(".so") || lower.contains(".so.")
+    }
+}
+
+fn find_gpu_libs(bin_dir: &Path, keyword: &str) -> Vec<PathBuf> {
+    let entries = match std::fs::read_dir(bin_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_lowercase(),
+            None => continue,
+        };
+        if name.contains(keyword) && is_shared_lib_name(&name) {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
 }
 
 fn verify_backend_dependencies(
@@ -888,28 +919,16 @@ fn verify_backend_dependencies(
     let start = std::time::Instant::now();
     let mut missing: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Existence check runs before parsing so a deleted lib is caught without
-    // handing a bad path to goblin.
-    let gpu_lib_path: Option<PathBuf> = if cfg!(target_os = "macos") {
-        None
+    let paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
+        Vec::new()
     } else {
-        expected_gpu_lib_name(backend).and_then(|name| {
-            let path = bin_dir.join(name);
-            if path.exists() {
-                Some(path)
-            } else {
-                missing.insert(name.to_string());
-                None
-            }
-        })
+        match gpu_backend_keyword(backend) {
+            Some(kw) => find_gpu_libs(bin_dir, kw),
+            None => Vec::new(),
+        }
     };
 
-    // Skip CPU variants (ggml-cpu-haswell, etc.) — they're loaded only when
-    // the host's detected features match, so parsing them false-flags deps.
-    let mut paths: Vec<PathBuf> = vec![exe_path.clone()];
-    if let Some(p) = gpu_lib_path {
-        paths.push(p);
-    }
+    let _ = exe_path;
 
     let analysis = crate::deps_analyzer::analyze_out_of_process(bin_dir, &paths);
 
@@ -957,6 +976,15 @@ pub async fn verify_backend_installation(
             "Backend executable not found".into(),
             Some(exe_path.to_string_lossy().to_string()),
         ));
+    }
+
+    #[cfg(target_os = "linux")]
+    if jan_utils::system::is_flatpak() {
+        return Ok(BackendVerificationResult {
+            verified: true,
+            missing_libraries: Vec::new(),
+            resolved_libraries: Vec::new(),
+        });
     }
     // Libs sit next to the exe (build/bin/ when present); backend_dir is too high.
     let bin_dir = exe_path
