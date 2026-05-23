@@ -156,10 +156,17 @@ function ThreadDetail() {
   const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
-  const oomError = useAppState((s) => s.oomError)
+  const oomErrorRaw = useAppState((s) => s.oomError)
   const setOomError = useAppState((s) => s.setOomError)
-  const backendError = useAppState((s) => s.backendError)
+  const backendErrorRaw = useAppState((s) => s.backendError)
   const setBackendError = useAppState((s) => s.setBackendError)
+
+  // These signals come from the llamacpp router via global Tauri events.
+  // Mask them when the active provider isn't llamacpp so a router crash
+  // doesn't decorate chats running against MLX / OpenAI / Anthropic / etc.
+  const isLlamacppActive = selectedProvider === 'llamacpp'
+  const oomError = isLlamacppActive ? oomErrorRaw : undefined
+  const backendError = isLlamacppActive ? backendErrorRaw : undefined
 
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
