@@ -75,7 +75,7 @@ export const ModelSupportStatus = ({
   if (tier === 'unknown') return null
 
   const style = TIER_STYLES[tier]
-  const tooltip = `${style.label} (estimated, ctx: ${contextSize || DEFAULT_CTX_LENGTH})`
+  const tooltip = `${style.label} (estimated)`
 
   return (
     <TooltipProvider>
