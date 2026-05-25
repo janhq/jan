@@ -142,12 +142,6 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
-      title: 'common:local_api_server',
-      route: route.settings.local_api_server,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
       title: 'common:https_proxy',
       route: route.settings.https_proxy,
       hasSubMenu: false,

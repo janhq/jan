@@ -18,6 +18,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
+import { CopyButton } from '@/containers/CopyButton'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { LogViewer } from '@/components/LogViewer'
@@ -461,7 +462,7 @@ function LocalAPIServerContent() {
                     isServerRunning ? (
                       <div className="space-y-1">
                         <div>The server is currently running.</div>
-                        <div className="text-xs font-mono">
+                        <div className="text-xs font-mono flex items-center gap-1">
                           <a
                             href={localServerUrl}
                             target="_blank"
@@ -470,6 +471,7 @@ function LocalAPIServerContent() {
                           >
                             {localServerUrl}
                           </a>
+                          <CopyButton text={localServerUrl} />
                         </div>
                       </div>
                     ) : (

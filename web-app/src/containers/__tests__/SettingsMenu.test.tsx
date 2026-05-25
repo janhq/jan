@@ -104,7 +104,7 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
     expect(screen.getByText('common:keyboardShortcuts')).toBeInTheDocument()
     expect(screen.getByText('common:hardware')).toBeInTheDocument()
-    expect(screen.getByText('common:local_api_server')).toBeInTheDocument()
+    expect(screen.queryByText('common:local_api_server')).not.toBeInTheDocument()
     expect(screen.getByText('common:https_proxy')).toBeInTheDocument()
     expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
   })
