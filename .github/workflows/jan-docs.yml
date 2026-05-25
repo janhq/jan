@@ -15,6 +15,10 @@ on:
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
   workflow_dispatch:
 
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Deploy to CloudFlare Pages
@@ -26,13 +30,13 @@ jobs:
       deployments: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
       - name: Install jq      
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe # v2.0.1
 
       - name: Config Yarn
         run: |
@@ -69,7 +73,7 @@ jobs:
 
       - name: Publish to Cloudflare Pages PR Preview and Staging
         if: github.event_name == 'pull_request'
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/pages-action@f0a1cd58cd66095dee69bfa18fa5efd1dde93bca # v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -79,7 +83,7 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
         id: deployCloudflarePages
 
-      - uses: mshick/add-pr-comment@v2
+      - uses: mshick/add-pr-comment@b8f338c590a895d50bcbfa6c5859251edc8952fc # v2
         if: github.event_name == 'pull_request'
         with:
           message: |
@@ -87,7 +91,7 @@ jobs:
 
       - name: Publish to Cloudflare Pages Production
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/release/'))
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/pages-action@f0a1cd58cd66095dee69bfa18fa5efd1dde93bca # v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -11,14 +11,14 @@ jobs:
         project: ["nitro", "docs"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.x'
       - name: install requests
         run: |
           python3 -m pip install requests pytz tqdm
       - name: Python Inline script
-        uses: jannekem/run-python-script-action@v1
+        uses: jannekem/run-python-script-action@9d8e2e0878d575fb6073277f38ce3f10ebf4f059 # v1
         with: 
           script: |
             import requests

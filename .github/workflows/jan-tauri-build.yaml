@@ -4,6 +4,10 @@ on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
+concurrency:
+  group: tauri-tag-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
@@ -25,7 +29,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
       - name: Create Draft Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -74,7 +78,7 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: create latest.json file
         run: |
@@ -114,7 +118,7 @@ jobs:
       - name: Upload release assert if public provider is github
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
         with:
           upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
           asset_path: ./latest.json
