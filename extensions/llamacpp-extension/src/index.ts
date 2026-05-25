@@ -117,18 +117,33 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  * Override the default app.log function to use Jan's logging system.
  * @param args
  */
+function formatLogArg(arg: unknown): string {
+  if (arg instanceof Error) {
+    return arg.stack ? `${arg.message}\n${arg.stack}` : arg.message
+  }
+  if (arg === null || arg === undefined) return String(arg)
+  if (typeof arg === 'object') {
+    try {
+      return JSON.stringify(arg)
+    } catch {
+      return String(arg)
+    }
+  }
+  return String(arg)
+}
+
 const logger = {
   info: function (...args: any[]) {
     console.log(...args)
-    info(args.map((arg) => ` ${arg}`).join(` `))
+    info(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
   },
   warn: function (...args: any[]) {
     console.warn(...args)
-    warn(args.map((arg) => ` ${arg}`).join(` `))
+    warn(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
   },
   error: function (...args: any[]) {
     console.error(...args)
-    error(args.map((arg) => ` ${arg}`).join(` `))
+    error(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
   },
 }
 
