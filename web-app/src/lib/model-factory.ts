@@ -62,7 +62,15 @@ import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
-import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
+import {
+  LLAMACPP_ONLY_PARAM_KEYS,
+  paramsSettings,
+} from '@/lib/predefinedParams'
+import {
+  resolveProviderCaps,
+  isModelLevelRejected,
+  getMutualExclusionDrops,
+} from '@/lib/providerCaps'
 import { useAppState } from '@/hooks/useAppState'
 
 /**
@@ -183,6 +191,46 @@ function filterParameters(
 }
 
 /**
+ * Strip sampler params the active provider doesn't accept. Built-in providers
+ * with strict capability tables (e.g. real OpenAI rejecting `top_k`) drop the
+ * unsupported keys here so the wire request never carries them. Custom/permissive
+ * providers keep everything — the user opted into an unknown OAI-compat endpoint.
+ *
+ * Unknown keys (not in paramsSettings) pass through untouched so non-sampler
+ * fields like reasoning controls aren't affected.
+ */
+function stripUnsupportedSamplers(
+  parameters: Record<string, unknown>,
+  provider: ProviderObject,
+  modelId: string
+): Record<string, unknown> {
+  const caps = resolveProviderCaps(provider)
+  const exclusionDrops = getMutualExclusionDrops(parameters, provider.provider)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(parameters)) {
+    if (exclusionDrops.has(k)) continue
+    if (isModelLevelRejected(k, provider.provider, modelId)) continue
+    const def = paramsSettings[k]
+    if (!def) {
+      out[k] = v
+      continue
+    }
+    if (def.capability === 'client_only') {
+      out[k] = v
+      continue
+    }
+    if (def.capability === 'core') {
+      out[k] = v
+      continue
+    }
+    if (caps.supported.has(def.capability) || caps.maybe.has(def.capability)) {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+/**
  * Strip Jinja-stack-trace noise and other diagnostic prelude from upstream
  * error messages so the UI shows the human-readable cause. Examples:
  *
@@ -197,6 +245,27 @@ function filterParameters(
  *
  * Pure / no I/O so it can be exercised from tests.
  */
+/**
+ * Heuristic: does this upstream error look like "this parameter is not
+ * accepted"? Catches OpenAI's "Unsupported parameter", Anthropic's mutual
+ * exclusion, Mistral/Cohere "unknown/disallowed field" shapes, etc.
+ *
+ * Used to gate a one-shot retry with all our injected sampling params
+ * stripped — cheap recovery without parsing per-provider error grammars.
+ */
+export function isSamplingParamRejection(message: string): boolean {
+  if (typeof message !== 'string') return false
+  return (
+    /unsupported parameter/i.test(message) ||
+    /is not supported with this model/i.test(message) ||
+    /cannot both be specified|use only one/i.test(message) ||
+    /unknown field/i.test(message) ||
+    /property\s+['"`][^'"`]+['"`]\s+is unsupported/i.test(message) ||
+    /field\s+['"`][^'"`]+['"`]\s+is not allowed/i.test(message) ||
+    /unrecognized arguments?/i.test(message)
+  )
+}
+
 export function cleanUpstreamErrorMessage(raw: string): string {
   if (typeof raw !== 'string') return raw
   let msg = raw.replace(/\r\n/g, '\n').trim()
@@ -231,33 +300,41 @@ export function createCustomFetch(
   keepLlamacppOnly = false,
   onLlamacppServerError?: () => void
 ): typeof globalThis.fetch {
+  const buildBody = (
+    rawBody: Record<string, unknown>,
+    includeOurParams: boolean
+  ): Record<string, unknown> => {
+    if (!includeOurParams) {
+      decodeAudioSentinelsInBody(rawBody)
+      return rawBody
+    }
+    const normalised: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parameters)) {
+      if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
+      if (!keepLlamacppOnly && LLAMACPP_ONLY_PARAM_KEYS.has(key)) continue
+      const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
+      normalised[targetKey] = value
+    }
+    const merged = { ...rawBody, ...normalised }
+    if (keepLlamacppOnly && merged.stream === true) {
+      merged.return_progress = true
+    }
+    // llama-server convention: max_tokens = -1 means "unlimited". Users who
+    // set max_output_tokens = 0 in assistant params mean "no cap", not
+    // "produce zero tokens" — coerce here, gated to llamacpp only because
+    // OpenAI/Anthropic reject negative values.
+    if (keepLlamacppOnly && merged.max_tokens === 0) {
+      merged.max_tokens = -1
+    }
+    decodeAudioSentinelsInBody(merged)
+    return merged
+  }
+
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    let rawBody: Record<string, unknown> | null = null
     if (init?.method === 'POST' || !init?.method) {
-      const body = init?.body ? JSON.parse(init.body as string) : {}
-
-      // Normalise and merge inference parameters
-      const normalised: Record<string, unknown> = {}
-      for (const [key, value] of Object.entries(parameters)) {
-        if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
-        if (!keepLlamacppOnly && LLAMACPP_ONLY_PARAM_KEYS.has(key)) continue
-        // max_output_tokens → max_tokens (OpenAI-compatible field name)
-        const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
-        normalised[targetKey] = value
-      }
-
-      const merged = { ...body, ...normalised }
-      if (keepLlamacppOnly && merged.stream === true) {
-        merged.return_progress = true
-      }
-      // llama-server convention: max_tokens = -1 means "unlimited". Users who
-      // set max_output_tokens = 0 in assistant params mean "no cap", not
-      // "produce zero tokens" — coerce here, gated to llamacpp only because
-      // OpenAI/Anthropic reject negative values.
-      if (keepLlamacppOnly && merged.max_tokens === 0) {
-        merged.max_tokens = -1
-      }
-      decodeAudioSentinelsInBody(merged)
-      init = { ...init, body: JSON.stringify(merged) }
+      rawBody = init?.body ? JSON.parse(init.body as string) : {}
+      init = { ...init, body: JSON.stringify(buildBody(rawBody!, true)) }
     }
 
     const res = await baseFetch(input, init)
@@ -302,6 +379,32 @@ export function createCustomFetch(
     }
 
     if (!innerMessage) return res
+
+    // Sampling-rejection auto-retry: when the upstream complains about an
+    // injected parameter (top_k on OpenAI, temp+top_p on Anthropic, etc.),
+    // retry once with all our injected params stripped, surface a toast so
+    // the user knows their popover knob was ignored this turn, and return
+    // the bare-body response. Only attempts when we have a captured body
+    // and the request looked like a chat completion / messages POST.
+    if (
+      rawBody &&
+      res.status >= 400 &&
+      res.status < 500 &&
+      isSamplingParamRejection(innerMessage) &&
+      Object.keys(parameters).length > 0
+    ) {
+      const bareInit = {
+        ...init,
+        body: JSON.stringify(buildBody(rawBody, false)),
+      }
+      const retry = await baseFetch(input, bareInit)
+      if (retry.ok) {
+        notifySamplingStripped(innerMessage)
+        return retry
+      }
+      // Retry also failed — fall through to surface the cleaned original error.
+    }
+
     const cleaned = cleanUpstreamErrorMessage(innerMessage)
     if (cleaned === innerMessage) return res
     const nextBody = JSON.stringify({
@@ -314,6 +417,22 @@ export function createCustomFetch(
       headers: res.headers,
     })
   }
+}
+
+let lastSamplingNoticeAt = 0
+function notifySamplingStripped(reason: string): void {
+  const now = Date.now()
+  if (now - lastSamplingNoticeAt < 3000) return
+  lastSamplingNoticeAt = now
+  void import('sonner')
+    .then(({ toast }) => {
+      toast.warning('Sampling parameters dropped', {
+        description: `${cleanUpstreamErrorMessage(reason)} — request retried without your sampling overrides. Adjust in the Sampling popover.`,
+      })
+    })
+    .catch(() => {
+      console.warn('[sampling-retry]', reason)
+    })
 }
 
 /**
@@ -486,6 +605,7 @@ export class ModelFactory {
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
+    parameters = stripUnsupportedSamplers(parameters, provider, modelId)
 
     switch (providerName) {
       case 'llamacpp':

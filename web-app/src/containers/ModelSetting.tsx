@@ -19,6 +19,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
+import { paramsSettings } from '@/lib/predefinedParams'
 
 const MTP_MIN_BUILD = 9193
 
@@ -277,6 +278,8 @@ export function ModelSetting({
             // localStorage state that still carries the orphan entry.
             if (entry[0] === 'auto_increase_ctx_len') return acc
             if (fitEnabled && entry[0] === 'ctx_len') return acc
+            // Sampling params live in the composer popover, not the sidebar.
+            if (entry[0] in paramsSettings) return acc
             acc.push(entry)
             return acc
           }, [])

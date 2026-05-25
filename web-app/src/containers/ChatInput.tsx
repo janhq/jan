@@ -15,9 +15,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -32,11 +29,11 @@ import {
   IconLoader2,
   IconWorld,
   IconBrandChrome,
-  IconUser,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
+import { SamplerPopover } from '@/containers/SamplerPopover'
 import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -56,7 +53,6 @@ import {
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -88,7 +84,6 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { AssistantsMenu } from '@/components/AssistantsMenu'
 
 type ChatInputProps = {
   className?: string
@@ -183,8 +178,6 @@ const ChatInput = memo(function ChatInput({
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
-  const wasPointerDown = useRef(false)
-
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistantId, setSelectedAssistantId] = useState<
@@ -195,16 +188,6 @@ const ChatInput = memo(function ChatInput({
     setSelectedAssistantId(currentAssistant?.id || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
-
-  const avatar = currentThread
-    ? assistants.find((a) => a.id === currentThread?.assistants?.[0]?.id)
-        ?.avatar ||
-      currentThread?.assistants?.[0]?.avatar ||
-      ''
-    : assistants.find((a) => a.id === selectedAssistantId)?.avatar || ''
-
-  const assistantCount = assistants?.length || 0
-
 
   // Jan Browser Extension hook
   const {
@@ -1845,89 +1828,6 @@ const ChatInput = memo(function ChatInput({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
-                    {/* Use Assistant - only show when no projectId */}
-                    {!projectId && assistantCount < 2 && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <IconUser size={18} className="text-muted-foreground" />
-                          <span>Use Assistant</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <AssistantsMenu
-                            selectedAssistant={selectedAssistantId}
-                            setSelectedAssistant={setSelectedAssistantId}
-                            currentThread={currentThread}
-                            updateCurrentThreadAssistant={
-                              updateCurrentThreadAssistant
-                            }
-                            assistants={assistants}
-                          />
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                {!projectId && assistantCount >= 2 && (
-                  <DropdownMenu>
-                    <Tooltip
-                      open={tooltipShown === 'assistants'}
-                      onOpenChange={(newValue) =>
-                        setTooltipShown(newValue ? 'assistants' : false)
-                      }
-                    >
-                      <TooltipTrigger asChild>
-                        <DropdownMenuTrigger
-                          asChild
-                          onPointerDown={() => {
-                            wasPointerDown.current = true
-                          }}
-                          onKeyDown={() => {
-                            wasPointerDown.current = false
-                          }}
-                        >
-                          <Button
-                            variant="secondary"
-                            size="icon-sm"
-                            className="rounded-full mr-2 mb-1"
-                          >
-                            {avatar && (
-                              <AvatarEmoji
-                                avatar={avatar}
-                                imageClassName="w-4 h-4 object-contain"
-                                textClassName="text-xs relative inline-block"
-                              />
-                            )}
-                            {!avatar && (
-                              <IconUser
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            )}
-                          </Button>
-                        </DropdownMenuTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('assistants')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <DropdownMenuContent
-                      onCloseAutoFocus={(event) => {
-                        if (wasPointerDown.current) {
-                          event.preventDefault()
-                        }
-                      }}
-                      align="start"
-                    >
-                      <AssistantsMenu
-                        selectedAssistant={selectedAssistantId}
-                        setSelectedAssistant={setSelectedAssistantId}
-                        currentThread={currentThread}
-                        updateCurrentThreadAssistant={
-                          updateCurrentThreadAssistant
-                        }
-                        assistants={assistants}
-                      />
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -1939,6 +1839,21 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
+                <SamplerPopover
+                  providerId={selectedProvider}
+                  modelId={selectedModel?.id}
+                  assistantSwitcher={
+                    !projectId
+                      ? {
+                          assistants,
+                          currentThread,
+                          selectedAssistantId,
+                          setSelectedAssistantId,
+                          updateCurrentThreadAssistant,
+                        }
+                      : undefined
+                  }
+                />
                 {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
