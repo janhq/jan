@@ -78,13 +78,32 @@ pub async fn is_model_supported(
             .size
     };
 
-    // Total memory consumption = model weights + kvcache
-    let total_required = model_size + kv_cache_size;
+    // Multimodal projector lives next to model.gguf as mmproj.gguf and is
+    // loaded into the same device alongside the weights + KV cache. Only
+    // inspected for local paths — remote URLs route through the importer
+    // and won't hit this branch with the final on-disk layout.
+    let mmproj_size: u64 = if path.starts_with("https://") {
+        0
+    } else {
+        std::path::Path::new(&path)
+            .parent()
+            .map(|d| d.join("mmproj.gguf"))
+            .and_then(|p| fs::metadata(&p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0)
+    };
+    if mmproj_size > 0 {
+        log::info!("mmprojSize: {}", mmproj_size);
+    }
+
+    // Total memory consumption = model weights + kvcache + mmproj
+    let total_required = model_size + kv_cache_size + mmproj_size;
     log::info!(
-        "isModelSupported: Total memory requirement: {} for {}; Got kvCacheSize: {} from BE",
+        "isModelSupported: Total memory requirement: {} for {}; kvCacheSize: {}, mmprojSize: {}",
         total_required,
         path,
-        kv_cache_size
+        kv_cache_size,
+        mmproj_size
     );
 
     // Apple Silicon: macOS + ARM64 + no discrete GPUs = unified memory.
