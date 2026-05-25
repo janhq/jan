@@ -1599,11 +1599,20 @@ export default class llamacpp_extension extends AIEngine {
       await fs.mkdir(modelsDir)
     }
 
-    await this.migrateLegacyModels()
+    // Legacy migration is best-effort: a failure here must never blank the
+    // model list. Pre-router users without anything to migrate would never
+    // notice, but a single throw used to bubble out of list() and return [].
+    try {
+      await this.migrateLegacyModels()
+    } catch (err) {
+      logger.warn(`list: migrateLegacyModels failed, continuing: ${String(err)}`)
+    }
 
     let modelIds: string[] = []
 
-    // DFS
+    // DFS. Mirror the defensive pattern in preset.ts: an unreadable entry
+    // (Windows AV quarantine, junction, locked file) must not kill the whole
+    // scan — log and continue past it.
     let stack = [modelsDir]
     while (stack.length > 0) {
       const currentDir = stack.pop()
@@ -1617,52 +1626,63 @@ export default class llamacpp_extension extends AIEngine {
         continue
       }
 
-      // otherwise, look into subdirectories
-      const children = await fs.readdirSync(currentDir)
+      let children: string[] = []
+      try {
+        children = await fs.readdirSync(currentDir)
+      } catch (err) {
+        logger.warn(`list: readdir failed for ${currentDir}: ${String(err)}`)
+        continue
+      }
       for (const child of children) {
-        // skip files
-        const dirInfo = await fs.fileStat(child)
-        if (!dirInfo.isDirectory) {
-          continue
+        try {
+          const dirInfo = await fs.fileStat(child)
+          if (!dirInfo?.isDirectory) continue
+          stack.push(child)
+        } catch (err) {
+          logger.warn(`list: stat failed for ${child}: ${String(err)}`)
         }
-
-        stack.push(child)
       }
     }
 
+    // Per-model isolation: one malformed model.yml (or a write_yaml failure
+    // inside resolveEmbeddingConfig) must not discard the other entries.
     let modelInfos: modelInfo[] = []
     for (const modelId of modelIds) {
-      const path = await joinPath([modelsDir, modelId, 'model.yml'])
-      const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
-      const isEmbedding = await this.resolveEmbeddingConfig(
-        modelId,
-        modelConfig
-      )
-
-      const capabilities: string[] = []
-      if (modelConfig.mmproj_path) {
-        const caps = await this.readMmprojCapabilities(
-          modelConfig.mmproj_path
+      try {
+        const path = await joinPath([modelsDir, modelId, 'model.yml'])
+        const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+        const isEmbedding = await this.resolveEmbeddingConfig(
+          modelId,
+          modelConfig
         )
-        if (caps.vision) capabilities.push('vision')
-        if (caps.audio) capabilities.push('audio')
+
+        const capabilities: string[] = []
+        if (modelConfig.mmproj_path) {
+          const caps = await this.readMmprojCapabilities(
+            modelConfig.mmproj_path
+          )
+          if (caps.vision) capabilities.push('vision')
+          if (caps.audio) capabilities.push('audio')
+        }
+
+        const mp = modelConfig.model_path ?? ''
+        const isAbsolute = mp.startsWith('/') || /^[A-Za-z]:[\\/]/.test(mp)
+
+        const modelInfo = {
+          id: modelId,
+          name: modelConfig.name ?? modelId,
+          quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
+          providerId: this.provider,
+          port: 0, // port is not known until the model is loaded
+          sizeBytes: modelConfig.size_bytes ?? 0,
+          embedding: isEmbedding,
+          imported: isAbsolute,
+          capabilities: capabilities.length > 0 ? capabilities : undefined,
+        } as modelInfo
+        modelInfos.push(modelInfo)
+      } catch (err) {
+        logger.warn(`list: skipping model ${modelId}: ${String(err)}`)
       }
-
-      const mp = modelConfig.model_path ?? ''
-      const isAbsolute = mp.startsWith('/') || /^[A-Za-z]:[\\/]/.test(mp)
-
-      const modelInfo = {
-        id: modelId,
-        name: modelConfig.name ?? modelId,
-        quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
-        providerId: this.provider,
-        port: 0, // port is not known until the model is loaded
-        sizeBytes: modelConfig.size_bytes ?? 0,
-        embedding: isEmbedding,
-        imported: isAbsolute,
-        capabilities: capabilities.length > 0 ? capabilities : undefined,
-      } as modelInfo
-      modelInfos.push(modelInfo)
     }
 
     return modelInfos
@@ -1749,16 +1769,25 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      // otherwise, look into subdirectories
-      const children = await fs.readdirSync(currentDir)
-      for (const child of children) {
-        // skip files
-        const dirInfo = await fs.fileStat(child)
-        if (!dirInfo.isDirectory) {
-          continue
+      let subdirs: string[] = []
+      try {
+        subdirs = await fs.readdirSync(currentDir)
+      } catch (err) {
+        logger.warn(
+          `migrateLegacyModels: readdir failed for ${currentDir}: ${String(err)}`
+        )
+        continue
+      }
+      for (const child of subdirs) {
+        try {
+          const dirInfo = await fs.fileStat(child)
+          if (!dirInfo?.isDirectory) continue
+          stack.push(child)
+        } catch (err) {
+          logger.warn(
+            `migrateLegacyModels: stat failed for ${child}: ${String(err)}`
+          )
         }
-
-        stack.push(child)
       }
     }
     localStorage.setItem('cortex_models_migrated', 'true')
