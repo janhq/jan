@@ -241,6 +241,9 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+  const hasSendableMedia = attachments.some(
+    (a) => (a.type === 'image' || a.type === 'audio') && !!a.dataUrl
+  )
 
   const [, setFileIngestProgress] = useState<{
     completed: number
@@ -307,7 +310,7 @@ const ChatInput = memo(function ChatInput({
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim()) {
+    if (!prompt.trim() && !hasSendableMedia) {
       return
     }
     if (ingestingAny) {
@@ -1718,7 +1721,7 @@ const ChatInput = memo(function ChatInput({
                   e.preventDefault()
                   // Submit prompt when Enter is pressed without Shift and prompt is not empty.
                   // If streaming, handleSendMessage will queue the message automatically.
-                  if (prompt.trim() && !ingestingAny) {
+                  if ((prompt.trim() || hasSendableMedia) && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -2186,7 +2189,7 @@ const ChatInput = memo(function ChatInput({
                 <Button
                   variant="default"
                   size="icon-sm"
-                  disabled={!prompt.trim() || ingestingAny}
+                  disabled={(!prompt.trim() && !hasSendableMedia) || ingestingAny}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"
