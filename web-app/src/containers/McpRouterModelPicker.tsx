@@ -50,18 +50,27 @@ export function McpRouterModelPicker({
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const availableModels = useMemo((): Entry[] => {
-    return providers
-      .filter((p) => p.active)
-      .flatMap((p) =>
-        p.models
-          .filter((m) => isRouterModelSelectable(p, m))
-          .map((m) => ({
-            model: m,
-            providerName: p.provider,
-            isLocal: !!isLocalProvider(p.provider),
-            hasApiKey: !!p.api_key?.length,
-          }))
-      )
+    // Dedupe by `${provider}:${modelId}` — provider model lists can carry
+    // duplicates (registry + locally imported, or upstream `/v1/models`
+    // returning the same id twice). React keys must be unique downstream.
+    const seen = new Set<string>()
+    const entries: Entry[] = []
+    for (const p of providers) {
+      if (!p.active) continue
+      for (const m of p.models) {
+        if (!isRouterModelSelectable(p, m)) continue
+        const key = `${p.provider}:${m.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        entries.push({
+          model: m,
+          providerName: p.provider,
+          isLocal: !!isLocalProvider(p.provider),
+          hasApiKey: !!p.api_key?.length,
+        })
+      }
+    }
+    return entries
   }, [providers])
 
   const filteredModels = useMemo(() => {
