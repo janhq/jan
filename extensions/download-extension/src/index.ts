@@ -20,6 +20,44 @@ type DownloadEvent = {
   total: number
 }
 
+// Hosts that may receive the Hugging Face access token. Sending the HF token
+// to any other host (e.g. github.com) makes that host respond with HTTP 401,
+// because an HF token is not a valid credential outside HF infrastructure.
+// See: HF token leaked into GitHub backend downloads → 401 Unauthorized.
+export const HF_AUTH_HOSTS: ReadonlyArray<string> = [
+  'huggingface.co',
+  'hf.co',
+]
+
+export function isHuggingFaceUrl(url: string): boolean {
+  try {
+    const host = new URL(url).host.toLowerCase()
+    return HF_AUTH_HOSTS.some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`)
+    )
+  } catch {
+    return false
+  }
+}
+
+// Pure variant of `_getHeaders`, exposed for unit testing. The HF access
+// token is only attached when every URL in the batch targets a Hugging Face
+// host. Mixed batches (HF + non-HF) drop the token to avoid leaking it to
+// e.g. GitHub releases, which reject foreign credentials with 401.
+export function buildAuthHeaders(
+  items: ReadonlyArray<{ url: string }>,
+  hfToken: string | undefined | null
+): Record<string, string> {
+  if (!hfToken || items.length === 0) {
+    return {}
+  }
+  const allHuggingFace = items.every((item) => isHuggingFaceUrl(item.url))
+  if (!allHuggingFace) {
+    return {}
+  }
+  return { Authorization: `Bearer ${hfToken}` }
+}
+
 export default class DownloadManager extends BaseExtension {
   hfToken?: string
 
@@ -71,7 +109,7 @@ export default class DownloadManager extends BaseExtension {
       await invoke<void>('download_files', {
         items,
         taskId,
-        headers: this._getHeaders(),
+        headers: this._getHeaders(items),
         resume,
       })
     } catch (error) {
@@ -91,9 +129,7 @@ export default class DownloadManager extends BaseExtension {
     }
   }
 
-  _getHeaders() {
-    return {
-      ...(this.hfToken && { Authorization: `Bearer ${this.hfToken}` }),
-    }
+  _getHeaders(items: DownloadItem[]) {
+    return buildAuthHeaders(items, this.hfToken)
   }
 }

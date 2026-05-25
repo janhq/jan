@@ -1,5 +1,6 @@
 import { getModelToStart } from './getModelToStart'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 
 export type EnsureModelResult =
   | { status: 'already_loaded'; modelId: string; providerName: string }
@@ -75,7 +76,8 @@ export async function ensureModelForServer(
 
   if (loadedModels && loadedModels.length > 0 && !modelOverride) {
     const modelId = loadedModels[0]
-    const providerName = findProviderForModel(modelId)?.provider ?? 'llamacpp'
+    const providerName =
+      findProviderForModel(modelId)?.provider ?? LOCAL_LLAMACPP_PROVIDER
     return { status: 'already_loaded', modelId, providerName }
   }
 

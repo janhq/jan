@@ -13,7 +13,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { switchToModel } from '@/utils/switchModel'
-import { isDev } from '@/lib/utils'
+import { isDev, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { AppEvent, events, ModelEvent } from '@janhq/core'
 import { toast } from 'sonner'
 import { SystemEvent } from '@/types/events'
@@ -22,6 +22,7 @@ import {
   type AtomicChatDeepLinkTarget,
 } from '@/services/deeplink/parse'
 import {
+  isLocalProvider,
   registerRemoteProvider,
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
@@ -44,9 +45,16 @@ const syncRemoteProviders = () => {
   const currentActive = new Set<string>()
 
   providers.forEach((provider) => {
+    // Only cloud providers should be registered with the backend proxy. Local
+    // engines (`llamacpp`, `llamacpp-upstream`, `mlx`, `foundation-models`)
+    // run in-process and must never be treated as remote — see ADR
+    // 2026-05-19 *Ship upstream `ggml-org/llama.cpp` as a second macOS
+    // provider* / ADR 2026-05-22 *Windows ships only `llamacpp-upstream`*.
+    // The pre-fix check excluded only `'llamacpp'`, which silently leaked
+    // `'llamacpp-upstream'` into the remote-registration path on Windows.
     if (
       provider.active &&
-      provider.provider !== 'llamacpp' &&
+      !isLocalProvider(provider.provider) &&
       provider.api_key
     ) {
       safeRegisterRemoteProvider(provider)
@@ -185,10 +193,9 @@ export function DataProvider() {
     const handleModelImported = async (eventData?: Record<string, unknown>) => {
       console.log('[LocalAPI] onModelImported fired, eventData:', eventData)
 
-      let newProviders: ModelProvider[]
       try {
-        newProviders = await serviceHub.providers().getProviders()
-        setProviders(newProviders)
+        const fetchedProviders = await serviceHub.providers().getProviders()
+        setProviders(fetchedProviders)
         syncRemoteProviders()
       } catch (err) {
         console.error(
@@ -213,27 +220,36 @@ export function DataProvider() {
         return
       }
 
-      // Find provider — try exact match first, then with normalized separators
-      let provider = newProviders.find((p) =>
+      // Resolve the provider against the *post-setProviders* store, not the
+      // raw `getProviders()` payload. On Windows the store strips the
+      // turboquant `'llamacpp'` provider (ADR 2026-05-22 *Windows ships only
+      // `llamacpp-upstream`*), but the raw payload may still carry a
+      // ghost `'llamacpp'` entry from leftover persisted state — picking
+      // it here would route the subsequent `switchToModel` to a provider
+      // id that the store doesn't know about and crash with `Provider
+      // 'llamacpp' not found`, leaving the previous model unloaded and
+      // the server stopped.
+      const storeProviders = useModelProvider.getState().providers
+      let provider = storeProviders.find((p) =>
         p?.models?.some((m: { id: string }) => m.id === modelId)
       )
       if (!provider) {
         const altId = modelId.replace(/\//g, '\\')
-        provider = newProviders.find((p) =>
+        provider = storeProviders.find((p) =>
           p?.models?.some((m: { id: string }) => m.id === altId)
         )
       }
       if (!provider) {
-        // Fallback: assume llamacpp provider
-        provider =
-          newProviders.find((p) => p?.provider === 'llamacpp') ?? undefined
+        provider = storeProviders.find(
+          (p) => p?.provider === LOCAL_LLAMACPP_PROVIDER
+        )
         console.warn(
           '[LocalAPI] Could not find provider for model',
           modelId,
-          '— falling back to llamacpp'
+          `— falling back to ${LOCAL_LLAMACPP_PROVIDER}`
         )
       }
-      const providerName = provider?.provider ?? 'llamacpp'
+      const providerName = provider?.provider ?? LOCAL_LLAMACPP_PROVIDER
       console.log('[LocalAPI] Provider for model:', providerName)
 
       const currentStatus = useAppState.getState().serverStatus
@@ -551,7 +567,7 @@ export function DataProvider() {
             const providerName =
               allProviders.find((p) =>
                 p.models.some((m) => m.id === firstLocal.id)
-              )?.provider ?? 'llamacpp'
+              )?.provider ?? LOCAL_LLAMACPP_PROVIDER
             return { model: firstLocal.id, provider: providerName }
           }
 

@@ -1,6 +1,6 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn, formatBytes, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -1496,14 +1496,21 @@ const ChatInput = memo(function ChatInput({
       try {
         localStorage.setItem(
           localStorageKey.lastUsedModel,
-          JSON.stringify({ provider: 'llamacpp', model: modelId })
+          JSON.stringify({
+            provider: LOCAL_LLAMACPP_PROVIDER,
+            model: modelId,
+          })
         )
       } catch {
         // Ignore localStorage errors
       }
 
       setTimeout(() => {
-        const provider = getProviderByName('llamacpp')
+        // `getProviderByName('llamacpp')` is alias-aware on Windows and
+        // returns the upstream provider, but `updateProvider` is not — so
+        // we must address the canonical id for the platform here, otherwise
+        // the vision capability is never persisted on Windows.
+        const provider = getProviderByName(LOCAL_LLAMACPP_PROVIDER)
         if (provider) {
           const modelIndex = provider.models.findIndex((m) => m.id === modelId)
           if (modelIndex !== -1) {
@@ -1516,13 +1523,18 @@ const ChatInput = memo(function ChatInput({
                 ...model,
                 capabilities: [...capabilities, 'vision'],
               }
-              updateProvider('llamacpp', { models: updatedModels })
+              updateProvider(LOCAL_LLAMACPP_PROVIDER, {
+                models: updatedModels,
+              })
             }
           }
         }
 
-        selectModelProvider('llamacpp', modelId)
-        updateCurrentThreadModel({ id: modelId, provider: 'llamacpp' })
+        selectModelProvider(LOCAL_LLAMACPP_PROVIDER, modelId)
+        updateCurrentThreadModel({
+          id: modelId,
+          provider: LOCAL_LLAMACPP_PROVIDER,
+        })
       }, 500)
     },
     [

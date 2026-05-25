@@ -2,7 +2,7 @@
  * Default Models Service - Web implementation
  */
 
-import { sanitizeModelId } from '@/lib/utils'
+import { sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   AIEngine,
   EngineManager,
@@ -24,8 +24,13 @@ import type {
   ModelValidationResult,
 } from './types'
 
-// TODO: Replace this with the actual provider later
-const defaultProvider = 'llamacpp'
+// Platform-active llama.cpp provider id. Windows registers only the
+// upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
+// macOS / Linux register the turboquant fork ('llamacpp'). Resolving
+// this through LOCAL_LLAMACPP_PROVIDER keeps `getEngine()` calls
+// platform-agnostic — without it, Windows `pullModel` / `validateGgufFile`
+// silently no-op because the EngineManager has no 'llamacpp' entry.
+const defaultProvider = LOCAL_LLAMACPP_PROVIDER
 const HUGGING_FACE_SEARCH_LIMIT = 10
 const localProviders = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 type LocalProviderName = (typeof localProviders)[number]
@@ -437,7 +442,7 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    const llamacppEngine = this.getEngine('llamacpp')
+    const llamacppEngine = this.getEngine(LOCAL_LLAMACPP_PROVIDER)
     const mlxEngine = this.getEngine('mlx')
     try {
       await Promise.allSettled(
@@ -588,7 +593,7 @@ export class DefaultModelsService implements ModelsService {
     let settingsUpdated = false
 
     try {
-      const engine = this.getEngine('llamacpp') as AIEngine & {
+      const engine = this.getEngine(LOCAL_LLAMACPP_PROVIDER) as AIEngine & {
         checkMmprojExists?: (id: string) => Promise<boolean>
       }
       if (engine && typeof engine.checkMmprojExists === 'function') {
@@ -688,7 +693,7 @@ export class DefaultModelsService implements ModelsService {
 
   async checkMmprojExists(modelId: string): Promise<boolean> {
     try {
-      const engine = this.getEngine('llamacpp') as AIEngine & {
+      const engine = this.getEngine(LOCAL_LLAMACPP_PROVIDER) as AIEngine & {
         checkMmprojExists?: (id: string) => Promise<boolean>
       }
       if (engine && typeof engine.checkMmprojExists === 'function') {
@@ -725,7 +730,7 @@ export class DefaultModelsService implements ModelsService {
     }
 
     try {
-      const engine = this.getEngine('llamacpp') as AIEngine & {
+      const engine = this.getEngine(LOCAL_LLAMACPP_PROVIDER) as AIEngine & {
         isModelSupported?: (
           path: string,
           ctx_size?: number
@@ -750,7 +755,7 @@ export class DefaultModelsService implements ModelsService {
 
   async validateGgufFile(filePath: string): Promise<ModelValidationResult> {
     try {
-      const engine = this.getEngine('llamacpp') as AIEngine & {
+      const engine = this.getEngine(LOCAL_LLAMACPP_PROVIDER) as AIEngine & {
         validateGgufFile?: (path: string) => Promise<ModelValidationResult>
       }
 
@@ -778,7 +783,7 @@ export class DefaultModelsService implements ModelsService {
     messages: ThreadMessage[]
   ): Promise<number> {
     try {
-      const engine = this.getEngine('llamacpp')
+      const engine = this.getEngine(LOCAL_LLAMACPP_PROVIDER)
       const typedEngine = engine as AIEngine & {
         getTokensCount?: (opts: {
           model: string
