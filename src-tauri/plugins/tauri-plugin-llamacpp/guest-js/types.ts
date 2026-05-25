@@ -35,6 +35,7 @@ export interface GgufMetadata {
 export type LlamacppConfig = {
   version_backend: string
   auto_update_engine: boolean
+  verify_backend_deps: boolean
   auto_unload: boolean
   models_max: string | number
   timeout: number

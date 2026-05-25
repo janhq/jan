@@ -45,6 +45,10 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
   return {
     version_backend: asString(config.version_backend),
     auto_update_engine: asBool(config.auto_update_engine),
+    verify_backend_deps:
+      config.verify_backend_deps === undefined || config.verify_backend_deps === null
+        ? true
+        : asBool(config.verify_backend_deps),
     auto_unload: asBool(config.auto_unload),
     models_max:
       typeof config.models_max === 'number'

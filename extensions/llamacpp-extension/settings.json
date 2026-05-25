@@ -30,6 +30,13 @@
     "controllerProps": { "value": true }
   },
   {
+    "key": "verify_backend_deps",
+    "title": "Verify backend dependencies",
+    "description": "Check that GPU backend shared libraries (CUDA, Vulkan, etc.) resolve on startup and warn if any are missing.",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
     "key": "models_max",
     "title": "Max Concurrently Loaded Models",
     "description": "Maximum number of models the router will keep loaded at once. 0 = unlimited.",
