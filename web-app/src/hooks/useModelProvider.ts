@@ -171,11 +171,20 @@ export const useModelProvider = create<ModelProviderState>()(
                 : existingProvider?.settings?.find(
                     (x) => x.key === setting.key
                   )
+              // Only the user's `value` is carried over from existing state;
+              // metadata like `recommended` / `options` must always reflect
+              // the fresh extension fetch (otherwise stale recommendations
+              // and stale option lists outlive the underlying setting).
+              const existingValue = (
+                existingSetting?.controller_props as { value?: unknown } | undefined
+              )?.value
               return {
                 ...setting,
                 controller_props: {
                   ...setting.controller_props,
-                  ...(existingSetting?.controller_props || {}),
+                  ...(existingSetting && existingValue !== undefined
+                    ? { value: existingValue }
+                    : {}),
                 },
               }
             })
