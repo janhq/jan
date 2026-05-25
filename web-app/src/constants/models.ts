@@ -49,7 +49,7 @@ export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
     platforms: ['macos'],
   },
   {
-    model_name: 'unsloth/Meta-Llama-3.1-8B-Instruct-GGUF',
+    model_name: 'unsloth/Llama-3.2-3B-Instruct-GGUF',
     description_key: 'hub:recFinetuningChat',
     platforms: ['windows', 'linux'],
   },
