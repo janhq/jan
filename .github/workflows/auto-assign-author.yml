@@ -10,6 +10,6 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: toshimaru/auto-author-assign@v1.1.0
+      - uses: toshimaru/auto-author-assign@eac0d15f4a55d1d1824f2b78fdea42de6cd59fef # v1.1.0
         with:
           repo-token: "${{ secrets.GITHUB_TOKEN }}"

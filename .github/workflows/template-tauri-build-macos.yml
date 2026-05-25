@@ -73,7 +73,7 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.ref }}
       - name: Replace Icons for Beta Build
@@ -83,12 +83,12 @@ jobs:
           cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe # v2.0.1
 
       - name: Install ctoml
         run: |
@@ -167,7 +167,7 @@ jobs:
         env:
           NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
 
-      - uses: apple-actions/import-codesign-certs@v2
+      - uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
         continue-on-error: true
         with:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
@@ -203,7 +203,7 @@ jobs:
       ## Artifacts, for dev and test
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |
@@ -253,7 +253,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.FILE_NAME }}
@@ -264,7 +264,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/${{ steps.metadata.outputs.DMG_NAME }}
@@ -275,7 +275,7 @@ jobs:
         if: inputs.public_provider == 'github'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.TAR_NAME }}

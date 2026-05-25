@@ -13,12 +13,12 @@ jobs:
       new_version: ${{ steps.version_update.outputs.new_version }}
     steps:
       - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe # v2.0.1
 
       - name: Get tag
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         id: tag
-        uses: dawidd6/action-get-tag@v1
+        uses: dawidd6/action-get-tag@727a6f0a561be04e09013531e73a3983a65e3479 # v1
 
       - name: Update app version based on latest release tag with build number
         id: version_update

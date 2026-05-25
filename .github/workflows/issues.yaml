@@ -10,7 +10,7 @@ jobs:
     name: Add issue to project
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/add-to-project@v1.0.2
+      - uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
         with:
           project-url: https://github.com/orgs/${{ vars.ORG_NAME }}/projects/${{ vars.JAN_PROJECT_NUMBER }}
           github-token: ${{ secrets.AUTO_ADD_TICKET_PAT }}
