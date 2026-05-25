@@ -28,6 +28,8 @@ import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
+  uiMessageHasMeaningfulContent,
+  threadMessageIsEmpty,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
 import {
@@ -238,38 +240,48 @@ function ThreadDetail() {
       // Persist assistant message to backend (skip if aborted).
       // For continuations, message.parts already contains partial + new content
       // because the stream wrapper prepended the partial text as the first delta.
-      if (!isAbort && message.role === 'assistant') {
+      if (
+        !isAbort &&
+        message.role === 'assistant' &&
+        uiMessageHasMeaningfulContent(message)
+      ) {
         const contentParts = extractContentPartsFromUIMessage(message)
+        const messageMetadata = (message.metadata || {}) as Record<
+          string,
+          unknown
+        >
 
-        if (contentParts.length > 0) {
-          const messageMetadata = (message.metadata || {}) as Record<
-            string,
-            unknown
-          >
+        const assistantMessage: ThreadMessage = {
+          type: 'text',
+          role: ChatCompletionRole.Assistant,
+          content: contentParts,
+          id: message.id,
+          object: 'thread.message',
+          thread_id: threadId,
+          status: MessageStatus.Ready,
+          created_at: Date.now(),
+          completed_at: Date.now(),
+          metadata: messageMetadata,
+        }
 
-          const assistantMessage: ThreadMessage = {
-            type: 'text',
-            role: ChatCompletionRole.Assistant,
-            content: contentParts,
-            id: message.id,
-            object: 'thread.message',
-            thread_id: threadId,
-            status: MessageStatus.Ready,
-            created_at: Date.now(),
-            completed_at: Date.now(),
-            metadata: messageMetadata,
-          }
+        const existingMessages = useMessages.getState().getMessages(threadId)
+        const existingMessage = existingMessages.find(
+          (m) => m.id === message.id
+        )
 
-          // Check if message with this ID already exists (onFinish can be called multiple times)
-          const existingMessages = useMessages.getState().getMessages(threadId)
-          const existingMessage = existingMessages.find(
-            (m) => m.id === message.id
-          )
+        if (existingMessage) {
+          updateMessage(assistantMessage)
+        } else {
+          addMessage(assistantMessage)
+        }
 
-          if (existingMessage) {
-            updateMessage(assistantMessage)
-          } else {
-            addMessage(assistantMessage)
+        // A successful assistant turn clears any sticky error on prior user
+        // messages — the conversation has moved forward.
+        for (const m of existingMessages) {
+          const meta = m.metadata as Record<string, unknown> | undefined
+          if (meta?.error) {
+            const { error: _drop, ...rest } = meta
+            updateMessage({ ...m, metadata: rest })
           }
         }
       }
@@ -561,10 +573,23 @@ function ThreadDetail() {
             }
           }
 
-          // Update the legacy store
+          // Drop and delete any persisted empty assistant rows produced by
+          // the old bug where errored generations were written as empty-text
+          // messages. Lossless cleanup — these carry no information.
+          const emptyAssistantIds = messagesToSet
+            .filter(threadMessageIsEmpty)
+            .map((m) => m.id)
+          if (emptyAssistantIds.length > 0) {
+            messagesToSet = messagesToSet.filter(
+              (m) => !emptyAssistantIds.includes(m.id)
+            )
+            for (const id of emptyAssistantIds) {
+              deleteMessage(threadId, id)
+            }
+          }
+
           setMessages(threadId, messagesToSet)
 
-          // Convert and set messages for AI SDK chat
           const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
           setChatMessages(uiMessages)
           currentThread.current = threadId
@@ -873,7 +898,11 @@ function ThreadDetail() {
 
       const originalMessage = currentLocalMessages[messageIndex]
 
-      // Update the message content
+      const priorMeta = (originalMessage.metadata || {}) as Record<
+        string,
+        unknown
+      >
+      const { error: _droppedError, ...cleanedMeta } = priorMeta
       const updatedMessage = {
         ...originalMessage,
         content: [
@@ -882,6 +911,7 @@ function ThreadDetail() {
             text: { value: newText, annotations: [] },
           },
         ],
+        metadata: cleanedMeta,
       }
       updateMessage(updatedMessage)
 
@@ -1088,6 +1118,32 @@ function ThreadDetail() {
       useMessageQueue.getState().clearQueue(threadId)
     }
   }, [status, threadId])
+
+  // Stamp the last user message with the error so it survives reload and
+  // navigation. Cleared on the next successful assistant onFinish, or when
+  // the user edits that message.
+  useEffect(() => {
+    if (status !== 'error' || !error) return
+    const messages = useMessages.getState().getMessages(threadId)
+    let lastUserIndex = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === ChatCompletionRole.User) {
+        lastUserIndex = i
+        break
+      }
+    }
+    if (lastUserIndex === -1) return
+    const target = messages[lastUserIndex]
+    const errMessage =
+      error instanceof Error ? error.message : String(error || 'Error')
+    const existingError = (target.metadata as Record<string, unknown> | undefined)
+      ?.error
+    if (existingError === errMessage) return
+    updateMessage({
+      ...target,
+      metadata: { ...(target.metadata || {}), error: errMessage },
+    })
+  }, [status, error, threadId, updateMessage])
 
   // Clear the queue when navigating away from this thread
   useEffect(() => {

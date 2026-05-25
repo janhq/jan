@@ -21,7 +21,12 @@ import {
 import { CopyButton } from './CopyButton'
 import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { IconRefresh, IconPaperclip, IconArrowDown } from '@tabler/icons-react'
+import {
+  IconRefresh,
+  IconPaperclip,
+  IconArrowDown,
+  IconAlertTriangle,
+} from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -568,6 +573,38 @@ export const MessageItem = memo(
             )}
           </div>
         )}
+
+        {message.role === 'user' &&
+          !hideActions &&
+          typeof metadata?.error === 'string' &&
+          metadata.error.length > 0 && (
+            <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+              <IconAlertTriangle
+                size={16}
+                className="mt-0.5 shrink-0 text-destructive"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-destructive">
+                  Generation failed
+                </div>
+                <div className="text-muted-foreground break-words">
+                  {metadata.error as string}
+                </div>
+              </div>
+              {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING &&
+                status !== CHAT_STATUS.SUBMITTED && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRegenerate}
+                    className="shrink-0"
+                  >
+                    <IconRefresh size={14} />
+                    <span>Regenerate</span>
+                  </Button>
+                )}
+            </div>
+          )}
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (

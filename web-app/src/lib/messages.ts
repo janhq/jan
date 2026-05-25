@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ThreadMessage, ContentType, MessageStatus } from '@janhq/core'
+import {
+  ThreadMessage,
+  ContentType,
+  MessageStatus,
+  ChatCompletionRole,
+} from '@janhq/core'
 import type { UIMessage } from '@ai-sdk/react'
 // Attachments are now handled upstream in newUserThreadContent
 
@@ -341,6 +346,50 @@ export function convertThreadMessageToUIMessage(
       createdAt: new Date(threadMessage.created_at || Date.now()),
     },
   } as UIMessage
+}
+
+export function uiMessageHasMeaningfulContent(message: {
+  parts?: any[]
+}): boolean {
+  if (!message.parts?.length) return false
+  for (const part of message.parts) {
+    if (!part || typeof part !== 'object') continue
+    if (part.type === 'text' && typeof part.text === 'string' && part.text.trim())
+      return true
+    if (
+      part.type === 'reasoning' &&
+      ((typeof part.text === 'string' && part.text.trim()) ||
+        (typeof part.reasoning === 'string' && part.reasoning.trim()))
+    )
+      return true
+    if (part.type === 'file' && part.url) return true
+    if (
+      typeof part.type === 'string' &&
+      part.type.startsWith('tool-') &&
+      (part.input !== undefined || part.args !== undefined ||
+        part.output !== undefined || part.result !== undefined)
+    )
+      return true
+  }
+  return false
+}
+
+export function threadMessageIsEmpty(message: ThreadMessage): boolean {
+  if (message.role !== ChatCompletionRole.Assistant) return false
+  const content = message.content || []
+  if (content.length === 0) return true
+  for (const c of content) {
+    if (c.type === ContentType.Text || c.type === ContentType.Reasoning) {
+      if (c.text?.value && c.text.value.trim()) return false
+    } else if (c.type === ContentType.Image && c.image_url?.url) {
+      return false
+    } else if (c.type === ContentType.InputAudio && c.input_audio?.data) {
+      return false
+    } else if (c.type === ContentType.ToolCall) {
+      return false
+    }
+  }
+  return true
 }
 
 /**
