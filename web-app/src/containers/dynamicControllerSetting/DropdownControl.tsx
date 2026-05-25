@@ -25,6 +25,17 @@ export function DropdownControl({
   const isSelected =
     options.find((option) => option.value === value)?.name || value
 
+  if (options.length <= 1) {
+    return (
+      <div
+        className="text-sm text-muted-foreground px-3 py-1.5 max-w-full truncate"
+        title={String(isSelected)}
+      >
+        {isSelected}
+      </div>
+    )
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
