@@ -244,10 +244,7 @@ pub async fn db_create_message<R: Runtime>(
 
     let data = serde_json::to_string(&message).map_err(|e| e.to_string())?;
 
-    // INSERT OR IGNORE: a concurrent modify_message may have already upserted
-    // this row (race when the UI stamps metadata onto a freshly-sent message
-    // before the original create lands). Skipping rather than replacing
-    // preserves the modify's data.
+    // Skip if a modify_message upsert already landed for this id.
     sqlx::query("INSERT OR IGNORE INTO messages (id, thread_id, data) VALUES (?1, ?2, ?3)")
         .bind(message_id)
         .bind(thread_id)
@@ -278,9 +275,7 @@ pub async fn db_modify_message<R: Runtime>(
 
     let data = serde_json::to_string(&message).map_err(|e| e.to_string())?;
 
-    // UPSERT: a plain UPDATE silently affects 0 rows when modify_message races
-    // ahead of the original create_message — dropping metadata edits (e.g.
-    // metadata.error stamped onto the user message right after an OOM).
+    // Upsert so a modify ahead of create still lands instead of UPDATEing 0 rows.
     sqlx::query(
         "INSERT INTO messages (id, thread_id, data) VALUES (?1, ?2, ?3) \
          ON CONFLICT(id) DO UPDATE SET data = excluded.data",

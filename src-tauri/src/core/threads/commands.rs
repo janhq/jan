@@ -189,6 +189,18 @@ pub async fn create_message<R: Runtime>(
         // Ensure directory exists right before file operations to handle race conditions
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
 
+        // Dedupe against a modify_message upsert that landed first.
+        let message_id = message.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        if let Some(ref id) = message_id {
+            let existing = read_messages_from_file(&data_folder, &thread_id)?;
+            if existing
+                .iter()
+                .any(|m| m.get("id").and_then(|v| v.as_str()) == Some(id.as_str()))
+            {
+                return Ok(message);
+            }
+        }
+
         let mut file: File = fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -235,16 +247,23 @@ pub async fn modify_message<R: Runtime>(
         let _guard = lock.lock().await;
 
         let mut messages = read_messages_from_file(&data_folder, thread_id)?;
-        if let Some(index) = messages
+        match messages
             .iter()
             .position(|m| m.get("id").and_then(|v| v.as_str()) == Some(message_id))
         {
-            messages[index] = message.clone();
-
-            // Rewrite all messages
-            let path = get_messages_path(&data_folder, thread_id);
-            write_messages_to_file(&messages, &path)?;
+            Some(index) => {
+                messages[index] = message.clone();
+            }
+            // Upsert when create_message lost the lock race; its dedupe path
+            // reconciles a subsequent late create.
+            None => {
+                ensure_thread_dir_exists(&data_folder, thread_id)?;
+                messages.push(message.clone());
+            }
         }
+
+        let path = get_messages_path(&data_folder, thread_id);
+        write_messages_to_file(&messages, &path)?;
     }
     Ok(message)
 }

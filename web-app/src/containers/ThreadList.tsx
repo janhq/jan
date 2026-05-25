@@ -75,7 +75,10 @@ const ThreadItem = memo(
           .messages()
           .fetchMessages(thread.id)
           .then((fetchedMessages) => {
-            if (fetchedMessages) {
+            // Only overwrite if the disk actually has content. A brand-new
+            // thread starts empty on disk, and racing this against the
+            // optimistic addMessage write was wiping the user message.
+            if (fetchedMessages && fetchedMessages.length > 0) {
               setMessages(thread.id, fetchedMessages)
               setLocalMessages(fetchedMessages)
               messagesLengthRef.current = fetchedMessages.length

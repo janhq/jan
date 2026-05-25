@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
+import { useMessageErrors } from '@/stores/message-errors'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
@@ -275,14 +276,13 @@ function ThreadDetail() {
           addMessage(assistantMessage)
         }
 
-        // A successful assistant turn clears any sticky error on prior user
-        // messages — the conversation has moved forward.
         for (const m of existingMessages) {
           const meta = m.metadata as Record<string, unknown> | undefined
           if (meta?.error) {
             const { error: _drop, ...rest } = meta
             updateMessage({ ...m, metadata: rest })
           }
+          useMessageErrors.getState().clearError(m.id)
         }
       }
 
@@ -589,6 +589,16 @@ function ThreadDetail() {
           }
 
           setMessages(threadId, messagesToSet)
+
+          const hydrated: Record<string, string> = {}
+          for (const m of messagesToSet) {
+            const err = (m.metadata as Record<string, unknown> | undefined)
+              ?.error
+            if (typeof err === 'string' && err.length > 0) {
+              hydrated[m.id] = err
+            }
+          }
+          useMessageErrors.getState().hydrate(hydrated)
 
           const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
           setChatMessages(uiMessages)
@@ -914,6 +924,7 @@ function ThreadDetail() {
         metadata: cleanedMeta,
       }
       updateMessage(updatedMessage)
+      useMessageErrors.getState().clearError(messageId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.map((msg) => {
@@ -953,6 +964,7 @@ function ThreadDetail() {
   const handleDeleteMessage = useCallback(
     (messageId: string) => {
       deleteMessage(threadId, messageId)
+      useMessageErrors.getState().clearError(messageId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.filter(
@@ -1119,31 +1131,54 @@ function ThreadDetail() {
     }
   }, [status, threadId])
 
-  // Stamp the last user message with the error so it survives reload and
-  // navigation. Cleared on the next successful assistant onFinish, or when
-  // the user edits that message.
+  // Source the user id from chatMessages — useMessages may not have it yet
+  // when the transport rejects on the same tick as addMessage.
   useEffect(() => {
-    if (status !== 'error' || !error) return
-    const messages = useMessages.getState().getMessages(threadId)
-    let lastUserIndex = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === ChatCompletionRole.User) {
-        lastUserIndex = i
+    if (!error) return
+    let lastUserId: string | undefined
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === 'user') {
+        lastUserId = chatMessages[i].id
         break
       }
     }
-    if (lastUserIndex === -1) return
-    const target = messages[lastUserIndex]
+    if (!lastUserId) return
     const errMessage =
       error instanceof Error ? error.message : String(error || 'Error')
-    const existingError = (target.metadata as Record<string, unknown> | undefined)
-      ?.error
-    if (existingError === errMessage) return
-    updateMessage({
-      ...target,
-      metadata: { ...(target.metadata || {}), error: errMessage },
-    })
-  }, [status, error, threadId, updateMessage])
+    useMessageErrors.getState().setError(lastUserId, errMessage)
+    const tm = useMessages.getState().getMessages(threadId).find(
+      (m) => m.id === lastUserId
+    )
+    if (tm) {
+      const existingError = (tm.metadata as Record<string, unknown> | undefined)
+        ?.error
+      if (existingError !== errMessage) {
+        updateMessage({
+          ...tm,
+          metadata: { ...(tm.metadata || {}), error: errMessage },
+        })
+      }
+    }
+  }, [status, error, threadId, chatMessages, updateMessage])
+
+  // Persist whenever the user message lands in useMessages — covers the race
+  // where the stamping effect ran before addMessage's commit was observable.
+  const localThreadMessages = useMessages((s) => s.messages[threadId])
+  const errorEntries = useMessageErrors((s) => s.errors)
+  useEffect(() => {
+    if (!localThreadMessages) return
+    for (const m of localThreadMessages) {
+      const err = errorEntries[m.id]
+      if (typeof err !== 'string' || !err) continue
+      const existing = (m.metadata as Record<string, unknown> | undefined)
+        ?.error
+      if (existing === err) continue
+      updateMessage({
+        ...m,
+        metadata: { ...(m.metadata || {}), error: err },
+      })
+    }
+  }, [localThreadMessages, errorEntries, updateMessage])
 
   // Clear the queue when navigating away from this thread
   useEffect(() => {
@@ -1224,7 +1259,7 @@ function ThreadDetail() {
                   {!lastIsAssistant && <PromptProgress />}
                 </div>
               )}
-              {(error || contextLimitError || oomError || backendError) && (
+              {(contextLimitError || oomError || backendError) && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
@@ -1246,7 +1281,7 @@ function ThreadDetail() {
                           }
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {oomError ?? backendError ?? (error ?? contextLimitError)?.message}
+                          {oomError ?? backendError ?? contextLimitError?.message}
                         </span>
                       </div>
                       {oomError && (

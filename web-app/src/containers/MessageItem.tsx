@@ -21,6 +21,7 @@ import {
 import { CopyButton } from './CopyButton'
 import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useMessageErrors } from '@/stores/message-errors'
 import {
   IconRefresh,
   IconPaperclip,
@@ -86,6 +87,7 @@ export const MessageItem = memo(
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const metadata = message.metadata as Record<string, unknown> | undefined
+    const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
     const [previewImage, setPreviewImage] = useState<{
       url: string
@@ -576,8 +578,8 @@ export const MessageItem = memo(
 
         {message.role === 'user' &&
           !hideActions &&
-          typeof metadata?.error === 'string' &&
-          metadata.error.length > 0 && (
+          typeof messageError === 'string' &&
+          messageError.length > 0 && (
             <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
               <IconAlertTriangle
                 size={16}
@@ -588,7 +590,7 @@ export const MessageItem = memo(
                   Generation failed
                 </div>
                 <div className="text-muted-foreground break-words">
-                  {metadata.error as string}
+                  {messageError}
                 </div>
               </div>
               {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING &&
