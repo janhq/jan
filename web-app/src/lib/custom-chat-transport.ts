@@ -53,30 +53,24 @@ import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
-import { renderInstructions } from '@/lib/instructionTemplate'
 
-/// Local inference backends for which we apply the "thinking-off ergonomics":
-/// when the user toggles reasoning off we strip the assistant system prompt
-/// down to a minimal identity stub AND drop tools entirely. Rationale:
-/// gemma-4 (and similar local models) reliably auto-emit a chain-of-thought
-/// block whenever the rendered prompt contains BOTH a system message and
-/// tools, even with `chat_template_kwargs.enable_thinking=false`. Without
-/// the strip, TTFT regresses and the model dumps CoT into either
-/// `delta.reasoning` (hidden by the UI -> long blank screen) or worse,
-/// straight into `delta.content`.
-const LOCAL_PROVIDERS_FOR_REASONING_STRIP = new Set<string>([
+/// Local inference backends (mlx, llamacpp, llamacpp-upstream,
+/// foundation-models) get special handling at the `streamText` boundary:
+///   * the assistant system prompt is **always dropped** (sent as
+///     `undefined`), regardless of the reasoning toggle, because gemma-4
+///     and similar local models reliably auto-emit a chain-of-thought
+///     block whenever the rendered prompt contains BOTH a system message
+///     and tools, even with `chat_template_kwargs.enable_thinking=false`;
+///   * tools are forwarded **only when reasoning is enabled**. With
+///     reasoning off the tool list is dropped so non-reasoning turns
+///     stay text-only and don't pay the CoT-on-tool-presence penalty.
+/// Remote providers (OpenAI, Anthropic, …) are unaffected.
+const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'mlx',
   'llamacpp',
   'llamacpp-upstream',
   'foundation-models',
 ])
-
-/// Minimal system prompt used when the assistant + tools strip is active.
-/// Keeps Atomic Chat's identity and the current date, drops all CoT /
-/// tool-calling instructions that would otherwise re-trigger the chain-
-/// of-thought heuristic on local models.
-const MINIMAL_SYSTEM_PROMPT_TEMPLATE =
-  'You are Atomic Chat, a helpful assistant. Current date: {{current_date}}.'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -562,30 +556,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ]
       : baseMessages
 
-    // Local-providers thinking-off ergonomics: when reasoning is OFF on a
-    // local backend (mlx, llamacpp, foundation-models), strip the assistant
-    // system prompt to a minimal identity stub AND drop tools entirely.
-    // Without this, gemma-4 auto-emits CoT whenever (system + tools) are
-    // present, even with `chat_template_kwargs.enable_thinking=false`,
-    // which tanks TTFT and pollutes the visible content stream.
+    // Local-providers ergonomics (mlx, llamacpp, llamacpp-upstream,
+    // foundation-models): always drop the system prompt, and forward
+    // tools only when reasoning is enabled. See LOCAL_INFERENCE_PROVIDERS
+    // for rationale.
     const { disableReasoning, reasoningBudget } = useGeneralSetting.getState()
     const reasoningDisabled = disableReasoning || reasoningBudget === 'off'
-    const shouldStripLocalContext =
-      reasoningDisabled &&
-      LOCAL_PROVIDERS_FOR_REASONING_STRIP.has(effectiveProviderName)
+    const isLocalProvider =
+      LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)
 
-    const effectiveSystemMessage = shouldStripLocalContext
-      ? renderInstructions(MINIMAL_SYSTEM_PROMPT_TEMPLATE)
+    const effectiveSystemMessage = isLocalProvider
+      ? undefined
       : this.systemMessage
 
-    // Include tools only if we have tools loaded AND model supports them
-    // AND we're not in the local thinking-off strip mode.
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools =
-      !shouldStripLocalContext && hasTools && modelSupportsTools
+      hasTools &&
+      modelSupportsTools &&
+      (!isLocalProvider || !reasoningDisabled)
 
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),
