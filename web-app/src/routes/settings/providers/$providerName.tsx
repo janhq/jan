@@ -150,11 +150,13 @@ function ProviderDetail() {
   ])
 
   // Check if llamacpp/mlx provider needs backend configuration
+  const isBackendKey = (k: string) =>
+    k === 'llamacpp_version' || k === 'llamacpp_backend'
   const needsBackendConfig =
     (provider?.provider === 'llamacpp' || provider?.provider === 'mlx') &&
     provider.settings?.some(
       (setting) =>
-        setting.key === 'version_backend' &&
+        isBackendKey(setting.key) &&
         (setting.controller_props.value === 'none' ||
           setting.controller_props.value === '' ||
           !setting.controller_props.value)
@@ -795,8 +797,7 @@ function ProviderDetail() {
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
-                      {needsBackendConfig &&
-                      setting.key === 'version_backend' ? (
+                      {needsBackendConfig && isBackendKey(setting.key) ? (
                         <div className="flex items-center gap-1 text-sm">
                           <IconLoader size={16} className="animate-spin" />
                           <span>loading</span>
@@ -836,8 +837,8 @@ function ProviderDetail() {
                                 updateObj.base_url = newValue
                               }
 
-                              // Reset device setting to empty when backend version changes
-                              if (settingKey === 'version_backend') {
+                              // Reset device setting to empty when backend or version changes
+                              if (isBackendKey(settingKey)) {
                                 const deviceSettingIndex =
                                   newSettings.findIndex(
                                     (s) => s.key === 'device'
@@ -918,19 +919,16 @@ function ProviderDetail() {
                               ),
                             }}
                           />
-                          {setting.key === 'version_backend' &&
+                          {setting.key === 'llamacpp_backend' &&
                             setting.controller_props?.recommended && (
                               <div className="mt-1 text-sm text-muted-foreground">
                                 <span className="font-medium">
-                                  {setting.controller_props.recommended
-                                    ?.split('/')
-                                    .pop() ||
-                                    setting.controller_props.recommended}
+                                  {setting.controller_props.recommended}
                                 </span>
                                 <span> is the recommended backend.</span>
                               </div>
                             )}
-                          {setting.key === 'version_backend' &&
+                          {setting.key === 'llamacpp_backend' &&
                             (provider?.provider === 'llamacpp' ||
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">

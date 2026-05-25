@@ -42,9 +42,22 @@ function asString(v: any, defaultValue = ''): string {
 }
 
 export function normalizeLlamacppConfig(config: any): LlamacppConfig {
+  const llamacpp_version = asString(config.llamacpp_version)
+  const llamacpp_backend = asString(config.llamacpp_backend)
+  const composedVersionBackend =
+    llamacpp_version && llamacpp_backend
+      ? `${llamacpp_version}/${llamacpp_backend}`
+      : asString(config.version_backend)
   return {
-    version_backend: asString(config.version_backend),
+    llamacpp_version,
+    llamacpp_backend,
+    version_backend: composedVersionBackend,
     auto_update_engine: asBool(config.auto_update_engine),
+    check_for_updates:
+      config.check_for_updates === undefined ||
+      config.check_for_updates === null
+        ? true
+        : asBool(config.check_for_updates),
     verify_backend_deps:
       config.verify_backend_deps === undefined || config.verify_backend_deps === null
         ? true

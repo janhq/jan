@@ -1,8 +1,19 @@
 [
   {
-    "key": "version_backend",
-    "title": "Version & Backend",
-    "description": "Version and Backend for llama.cpp",
+    "key": "llamacpp_version",
+    "title": "Version",
+    "description": "llama.cpp release version",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": [],
+      "recommended": ""
+    }
+  },
+  {
+    "key": "llamacpp_backend",
+    "title": "Backend",
+    "description": "Hardware backend for llama.cpp (CUDA, Vulkan, CPU, etc.)",
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "none",
@@ -23,9 +34,16 @@
     }
   },
   {
+    "key": "check_for_updates",
+    "title": "Check for updates",
+    "description": "Fetch the remote llama.cpp release list. Required for the version dropdown to show releases beyond what's installed locally, and for update notifications.",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
     "key": "auto_update_engine",
     "title": "Auto update engine",
-    "description": "Automatically update llamacpp engine to latest version",
+    "description": "Automatically download and switch to the latest llamacpp engine when available. Requires \"Check for updates\" to be on.",
     "controllerType": "checkbox",
     "controllerProps": { "value": true }
   },

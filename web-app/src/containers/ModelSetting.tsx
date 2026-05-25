@@ -366,10 +366,10 @@ function MtpPanel({
     }
   }, [modelId, serviceHub])
 
-  const versionBackend = provider.settings?.find(
-    (s) => s.key === 'version_backend'
+  const llamacppVersion = provider.settings?.find(
+    (s) => s.key === 'llamacpp_version'
   )?.controller_props?.value as string | undefined
-  const buildNo = parseBuildNumber(versionBackend?.split('/')[0])
+  const buildNo = parseBuildNumber(llamacppVersion)
   const backendSupports = buildNo !== null && buildNo >= MTP_MIN_BUILD
 
   const persist = useCallback(
