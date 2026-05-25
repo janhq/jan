@@ -3234,6 +3234,35 @@ export default class llamacpp_upstream_extension extends AIEngine {
           `cudart archive for ${backendString} contained no DLLs`
         )
       }
+
+      // Clear the cudart row from the top-left download manager UI.
+      // Without this, the per-chunk `onProgress` emits above leave a
+      // phantom row stuck at 100% forever — the backend tarball clears
+      // itself via the matching success emit in
+      // `downloadAndInstallBackend`, but the cudart taskId is distinct
+      // and previously had no clear path of its own.
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+          modelId: taskId,
+          downloadType: 'Backend',
+        })
+      }
+    } catch (cudartErr) {
+      // Mirror the success path so the UI row gets cleared even when
+      // the cudart merge fails. The caller in `downloadAndInstallBackend`
+      // swallows this error as best-effort (the backend exe is in place;
+      // only GPU enumeration is missing) and `ensureBackendReady` wraps
+      // it similarly — neither layer would otherwise dispatch a clear
+      // event for `taskId`.
+      if (events && typeof events.emit === 'function') {
+        events.emit(DownloadEvent.onFileDownloadError, {
+          modelId: taskId,
+          error:
+            cudartErr instanceof Error ? cudartErr.message : String(cudartErr),
+          downloadType: 'Backend',
+        })
+      }
+      throw cudartErr
     } finally {
       try {
         if (await fs.existsSync(cudartArchivePath)) {
