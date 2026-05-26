@@ -126,7 +126,7 @@ jobs:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install jq
-        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe # v2.0.1
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
       - name: create latest.json file
         run: |
 
