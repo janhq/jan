@@ -61,6 +61,7 @@ import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
+import { getProviderDefaultHeaders } from '@/lib/provider-headers'
 
 /**
  * Llama.cpp timings structure from the response
@@ -792,6 +793,7 @@ export class ModelFactory {
         headers[customHeader.header] = customHeader.value
       })
     }
+    Object.assign(headers, getProviderDefaultHeaders(provider.provider))
 
     const keyChain = providerRemoteApiKeyChain(provider)
     if (keyChain.length === 1) {

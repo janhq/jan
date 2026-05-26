@@ -12,6 +12,7 @@ import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { getProviderDefaultHeaders } from '@/lib/provider-headers'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -172,6 +173,7 @@ export class TauriProvidersService extends DefaultProvidersService {
             headers[header.header] = header.value
           })
         }
+        Object.assign(headers, getProviderDefaultHeaders(provider.provider))
 
         const response = await fetchTauri(`${provider.base_url}/models`, {
           method: 'GET',

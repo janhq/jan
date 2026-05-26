@@ -4,6 +4,7 @@ import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { PPLX_INTEGRATION_HEADER } from '../provider-headers'
 
 const mockGlobalFetch = vi.fn()
 
@@ -211,6 +212,22 @@ describe('ModelFactory', () => {
       const model = await ModelFactory.createModel('MiniMax-M2.7', provider)
       expect(model).toBeDefined()
       expect(model.type).toBe('openai-compatible')
+    })
+
+    it('should add the Perplexity integration attribution header', async () => {
+      const provider: ProviderObject = {
+        provider: 'perplexity',
+        api_key: 'test-api-key',
+        base_url: 'https://api.perplexity.ai',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      await ModelFactory.createModel('sonar', provider)
+
+      const config = mockedCreateOpenAICompatible.mock.calls[0]?.[0]
+      expect(config?.headers?.[PPLX_INTEGRATION_HEADER]).toMatch(/^jan\/.+/)
     })
 
     it('should handle custom headers for OpenAI-compatible providers', async () => {

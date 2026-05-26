@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import packageJson from './package.json'
 
 export default defineConfig({
   plugins: [react()],
@@ -36,7 +37,7 @@ export default defineConfig({
     IS_IOS: JSON.stringify(false),
     IS_ANDROID: JSON.stringify(false),
     PLATFORM: JSON.stringify('web'),
-    VERSION: JSON.stringify('test'),
+    VERSION: JSON.stringify(packageJson.version),
     POSTHOG_KEY: JSON.stringify(''),
     POSTHOG_HOST: JSON.stringify(''),
     AUTO_UPDATER_DISABLED: JSON.stringify('false'),

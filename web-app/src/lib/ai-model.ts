@@ -1,5 +1,6 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { LanguageModel } from 'ai'
+import { getProviderDefaultHeaders } from './provider-headers'
 
 /**
  * Llama.cpp timings structure from the response
@@ -109,13 +110,7 @@ export function createLanguageModel(
       provider.base_url?.includes('127.0.0.1:')
         ? { Origin: 'tauri://localhost' }
         : {}),
-      // OpenRouter identification headers
-      ...(provider.provider === 'openrouter'
-        ? {
-            'HTTP-Referer': 'https://jan.ai',
-            'X-Title': 'Jan',
-          }
-        : {}),
+      ...getProviderDefaultHeaders(provider.provider),
     },
     // Include usage data in streaming responses for token speed calculation
     includeUsage: true,
