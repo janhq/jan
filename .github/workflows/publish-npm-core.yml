@@ -14,7 +14,7 @@ jobs:
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe # v2.0.1
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
 
       - name: Extract tag name without v prefix
         id: get_version
