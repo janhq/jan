@@ -1143,14 +1143,17 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // for CUDA 12.4 (~551.61) fall through to Vulkan/CPU below via
         // the feature-flag gating in `get_supported_features`.
         //
-        // Tiers are checked top-down with a non-destructive health probe:
-        // an already-installed backend whose `--list-devices` returns no
-        // devices is skipped and the next tier becomes the recommendation.
-        // This catches the H1 cohort where the driver passes the static
-        // `get_supported_features` gate but the binary can't actually
-        // enumerate CUDA devices (most often a CUDA-13.1 binary running
-        // against a driver that ships only the CUDA-13.0 ABI). See
-        // AtomicBot-ai/Atomic-Chat#25.
+        // Tiers are checked top-down with a *conservative* runtime probe:
+        // an installed backend is only skipped when `--list-devices` is
+        // empty AND the hardware plugin (NVML / Vulkan loader) cannot
+        // corroborate the existence of a matching GPU. This guard exists
+        // because real-world data (nvidia-smi on AtomicBot-ai/Atomic-Chat#25,
+        // 2026-05-26: driver 596.49, CUDA 13.2, `llama-server.exe`
+        // visible as Compute process with 15.6 GiB VRAM in use) showed
+        // that `--list-devices` can return empty stdout on hosts where
+        // the same binary's real inference path uses CUDA happily. Using
+        // `--list-devices` alone as a degrade trigger would push those
+        // users off a working CUDA-13.1 onto CUDA-12.4 / Vulkan / CPU.
         const tiers: string[] = []
         if (features.cuda13) tiers.push(`win-cuda-13.1-${archSuffix}`)
         if (features.cuda12) tiers.push(`win-cuda-12.4-${archSuffix}`)
@@ -1158,7 +1161,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
           tiers.push(`win-vulkan-${archSuffix}`)
 
         for (const tier of tiers) {
-          if (await this.tierEnumeratesDevices(tier)) {
+          const probe = await this.tierEnumeratesDevices(tier, sysInfo)
+          if (probe !== 'broken') {
             return tier
           }
         }
@@ -1185,51 +1189,133 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * Non-destructive runtime probe for whether a given backend tier can
    * actually enumerate GPU devices on this host.
    *
-   * Behaviour:
-   *   - Tier is NOT installed locally → return `true`. We have no signal
-   *     to disqualify it, so trust the driver-version gate from
-   *     `get_supported_features`. If the post-download reality turns out
-   *     to be empty, the next `recheckOptimalBackend()` call will probe
-   *     it again (now installed) and degrade then.
-   *   - Tier IS installed AND `llama-server.exe --list-devices` returns
-   *     at least one device → return `true`.
-   *   - Tier IS installed AND `--list-devices` returns an empty list or
-   *     throws → return `false` with a `warn!` log.
+   * Returns a tri-state because `--list-devices` is not a reliable
+   * "this tier is broken" signal on its own (see ADR 2026-05-26):
+   *   - `'works'`      — `--list-devices` returned ≥1 device. Tier is
+   *                      definitely usable.
+   *   - `'unverified'` — we have no negative signal strong enough to
+   *                      reject the tier. Three sub-cases:
+   *                        a) tier is not installed locally (no smoke
+   *                           test possible);
+   *                        b) tier is installed, `--list-devices` is
+   *                           empty / threw, BUT the hardware plugin
+   *                           (NVML / Vulkan) sees a matching GPU and
+   *                           contradicts the empty enumeration.
+   *                      Caller should treat `'unverified'` as acceptable
+   *                      and keep the tier as the recommendation.
+   *   - `'broken'`     — tier is installed, `--list-devices` is empty /
+   *                      threw, AND the hardware plugin also has no
+   *                      matching GPU. Two independent signals agree
+   *                      this tier cannot use any GPU on this host.
+   *                      Caller should degrade to the next tier.
    *
-   * Deliberately does NOT trigger a download — health checks should be
+   * Rationale for the corroboration guard: nvidia-smi from the
+   * AtomicBot-ai/Atomic-Chat#25 reporter (RTX 4090 Laptop, driver
+   * 596.49, CUDA 13.2) showed `llama-server.exe` running as a Compute
+   * process with 15.6 GiB VRAM in use, while `--list-devices` from the
+   * same binary returned empty. Treating `--list-devices` emptiness as
+   * a sole degrade trigger would have pushed that user (and the
+   * cohort he represents) off a working CUDA-13.1 onto CUDA-12.4 /
+   * Vulkan / CPU. The corroborating-GPU check from NVML / Vulkan
+   * prevents that false-positive.
+   *
+   * Deliberately does NOT trigger a download — health checks must be
    * cheap. A degraded recommendation flows through the existing
    * download-backend UI path the same way as any other recommendation.
    */
-  private async tierEnumeratesDevices(backendType: string): Promise<boolean> {
+  private async tierEnumeratesDevices(
+    backendType: string,
+    sysInfo: { gpus: Array<{ vendor: string }> }
+  ): Promise<'works' | 'unverified' | 'broken'> {
+    let installed: { backend: string; version: string } | undefined
     try {
       const local = await getLocalInstalledBackends()
-      const installed = local.find((b) => b.backend === backendType)
-      if (!installed) {
-        return true
-      }
+      installed = local.find((b) => b.backend === backendType)
+    } catch (err) {
+      logger.warn(
+        `Tier ${backendType} health-check: getLocalInstalledBackends threw (${
+          err instanceof Error ? err.message : String(err)
+        }); treating as unverified`
+      )
+      return 'unverified'
+    }
+    if (!installed) {
+      return 'unverified'
+    }
+
+    let devices: DeviceList[] | null = null
+    let probeError: string | null = null
+    try {
       const backendPath = await getBackendExePath(
         installed.backend,
         installed.version
       )
-      const devices = await invoke<DeviceList[]>(
+      devices = await invoke<DeviceList[]>(
         'plugin:llamacpp-upstream|get_devices',
         { backendPath, envs: {} }
       )
-      if (!Array.isArray(devices) || devices.length === 0) {
-        logger.warn(
-          `Tier ${backendType} (${installed.version}) is installed but --list-devices returned no devices; degrading recommendation to next tier`
-        )
-        return false
-      }
-      return true
     } catch (err) {
-      logger.warn(
-        `Tier ${backendType} health-check threw (${
-          err instanceof Error ? err.message : String(err)
-        }); degrading to next tier`
-      )
-      return false
+      probeError = err instanceof Error ? err.message : String(err)
     }
+
+    if (devices && Array.isArray(devices) && devices.length > 0) {
+      return 'works'
+    }
+
+    const corroborated = this.hasCorroboratingGpu(backendType, sysInfo)
+    if (corroborated) {
+      // NVML / Vulkan see a matching GPU but `--list-devices` did not —
+      // most likely a parser / environment / cudart-search-path quirk
+      // (see ADR 2026-05-26). Trust the hardware plugin and keep this
+      // tier as the recommendation; the real inference path uses its
+      // own CUDA init and is unaffected by `--list-devices` quirks.
+      const reason = probeError
+        ? `--list-devices threw (${probeError})`
+        : '--list-devices returned no devices'
+      logger.info(
+        `Tier ${backendType} (${installed.version}) ${reason} but NVML/Vulkan corroborates a matching GPU; keeping tier as recommendation (unverified)`
+      )
+      return 'unverified'
+    }
+
+    // Two independent signals (`--list-devices` AND NVML/Vulkan) agree
+    // this tier has no usable GPU on this host. Degrade.
+    const reason = probeError
+      ? `--list-devices threw (${probeError})`
+      : '--list-devices returned no devices'
+    logger.warn(
+      `Tier ${backendType} (${installed.version}) is broken: ${reason} and the hardware plugin sees no matching GPU; degrading recommendation to next tier`
+    )
+    return 'broken'
+  }
+
+  /**
+   * Returns true when the hardware plugin's GPU enumeration corroborates
+   * that the given backend tier could plausibly use a GPU on this host.
+   *
+   *   - `win-cuda-*` / `linux-cuda-*` → at least one NVIDIA GPU detected
+   *     by NVML.
+   *   - `win-vulkan-*` / `linux-vulkan-*` → at least one GPU of any
+   *     vendor detected (Vulkan enumeration runs through the Vulkan
+   *     loader, which covers AMD / Intel / NVIDIA).
+   *   - `*-cpu*` or anything else → corroboration is meaningless,
+   *     return true so the picker can fall through.
+   *
+   * Vendor names match the strings serialised by
+   * `tauri-plugin-hardware/src/types.rs` (`"NVIDIA" | "AMD" | "Intel" |
+   * "Unknown (vendor_id: N)"`).
+   */
+  private hasCorroboratingGpu(
+    backendType: string,
+    sysInfo: { gpus: Array<{ vendor: string }> }
+  ): boolean {
+    if (backendType.includes('cuda')) {
+      return sysInfo.gpus.some((g) => g.vendor === 'NVIDIA')
+    }
+    if (backendType.includes('vulkan')) {
+      return sysInfo.gpus.length > 0
+    }
+    return true
   }
 
   async updateBackend(

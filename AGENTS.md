@@ -327,18 +327,29 @@ Append-only. Newest at top. Each entry follows this shape:
        `581.42` (accepted — typical recent driver), `550.00` (rejected
        for both CUDA tiers — H7), and `551.61` (CUDA 12.4 only).
     2. **Add a runtime `--list-devices` health-check** to the Windows
-       tier picker. New private method
-       `tierEnumeratesDevices(backendType)` in
+       tier picker, **guarded by a corroborating-GPU check** against the
+       hardware plugin (NVML / Vulkan). New private method
+       `tierEnumeratesDevices(backendType, sysInfo)` in
        [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
-       probes the already-installed backend for the requested tier and
-       returns `false` when `--list-devices` is empty or throws.
+       returns a tri-state — `'works' | 'unverified' | 'broken'`:
+         - `'works'` — `--list-devices` returned ≥1 device;
+         - `'unverified'` — tier is not installed yet, OR tier is
+           installed and `--list-devices` is empty / threw BUT NVML /
+           Vulkan corroborate a matching GPU (NVIDIA for cuda-*, any
+           GPU for vulkan-*);
+         - `'broken'` — tier is installed, `--list-devices` is empty /
+           threw, AND the hardware plugin sees no matching GPU.
        `detectIdealBackendType()` on Windows now iterates the ordered
-       tier list `[cuda-13.1?, cuda-12.4?, vulkan?]` and degrades to
-       the first tier whose binary actually enumerates a device. The
-       probe is **non-destructive** — it never triggers a download.
-       Tiers that are not yet installed are assumed to work (the
-       driver-version gate is the only signal), and any miss is
-       caught on the next `recheckOptimalBackend()` once installed.
+       tier list `[cuda-13.1?, cuda-12.4?, vulkan?]` and skips a tier
+       only when it returns `'broken'` (two independent signals agree).
+       Helper `hasCorroboratingGpu(backendType, sysInfo)` does the
+       NVML / Vulkan match by reading `sysInfo.gpus[*].vendor` (matches
+       the strings serialised by
+       [`tauri-plugin-hardware/src/types.rs`](src-tauri/plugins/tauri-plugin-hardware/src/types.rs)).
+       The probe is **non-destructive** — it never triggers a download
+       — and is only invoked from the two existing user-facing entry
+       points (`SetupBackendStep` on first launch and the manual
+       "Find optimal backend" button in provider settings).
     3. **Surface the H7 cohort with a UI banner.** New
        [`web-app/src/containers/DriverOutdatedBanner.tsx`](web-app/src/containers/DriverOutdatedBanner.tsx)
        (with helper `findOutdatedNvidiaGpu` + Rust-mirror
@@ -375,20 +386,28 @@ Append-only. Newest at top. Each entry follows this shape:
       laptops where the dGPU is parked and `cuInit()` returns zero
       devices to a process started in the iGPU context. Fix 2 is the
       mechanism that rescues those users.
-    - **Fix 2 makes the picker self-healing.** When a previously
-      installed `cuda-13.1` returns empty `--list-devices`,
-      `recheckOptimalBackend()` will now surface a recommendation to
-      switch to `cuda-12.4` (or `vulkan`, or `cpu` as terminal
-      fallback). The existing download-recommended-backend UI flow
-      then carries the user through the upgrade. Cost: each
+    - **Fix 2 makes the picker self-healing, but conservatively.** Two
+      independent signals must agree before we degrade away from a
+      tier: `--list-devices` must come back empty / throw AND the
+      hardware plugin (NVML for CUDA, Vulkan loader for vulkan) must
+      also fail to see a matching GPU. When that happens,
+      `recheckOptimalBackend()` surfaces a recommendation to switch to
+      the next tier — `cuda-13.1` → `cuda-12.4` → `vulkan` → `cpu`
+      (terminal). The existing download-recommended-backend UI flow
+      then carries the user through the upgrade. When `--list-devices`
+      is empty but NVML / Vulkan corroborate a matching GPU, the tier
+      is kept (`'unverified'`) and a single `info` log records the
+      mismatch — the inference path uses its own CUDA init and is
+      unaffected by `--list-devices` quirks (see Amendment below for
+      the nvidia-smi evidence that motivated this guard). Cost: each
       already-installed tier costs one `--list-devices` invocation
       per `recheckOptimalBackend()` call — bounded at three tiers
-      with a 30-second Rust-side timeout per call, so worst-case ~90s
-      blocking for a user whose entire CUDA stack is broken. Probing
-      is only triggered by the two existing user-facing entry points
-      (`SetupBackendStep` on first launch, and the manual "Find
-      optimal backend" button in provider settings) — there is no
-      automatic background probe. A future ADR may add an
+      with a 30-second Rust-side timeout per call, so worst-case
+      ~90s blocking for a host whose entire CUDA stack is broken.
+      Probing is only triggered by the two existing user-facing entry
+      points (`SetupBackendStep` on first launch, and the manual
+      "Find optimal backend" button in provider settings) — there is
+      no automatic background probe. A future ADR may add an
       auto-trigger when `hardwareData.gpus.length > 0 &&
       llamacppDevices.length === 0` is detected for >N seconds; for
       now this is a manual escalation step the banner from Fix 3
@@ -423,6 +442,38 @@ Append-only. Newest at top. Each entry follows this shape:
       integration-level (requires a real installed backend) and is
       covered by the manual test plan in the PR.
 
+- **Amendment (same day) — nvidia-smi evidence narrowed Fix 2 scope:**
+  After the four fixes landed, the #25 reporter shared `nvidia-smi`
+  output from a representative affected host: **driver 596.49, CUDA
+  13.2, RTX 4090 Laptop, WDDM mode, 15.6 / 16.4 GiB VRAM in use,
+  `llama-server.exe` listed twice as a Compute (`C`) process.** This
+  directly opposes the H1 root-cause for that host — the driver is
+  well above `581.15`, CUDA 13.x ABI is fully supported, and the real
+  inference path is already using the GPU successfully (VRAM is
+  loaded, llama-server holds a Compute context). The "No GPUs
+  detected" UI message and the empty `--list-devices` output must
+  therefore come from a different code path than the inference one
+  — most likely a parser quirk in
+  [`tauri-plugin-llamacpp-upstream/src/device.rs::parse_device_output`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs),
+  a cudart DLL search-path difference between the `--list-devices`
+  invocation and the `load_session` invocation, or an environment /
+  cwd mismatch between the two `Command::new("llama-server.exe")`
+  call sites. Without that guard, the original Fix 2 (degrade on
+  empty `--list-devices` alone) would have pushed this user — and
+  the whole cohort he represents — off a **working** CUDA-13.1 onto
+  CUDA-12.4 / Vulkan / CPU, making the bug worse. The
+  corroborating-GPU guard added in this amendment ensures
+  `tierEnumeratesDevices` returns `'unverified'` (not `'broken'`)
+  when NVML still reports the matching NVIDIA GPU, so the picker
+  keeps the working tier. Fix 2 still degrades when both signals
+  agree — i.e. when the binary really cannot use any GPU (no NVML
+  detection AND empty `--list-devices`). Outstanding follow-up to
+  fully close #25 (separate from this ADR): capture stderr of
+  `llama-server.exe --list-devices` on an affected host and decide
+  between (a) hardening the stdout parser, (b) preferring NVML /
+  Vulkan as the authoritative source for the System Monitor
+  "Active GPUs" panel, or (c) both.
+
 - **Owner:** team.
 - **Links:** [AtomicBot-ai/Atomic-Chat#25](https://github.com/AtomicBot-ai/Atomic-Chat/issues/25),
   [janhq/jan#7553](https://github.com/janhq/jan/issues/7553),
@@ -439,6 +490,9 @@ Append-only. Newest at top. Each entry follows this shape:
   [`web-app/src/routes/settings/hardware.tsx`](web-app/src/routes/settings/hardware.tsx),
   [`src-tauri/plugins/tauri-plugin-hardware/src/vendor/nvidia.rs`](src-tauri/plugins/tauri-plugin-hardware/src/vendor/nvidia.rs),
   [`src-tauri/plugins/tauri-plugin-hardware/src/vendor/vulkan.rs`](src-tauri/plugins/tauri-plugin-hardware/src/vendor/vulkan.rs),
+  [`src-tauri/plugins/tauri-plugin-hardware/src/types.rs`](src-tauri/plugins/tauri-plugin-hardware/src/types.rs)
+  (source of truth for `vendor` strings consumed by
+  `hasCorroboratingGpu`),
   [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs).
 
 ### 2026-05-22 — Windows ships only `llamacpp-upstream`, sourced from `ggml-org/llama.cpp`
