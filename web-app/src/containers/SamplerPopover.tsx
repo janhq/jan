@@ -60,6 +60,7 @@ export function SamplerPopover({
 }: SamplerPopoverProps) {
   const currentAssistant = useAssistant((s) => s.currentAssistant)
   const updateAssistant = useAssistant((s) => s.updateAssistant)
+  const assistantsLoading = useAssistant((s) => s.loading)
   const providers = useModelProvider((s) => s.providers)
 
   const scopedProviders = useMemo(() => {
@@ -119,9 +120,11 @@ export function SamplerPopover({
 
   if (isPredefinedRemoteProvider(providerId)) return null
 
-  const triggerLabel = currentAssistant
-    ? `Sampling — ${currentAssistant.name}`
-    : 'Sampling'
+  const triggerLabel = assistantsLoading
+    ? 'Loading assistant…'
+    : currentAssistant
+      ? `Sampling — ${currentAssistant.name}`
+      : 'Sampling'
 
   return (
     <Popover>
@@ -133,6 +136,7 @@ export function SamplerPopover({
               size="icon-xs"
               aria-label="Sampling parameters"
               className="relative"
+              disabled={assistantsLoading}
             >
               <IconAdjustmentsHorizontal
                 size={18}
