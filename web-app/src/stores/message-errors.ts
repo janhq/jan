@@ -19,7 +19,8 @@ export const useMessageErrors = create<MessageErrorsState>()((set) => ({
   clearError: (messageId) =>
     set((state) => {
       if (!(messageId in state.errors)) return state
-      const { [messageId]: _drop, ...rest } = state.errors
+      const rest = { ...state.errors }
+      delete rest[messageId]
       return { errors: rest }
     }),
   clearAll: () => set({ errors: {} }),

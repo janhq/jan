@@ -279,7 +279,8 @@ function ThreadDetail() {
         for (const m of existingMessages) {
           const meta = m.metadata as Record<string, unknown> | undefined
           if (meta?.error) {
-            const { error: _drop, ...rest } = meta
+            const rest = { ...meta }
+            delete rest.error
             updateMessage({ ...m, metadata: rest })
           }
           useMessageErrors.getState().clearError(m.id)
@@ -912,7 +913,8 @@ function ThreadDetail() {
         string,
         unknown
       >
-      const { error: _droppedError, ...cleanedMeta } = priorMeta
+      const cleanedMeta = { ...priorMeta }
+      delete cleanedMeta.error
       const updatedMessage = {
         ...originalMessage,
         content: [
