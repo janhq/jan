@@ -1142,9 +1142,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // CUDA 11 has been dropped upstream. Hosts with driver too old
         // for CUDA 12.4 (~551.61) fall through to Vulkan/CPU below via
         // the feature-flag gating in `get_supported_features`.
-        if (features.cuda13) return `win-cuda-13.1-${archSuffix}`
-        if (features.cuda12) return `win-cuda-12.4-${archSuffix}`
-        if (features.vulkan && hasEnoughVram) return `win-vulkan-${archSuffix}`
+        //
+        // Tiers are checked top-down with a non-destructive health probe:
+        // an already-installed backend whose `--list-devices` returns no
+        // devices is skipped and the next tier becomes the recommendation.
+        // This catches the H1 cohort where the driver passes the static
+        // `get_supported_features` gate but the binary can't actually
+        // enumerate CUDA devices (most often a CUDA-13.1 binary running
+        // against a driver that ships only the CUDA-13.0 ABI). See
+        // AtomicBot-ai/Atomic-Chat#25.
+        const tiers: string[] = []
+        if (features.cuda13) tiers.push(`win-cuda-13.1-${archSuffix}`)
+        if (features.cuda12) tiers.push(`win-cuda-12.4-${archSuffix}`)
+        if (features.vulkan && hasEnoughVram)
+          tiers.push(`win-vulkan-${archSuffix}`)
+
+        for (const tier of tiers) {
+          if (await this.tierEnumeratesDevices(tier)) {
+            return tier
+          }
+        }
         return null
       }
 
@@ -1161,6 +1178,57 @@ export default class llamacpp_upstream_extension extends AIEngine {
     } catch (err) {
       logger.warn('detectIdealBackendType failed:', err)
       return null
+    }
+  }
+
+  /**
+   * Non-destructive runtime probe for whether a given backend tier can
+   * actually enumerate GPU devices on this host.
+   *
+   * Behaviour:
+   *   - Tier is NOT installed locally → return `true`. We have no signal
+   *     to disqualify it, so trust the driver-version gate from
+   *     `get_supported_features`. If the post-download reality turns out
+   *     to be empty, the next `recheckOptimalBackend()` call will probe
+   *     it again (now installed) and degrade then.
+   *   - Tier IS installed AND `llama-server.exe --list-devices` returns
+   *     at least one device → return `true`.
+   *   - Tier IS installed AND `--list-devices` returns an empty list or
+   *     throws → return `false` with a `warn!` log.
+   *
+   * Deliberately does NOT trigger a download — health checks should be
+   * cheap. A degraded recommendation flows through the existing
+   * download-backend UI path the same way as any other recommendation.
+   */
+  private async tierEnumeratesDevices(backendType: string): Promise<boolean> {
+    try {
+      const local = await getLocalInstalledBackends()
+      const installed = local.find((b) => b.backend === backendType)
+      if (!installed) {
+        return true
+      }
+      const backendPath = await getBackendExePath(
+        installed.backend,
+        installed.version
+      )
+      const devices = await invoke<DeviceList[]>(
+        'plugin:llamacpp-upstream|get_devices',
+        { backendPath, envs: {} }
+      )
+      if (!Array.isArray(devices) || devices.length === 0) {
+        logger.warn(
+          `Tier ${backendType} (${installed.version}) is installed but --list-devices returned no devices; degrading recommendation to next tier`
+        )
+        return false
+      }
+      return true
+    } catch (err) {
+      logger.warn(
+        `Tier ${backendType} health-check threw (${
+          err instanceof Error ? err.message : String(err)
+        }); degrading to next tier`
+      )
+      return false
     }
   }
 

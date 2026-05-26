@@ -10,6 +10,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { DriverOutdatedBanner } from '@/containers/DriverOutdatedBanner'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitorContent,
@@ -150,6 +151,12 @@ function SystemMonitorContent() {
             <h2 className="text-base font-semibold mb-4">
               {t('system-monitor:activeGpus')}
             </h2>
+            {hardwareData.gpus.length > 0 && llamacppDevices.length === 0 && (
+              <DriverOutdatedBanner
+                gpus={hardwareData.gpus}
+                className="mb-4"
+              />
+            )}
             <div className="flex flex-col gap-2">
               {llamacppDevices.length > 0 ? (
                 llamacppDevices.map((device) => (

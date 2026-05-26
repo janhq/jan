@@ -24,5 +24,10 @@
   "active": "Active",
   "performance": "Performance",
   "resources": "Resources",
-  "refresh": "Refresh"
+  "refresh": "Refresh",
+  "driverOutdated": {
+    "title": "NVIDIA driver too old for GPU acceleration",
+    "description": "Detected {{gpu}} with driver {{driver}}. Atomic Chat requires driver {{minDriver}}+ for CUDA acceleration; until you update, models will run on CPU.",
+    "updateAction": "Update NVIDIA driver"
+  }
 }

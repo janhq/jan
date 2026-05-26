@@ -24,5 +24,10 @@
   "active": "Активный",
   "performance": "Производительность",
   "resources": "Ресурсы",
-  "refresh": "Обновить"
+  "refresh": "Обновить",
+  "driverOutdated": {
+    "title": "Драйвер NVIDIA слишком старый для GPU-ускорения",
+    "description": "Обнаружена {{gpu}} с драйвером {{driver}}. Atomic Chat требует драйвер {{minDriver}}+ для CUDA-ускорения; до обновления модели будут работать на CPU.",
+    "updateAction": "Обновить драйвер NVIDIA"
+  }
 }

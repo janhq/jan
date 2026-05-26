@@ -409,9 +409,25 @@ pub fn get_supported_features(
     // `llamacpp-upstream`". Linux thresholds are kept aligned with the
     // primary turboquant plugin so the upstream plugin's Linux matrix
     // (currently unused) stays consistent.
+    //
+    // CUDA 13.1 Windows threshold: NVIDIA CUDA Toolkit 13.1 Release Notes
+    // document driver >= 581.15 as the minimum. The previous value "581"
+    // effectively meant ">= 581.00" — a 0.15 gap below the documented
+    // floor that let through beta/pre-release 581.0x drivers. Bumped to
+    // "581.15" to match the spec exactly.
+    //
+    // NOTE: this gate alone does NOT fix the empty `--list-devices`
+    // symptom in AtomicBot-ai/Atomic-Chat#25 — that user's driver almost
+    // certainly already satisfies 581.15 and the failure is in
+    // `cuInit()` enumeration (Optimus / MUX-switch parked dGPU, missing
+    // cudart placement, etc.). The runtime degradation handled by
+    // `tierEnumeratesDevices` in
+    // `extensions/llamacpp-upstream-extension/src/index.ts` is the
+    // primary fix for that cohort; this threshold correction is for
+    // documentation accuracy and the narrow 581.00-581.14 band.
     let (min_cuda11_driver, min_cuda12_driver, min_cuda13_driver) = match os_type.as_str() {
         "linux" => ("450.80.02", "525.60.13", "580"),
-        "windows" => ("452.39", "551.61", "581"),
+        "windows" => ("452.39", "551.61", "581.15"),
         _ => return Ok(features), // Other OS types don't support CUDA
     };
 
@@ -1302,6 +1318,76 @@ mod tests {
 
         assert!(result.vulkan);
         assert!(!result.cuda11);
+    }
+
+    fn windows_nvidia_gpu(driver_version: &str) -> GpuInfo {
+        GpuInfo {
+            driver_version: driver_version.to_string(),
+            nvidia_info: Some(NvidiaInfo {
+                compute_capability: "8.9".to_string(),
+            }),
+            vulkan_info: None,
+        }
+    }
+
+    #[test]
+    fn test_windows_driver_581_14_does_not_enable_cuda13() {
+        // Drivers below the documented 581.15 minimum for CUDA Toolkit 13.1
+        // are gated out. 581.14 is one step below the floor — keeps the
+        // narrow beta/pre-release band of 581.00–581.14 off the CUDA 13.1
+        // path. CUDA 12.4 still enabled (>= 551.61).
+        let gpus = vec![windows_nvidia_gpu("581.14")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(result.cuda12, "581.14 must still satisfy CUDA 12.4 (>= 551.61)");
+        assert!(
+            !result.cuda13,
+            "581.14 must NOT pass the CUDA 13.1 gate (below documented 581.15 minimum)"
+        );
+    }
+
+    #[test]
+    fn test_windows_driver_581_15_enables_cuda13() {
+        // Exact boundary — NVIDIA CUDA Toolkit 13.1 Release Notes list
+        // 581.15 as the minimum Windows driver. Both tiers enabled.
+        let gpus = vec![windows_nvidia_gpu("581.15")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(result.cuda12);
+        assert!(
+            result.cuda13,
+            "581.15 is the documented minimum for CUDA Toolkit 13.1 on Windows"
+        );
+    }
+
+    #[test]
+    fn test_windows_driver_581_42_enables_cuda13() {
+        // Typical "recent" driver in the wild — should enable CUDA 13.1.
+        // This is the cohort behind AtomicBot-ai/Atomic-Chat#25 whose
+        // RTX 4090 still sees an empty `--list-devices`; the cause is
+        // NOT this gate (driver is fine) but `cuInit()` enumeration
+        // failure handled by `tierEnumeratesDevices` runtime degrade.
+        let gpus = vec![windows_nvidia_gpu("581.42")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(result.cuda12);
+        assert!(result.cuda13);
+    }
+
+    #[test]
+    fn test_windows_driver_551_61_enables_cuda12_only() {
+        let gpus = vec![windows_nvidia_gpu("551.61")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(result.cuda12);
+        assert!(!result.cuda13);
+    }
+
+    #[test]
+    fn test_windows_driver_550_does_not_enable_any_cuda_tier() {
+        // H7 cohort — drivers in 528–550 range previously had CUDA 12.0
+        // via the janhq mirror, now have nothing CUDA after the upstream
+        // switch. Documented behaviour; UI surfaces a banner in Fix 3.
+        let gpus = vec![windows_nvidia_gpu("550.00")];
+        let result = get_supported_features("windows".to_string(), vec![], gpus).unwrap();
+        assert!(!result.cuda12);
+        assert!(!result.cuda13);
     }
 
     // --- Tests for determine_supported_backends ---

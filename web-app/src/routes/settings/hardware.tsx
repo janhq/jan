@@ -17,6 +17,7 @@ import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { Button } from '@/components/ui/button'
+import { DriverOutdatedBanner } from '@/containers/DriverOutdatedBanner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -307,6 +308,12 @@ function HardwareContent() {
                     </div>
                   }
                 >
+                  {hardwareData.gpus.length > 0 &&
+                    llamacppDevices.length === 0 && (
+                      <div className="mb-3">
+                        <DriverOutdatedBanner gpus={hardwareData.gpus} />
+                      </div>
+                    )}
                   {llamacppDevicesLoading ? (
                     <CardItem title="Loading devices..." actions={<></>} />
                   ) : llamacppDevicesError ? (

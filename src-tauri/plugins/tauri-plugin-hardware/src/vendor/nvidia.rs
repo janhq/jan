@@ -50,7 +50,12 @@ where
                     *guard = Some(nvml);
                 }
                 Err(e) => {
-                    log::debug!("Unable to initialize NVML: {}", e);
+                    // Promoted from `debug!` to `warn!` so the failure is
+                    // visible in release-build logs (which default to
+                    // INFO+). Without this, "no NVIDIA GPUs detected" is
+                    // indistinguishable from "NVML didn't load" in user
+                    // bug reports.
+                    log::warn!("Unable to initialize NVML: {}", e);
                 }
             }
         }
@@ -133,7 +138,11 @@ fn get_nvidia_gpus_internal() -> Vec<GpuInfo> {
         let nvml = match nvml {
             Some(n) => n,
             None => {
-                log::debug!("NVML not available");
+                // Promoted from `debug!` to `warn!` — same rationale as the
+                // NVML init failure path above. This is the single point
+                // where every NVIDIA-aware code path silently gives up on
+                // hosts without a working `nvml.dll` / `libnvidia-ml.so`.
+                log::warn!("NVML not available — NVIDIA GPUs will not be enumerated");
                 return vec![];
             }
         };

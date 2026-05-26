@@ -99,7 +99,21 @@ fn parse_device_output(output: &str) -> ServerResult<Vec<DeviceInfo>> {
     }
 
     if devices.is_empty() && found_devices_section {
-        log::warn!("No devices found in output");
+        // Most common causes (in observed frequency):
+        //   1. CUDA binary loaded against a driver that ships an older
+        //      CUDA ABI (e.g. cuda-13.1 binary on a 581.x driver — see
+        //      AtomicBot-ai/Atomic-Chat#25).
+        //   2. NVIDIA Optimus / MUX-switch laptop with dGPU parked and
+        //      no High Performance preference set for `llama-server.exe`.
+        //   3. CUDA runtime DLLs (cudart64_*.dll) missing next to the
+        //      binary or on PATH.
+        // Caller (extension) uses this signal to degrade the recommended
+        // backend tier; see `pickFirstWorkingTier` / `tierEnumeratesDevices`
+        // in `extensions/llamacpp-upstream-extension/src/index.ts`.
+        log::warn!(
+            "llama-server --list-devices returned an empty device list — \
+             chosen backend cannot enumerate any GPU on this host"
+        );
     } else if !found_devices_section {
         return Err(LlamacppError::new(
             ErrorCode::DeviceListParseFailed,

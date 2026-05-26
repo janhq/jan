@@ -62,7 +62,17 @@ pub fn get_vulkan_gpus() -> Vec<GpuInfo> {
         match get_vulkan_gpus_internal() {
             Ok(gpus) => gpus,
             Err(e) => {
-                log::error!("Failed to get Vulkan GPUs: {:?}", e);
+                // Already at `error!`. Keep the level but enrich the
+                // message — the most common cause is a missing
+                // `vulkan-1.dll` on Windows (no Vulkan loader installed
+                // by the GPU driver), which means AMD/Intel GPUs won't
+                // be enumerated at all.
+                log::error!(
+                    "Failed to enumerate Vulkan GPUs (most likely the Vulkan loader \
+                     is not installed — `vulkan-1.dll` on Windows / `libvulkan.so` \
+                     on Linux): {:?}",
+                    e
+                );
                 vec![]
             }
         }
