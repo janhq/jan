@@ -2342,6 +2342,7 @@ export default class llamacpp_extension extends AIEngine {
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let resolvedName: string | undefined
 
     try {
       // Validate main model file
@@ -2354,6 +2355,12 @@ export default class llamacpp_extension extends AIEngine {
         isEmbedding = true
       }
       mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+
+      const rawName = modelMetadata.metadata?.['general.name']
+      if (typeof rawName === 'string') {
+        const normalized = rawName.trim().replace(/\s+/g, '-')
+        if (normalized.length > 0) resolvedName = normalized
+      }
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -2380,12 +2387,16 @@ export default class llamacpp_extension extends AIEngine {
       ).size
     }
 
-    // TODO: add name as import() argument
+    if (!resolvedName) {
+      const base = opts.modelPath.split(/[\\/]/).pop() ?? modelId
+      resolvedName = base.replace(/\.gguf$/i, '') || modelId
+    }
+
     // TODO: add updateModelConfig() method
     const modelConfig = {
       model_path: modelPath,
       mmproj_path: mmprojPath,
-      name: modelId,
+      name: resolvedName,
       size_bytes,
       model_sha256: opts.modelSha256,
       model_size_bytes: opts.modelSize,
