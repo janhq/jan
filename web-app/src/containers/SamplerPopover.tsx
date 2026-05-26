@@ -32,6 +32,7 @@ import { ParametersSection } from '@/containers/ParametersSection'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { paramsSettings, type ParamDef } from '@/lib/predefinedParams'
+import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { cn } from '@/lib/utils'
 
 interface SamplerPopoverProps {
@@ -115,6 +116,8 @@ export function SamplerPopover({
     }
     writeParams(next)
   }
+
+  if (isPredefinedRemoteProvider(providerId)) return null
 
   const triggerLabel = currentAssistant
     ? `Sampling — ${currentAssistant.name}`

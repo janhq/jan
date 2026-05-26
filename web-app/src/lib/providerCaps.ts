@@ -164,6 +164,22 @@ export function resolveProviderCaps(
   return BUILTIN_CAPS[id] ?? CUSTOM_PERMISSIVE
 }
 
+const LOCAL_PROVIDER_IDS = new Set<string>(['llamacpp', 'mlx'])
+
+/**
+ * Predefined remote providers ship locked base_urls and expose only a fixed
+ * sampling surface — exposing the in-app sampler UI for them invites silent
+ * 400s. Local engines and user-added custom OpenAI-compatible providers keep
+ * the sampler UI.
+ */
+export function isPredefinedRemoteProvider(
+  provider: Pick<ProviderObject, 'provider'> | string | undefined
+): boolean {
+  if (!provider) return false
+  const id = typeof provider === 'string' ? provider : provider.provider
+  return id in BUILTIN_CAPS && !LOCAL_PROVIDER_IDS.has(id)
+}
+
 /**
  * Sampler keys that some model families reject outright even when the
  * provider's API surface accepts them. Indexed by sampler capability — the
