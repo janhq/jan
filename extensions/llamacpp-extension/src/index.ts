@@ -444,18 +444,35 @@ export default class llamacpp_extension extends AIEngine {
     componentProps: Partial<SettingComponentProps>[]
   ): Promise<void> {
     const current = await readSettingsFile()
+    const changed: { key: string; value: unknown }[] = []
     const updated = current.length
       ? current.map((s) => {
           const patch = componentProps.find((p) => p.key === s.key)
           if (patch?.controllerProps) {
-            ;(s.controllerProps as { value?: unknown }).value = (
-              patch.controllerProps as { value?: unknown }
-            ).value
+            const nextValue = (patch.controllerProps as { value?: unknown })
+              .value
+            const prevValue = (s.controllerProps as { value?: unknown }).value
+            if (nextValue !== prevValue) {
+              changed.push({ key: s.key, value: nextValue })
+            }
+            ;(s.controllerProps as { value?: unknown }).value = nextValue
           }
           return s
         })
-      : (componentProps as SettingComponentProps[])
+      : ((): SettingComponentProps[] => {
+          const arr = componentProps as SettingComponentProps[]
+          for (const s of arr) {
+            changed.push({
+              key: s.key,
+              value: (s.controllerProps as { value?: unknown })?.value,
+            })
+          }
+          return arr
+        })()
     await writeSettingsFile(updated)
+    for (const { key, value } of changed) {
+      this.onSettingUpdate(key, value)
+    }
   }
 
   override async registerSettings(
