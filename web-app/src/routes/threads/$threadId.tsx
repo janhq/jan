@@ -1165,7 +1165,7 @@ function ThreadDetail() {
 
   // Persist whenever the user message lands in useMessages — covers the race
   // where the stamping effect ran before addMessage's commit was observable.
-  const localThreadMessages = useMessages((s) => s.messages[threadId])
+  const localThreadMessages = useMessages((s) => s.messages?.[threadId])
   const errorEntries = useMessageErrors((s) => s.errors)
   useEffect(() => {
     if (!localThreadMessages) return
