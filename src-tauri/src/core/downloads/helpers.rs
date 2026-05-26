@@ -5,6 +5,7 @@ use crate::core::updater::hmac_client::SignedRequestHeaders;
 use crate::core::updater::session::get_session_id;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
@@ -52,6 +53,30 @@ const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
 
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
+}
+
+pub(crate) fn handle_emit_result(event_name: &str, result: Result<(), String>) {
+    if let Err(err) = result {
+        log::warn!("Failed to emit event '{event_name}': {err}");
+    }
+}
+
+fn emit_event_safe<T: Serialize + Clone>(
+    app: &tauri::AppHandle<impl Runtime>,
+    event_name: &str,
+    payload: T,
+) {
+    handle_emit_result(
+        event_name,
+        app.emit(event_name, payload).map_err(|e| e.to_string()),
+    );
+}
+
+pub(crate) async fn cleanup_failed_validation(save_path: &Path) {
+    let _ = tokio::fs::remove_file(save_path).await;
+    if let Some(parent) = save_path.parent() {
+        let _ = tokio::fs::remove_dir(parent).await;
+    }
 }
 
 /// Converts a URL to Jan mirror URL if applicable
@@ -120,14 +145,14 @@ async fn validate_downloaded_file(
         });
 
     if emit_event {
-        app.emit(
+        emit_event_safe(
+            app,
             "onModelValidationStarted",
             serde_json::json!({
                 "modelId": model_id,
                 "downloadType": "Model",
             }),
-        )
-        .unwrap();
+        );
         log::info!("Starting validation for model: {model_id}");
     }
 
@@ -504,14 +529,14 @@ pub async fn _download_files_internal(
             .iter()
             .any(|item| item.sha256.is_some() || item.size.is_some())
     {
-        app.emit(
+        emit_event_safe(
+            &app,
             "onModelValidationStarted",
             serde_json::json!({
                 "modelId": model_id,
                 "downloadType": "Model",
             }),
-        )
-        .unwrap();
+        );
         log::info!("Starting validation for model: {model_id}");
     }
 
@@ -522,13 +547,7 @@ pub async fn _download_files_internal(
             .map_err(|e| format!("Validation task join error: {e}"))?;
 
         if let Err(validation_error) = validation_result {
-            // Clean up the file if validation fails
-            let _ = tokio::fs::remove_file(&save_path).await;
-
-            // Try to clean up the parent directory if it's empty
-            if let Some(parent) = save_path.parent() {
-                let _ = tokio::fs::remove_dir(parent).await;
-            }
+            cleanup_failed_validation(&save_path).await;
 
             return Err(validation_error);
         }
@@ -537,7 +556,7 @@ pub async fn _download_files_internal(
     // Emit final progress
     let (transferred, total) = progress_tracker.get_total_progress().await;
     let final_evt = DownloadEvent { transferred, total };
-    app.emit(&evt_name, final_evt).unwrap();
+    emit_event_safe(&app, &evt_name, final_evt);
     Ok(())
 }
 
@@ -620,7 +639,7 @@ async fn download_single_file(
                     transferred: combined_transferred,
                     total: combined_total,
                 };
-                app.emit(&evt_name, evt).unwrap();
+                emit_event_safe(&app, &evt_name, evt);
 
                 (resp, item.url.clone())
             }
@@ -697,7 +716,7 @@ async fn download_single_file(
                 transferred: combined_transferred,
                 total: combined_total,
             };
-            app.emit(&evt_name, evt).unwrap();
+            emit_event_safe(&app, &evt_name, evt);
 
             download_delta = 0u64;
         }
@@ -716,7 +735,7 @@ async fn download_single_file(
         transferred: combined_transferred,
         total: combined_total,
     };
-    app.emit(&evt_name, evt).unwrap();
+    emit_event_safe(&app, &evt_name, evt);
 
     // rename tmp file to final file
     tokio::fs::rename(&tmp_save_path, &save_path)
