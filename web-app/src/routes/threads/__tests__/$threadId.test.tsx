@@ -51,6 +51,8 @@ const h = vi.hoisted(() => {
   const appStateState = {
     ragToolNames: new Set<string>(),
     mcpToolNames: new Set<string>(),
+    setOomError: vi.fn(),
+    setBackendError: vi.fn(),
   }
   const useAppStateMock: any = (selector: any) => selector(appStateState)
   useAppStateMock.getState = () => appStateState

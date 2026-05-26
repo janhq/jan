@@ -617,6 +617,24 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Resync the OOM/backend banner from message metadata on every thread switch.
+  // Persisted by LlamacppOomListener at error time; unset state when this
+  // thread carries no such metadata so the banner doesn't leak across threads.
+  const threadMessagesForBanner = useMessages((s) => s.messages?.[threadId])
+  useEffect(() => {
+    let oom: string | undefined
+    let be: string | undefined
+    for (const m of threadMessagesForBanner ?? []) {
+      const meta = m.metadata as Record<string, unknown> | undefined
+      const o = meta?.oomError
+      if (typeof o === 'string' && o.length > 0) oom = o
+      const b = meta?.backendError
+      if (typeof b === 'string' && b.length > 0) be = b
+    }
+    useAppState.getState().setOomError(oom)
+    useAppState.getState().setBackendError(be)
+  }, [threadId, threadMessagesForBanner])
+
   // Consolidated function to process and send a message
   const processAndSendMessage = useCallback(
     async (
@@ -829,6 +847,19 @@ function ThreadDetail() {
     }
   }, [threadId, processAndSendMessage])
 
+  const stripBannerMetadata = useCallback(() => {
+    const tmsgs = useMessages.getState().getMessages(threadId)
+    for (const m of tmsgs) {
+      const meta = m.metadata as Record<string, unknown> | undefined
+      if (!meta) continue
+      if (meta.oomError == null && meta.backendError == null) continue
+      const nextMeta = { ...meta }
+      delete nextMeta.oomError
+      delete nextMeta.backendError
+      updateMessage({ ...m, metadata: nextMeta })
+    }
+  }, [threadId, updateMessage])
+
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
     async (
@@ -837,21 +868,33 @@ function ThreadDetail() {
     ) => {
       if (oomError) setOomError(undefined)
       if (backendError) setBackendError(undefined)
+      if (oomError || backendError) stripBannerMetadata()
       await processAndSendMessage(text, files)
     },
-    [processAndSendMessage, oomError, setOomError, backendError, setBackendError]
+    [
+      processAndSendMessage,
+      oomError,
+      setOomError,
+      backendError,
+      setBackendError,
+      stripBannerMetadata,
+    ]
   )
 
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback((messageId?: string) => {
+    const hadBannerError =
+      useAppState.getState().oomError != null ||
+      useAppState.getState().backendError != null
     if (useAppState.getState().oomError) {
       useAppState.getState().setOomError(undefined)
     }
     if (useAppState.getState().backendError) {
       useAppState.getState().setBackendError(undefined)
     }
+    if (hadBannerError) stripBannerMetadata()
     // Cancel any in-flight title summarization before regenerating
     titleAbortRef.current?.abort()
     titleAbortRef.current = null
@@ -895,7 +938,7 @@ function ThreadDetail() {
     // Call the AI SDK regenerate function - it will handle truncating the UI messages
     // and generating a new response from the selected message
     regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate])
+  }, [threadId, deleteMessage, regenerate, stripBannerMetadata])
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
