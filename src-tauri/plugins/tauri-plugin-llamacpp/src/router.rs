@@ -89,6 +89,7 @@ pub fn router_args(
 ///
 /// On readiness-detection failure or spawn failure, the child is killed before
 /// returning the error.
+#[allow(clippy::too_many_arguments)]
 pub async fn start_router(
     backend_exe: PathBuf,
     preset_path: PathBuf,

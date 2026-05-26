@@ -98,6 +98,14 @@ pub fn resolve_path_within_jan_data_folder(
     Ok((canonical_data, canonical_path))
 }
 
+pub fn resolve_app_path_within_jan_data_folder<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    path: &str,
+) -> Result<(PathBuf, PathBuf), String> {
+    let jan_data_folder = get_jan_data_folder_path(app_handle);
+    resolve_path_within_jan_data_folder(&jan_data_folder, path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,12 +189,4 @@ mod tests {
         assert!(resolved.starts_with(&root));
         assert!(resolved.ends_with("file.txt"));
     }
-}
-
-pub fn resolve_app_path_within_jan_data_folder<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    path: &str,
-) -> Result<(PathBuf, PathBuf), String> {
-    let jan_data_folder = get_jan_data_folder_path(app_handle);
-    resolve_path_within_jan_data_folder(&jan_data_folder, path)
 }

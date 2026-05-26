@@ -297,7 +297,7 @@ pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ToolWithServer>, String> {
-    collect_mcp_tools(&app, &*state, None).await
+    collect_mcp_tools(&app, &state, None).await
 }
 
 /// Retrieves tools from a specific subset of MCP servers by name.
@@ -391,7 +391,7 @@ pub async fn call_tool(
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&*state).await;
+    let timeout_duration = tool_call_timeout(&state).await;
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 

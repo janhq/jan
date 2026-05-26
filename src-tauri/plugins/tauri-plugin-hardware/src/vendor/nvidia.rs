@@ -54,7 +54,7 @@ where
                 }
             }
         }
-        return f(guard.as_ref());
+        f(guard.as_ref())
     }
 }
 
@@ -166,8 +166,8 @@ fn create_gpu_info(nvml: &Nvml, index: u32, driver_version: &str) -> Result<GpuI
     let compute_capability = device.cuda_compute_capability()?;
 
     let uuid = device.uuid()?;
-    let clean_uuid = if uuid.starts_with("GPU-") {
-        uuid[4..].to_string()
+    let clean_uuid = if let Some(stripped) = uuid.strip_prefix("GPU-") {
+        stripped.to_string()
     } else {
         uuid
     };

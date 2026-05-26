@@ -506,7 +506,7 @@ fn test_default_constants_values() {
     assert_eq!(DEFAULT_MCP_BASE_RESTART_DELAY_MS, 1000);
     assert_eq!(DEFAULT_MCP_MAX_RESTART_DELAY_MS, 30000);
     assert!((DEFAULT_MCP_BACKOFF_MULTIPLIER - 2.0).abs() < f64::EPSILON);
-    assert!(DEFAULT_MCP_BASE_RESTART_DELAY_MS < DEFAULT_MCP_MAX_RESTART_DELAY_MS);
+    const _: () = assert!(DEFAULT_MCP_BASE_RESTART_DELAY_MS < DEFAULT_MCP_MAX_RESTART_DELAY_MS);
 }
 
 #[test]
@@ -572,8 +572,10 @@ fn test_mcp_settings_default_matches_constants() {
 #[test]
 fn test_mcp_settings_tool_call_timeout_duration_enforces_minimum() {
     use super::models::McpSettings;
-    let mut s = McpSettings::default();
-    s.tool_call_timeout_seconds = 0;
+    let mut s = McpSettings {
+        tool_call_timeout_seconds: 0,
+        ..McpSettings::default()
+    };
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(1));
     s.tool_call_timeout_seconds = 5;
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(5));
@@ -612,11 +614,13 @@ impl PartialEq for super::models::McpSettings {
 #[test]
 fn test_mcp_settings_round_trip_camel_case() {
     use super::models::McpSettings;
-    let mut s = McpSettings::default();
-    s.tool_call_timeout_seconds = 42;
-    s.router_model_provider = "openai".into();
-    s.router_model_id = "gpt-4".into();
-    s.use_lightweight_router_model = true;
+    let s = McpSettings {
+        tool_call_timeout_seconds: 42,
+        router_model_provider: "openai".into(),
+        router_model_id: "gpt-4".into(),
+        use_lightweight_router_model: true,
+        ..McpSettings::default()
+    };
     let json = serde_json::to_string(&s).unwrap();
     assert!(json.contains("\"toolCallTimeoutSeconds\":42"));
     assert!(json.contains("\"routerModelProvider\":\"openai\""));
@@ -822,7 +826,7 @@ fn test_is_process_alive_for_almost_certainly_dead_pid() {
     // PID 0 is the scheduler / not a real signalable process on Linux/macOS
     // and PID 999999 is extremely unlikely to exist
     // (i32::MAX as u32) exceeds Linux pid_max → kernel returns ESRCH/EINVAL
-    assert!(!is_process_alive((i32::MAX as u32)));
+    assert!(!is_process_alive(i32::MAX as u32));
 }
 
 #[test]
@@ -903,7 +907,7 @@ async fn test_check_and_cleanup_stale_lock_removes_dead_pid_lock() {
     let lock_path = app_data_dir.join(format!("mcp_lock_{}.json", port));
 
     // PID above pid_max guarantees ESRCH/EINVAL on Unix → reported as not alive
-    let dead_pid: u32 = (i32::MAX as u32);
+    let dead_pid: u32 = i32::MAX as u32;
     let lock = McpLockFile {
         pid: dead_pid,
         port,

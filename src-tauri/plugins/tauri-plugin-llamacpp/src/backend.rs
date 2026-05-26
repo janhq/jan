@@ -144,7 +144,7 @@ pub async fn get_local_installed_backends(
 
 /// Helper function to check if a backend is properly installed
 /// Checks for the existence of llama-server executable in the expected locations
-fn is_backend_installed(backend_dir: &PathBuf) -> bool {
+fn is_backend_installed(backend_dir: &Path) -> bool {
     if !backend_dir.exists() || !backend_dir.is_dir() {
         return false;
     }
@@ -904,8 +904,8 @@ fn find_gpu_libs(bin_dir: &Path, keyword: &str) -> Vec<PathBuf> {
 }
 
 fn verify_backend_dependencies(
-    bin_dir: &PathBuf,
-    exe_path: &PathBuf,
+    bin_dir: &Path,
+    exe_path: &Path,
     backend: &str,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
     if !bin_dir.exists() {
@@ -1545,7 +1545,7 @@ mod tests {
         let backend_a = v1_path.join("backend-a");
         let backend_empty = v1_path.join("backend-empty");
 
-        fs::create_dir_all(&backend_a.join("build").join("bin")).unwrap();
+        fs::create_dir_all(backend_a.join("build").join("bin")).unwrap();
         fs::create_dir_all(&backend_empty).unwrap();
 
         // Create mock executable

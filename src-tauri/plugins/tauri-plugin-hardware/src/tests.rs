@@ -1,6 +1,5 @@
 use crate::commands::*;
 use crate::types::CpuStaticInfo;
-use tauri::test::mock_app;
 
 #[test]
 fn test_system_info() {
@@ -57,7 +56,6 @@ mod cpu_tests {
     fn test_cpu_name_not_empty() {
         let cpu_info = CpuStaticInfo::new();
         assert!(!cpu_info.name.is_empty());
-        assert!(cpu_info.name.len() > 0);
     }
 
     #[test]

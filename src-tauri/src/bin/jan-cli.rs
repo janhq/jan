@@ -760,11 +760,13 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
             cmd.pre_exec(|| {
                 nix::unistd::setsid()
                     .map(|_| ())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                    .map_err(|e| std::io::Error::other(e.to_string()))
             });
         }
     }
 
+    // child is intentionally detached via setsid; reaping is the OS's job
+    #[allow(clippy::zombie_processes)]
     let child = cmd.spawn().unwrap_or_else(|e| {
         eprintln!("Failed to spawn detached process: {e}");
         std::process::exit(1);
@@ -973,6 +975,7 @@ struct RouterServeInfo {
     api_key: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ensure_router_and_load(
     llama_state: &std::sync::Arc<LlamacppState>,
     bin_path: &str,
@@ -1284,6 +1287,7 @@ fn configure_openclaw(v1_url: &str, api_key: &str, model_id: &str) {
 
 /// Start the model server and return `(pid, actual_port)`.
 /// Resolves the engine automatically (LlamaCPP or MLX).
+#[allow(clippy::too_many_arguments)]
 async fn start_model_server(
     model_id: &str,
     bin: Option<String>,

@@ -2,6 +2,12 @@ use sysinfo::System;
 
 use crate::types::CpuStaticInfo;
 
+impl Default for CpuStaticInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpuStaticInfo {
     pub fn new() -> Self {
         let mut system = System::new();

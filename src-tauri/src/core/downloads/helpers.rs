@@ -109,8 +109,7 @@ async fn validate_downloaded_file(
     // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
     let model_id = item
         .model_id
-        .as_ref()
-        .map(|s| s.as_str())
+        .as_deref()
         .unwrap_or_else(|| {
             save_path
                 .parent() // get parent directory (modelId folder)

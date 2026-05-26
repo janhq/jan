@@ -35,6 +35,7 @@ pub struct MlxConfig {
 /// Core model-loading logic, decoupled from Tauri AppHandle.
 /// `binary_path` must point to the mlx-server executable.
 /// `process_map_arc` is the shared session map from MlxState.
+#[allow(clippy::too_many_arguments)]
 pub async fn load_mlx_model_impl(
     process_map_arc: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     binary_path: &Path,
@@ -274,6 +275,7 @@ pub async fn load_mlx_model_impl(
 
 /// Load a model using the MLX server binary (Tauri command wrapper)
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn load_mlx_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: String,

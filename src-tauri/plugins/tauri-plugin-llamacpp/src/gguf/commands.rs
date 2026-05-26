@@ -8,7 +8,7 @@ use tauri_plugin_hardware::{get_system_info, SystemInfo};
 /// Read GGUF metadata from a model file
 #[tauri::command]
 pub async fn read_gguf_metadata(path: String) -> Result<GgufMetadata, String> {
-    return read_gguf_metadata_internal(path).await;
+    read_gguf_metadata_internal(path).await
 }
 
 #[tauri::command]
@@ -139,11 +139,7 @@ pub async fn is_model_supported(
 
     log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
 
-    let usable_vram = if total_vram > RESERVE_BYTES {
-        total_vram - RESERVE_BYTES
-    } else {
-        0
-    };
+    let usable_vram = total_vram.saturating_sub(RESERVE_BYTES);
 
     let usable_total_memory = if total_system_memory > RESERVE_BYTES {
         (total_system_memory - RESERVE_BYTES) + usable_vram

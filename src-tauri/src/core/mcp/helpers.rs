@@ -398,7 +398,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    if config_params.transport_type.as_deref() == Some("http") && config_params.url.is_some() {
+    if let (Some("http"), Some(url)) = (
+        config_params.transport_type.as_deref(),
+        config_params.url.clone(),
+    ) {
         let transport = StreamableHttpClientTransport::with_client(
             reqwest::Client::builder()
                 .default_headers({
@@ -425,7 +428,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .build()
                 .unwrap(),
             StreamableHttpClientTransportConfig {
-                uri: config_params.url.unwrap().into(),
+                uri: url.into(),
                 ..Default::default()
             },
         );
@@ -460,8 +463,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 return Err(format!("Failed to connect to server: {e}"));
             }
         }
-    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some()
-    {
+    } else if let (Some("sse"), Some(url)) = (
+        config_params.transport_type.as_deref(),
+        config_params.url.clone(),
+    ) {
         let transport = SseClientTransport::start_with_client(
             reqwest::Client::builder()
                 .default_headers({
@@ -488,7 +493,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .build()
                 .unwrap(),
             rmcp::transport::sse_client::SseClientConfig {
-                sse_endpoint: config_params.url.unwrap().into(),
+                sse_endpoint: url.into(),
                 ..Default::default()
             },
         )

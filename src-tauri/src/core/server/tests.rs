@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod server_tests {
     use crate::core::server::proxy;
     use serde_json::json;
 
@@ -1060,7 +1060,7 @@ mod tests {
     fn get_destination_path_trailing_slash() {
         let result = proxy::get_destination_path("/v1/", "/v1");
         // remove_prefix should leave "/" or "" — either way no panic, deterministic.
-        assert!(result == "/" || result == "");
+        assert!(result == "/" || result.is_empty());
     }
 
     #[test]
