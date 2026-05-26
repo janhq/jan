@@ -2094,8 +2094,8 @@ const ChatInput = memo(function ChatInput({
                             <DropdownMenuTrigger asChild>
                               <Button
                                 variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1 px-1.5"
+                                size="icon-xs"
+                                aria-label={`Reasoning: ${label}`}
                               >
                                 <IconBrain
                                   size={18}
@@ -2105,9 +2105,6 @@ const ChatInput = memo(function ChatInput({
                                     reasoningValue === 'off' && 'opacity-50'
                                   )}
                                 />
-                                <span className="text-xs text-muted-foreground lowercase">
-                                  {label}
-                                </span>
                               </Button>
                             </DropdownMenuTrigger>
                           </TooltipTrigger>
