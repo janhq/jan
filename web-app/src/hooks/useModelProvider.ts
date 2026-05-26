@@ -176,7 +176,9 @@ export const useModelProvider = create<ModelProviderState>()(
               // the fresh extension fetch (otherwise stale recommendations
               // and stale option lists outlive the underlying setting).
               const existingValue = (
-                existingSetting?.controller_props as { value?: unknown } | undefined
+                existingSetting?.controller_props as
+                  | { value?: string | number | boolean }
+                  | undefined
               )?.value
               return {
                 ...setting,
