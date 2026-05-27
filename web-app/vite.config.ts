@@ -99,8 +99,17 @@ export default defineConfig(({ mode }) => {
       POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
       GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
+      // Legacy compile-time constant: the original `janhq/model-catalog`
+      // CDN. Kept for one release window so any out-of-band code path that
+      // still reads `MODEL_CATALOG_URL` does not break. New runtime code
+      // (see `services/model-catalog-registry.ts`) reads the curated
+      // catalog from `AtomicBot-ai/atomic-chat-model-catalog`'s
+      // `dist/` folder on main via `raw.githubusercontent.com` (and the
+      // override `VITE_MODEL_CATALOG_URL` / `VITE_MODEL_CATALOG_INDEX_URL`).
+      // Once the legacy consumers are gone, this define block can be deleted.
       MODEL_CATALOG_URL: JSON.stringify(
-        'https://raw.githubusercontent.com/janhq/model-catalog/main/model_catalog_v2.json'
+        env.VITE_MODEL_CATALOG_URL ||
+          'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-model-catalog/main/dist/catalog.json'
       ),
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'

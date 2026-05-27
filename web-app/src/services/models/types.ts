@@ -113,6 +113,19 @@ export interface ModelsService {
     repoId: string,
     hfToken?: string
   ): Promise<HuggingFaceRepo | null>
+  /**
+   * Long-tail fallback: query HF for the top-N candidates matching a free
+   * text term, scored via the same heuristic used by `fetchHuggingFaceRepo`.
+   * Returns lightweight `CatalogModel`-shaped entries (no per-repo detail
+   * fetch) so the Hub UI can render a "From Hugging Face" section without
+   * paying the cost of N follow-up requests. Callers should drill into
+   * `fetchHuggingFaceRepo` only when the user actually picks a result.
+   */
+  searchHuggingFaceCandidates(
+    query: string,
+    hfToken?: string,
+    limit?: number
+  ): Promise<CatalogModel[]>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(

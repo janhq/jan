@@ -1,54 +1,71 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useModelSources } from '../useModelSources'
+
+// IS_MACOS is a build-time constant; ensure it is true before the shim
+// (which references it inside `adaptCatalog`) loads.
+vi.hoisted(() => {
+  ;(globalThis as Record<string, unknown>).IS_MACOS = true
+})
+
 import type { CatalogModel } from '@/services/models/types'
 
-// Mock constants
-vi.mock('@/constants/localStorage', () => ({
-  localStorageKey: {
-    modelSources: 'model-sources-settings',
-  },
-}))
-
-// Mock zustand persist
-vi.mock('zustand/middleware', () => ({
-  persist: (fn: any) => fn,
-  createJSONStorage: () => ({
-    getItem: vi.fn(),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-  }),
-}))
-
-// Mock the ServiceHub
-const mockFetchModelCatalog = vi.fn()
-
-vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({
-    models: () => ({
-      fetchModelCatalog: mockFetchModelCatalog,
-    }),
-  }),
-}))
-
-// Mock the sanitizeModelId function
+// Mock the sanitizeModelId function — keep ids verbatim for assertion clarity.
 vi.mock('@/lib/utils', () => ({
-  sanitizeModelId: vi.fn((id: string) => id),
+  sanitizeModelId: (id: string) => id,
 }))
 
-describe('useModelSources', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+// Mock the underlying catalog store so the shim exercises the subscription
+// path without involving the registry/network.
+const mockEnsureCatalogLoaded = vi.fn()
+const subscribers = new Set<
+  (next: CatalogStoreState, prev: CatalogStoreState) => void
+>()
 
-    // Reset store state to defaults
-    useModelSources.setState({
-      sources: [],
-      error: null,
-      loading: false,
-    })
-  })
+type CatalogStoreState = {
+  catalog: CatalogModel[]
+  status: 'idle' | 'loading' | 'success' | 'error'
+  error: string | null
+}
 
-  it('should initialize with default values', () => {
+let storeState: CatalogStoreState = {
+  catalog: [],
+  status: 'idle',
+  error: null,
+}
+
+const setStoreState = (next: Partial<CatalogStoreState>) => {
+  const prev = storeState
+  storeState = { ...storeState, ...next }
+  for (const sub of subscribers) sub(storeState, prev)
+}
+
+vi.mock('@/stores/model-catalog-store', () => ({
+  useModelCatalogStore: {
+    getState: () => storeState,
+    subscribe: (
+      listener: (n: CatalogStoreState, p: CatalogStoreState) => void
+    ) => {
+      subscribers.add(listener)
+      return () => subscribers.delete(listener)
+    },
+  },
+  ensureCatalogLoaded: mockEnsureCatalogLoaded,
+}))
+
+// Dynamically import the shim after mocks are wired so the module-level
+// subscribe runs against the mock.
+let useModelSources: typeof import('../useModelSources').useModelSources
+
+beforeEach(async () => {
+  subscribers.clear()
+  storeState = { catalog: [], status: 'idle', error: null }
+  mockEnsureCatalogLoaded.mockReset()
+  vi.resetModules()
+  ;({ useModelSources } = await import('../useModelSources'))
+})
+
+describe('useModelSources (compatibility shim)', () => {
+  it('exposes default values when the catalog store is empty', () => {
     const { result } = renderHook(() => useModelSources())
 
     expect(result.current.sources).toEqual([])
@@ -57,343 +74,86 @@ describe('useModelSources', () => {
     expect(typeof result.current.fetchSources).toBe('function')
   })
 
-  describe('fetchSources', () => {
-    it('should fetch sources successfully', async () => {
-      const mockSources: CatalogModel[] = [
-        {
-          model_name: 'model-1',
-          description: 'First model',
-          developer: 'provider-1',
-          downloads: 100,
-          num_quants: 1,
-          quants: [{ model_id: 'model-1-q4', path: '/path/1', file_size: '1GB' }],
-          is_mlx: false,
-        },
-        {
-          model_name: 'model-2',
-          description: 'Second model',
-          developer: 'provider-2',
-          downloads: 200,
-          num_quants: 1,
-          quants: [{ model_id: 'model-2-q4', path: '/path/2', file_size: '2GB' }],
-          is_mlx: false,
-        },
-      ]
+  it('mirrors the catalog from the underlying store, sanitised + platform-filtered', async () => {
+    const catalog: CatalogModel[] = [
+      {
+        model_name: 'unsloth/model-1',
+        description: 'gguf entry',
+        developer: 'unsloth',
+        downloads: 100,
+        num_quants: 1,
+        quants: [
+          { model_id: 'unsloth/model-1-q4', path: '/p1', file_size: '1GB' },
+        ],
+        is_mlx: false,
+      },
+      {
+        model_name: 'mlx-community/model-2',
+        description: 'mlx entry',
+        developer: 'mlx-community',
+        library_name: 'mlx',
+        downloads: 200,
+        is_mlx: true,
+      },
+    ]
 
-      mockFetchModelCatalog.mockResolvedValueOnce(mockSources)
-
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(mockFetchModelCatalog).toHaveBeenCalledOnce()
-      expect(result.current.sources).toEqual(mockSources)
-      expect(result.current.loading).toBe(false)
-      expect(result.current.error).toBe(null)
+    mockEnsureCatalogLoaded.mockImplementation(async () => {
+      setStoreState({ catalog, status: 'success', error: null })
     })
 
-    it('should handle fetch errors', async () => {
-      const mockError = new Error('Network error')
-      mockFetchModelCatalog.mockRejectedValueOnce(mockError)
+    const { result } = renderHook(() => useModelSources())
 
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.loading).toBe(false)
-      expect(result.current.error).toBe(mockError)
-      expect(result.current.sources).toEqual([])
+    await act(async () => {
+      await result.current.fetchSources()
     })
 
-    it('should not merge new sources with existing ones', async () => {
-      const existingSources: CatalogModel[] = [
-        {
-          model_name: 'existing-model',
-          description: 'Existing model',
-          developer: 'existing-provider',
-          downloads: 50,
-          num_quants: 1,
-          quants: [{ model_id: 'existing-model-q4', path: '/path/existing', file_size: '1GB' }],
-          is_mlx: false,
-        },
-      ]
+    expect(mockEnsureCatalogLoaded).toHaveBeenCalledOnce()
+    expect(result.current.sources).toHaveLength(2)
+    expect(result.current.sources[0]).toMatchObject({
+      model_name: 'unsloth/model-1',
+      is_mlx: false,
+    })
+    expect(result.current.sources[1]).toMatchObject({
+      model_name: 'mlx-community/model-2',
+      is_mlx: true,
+    })
+  })
 
-      const newSources: CatalogModel[] = [
-        {
-          model_name: 'new-model',
-          description: 'New model',
-          developer: 'new-provider',
-          downloads: 150,
-          num_quants: 1,
-          quants: [{ model_id: 'new-model-q4', path: '/path/new', file_size: '2GB' }],
-          is_mlx: false,
-        },
-      ]
+  it('surfaces errors from the underlying store as Error instances', async () => {
+    mockEnsureCatalogLoaded.mockImplementation(async () => {
+      setStoreState({ catalog: [], status: 'error', error: 'network down' })
+    })
 
-      // Set initial state with existing sources
-      useModelSources.setState({
-        sources: existingSources,
+    const { result } = renderHook(() => useModelSources())
+
+    await act(async () => {
+      await result.current.fetchSources()
+    })
+
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.error?.message).toBe('network down')
+    expect(result.current.sources).toEqual([])
+  })
+
+  it('reacts to background store updates without an explicit fetchSources call', () => {
+    const { result } = renderHook(() => useModelSources())
+
+    act(() => {
+      setStoreState({
+        catalog: [
+          {
+            model_name: 'unsloth/late-arrival',
+            description: '',
+            developer: 'unsloth',
+            downloads: 0,
+          },
+        ],
+        status: 'success',
         error: null,
-        loading: false,
       })
-
-      mockFetchModelCatalog.mockResolvedValueOnce(newSources)
-
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.sources).toEqual(newSources)
     })
 
-    it('should not duplicate models with same model_name', async () => {
-      const existingSources: CatalogModel[] = [
-        {
-          model_name: 'duplicate-model',
-          description: 'Old version',
-          developer: 'old-provider',
-          downloads: 100,
-          num_quants: 1,
-          quants: [{ model_id: 'duplicate-model-q4', path: '/path/old', file_size: '1GB' }],
-          is_mlx: false,
-        },
-        {
-          model_name: 'unique-model',
-          description: 'Unique model',
-          developer: 'provider',
-          downloads: 75,
-          num_quants: 1,
-          quants: [{ model_id: 'unique-model-q4', path: '/path/unique', file_size: '1GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      const newSources: CatalogModel[] = [
-        {
-          model_name: 'duplicate-model',
-          description: 'New version',
-          developer: 'new-provider',
-          downloads: 200,
-          num_quants: 1,
-          quants: [{ model_id: 'duplicate-model-q4-new', path: '/path/new', file_size: '2GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      // Set initial state with existing sources
-      useModelSources.setState({
-        sources: existingSources,
-        error: null,
-        loading: false,
-      })
-
-      mockFetchModelCatalog.mockResolvedValueOnce(newSources)
-
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.sources).toEqual(newSources)
-    })
-
-    it('should handle empty sources response', async () => {
-      mockFetchModelCatalog.mockResolvedValueOnce([])
-
-      const { result } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.sources).toEqual([])
-      expect(result.current.loading).toBe(false)
-      expect(result.current.error).toBe(null)
-    })
-
-    it('should clear previous error on successful fetch', async () => {
-      const { result } = renderHook(() => useModelSources())
-
-      // First request fails
-      mockFetchModelCatalog.mockRejectedValueOnce(new Error('First error'))
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.error).toBeInstanceOf(Error)
-
-      // Second request succeeds
-      const mockSources: CatalogModel[] = [
-        {
-          model_name: 'model-1',
-          description: 'Model 1',
-          developer: 'provider-1',
-          downloads: 100,
-          num_quants: 1,
-          quants: [{ model_id: 'model-1-q4', path: '/path/1', file_size: '1GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      mockFetchModelCatalog.mockResolvedValueOnce(mockSources)
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.error).toBe(null)
-      expect(result.current.sources).toEqual(mockSources)
-    })
-  })
-
-  describe('state management', () => {
-    it('should maintain state across multiple hook instances', () => {
-      const { result: result1 } = renderHook(() => useModelSources())
-      const { result: result2 } = renderHook(() => useModelSources())
-
-      expect(result1.current.sources).toBe(result2.current.sources)
-      expect(result1.current.loading).toBe(result2.current.loading)
-      expect(result1.current.error).toBe(result2.current.error)
-    })
-
-    it('should update state across multiple hook instances', async () => {
-      const mockSources: CatalogModel[] = [
-        {
-          model_name: 'shared-model',
-          description: 'Shared model',
-          developer: 'shared-provider',
-          downloads: 100,
-          num_quants: 1,
-          quants: [{ model_id: 'shared-model-q4', path: '/path/shared', file_size: '1GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      mockFetchModelCatalog.mockResolvedValueOnce(mockSources)
-
-      const { result: result1 } = renderHook(() => useModelSources())
-      const { result: result2 } = renderHook(() => useModelSources())
-
-      await act(async () => {
-        await result1.current.fetchSources()
-      })
-
-      expect(result2.current.sources).toEqual(mockSources)
-    })
-  })
-
-  describe('error handling', () => {
-    it('should handle different error types', async () => {
-      const errors = [
-        new Error('Network error'),
-        new TypeError('Type error'),
-        new ReferenceError('Reference error'),
-      ]
-
-      const { result } = renderHook(() => useModelSources())
-
-      for (const error of errors) {
-        mockFetchModelCatalog.mockRejectedValueOnce(error)
-
-        await act(async () => {
-          await result.current.fetchSources()
-        })
-
-        expect(result.current.error).toBe(error)
-        expect(result.current.loading).toBe(false)
-        expect(result.current.sources).toEqual([])
-      }
-    })
-  })
-
-  describe('complex scenarios', () => {
-    it('should handle multiple fetch operations', async () => {
-      const { result } = renderHook(() => useModelSources())
-
-      const sources1: CatalogModel[] = [
-        {
-          model_name: 'model-1',
-          description: 'First batch',
-          developer: 'provider-1',
-          downloads: 100,
-          num_quants: 1,
-          quants: [{ model_id: 'model-1-q4', path: '/path/1', file_size: '1GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      const sources2: CatalogModel[] = [
-        {
-          model_name: 'model-2',
-          description: 'Second batch',
-          developer: 'provider-2',
-          downloads: 200,
-          num_quants: 1,
-          quants: [{ model_id: 'model-2-q4', path: '/path/2', file_size: '2GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      // First fetch
-      mockFetchModelCatalog.mockResolvedValueOnce(sources1)
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.sources).toEqual(sources1)
-
-      // Second fetch
-      mockFetchModelCatalog.mockResolvedValueOnce(sources2)
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.sources).toEqual(sources2)
-    })
-
-    it('should handle fetch after error', async () => {
-      const { result } = renderHook(() => useModelSources())
-
-      // First request fails
-      mockFetchModelCatalog.mockRejectedValueOnce(new Error('Network error'))
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.error).toBeInstanceOf(Error)
-
-      // Second request succeeds
-      const mockSources: CatalogModel[] = [
-        {
-          model_name: 'recovery-model',
-          description: 'Recovery model',
-          developer: 'recovery-provider',
-          downloads: 100,
-          num_quants: 1,
-          quants: [{ model_id: 'recovery-model-q4', path: '/path/recovery', file_size: '1GB' }],
-          is_mlx: false,
-        },
-      ]
-
-      mockFetchModelCatalog.mockResolvedValueOnce(mockSources)
-
-      await act(async () => {
-        await result.current.fetchSources()
-      })
-
-      expect(result.current.error).toBe(null)
-      expect(result.current.sources).toEqual(mockSources)
-    })
+    expect(result.current.sources).toHaveLength(1)
+    expect(result.current.sources[0].model_name).toBe('unsloth/late-arrival')
   })
 })

@@ -2849,7 +2849,6 @@ __metadata:
     eslint-plugin-react-hooks: "npm:5.2.0"
     eslint-plugin-react-refresh: "npm:0.4.20"
     framer-motion: "npm:12.23.12"
-    fuse.js: "npm:7.1.0"
     fzf: "npm:0.5.2"
     globals: "npm:16.0.0"
     i18next: "npm:25.0.2"
@@ -2864,6 +2863,7 @@ __metadata:
     lodash.debounce: "npm:4.0.8"
     lucide-react: "npm:^0.563.0"
     matter-js: "npm:^0.20.0"
+    minisearch: "npm:^7.1.2"
     motion: "npm:^12.35.0"
     next-themes: "npm:0.4.6"
     posthog-js: "npm:1.255.1"
@@ -11365,13 +11365,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fuse.js@npm:7.1.0":
-  version: 7.1.0
-  resolution: "fuse.js@npm:7.1.0"
-  checksum: 10c0/c0d1b1d192a4bdf3eade897453ddd28aff96b70bf3e49161a45880f9845ebaee97265595db633776700a5bcf8942223c752754a848d70c508c3c9fd997faad1e
-  languageName: node
-  linkType: hard
-
 "fzf@npm:0.5.2":
   version: 0.5.2
   resolution: "fzf@npm:0.5.2"
@@ -14975,6 +14968,13 @@ __metadata:
   version: 7.1.2
   resolution: "minipass@npm:7.1.2"
   checksum: 10c0/b0fd20bb9fb56e5fa9a8bfac539e8915ae07430a619e4b86ff71f5fc757ef3924b23b2c4230393af1eda647ed3d75739e4e0acb250a6b1eb277cf7f8fe449557
+  languageName: node
+  linkType: hard
+
+"minisearch@npm:^7.1.2":
+  version: 7.2.0
+  resolution: "minisearch@npm:7.2.0"
+  checksum: 10c0/64efaf30ead2acb19eb8be49c78352c527812dd2927a0981c9d666339d5d206d132b83038d2bfa756f5161cae5d98f15b07cc7e7b7be6b8278d35d2ecdc2628c
   languageName: node
   linkType: hard
 

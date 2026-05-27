@@ -6,6 +6,7 @@ Default permissions for the hardware plugin
 
 - `allow-get-system-info`
 - `allow-get-system-usage`
+- `allow-refresh-system-info`
 
 ## Permission Table
 
@@ -64,6 +65,32 @@ Enables the get_system_usage command without any pre-configured scope.
 <td>
 
 Denies the get_system_usage command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`hardware:allow-refresh-system-info`
+
+</td>
+<td>
+
+Enables the refresh_system_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`hardware:deny-refresh-system-info`
+
+</td>
+<td>
+
+Denies the refresh_system_info command without any pre-configured scope.
 
 </td>
 </tr>

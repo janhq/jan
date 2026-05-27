@@ -1,7 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// Build-time globals must be set BEFORE the modules under test load. The
+// catalog registry imported transitively by `services/models/default` reads
+// these. Disable the gzip-preferred fetch path so a single mocked `fetch`
+// call per assertion suffices (the gzip path is covered by
+// model-catalog-registry.test.ts and by the real cron pipeline).
+vi.hoisted(() => {
+  const g = globalThis as Record<string, unknown>
+  g.IS_TAURI = false
+  g.IS_MACOS = true
+  g.IS_WINDOWS = false
+  g.IS_LINUX = false
+  g.DecompressionStream = undefined
+})
+
 import { DefaultModelsService } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
+import { BASELINE_MODEL_CATALOG } from '@/constants/models'
+import { clearCatalogCache } from '@/services/model-catalog-registry'
 
 const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
   mockEvents: {
@@ -19,6 +36,10 @@ vi.mock('@janhq/core', () => ({
   },
   events: mockEvents,
   DownloadEvent: mockDownloadEvent,
+}))
+
+vi.mock('@tauri-apps/plugin-http', () => ({
+  fetch: vi.fn(),
 }))
 
 // Mock fetch
@@ -76,10 +97,20 @@ describe('DefaultModelsService', () => {
   })
 
   describe('fetchModelCatalog', () => {
+    // `fetchModelCatalog` now delegates to the failure-safe
+    // `getCatalogOrFallback()` registry: on success it returns the
+    // manifest's `models[]`; on network / HTTP / schema failure it returns
+    // the bundled baseline and never throws. These tests assert that
+    // contract.
+
+    beforeEach(() => {
+      clearCatalogCache()
+    })
+
     it('should fetch model catalog successfully', async () => {
-      const mockCatalog = [
+      const mockModels: CatalogModel[] = [
         {
-          model_name: 'GPT-4',
+          model_name: 'OpenAI/GPT-4',
           description: 'Large language model',
           developer: 'OpenAI',
           downloads: 1000,
@@ -87,35 +118,43 @@ describe('DefaultModelsService', () => {
           quants: [],
         },
       ]
+      const mockManifest = {
+        manifest_version: 1,
+        schema_version: 1,
+        updated_at: '2026-05-27T00:00:00Z',
+        models: mockModels,
+      }
 
       ;(fetch as any).mockResolvedValue({
         ok: true,
-        json: vi.fn().mockResolvedValue(mockCatalog),
+        status: 200,
+        statusText: 'OK',
+        json: vi.fn().mockResolvedValue(mockManifest),
       })
 
       const result = await modelsService.fetchModelCatalog()
 
-      expect(result).toEqual(mockCatalog)
+      expect(result).toEqual(mockModels)
     })
 
-    it('should handle fetch error', async () => {
+    it('should fall back to baseline on HTTP error', async () => {
       ;(fetch as any).mockResolvedValue({
         ok: false,
         status: 404,
         statusText: 'Not Found',
       })
 
-      await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
-        'Failed to fetch model catalog: 404 Not Found'
-      )
+      const result = await modelsService.fetchModelCatalog()
+
+      expect(result).toEqual(BASELINE_MODEL_CATALOG)
     })
 
-    it('should handle network error', async () => {
+    it('should fall back to baseline on network error', async () => {
       ;(fetch as any).mockRejectedValue(new Error('Network error'))
 
-      await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
-        'Failed to fetch model catalog: Network error'
-      )
+      const result = await modelsService.fetchModelCatalog()
+
+      expect(result).toEqual(BASELINE_MODEL_CATALOG)
     })
   })
 

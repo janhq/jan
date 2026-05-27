@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-refresh-system-info"
+description = "Enables the refresh_system_info command without any pre-configured scope."
+commands.allow = ["refresh_system_info"]
+
+[[permission]]
+identifier = "deny-refresh-system-info"
+description = "Denies the refresh_system_info command without any pre-configured scope."
+commands.deny = ["refresh_system_info"]

@@ -13,6 +13,12 @@ dist-ssr
 dist-web
 *.local
 
+# Bundled seed catalog snapshots — fetched at build time by
+# `scripts/fetch-seed-catalog.mjs`. Tracking them in git would force a
+# new commit on every release just to refresh a derived artefact.
+public/seed-catalog.json.gz
+public/seed-catalog.idx.json.gz
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

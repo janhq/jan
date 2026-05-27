@@ -165,18 +165,17 @@ export function getMlxTotalFileSize(
   return formatCatalogFileSize(totalBytes)
 }
 
-//* Hub / setup: рекомендованный repo id ↔ запись каталога (регистр, полный путь)
+//* Hub / setup: рекомендованный repo id ↔ запись каталога.
+//* Совпадение строго по полному `org/repo` (case-insensitive). Без fallback
+//* по «хвосту» — иначе при коллизии (`unsloth/X` vs `lmstudio-community/X`)
+//* recommended из одной орги молча резолвится в чужую модель.
 export function findCatalogModelForRecommendedRepo(
   sources: readonly CatalogModel[],
   recommendedRepoId: string
 ): CatalogModel | undefined {
-  const recTail = extractModelName(recommendedRepoId)?.toLowerCase() ?? ''
-  if (!recTail) return undefined
-  return sources.find((s) => {
-    if (s.model_name === recommendedRepoId) return true
-    const st = extractModelName(s.model_name)?.toLowerCase() ?? ''
-    return st === recTail
-  })
+  if (!recommendedRepoId) return undefined
+  const target = recommendedRepoId.toLowerCase()
+  return sources.find((s) => s.model_name.toLowerCase() === target)
 }
 
 /**

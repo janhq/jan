@@ -23,5 +23,10 @@
   "recFinetuningChat": "Fine-tuning & chat",
   "recMathReasoning": "Math & reasoning",
   "recForMlx": "For MLX",
-  "backToModels": "Back to models"
+  "backToModels": "Back to models",
+  "fromHuggingFace": "From Hugging Face",
+  "fromHuggingFaceHint": "Not in curated catalog",
+  "fromHuggingFaceExpand": "Search more on Hugging Face",
+  "fromHuggingFaceCollapse": "Hide Hugging Face results",
+  "catalogFooter": "Indexed {{count}} models from {{orgs}} organizations · updated {{ago}}"
 }

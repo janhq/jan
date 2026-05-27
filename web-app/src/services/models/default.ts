@@ -23,6 +23,7 @@ import type {
   CatalogModel,
   ModelValidationResult,
 } from './types'
+import { getCatalogOrFallback } from '@/services/model-catalog-registry'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -193,22 +194,72 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async fetchModelCatalog(): Promise<ModelCatalog> {
+    // Primary source: the Atomic Chat curated catalog (`atomic-chat-model-catalog`
+    // GitHub Releases) loaded via the registry abstraction so the same
+    // localStorage cache + baseline fallback machinery is shared with
+    // `useModelCatalogStore`. The loader never throws — on hard failure it
+    // returns the bundled baseline so callers always get *something*.
     try {
-      const response = await fetch(MODEL_CATALOG_URL)
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch model catalog: ${response.status} ${response.statusText}`
-        )
-      }
-
-      const catalog: ModelCatalog = await response.json()
-      return catalog
+      const result = await getCatalogOrFallback()
+      return result.manifest.models
     } catch (error) {
-      console.error('Error fetching model catalog:', error)
+      // Defensive only. `getCatalogOrFallback` already catches network /
+      // schema errors and returns a baseline result.
+      console.error('Unexpected fetchModelCatalog failure:', error)
       throw new Error(
         `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
+    }
+  }
+
+  async searchHuggingFaceCandidates(
+    query: string,
+    hfToken?: string,
+    limit = HUGGING_FACE_SEARCH_LIMIT
+  ): Promise<CatalogModel[]> {
+    const trimmed = query.trim()
+    if (trimmed.length < 3) return []
+    try {
+      const ggufQuery = /\bgguf\b/i.test(trimmed) ? trimmed : `${trimmed} GGUF`
+      const response = await fetch(
+        `https://huggingface.co/api/models?search=${encodeURIComponent(ggufQuery)}&limit=${limit}`,
+        { headers: this.getHuggingFaceHeaders(hfToken) }
+      )
+      if (!response.ok) return []
+      const raw = (await response.json()) as HuggingFaceRepoSearchResult[]
+      const ranked = raw
+        .filter((repo) => getHuggingFaceRepoId(repo))
+        .filter(isLikelyGgufRepo)
+        .sort(
+          (a, b) =>
+            scoreHuggingFaceRepoMatch(trimmed, b) -
+            scoreHuggingFaceRepoMatch(trimmed, a)
+        )
+      return ranked.slice(0, limit).map((repo) => {
+        const repoId = getHuggingFaceRepoId(repo)
+        const developer = repoId.includes('/')
+          ? repoId.split('/', 1)[0]
+          : undefined
+        return {
+          model_name: repoId,
+          developer,
+          downloads: repo.downloads ?? 0,
+          description: `**Tags**: ${(repo.tags ?? []).join(', ')}`,
+          // No quants / mmproj here — the detail fetch happens later when
+          // the user clicks through to the dedicated model page.
+          num_quants: 0,
+          quants: [],
+          num_mmproj: 0,
+          mmproj_models: [],
+          num_safetensors: 0,
+          safetensors_files: [],
+          is_mlx: (repo.tags ?? []).some((t) => t.toLowerCase() === 'mlx'),
+          readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
+        } satisfies CatalogModel
+      })
+    } catch (error) {
+      console.warn('searchHuggingFaceCandidates failed:', error)
+      return []
     }
   }
 
