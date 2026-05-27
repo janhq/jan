@@ -14,6 +14,7 @@ import {
   IconTopologyStar3,
   IconLock,
   IconCpu,
+  IconWorld,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -179,6 +180,11 @@ const SettingsMenu = () => {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
       icon: IconCircles,
+    },
+    {
+      title: 'common:https_proxy',
+      route: route.settings.https_proxy,
+      icon: IconWorld,
     },
     {
       title: 'common:keyboardShortcuts',
