@@ -604,14 +604,16 @@ export default class llamacpp_extension extends AIEngine {
       const n = parseInt(rawMax, 10)
       if (!Number.isNaN(n) && n >= 0) modelsMax = n
     }
-    // Reserve extra slots for embedding models so loading an embedder doesn't
-    // evict the user's chat model. `models_max` governs chat models only;
-    // Jan pre-evicts the oldest chat model in `performLoad` so the router's
-    // LRU never picks the embedding. 0 (unlimited) stays unlimited.
+    // Reserve a single extra slot when any embedder is installed, so loading
+    // an embedder doesn't evict the user's chat model. Only one embedding is
+    // ever loaded at a time (RAG calls load() once per request), so the bonus
+    // is +1 regardless of how many embedders are installed. 0 (unlimited)
+    // stays unlimited.
     const userModelsMax = modelsMax
     this.userModelsMax = userModelsMax
-    if (modelsMax > 0 && embeddingCount > 0) {
-      modelsMax += embeddingCount
+    const embeddingSlotBonus = embeddingCount > 0 ? 1 : 0
+    if (modelsMax > 0 && embeddingSlotBonus > 0) {
+      modelsMax += embeddingSlotBonus
     }
 
     // Defensive: if a router is already running (hot reload / dev), stop it
@@ -650,7 +652,7 @@ export default class llamacpp_extension extends AIEngine {
     this.routerPort = info.port
     this.routerApiKey = info.api_key
     logger.info(
-      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingCount} embedding], preset=${presetPath})`
+      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingSlotBonus} embedding, ${embeddingCount} installed], preset=${presetPath})`
     )
   }
 
