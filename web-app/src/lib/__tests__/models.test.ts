@@ -5,9 +5,11 @@ import {
   removeYamlFrontMatter,
   extractModelName,
   extractModelRepo,
+  findCatalogModelForRecommendedRepo,
   getModelCapabilities,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
+import type { CatalogModel } from '@/services/models/types'
 
 // Mock the token.js module
 vi.mock('token.js', () => ({
@@ -303,5 +305,53 @@ describe('getModelCapabilities', () => {
     expect(capabilities).toContain(ModelCapabilities.COMPLETION)
     expect(capabilities).toContain(ModelCapabilities.TOOLS)
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+})
+
+describe('findCatalogModelForRecommendedRepo', () => {
+  const make = (model_name: string): CatalogModel =>
+    ({ model_name, developer: model_name.split('/')[0] }) as CatalogModel
+
+  it('returns the exact repo match (case-sensitive equality)', () => {
+    const sources = [
+      make('unsloth/gemma-4-E4B-it-GGUF'),
+      make('lmstudio-community/gemma-4-E4B-it-GGUF'),
+      make('ggml-org/gemma-4-E4B-it-GGUF'),
+    ]
+    const result = findCatalogModelForRecommendedRepo(
+      sources,
+      'unsloth/gemma-4-E4B-it-GGUF'
+    )
+    expect(result?.model_name).toBe('unsloth/gemma-4-E4B-it-GGUF')
+  })
+
+  it('matches case-insensitively on the full org/repo path', () => {
+    const sources = [make('mlx-community/Gemma-4-31b-It-4bit')]
+    const result = findCatalogModelForRecommendedRepo(
+      sources,
+      'MLX-Community/gemma-4-31b-it-4bit'
+    )
+    expect(result?.model_name).toBe('mlx-community/Gemma-4-31b-It-4bit')
+  })
+
+  it('does NOT fall back to tail-only matching across orgs (regression)', () => {
+    //* Bug: «recommended unsloth/X» молча резолвился в lmstudio-community/X
+    //* потому что tail совпадал. После фикса — undefined.
+    const sources = [
+      make('lmstudio-community/gemma-4-E4B-it-GGUF'),
+      make('ggml-org/gemma-4-E4B-it-GGUF'),
+    ]
+    const result = findCatalogModelForRecommendedRepo(
+      sources,
+      'unsloth/gemma-4-E4B-it-GGUF'
+    )
+    expect(result).toBeUndefined()
+  })
+
+  it('returns undefined for empty input', () => {
+    expect(findCatalogModelForRecommendedRepo([], 'foo/bar')).toBeUndefined()
+    expect(
+      findCatalogModelForRecommendedRepo([make('foo/bar')], '')
+    ).toBeUndefined()
   })
 })

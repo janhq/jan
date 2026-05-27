@@ -4,8 +4,9 @@
   "version": "1.1.82",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "seed-catalog": "node scripts/fetch-seed-catalog.mjs",
+    "dev": "yarn seed-catalog && vite",
+    "build": "yarn seed-catalog && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest --run",

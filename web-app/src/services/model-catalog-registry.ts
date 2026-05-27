@@ -88,7 +88,74 @@ export type CatalogIndexPayload = {
   minisearch: unknown
 }
 
-export type RegistrySource = 'remote' | 'cache' | 'baseline'
+/**
+ * Where the manifest came from, in priority order:
+ *
+ *   - `remote`   — fresh GET against `raw.githubusercontent.com`.
+ *   - `cache`    — `localStorage` snapshot from a previous successful
+ *                  remote fetch (TTL: 1 hour).
+ *   - `bundled`  — gzipped catalog snapshot embedded in the app bundle
+ *                  by `scripts/fetch-seed-catalog.mjs` at build time.
+ *                  Used when neither cache nor remote is available
+ *                  (offline first-launch, corporate proxy, blocked CDN).
+ *   - `baseline` — five-model hard-coded `BASELINE_MODEL_CATALOG`,
+ *                  truly defensive only.
+ */
+export type RegistrySource = 'remote' | 'cache' | 'bundled' | 'baseline'
+
+const SEED_CATALOG_PATH = '/seed-catalog.json.gz'
+const SEED_INDEX_PATH = '/seed-catalog.idx.json.gz'
+
+/**
+ * Best-effort read of the bundled seed catalog. Returns `null` if the
+ * asset is missing (no prebuild ran, dev mode without seed, build
+ * pipeline skipped) or unreadable (corrupt gzip, schema mismatch).
+ * Never throws.
+ */
+export const getBundledSeedCatalog = async (): Promise<CatalogManifest | null> => {
+  if (typeof window === 'undefined') return null
+  if (!hasDecompressionStream()) return null
+  try {
+    const response = await fetch(SEED_CATALOG_PATH, {
+      method: 'GET',
+      headers: { Accept: 'application/octet-stream' },
+    })
+    if (!response.ok) return null
+    const buf = await response.arrayBuffer()
+    if (buf.byteLength < 1024) return null
+    const text = await gunzipToText(buf)
+    const parsed = JSON.parse(text) as unknown
+    if (!isManifestShape(parsed)) return null
+    if (parsed.schema_version > SUPPORTED_SCHEMA_VERSION) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Best-effort read of the bundled MiniSearch index snapshot.
+ */
+export const getBundledSeedIndex = async (): Promise<CatalogIndexPayload | null> => {
+  if (typeof window === 'undefined') return null
+  if (!hasDecompressionStream()) return null
+  try {
+    const response = await fetch(SEED_INDEX_PATH, {
+      method: 'GET',
+      headers: { Accept: 'application/octet-stream' },
+    })
+    if (!response.ok) return null
+    const buf = await response.arrayBuffer()
+    if (buf.byteLength < 256) return null
+    const text = await gunzipToText(buf)
+    const parsed = JSON.parse(text) as unknown
+    if (!isIndexShape(parsed)) return null
+    if (parsed.index_version > SUPPORTED_INDEX_VERSION) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
 
 export type CatalogFetchResult = {
   manifest: CatalogManifest

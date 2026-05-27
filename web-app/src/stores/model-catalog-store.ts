@@ -15,6 +15,8 @@
 
 import { create } from 'zustand'
 import {
+  getBundledSeedCatalog,
+  getBundledSeedIndex,
   getCatalogOrFallback,
   getCachedCatalog,
   getCachedIndex,
@@ -90,8 +92,48 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
   indexFetchedAt: getCachedIndex()?.fetchedAt ?? null,
   hasInitialized: false,
   refresh: async (options?: FetchOptions) => {
+    const initialState = useModelCatalogStore.getState()
     set({ status: 'loading', error: null })
 
+    // Phase 1: if neither localStorage cache nor a previous successful
+    // refresh has populated the store yet, try the bundled seed snapshot.
+    // It is shipped with the app by `scripts/fetch-seed-catalog.mjs` and
+    // gives the user the full ~2700-model catalog instantly, even on a
+    // brand-new offline machine. We only fire this once per session
+    // (gated on `hasInitialized`) to avoid re-reading the same asset on
+    // every manual refresh.
+    if (
+      !initialState.hasInitialized &&
+      initialState.source === 'baseline'
+    ) {
+      try {
+        const [seedManifest, seedIndex] = await Promise.all([
+          getBundledSeedCatalog(),
+          getBundledSeedIndex(),
+        ])
+        if (seedManifest && seedManifest.models.length > 0) {
+          set({
+            catalog: seedManifest.models,
+            manifestUpdatedAt: seedManifest.updated_at,
+            source: 'bundled',
+            fetchedAt: null,
+            error: null,
+            index: seedIndex ?? null,
+            indexSource: seedIndex ? 'bundled' : 'baseline',
+            indexFetchedAt: null,
+          })
+        }
+      } catch (error) {
+        console.warn(
+          '[model-catalog-store] bundled seed unavailable:',
+          error instanceof Error ? error.message : error
+        )
+      }
+    }
+
+    // Phase 2: network refresh — promotes `source` from 'bundled'/'cache'
+    // to 'remote' on success, or keeps the seed/cache when the remote
+    // call fails. Either way the user already sees a populated UI by now.
     let catalogResult: CatalogFetchResult
     let indexResult: IndexFetchResult
     try {
@@ -102,9 +144,6 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
       catalogResult = catalog
       indexResult = index
     } catch (error) {
-      // Defensive: `getCatalogOrFallback` / `getIndexOrFallback` already
-      // catch network errors and return fallback results. This branch is
-      // here only for synchronous bugs inside the loader itself.
       const message =
         error instanceof Error ? error.message : 'Unknown catalog error'
       console.warn('[model-catalog-store] refresh threw:', message)
@@ -112,16 +151,27 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
       indexResult = baselineIndex(message)
     }
 
+    // If the network came back with `baseline` (everything failed) and
+    // we previously populated from `bundled`, keep the bundled snapshot
+    // — it's strictly better than five emergency entries.
+    const current = useModelCatalogStore.getState()
+    const shouldKeepBundled =
+      catalogResult.source === 'baseline' && current.source === 'bundled'
+
     set({
-      catalog: catalogResult.manifest.models,
-      manifestUpdatedAt: catalogResult.manifestUpdatedAt,
-      source: catalogResult.source,
-      fetchedAt: catalogResult.fetchedAt,
-      status: catalogResult.error ? 'error' : 'success',
-      error: catalogResult.error ?? null,
-      index: indexResult.payload,
-      indexSource: indexResult.source,
-      indexFetchedAt: indexResult.fetchedAt,
+      catalog: shouldKeepBundled ? current.catalog : catalogResult.manifest.models,
+      manifestUpdatedAt: shouldKeepBundled
+        ? current.manifestUpdatedAt
+        : catalogResult.manifestUpdatedAt,
+      source: shouldKeepBundled ? 'bundled' : catalogResult.source,
+      fetchedAt: shouldKeepBundled ? current.fetchedAt : catalogResult.fetchedAt,
+      status: catalogResult.error && !shouldKeepBundled ? 'error' : 'success',
+      error: shouldKeepBundled ? null : catalogResult.error ?? null,
+      index: shouldKeepBundled ? current.index : indexResult.payload,
+      indexSource: shouldKeepBundled ? current.indexSource : indexResult.source,
+      indexFetchedAt: shouldKeepBundled
+        ? current.indexFetchedAt
+        : indexResult.fetchedAt,
       hasInitialized: true,
     })
   },
