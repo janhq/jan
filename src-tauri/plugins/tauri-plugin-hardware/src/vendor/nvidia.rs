@@ -89,7 +89,20 @@ impl GpuInfo {
             let index = match &self.nvidia_info {
                 Some(nvidia_info) => nvidia_info.index,
                 None => {
-                    log::error!("get_usage_nvidia() called on non-NVIDIA GPU");
+                    // Defense-in-depth: the `GpuInfo::get_usage` dispatcher
+                    // in `gpu.rs` now guards this with
+                    // `Vendor::NVIDIA if self.nvidia_info.is_some()`, so
+                    // this branch is unreachable in normal flow. Kept as
+                    // `trace!` (was `error!`, which spammed every poll on
+                    // hosts where NVML and Vulkan returned mismatched
+                    // UUIDs for the same NVIDIA card — see the 2026-05-27
+                    // ADR) in case future call sites bypass the
+                    // dispatcher.
+                    log::trace!(
+                        "get_usage_nvidia called on an entry with no NVML index \
+                         (e.g. a Vulkan-only enumeration of an NVIDIA GPU); \
+                         returning empty usage"
+                    );
                     return self.get_usage_unsupported();
                 }
             };

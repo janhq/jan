@@ -11,6 +11,7 @@ import { toNumber } from '@/utils/number'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DriverOutdatedBanner } from '@/containers/DriverOutdatedBanner'
+import { buildFallbackDevices } from '@/lib/gpuFallback'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitorContent,
@@ -191,6 +192,27 @@ function SystemMonitorContent() {
                     </div>
                   </div>
                 ))
+              ) : hardwareData.gpus.length > 0 ? (
+                <>
+                  {buildFallbackDevices(hardwareData.gpus).map((device) => (
+                    <div key={device.id} className="flex flex-col gap-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">
+                          {device.name}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">VRAM:</span>
+                        <span className="text-foreground">
+                          {formatMegaBytes(device.totalMemoryMiB)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground/80 mt-2">
+                    {t('system-monitor:liveStatsUnavailable')}
+                  </p>
+                </>
               ) : (
                 <div className="text-muted-foreground text-center py-4">
                   {t('system-monitor:noGpus')}

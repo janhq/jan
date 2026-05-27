@@ -17,7 +17,18 @@ impl Vendor {
 impl GpuInfo {
     pub fn get_usage(&self) -> GpuUsage {
         match self.vendor {
-            Vendor::NVIDIA => self.get_usage_nvidia(),
+            // Only dispatch to the NVML path when this entry actually carries
+            // an NVML index. Without this guard, NVIDIA cards that show up
+            // twice in the GPU map — once from NVML and once from Vulkan
+            // enumeration with mismatched UUIDs (a documented NVIDIA quirk:
+            // NVML's CUDA UUID and Vulkan's VkPhysicalDeviceIDProperties
+            // .deviceUUID are not guaranteed to be byte-identical) — would
+            // call `get_usage_nvidia` on the Vulkan-sourced duplicate,
+            // trip the `nvidia_info.is_none()` branch, and spam a
+            // misleading `log::error!("called on non-NVIDIA GPU")` every
+            // poll. See the 2026-05-27 ADR and the commands.rs dedup
+            // comment for the wider story.
+            Vendor::NVIDIA if self.nvidia_info.is_some() => self.get_usage_nvidia(),
             Vendor::AMD => self.get_usage_amd(),
             _ => self.get_usage_unsupported(),
         }

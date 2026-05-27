@@ -228,6 +228,116 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     : {}),
 }
 
+/**
+ * Bundled offline-first fallback for the model catalog registry.
+ *
+ * Lives next to `RECOMMENDED_MODEL_FALLBACKS` above but serves a different
+ * purpose: this list seeds `useModelCatalogStore` when neither the
+ * `localStorage` cache nor the network fetch succeed (e.g. first launch on
+ * an air-gapped machine). Each entry follows the exact `CatalogModel` shape
+ * so the existing download pipeline can act on it without conversion.
+ *
+ * Keep it small (~10 entries) — the goal is for Hub to render something
+ * useful before the real catalog lands, not to mirror the full curated set.
+ */
+export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
+  {
+    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
+    developer: 'unsloth',
+    description:
+      '**Tags**: gguf, gemma4, unsloth, gemma, google, conversational, image-text-to-text',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'unsloth/gemma-4-E4B-it-Q4_K_M',
+        path: `${GEMMA4_HF}/gemma-4-E4B-it-Q4_K_M.gguf`,
+        file_size: '5.0 GB',
+      },
+    ],
+    num_mmproj: 1,
+    mmproj_models: [
+      {
+        model_id: 'mmproj-F16',
+        path: `${GEMMA4_HF}/mmproj-F16.gguf`,
+        file_size: '990.0 MB',
+      },
+    ],
+    num_safetensors: 0,
+    safetensors_files: [],
+    is_mlx: false,
+    readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  {
+    model_name: 'unsloth/Qwen3.5-9B-GGUF',
+    developer: 'unsloth',
+    description: '**Tags**: gguf, qwen3, unsloth, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    num_safetensors: 0,
+    safetensors_files: [],
+    is_mlx: false,
+    readme:
+      'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/README.md',
+  },
+  {
+    model_name: 'unsloth/Llama-3.2-3B-Instruct-GGUF',
+    developer: 'unsloth',
+    description: '**Tags**: gguf, llama, unsloth, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    num_safetensors: 0,
+    safetensors_files: [],
+    is_mlx: false,
+    readme:
+      'https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/README.md',
+  },
+  {
+    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+    developer: 'mlx-community',
+    library_name: 'mlx',
+    description:
+      '**Tags**: mlx, qwen3_5, vision-language-model, 4-bit, conversational',
+    downloads: 73490,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    num_safetensors: 1,
+    safetensors_files: [
+      {
+        model_id: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+        path: `${QWEN_MLX_HF}/model.safetensors`,
+        file_size: '5.6 GB',
+      },
+    ],
+    is_mlx: true,
+    readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+  },
+  {
+    model_name: 'mlx-community/gemma-4-e4b-it-4bit',
+    developer: 'mlx-community',
+    library_name: 'mlx',
+    description: '**Tags**: mlx, gemma4, 4-bit, conversational',
+    downloads: 0,
+    num_quants: 0,
+    quants: [],
+    num_mmproj: 0,
+    mmproj_models: [],
+    num_safetensors: 0,
+    safetensors_files: [],
+    is_mlx: true,
+    readme:
+      'https://huggingface.co/mlx-community/gemma-4-e4b-it-4bit/resolve/main/README.md',
+  },
+]
+
 export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
 export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']
 

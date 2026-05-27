@@ -18,6 +18,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { Button } from '@/components/ui/button'
 import { DriverOutdatedBanner } from '@/containers/DriverOutdatedBanner'
+import { buildFallbackDevices } from '@/lib/gpuFallback'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -375,6 +376,32 @@ function HardwareContent() {
                         </div>
                       </Card>
                     ))
+                  ) : hardwareData.gpus.length > 0 ? (
+                    <>
+                      {buildFallbackDevices(hardwareData.gpus).map(
+                        (device) => (
+                          <Card key={device.id}>
+                            <CardItem
+                              title={device.name}
+                              actions={<></>}
+                            />
+                            <div className="mt-3">
+                              <CardItem
+                                title={t('settings:hardware.vram')}
+                                actions={
+                                  <span className="text-foreground">
+                                    {formatMegaBytes(device.totalMemoryMiB)}
+                                  </span>
+                                }
+                              />
+                            </div>
+                          </Card>
+                        )
+                      )}
+                      <p className="text-xs text-muted-foreground/80 mt-2 px-1">
+                        {t('system-monitor:liveStatsUnavailable')}
+                      </p>
+                    </>
                   ) : (
                     <CardItem title="No devices found" actions={<></>} />
                   )}

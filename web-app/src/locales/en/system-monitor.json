@@ -17,6 +17,7 @@
   "stop": "Stop",
   "activeGpus": "Active GPUs",
   "noGpus": "No GPUs detected",
+  "liveStatsUnavailable": "GPU detected via system enumeration. Live VRAM stats are unavailable for this card — the chosen llama.cpp backend did not return a device list, but the GPU is still usable for inference.",
   "noActiveGpus": "No active GPUs. All GPUs are currently disabled.",
   "vramUsage": "VRAM Usage",
   "driverVersion": "Driver Version:",

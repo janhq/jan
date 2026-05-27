@@ -51,8 +51,9 @@ import type { CatalogModel } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelCatalogStore } from '@/stores/model-catalog-store'
+import { getModelSearchService } from '@/services/model-search'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
@@ -122,14 +123,21 @@ function HubContent() {
         ]
       : []),
   ]
-  const searchOptions = useMemo(
-    () => ({
-      includeScore: true,
-      // Search in `author` and in `tags` array
-      keys: ['model_name', 'quants.model_id', 'safetensors_files.model_id'],
-    }),
-    []
-  )
+  // Subscribe to the model-catalog store so the search service rebuilds
+  // its index whenever a fresh catalog (or pre-built MiniSearch snapshot)
+  // arrives. The store exposes the platform-neutral list; useModelSources
+  // (below) handles MLX/platform filtering before rendering.
+  const catalogSnapshot = useModelCatalogStore((s) => s.catalog)
+  const catalogIndexPayload = useModelCatalogStore((s) => s.index)
+
+  const searchService = useMemo(() => {
+    const svc = getModelSearchService()
+    svc.setCatalog(catalogSnapshot)
+    if (!svc.loadSnapshot(catalogIndexPayload)) {
+      svc.rebuild()
+    }
+    return svc
+  }, [catalogSnapshot, catalogIndexPayload])
 
   const { sources, fetchSources, loading } = useModelSources(
     useShallow((state) => ({
@@ -209,15 +217,32 @@ function HubContent() {
 
   const filteredModels = useMemo(() => {
     let filtered = sortedModels
-    // Apply search filter
+    // Apply search filter via the MiniSearch-powered service. The service
+    // operates on the catalog snapshot held by `model-catalog-store`, so
+    // ranking is unaffected by transient sort/filter state in this
+    // component. We intersect the scored hit set against `sortedModels`
+    // so engine / downloaded toggles keep working.
     if (debouncedSearchValue.length) {
-      const fuse = new Fuse(filtered, searchOptions)
-      // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(
-        /^https?:\/\/[^/]+\//,
-        ''
-      )
-      filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
+      const scored = searchService.search(debouncedSearchValue, { limit: 500 })
+      if (scored.length > 0) {
+        const allowedIds = new Set(filtered.map((m) => m.model_name))
+        const ordered: CatalogModel[] = []
+        const seen = new Set<string>()
+        for (const hit of scored) {
+          if (!allowedIds.has(hit.model_name)) continue
+          if (seen.has(hit.model_name)) continue
+          seen.add(hit.model_name)
+          const original = filtered.find(
+            (m) => m.model_name === hit.model_name
+          )
+          ordered.push(original ?? hit)
+        }
+        filtered = ordered
+      } else {
+        // No MiniSearch hits — fall through to an empty list rather than
+        // a stale `filtered` so the UI surfaces "no results" cleanly.
+        filtered = []
+      }
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
@@ -375,7 +400,7 @@ function HubContent() {
     debouncedSearchValue,
     showOnlyDownloaded,
     huggingFaceRepo,
-    searchOptions,
+    searchService,
     sortSelected,
     sources,
     enrichedOrphans,
@@ -416,10 +441,67 @@ function HubContent() {
   const showRecommendedBlock =
     debouncedSearchValue.length === 0 && !showOnlyDownloaded
 
+  // Long-tail Hugging Face fallback (Path B).
+  //
+  // Trigger only when the curated catalog returns sparse hits for a
+  // non-trivial query. We fan out to HF's public search endpoint, dedupe
+  // against `filteredModels`, and append the result as additional
+  // CatalogModel cards. They land at the tail of the virtual list so
+  // curated hits always rank first.
+  const [hfCandidates, setHfCandidates] = useState<CatalogModel[]>([])
+  const hfCandidatesFetchedForRef = useRef<string>('')
+
+  useEffect(() => {
+    if (showOnlyDownloaded) {
+      setHfCandidates([])
+      hfCandidatesFetchedForRef.current = ''
+      return
+    }
+    const query = debouncedSearchValue.trim()
+    if (query.length < 3 || filteredModels.length >= 5) {
+      if (filteredModels.length >= 5) setHfCandidates([])
+      return
+    }
+    const cacheKey = query.toLowerCase()
+    if (hfCandidatesFetchedForRef.current === cacheKey) return
+    hfCandidatesFetchedForRef.current = cacheKey
+
+    let cancelled = false
+    serviceHub
+      .models()
+      .searchHuggingFaceCandidates(query, huggingfaceToken, 10)
+      .then((candidates) => {
+        if (cancelled) return
+        const seen = new Set(filteredModels.map((m) => m.model_name))
+        if (huggingFaceRepo) seen.add(huggingFaceRepo.model_name)
+        setHfCandidates(
+          candidates.filter((c) => !seen.has(c.model_name) && c.model_name)
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setHfCandidates([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    debouncedSearchValue,
+    filteredModels,
+    showOnlyDownloaded,
+    serviceHub,
+    huggingfaceToken,
+    huggingFaceRepo,
+  ])
+
   //* Каталог рендерится всегда: при поиске/фильтре «скачанные» — сам по себе, иначе под блоком Recommended
   const virtualListModels = useMemo(() => {
-    return filteredModels
-  }, [filteredModels])
+    if (hfCandidates.length === 0) return filteredModels
+    const seen = new Set(filteredModels.map((m) => m.model_name))
+    const tail = hfCandidates.filter(
+      (c) => c.model_name && !seen.has(c.model_name)
+    )
+    return tail.length > 0 ? [...filteredModels, ...tail] : filteredModels
+  }, [filteredModels, hfCandidates])
 
   // Dynamic estimate size based on model state
   const estimateSize = useCallback(
