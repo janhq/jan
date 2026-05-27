@@ -93,7 +93,7 @@ Three engines under the hood, all exposed through one OpenAI-compatible API at `
 
 Speculative-decoding features available across backends:
 
-- **MTP (Multi-Token Prediction)** — a draft model predicts ahead, the full model verifies in one pass. Available on macOS, Windows, and Linux.
+- **MTP (Multi-Token Prediction)** — a draft model predicts ahead, the full model verifies in one pass. Available on macOS and Windows.
 - **DFlash** — block-diffusion speculative decoding for Qwen 3.6, Gemma 4, Kimi K2.5 and others. Apple Silicon only; can't be enabled together with MTP.
 - **Flash Attention** — Settings → `on` / `off` / `auto`.
 
