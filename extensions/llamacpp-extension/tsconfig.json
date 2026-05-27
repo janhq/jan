@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "es2018",
-    "module": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2018", "DOM", "DOM.Iterable"],
     "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
