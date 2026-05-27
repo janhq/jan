@@ -28,46 +28,58 @@ twitter:
 
 import { Tabs, Callout, Steps } from 'nextra/components'
 import { Settings } from 'lucide-react'
-import { DownloadButton } from '@/components/DownloadButton'
 
 # Linux Installation
 Instructions for installing Jan on Linux.
 
 ## Install Jan
 
-<Steps>
+<Callout type="info">
+**Flatpak is the recommended way to install Jan on Linux.** It runs on any distribution and updates automatically through Flathub. Use the `.deb` or AppImage only if you can't use Flatpak.
+</Callout>
 
-### Download
-
-<div className="inline-flex flex-col gap-3">
-  <DownloadButton href="https://app.jan.ai/download/latest/linux-amd64-deb">Download Jan for Ubuntu / Debian</DownloadButton>
-  <DownloadButton href="https://app.jan.ai/download/latest/linux-amd64-appimage">Download Jan AppImage</DownloadButton>
-</div>
-
-### Install
-
-Installation commands:
-
-<Tabs items={['Ubuntu', 'Others']}>
+<Tabs items={['Flatpak (recommended)', '.deb (Ubuntu/Debian)', 'AppImage']}>
 <Tabs.Tab>
 
-##### dpkg
+Install from [Flathub](https://flathub.org/apps/ai.jan.Jan):
 
 ```bash
-sudo dpkg -i jan-linux-amd64-{version}.deb
+flatpak install flathub ai.jan.Jan
 ```
 
-##### apt-get
+Then launch it:
 
 ```bash
-sudo apt-get install ./jan-linux-amd64-{version}.deb
+flatpak run ai.jan.Jan
+```
+
+If you don't have the Flathub remote set up yet:
+
+```bash
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 ```
 
 </Tabs.Tab>
 
 <Tabs.Tab>
 
-From the terminal, run the following commands:
+[Download the `.deb`](https://app.jan.ai/download/latest/linux-amd64-deb), then install it:
+
+```bash
+sudo apt-get install ./jan-linux-amd64-{version}.deb
+```
+
+Or with `dpkg`:
+
+```bash
+sudo dpkg -i jan-linux-amd64-{version}.deb
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+[Download the AppImage](https://app.jan.ai/download/latest/linux-amd64-appimage), then run it:
 
 ```bash
 chmod +x jan-linux-x86_64-{version}.AppImage
@@ -77,8 +89,37 @@ chmod +x jan-linux-x86_64-{version}.AppImage
 </Tabs.Tab>
 </Tabs>
 
-</Steps>
+## Updating Jan
 
+How Jan updates depends on which package you installed:
+
+<Tabs items={['Flatpak (recommended)', 'AppImage', '.deb (Ubuntu/Debian)']}>
+<Tabs.Tab>
+
+Flatpak updates through Flathub along with the rest of your system. The in-app updater is disabled — your package manager handles it:
+
+```bash
+flatpak update ai.jan.Jan
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+The AppImage supports Jan's **built-in auto-updater**. When a new release is available, Jan downloads and applies it in place, then restarts.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+The `.deb` package is **not updated by the in-app updater** — the auto-updater only ships the AppImage as the Linux update artifact. Update the `.deb` manually by downloading the latest package and reinstalling:
+
+```bash
+sudo apt-get install ./jan-linux-amd64-{version}.deb
+```
+
+Your data folder (`~/.local/share/Jan`) and configuration (`~/.config/Jan`) are preserved across reinstalls.
+
+</Tabs.Tab>
+</Tabs>
 
 ## Compatibility
 
@@ -181,7 +222,15 @@ Requires Vulkan support.
 ## Uninstall Jan
 
 Removal commands:
-<Tabs items={['Ubuntu', 'Others']}>
+<Tabs items={['Flatpak', '.deb (Ubuntu/Debian)', 'AppImage']}>
+<Tabs.Tab>
+
+```bash
+flatpak uninstall ai.jan.Jan
+rm -rf ~/.local/share/Jan   # data folder (models, threads, logs)
+rm -rf ~/.config/Jan        # app configuration
+```
+</Tabs.Tab>
 <Tabs.Tab>
 
 ```bash
