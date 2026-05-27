@@ -6,11 +6,12 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 
 <a href="https://github.com/AtomicBot-ai/Atomic-Chat/stargazers"><img src="https://img.shields.io/github/stars/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Stars&color=f5c542" alt="Stars" /></a>&nbsp;
 <a href="https://github.com/AtomicBot-ai/Atomic-Chat/network/members"><img src="https://img.shields.io/github/forks/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Forks&color=4ac1f2" alt="Forks" /></a>&nbsp;
+<a href="https://github.com/AtomicBot-ai/Atomic-Chat/graphs/contributors"><img src="https://img.shields.io/badge/Contributors-10-ff69b4?style=flat&logo=github" alt="Contributors" /></a>&nbsp;
 <a href="https://github.com/AtomicBot-ai/Atomic-Chat/commits/main"><img src="https://img.shields.io/github/last-commit/AtomicBot-ai/Atomic-Chat?style=flat&label=Last%20Commit&color=blueviolet" alt="Last Commit" /></a>&nbsp;
 <img src="https://img.shields.io/badge/Built_with-Tauri-FFC131?style=flat&logo=tauri&logoColor=white" alt="Tauri" />&nbsp;
 <img src="https://img.shields.io/badge/Runtime-Node.js_≥20-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js" />
 
-[Getting Started](https://atomic.chat/) · [Discord](https://discord.com/invite/BkeeDCmPYM) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
+[Getting Started](https://atomic.chat/) · [Discord](https://discord.com/invite/8wGSsvmg4V) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
 
 <p align="center">
   <img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/preview.png" width="100%" alt="Atomic Chat Interface" />
@@ -22,34 +23,81 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 
 |                       |                                                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS (Universal)** | [Atomic.Chat_1.1.66_universal.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.66/Atomic.Chat_1.1.66_universal.dmg) |
-| **Windows (x64)**     | [Atomic.Chat_1.1.66_x64-setup.exe](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.66/Atomic.Chat_1.1.66_x64-setup.exe) |
+| **macOS (Universal)** | [Atomic.Chat_1.1.83_universal.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.83/Atomic.Chat_1.1.83_universal.dmg) |
+| **Windows (x64)**     | [Atomic.Chat_1.1.83_x64-setup.exe](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.83/Atomic.Chat_1.1.83_x64-setup.exe) |
 | **iOS**               | [App Store](https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226)                                           |
 
-Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
+Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases) — latest: [v1.1.83](https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.1.83).
+
+---
+
+### Contributors
+
+Atomic Chat is built by a small team and a handful of community contributors. Pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
+
+<a href="https://github.com/Vect0rM"><img src="https://images.weserv.nl/?url=https://github.com/Vect0rM.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="Vect0rM" /></a>
+<a href="https://github.com/dtorey-d"><img src="https://images.weserv.nl/?url=https://github.com/dtorey-d.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="dtorey-d" /></a>
+<a href="https://github.com/MaxKoshJob"><img src="https://images.weserv.nl/?url=https://github.com/MaxKoshJob.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="MaxKoshJob" /></a>
+<a href="https://github.com/Albert-Atomic"><img src="https://images.weserv.nl/?url=https://github.com/Albert-Atomic.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="Albert-Atomic" /></a>
+<a href="https://github.com/yanalialiuk"><img src="https://images.weserv.nl/?url=https://github.com/yanalialiuk.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="yanalialiuk" /></a>
+<a href="https://github.com/corevibe555"><img src="https://images.weserv.nl/?url=https://github.com/corevibe555.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="corevibe555" /></a>
+<a href="https://github.com/claytonlin1110"><img src="https://images.weserv.nl/?url=https://github.com/claytonlin1110.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="claytonlin1110" /></a>
+<a href="https://github.com/Fieldnote-Echo"><img src="https://images.weserv.nl/?url=https://github.com/Fieldnote-Echo.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="Fieldnote-Echo" /></a>
+<a href="https://github.com/Angelopgit"><img src="https://images.weserv.nl/?url=https://github.com/Angelopgit.png&w=120&h=120&fit=cover&mask=circle" width="60" height="60" alt="Angelopgit" /></a>
 
 ---
 
 ### Features
 
-- 🧠 **Local AI Models** — download and run LLMs (Llama, Gemma, Qwen, and more) from HuggingFace
-- ⚡ **Fast Inference Engines** — TurboQuant-optimized llama.cpp on all platforms, MLX for Apple Silicon
-- ☁️ **Cloud Integration** — connect to OpenAI, Anthropic, Mistral, Groq, MiniMax, and others
-- 🤖 **Custom Assistants** — create specialized AI assistants for your tasks
-- 🔌 **OpenAI-Compatible API** — local server at `localhost:1337` for other applications
-- 🔗 **Model Context Protocol** — MCP integration for agentic capabilities
-- 🔒 **Privacy First** — everything runs locally when you want it to
+**Local models**
+
+- Run open-weight LLMs locally from HuggingFace — Llama, Gemma, Qwen, Mistral, Phi, and others
+- Multi-Token Prediction (MTP) speculative decoding — 30–70% throughput boost on supported models, up to 3× on Gemma 4
+- DFlash block-diffusion decoding — up to 6× faster on Qwen 3.6, Gemma 4, Kimi K2.5
+- Flash Attention toggle (`on` / `off` / `auto`)
+- Automatic reasoning-context tracking for chain-of-thought models
+- Auto context-window expansion with overflow notifications
+
+**Cloud models**
+
+- Built-in providers: OpenAI, Anthropic, Mistral, Groq, MiniMax, Qwen, Moonshot
+- Bring your own key, switch model per chat, mix local and cloud freely
+
+**Tools & integrations**
+
+- Connect multiple [MCP](https://modelcontextprotocol.io/) servers — bring your own tools, file access, web search
+- In-app log viewer for MCP tool calls
+- Custom assistants with per-assistant system prompts
+- Projects with conversation tree view in the sidebar
+
+**Local API**
+
+- OpenAI-compatible server at `http://localhost:1337/v1` — drop-in replacement for the OpenAI SDK
+- Works with any agent, CLI, or IDE plugin that speaks the OpenAI API
+- Bound to `127.0.0.1` by default; set `host: 0.0.0.0` to expose on LAN
+
+**Privacy**
+
+- Everything runs locally when you want it to — local server is loopback-only by default
+- Your conversations and keys stay on your machine
 
 ---
 
 ### Inference Engines
 
-Atomic Chat ships its own optimized inference stack so models run fast on whatever hardware you have:
+Three engines under the hood, all exposed through one OpenAI-compatible API at `http://localhost:1337/v1`:
 
-- **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our fork of `llama.cpp` with TurboQuant optimizations for faster quantized inference. Works on macOS, Windows, and Linux across CPU and GPU backends.
-- **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)** — Apple Silicon-native engine for vision-language models, running directly on the Neural Engine and unified memory. Faster than llama.cpp on M-series chips for supported models.
+- **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our `llama.cpp` fork with TurboQuant optimizations for faster quantized inference. Cross-platform (macOS, Windows, Linux), CPU and GPU.
+- **Upstream [llama.cpp](https://github.com/ggml-org/llama.cpp)** — official `ggml-org` build, used on Windows by default for the widest hardware coverage and MTP support.
+- **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)** — Apple Silicon-native engine for vision-language models, running on the Neural Engine and unified memory. Faster than llama.cpp on M-series chips for supported models.
 
-The local API server at `http://localhost:1337/v1` exposes models from both engines through a single OpenAI-compatible endpoint — tools don't need to know which backend is running underneath.
+Speculative-decoding features available across backends:
+
+- **MTP (Multi-Token Prediction)** — a draft model predicts ahead, the full model verifies in one pass. Available on macOS, Windows, and Linux.
+- **DFlash** — block-diffusion speculative decoding for Qwen 3.6, Gemma 4, Kimi K2.5 and others. Apple Silicon only; can't be enabled together with MTP.
+- **Flash Attention** — Settings → `on` / `off` / `auto`.
+
+Tools talking to `http://localhost:1337/v1` don't need to know which backend is running underneath — switch engines without reconfiguring clients.
 
 ---
 
@@ -125,27 +173,15 @@ If something isn't working:
 
 1. Copy your error logs and system specs
 2. Open an issue on [GitHub](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-3. Or ask for help in our [](https://.com/invite/BkeeDCmPYM) `#🆘|atomic-chat-help` channel
+3. Or ask for help in our [Discord](https://discord.com/invite/8wGSsvmg4V)
 
 ---
 
-### Contributing
+### Star History
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-<p align="center">
-  <a href="https://discord.com/invite/BkeeDCmPYM"><img src="https://img.shields.io/badge/💬_Chat_on-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/issues"><img src="https://img.shields.io/badge/🐛_Report-Issues-FF4444?style=for-the-badge" alt="Report Issues" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/pulls"><img src="https://img.shields.io/badge/🔀_Submit-PRs-44CC11?style=for-the-badge" alt="Submit PRs" /></a>
-</p>
-
----
-
-### Contact
-
-- **Bugs**: [GitHub Issues](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-- **General Discussion**: [Discord](https://discord.com/invite/BkeeDCmPYM)
-- **Updates**: [X / Twitter](https://x.com/atomic_chat_hq)
+<a href="https://star-history.com/#AtomicBot-ai/Atomic-Chat&Date">
+  <img src="https://api.star-history.com/svg?repos=AtomicBot-ai/Atomic-Chat&type=Date" width="100%" alt="Star History" />
+</a>
 
 ---
 
@@ -157,7 +193,7 @@ Apache 2.0 — see [LICENSE](LICENSE) for details.
 
 Built on the shoulders of giants:
 
-- [Llama.cpp](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)
+- [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - [MLX-VLM](https://github.com/Blaizzy/mlx-vlm)
 - [Tauri](https://tauri.app/)
 - [Scalar](https://github.com/scalar/scalar)
