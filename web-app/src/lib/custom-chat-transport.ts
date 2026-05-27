@@ -36,7 +36,7 @@ import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
-import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
+import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
 
 export type TokenUsageCallback = (
@@ -897,8 +897,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // split it into separate messages so convertToModelMessages produces the
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
+    const effectiveApiType = getProviderApiType(provider)
     let messagesToConvert = (() => {
-      if (effectiveProviderName !== 'anthropic') {
+      if (effectiveApiType !== 'anthropic') {
         return options.messages
       }
       return options.messages.flatMap((message) => {

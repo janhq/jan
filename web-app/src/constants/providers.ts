@@ -1,3 +1,30 @@
+export const anthropicProviderSettings = [
+  {
+    key: 'api-key',
+    title: 'API Key',
+    description:
+      "The Anthropic API uses API keys for authentication. Visit your [API Keys](https://console.anthropic.com/settings/keys) page to retrieve the API key you'll use in your requests.",
+    controller_type: 'input',
+    controller_props: {
+      placeholder: 'Insert API Key',
+      value: '',
+      type: 'password',
+      input_actions: ['unobscure', 'copy'],
+    },
+  },
+  {
+    key: 'base-url',
+    title: 'Base URL',
+    description:
+      'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/getting-started) for more information.',
+    controller_type: 'input',
+    controller_props: {
+      placeholder: 'https://api.anthropic.com/v1',
+      value: 'https://api.anthropic.com/v1',
+    },
+  },
+]
+
 export const openAIProviderSettings = [
   {
     key: 'api-key',
@@ -76,6 +103,7 @@ export const predefinedProviders = [
     api_key: '',
     base_url: 'https://api.anthropic.com/v1',
     provider: 'anthropic',
+    api_type: 'anthropic',
     explore_models_url:
       'https://docs.anthropic.com/en/docs/about-claude/models',
     settings: [

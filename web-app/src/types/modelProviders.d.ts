@@ -47,6 +47,8 @@ type Model = {
 /**
  * The provider object structure
  */
+type ProviderApiType = 'openai' | 'anthropic'
+
 type ProviderObject = {
   active: boolean
   provider: string
@@ -59,6 +61,8 @@ type ProviderObject = {
   models: Model[]
   persist?: boolean
   custom_header?: ProviderCustomHeader[] | null
+  /** Wire format of the provider's HTTP API. Missing = 'openai' (default). */
+  api_type?: ProviderApiType
 }
 
 /**

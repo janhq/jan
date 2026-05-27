@@ -70,6 +70,7 @@ import {
   resolveProviderCaps,
   isModelLevelRejected,
   getMutualExclusionDrops,
+  getProviderApiType,
 } from '@/lib/providerCaps'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -205,7 +206,11 @@ function stripUnsupportedSamplers(
   modelId: string
 ): Record<string, unknown> {
   const caps = resolveProviderCaps(provider)
-  const exclusionDrops = getMutualExclusionDrops(parameters, provider.provider)
+  const exclusionDrops = getMutualExclusionDrops(
+    parameters,
+    provider.provider,
+    getProviderApiType(provider)
+  )
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(parameters)) {
     if (exclusionDrops.has(k)) continue
@@ -606,6 +611,13 @@ export class ModelFactory {
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
     parameters = stripUnsupportedSamplers(parameters, provider, modelId)
+
+    // Wire-format dispatch wins over name-based dispatch — custom providers
+    // pointing at Anthropic-compatible proxies (LiteLLM, Bedrock gateways)
+    // need the Anthropic SDK regardless of the user-chosen provider name.
+    if (getProviderApiType(provider) === 'anthropic' && providerName !== 'anthropic') {
+      return this.createAnthropicModel(modelId, provider, parameters)
+    }
 
     switch (providerName) {
       case 'llamacpp':

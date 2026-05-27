@@ -158,10 +158,22 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
 }
 
 export function resolveProviderCaps(
-  provider: Pick<ProviderObject, 'provider'> | string
+  provider: Pick<ProviderObject, 'provider' | 'api_type'> | string
 ): ProviderCaps {
+  if (typeof provider !== 'string' && provider.api_type === 'anthropic') {
+    return ANTHROPIC
+  }
   const id = typeof provider === 'string' ? provider : provider.provider
   return BUILTIN_CAPS[id] ?? CUSTOM_PERMISSIVE
+}
+
+/** Wire format the provider speaks. Defaults to 'openai' when unset. */
+export function getProviderApiType(
+  provider: Pick<ProviderObject, 'provider' | 'api_type'> | undefined | null
+): ProviderApiType {
+  if (!provider) return 'openai'
+  if (provider.api_type) return provider.api_type
+  return provider.provider === 'anthropic' ? 'anthropic' : 'openai'
 }
 
 const LOCAL_PROVIDER_IDS = new Set<string>(['llamacpp', 'mlx'])
@@ -210,10 +222,11 @@ const GROK_NO_PENALTY_RE = /^grok-[3-9]/i
  */
 export function getMutualExclusionDrops(
   parameters: Record<string, unknown>,
-  providerId: string
+  providerId: string,
+  apiType: ProviderApiType = 'openai'
 ): Set<string> {
   const drops = new Set<string>()
-  if (providerId === 'anthropic') {
+  if (providerId === 'anthropic' || apiType === 'anthropic') {
     if ('temperature' in parameters && 'top_p' in parameters) {
       drops.add('top_p')
     }
