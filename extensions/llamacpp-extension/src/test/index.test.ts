@@ -425,7 +425,7 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('migrateFitDefault', () => {
+  describe('migrateFitOff', () => {
     beforeEach(() => {
       vi.mocked(localStorage.getItem).mockReturnValue(null)
     })
@@ -435,7 +435,7 @@ describe('llamacpp_extension', () => {
       extension['config'] = { fit: true } as any
       extension['getSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
     })
@@ -445,11 +445,11 @@ describe('llamacpp_extension', () => {
       extension['getSettings'] = vi.fn()
       extension['updateSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
       expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
 
     it('should disable fit when it is true', async () => {
@@ -460,13 +460,13 @@ describe('llamacpp_extension', () => {
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
       expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
       expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
       expect(extension['config'].fit).toBe(false)
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
 
     it('should not modify other settings during fit migration', async () => {
@@ -478,7 +478,7 @@ describe('llamacpp_extension', () => {
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
       expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')

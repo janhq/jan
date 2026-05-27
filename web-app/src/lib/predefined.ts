@@ -3,11 +3,11 @@ export const modelSettings = {
     key: 'ctx_len',
     title: 'Context Size',
     description:
-      'Size of the prompt context. Leave empty to auto-fit when --fit is on, or fall back to 4096 when off.',
+      'Size of the prompt context. Leave empty to auto-fit when --fit is on.',
     controller_type: 'input',
     controller_props: {
-      value: '',
-      placeholder: 'auto',
+      value: 8192,
+      placeholder: '8192',
       type: 'number',
     },
   },

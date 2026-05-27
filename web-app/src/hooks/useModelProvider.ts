@@ -800,9 +800,28 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 16 && state?.providers) {
+          // Auto-fit is now disabled by default, so seed empty/auto ctx_len
+          // with the new 8192 default. Preserve any user-customised value.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              const ctx = model.settings?.ctx_len as
+                | { controller_props?: { value?: unknown } }
+                | undefined
+              const controllerProps = ctx?.controller_props
+              if (!controllerProps) return
+              const value = controllerProps.value
+              if (value === '' || value == null) {
+                controllerProps.value = 8192
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 16,
+      version: 17,
     }
   )
 )
