@@ -23,6 +23,7 @@ import {
   DownloadEvent,
   chatCompletionRequestMessage,
   SettingComponentProps,
+  DropdownComponentProps,
 } from '@janhq/core'
 import {
   readSettingsFile,
@@ -1194,14 +1195,16 @@ export default class llamacpp_extension extends AIEngine {
     const allBackends = Array.from(
       new Set(version_backends.map((b) => b.backend))
     )
-    versionSetting.controllerProps.options = allVersions.map((v) => ({
-      value: v,
-      name: v,
-    }))
-    backendSetting.controllerProps.options = allBackends.map((b) => ({
-      value: b,
-      name: b,
-    }))
+    ;(versionSetting.controllerProps as DropdownComponentProps).options =
+      allVersions.map((v) => ({
+        value: v,
+        name: v,
+      }))
+    ;(backendSetting.controllerProps as DropdownComponentProps).options =
+      allBackends.map((b) => ({
+        value: b,
+        name: b,
+      }))
 
     const currentV = String(versionSetting.controllerProps.value ?? '')
     const currentB = String(backendSetting.controllerProps.value ?? '')
