@@ -391,4 +391,48 @@ describe('useModelProvider migrations', () => {
     expect(migratedState.providers[0].base_url).toBe('https://api.mistral.ai/v1')
     expect(migratedState.providers[1].base_url).toBe('https://api.openai.com/v1')
   })
+
+  it('backfills api_type on the built-in anthropic provider (v15 → v16)', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'anthropic',
+          models: [],
+          base_url: 'https://api.anthropic.com/v1',
+          settings: [],
+        },
+        {
+          provider: 'openai',
+          models: [],
+          base_url: 'https://api.openai.com/v1',
+          settings: [],
+        },
+        {
+          provider: 'my-anthropic-proxy',
+          models: [],
+          api_type: 'anthropic',
+          base_url: 'https://proxy.example.com/v1',
+          settings: [],
+        },
+      ],
+      selectedProvider: 'anthropic',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 15)
+    const [anthropic, openai, customAnthropic] = migratedState.providers
+
+    expect(anthropic.api_type).toBe('anthropic')
+    expect(openai.api_type).toBeUndefined()
+    // Pre-set api_type must round-trip untouched.
+    expect(customAnthropic.api_type).toBe('anthropic')
+  })
 })

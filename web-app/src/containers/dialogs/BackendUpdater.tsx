@@ -28,10 +28,13 @@ const BackendUpdater = () => {
     }
   }
 
-  // Check when the shell mounts or when the llamacpp provider is toggled on/off
+  // Check when the shell mounts or when the llamacpp provider is toggled on/off.
+  // Skipped when auto-update is disabled — users opt into checks via the manual
+  // "Check for Updates" button in provider settings.
   useEffect(() => {
+    if (!updateState.autoUpdateEnabled) return
     checkForUpdate()
-  }, [checkForUpdate, isLlamacppEnabled])
+  }, [checkForUpdate, isLlamacppEnabled, updateState.autoUpdateEnabled])
 
   const [backendUpdateState, setBackendUpdateState] = useState({
     remindMeLater: false,

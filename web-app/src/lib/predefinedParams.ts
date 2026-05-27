@@ -1,158 +1,359 @@
-export const paramsSettings = {
+/**
+ * Sampling-parameter schema.
+ *
+ * Each ParamDef carries enough metadata for the UI to render the right
+ * widget, validate values in isolation, and reason about mutual-exclusion
+ * with other params (e.g. mirostat overrides top_k/top_p). Provider
+ * applicability is expressed through `capability`, not provider IDs, so
+ * provider-capability mapping lives in one place (resolveProviderCaps).
+ */
+
+export type ParamControllerType =
+  | 'slider'
+  | 'input'
+  | 'checkbox'
+  | 'dropdown'
+  | 'textarea'
+
+export type SamplerCap =
+  | 'core'
+  | 'penalties'
+  | 'top_k'
+  | 'min_p'
+  | 'repetition'
+  | 'mirostat'
+  | 'dry'
+  | 'xtc'
+  | 'dynatemp'
+  | 'typical_p'
+  | 'top_n_sigma'
+  | 'grammar'
+  | 'json_schema'
+  | 'ignore_eos'
+  | 'client_only'
+
+export interface ParamControllerProps {
+  min?: number
+  max?: number
+  step?: number
+  /** Values strictly greater than this render as a "warn" segment. */
+  warnAbove?: number
+  /** Values strictly less than this render as a "warn" segment. */
+  warnBelow?: number
+  placeholder?: string
+  rows?: number
+  options?: Array<{ value: number | string; name: string }>
+}
+
+export interface ParamDef {
+  key: string
+  title: string
+  description: string
+  /** Default value; type witness for the param. */
+  value: string | number | boolean
+  controllerType: ParamControllerType
+  controllerProps?: ParamControllerProps
+  /** Drives provider gating and outbound filtering. */
+  capability: SamplerCap
+  /**
+   * Returns a short human reason when this param should be disabled given
+   * the other current values (e.g. "Controlled by Mirostat"), else null.
+   */
+  disabledBy?: (vals: Record<string, unknown>) => string | null
+  /** Plain-English one-liner shown under the control. */
+  effectHint?: string
+}
+
+export const paramsSettings: Record<string, ParamDef> = {
   stream: {
     key: 'stream',
-    value: true,
     title: 'Stream',
-    description: `Enables real-time response streaming.`,
+    description: 'Enables real-time response streaming.',
+    value: true,
+    controllerType: 'checkbox',
+    capability: 'core',
   },
   max_context_tokens: {
     key: 'max_context_tokens',
-    value: 0,
     title: 'Max Context Tokens',
-    description: `Total token budget (input + output) for the model. When set (> 0), older messages are automatically trimmed or compacted to stay within this limit. Set to 0 to disable (no trimming). Common values: 4096, 8192, 16384, 32768, 128000.`,
+    description:
+      'Total token budget (input + output). Older messages are trimmed/compacted to stay within this. 0 disables trimming.',
+    value: 0,
+    controllerType: 'input',
+    controllerProps: { min: 0, step: 1 },
+    capability: 'client_only',
   },
   max_output_tokens: {
     key: 'max_output_tokens',
-    value: 2048,
     title: 'Max Output Tokens',
-    description: `Maximum number of tokens the model can generate in a single reply. Sent as max_tokens to OpenAI-compatible APIs.`,
+    description:
+      'Maximum tokens the model may generate in one reply. Sent as max_tokens to OpenAI-compatible APIs.',
+    value: 2048,
+    controllerType: 'input',
+    controllerProps: { min: 0, step: 1 },
+    capability: 'core',
   },
   auto_compact: {
     key: 'auto_compact',
-    value: false,
     title: 'Auto Compact',
-    description: `When enabled and context limit is reached, automatically summarize older messages instead of dropping them. Preserves conversation meaning while reducing token usage. Requires max_context_tokens to be set.`,
+    description:
+      'When context limit is reached, summarize older messages instead of dropping them. Requires Max Context Tokens to be set.',
+    value: false,
+    controllerType: 'checkbox',
+    capability: 'client_only',
   },
   temperature: {
     key: 'temperature',
-    value: 0.7,
     title: 'Temperature',
-    description: `Controls response randomness. Higher values produce more creative, varied responses. `,
-  },
-  frequency_penalty: {
-    key: 'frequency_penalty',
+    description: 'Controls response randomness.',
     value: 0.7,
-    title: 'Frequency Penalty',
-    description: `Reduces word repetition. Higher values encourage more varied language. Useful for creative writing and content generation.`,
-  },
-  presence_penalty: {
-    key: 'presence_penalty',
-    value: 0.7,
-    title: 'Presence Penalty',
-    description: `Encourages the model to explore new topics. Higher values help prevent the model from fixating on already-discussed subjects.`,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 2, step: 0.05, warnAbove: 1.5 },
+    capability: 'core',
+    effectHint: 'Higher = more varied; 0 = deterministic.',
   },
   top_p: {
     key: 'top_p',
-    value: 0.95,
     title: 'Top P',
-    description: `Set probability threshold for more relevant outputs. Higher values allow more diverse word choices.`,
+    description:
+      'Nucleus sampling threshold. Higher values allow more diverse word choices.',
+    value: 0.95,
     controllerType: 'slider',
+    controllerProps: { min: 0, max: 1, step: 0.01 },
+    capability: 'core',
+    disabledBy: (v) =>
+      Number(v.temperature) === 0
+        ? 'Ignored when Temperature is 0'
+        : Number(v.mirostat) > 0
+          ? 'Controlled by Mirostat'
+          : null,
   },
   top_k: {
     key: 'top_k',
-    value: 2,
     title: 'Top K',
+    description: 'Sample from the top K most likely tokens. 0 = disabled.',
+    value: 40,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 200, step: 1 },
+    capability: 'top_k',
+    disabledBy: (v) =>
+      Number(v.temperature) === 0
+        ? 'Ignored when Temperature is 0'
+        : Number(v.mirostat) > 0
+          ? 'Controlled by Mirostat'
+          : null,
+  },
+  min_p: {
+    key: 'min_p',
+    title: 'Min P',
+    description: 'Minimum relative probability for a token to be considered.',
+    value: 0.05,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 1, step: 0.01 },
+    capability: 'min_p',
+    disabledBy: (v) =>
+      Number(v.mirostat) > 0 ? 'Controlled by Mirostat' : null,
+  },
+  frequency_penalty: {
+    key: 'frequency_penalty',
+    title: 'Frequency Penalty',
+    description: 'Reduces word repetition based on prior frequency.',
+    value: 0,
+    controllerType: 'slider',
+    controllerProps: { min: -2, max: 2, step: 0.05, warnAbove: 1.5 },
+    capability: 'penalties',
+  },
+  presence_penalty: {
+    key: 'presence_penalty',
+    title: 'Presence Penalty',
+    description: 'Encourages the model to introduce new topics.',
+    value: 0,
+    controllerType: 'slider',
+    controllerProps: { min: -2, max: 2, step: 0.05, warnAbove: 1.5 },
+    capability: 'penalties',
+  },
+  repeat_penalty: {
+    key: 'repeat_penalty',
+    title: 'Repeat Penalty',
     description:
-      'Number of most relevant documents to retrieve. Higher values return more results.',
+      'llama.cpp-style multiplicative penalty for repeated tokens. 1.0 = disabled.',
+    value: 1.1,
+    controllerType: 'slider',
+    controllerProps: { min: 1, max: 2, step: 0.01, warnAbove: 1.3 },
+    capability: 'repetition',
   },
   mirostat: {
     key: 'mirostat',
-    value: 0,
     title: 'Mirostat',
-    description: `Mirostat sampling mode (llama.cpp only). 0 = disabled, 1 = Mirostat v1, 2 = Mirostat v2.`,
+    description: 'Adaptive perplexity-targeting sampler.',
+    value: 0,
+    controllerType: 'dropdown',
+    controllerProps: {
+      options: [
+        { value: 0, name: 'Off' },
+        { value: 1, name: 'v1' },
+        { value: 2, name: 'v2' },
+      ],
+    },
+    capability: 'mirostat',
+    effectHint: 'When enabled, overrides Top K / Top P / Min P.',
   },
   mirostat_tau: {
     key: 'mirostat_tau',
-    value: 5.0,
     title: 'Mirostat Tau',
-    description: `Mirostat target entropy (llama.cpp only). Lower values produce more focused output.`,
+    description: 'Target entropy. Lower = more focused.',
+    value: 5.0,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 10, step: 0.1 },
+    capability: 'mirostat',
+    disabledBy: (v) =>
+      Number(v.mirostat) === 0 ? 'Enable Mirostat to use' : null,
   },
   mirostat_eta: {
     key: 'mirostat_eta',
-    value: 0.1,
     title: 'Mirostat Eta',
-    description: `Mirostat learning rate (llama.cpp only).`,
+    description: 'Mirostat learning rate.',
+    value: 0.1,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 1, step: 0.01 },
+    capability: 'mirostat',
+    disabledBy: (v) =>
+      Number(v.mirostat) === 0 ? 'Enable Mirostat to use' : null,
   },
   grammar: {
     key: 'grammar',
-    value: '',
     title: 'Grammar (GBNF)',
-    description: `GBNF grammar string to constrain generations (llama.cpp only). Paste the grammar contents directly.`,
+    description: 'GBNF grammar to constrain generations.',
+    value: '',
+    controllerType: 'textarea',
+    controllerProps: { rows: 4, placeholder: 'root ::= ...' },
+    capability: 'grammar',
   },
   json_schema: {
     key: 'json_schema',
-    value: '',
     title: 'JSON Schema',
-    description: `JSON schema string to constrain generations as valid JSON (llama.cpp only).`,
+    description: 'JSON schema constraining the output to valid JSON.',
+    value: '',
+    controllerType: 'textarea',
+    controllerProps: { rows: 4, placeholder: '{"type":"object", ...}' },
+    capability: 'json_schema',
   },
   typical_p: {
     key: 'typical_p',
-    value: 1.0,
     title: 'Typical P',
-    description: `Locally-typical sampling (llama.cpp only). 1.0 = disabled. Lower values bias toward tokens whose probability is close to the conditional entropy.`,
+    description: 'Locally-typical sampling. 1.0 = disabled.',
+    value: 1.0,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 1, step: 0.01 },
+    capability: 'typical_p',
   },
   top_n_sigma: {
     key: 'top_n_sigma',
-    value: -1.0,
     title: 'Top N Sigma',
-    description: `Top-n-sigma sampling (llama.cpp only). -1 = disabled. Filters tokens by standard deviations above the max logit.`,
+    description: 'Filter by standard deviations above the max logit. -1 = off.',
+    value: -1.0,
+    controllerType: 'slider',
+    controllerProps: { min: -1, max: 10, step: 0.1 },
+    capability: 'top_n_sigma',
   },
   dynatemp_range: {
     key: 'dynatemp_range',
-    value: 0.0,
     title: 'Dynamic Temperature Range',
-    description: `Dynamic temperature range (llama.cpp only). 0 = disabled. The effective temperature is sampled in [temperature - range, temperature + range].`,
+    description:
+      'Effective temperature is sampled in [temperature - range, temperature + range]. 0 = off.',
+    value: 0.0,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 2, step: 0.05 },
+    capability: 'dynatemp',
   },
   dynatemp_exp: {
     key: 'dynatemp_exp',
-    value: 1.0,
     title: 'Dynamic Temperature Exponent',
-    description: `Dynamic temperature exponent (llama.cpp only). Shapes the temperature distribution within the dynamic range.`,
+    description: 'Shapes the temperature distribution within the range.',
+    value: 1.0,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 5, step: 0.1 },
+    capability: 'dynatemp',
+    disabledBy: (v) =>
+      Number(v.dynatemp_range) === 0 ? 'Set Dynamic Temperature Range > 0' : null,
   },
   xtc_probability: {
     key: 'xtc_probability',
-    value: 0.0,
     title: 'XTC Probability',
-    description: `Probability of activating the XTC (Exclude Top Choices) sampler (llama.cpp only). 0 = disabled.`,
+    description: 'Probability of activating the Exclude-Top-Choices sampler.',
+    value: 0.0,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 1, step: 0.01 },
+    capability: 'xtc',
   },
   xtc_threshold: {
     key: 'xtc_threshold',
-    value: 0.1,
     title: 'XTC Threshold',
-    description: `Minimum probability of a token to be considered for XTC exclusion (llama.cpp only). Only used when XTC probability > 0.`,
+    description: 'Minimum token probability to be eligible for XTC exclusion.',
+    value: 0.1,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 1, step: 0.01 },
+    capability: 'xtc',
+    disabledBy: (v) =>
+      Number(v.xtc_probability) === 0 ? 'Set XTC Probability > 0' : null,
   },
   dry_multiplier: {
     key: 'dry_multiplier',
-    value: 0.0,
     title: 'DRY Multiplier',
-    description: `DRY (Don't Repeat Yourself) penalty multiplier (llama.cpp only). 0 = disabled. Penalizes sequences that have appeared before in the context.`,
+    description:
+      "Don't-Repeat-Yourself penalty multiplier. 0 = disabled.",
+    value: 0.0,
+    controllerType: 'slider',
+    controllerProps: { min: 0, max: 5, step: 0.1 },
+    capability: 'dry',
   },
   dry_base: {
     key: 'dry_base',
-    value: 1.75,
     title: 'DRY Base',
-    description: `DRY penalty base (llama.cpp only). Exponential base for penalty growth as repeated-sequence length increases.`,
+    description: 'Exponential base for penalty growth.',
+    value: 1.75,
+    controllerType: 'slider',
+    controllerProps: { min: 1, max: 4, step: 0.05 },
+    capability: 'dry',
+    disabledBy: (v) =>
+      Number(v.dry_multiplier) === 0 ? 'Set DRY Multiplier > 0' : null,
   },
   dry_allowed_length: {
     key: 'dry_allowed_length',
-    value: 2,
     title: 'DRY Allowed Length',
-    description: `Minimum repeated-sequence length before DRY starts penalizing (llama.cpp only).`,
+    description: 'Minimum repeated-sequence length before DRY engages.',
+    value: 2,
+    controllerType: 'slider',
+    controllerProps: { min: 1, max: 20, step: 1 },
+    capability: 'dry',
+    disabledBy: (v) =>
+      Number(v.dry_multiplier) === 0 ? 'Set DRY Multiplier > 0' : null,
   },
   dry_penalty_last_n: {
     key: 'dry_penalty_last_n',
-    value: -1,
     title: 'DRY Penalty Window',
-    description: `Window of recent tokens DRY scans for repetitions (llama.cpp only). 0 = disabled, -1 = full context.`,
+    description: 'Recent-token window DRY scans. -1 = full context, 0 = off.',
+    value: -1,
+    controllerType: 'input',
+    controllerProps: { min: -1, step: 1 },
+    capability: 'dry',
+    disabledBy: (v) =>
+      Number(v.dry_multiplier) === 0 ? 'Set DRY Multiplier > 0' : null,
   },
   ignore_eos: {
     key: 'ignore_eos',
-    value: false,
     title: 'Ignore EOS',
-    description: `Continue generating past the end-of-sequence token (llama.cpp only). Useful for forcing the model to fill a token budget.`,
+    description: 'Continue past the end-of-sequence token.',
+    value: false,
+    controllerType: 'checkbox',
+    capability: 'ignore_eos',
   },
 }
 
+/**
+ * Outbound strip list for non-llamacpp providers. Kept explicit to preserve
+ * existing wire-level behavior. resolveProviderCaps owns the richer UI gating.
+ */
 export const LLAMACPP_ONLY_PARAM_KEYS: ReadonlySet<string> = new Set([
   'mirostat',
   'mirostat_tau',
@@ -170,4 +371,130 @@ export const LLAMACPP_ONLY_PARAM_KEYS: ReadonlySet<string> = new Set([
   'dry_allowed_length',
   'dry_penalty_last_n',
   'ignore_eos',
+  'min_p',
+  'repeat_penalty',
 ])
+
+export function evaluateDisabled(
+  def: ParamDef,
+  currentValues: Record<string, unknown>
+): string | null {
+  return def.disabledBy?.(currentValues) ?? null
+}
+
+/**
+ * Coupled samplers that only make sense as a unit. Adding the group writes
+ * `triggerValue` to the first member (the on/off knob) plus the defaults of
+ * the rest. Removing the group deletes every member key.
+ */
+export interface ParamGroup {
+  id: string
+  title: string
+  description: string
+  members: string[]
+  triggerKey: string
+  triggerValue: string | number | boolean
+  capability: SamplerCap
+}
+
+export const paramGroups: ParamGroup[] = [
+  {
+    id: 'mirostat',
+    title: 'Mirostat',
+    description:
+      'Adaptive perplexity-targeting sampler. Overrides Top K / Top P / Min P.',
+    members: ['mirostat', 'mirostat_tau', 'mirostat_eta'],
+    triggerKey: 'mirostat',
+    triggerValue: 1,
+    capability: 'mirostat',
+  },
+  {
+    id: 'dry',
+    title: 'DRY',
+    description: "Don't-Repeat-Yourself penalty for long repeated sequences.",
+    members: [
+      'dry_multiplier',
+      'dry_base',
+      'dry_allowed_length',
+      'dry_penalty_last_n',
+    ],
+    triggerKey: 'dry_multiplier',
+    triggerValue: 0.8,
+    capability: 'dry',
+  },
+  {
+    id: 'xtc',
+    title: 'XTC',
+    description:
+      'Exclude-Top-Choices sampler — probabilistically removes high-prob tokens.',
+    members: ['xtc_probability', 'xtc_threshold'],
+    triggerKey: 'xtc_probability',
+    triggerValue: 0.1,
+    capability: 'xtc',
+  },
+  {
+    id: 'dynatemp',
+    title: 'Dynamic Temperature',
+    description: 'Sample the effective temperature from a range around the base.',
+    members: ['dynatemp_range', 'dynatemp_exp'],
+    triggerKey: 'dynatemp_range',
+    triggerValue: 0.5,
+    capability: 'dynatemp',
+  },
+]
+
+const GROUPED_KEYS = new Set(paramGroups.flatMap((g) => g.members))
+
+/** True iff this param belongs to a coupled group (rendered as a unit). */
+export function isGroupedParamKey(key: string): boolean {
+  return GROUPED_KEYS.has(key)
+}
+
+export type ParamCategory =
+  | 'common'
+  | 'penalties'
+  | 'output'
+  | 'advanced'
+
+export interface CategoryDef {
+  id: ParamCategory
+  title: string
+  /** Standalone param keys in display order. */
+  paramKeys: string[]
+  /** Coupled groups shown as a single menu entry in this category. */
+  groupIds: string[]
+}
+
+export const paramCategories: CategoryDef[] = [
+  {
+    id: 'common',
+    title: 'Common',
+    paramKeys: ['temperature', 'top_p', 'top_k', 'min_p', 'max_output_tokens'],
+    groupIds: [],
+  },
+  {
+    id: 'penalties',
+    title: 'Penalties',
+    paramKeys: ['frequency_penalty', 'presence_penalty', 'repeat_penalty'],
+    groupIds: [],
+  },
+  {
+    id: 'output',
+    title: 'Output control',
+    paramKeys: [
+      'stream',
+      'json_schema',
+      'grammar',
+      'auto_compact',
+      'max_context_tokens',
+      'ignore_eos',
+    ],
+    groupIds: [],
+  },
+  {
+    id: 'advanced',
+    title: 'Advanced samplers',
+    paramKeys: ['typical_p', 'top_n_sigma'],
+    groupIds: ['mirostat', 'dry', 'xtc', 'dynatemp'],
+  },
+]

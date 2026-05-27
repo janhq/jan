@@ -616,7 +616,7 @@ describe('llamacpp_extension', () => {
         extension['isUpdatingBackend'] = true
 
         // Call onSettingUpdate while updateBackend is "running"
-        extension.onSettingUpdate('version_backend', 'v2.0.0/linux-avx2-x64')
+        extension.onSettingUpdate('llamacpp_backend', 'linux-avx2-x64')
 
         // ensureBackendReady should NOT have been called from onSettingUpdate
         expect(extension['ensureBackendReady']).not.toHaveBeenCalled()

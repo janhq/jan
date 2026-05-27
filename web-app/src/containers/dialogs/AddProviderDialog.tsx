@@ -11,9 +11,15 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
 interface AddProviderDialogProps {
-  onCreateProvider: (name: string, baseUrl: string, apiKey: string) => void
+  onCreateProvider: (
+    name: string,
+    baseUrl: string,
+    apiKey: string,
+    apiType: ProviderApiType
+  ) => void
   children: React.ReactNode
 }
 
@@ -27,6 +33,7 @@ export function AddProviderDialog({
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [apiType, setApiType] = useState<ProviderApiType>('openai')
   const [error, setError] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -35,18 +42,20 @@ export function AddProviderDialog({
     setName('')
     setBaseUrl('')
     setApiKey('')
+    setApiType('openai')
     setError(null)
   }
 
   const handleCreate = () => {
     const trimmedName = name.trim()
     const trimmedBaseUrl = baseUrl.trim().replace(/\/+$/, '')
-    if (!trimmedName || !trimmedBaseUrl) return
+    const trimmedApiKey = apiKey.trim()
+    if (!trimmedName || !trimmedBaseUrl || !trimmedApiKey) return
     if (!URL_PATTERN.test(trimmedBaseUrl)) {
       setError(t('provider:invalidBaseUrl'))
       return
     }
-    onCreateProvider(trimmedName, trimmedBaseUrl, apiKey.trim())
+    onCreateProvider(trimmedName, trimmedBaseUrl, trimmedApiKey, apiType)
     reset()
     setIsOpen(false)
   }
@@ -56,7 +65,14 @@ export function AddProviderDialog({
     if (!open) reset()
   }
 
-  const canSubmit = name.trim().length > 0 && baseUrl.trim().length > 0
+  const canSubmit =
+    name.trim().length > 0 &&
+    baseUrl.trim().length > 0 &&
+    apiKey.trim().length > 0
+  const baseUrlPlaceholder =
+    apiType === 'anthropic'
+      ? t('provider:baseUrlPlaceholderAnthropic')
+      : t('provider:baseUrlPlaceholder')
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -80,6 +96,25 @@ export function AddProviderDialog({
             placeholder={t('provider:enterNameForProvider')}
             onKeyDown={(e) => e.stopPropagation()}
           />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-muted-foreground">
+              {t('provider:apiTypeLabel')}
+            </label>
+            <RadioGroup
+              value={apiType}
+              onValueChange={(v) => setApiType(v as ProviderApiType)}
+              className="flex flex-row gap-4"
+            >
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="openai" />
+                {t('provider:apiTypeOpenAI')}
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="anthropic" />
+                {t('provider:apiTypeAnthropic')}
+              </label>
+            </RadioGroup>
+          </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">
               {t('provider:baseUrlLabel')}
@@ -90,7 +125,7 @@ export function AddProviderDialog({
                 setBaseUrl(e.target.value)
                 if (error) setError(null)
               }}
-              placeholder={t('provider:baseUrlPlaceholder')}
+              placeholder={baseUrlPlaceholder}
               onKeyDown={(e) => e.stopPropagation()}
             />
           </div>

@@ -58,7 +58,7 @@ impl GpuInfo {
                     used_memory: read_mem(&device_path.join("mem_info_vram_used")),
                 });
             }
-            Err(format!("GPU not found").into())
+            Err("GPU not found".to_string().into())
         };
 
         match closure() {

@@ -8,7 +8,7 @@ use tauri_plugin_hardware::{get_system_info, SystemInfo};
 /// Read GGUF metadata from a model file
 #[tauri::command]
 pub async fn read_gguf_metadata(path: String) -> Result<GgufMetadata, String> {
-    return read_gguf_metadata_internal(path).await;
+    read_gguf_metadata_internal(path).await
 }
 
 #[tauri::command]
@@ -78,13 +78,32 @@ pub async fn is_model_supported(
             .size
     };
 
-    // Total memory consumption = model weights + kvcache
-    let total_required = model_size + kv_cache_size;
+    // Multimodal projector lives next to model.gguf as mmproj.gguf and is
+    // loaded into the same device alongside the weights + KV cache. Only
+    // inspected for local paths — remote URLs route through the importer
+    // and won't hit this branch with the final on-disk layout.
+    let mmproj_size: u64 = if path.starts_with("https://") {
+        0
+    } else {
+        std::path::Path::new(&path)
+            .parent()
+            .map(|d| d.join("mmproj.gguf"))
+            .and_then(|p| fs::metadata(&p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0)
+    };
+    if mmproj_size > 0 {
+        log::info!("mmprojSize: {}", mmproj_size);
+    }
+
+    // Total memory consumption = model weights + kvcache + mmproj
+    let total_required = model_size + kv_cache_size + mmproj_size;
     log::info!(
-        "isModelSupported: Total memory requirement: {} for {}; Got kvCacheSize: {} from BE",
+        "isModelSupported: Total memory requirement: {} for {}; kvCacheSize: {}, mmprojSize: {}",
         total_required,
         path,
-        kv_cache_size
+        kv_cache_size,
+        mmproj_size
     );
 
     // Apple Silicon: macOS + ARM64 + no discrete GPUs = unified memory.
@@ -120,11 +139,7 @@ pub async fn is_model_supported(
 
     log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
 
-    let usable_vram = if total_vram > RESERVE_BYTES {
-        total_vram - RESERVE_BYTES
-    } else {
-        0
-    };
+    let usable_vram = total_vram.saturating_sub(RESERVE_BYTES);
 
     let usable_total_memory = if total_system_memory > RESERVE_BYTES {
         (total_system_memory - RESERVE_BYTES) + usable_vram

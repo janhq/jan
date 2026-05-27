@@ -22,12 +22,19 @@ import {
   AppEvent,
   DownloadEvent,
   chatCompletionRequestMessage,
+  SettingComponentProps,
 } from '@janhq/core'
+import {
+  readSettingsFile,
+  writeSettingsFile,
+  settingsFileExists,
+} from './settings-store'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
 import { listen } from '@tauri-apps/api/event'
 import {
   listSupportedBackends,
+  fetchRemoteBackends,
   downloadBackend,
   isBackendInstalled,
   verifyBackendInstallation,
@@ -110,18 +117,33 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  * Override the default app.log function to use Jan's logging system.
  * @param args
  */
+function formatLogArg(arg: unknown): string {
+  if (arg instanceof Error) {
+    return arg.stack ? `${arg.message}\n${arg.stack}` : arg.message
+  }
+  if (arg === null || arg === undefined) return String(arg)
+  if (typeof arg === 'object') {
+    try {
+      return JSON.stringify(arg)
+    } catch {
+      return String(arg)
+    }
+  }
+  return String(arg)
+}
+
 const logger = {
   info: function (...args: any[]) {
     console.log(...args)
-    info(args.map((arg) => ` ${arg}`).join(` `))
+    info(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
   },
   warn: function (...args: any[]) {
     console.warn(...args)
-    warn(args.map((arg) => ` ${arg}`).join(` `))
+    warn(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
   },
   error: function (...args: any[]) {
     console.error(...args)
-    error(args.map((arg) => ` ${arg}`).join(` `))
+    error(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
   },
 }
 
@@ -324,6 +346,8 @@ export default class llamacpp_extension extends AIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
 
+    await this.migrateLocalStorageToFile()
+
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
     if (!IS_MAC) {
@@ -331,8 +355,34 @@ export default class llamacpp_extension extends AIEngine {
       if (fitItem) fitItem.controllerProps.value = true
     }
 
-    // This makes the settings (including the backend options and initial value) available to the Jan UI.
-    this.registerSettings(settings)
+    // Migration: legacy `version_backend` (single composite string) → split
+    // into `llamacpp_version` + `llamacpp_backend`. Read from localStorage
+    // before registerSettings overwrites the persisted set.
+    try {
+      const prior = await this.getSettings()
+      const legacy = prior.find((s) => s.key === 'version_backend')
+      const legacyValue = legacy?.controllerProps?.value
+      if (
+        typeof legacyValue === 'string' &&
+        legacyValue.includes('/') &&
+        legacyValue !== 'none'
+      ) {
+        const [v, b] = legacyValue.split('/')
+        if (v && b) {
+          const vSetting = settings.find((s) => s.key === 'llamacpp_version')
+          const bSetting = settings.find((s) => s.key === 'llamacpp_backend')
+          if (vSetting) vSetting.controllerProps.value = v
+          if (bSetting) bSetting.controllerProps.value = b
+          logger.info(
+            `Migrated legacy version_backend '${legacyValue}' → version='${v}', backend='${b}'`
+          )
+        }
+      }
+    } catch (e) {
+      logger.warn('version_backend migration check failed (ignored):', e)
+    }
+
+    await this.registerSettings(settings)
 
     let loadedConfig: any = {}
     for (const item of settings) {
@@ -344,6 +394,7 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
     this.config = loadedConfig as LlamacppConfig
+    this.recomposeVersionBackend()
 
     // Migration v2: disable fit by default
     await this.migrateFitDefault()
@@ -382,6 +433,126 @@ export default class llamacpp_extension extends AIEngine {
       await this.startRouter()
     } catch (e) {
       logger.error('Router failed to start during onLoad:', e)
+    }
+  }
+
+  override async getSettings(): Promise<SettingComponentProps[]> {
+    return readSettingsFile()
+  }
+
+  override async updateSettings(
+    componentProps: Partial<SettingComponentProps>[]
+  ): Promise<void> {
+    const current = await readSettingsFile()
+    const changed: { key: string; value: unknown }[] = []
+    const updated = current.length
+      ? current.map((s) => {
+          const patch = componentProps.find((p) => p.key === s.key)
+          if (patch?.controllerProps) {
+            const nextValue = (patch.controllerProps as { value?: unknown })
+              .value
+            const prevValue = (s.controllerProps as { value?: unknown }).value
+            if (nextValue !== prevValue) {
+              changed.push({ key: s.key, value: nextValue })
+            }
+            ;(s.controllerProps as { value?: unknown }).value = nextValue
+          }
+          return s
+        })
+      : ((): SettingComponentProps[] => {
+          const arr = componentProps as SettingComponentProps[]
+          for (const s of arr) {
+            changed.push({
+              key: s.key,
+              value: (s.controllerProps as { value?: unknown })?.value,
+            })
+          }
+          return arr
+        })()
+    await writeSettingsFile(updated)
+    for (const { key, value } of changed) {
+      this.onSettingUpdate(key, value)
+    }
+  }
+
+  override async registerSettings(
+    settings: SettingComponentProps[]
+  ): Promise<void> {
+    settings.forEach((s) => {
+      s.extensionName = this.name
+    })
+    const old = await readSettingsFile()
+    if (old.length) {
+      settings.forEach((s) => {
+        const prev = old.find((o) => o.key === s.key)
+        if (!prev) return
+        const cp = s.controllerProps as Record<string, unknown>
+        const pcp = prev.controllerProps as Record<string, unknown>
+        if (pcp.value !== undefined) cp.value = pcp.value
+        if ('options' in cp) {
+          const newOptions = (cp.options as unknown[]) ?? []
+          if (newOptions.length === 0 && Array.isArray(pcp.options)) {
+            cp.options = pcp.options
+          }
+          const opts = (cp.options as { value: unknown }[]) ?? []
+          if (opts.length && !opts.some((o) => o.value === cp.value)) {
+            cp.value = opts[0]?.value
+          }
+        }
+      })
+    }
+    await writeSettingsFile(settings)
+  }
+
+  private async migrateLocalStorageToFile(): Promise<void> {
+    if (await settingsFileExists()) return
+    if (!this.name) return
+    let raw: string | null = null
+    try {
+      raw = localStorage.getItem(this.name)
+    } catch {
+      raw = null
+    }
+    if (!raw) return
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        await writeSettingsFile(parsed as SettingComponentProps[])
+        logger.info(
+          `Migrated llamacpp settings from localStorage → file (${parsed.length} entries)`
+        )
+      }
+    } catch (e) {
+      logger.warn('Failed to migrate localStorage settings to file:', e)
+      return
+    }
+    try {
+      localStorage.removeItem(this.name)
+    } catch (e) {
+      logger.warn('Failed to clear migrated localStorage entry:', e)
+    }
+  }
+
+  private async persistRecommended(
+    key: string,
+    value: string
+  ): Promise<void> {
+    const settings = await readSettingsFile()
+    const entry = settings.find((s) => s.key === key)
+    if (!entry) return
+    const cp = entry.controllerProps as { recommended?: string }
+    if (cp.recommended === value) return
+    cp.recommended = value
+    await writeSettingsFile(settings)
+  }
+
+  private recomposeVersionBackend(): void {
+    const v = this.config?.llamacpp_version
+    const b = this.config?.llamacpp_backend
+    if (v && b && v !== 'none' && b !== 'none') {
+      this.config.version_backend = `${v}/${b}`
+    } else if (!this.config.version_backend) {
+      this.config.version_backend = ''
     }
   }
 
@@ -433,14 +604,16 @@ export default class llamacpp_extension extends AIEngine {
       const n = parseInt(rawMax, 10)
       if (!Number.isNaN(n) && n >= 0) modelsMax = n
     }
-    // Reserve extra slots for embedding models so loading an embedder doesn't
-    // evict the user's chat model. `models_max` governs chat models only;
-    // Jan pre-evicts the oldest chat model in `performLoad` so the router's
-    // LRU never picks the embedding. 0 (unlimited) stays unlimited.
+    // Reserve a single extra slot when any embedder is installed, so loading
+    // an embedder doesn't evict the user's chat model. Only one embedding is
+    // ever loaded at a time (RAG calls load() once per request), so the bonus
+    // is +1 regardless of how many embedders are installed. 0 (unlimited)
+    // stays unlimited.
     const userModelsMax = modelsMax
     this.userModelsMax = userModelsMax
-    if (modelsMax > 0 && embeddingCount > 0) {
-      modelsMax += embeddingCount
+    const embeddingSlotBonus = embeddingCount > 0 ? 1 : 0
+    if (modelsMax > 0 && embeddingSlotBonus > 0) {
+      modelsMax += embeddingSlotBonus
     }
 
     // Defensive: if a router is already running (hot reload / dev), stop it
@@ -479,7 +652,7 @@ export default class llamacpp_extension extends AIEngine {
     this.routerPort = info.port
     this.routerApiKey = info.api_key
     logger.info(
-      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingCount} embedding], preset=${presetPath})`
+      `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingSlotBonus} embedding, ${embeddingCount} installed], preset=${presetPath})`
     )
   }
 
@@ -757,7 +930,9 @@ export default class llamacpp_extension extends AIEngine {
       let version_backends: { version: string; backend: string }[] = []
 
       try {
-        version_backends = await listSupportedBackends()
+        version_backends = await listSupportedBackends(
+          this.config.check_for_updates !== false
+        )
         if (version_backends.length === 0) {
           throw new Error(
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
@@ -777,9 +952,18 @@ export default class llamacpp_extension extends AIEngine {
       const storedBackendType = this.getStoredBackendType()
       let bestAvailableBackendString = ''
 
-      // Calculate the "best" backend first, as it's used for fallback and defaults
+      // "Recommended" is computed against upstream releases only — a
+      // user-side-loaded backend (Install from File) must not bias the
+      // suggestion. If we have no remote data (check_for_updates off or
+      // offline), there is no honest recommendation to surface.
+      const remoteOnly =
+        this.config.check_for_updates !== false
+          ? await fetchRemoteBackends()
+          : []
       bestAvailableBackendString =
-        await this.determineBestBackend(version_backends)
+        remoteOnly.length > 0
+          ? await this.determineBestBackend(remoteOnly)
+          : ''
 
       if (storedBackendType) {
         // Delegate migration check to Rust
@@ -821,84 +1005,99 @@ export default class llamacpp_extension extends AIEngine {
       }
 
       let settings = structuredClone(SETTINGS)
-      const backendSettingIndex = settings.findIndex(
-        (item) => item.key === 'version_backend'
-      )
-
-      let originalDefaultBackendValue = ''
-      if (backendSettingIndex !== -1) {
-        const backendSetting = settings[backendSettingIndex]
-        originalDefaultBackendValue = backendSetting.controllerProps
-          .value as string
-
-        backendSetting.controllerProps.options = version_backends.map((b) => {
-          const key = `${b.version}/${b.backend}`
-          return { value: key, name: key }
-        })
-
-        // Set the recommended backend based on bestAvailableBackendString
-        if (bestAvailableBackendString) {
-          backendSetting.controllerProps.recommended =
-            bestAvailableBackendString
-        }
-
-        const savedBackendSetting = await this.getSetting<string>(
-          'version_backend',
-          originalDefaultBackendValue
+      const versionSetting = settings.find((s) => s.key === 'llamacpp_version')
+      const backendSetting = settings.find((s) => s.key === 'llamacpp_backend')
+      if (!versionSetting || !backendSetting) {
+        throw new Error(
+          'Critical settings "llamacpp_version" / "llamacpp_backend" not found.'
         )
-
-        // Determine initial UI default based on priority:
-        // 1. Saved setting (if valid and not original default)
-        // 2. Best available for stored backend type or automatic best
-        // 3. Original default
-        let initialUiDefault = originalDefaultBackendValue
-
-        if (
-          savedBackendSetting &&
-          savedBackendSetting !== originalDefaultBackendValue
-        ) {
-          const [savedVersion, savedBackend] = savedBackendSetting.split('/')
-          if (savedVersion && savedBackend) {
-            // Map saved backend to new format if needed
-            const normalizedBackend = await mapOldBackendToNew(savedBackend)
-            initialUiDefault = `${savedVersion}/${normalizedBackend}`
-
-            // Store the backend type from the saved setting only if different
-            const currentStoredBackend = this.getStoredBackendType()
-            if (currentStoredBackend !== normalizedBackend) {
-              this.setStoredBackendType(normalizedBackend)
-              logger.info(
-                `Stored backend type preference from saved setting: ${normalizedBackend}`
-              )
-            }
-          }
-        } else if (bestAvailableBackendString) {
-          initialUiDefault = bestAvailableBackendString
-          // Store the backend type from the best available only if different
-          const [, backendType] = bestAvailableBackendString.split('/')
-          if (backendType) {
-            const currentStoredBackend = this.getStoredBackendType()
-            if (currentStoredBackend !== backendType) {
-              this.setStoredBackendType(backendType)
-              logger.info(
-                `Stored backend type preference from best available: ${backendType}`
-              )
-            }
-          }
-        }
-
-        backendSetting.controllerProps.value = initialUiDefault
-        logger.info(
-          `Initial UI default for version_backend set to: ${initialUiDefault}`
-        )
-      } else {
-        logger.error(
-          'Critical setting "version_backend" definition not found in SETTINGS.'
-        )
-        throw new Error('Critical setting "version_backend" not found.')
       }
 
-      this.registerSettings(settings)
+      // Read prior persisted values (may have been pre-populated by the
+      // legacy-migration pass in onLoad, or carry user-edited values from a
+      // prior session).
+      const priorPersisted = await this.getSettings()
+      const priorVersion = String(
+        priorPersisted.find((s) => s.key === 'llamacpp_version')?.controllerProps
+          .value ?? ''
+      )
+      const priorBackend = String(
+        priorPersisted.find((s) => s.key === 'llamacpp_backend')?.controllerProps
+          .value ?? ''
+      )
+
+      const allVersions = Array.from(
+        new Set(version_backends.map((b) => b.version))
+      )
+      versionSetting.controllerProps.options = allVersions.map((v) => ({
+        value: v,
+        name: v,
+      }))
+
+      const allBackends = Array.from(
+        new Set(version_backends.map((b) => b.backend))
+      )
+      backendSetting.controllerProps.options = allBackends.map((b) => ({
+        value: b,
+        name: b,
+      }))
+
+      const [bestVersion, bestBackend] =
+        bestAvailableBackendString.split('/')
+      if (bestVersion) versionSetting.controllerProps.recommended = bestVersion
+      if (bestBackend) backendSetting.controllerProps.recommended = bestBackend
+
+      // Decide initial UI values. Priority: valid prior selection → best-available.
+      let initialVersion = bestVersion || ''
+      let initialBackend = bestBackend || ''
+      if (
+        priorVersion &&
+        priorBackend &&
+        priorVersion !== 'none' &&
+        priorBackend !== 'none'
+      ) {
+        const normalizedBackend = await mapOldBackendToNew(priorBackend)
+        const composed = `${priorVersion}/${normalizedBackend}`
+        if (
+          version_backends.some(
+            (e) => `${e.version}/${e.backend}` === composed
+          )
+        ) {
+          initialVersion = priorVersion
+          initialBackend = normalizedBackend
+          const currentStoredBackend = this.getStoredBackendType()
+          if (currentStoredBackend !== normalizedBackend) {
+            this.setStoredBackendType(normalizedBackend)
+            logger.info(
+              `Stored backend type preference from saved setting: ${normalizedBackend}`
+            )
+          }
+        }
+      } else if (bestBackend) {
+        const currentStoredBackend = this.getStoredBackendType()
+        if (currentStoredBackend !== bestBackend) {
+          this.setStoredBackendType(bestBackend)
+          logger.info(
+            `Stored backend type preference from best available: ${bestBackend}`
+          )
+        }
+      }
+
+      versionSetting.controllerProps.value = initialVersion
+      backendSetting.controllerProps.value = initialBackend
+      logger.info(
+        `Initial UI defaults: llamacpp_version='${initialVersion}', llamacpp_backend='${initialBackend}'`
+      )
+
+      // Must await — registerSettings is async; without await, the
+      // persistRecommended writes below race with its merge+write and lose.
+      await this.registerSettings(settings)
+
+      // core's registerSettings preserves the previous `recommended` over the
+      // new one (see extension.ts:142-148). Force-write afterward so a stale
+      // recommendation from a prior session can't outlive a fresh compute.
+      await this.persistRecommended('llamacpp_version', bestVersion || '')
+      await this.persistRecommended('llamacpp_backend', bestBackend || '')
 
       let effectiveBackendString = this.config.version_backend
       let backendWasDownloaded = false
@@ -921,29 +1120,32 @@ export default class llamacpp_extension extends AIEngine {
           `Fresh installation or invalid backend detected, using: ${effectiveBackendString}`
         )
 
-        // Update the config immediately
-        this.config.version_backend = effectiveBackendString
+        const [newV, newB] = effectiveBackendString.split('/')
+        this.config.llamacpp_version = newV
+        this.config.llamacpp_backend = newB
+        this.recomposeVersionBackend()
 
-        // Update the settings to reflect the change in UI
         const updatedSettings = await this.getSettings()
         await this.updateSettings(
           updatedSettings.map((item) => {
-            if (item.key === 'version_backend') {
-              item.controllerProps.value = effectiveBackendString
+            if (item.key === 'llamacpp_version') {
+              item.controllerProps.value = newV
+            } else if (item.key === 'llamacpp_backend') {
+              item.controllerProps.value = newB
             }
             return item
           })
         )
         logger.info(`Updated UI settings to show: ${effectiveBackendString}`)
 
-        // Emit for updating fe
         if (events && typeof events.emit === 'function') {
-          logger.info(
-            `Emitting settingsChanged event for version_backend with value: ${effectiveBackendString}`
-          )
           events.emit('settingsChanged', {
-            key: 'version_backend',
-            value: effectiveBackendString,
+            key: 'llamacpp_version',
+            value: newV,
+          })
+          events.emit('settingsChanged', {
+            key: 'llamacpp_backend',
+            value: newB,
           })
         }
       }
@@ -964,7 +1166,7 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      if (this.config.auto_update_engine) {
+      if (this.config.auto_update_engine && this.config.check_for_updates) {
         const updateResult = await this.handleAutoUpdate(
           bestAvailableBackendString
         )
@@ -981,7 +1183,7 @@ export default class llamacpp_extension extends AIEngine {
       // Run dependency verification once after the backend is confirmed
       // installed. This covers both fresh downloads and pre-existing installs,
       // and runs only once per app startup via the isConfiguringBackends guard.
-      if (effectiveBackendString) {
+      if (effectiveBackendString && this.config.verify_backend_deps !== false) {
         // effectiveBackendString is expected to be "<version>/<backend>" (e.g.
         // "b4589/linux-cuda-12"). Any other shape silently skips verification.
         const [version, backend] = effectiveBackendString.split('/')
@@ -1009,7 +1211,9 @@ export default class llamacpp_extension extends AIEngine {
   async refreshBackendOptions(): Promise<void> {
     let version_backends: { version: string; backend: string }[] = []
     try {
-      version_backends = await listSupportedBackends()
+      version_backends = await listSupportedBackends(
+        this.config.check_for_updates !== false
+      )
     } catch (e) {
       logger.error(
         `refreshBackendOptions: failed to list supported backends: ${String(e)}`
@@ -1023,49 +1227,59 @@ export default class llamacpp_extension extends AIEngine {
     version_backends.sort((a, b) => b.version.localeCompare(a.version))
 
     const settings = await this.getSettings()
-    const backendSetting = settings.find(
-      (item) => item.key === 'version_backend'
-    )
-    if (!backendSetting) {
+    const versionSetting = settings.find((s) => s.key === 'llamacpp_version')
+    const backendSetting = settings.find((s) => s.key === 'llamacpp_backend')
+    if (!versionSetting || !backendSetting) {
       logger.error(
-        'refreshBackendOptions: version_backend setting not found in persisted settings'
+        'refreshBackendOptions: llamacpp_version/llamacpp_backend not found in persisted settings'
       )
       return
     }
 
-    const newOptions = version_backends.map((b) => {
-      const key = `${b.version}/${b.backend}`
-      return { value: key, name: key }
-    })
+    const allVersions = Array.from(
+      new Set(version_backends.map((b) => b.version))
+    )
+    const allBackends = Array.from(
+      new Set(version_backends.map((b) => b.backend))
+    )
+    versionSetting.controllerProps.options = allVersions.map((v) => ({
+      value: v,
+      name: v,
+    }))
+    backendSetting.controllerProps.options = allBackends.map((b) => ({
+      value: b,
+      name: b,
+    }))
 
-    backendSetting.controllerProps.options = newOptions
-
-    // Preserve current selection if still present; otherwise fall back to
-    // the best available so the UI stays consistent.
-    const currentValue = backendSetting.controllerProps.value as
-      | string
-      | undefined
-    const stillPresent =
-      typeof currentValue === 'string' &&
-      newOptions.some((o) => o.value === currentValue)
-    if (!stillPresent) {
+    const currentV = String(versionSetting.controllerProps.value ?? '')
+    const currentB = String(backendSetting.controllerProps.value ?? '')
+    const composedStillPresent =
+      currentV &&
+      currentB &&
+      version_backends.some(
+        (e) => e.version === currentV && e.backend === currentB
+      )
+    if (!composedStillPresent) {
       const best = await this.determineBestBackend(version_backends)
-      if (best) {
-        backendSetting.controllerProps.value = best
-        this.config.version_backend = best
+      const [bv, bb] = best.split('/')
+      if (bv && bb) {
+        versionSetting.controllerProps.value = bv
+        backendSetting.controllerProps.value = bb
+        this.config.llamacpp_version = bv
+        this.config.llamacpp_backend = bb
+        this.recomposeVersionBackend()
       }
     }
 
-    // registerSettings overwrites the persisted settings (including the
-    // new options array). updateSettings only copies `value`, which would
-    // silently drop our options change.
     await this.registerSettings(settings)
 
-    // Tell the rest of the app (GlobalEventHandler) to refetch providers
-    // so the dropdown re-renders with the new options.
     if (events && typeof events.emit === 'function') {
       events.emit('settingsChanged', {
-        key: 'version_backend',
+        key: 'llamacpp_version',
+        value: versionSetting.controllerProps.value,
+      })
+      events.emit('settingsChanged', {
+        key: 'llamacpp_backend',
         value: backendSetting.controllerProps.value,
       })
     }
@@ -1156,18 +1370,18 @@ export default class llamacpp_extension extends AIEngine {
       // Persist settings and stored preference before mutating in-memory config,
       // so that if any of these steps fail, config remains consistent.
 
-      // Update settings first — if this fails, we haven't mutated any state yet
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
+          if (item.key === 'llamacpp_version') {
+            item.controllerProps.value = version
+          } else if (item.key === 'llamacpp_backend') {
+            item.controllerProps.value = backend
           }
           return item
         })
       )
 
-      // Store the backend type preference only if it changed
       if (currentStoredBackend !== effectiveBackendType) {
         this.setStoredBackendType(effectiveBackendType)
         logger.info(
@@ -1175,20 +1389,21 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
-      // All critical side effects succeeded — now commit to in-memory config
-      this.config.version_backend = targetBackendString
+      this.config.llamacpp_version = version
+      this.config.llamacpp_backend = backend
+      this.recomposeVersionBackend()
       this.config.device = ''
 
       logger.info(`Successfully updated to backend: ${targetBackendString}`)
 
-      // Emit for updating frontend
       if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
         events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
+          key: 'llamacpp_version',
+          value: version,
+        })
+        events.emit('settingsChanged', {
+          key: 'llamacpp_backend',
+          value: backend,
         })
       }
 
@@ -1248,7 +1463,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Use Rust checkBackendForUpdates logic implicitly here by using the helpers
-    const version_backends = await listSupportedBackends()
+    const version_backends = await listSupportedBackends(true)
     const checkResult = await checkBackendForUpdates(
       this.config.version_backend,
       version_backends
@@ -1289,7 +1504,7 @@ export default class llamacpp_extension extends AIEngine {
     targetBackend?: string
   }> {
     try {
-      const version_backends = await listSupportedBackends()
+      const version_backends = await listSupportedBackends(true)
       const result = await checkBackendForUpdates(
         this.config.version_backend,
         version_backends
@@ -1374,10 +1589,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    if (key === 'version_backend') {
-      // Skip entirely if updateBackend() is already handling it —
-      // updateBackend() will commit to in-memory config itself after all
-      // side effects succeed.
+    if (key === 'llamacpp_version' || key === 'llamacpp_backend') {
       if (this.isUpdatingBackend) {
         return
       }
@@ -1385,13 +1597,59 @@ export default class llamacpp_extension extends AIEngine {
 
     this.config[key] = value
 
-    if (key === 'version_backend') {
-      const valueStr = value as string
-      // Async logic wrapped in IIFE since onSettingUpdate is void
+    if (key === 'llamacpp_version' || key === 'llamacpp_backend') {
       ;(async () => {
         try {
+          let v = this.config.llamacpp_version
+          let b = this.config.llamacpp_backend
+          if (!v || !b || v === 'none' || b === 'none') return
+
+          // Validate (v, b) combination exists; if not, auto-resolve the
+          // backend to the best one available for the chosen version.
+          const supported = await listSupportedBackends(
+            this.config.check_for_updates !== false
+          )
+          const combos = new Set(
+            supported.map((e) => `${e.version}/${e.backend}`)
+          )
+          if (!combos.has(`${v}/${b}`)) {
+            const candidates = supported.filter((e) => e.version === v)
+            if (candidates.length === 0) {
+              logger.warn(
+                `No backends available for version '${v}'; ignoring update.`
+              )
+              return
+            }
+            const best = await this.determineBestBackend(candidates)
+            const [, bb] = best.split('/')
+            if (!bb) return
+            b = bb
+            this.config.llamacpp_backend = bb
+            const settings = await this.getSettings()
+            await this.updateSettings(
+              settings.map((item) => {
+                if (item.key === 'llamacpp_backend') {
+                  item.controllerProps.value = bb
+                }
+                return item
+              })
+            )
+            if (events && typeof events.emit === 'function') {
+              events.emit('settingsChanged', {
+                key: 'llamacpp_backend',
+                value: bb,
+              })
+            }
+          }
+
+          this.recomposeVersionBackend()
+          const composite = this.config.version_backend
           const currentStored = this.getStoredBackendType() || undefined
-          const result = await handleSettingUpdate(key, valueStr, currentStored)
+          const result = await handleSettingUpdate(
+            'version_backend',
+            composite,
+            currentStored
+          )
 
           if (result.backend_type_updated && result.effective_backend_type) {
             this.setStoredBackendType(result.effective_backend_type)
@@ -2103,6 +2361,7 @@ export default class llamacpp_extension extends AIEngine {
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let resolvedName: string | undefined
 
     try {
       // Validate main model file
@@ -2115,6 +2374,12 @@ export default class llamacpp_extension extends AIEngine {
         isEmbedding = true
       }
       mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+
+      const rawName = modelMetadata.metadata?.['general.name']
+      if (typeof rawName === 'string') {
+        const normalized = rawName.trim().replace(/\s+/g, '-')
+        if (normalized.length > 0) resolvedName = normalized
+      }
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -2141,12 +2406,16 @@ export default class llamacpp_extension extends AIEngine {
       ).size
     }
 
-    // TODO: add name as import() argument
+    if (!resolvedName) {
+      const base = opts.modelPath.split(/[\\/]/).pop() ?? modelId
+      resolvedName = base.replace(/\.gguf$/i, '') || modelId
+    }
+
     // TODO: add updateModelConfig() method
     const modelConfig = {
       model_path: modelPath,
       mmproj_path: mmprojPath,
-      name: modelId,
+      name: resolvedName,
       size_bytes,
       model_sha256: opts.modelSha256,
       model_size_bytes: opts.modelSize,

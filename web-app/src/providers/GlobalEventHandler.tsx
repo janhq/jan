@@ -53,13 +53,13 @@ export function GlobalEventHandler() {
     }) => {
       console.log('Global settingsChanged event:', event)
 
-      // Handle version_backend changes specifically
-      if (event.key === 'version_backend') {
+      if (
+        event.key === 'llamacpp_version' ||
+        event.key === 'llamacpp_backend'
+      ) {
         try {
-          // Refresh providers to get updated settings from the extension
           const updatedProviders = await serviceHub.providers().getProviders()
           setProviders(updatedProviders)
-          console.log('Providers refreshed after version_backend change')
         } catch (error) {
           console.error(
             'Failed to refresh providers after settingsChanged:',

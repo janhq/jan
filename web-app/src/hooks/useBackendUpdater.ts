@@ -36,23 +36,13 @@ async function getCurrentBackendTypeFromSettings(
   extension: ExtensionWithSettings
 ): Promise<string> {
   const settings = await extension.getSettings?.()
-  const currentBackendSetting = settings?.find(
-    (s) => s.key === 'version_backend'
-  )
-  const currentBackend = currentBackendSetting?.controllerProps?.value as string
+  const backendSetting = settings?.find((s) => s.key === 'llamacpp_backend')
+  const currentBackendType = (
+    backendSetting?.controllerProps?.value as string | undefined
+  )?.trim()
 
-  if (!currentBackend) {
+  if (!currentBackendType) {
     throw new Error('Current backend not found')
-  }
-
-  const parts = currentBackend.split('/')
-  const currentVersionPart = parts[0]?.trim()
-  const currentBackendType = parts[1]?.trim()
-
-  if (parts.length !== 2 || !currentVersionPart || !currentBackendType) {
-    throw new Error(
-      `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
-    )
   }
 
   return currentBackendType

@@ -43,13 +43,13 @@ pub async fn get_status(state: State<'_, VectorDBState>) -> Result<Status, Vecto
             for p in paths {
                 println!("[VectorDB]   Trying: {}", p);
                 unsafe {
-                    if let Ok(_) = conn.load_extension(&p, Some("sqlite3_vec_init")) {
-                        if conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok() {
-                            let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
-                            println!("[VectorDB] ✓ sqlite-vec loaded from: {}", p);
-                            found = true;
-                            break;
-                        }
+                    if conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok()
+                        && conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok()
+                    {
+                        let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
+                        println!("[VectorDB] ✓ sqlite-vec loaded from: {}", p);
+                        found = true;
+                        break;
                     }
                 }
             }
@@ -128,6 +128,7 @@ pub async fn delete_file<R: tauri::Runtime>(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn search_collection<R: tauri::Runtime>(
     _app: tauri::AppHandle<R>,
     state: State<'_, VectorDBState>,

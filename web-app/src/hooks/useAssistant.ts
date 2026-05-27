@@ -31,12 +31,7 @@ export const defaultAssistant: Assistant = {
   id: 'jan',
   name: 'Jan',
   created_at: 1747029866.542,
-  parameters: {
-    temperature: 0.7,
-    top_k: 20,
-    top_p: 0.8,
-    repeat_penalty: 1.12,
-  },
+  parameters: {},
   avatar: '👋',
   description:
     "Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",

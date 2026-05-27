@@ -172,9 +172,9 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
     let mut consecutive_failures: u32 = 0;
 
     loop {
-        // Wait for either the periodic health check or an immediate reconnect signal
+        // 30s, not 2s: every probe forces a ListToolsRequest the server echoes to stderr.
         tokio::select! {
-            _ = sleep(Duration::from_secs(2)) => {}
+            _ = sleep(Duration::from_secs(30)) => {}
             _ = reconnect_notify.notified() => {
                 log::info!("MCP server {name} monitor received reconnect signal");
             }
@@ -398,7 +398,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
     let config_params = extract_command_args(&config)
         .ok_or_else(|| format!("Failed to extract command args from config for {name}"))?;
 
-    if config_params.transport_type.as_deref() == Some("http") && config_params.url.is_some() {
+    if let (Some("http"), Some(url)) = (
+        config_params.transport_type.as_deref(),
+        config_params.url.clone(),
+    ) {
         let transport = StreamableHttpClientTransport::with_client(
             reqwest::Client::builder()
                 .default_headers({
@@ -425,7 +428,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .build()
                 .unwrap(),
             StreamableHttpClientTransportConfig {
-                uri: config_params.url.unwrap().into(),
+                uri: url.into(),
                 ..Default::default()
             },
         );
@@ -460,8 +463,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 return Err(format!("Failed to connect to server: {e}"));
             }
         }
-    } else if config_params.transport_type.as_deref() == Some("sse") && config_params.url.is_some()
-    {
+    } else if let (Some("sse"), Some(url)) = (
+        config_params.transport_type.as_deref(),
+        config_params.url.clone(),
+    ) {
         let transport = SseClientTransport::start_with_client(
             reqwest::Client::builder()
                 .default_headers({
@@ -488,7 +493,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 .build()
                 .unwrap(),
             rmcp::transport::sse_client::SseClientConfig {
-                sse_endpoint: config_params.url.unwrap().into(),
+                sse_endpoint: url.into(),
                 ..Default::default()
             },
         )
@@ -640,7 +645,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                             if let Ok(text) = std::str::from_utf8(&buf[..n]) {
                                 for line in text.lines() {
                                     if !line.trim().is_empty() {
-                                        log::warn!("[mcp-stderr:{}] {}", stderr_name, line);
+                                        log_mcp_stderr_line(&stderr_name, line);
                                     }
                                 }
                             }
@@ -760,6 +765,25 @@ async fn schedule_mcp_start_task<R: Runtime>(
         emit_mcp_update_event(&app, &name);
     }
     Ok(())
+}
+
+/// Route an MCP server's stderr line through Jan's logger at the level the
+/// server itself reported, defaulting to info when no level tag is present.
+fn log_mcp_stderr_line(server_name: &str, line: &str) {
+    let trimmed = line.trim_start();
+    let level_token = trimmed
+        .split_whitespace()
+        .next()
+        .map(|t| t.trim_matches(|c: char| !c.is_ascii_alphabetic()).to_ascii_uppercase());
+    match level_token.as_deref() {
+        Some("ERROR" | "CRITICAL" | "FATAL") => {
+            log::error!("[mcp-stderr:{server_name}] {line}")
+        }
+        Some("WARN" | "WARNING") => log::warn!("[mcp-stderr:{server_name}] {line}"),
+        Some("DEBUG") => log::debug!("[mcp-stderr:{server_name}] {line}"),
+        Some("TRACE") => log::trace!("[mcp-stderr:{server_name}] {line}"),
+        _ => log::info!("[mcp-stderr:{server_name}] {line}"),
+    }
 }
 
 fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {

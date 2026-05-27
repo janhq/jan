@@ -171,11 +171,22 @@ export const useModelProvider = create<ModelProviderState>()(
                 : existingProvider?.settings?.find(
                     (x) => x.key === setting.key
                   )
+              // Only the user's `value` is carried over from existing state;
+              // metadata like `recommended` / `options` must always reflect
+              // the fresh extension fetch (otherwise stale recommendations
+              // and stale option lists outlive the underlying setting).
+              const existingValue = (
+                existingSetting?.controller_props as
+                  | { value?: string | number | boolean }
+                  | undefined
+              )?.value
               return {
                 ...setting,
                 controller_props: {
                   ...setting.controller_props,
-                  ...(existingSetting?.controller_props || {}),
+                  ...(existingSetting && existingValue !== undefined
+                    ? { value: existingValue }
+                    : {}),
                 },
               }
             })
@@ -778,9 +789,20 @@ export const useModelProvider = create<ModelProviderState>()(
             })
           })
         }
+        if (version <= 15 && state?.providers) {
+          // Introduce `api_type` discriminant. Backfill on the built-in
+          // Anthropic provider; everything else stays undefined (defaults to
+          // 'openai' at dispatch time).
+          state.providers.forEach((provider) => {
+            if (provider.provider === 'anthropic' && !provider.api_type) {
+              provider.api_type = 'anthropic'
+            }
+          })
+        }
+
         return state
       },
-      version: 15,
+      version: 16,
     }
   )
 )

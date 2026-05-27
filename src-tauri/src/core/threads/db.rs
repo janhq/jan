@@ -244,7 +244,8 @@ pub async fn db_create_message<R: Runtime>(
 
     let data = serde_json::to_string(&message).map_err(|e| e.to_string())?;
 
-    sqlx::query("INSERT INTO messages (id, thread_id, data) VALUES (?1, ?2, ?3)")
+    // Skip if a modify_message upsert already landed for this id.
+    sqlx::query("INSERT OR IGNORE INTO messages (id, thread_id, data) VALUES (?1, ?2, ?3)")
         .bind(message_id)
         .bind(thread_id)
         .bind(&data)
@@ -267,14 +268,24 @@ pub async fn db_modify_message<R: Runtime>(
         .and_then(|v| v.as_str())
         .ok_or("Missing message id")?;
 
+    let thread_id = message
+        .get("thread_id")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing thread_id")?;
+
     let data = serde_json::to_string(&message).map_err(|e| e.to_string())?;
 
-    sqlx::query("UPDATE messages SET data = ?1 WHERE id = ?2")
-        .bind(&data)
-        .bind(message_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| format!("Failed to modify message: {}", e))?;
+    // Upsert so a modify ahead of create still lands instead of UPDATEing 0 rows.
+    sqlx::query(
+        "INSERT INTO messages (id, thread_id, data) VALUES (?1, ?2, ?3) \
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+    )
+    .bind(message_id)
+    .bind(thread_id)
+    .bind(&data)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to modify message: {}", e))?;
 
     Ok(message)
 }

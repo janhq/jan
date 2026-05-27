@@ -36,6 +36,8 @@ import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
+import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
+import { paramsSettings } from '@/lib/predefinedParams'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -864,14 +866,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
+      const mergedParams: Record<string, unknown> = {
+        ...modelSamplingDefaults,
+        ...(inferenceParams ?? {}),
+        ...reasoningParams,
+      }
+      if (isPredefinedRemoteProvider(effectiveProviderName)) {
+        for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
+      }
       this.model = await ModelFactory.createModel(
         modelId,
         updatedProvider ?? provider,
-        {
-          ...modelSamplingDefaults,
-          ...(inferenceParams ?? {}),
-          ...reasoningParams,
-        }
+        mergedParams
       )
       useAppState.getState().updateLoadingModel(false)
       useAppState.getState().updateThreadLoadingModel(threadId, false)
@@ -891,8 +897,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // split it into separate messages so convertToModelMessages produces the
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
+    const effectiveApiType = getProviderApiType(provider)
     let messagesToConvert = (() => {
-      if (effectiveProviderName !== 'anthropic') {
+      if (effectiveApiType !== 'anthropic') {
         return options.messages
       }
       return options.messages.flatMap((message) => {

@@ -51,6 +51,8 @@ const h = vi.hoisted(() => {
   const appStateState = {
     ragToolNames: new Set<string>(),
     mcpToolNames: new Set<string>(),
+    setOomError: vi.fn(),
+    setBackendError: vi.fn(),
   }
   const useAppStateMock: any = (selector: any) => selector(appStateState)
   useAppStateMock.getState = () => appStateState
@@ -527,29 +529,6 @@ describe('ThreadDetail route', () => {
     h.chatState.status = 'submitted'
     renderComponent()
     expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
-  })
-
-  it('shows error banner with Regenerate button for generic errors', () => {
-    h.chatState.error = new Error('something broke')
-    renderComponent()
-    expect(screen.getByText('Error generating response')).toBeInTheDocument()
-    expect(screen.getByText('something broke')).toBeInTheDocument()
-    expect(screen.getByText('Regenerate')).toBeInTheDocument()
-  })
-
-  it('shows Increase Context Size button on context-length errors (agent mode)', () => {
-    // Agent mode bypasses auto-increase effect so the UI stays on the error.
-    h.agentModeState.agentThreads = { 'thread-1': true }
-    h.chatState.error = new Error('context length limit exceeded')
-    renderComponent()
-    expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
-  })
-
-  it('clicking Regenerate in error banner triggers regenerate()', () => {
-    h.chatState.error = new Error('something broke')
-    renderComponent()
-    screen.getByText('Regenerate').click()
-    expect(h.mockRegenerate).toHaveBeenCalled()
   })
 
   it('processes an initial message from sessionStorage on mount', async () => {

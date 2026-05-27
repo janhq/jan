@@ -304,10 +304,7 @@ pub(crate) fn convert_messages(
             continue;
         }
 
-        let content_array = match content.as_array() {
-            Some(arr) => arr,
-            None => return None,
-        };
+        let content_array = content.as_array()?;
 
         match role {
             "assistant" => {
@@ -1006,6 +1003,8 @@ async fn call_openai_chat_completions(
     Err(last_err)
 }
 
+// orchestration coordinator threads state from multiple subsystems
+#[allow(clippy::too_many_arguments)]
 async fn run_server_side_openai_orchestration(
     json_body: &serde_json::Value,
     client: &Client,
@@ -1155,6 +1154,7 @@ async fn run_server_side_openai_orchestration(
 }
 
 /// Handles the proxy request logic
+#[allow(clippy::too_many_arguments)]
 async fn proxy_request(
     req: Request<Body>,
     client: Client,
@@ -2774,6 +2774,7 @@ pub async fn start_server(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn start_server_internal(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     llama_state: Arc<LlamacppState>,

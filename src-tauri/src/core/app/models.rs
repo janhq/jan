@@ -6,11 +6,10 @@ pub struct AppConfiguration {
     // Add other fields as needed
 }
 
-impl AppConfiguration {
-    pub fn default() -> Self {
+impl Default for AppConfiguration {
+    fn default() -> Self {
         Self {
-            data_folder: String::from("./data"), // Set a default value for the data_folder
-                                                 // Add other fields with default values as needed
+            data_folder: String::from("./data"),
         }
     }
 }

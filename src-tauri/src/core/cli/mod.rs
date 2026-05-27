@@ -93,6 +93,7 @@ pub fn cli_get_thread(thread_id: &str) -> Result<serde_json::Value, String> {
 // ── Server operations ──────────────────────────────────────────────────────
 
 /// Start the OpenAI-compatible proxy server. Returns the port it's listening on.
+#[allow(clippy::too_many_arguments)]
 pub async fn cli_start_server(
     app_state: Arc<AppState>,
     llama_state: Arc<LlamacppState>,
@@ -296,7 +297,7 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .collect();
-    version_entries.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    version_entries.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
 
     for version_entry in version_entries {
         let version_dir = version_entry.path();
@@ -305,7 +306,7 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_dir())
             .collect();
-        backend_entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        backend_entries.sort_by_key(|a| a.file_name());
 
         for backend_entry in backend_entries {
             let backend_dir = backend_entry.path();
@@ -530,7 +531,7 @@ pub async fn download_hf_model(
         "llamacpp/models/{}/{}",
         repo_id, file.filename
     );
-    let display_name = repo_id.split('/').last().unwrap_or(repo_id);
+    let display_name = repo_id.split('/').next_back().unwrap_or(repo_id);
 
     let mut yml = format!(
         "model_path: {rel_path}\nname: {display_name}\nsize_bytes: {}\nembedding: false\n",

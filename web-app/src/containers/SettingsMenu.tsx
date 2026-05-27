@@ -22,7 +22,10 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle, isLocalProvider } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
-import { openAIProviderSettings } from '@/constants/providers'
+import {
+  openAIProviderSettings,
+  anthropicProviderSettings,
+} from '@/constants/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -37,14 +40,23 @@ const SettingsMenu = () => {
   const { providers, addProvider } = useModelProvider()
 
   const createProvider = useCallback(
-    (name: string, baseUrl: string, apiKey: string) => {
+    (
+      name: string,
+      baseUrl: string,
+      apiKey: string,
+      apiType: ProviderApiType
+    ) => {
       if (
         providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
       ) {
         toast.error(t('provider:providerAlreadyExists', { name }))
         return
       }
-      const settings = cloneDeep(openAIProviderSettings) as ProviderSetting[]
+      const template =
+        apiType === 'anthropic'
+          ? anthropicProviderSettings
+          : openAIProviderSettings
+      const settings = cloneDeep(template) as ProviderSetting[]
       for (const s of settings) {
         if (s.key === 'base-url') {
           (s.controller_props as { value: string }).value = baseUrl
@@ -59,6 +71,7 @@ const SettingsMenu = () => {
         settings,
         api_key: apiKey,
         base_url: baseUrl,
+        ...(apiType === 'anthropic' ? { api_type: 'anthropic' as const } : {}),
       }
       addProvider(newProvider)
       setTimeout(() => {

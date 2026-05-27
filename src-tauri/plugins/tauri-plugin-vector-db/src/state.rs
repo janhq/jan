@@ -4,6 +4,12 @@ pub struct VectorDBState {
     pub base_dir: PathBuf,
 }
 
+impl Default for VectorDBState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VectorDBState {
     pub fn new() -> Self {
         // Default vector db path: /Jan/data/db

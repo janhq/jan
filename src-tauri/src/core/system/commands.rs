@@ -193,8 +193,9 @@ pub fn factory_reset<R: Runtime>(
 
         // Reset app configuration to defaults unless user chose to keep configs
         if !keep_models_and_configs {
-            let mut default_config = AppConfiguration::default();
-            default_config.data_folder = default_data_folder_path(app_handle.clone());
+            let default_config = AppConfiguration {
+                data_folder: default_data_folder_path(app_handle.clone()),
+            };
             let _ = update_app_configuration(app_handle.clone(), default_config);
         }
 
@@ -349,11 +350,12 @@ pub fn launch_claude_code_with_config(
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {
                 write_env_to_shell(&env_file_path, &env_vars)?;
-                return Ok(());
+                Ok(())
             }
             Err(_) => {
                 // Use admin privileges to write
@@ -397,7 +399,7 @@ pub fn launch_claude_code_with_config(
                     "Env vars written to {} with admin privileges",
                     env_file_path
                 );
-                return Ok(());
+                Ok(())
             }
         }
     } else if cfg!(target_os = "linux") {
@@ -412,17 +414,18 @@ pub fn launch_claude_code_with_config(
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {
                 write_env_to_shell(&env_file_path, &env_vars)?;
-                return Ok(());
+                Ok(())
             }
             Err(_) => {
                 let jan_config_dir = format!("{}/.config/jan", home_dir);
                 let ext = if shell_name == "bash" { "bash" } else { "zsh" };
                 let env_file = format!("{}/claude-code-env.{}", jan_config_dir, ext);
-                return Err(format!("NEED_PERMISSION:{}", env_file));
+                Err(format!("NEED_PERMISSION:{}", env_file))
             }
         }
     } else {
@@ -441,7 +444,7 @@ pub fn launch_claude_code_with_config(
         }
 
         log::info!("Environment variables set permanently in Windows registry.");
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -664,11 +667,12 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {
                 std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
-                return Ok(());
+                Ok(())
             }
             Err(_) => {
                 // Write cleaned content to a temp file, then use osascript to move it
@@ -690,7 +694,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                     "CC env cleared from {} with admin privileges",
                     env_file_path
                 );
-                return Ok(());
+                Ok(())
             }
         }
     } else if cfg!(target_os = "linux") {
@@ -707,6 +711,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {

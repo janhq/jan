@@ -26,7 +26,7 @@ fn test_get_vulkan_gpus_on_desktop() {
     let gpus = vulkan::get_vulkan_gpus();
 
     // Test that function returns without panicking on desktop platforms
-    assert!(gpus.len() >= 0);
+    let _ = gpus.len();
 
     // If GPUs are found, verify they have valid properties
     for (i, gpu) in gpus.iter().enumerate() {

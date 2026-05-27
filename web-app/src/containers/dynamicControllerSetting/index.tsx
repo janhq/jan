@@ -11,6 +11,8 @@ type DynamicControllerProps = {
   className?: string
   description?: string
   readonly?: boolean
+  /** Human reason the control is disabled (e.g. "Controlled by Mirostat"). */
+  disabledReason?: string
   controllerType:
     | 'input'
     | 'checkbox'
@@ -28,6 +30,8 @@ type DynamicControllerProps = {
     min?: number
     max?: number
     step?: number
+    warnAbove?: number
+    warnBelow?: number
     recommended?: string
   }
   onChange: (value: string | boolean | number) => void
@@ -37,8 +41,28 @@ export function DynamicControllerSetting({
   className,
   controllerType,
   controllerProps,
+  disabledReason,
   onChange,
 }: DynamicControllerProps) {
+  const control = renderControl(controllerType, controllerProps, className, onChange)
+  if (!disabledReason) return control
+  return (
+    <div
+      className="opacity-50 pointer-events-none select-none"
+      title={disabledReason}
+      aria-disabled
+    >
+      {control}
+    </div>
+  )
+}
+
+function renderControl(
+  controllerType: DynamicControllerProps['controllerType'],
+  controllerProps: DynamicControllerProps['controllerProps'],
+  className: string | undefined,
+  onChange: DynamicControllerProps['onChange']
+) {
   if (controllerType === 'input') {
     return (
       <InputControl
@@ -90,6 +114,8 @@ export function DynamicControllerSetting({
         min={controllerProps.min}
         max={controllerProps.max}
         step={controllerProps.step}
+        warnAbove={controllerProps.warnAbove}
+        warnBelow={controllerProps.warnBelow}
         onChange={(newValue) => newValue && onChange(newValue[0])}
       />
     )

@@ -47,11 +47,18 @@ const h = vi.hoisted(() => {
     ],
     settings: [
       {
-        key: 'version_backend',
-        title: 'Backend',
-        description: 'Backend version',
+        key: 'llamacpp_version',
+        title: 'Version',
+        description: 'llama.cpp release version',
         controller_type: 'input',
-        controller_props: { value: 'v1', recommended: 'cuda/v1' },
+        controller_props: { value: 'v1', recommended: 'v1' },
+      },
+      {
+        key: 'llamacpp_backend',
+        title: 'Backend',
+        description: 'Hardware backend',
+        controller_type: 'input',
+        controller_props: { value: 'cuda', recommended: 'cuda' },
       },
       {
         key: 'device',
@@ -792,12 +799,12 @@ describe('ProviderDetail route', () => {
       )
     })
 
-    it('for llamacpp, the version_backend control also stops all running models on change', async () => {
+    it('for llamacpp, the llamacpp_version control also stops all running models on change', async () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       const dyns = screen.getAllByTestId('dynamic-ctrl')
       await act(async () => {
-        fireEvent.click(dyns[0]) // version_backend
+        fireEvent.click(dyns[0]) // llamacpp_version
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
     })

@@ -73,6 +73,7 @@ vi.mock('@/hooks/useModelProvider', () => ({
     selector({
       selectedModel: selectedModelOverride,
       selectedProvider: { provider: 'llamacpp' },
+      providers: [],
       selectModelProvider: vi.fn(),
       updateProvider: vi.fn(),
       getProviderByName: getProviderByNameMock,
@@ -201,6 +202,7 @@ vi.mock('@janhq/core', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ navigate: vi.fn() }),
+  Link: ({ children, ...props }: any) => <a {...props}>{children}</a>,
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({

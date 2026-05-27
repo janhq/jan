@@ -335,7 +335,7 @@ pub async fn load_llama_model<R: Runtime>(
 ) -> ServerResult<SessionInfo> {
     let (port, api_key, pid) = router_endpoint(&app_handle)
         .await
-        .map_err(|e| ServerError::InvalidArgument(e))?;
+        .map_err(ServerError::InvalidArgument)?;
     post_load(port, &api_key, &model_id).await?;
     Ok(SessionInfo {
         pid: pid as i32,
@@ -353,7 +353,7 @@ pub async fn unload_llama_model<R: Runtime>(
 ) -> ServerResult<UnloadResult> {
     let (port, api_key, _pid) = router_endpoint(&app_handle)
         .await
-        .map_err(|e| ServerError::InvalidArgument(e))?;
+        .map_err(ServerError::InvalidArgument)?;
     match post_unload(port, &api_key, &model_id).await {
         Ok(()) => Ok(UnloadResult { success: true, error: None }),
         Err(e) => Ok(UnloadResult { success: false, error: Some(e) }),

@@ -93,6 +93,30 @@ describe('ModelFactory', () => {
       expect(model.type).toBe('anthropic')
     })
 
+    it('routes a custom provider with api_type="anthropic" through the Anthropic SDK', async () => {
+      const { createAnthropic } = await import('@ai-sdk/anthropic')
+      vi.mocked(createAnthropic).mockClear()
+      const provider: ProviderObject = {
+        provider: 'my-claude-proxy',
+        api_type: 'anthropic',
+        api_key: 'sk-proxy',
+        base_url: 'https://proxy.example.com/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      const model = await ModelFactory.createModel('claude-3-haiku', provider)
+      expect(model).toBeDefined()
+      expect(model.type).toBe('anthropic')
+      expect(createAnthropic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'sk-proxy',
+          baseURL: 'https://proxy.example.com/v1',
+        })
+      )
+    })
+
     it('routes google and gemini through the native @ai-sdk/google client and strips the /openai suffix', async () => {
       const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
       for (const name of ['google', 'gemini'] as const) {

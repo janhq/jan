@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
+import { useMessageErrors } from '@/stores/message-errors'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
@@ -28,6 +29,8 @@ import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
+  uiMessageHasMeaningfulContent,
+  threadMessageIsEmpty,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
 import {
@@ -156,10 +159,17 @@ function ThreadDetail() {
   const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
-  const oomError = useAppState((s) => s.oomError)
+  const oomErrorRaw = useAppState((s) => s.oomError)
   const setOomError = useAppState((s) => s.setOomError)
-  const backendError = useAppState((s) => s.backendError)
+  const backendErrorRaw = useAppState((s) => s.backendError)
   const setBackendError = useAppState((s) => s.setBackendError)
+
+  // These signals come from the llamacpp router via global Tauri events.
+  // Mask them when the active provider isn't llamacpp so a router crash
+  // doesn't decorate chats running against MLX / OpenAI / Anthropic / etc.
+  const isLlamacppActive = selectedProvider === 'llamacpp'
+  const oomError = isLlamacppActive ? oomErrorRaw : undefined
+  const backendError = isLlamacppActive ? backendErrorRaw : undefined
 
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
@@ -231,39 +241,49 @@ function ThreadDetail() {
       // Persist assistant message to backend (skip if aborted).
       // For continuations, message.parts already contains partial + new content
       // because the stream wrapper prepended the partial text as the first delta.
-      if (!isAbort && message.role === 'assistant') {
+      if (
+        !isAbort &&
+        message.role === 'assistant' &&
+        uiMessageHasMeaningfulContent(message)
+      ) {
         const contentParts = extractContentPartsFromUIMessage(message)
+        const messageMetadata = (message.metadata || {}) as Record<
+          string,
+          unknown
+        >
 
-        if (contentParts.length > 0) {
-          const messageMetadata = (message.metadata || {}) as Record<
-            string,
-            unknown
-          >
+        const assistantMessage: ThreadMessage = {
+          type: 'text',
+          role: ChatCompletionRole.Assistant,
+          content: contentParts,
+          id: message.id,
+          object: 'thread.message',
+          thread_id: threadId,
+          status: MessageStatus.Ready,
+          created_at: Date.now(),
+          completed_at: Date.now(),
+          metadata: messageMetadata,
+        }
 
-          const assistantMessage: ThreadMessage = {
-            type: 'text',
-            role: ChatCompletionRole.Assistant,
-            content: contentParts,
-            id: message.id,
-            object: 'thread.message',
-            thread_id: threadId,
-            status: MessageStatus.Ready,
-            created_at: Date.now(),
-            completed_at: Date.now(),
-            metadata: messageMetadata,
+        const existingMessages = useMessages.getState().getMessages(threadId)
+        const existingMessage = existingMessages.find(
+          (m) => m.id === message.id
+        )
+
+        if (existingMessage) {
+          updateMessage(assistantMessage)
+        } else {
+          addMessage(assistantMessage)
+        }
+
+        for (const m of existingMessages) {
+          const meta = m.metadata as Record<string, unknown> | undefined
+          if (meta?.error) {
+            const rest = { ...meta }
+            delete rest.error
+            updateMessage({ ...m, metadata: rest })
           }
-
-          // Check if message with this ID already exists (onFinish can be called multiple times)
-          const existingMessages = useMessages.getState().getMessages(threadId)
-          const existingMessage = existingMessages.find(
-            (m) => m.id === message.id
-          )
-
-          if (existingMessage) {
-            updateMessage(assistantMessage)
-          } else {
-            addMessage(assistantMessage)
-          }
+          useMessageErrors.getState().clearError(m.id)
         }
       }
 
@@ -554,10 +574,33 @@ function ThreadDetail() {
             }
           }
 
-          // Update the legacy store
+          // Drop and delete any persisted empty assistant rows produced by
+          // the old bug where errored generations were written as empty-text
+          // messages. Lossless cleanup — these carry no information.
+          const emptyAssistantIds = messagesToSet
+            .filter(threadMessageIsEmpty)
+            .map((m) => m.id)
+          if (emptyAssistantIds.length > 0) {
+            messagesToSet = messagesToSet.filter(
+              (m) => !emptyAssistantIds.includes(m.id)
+            )
+            for (const id of emptyAssistantIds) {
+              deleteMessage(threadId, id)
+            }
+          }
+
           setMessages(threadId, messagesToSet)
 
-          // Convert and set messages for AI SDK chat
+          const hydrated: Record<string, string> = {}
+          for (const m of messagesToSet) {
+            const err = (m.metadata as Record<string, unknown> | undefined)
+              ?.error
+            if (typeof err === 'string' && err.length > 0) {
+              hydrated[m.id] = err
+            }
+          }
+          useMessageErrors.getState().hydrate(hydrated)
+
           const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
           setChatMessages(uiMessages)
           currentThread.current = threadId
@@ -573,6 +616,24 @@ function ThreadDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Resync the OOM/backend banner from message metadata on every thread switch.
+  // Persisted by LlamacppOomListener at error time; unset state when this
+  // thread carries no such metadata so the banner doesn't leak across threads.
+  const threadMessagesForBanner = useMessages((s) => s.messages?.[threadId])
+  useEffect(() => {
+    let oom: string | undefined
+    let be: string | undefined
+    for (const m of threadMessagesForBanner ?? []) {
+      const meta = m.metadata as Record<string, unknown> | undefined
+      const o = meta?.oomError
+      if (typeof o === 'string' && o.length > 0) oom = o
+      const b = meta?.backendError
+      if (typeof b === 'string' && b.length > 0) be = b
+    }
+    useAppState.getState().setOomError(oom)
+    useAppState.getState().setBackendError(be)
+  }, [threadId, threadMessagesForBanner])
 
   // Consolidated function to process and send a message
   const processAndSendMessage = useCallback(
@@ -786,6 +847,19 @@ function ThreadDetail() {
     }
   }, [threadId, processAndSendMessage])
 
+  const stripBannerMetadata = useCallback(() => {
+    const tmsgs = useMessages.getState().getMessages(threadId)
+    for (const m of tmsgs) {
+      const meta = m.metadata as Record<string, unknown> | undefined
+      if (!meta) continue
+      if (meta.oomError == null && meta.backendError == null) continue
+      const nextMeta = { ...meta }
+      delete nextMeta.oomError
+      delete nextMeta.backendError
+      updateMessage({ ...m, metadata: nextMeta })
+    }
+  }, [threadId, updateMessage])
+
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
     async (
@@ -794,21 +868,33 @@ function ThreadDetail() {
     ) => {
       if (oomError) setOomError(undefined)
       if (backendError) setBackendError(undefined)
+      if (oomError || backendError) stripBannerMetadata()
       await processAndSendMessage(text, files)
     },
-    [processAndSendMessage, oomError, setOomError, backendError, setBackendError]
+    [
+      processAndSendMessage,
+      oomError,
+      setOomError,
+      backendError,
+      setBackendError,
+      stripBannerMetadata,
+    ]
   )
 
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback((messageId?: string) => {
+    const hadBannerError =
+      useAppState.getState().oomError != null ||
+      useAppState.getState().backendError != null
     if (useAppState.getState().oomError) {
       useAppState.getState().setOomError(undefined)
     }
     if (useAppState.getState().backendError) {
       useAppState.getState().setBackendError(undefined)
     }
+    if (hadBannerError) stripBannerMetadata()
     // Cancel any in-flight title summarization before regenerating
     titleAbortRef.current?.abort()
     titleAbortRef.current = null
@@ -852,7 +938,7 @@ function ThreadDetail() {
     // Call the AI SDK regenerate function - it will handle truncating the UI messages
     // and generating a new response from the selected message
     regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate])
+  }, [threadId, deleteMessage, regenerate, stripBannerMetadata])
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
@@ -866,7 +952,12 @@ function ThreadDetail() {
 
       const originalMessage = currentLocalMessages[messageIndex]
 
-      // Update the message content
+      const priorMeta = (originalMessage.metadata || {}) as Record<
+        string,
+        unknown
+      >
+      const cleanedMeta = { ...priorMeta }
+      delete cleanedMeta.error
       const updatedMessage = {
         ...originalMessage,
         content: [
@@ -875,8 +966,10 @@ function ThreadDetail() {
             text: { value: newText, annotations: [] },
           },
         ],
+        metadata: cleanedMeta,
       }
       updateMessage(updatedMessage)
+      useMessageErrors.getState().clearError(messageId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.map((msg) => {
@@ -916,6 +1009,7 @@ function ThreadDetail() {
   const handleDeleteMessage = useCallback(
     (messageId: string) => {
       deleteMessage(threadId, messageId)
+      useMessageErrors.getState().clearError(messageId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.filter(
@@ -1082,6 +1176,55 @@ function ThreadDetail() {
     }
   }, [status, threadId])
 
+  // Source the user id from chatMessages — useMessages may not have it yet
+  // when the transport rejects on the same tick as addMessage.
+  useEffect(() => {
+    if (!error) return
+    let lastUserId: string | undefined
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === 'user') {
+        lastUserId = chatMessages[i].id
+        break
+      }
+    }
+    if (!lastUserId) return
+    const errMessage =
+      error instanceof Error ? error.message : String(error || 'Error')
+    useMessageErrors.getState().setError(lastUserId, errMessage)
+    const tm = useMessages.getState().getMessages(threadId).find(
+      (m) => m.id === lastUserId
+    )
+    if (tm) {
+      const existingError = (tm.metadata as Record<string, unknown> | undefined)
+        ?.error
+      if (existingError !== errMessage) {
+        updateMessage({
+          ...tm,
+          metadata: { ...(tm.metadata || {}), error: errMessage },
+        })
+      }
+    }
+  }, [status, error, threadId, chatMessages, updateMessage])
+
+  // Persist whenever the user message lands in useMessages — covers the race
+  // where the stamping effect ran before addMessage's commit was observable.
+  const localThreadMessages = useMessages((s) => s.messages?.[threadId])
+  const errorEntries = useMessageErrors((s) => s.errors)
+  useEffect(() => {
+    if (!localThreadMessages) return
+    for (const m of localThreadMessages) {
+      const err = errorEntries[m.id]
+      if (typeof err !== 'string' || !err) continue
+      const existing = (m.metadata as Record<string, unknown> | undefined)
+        ?.error
+      if (existing === err) continue
+      updateMessage({
+        ...m,
+        metadata: { ...(m.metadata || {}), error: err },
+      })
+    }
+  }, [localThreadMessages, errorEntries, updateMessage])
+
   // Clear the queue when navigating away from this thread
   useEffect(() => {
     return () => {
@@ -1161,7 +1304,7 @@ function ThreadDetail() {
                   {!lastIsAssistant && <PromptProgress />}
                 </div>
               )}
-              {(error || contextLimitError || oomError || backendError) && (
+              {(contextLimitError || oomError || backendError) && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
@@ -1183,7 +1326,7 @@ function ThreadDetail() {
                           }
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {oomError ?? backendError ?? (error ?? contextLimitError)?.message}
+                          {oomError ?? backendError ?? contextLimitError?.message}
                         </span>
                       </div>
                       {oomError && (

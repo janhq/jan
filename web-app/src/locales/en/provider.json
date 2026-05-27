@@ -1,10 +1,14 @@
 {
   "addProvider": "Add Provider",
-  "addOpenAIProvider": "Add OpenAI-compatible Provider",
+  "addOpenAIProvider": "Add Custom Provider",
   "enterNameForProvider": "Provider name (e.g. my-llm-server)",
+  "apiTypeLabel": "API format",
+  "apiTypeOpenAI": "OpenAI-compatible",
+  "apiTypeAnthropic": "Anthropic-compatible",
   "baseUrlLabel": "Base URL",
   "baseUrlPlaceholder": "https://your-endpoint/v1",
-  "apiKeyLabel": "API key (optional)",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API key",
   "apiKeyPlaceholder": "Paste your API key",
   "invalidBaseUrl": "Base URL must be a valid http(s) URL"
 }
