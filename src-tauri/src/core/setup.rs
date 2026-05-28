@@ -427,6 +427,22 @@ pub fn install_gtk_headerbar<R: Runtime>(app: &App<R>) {
         .show_close_button(true)
         .title("Jan")
         .build();
+
+    // Shrink the headerbar: default Adwaita is ~46px, this brings it to ~24px.
+    let css = gtk::CssProvider::new();
+    let style = b"headerbar { min-height: 24px; padding: 0 4px; } \
+                  headerbar button { min-height: 20px; min-width: 20px; padding: 0 4px; } \
+                  headerbar .title { font-size: 0.9em; }";
+    if let Err(e) = css.load_from_data(style) {
+        log::warn!("install_gtk_headerbar: css load failed: {e}");
+    } else if let Some(screen) = gtk::gdk::Screen::default() {
+        gtk::StyleContext::add_provider_for_screen(
+            &screen,
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
     header.show_all();
     gtk_window.set_titlebar(Some(&header));
 }
