@@ -52,7 +52,7 @@ fn compute_system_info() -> SystemInfo {
 pub fn get_system_info() -> SystemInfo {
     // Fast path: use cache if present
     {
-        let guard = SYSTEM_INFO.read().expect("RwLock poisoned");
+        let guard = SYSTEM_INFO.read().unwrap_or_else(|e| e.into_inner());
         if let Some(ref info) = *guard {
             return info.clone();
         }
@@ -60,7 +60,7 @@ pub fn get_system_info() -> SystemInfo {
     // Cache miss or invalidated: compute and store
     let info = compute_system_info();
     {
-        let mut guard = SYSTEM_INFO.write().expect("RwLock poisoned");
+        let mut guard = SYSTEM_INFO.write().unwrap_or_else(|e| e.into_inner());
         *guard = Some(info.clone());
     }
     info
@@ -73,7 +73,7 @@ pub fn get_system_info() -> SystemInfo {
 pub fn refresh_system_info() {
     #[cfg(target_os = "linux")]
     nvidia::invalidate_nvml();
-    let mut guard = SYSTEM_INFO.write().expect("RwLock poisoned");
+    let mut guard = SYSTEM_INFO.write().unwrap_or_else(|e| e.into_inner());
     *guard = None;
 }
 

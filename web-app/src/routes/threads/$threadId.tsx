@@ -624,6 +624,9 @@ function ThreadDetail() {
           currentThread.current = threadId
         }
       })
+      .catch((error) =>
+        console.error('Failed to fetch messages for thread:', threadId, error)
+      )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, serviceHub])
 

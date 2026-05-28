@@ -407,10 +407,18 @@ function MCPServersDesktop() {
     let unlisten: (() => void) | undefined
     const setupListener = async () => {
       unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
-        serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+        serviceHub
+          .mcp()
+          .getConnectedServers()
+          .then(setConnectedServers)
+          .catch((error) =>
+            console.error('Failed to refresh MCP servers:', error)
+          )
       })
     }
-    setupListener()
+    setupListener().catch((error) =>
+      console.error('Failed to set up MCP update listener:', error)
+    )
 
     return () => {
       unlisten?.()
