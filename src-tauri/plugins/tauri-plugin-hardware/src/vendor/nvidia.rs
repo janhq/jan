@@ -1,6 +1,6 @@
 use crate::types::{GpuInfo, GpuUsage};
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
 use {
     crate::types::Vendor,
     nvml_wrapper::{error::NvmlError, Nvml},
@@ -9,7 +9,7 @@ use {
 
 /// NVML handle. On Linux we use RwLock so we can invalidate after sleep/resume
 /// and re-initialize when the driver is ready again.
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
 static NVML: RwLock<Option<Nvml>> = RwLock::new(None);
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -19,7 +19,7 @@ pub struct NvidiaInfo {
 }
 
 /// Run a closure with the current NVML handle, initializing if needed.
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
 fn with_nvml<F, R>(f: F) -> R
 where
     F: FnOnce(Option<&Nvml>) -> R,
@@ -73,13 +73,12 @@ pub fn invalidate_nvml() {}
 
 impl GpuInfo {
     pub fn get_usage_nvidia(&self) -> GpuUsage {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
         {
-            log::warn!("NVIDIA GPU usage detection is not supported on mobile platforms");
             return self.get_usage_unsupported();
         }
 
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
         {
             let index = match &self.nvidia_info {
                 Some(nvidia_info) => nvidia_info.index,
@@ -97,7 +96,7 @@ impl GpuInfo {
         }
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
     fn get_nvidia_memory_usage(&self, index: u32) -> Result<GpuUsage, NvmlError> {
         with_nvml(|nvml| {
             let nvml = nvml.ok_or(NvmlError::Unknown)?;
@@ -114,20 +113,18 @@ impl GpuInfo {
 }
 
 pub fn get_nvidia_gpus() -> Vec<GpuInfo> {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
     {
-        // On mobile platforms, NVIDIA GPU detection is not supported
-        log::info!("NVIDIA GPU detection is not supported on mobile platforms");
         vec![]
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
     {
         get_nvidia_gpus_internal()
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
 fn get_nvidia_gpus_internal() -> Vec<GpuInfo> {
     with_nvml(|nvml| {
         let nvml = match nvml {
@@ -159,7 +156,7 @@ fn get_nvidia_gpus_internal() -> Vec<GpuInfo> {
     })
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
 fn create_gpu_info(nvml: &Nvml, index: u32, driver_version: &str) -> Result<GpuInfo, NvmlError> {
     let device = nvml.device_by_index(index)?;
     let memory_info = device.memory_info()?;
