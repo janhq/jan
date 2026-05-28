@@ -30,7 +30,13 @@
   },
   "bundle": {
     "targets": ["appimage"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/LICENSE",
+      "resources/bin/jan-cli",
+      "resources/bin/sqlite-vec.so",
+      "resources/llamacpp-backend-upstream/**/*"
+    ],
     "externalBin": ["resources/bin/uv"],
     "linux": {
       "appimage": {

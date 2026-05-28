@@ -1169,14 +1169,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return null
       }
 
-      // Linux fallthrough — preserved for future Linux wiring; matches the
-      // primary turboquant extension's naming.
-      const prefix = 'linux'
-      if (features.cuda13) return `${prefix}-cuda-13-common_cpus-${archSuffix}`
-      if (features.cuda12) return `${prefix}-cuda-12-common_cpus-${archSuffix}`
-      if (features.cuda11) return `${prefix}-cuda-11-common_cpus-${archSuffix}`
-      if (features.vulkan && hasEnoughVram)
-        return `${prefix}-vulkan-common_cpus-${archSuffix}`
+      // Linux — per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*,
+      // the only GPU-accelerated backend `ggml-org/llama.cpp` publishes for
+      // Linux is Vulkan. There are no `ubuntu-cuda-*` release artefacts,
+      // so even on NVIDIA hosts the optimal upgrade path is Vulkan (which
+      // works with the proprietary NVIDIA driver's Vulkan ICD just fine).
+      // `features.vulkan` is only `true` when libvulkan.so.1 loaded AND
+      // `vkEnumeratePhysicalDevices` returned ≥1 GPU — so this branch
+      // never recommends Vulkan on a host that can't actually run it.
+      //
+      // The `cuda*` feature flags are intentionally ignored here; they
+      // can still be true on a Linux box with a recent NVIDIA driver,
+      // but recommending a CUDA backend we don't ship would just produce
+      // a 404 at download time. `determine_supported_backends` in the
+      // Rust plugin mirrors this matrix.
+      if (sysInfo.os_type === 'linux') {
+        if (features.vulkan && hasEnoughVram && archSuffix === 'x64') {
+          return 'linux-vulkan-x64'
+        }
+        return null
+      }
 
       return null
     } catch (err) {

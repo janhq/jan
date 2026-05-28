@@ -1441,15 +1441,18 @@ function ProviderDetail() {
                                     uses the separate turboquant
                                     pipeline with no alternate backend
                                     matrix. */}
-                                {/* On Windows the local llama.cpp provider is
-                                    `llamacpp-upstream` (sole survivor of the
-                                    upstream-only consolidation). On Linux it
-                                    is still the turboquant `llamacpp`. macOS
-                                    has no alternate-backend matrix here. */}
-                                {((IS_WINDOWS &&
-                                  provider?.provider === 'llamacpp-upstream') ||
-                                  (IS_LINUX &&
-                                    provider?.provider === 'llamacpp')) && (
+                                {/* Both Windows and Linux ship the
+                                    upstream `ggml-org/llama.cpp` provider
+                                    (`llamacpp-upstream`) as the only
+                                    local llama.cpp option — see ADRs
+                                    2026-05-22 (Windows) and 2026-05-28
+                                    (Linux). `LOCAL_LLAMACPP_PROVIDER`
+                                    is the single source of truth for
+                                    "which provider id is local on this
+                                    OS"; reuse it instead of hard-coding
+                                    the id per branch. */}
+                                {(IS_WINDOWS || IS_LINUX) &&
+                                  provider?.provider === LOCAL_LLAMACPP_PROVIDER && (
                                     <Button
                                       variant="outline"
                                       size="sm"

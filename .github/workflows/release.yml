@@ -783,8 +783,25 @@ jobs:
           yarn build:core
           yarn build:extensions
 
-      - name: Download binaries (bun, uv)
+      - name: Download binaries (bun, uv, sqlite-vec)
         run: yarn download:bin
+
+      - name: Assert sqlite-vec was bundled
+        # `scripts/download-bin.mjs` treats sqlite-vec as non-fatal (it
+        # logs and continues if the GitHub release lookup or download
+        # fails). Once it's listed in `tauri.linux.conf.json :: resources`
+        # though, `tauri build` fails with an opaque path-not-found if
+        # the file is missing — so fail fast here with a clear message
+        # instead of letting the bundler surface a confusing error 200
+        # lines deeper.
+        run: |
+          if [ ! -f src-tauri/resources/bin/sqlite-vec.so ]; then
+            echo "::error::sqlite-vec.so not found after yarn download:bin."
+            echo "          Vector DB ANN acceleration would be missing from the AppImage."
+            echo "          Check the previous step's logs for the sqlite-vec download failure."
+            exit 1
+          fi
+          echo "sqlite-vec.so present: $(ls -l src-tauri/resources/bin/sqlite-vec.so)"
 
       - name: Download upstream llamacpp backend (ggml-org/llama.cpp, linux-cpu-x64)
         env:
