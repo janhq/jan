@@ -303,10 +303,17 @@ export function convertThreadMessageToUIMessage(
       }
 
       const toolName = tc.tool?.function?.name || tc.name
-      const toolInput =
-        typeof tc.tool?.function?.arguments === 'string'
-          ? JSON.parse(tc.tool.function.arguments)
-          : tc.tool?.function?.arguments || tc.args
+      let toolInput: unknown
+      if (typeof tc.tool?.function?.arguments === 'string') {
+        try {
+          toolInput = JSON.parse(tc.tool.function.arguments)
+        } catch (error) {
+          console.warn('Failed to parse tool call arguments; using raw string:', error)
+          toolInput = tc.tool.function.arguments
+        }
+      } else {
+        toolInput = tc.tool?.function?.arguments || tc.args
+      }
       const toolCallId = tc.tool?.id || tc.id
 
       // Use AI SDK v5 UIToolInvocation format

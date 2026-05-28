@@ -27,8 +27,12 @@ export default class RagExtension extends RAGExtension {
   }
 
   async onLoad(): Promise<void> {
-    this.configure()
-    // Check ANN availability on load
+    try {
+      await this.configure()
+    } catch (e) {
+      console.error('[RAG] configure() failed during onLoad:', e)
+    }
+    // Check ANN availability on load (already self-contained try/catch)
     this.checkANNAvailability()
   }
 
