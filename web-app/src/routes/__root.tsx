@@ -21,14 +21,13 @@ import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
-import { useEffect, type MouseEvent } from 'react'
+import { useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
 import { WindowControls } from '@/components/WindowControls'
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import LlamacppBusyOnExitDialog from '@/containers/dialogs/LlamacppBusyOnExitDialog'
 import LlamacppOomListener from '@/containers/dialogs/LlamacppOomListener'
@@ -61,19 +60,12 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         {/* Fake absolute panel top to enable window drag */}
         {IS_WINDOWS && <WindowControls />}
-        {IS_TAURI && (
+        {IS_TAURI && !IS_LINUX && (
           <div
             className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing"
             title="Drag window"
             aria-label="Window drag area"
-            {...(IS_LINUX
-              ? {
-                  onMouseDown: (e: MouseEvent) => {
-                    if (e.button !== 0) return
-                    void getCurrentWebviewWindow().startDragging()
-                  },
-                }
-              : { 'data-tauri-drag-region': true as const })}
+            data-tauri-drag-region
           />
         )}
         <DialogAppUpdater />

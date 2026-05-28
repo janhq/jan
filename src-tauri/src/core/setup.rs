@@ -390,6 +390,47 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         .build(app)
 }
 
+/// Install a real GTK `HeaderBar` on the main window so GNOME (and any other
+/// CSD-only compositor) gets native min/max/close buttons, drag, system menu,
+/// and proper shadows instead of wry's bare-bones default CSD. KDE/XFCE keep
+/// using SSD; this only takes effect when GTK falls back to CSD.
+#[cfg(target_os = "linux")]
+pub fn install_gtk_headerbar<R: Runtime>(app: &App<R>) {
+    use gtk::prelude::*;
+
+    // CSD-only DEs (GNOME, Pantheon) need a real HeaderBar; KDE/XFCE provide
+    // SSD via xdg-decoration and would render a double titlebar if we install
+    // one here. Match the desktop session to keep this opt-in.
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let is_csd_desktop = desktop
+        .split(':')
+        .any(|d| matches!(d, "GNOME" | "GNOME-Classic" | "Unity" | "Pantheon"));
+    if !is_csd_desktop {
+        log::info!(
+            "install_gtk_headerbar: skipping on XDG_CURRENT_DESKTOP={desktop:?} (not CSD-only)"
+        );
+        return;
+    }
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let gtk_window = match window.gtk_window() {
+        Ok(w) => w,
+        Err(e) => {
+            log::warn!("install_gtk_headerbar: gtk_window() failed: {e}");
+            return;
+        }
+    };
+
+    let header = gtk::HeaderBar::builder()
+        .show_close_button(true)
+        .title("Jan")
+        .build();
+    header.show_all();
+    gtk_window.set_titlebar(Some(&header));
+}
+
 pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     // Setup GTK window theme listener for main window
     if let Some(window) = app.get_webview_window("main") {
@@ -412,6 +453,83 @@ pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     }
 
     Ok(())
+}
+
+/// Read the current XDG Desktop Portal `org.freedesktop.appearance/color-scheme`
+/// setting. Returns "dark", "light", or `None` if the portal reports no preference
+/// or is unavailable.
+#[cfg(target_os = "linux")]
+async fn read_xdg_portal_color_scheme() -> Result<Option<&'static str>, Box<dyn std::error::Error>>
+{
+    use zbus::Connection;
+
+    let connection = Connection::session().await?;
+    let proxy: zbus::Proxy<'_> = zbus::proxy::Builder::new(&connection)
+        .destination("org.freedesktop.portal.Desktop")?
+        .path("/org/freedesktop/portal/desktop")?
+        .interface("org.freedesktop.portal.Settings")?
+        .build()
+        .await?;
+
+    let reply: zbus::zvariant::OwnedValue = proxy
+        .call("Read", &("org.freedesktop.appearance", "color-scheme"))
+        .await?;
+
+    let inner: zbus::zvariant::OwnedValue = match reply.downcast_ref::<zbus::zvariant::Value>() {
+        Ok(v) => v.try_to_owned()?,
+        Err(_) => reply,
+    };
+    let color_scheme = u32::try_from(inner).unwrap_or(0);
+    // GNOME emits 0 ("no preference") for light, 1 for dark, 2 for explicit
+    // light (rare). Treat 0 and 2 as light so light↔dark toggles work on both
+    // GNOME and KDE/freedesktop-compliant DEs.
+    Ok(match color_scheme {
+        1 => Some("dark"),
+        _ => Some("light"),
+    })
+}
+
+/// Flip GTK's `gtk-application-prefer-dark-theme` so the native HeaderBar
+/// installed by `install_gtk_headerbar` follows the app's effective theme
+/// (user override or system). No-op on non-Linux.
+#[tauri::command]
+pub fn set_gtk_prefer_dark(dark: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        // GTK objects are not Send; bounce onto the GTK main thread.
+        gtk::glib::MainContext::default().invoke(move || {
+            if let Some(settings) = gtk::Settings::default() {
+                settings.set_gtk_application_prefer_dark_theme(dark);
+            }
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = dark;
+    }
+}
+
+#[tauri::command]
+pub async fn get_system_theme<R: Runtime>(app: tauri::AppHandle<R>) -> Result<String, String> {
+    #[cfg(target_os = "linux")]
+    {
+        match read_xdg_portal_color_scheme().await {
+            Ok(Some(theme)) => return Ok(theme.to_string()),
+            Ok(None) => {}
+            Err(e) => log::warn!("get_system_theme: portal read failed: {e}"),
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(theme) = window.theme() {
+            return Ok(match theme {
+                tauri::Theme::Dark => "dark".to_string(),
+                _ => "light".to_string(),
+            });
+        }
+    }
+    Ok("light".to_string())
 }
 
 /// Listen to the XDG Desktop Portal `org.freedesktop.appearance` `color-scheme`
@@ -439,6 +557,17 @@ async fn setup_xdg_portal_theme_listener<R: Runtime>(
 
     log::info!("XDG Desktop Portal theme listener active");
 
+    // Emit the current value so the frontend doesn't have to wait for the first
+    // SettingChanged signal to learn the system color-scheme on startup.
+    match read_xdg_portal_color_scheme().await {
+        Ok(Some(theme_str)) => {
+            log::info!("XDG Portal: initial system color-scheme: {theme_str}");
+            let _ = app_handle.emit("theme-changed", theme_str);
+        }
+        Ok(None) => log::info!("XDG Portal: initial color-scheme is 'no preference'"),
+        Err(e) => log::warn!("XDG Portal: initial Read failed: {e}"),
+    }
+
     while let Some(signal) = signal_stream.next().await {
         let body = signal.body();
         if let Ok((namespace, key, value)) =
@@ -449,8 +578,7 @@ async fn setup_xdg_portal_theme_listener<R: Runtime>(
                 let color_scheme = u32::try_from(value).unwrap_or(0);
                 let theme_str = match color_scheme {
                     1 => "dark",
-                    2 => "light",
-                    _ => "light", // default to light for "no preference"
+                    _ => "light",
                 };
                 log::info!(
                     "XDG Portal: system color-scheme changed to: {theme_str} (raw value: {color_scheme})"
