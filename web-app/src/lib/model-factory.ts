@@ -338,7 +338,13 @@ export function createCustomFetch(
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     let rawBody: Record<string, unknown> | null = null
     if (init?.method === 'POST' || !init?.method) {
-      rawBody = init?.body ? JSON.parse(init.body as string) : {}
+      try {
+        rawBody = init?.body ? JSON.parse(init.body as string) : {}
+      } catch (e) {
+        throw new Error(
+          `Failed to parse request body as JSON: ${e instanceof Error ? e.message : String(e)}`
+        )
+      }
       init = { ...init, body: JSON.stringify(buildBody(rawBody!, true)) }
     }
 
@@ -776,7 +782,16 @@ export class ModelFactory {
       init?: RequestInit
     ): Promise<Response> => {
       if (init?.method === 'POST' || !init?.method) {
-        const body = init?.body ? JSON.parse(init.body as string) : {}
+        let body: Record<string, unknown> = {}
+        if (init?.body) {
+          try {
+            body = JSON.parse(init.body as string)
+          } catch (e) {
+            throw new Error(
+              `Failed to parse MLX request body as JSON: ${e instanceof Error ? e.message : String(e)}`
+            )
+          }
+        }
         const mergedBody = { ...body, ...parameters }
         init = { ...init, body: JSON.stringify(mergedBody) }
       }

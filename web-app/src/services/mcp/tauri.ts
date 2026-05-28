@@ -31,7 +31,13 @@ export class TauriMCPService extends DefaultMCPService {
       return defaultResponse()
     }
 
-    const parsed = JSON.parse(configString) as MCPConfig & Record<string, unknown>
+    let parsed: MCPConfig & Record<string, unknown>
+    try {
+      parsed = JSON.parse(configString) as MCPConfig & Record<string, unknown>
+    } catch (error) {
+      console.error('Failed to parse MCP config JSON; falling back to defaults:', error)
+      return defaultResponse()
+    }
 
     if (!parsed || typeof parsed !== 'object') {
       return defaultResponse()

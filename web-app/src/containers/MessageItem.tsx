@@ -73,6 +73,7 @@ export type MessageItemProps = {
 export const MessageItem = memo(
   ({
     message,
+    isFirstMessage,
     isLastMessage,
     status,
     isAnimating,
@@ -541,7 +542,12 @@ export const MessageItem = memo(
     }, [message.parts, isStreaming, isReasoningAtBottom, grounding])
 
     return (
-      <div className="w-full mb-4">
+      <div
+        className={cn(
+          'w-full mb-4',
+          message.role === 'user' && !isFirstMessage && 'mt-8'
+        )}
+      >
 
         {/* Render message parts */}
         {renderedParts}
@@ -551,6 +557,35 @@ export const MessageItem = memo(
           (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
             <PromptProgress />
           )}
+
+        {typeof messageError === 'string' && messageError.length > 0 && (
+          <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+            <IconAlertTriangle
+              size={16}
+              className="mt-0.5 shrink-0 text-destructive"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-destructive">
+                Generation failed
+              </div>
+              <div className="text-muted-foreground break-words">
+                {messageError}
+              </div>
+            </div>
+            {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING &&
+              status !== CHAT_STATUS.SUBMITTED && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRegenerate}
+                  className="shrink-0"
+                >
+                  <IconRefresh size={14} />
+                  <span>Regenerate</span>
+                </Button>
+              )}
+          </div>
+        )}
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
@@ -575,38 +610,6 @@ export const MessageItem = memo(
             )}
           </div>
         )}
-
-        {message.role === 'user' &&
-          !hideActions &&
-          typeof messageError === 'string' &&
-          messageError.length > 0 && (
-            <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-              <IconAlertTriangle
-                size={16}
-                className="mt-0.5 shrink-0 text-destructive"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-destructive">
-                  Generation failed
-                </div>
-                <div className="text-muted-foreground break-words">
-                  {messageError}
-                </div>
-              </div>
-              {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING &&
-                status !== CHAT_STATUS.SUBMITTED && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRegenerate}
-                    className="shrink-0"
-                  >
-                    <IconRefresh size={14} />
-                    <span>Regenerate</span>
-                  </Button>
-                )}
-            </div>
-          )}
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (

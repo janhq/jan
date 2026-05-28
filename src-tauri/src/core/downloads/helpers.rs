@@ -119,14 +119,15 @@ async fn validate_downloaded_file(
         });
 
     if emit_event {
-        app.emit(
+        if let Err(e) = app.emit(
             "onModelValidationStarted",
             serde_json::json!({
                 "modelId": model_id,
                 "downloadType": "Model",
             }),
-        )
-        .unwrap();
+        ) {
+            log::warn!("Failed to emit onModelValidationStarted for {model_id}: {e}");
+        }
         log::info!("Starting validation for model: {model_id}");
     }
 
@@ -503,14 +504,15 @@ pub async fn _download_files_internal(
             .iter()
             .any(|item| item.sha256.is_some() || item.size.is_some())
     {
-        app.emit(
+        if let Err(e) = app.emit(
             "onModelValidationStarted",
             serde_json::json!({
                 "modelId": model_id,
                 "downloadType": "Model",
             }),
-        )
-        .unwrap();
+        ) {
+            log::warn!("Failed to emit onModelValidationStarted for {model_id}: {e}");
+        }
         log::info!("Starting validation for model: {model_id}");
     }
 
@@ -536,7 +538,9 @@ pub async fn _download_files_internal(
     // Emit final progress
     let (transferred, total) = progress_tracker.get_total_progress().await;
     let final_evt = DownloadEvent { transferred, total };
-    app.emit(&evt_name, final_evt).unwrap();
+    if let Err(e) = app.emit(&evt_name, final_evt) {
+        log::warn!("Failed to emit final {evt_name} progress: {e}");
+    }
     Ok(())
 }
 
@@ -619,7 +623,9 @@ async fn download_single_file(
                     transferred: combined_transferred,
                     total: combined_total,
                 };
-                app.emit(&evt_name, evt).unwrap();
+                if let Err(e) = app.emit(&evt_name, evt) {
+                    log::warn!("Failed to emit resume progress for {evt_name}: {e}");
+                }
 
                 (resp, item.url.clone())
             }
@@ -669,9 +675,9 @@ async fn download_single_file(
     while let Some(chunk) = stream.next().await {
         if cancel_token.is_cancelled() {
             if !should_resume {
-                tokio::fs::remove_dir_all(&save_path.parent().unwrap())
-                    .await
-                    .ok();
+                if let Some(parent) = save_path.parent() {
+                    tokio::fs::remove_dir_all(parent).await.ok();
+                }
             }
             log::info!("Download cancelled: {}", item.url);
             return Err("Download cancelled".to_string());
@@ -696,7 +702,9 @@ async fn download_single_file(
                 transferred: combined_transferred,
                 total: combined_total,
             };
-            app.emit(&evt_name, evt).unwrap();
+            if let Err(e) = app.emit(&evt_name, evt) {
+                log::warn!("Failed to emit progress for {evt_name}: {e}");
+            }
 
             download_delta = 0u64;
         }
@@ -715,7 +723,9 @@ async fn download_single_file(
         transferred: combined_transferred,
         total: combined_total,
     };
-    app.emit(&evt_name, evt).unwrap();
+    if let Err(e) = app.emit(&evt_name, evt) {
+        log::warn!("Failed to emit final per-file progress for {evt_name}: {e}");
+    }
 
     // rename tmp file to final file
     tokio::fs::rename(&tmp_save_path, &save_path)
