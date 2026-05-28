@@ -75,21 +75,38 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         return format!("win-cpu-{}", arch);
     }
 
-    // Linux legacy mappings — preserved verbatim for callers that still
-    // pass the upstream plugin a janhq-mirror linux name. The upstream
-    // extension is not used on Linux today, but keeping this path lets
-    // unit tests stay valid and avoids surprises if it ever is.
-    if old_backend.contains("cuda-cu12.0") {
-        return format!("{}cuda-12-common_cpus-{}", os_prefix, arch);
-    } else if old_backend.contains("cuda-cu11.7") {
-        return format!("{}cuda-11-common_cpus-{}", os_prefix, arch);
-    } else if old_backend.contains("vulkan") {
-        if old_backend.contains("vulkan-common_cpus") {
+    // Linux mappings — per 2026-05-28 ADR *Linux ships only
+    // `llamacpp-upstream`*, the only supported Linux backend ids are
+    // `linux-cpu-x64` (bundled default) and `linux-vulkan-x64` (auto-
+    // installed when a Vulkan-capable GPU is detected). Any persisted
+    // legacy janhq-mirror id (`linux-common_cpus-x64`,
+    // `linux-cuda-{11,12,13}-common_cpus-x64`,
+    // `linux-vulkan-common_cpus-x64`, AVX variants, …) is translated to
+    // its closest current equivalent so old user settings keep resolving
+    // to a backend we can actually download. Linux CUDA tiers fall
+    // through to the CPU build because upstream publishes no
+    // `ubuntu-cuda-*` asset — NVIDIA users opt into Vulkan separately
+    // via the "Find optimal backend" flow.
+    if is_linux {
+        // ggml-org native ids — already correct, pass through.
+        if old_backend == "linux-cpu-x64" || old_backend == "linux-vulkan-x64" {
             return old_backend;
         }
-        return format!("{}vulkan-common_cpus-{}", os_prefix, arch);
+        // x86_64 host: collapse everything onto cpu or vulkan.
+        if is_x64 {
+            if old_backend.contains("vulkan") {
+                return "linux-vulkan-x64".to_string();
+            }
+            // Legacy linux-cuda-* and linux-common_cpus-x64 / AVX variants
+            // all map to the CPU backend on x86_64.
+            return "linux-cpu-x64".to_string();
+        }
+        // aarch64 host: Phase 2 territory, keep the placeholder.
+        return "linux-cpu-arm64".to_string();
     }
 
+    // Non-Linux non-Windows fall-through (kept verbatim for any legacy
+    // janhq-mirror id that might still be persisted in user settings).
     let is_old_cpu_backend = old_backend.contains("avx512")
         || old_backend.contains("avx2")
         || old_backend.contains("avx-x64")
@@ -254,22 +271,24 @@ pub fn determine_supported_backends(
             supported_backends.push("win-cpu-arm64".to_string());
         }
         "linux-x86_64" | "linux-x86" => {
-            supported_backends.push("linux-common_cpus-x64".to_string());
-            if features.cuda11 {
-                supported_backends.push("linux-cuda-11-common_cpus-x64".to_string());
-            }
-            if features.cuda12 {
-                supported_backends.push("linux-cuda-12-common_cpus-x64".to_string());
-            }
-            if features.cuda13 {
-                supported_backends.push("linux-cuda-13-common_cpus-x64".to_string());
-            }
+            // Per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*:
+            // ggml-org publishes no CUDA-Linux artefact, so NVIDIA / AMD /
+            // Intel users all share a single Vulkan-based GPU backend.
+            // ROCm 7.2 and OpenVINO 2026.0 are upstream-available but
+            // intentionally out of scope for Phase 1; adding either is a
+            // one-line whitelist edit here + a feature detector in
+            // `get_supported_features`.
+            supported_backends.push("linux-cpu-x64".to_string());
             if features.vulkan {
-                supported_backends.push("linux-vulkan-common_cpus-x64".to_string());
+                supported_backends.push("linux-vulkan-x64".to_string());
             }
         }
         "linux-aarch64" | "linux-arm64" => {
-            supported_backends.push("linux-arm64".to_string());
+            // aarch64 / DGX Spark is Phase 2 of the Linux epic; keep this
+            // arm as a placeholder so the matrix does not panic on ARM
+            // hosts that somehow reach this code path before the Phase 2
+            // ADR lands.
+            supported_backends.push("linux-cpu-arm64".to_string());
         }
         "macos-x86_64" | "macos-x86" => {
             supported_backends.push("macos-x64".to_string());
@@ -1171,10 +1190,21 @@ mod tests {
 
     #[test]
     fn test_map_old_backend_to_new_cuda() {
-        // Linux CUDA 12 — preserved legacy path (upstream Linux unused).
+        // Per 2026-05-28 ADR: Linux CUDA tiers collapse onto the bundled
+        // CPU backend because ggml-org publishes no ubuntu-cuda-* asset.
+        // NVIDIA users opt into Vulkan separately via "Find optimal
+        // backend" once their host enables `features.vulkan`.
         assert_eq!(
             map_old_backend_to_new("linux-avx2-cuda-cu12.0-x64".to_string()),
-            "linux-cuda-12-common_cpus-x64"
+            "linux-cpu-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-cuda-12-common_cpus-x64".to_string()),
+            "linux-cpu-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-cuda-13-common_cpus-x64".to_string()),
+            "linux-cpu-x64"
         );
         // Legacy janhq-mirror Windows CUDA 11 → folded into ggml-org's
         // lowest CUDA tier (12.4) because ggml-org dropped CUDA 11 builds.
@@ -1207,10 +1237,17 @@ mod tests {
 
     #[test]
     fn test_map_old_backend_to_new_vulkan() {
-        // Linux Vulkan — legacy path (upstream Linux unused).
+        // Per 2026-05-28 ADR: Linux Vulkan ids collapse onto the single
+        // upstream-aligned `linux-vulkan-x64`. The legacy
+        // `linux-vulkan-common_cpus-x64` id is the dominant historical
+        // shape; the new ggml-org-style id round-trips unchanged.
+        assert_eq!(
+            map_old_backend_to_new("linux-vulkan-common_cpus-x64".to_string()),
+            "linux-vulkan-x64"
+        );
         assert_eq!(
             map_old_backend_to_new("linux-vulkan-x64".to_string()),
-            "linux-vulkan-common_cpus-x64"
+            "linux-vulkan-x64"
         );
         // Legacy janhq Windows Vulkan → ggml-org Windows Vulkan.
         assert_eq!(
@@ -1241,19 +1278,43 @@ mod tests {
             map_old_backend_to_new("win-cpu-x64".to_string()),
             "win-cpu-x64"
         );
-        // Linux AVX2 — legacy path.
+        // Per 2026-05-28 ADR: Linux AVX-tier CPU ids collapse onto
+        // `linux-cpu-x64`. Already-new id round-trips.
         assert_eq!(
             map_old_backend_to_new("linux-avx2-x64".to_string()),
-            "linux-common_cpus-x64"
+            "linux-cpu-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-avx512-x64".to_string()),
+            "linux-cpu-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-common_cpus-x64".to_string()),
+            "linux-cpu-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-cpu-x64".to_string()),
+            "linux-cpu-x64"
         );
     }
 
     #[test]
     fn test_map_old_backend_to_new_arch() {
-        // ARM64 detection
+        // Per 2026-05-28 ADR: aarch64 Linux is Phase 2 territory; any
+        // legacy arm64 id resolves to the placeholder `linux-cpu-arm64`
+        // so callers stop trying to download archetype-mismatched
+        // bundles.
         assert_eq!(
             map_old_backend_to_new("linux-arm64".to_string()),
-            "linux-arm64" // Does not match specific migration patterns, returns original
+            "linux-cpu-arm64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-common_cpus-arm64".to_string()),
+            "linux-cpu-arm64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("linux-cpu-arm64".to_string()),
+            "linux-cpu-arm64"
         );
     }
 
@@ -1430,6 +1491,106 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "macos-arm64");
+    }
+
+    // --- Linux backend matrix (per 2026-05-28 ADR) ---
+
+    #[test]
+    fn test_determine_supported_backends_linux_x64_cpu_only() {
+        // No GPU at all → only the bundled-by-default CPU backend.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(result, vec!["linux-cpu-x64".to_string()]);
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_x64_with_vulkan() {
+        // Vulkan loader present → CPU bundled fallback + Vulkan GPU path.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(
+            result,
+            vec!["linux-cpu-x64".to_string(), "linux-vulkan-x64".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_x64_cuda_flags_ignored() {
+        // Per ADR: upstream publishes no ubuntu-cuda-* asset. NVIDIA
+        // detection flags (cuda11/12/13) must NOT expand into any
+        // supported backend on Linux — they only matter on Windows.
+        let features = SystemFeatures {
+            cuda11: true,
+            cuda12: true,
+            cuda13: true,
+            vulkan: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(result, vec!["linux-cpu-x64".to_string()]);
+        assert!(!result.iter().any(|b| b.contains("cuda")));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_x64_nvidia_with_vulkan() {
+        // Typical NVIDIA-on-Linux host: CUDA driver detected AND Vulkan
+        // loader available. The CUDA flags are ignored; user gets the
+        // Vulkan backend as their GPU path.
+        let features = SystemFeatures {
+            cuda11: true,
+            cuda12: true,
+            cuda13: false,
+            vulkan: true,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(
+            result,
+            vec!["linux-cpu-x64".to_string(), "linux-vulkan-x64".to_string()]
+        );
+        assert!(!result.iter().any(|b| b.contains("cuda")));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_aarch64_placeholder() {
+        // Phase 2 territory — placeholder backend so the matrix does not
+        // panic on ARM hosts that hit this code path.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: false,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "aarch64".to_string(), features)
+                .unwrap();
+
+        assert_eq!(result, vec!["linux-cpu-arm64".to_string()]);
     }
 
     // --- Tests for list_supported_backends ---
@@ -1644,23 +1805,23 @@ mod tests {
         let backends = vec![
             BackendInfo {
                 version: "b7523".into(),
-                backend: "linux-common_cpus-x64".into(),
+                backend: "linux-cpu-x64".into(),
                 order: 2,
             },
             BackendInfo {
                 version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(),
+                backend: "linux-cpu-x64".into(),
                 order: 3,
             },
             BackendInfo {
                 version: "b7522".into(),
-                backend: "linux-common_cpus-x64".into(),
+                backend: "linux-cpu-x64".into(),
                 order: 1,
             },
         ];
 
-        let result = find_latest_version_for_backend(backends, "linux-common_cpus-x64".to_string());
-        assert_eq!(result, Some("b7524/linux-common_cpus-x64".to_string()));
+        let result = find_latest_version_for_backend(backends, "linux-cpu-x64".to_string());
+        assert_eq!(result, Some("b7524/linux-cpu-x64".to_string()));
     }
 
     #[test]
@@ -1688,6 +1849,11 @@ mod tests {
 
     #[test]
     fn test_find_latest_version_for_backend_with_migration() {
+        // Per 2026-05-28 ADR: legacy `linux-avx2-x64` and the bundled
+        // ggml-org native `linux-cpu-x64` both normalise to
+        // `linux-cpu-x64` via `map_old_backend_to_new`, so a query for
+        // the new id matches both entries and the higher-version one
+        // wins.
         let backends = vec![
             BackendInfo {
                 version: "b7523".into(),
@@ -1696,13 +1862,13 @@ mod tests {
             },
             BackendInfo {
                 version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(),
+                backend: "linux-cpu-x64".into(),
                 order: 2,
             },
         ];
 
-        let result = find_latest_version_for_backend(backends, "linux-common_cpus-x64".to_string());
-        assert_eq!(result, Some("b7524/linux-common_cpus-x64".to_string()));
+        let result = find_latest_version_for_backend(backends, "linux-cpu-x64".to_string());
+        assert_eq!(result, Some("b7524/linux-cpu-x64".to_string()));
     }
 
     // --- Tests for check_backend_for_updates ---
@@ -1802,23 +1968,26 @@ mod tests {
 
     #[test]
     fn test_should_migrate_backend_needs_migration() {
+        // Per 2026-05-28 ADR: legacy `linux-avx2-x64` migrates to the
+        // bundled `linux-cpu-x64` once the upstream-only Linux matrix
+        // takes over.
         let old_backend = "linux-avx2-x64".to_string();
         let available = vec![BackendInfo {
             version: "b7524".into(),
-            backend: "linux-common_cpus-x64".into(),
+            backend: "linux-cpu-x64".into(),
             order: 1,
         }];
 
         let result = should_migrate_backend(old_backend, available).unwrap();
-        assert_eq!(result, Some("linux-common_cpus-x64".to_string()));
+        assert_eq!(result, Some("linux-cpu-x64".to_string()));
     }
 
     #[test]
     fn test_should_migrate_backend_no_migration_needed() {
-        let new_backend = "linux-common_cpus-x64".to_string();
+        let new_backend = "linux-cpu-x64".to_string();
         let available = vec![BackendInfo {
             version: "b7524".into(),
-            backend: "linux-common_cpus-x64".into(),
+            backend: "linux-cpu-x64".into(),
             order: 1,
         }];
 

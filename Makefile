@@ -822,9 +822,107 @@ else ifeq ($(OS),Windows_NT)
 		-BackendDir src-tauri/resources/llamacpp-backend-upstream -Backend "$$BACKEND" -Tag "$$TAG" || \
 		echo "Warning: cudart merge failed for $$BACKEND (GPU detection may not work)"; \
 	echo "Downloaded and extracted upstream llamacpp backend ($$BACKEND) for Windows successfully"
+else ifeq ($(shell uname -s),Linux)
+	@mkdir -p src-tauri/resources/llamacpp-backend-upstream
+	@# Per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*: Phase 1
+	@# bundles the CPU-only build by default. NVIDIA / AMD / Intel users
+	@# get `linux-vulkan-x64` at runtime through the "Find optimal
+	@# backend" flow — we deliberately do NOT auto-detect GPU at build
+	@# time, since the bundled artefact is meant to be the offline
+	@# fallback that works on any host.
+	@BACKEND="linux-cpu-x64"; \
+	UPSTREAM_INFIX="ubuntu-x64"; \
+	echo "Platform: $$BACKEND (upstream / Linux, asset infix: $$UPSTREAM_INFIX)"; \
+	if [ -n "$(LLAMACPP_UPSTREAM_TAG)" ]; then \
+		TAG="$(LLAMACPP_UPSTREAM_TAG)"; \
+		echo "Using pinned upstream release: $$TAG"; \
+	else \
+		echo "Fetching latest upstream llama.cpp release..."; \
+		TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
+		API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"; \
+		_gh_get() { \
+			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
+				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			else \
+				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
+			fi; \
+		}; \
+		_gh_fetch() { \
+			HTTP_CODE=""; \
+			for attempt in 1 2 3 4 5; do \
+				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
+				case "$$HTTP_CODE" in \
+					2*) return 0 ;; \
+					403|429|5*|000) \
+						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
+						sleep $$((attempt * 2)) ;; \
+					*) return 1 ;; \
+				esac; \
+			done; \
+			return 1; \
+		}; \
+		_tag_ok() { \
+			[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+		}; \
+		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
+		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
+		FIRST_CODE="$$HTTP_CODE"; \
+		if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
+			echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
+			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+		fi; \
+		case "$$HTTP_CODE" in \
+			2*) ;; \
+			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
+			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			   rm -f "$$TMPREL"; exit 1 ;; \
+		esac; \
+		TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
+			echo "Error: Failed to extract tag_name from upstream release response:"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			rm -f "$$TMPREL"; exit 1; \
+		fi; \
+		rm -f "$$TMPREL"; \
+	fi; \
+	URL="https://github.com/ggml-org/llama.cpp/releases/download/$$TAG/llama-$$TAG-bin-$$UPSTREAM_INFIX.tar.gz"; \
+	echo "$$TAG" > src-tauri/resources/llamacpp-backend-upstream/version.txt; \
+	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
+	echo "Release: $$TAG  Backend: $$BACKEND"; \
+	echo "Downloading: $$URL"; \
+	curl -fSL "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
+	tar -xzf /tmp/llamacpp-upstream-backend.tar.gz -C src-tauri/resources/llamacpp-backend-upstream/; \
+	rm -f /tmp/llamacpp-upstream-backend.tar.gz; \
+	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \
+		if [ -f "src-tauri/resources/llamacpp-backend-upstream/bin/llama-server" ]; then \
+			echo "Relocating bin/ → build/bin/ to match expected layout..."; \
+			mkdir -p src-tauri/resources/llamacpp-backend-upstream/build; \
+			mv src-tauri/resources/llamacpp-backend-upstream/bin src-tauri/resources/llamacpp-backend-upstream/build/bin; \
+		elif [ -f "src-tauri/resources/llamacpp-backend-upstream/llama-server" ]; then \
+			echo "Relocating flat layout → build/bin/..."; \
+			mkdir -p src-tauri/resources/llamacpp-backend-upstream/build/bin; \
+			find src-tauri/resources/llamacpp-backend-upstream -maxdepth 1 -type f \( -name "llama-*" -o -name "*.so" -o -name "*.so.*" \) -exec mv {} src-tauri/resources/llamacpp-backend-upstream/build/bin/ \;; \
+		else \
+			NESTED_DIR=$$(find src-tauri/resources/llamacpp-backend-upstream -maxdepth 1 -type d -name 'llama-*' -o -name 'build' | head -1); \
+			if [ -n "$$NESTED_DIR" ] && [ -f "$$NESTED_DIR/llama-server" ]; then \
+				echo "Relocating $$NESTED_DIR/ → build/bin/ ..."; \
+				mkdir -p src-tauri/resources/llamacpp-backend-upstream/build/bin; \
+				find "$$NESTED_DIR" -maxdepth 1 -type f -exec mv {} src-tauri/resources/llamacpp-backend-upstream/build/bin/ \;; \
+				find "$$NESTED_DIR" -maxdepth 1 -type l -exec mv {} src-tauri/resources/llamacpp-backend-upstream/build/bin/ \;; \
+				rmdir "$$NESTED_DIR" 2>/dev/null || rm -rf "$$NESTED_DIR"; \
+			fi; \
+		fi; \
+	fi; \
+	echo "Downloaded and extracted upstream llamacpp backend ($$BACKEND) for Linux successfully"
 else
-	@echo "Skipping upstream llamacpp backend download (macOS / Windows only)"
+	@echo "Skipping upstream llamacpp backend download (macOS / Windows / Linux only)"
 endif
+
+# Convenience target: explicitly download the Linux CPU-only upstream
+# backend. Mirrors `download-llamacpp-upstream-backend-win-cpu`. Useful
+# for CI jobs that want to be explicit about the artefact they bundle.
+download-llamacpp-upstream-backend-linux-cpu:
+	@$(MAKE) download-llamacpp-upstream-backend
 
 # Download upstream llamacpp backend only if not already present (for dev)
 download-llamacpp-upstream-backend-if-exists:
@@ -840,8 +938,14 @@ else ifeq ($(OS),Windows_NT)
 	else \
 		$(MAKE) download-llamacpp-upstream-backend; \
 	fi
+else ifeq ($(shell uname -s),Linux)
+	@if [ -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \
+		echo "upstream llamacpp backend already exists, skipping download..."; \
+	else \
+		$(MAKE) download-llamacpp-upstream-backend; \
+	fi
 else
-	@echo "Skipping upstream llamacpp backend (macOS / Windows only)"
+	@echo "Skipping upstream llamacpp backend (macOS / Windows / Linux only)"
 endif
 
 # Download llamacpp backend only if not already present (for dev)

@@ -25,6 +25,7 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | **macOS (Universal)** | [Atomic.Chat_1.1.83_universal.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.83/Atomic.Chat_1.1.83_universal.dmg) |
 | **Windows (x64)**     | [Atomic.Chat_1.1.83_x64-setup.exe](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.83/Atomic.Chat_1.1.83_x64-setup.exe) |
+| **Linux (x86_64)**    | `.AppImage` — published with the next tagged release; see [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases) and the *Running on Linux* section below |
 | **iOS**               | [App Store](https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226)                                           |
 
 Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases) — latest: [v1.1.83](https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.1.83).
@@ -163,7 +164,59 @@ yarn dev
 
 - **macOS**: 13.6+ (8GB RAM for 3B models, 16GB for 7B, 32GB for 13B)
 - **Windows**: 10/11 x64 (same RAM recommendations as macOS)
+- **Linux**: x86_64, glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch, Mint, Pop!_OS — same RAM recommendations as macOS). Optional: a Vulkan loader (`vulkan-1` package, or `mesa-vulkan-drivers` / proprietary NVIDIA driver) for GPU acceleration.
 - **iOS**: 17+ (download from App Store)
+
+---
+
+### Running on Linux
+
+Atomic Chat ships on Linux as a single self-contained `.AppImage` —
+one file, no installer, no root, works on every mainstream distro
+above. To run:
+
+```bash
+chmod +x Atomic.Chat_*_amd64.AppImage
+./Atomic.Chat_*_amd64.AppImage
+```
+
+If your distro asks about FUSE on first launch, install it
+(`sudo apt install fuse libfuse2` on Debian/Ubuntu, `sudo dnf install fuse fuse-libs` on Fedora).
+
+**GPU acceleration on Linux.** The installer bundles a CPU-only
+backend. On first launch (or via *Settings → Providers → Llama.cpp
+→ Find optimal backend*), Atomic Chat detects whether a Vulkan
+loader is available and offers to download the `linux-vulkan-x64`
+build of `llama-server` from
+[`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp/releases).
+NVIDIA, AMD, and Intel GPUs all share the same Vulkan path —
+upstream `llama.cpp` does not publish CUDA binaries for Linux, so
+Vulkan is the single supported GPU backend today. Expect roughly
+10–20 % slower decode than CUDA on the same NVIDIA card; if that
+gap matters to you, build our `atomic-llama-cpp-turboquant` fork
+manually for the time being (a CUDA-on-Linux release is a separate
+follow-up epic).
+
+**Auto-updates.** The built-in updater pulls
+`latest.json` from GitHub Releases and verifies every new
+`.AppImage` against our [minisign](https://jedisct1.github.io/minisign/)
+public key — the same key that signs macOS and Windows builds. The
+updater can only replace the AppImage **in place**, which means the
+running file must be writable by the current user. This is the
+default when you launch from `~/Downloads/`, `~/Applications/`, or
+anywhere else inside your home directory; it does *not* work when an
+admin has installed the AppImage to a system path like `/opt/` or
+`/usr/local/bin/` (read-only for non-root users). In that case the
+updater will surface an error — re-download the new AppImage
+manually from [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases)
+and replace the old one. We do *not* ship `.deb` / `.rpm` / Flatpak
+/ Snap packages — see [`AGENTS.md`](AGENTS.md) ADR 2026-05-28 for
+the reasoning.
+
+**Models on Linux.** Only GGUF models are supported (same as
+Windows). MLX models — they require Apple Silicon — are filtered
+out of the Hub on Linux automatically; you can still browse them
+manually, but they won't run.
 
 ---
 

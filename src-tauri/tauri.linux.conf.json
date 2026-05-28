@@ -3,7 +3,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Jan",
+        "title": "Atomic Chat",
         "width": 1200,
         "minWidth": 1024,
         "height": 800,
@@ -29,18 +29,13 @@
     ]
   },
   "bundle": {
-    "targets": ["deb", "appimage"],
+    "targets": ["appimage"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli"],
     "externalBin": ["resources/bin/uv"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,
         "files": {}
-      },
-      "deb": {
-        "files": {
-          "usr/bin/bun": "resources/bin/bun"
-        }
       }
     }
   }
