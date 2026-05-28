@@ -73,6 +73,7 @@ export type MessageItemProps = {
 export const MessageItem = memo(
   ({
     message,
+    isFirstMessage,
     isLastMessage,
     status,
     isAnimating,
@@ -541,7 +542,12 @@ export const MessageItem = memo(
     }, [message.parts, isStreaming, isReasoningAtBottom, grounding])
 
     return (
-      <div className="w-full mb-4">
+      <div
+        className={cn(
+          'w-full mb-4',
+          message.role === 'user' && !isFirstMessage && 'mt-8'
+        )}
+      >
 
         {/* Render message parts */}
         {renderedParts}
