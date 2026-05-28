@@ -22,6 +22,29 @@
     />
     <title>Jan</title>
     <link rel="stylesheet" href="/src/loader.css" />
+    <script>
+      // Apply dark class synchronously before first paint to avoid a
+      // light-mode flash when the user's effective theme is dark. Truth is
+      // re-resolved by ThemeProvider once React mounts (and, on Linux, after
+      // the XDG portal read completes).
+      (function () {
+        try {
+          var raw = localStorage.getItem('theme')
+          var active = 'auto'
+          if (raw) {
+            var parsed = JSON.parse(raw)
+            var s = parsed && parsed.state
+            if (s && typeof s.activeTheme === 'string') active = s.activeTheme
+          }
+          var dark =
+            active === 'dark' ||
+            (active === 'auto' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+        } catch (_) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="initial-loader">

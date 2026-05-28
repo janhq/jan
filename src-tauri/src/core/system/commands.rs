@@ -209,30 +209,29 @@ pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
 }
 
 #[tauri::command]
-pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) {
-    let app_path = app.path().app_data_dir().unwrap();
-    if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
+pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let app_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    let program = if cfg!(target_os = "windows") {
+        "explorer"
     } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
+        "open"
     } else {
-        std::process::Command::new("xdg-open")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
-    }
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(app_path)
+        .status()
+        .map_err(|e| format!("Failed to open app directory: {e}"))?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn open_file_explorer(path: String) {
+pub fn open_file_explorer(path: String) -> Result<(), String> {
     let path = PathBuf::from(path);
-    if cfg!(target_os = "windows") {
+    let (program, arg): (&str, std::ffi::OsString) = if cfg!(target_os = "windows") {
         // Normalize extended-length paths (\\?\...) for explorer compatibility.
         let mut path_str = path.to_string_lossy().into_owned();
         if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
@@ -240,21 +239,17 @@ pub fn open_file_explorer(path: String) {
         } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
             path_str = stripped.to_string();
         }
-        std::process::Command::new("explorer")
-            .arg(path_str)
-            .status()
-            .expect("Failed to open file explorer");
+        ("explorer", path_str.into())
     } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
+        ("open", path.into())
     } else {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
-    }
+        ("xdg-open", path.into())
+    };
+    std::process::Command::new(program)
+        .arg(arg)
+        .status()
+        .map_err(|e| format!("Failed to open file explorer: {e}"))?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -26,14 +26,14 @@ where
 {
     // Try read first for the common case (already initialized)
     {
-        let guard = NVML.read().expect("RwLock poisoned");
+        let guard = NVML.read().unwrap_or_else(|e| e.into_inner());
         if guard.is_some() {
             return f(guard.as_ref());
         }
     }
     // Not initialized or was invalidated: try to init
     {
-        let mut guard = NVML.write().expect("RwLock poisoned");
+        let mut guard = NVML.write().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             let result = Nvml::init().or_else(|e| {
                 if cfg!(target_os = "linux") {
@@ -62,7 +62,7 @@ where
 /// resume on Linux when the GPU driver state has been reset.
 #[cfg(target_os = "linux")]
 pub fn invalidate_nvml() {
-    let mut guard = NVML.write().expect("RwLock poisoned");
+    let mut guard = NVML.write().unwrap_or_else(|e| e.into_inner());
     *guard = None;
     log::debug!("NVML invalidated (e.g. after resume); will re-init on next use");
 }

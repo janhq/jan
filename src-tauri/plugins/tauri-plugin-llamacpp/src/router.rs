@@ -254,7 +254,10 @@ pub async fn start_router(
 
     // Early-exit check.
     if let Some(status) = child.try_wait()? {
-        let stderr_output = stderr_task.await.unwrap_or_default();
+        let stderr_output = stderr_task.await.unwrap_or_else(|e| {
+                        log::warn!("Router stderr task join failed: {e}");
+                        String::new()
+                    });
         log::error!("llama-server router exited early with status {:?}", status);
         return Err(LlamacppError::from_stderr(&stderr_output).into());
     }
@@ -271,14 +274,20 @@ pub async fn start_router(
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if let Some(status) = child.try_wait()? {
-                    let stderr_output = stderr_task.await.unwrap_or_default();
+                    let stderr_output = stderr_task.await.unwrap_or_else(|e| {
+                        log::warn!("Router stderr task join failed: {e}");
+                        String::new()
+                    });
                     log::error!("llama-server router exited before readiness: {:?}", status);
                     return Err(LlamacppError::from_stderr(&stderr_output).into());
                 }
                 if start_time.elapsed() > timeout_duration {
                     log::error!("Timeout waiting for router to be ready");
                     let _ = child.kill().await;
-                    let stderr_output = stderr_task.await.unwrap_or_default();
+                    let stderr_output = stderr_task.await.unwrap_or_else(|e| {
+                        log::warn!("Router stderr task join failed: {e}");
+                        String::new()
+                    });
                     return Err(LlamacppError::new(
                         ErrorCode::ModelLoadTimedOut,
                         "Router took too long to start and timed out.".into(),

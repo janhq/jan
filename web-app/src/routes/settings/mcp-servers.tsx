@@ -351,7 +351,13 @@ function MCPServersDesktop() {
                 ? t('mcp-servers:serverStatusActive', { serverKey })
                 : t('mcp-servers:serverStatusInactive', { serverKey })
             )
-            serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+            serviceHub
+              .mcp()
+              .getConnectedServers()
+              .then(setConnectedServers)
+              .catch((error) =>
+                console.error('Failed to refresh connected MCP servers:', error)
+              )
           })
           .catch((error) => {
             editServer(serverKey, {
@@ -376,7 +382,13 @@ function MCPServersDesktop() {
           .mcp()
           .deactivateMCPServer(serverKey)
           .finally(() => {
-            serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+            serviceHub
+              .mcp()
+              .getConnectedServers()
+              .then(setConnectedServers)
+              .catch((error) =>
+                console.error('Failed to refresh connected MCP servers:', error)
+              )
             setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
           })
       }
@@ -384,15 +396,29 @@ function MCPServersDesktop() {
   }
 
   useEffect(() => {
-    serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+    serviceHub
+      .mcp()
+      .getConnectedServers()
+      .then(setConnectedServers)
+      .catch((error) =>
+        console.error('Failed to fetch connected MCP servers:', error)
+      )
 
     let unlisten: (() => void) | undefined
     const setupListener = async () => {
       unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
-        serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+        serviceHub
+          .mcp()
+          .getConnectedServers()
+          .then(setConnectedServers)
+          .catch((error) =>
+            console.error('Failed to refresh MCP servers:', error)
+          )
       })
     }
-    setupListener()
+    setupListener().catch((error) =>
+      console.error('Failed to set up MCP update listener:', error)
+    )
 
     return () => {
       unlisten?.()

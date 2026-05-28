@@ -93,6 +93,7 @@ function RenderMarkdownComponent({
   components,
   messageId,
   isAnimating,
+  isStreaming,
 }: MarkdownProps) {
 
   // Memoize the normalized content to avoid reprocessing on every render
@@ -126,6 +127,8 @@ function RenderMarkdownComponent({
       )}
     >
       <Streamdown
+        mode={isStreaming ? 'streaming' : 'static'}
+        parseIncompleteMarkdown={isStreaming ?? false}
         animate={isAnimating ?? true}
         animationDuration={500}
         linkSafety={{
@@ -168,5 +171,7 @@ function RenderMarkdownComponent({
 }
 export const RenderMarkdown = memo(
   RenderMarkdownComponent,
-  (prevProps, nextProps) => prevProps.content === nextProps.content
+  (prevProps, nextProps) =>
+    prevProps.content === nextProps.content &&
+    prevProps.isStreaming === nextProps.isStreaming
 )
