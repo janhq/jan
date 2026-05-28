@@ -1214,23 +1214,35 @@ function ThreadDetail() {
     }
   }, [status, threadId])
 
-  // Source the user id from chatMessages — useMessages may not have it yet
-  // when the transport rejects on the same tick as addMessage.
+  // Attach the error to the assistant turn it belongs to so the banner renders
+  // alongside any tool-call parts the model already produced. Falls back to the
+  // last user message if no assistant message exists yet (e.g. provider 4xx
+  // before streaming starts).
   useEffect(() => {
     if (!error) return
-    let lastUserId: string | undefined
+    let targetId: string | undefined
+    let lastUserIdx = -1
     for (let i = chatMessages.length - 1; i >= 0; i--) {
       if (chatMessages[i].role === 'user') {
-        lastUserId = chatMessages[i].id
+        lastUserIdx = i
         break
       }
     }
-    if (!lastUserId) return
+    for (let i = chatMessages.length - 1; i > lastUserIdx; i--) {
+      if (chatMessages[i].role === 'assistant') {
+        targetId = chatMessages[i].id
+        break
+      }
+    }
+    if (!targetId && lastUserIdx >= 0) {
+      targetId = chatMessages[lastUserIdx].id
+    }
+    if (!targetId) return
     const errMessage =
       error instanceof Error ? error.message : String(error || 'Error')
-    useMessageErrors.getState().setError(lastUserId, errMessage)
+    useMessageErrors.getState().setError(targetId, errMessage)
     const tm = useMessages.getState().getMessages(threadId).find(
-      (m) => m.id === lastUserId
+      (m) => m.id === targetId
     )
     if (tm) {
       const existingError = (tm.metadata as Record<string, unknown> | undefined)
