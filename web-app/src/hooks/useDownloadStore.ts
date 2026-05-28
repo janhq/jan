@@ -13,6 +13,16 @@ export type DownloadState = {
   downloads: { [id: string]: DownloadProgressProps }
   localDownloadingModels: Set<string>
   resumableDownloads: Set<string>
+  // Maps a raw `quant.model_id` to the `model.model_name` of the Hub
+  // card that initiated the download. Used as a defensive disambiguator
+  // when the curated catalog accidentally emits the same `quant.model_id`
+  // for files of identical name living in different HF repos
+  // (e.g. `unsloth/Qwen3.5-4B-GGUF` and `unsloth/Qwen3.5-4B-MTP-GGUF`).
+  // Without this map both Hub cards react to the same progress events
+  // and look like they are both being downloaded. The catalog scraper
+  // fixes the root cause; this map keeps the UI honest for clients on
+  // an older cached catalog.
+  downloadOriginByModelId: { [modelId: string]: string }
   removeDownload: (id: string) => void
   updateProgress: (
     id: string,
@@ -25,6 +35,8 @@ export type DownloadState = {
   removeLocalDownloadingModel: (modelId: string) => void
   markResumableDownload: (modelId: string) => void
   clearResumableDownload: (modelId: string) => void
+  setDownloadOrigin: (modelId: string, modelName: string) => void
+  clearDownloadOrigin: (modelId: string) => void
 }
 
 /**
@@ -34,6 +46,7 @@ export const useDownloadStore = create<DownloadState>((set) => ({
   downloads: {},
   localDownloadingModels: new Set(),
   resumableDownloads: new Set(),
+  downloadOriginByModelId: {},
   removeDownload: (id: string) =>
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -79,5 +92,23 @@ export const useDownloadStore = create<DownloadState>((set) => ({
       const newSet = new Set(state.resumableDownloads)
       newSet.delete(modelId)
       return { resumableDownloads: newSet }
+    }),
+
+  setDownloadOrigin: (modelId: string, modelName: string) =>
+    set((state) => ({
+      downloadOriginByModelId: {
+        ...state.downloadOriginByModelId,
+        [modelId]: modelName,
+      },
+    })),
+
+  clearDownloadOrigin: (modelId: string) =>
+    set((state) => {
+      if (!(modelId in state.downloadOriginByModelId)) {
+        return state
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [modelId]: _, ...rest } = state.downloadOriginByModelId
+      return { downloadOriginByModelId: rest }
     }),
 }))

@@ -29,19 +29,25 @@ export function DownloadButtonPlaceholder({
     downloads,
     localDownloadingModels,
     resumableDownloads,
+    downloadOriginByModelId,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
+    setDownloadOrigin,
+    clearDownloadOrigin,
   } = useDownloadStore(
     useShallow((state) => ({
       downloads: state.downloads,
       localDownloadingModels: state.localDownloadingModels,
       resumableDownloads: state.resumableDownloads,
+      downloadOriginByModelId: state.downloadOriginByModelId,
       addLocalDownloadingModel: state.addLocalDownloadingModel,
       removeLocalDownloadingModel: state.removeLocalDownloadingModel,
       markResumableDownload: state.markResumableDownload,
       clearResumableDownload: state.clearResumableDownload,
+      setDownloadOrigin: state.setDownloadOrigin,
+      clearDownloadOrigin: state.clearDownloadOrigin,
     }))
   )
   const { t } = useTranslation()
@@ -107,9 +113,21 @@ export function DownloadButtonPlaceholder({
   }, [])
 
   const modelUrl = quant?.path || modelId
+  // Defensive guard against catalog-level `quant.model_id` collisions
+  // across different repos (e.g. `unsloth/Qwen3.5-4B-GGUF` and
+  // `unsloth/Qwen3.5-4B-MTP-GGUF` both ship a file called
+  // `Qwen3.5-4B-Q4_K_M.gguf`). The scraper now disambiguates colliding
+  // ids at catalog build time; this check keeps clients running on an
+  // older cached catalog from showing the progress bar on a card that
+  // did not initiate the download. When no origin is recorded (legacy
+  // sessions, post-reload, etc.) we fall through to the legacy behaviour.
+  const downloadOrigin = downloadOriginByModelId[modelId]
+  const isOriginConflict =
+    downloadOrigin !== undefined && downloadOrigin !== model.model_name
   const isDownloading =
-    localDownloadingModels.has(modelId) ||
-    downloadProcesses.some((e) => e.id === modelId)
+    !isOriginConflict &&
+    (localDownloadingModels.has(modelId) ||
+      downloadProcesses.some((e) => e.id === modelId))
 
   const downloadProgress =
     downloadProcesses.find((e) => e.id === modelId)?.progress || 0
@@ -125,6 +143,7 @@ export function DownloadButtonPlaceholder({
     // Immediately set local downloading state and start download
     clearResumableDownload(modelId)
     addLocalDownloadingModel(modelId)
+    setDownloadOrigin(modelId, model.model_name)
     const mmprojPath = (
       model.mmproj_models?.find(
         (e) => e.model_id.toLowerCase() === 'mmproj-f16'
@@ -147,6 +166,7 @@ export function DownloadButtonPlaceholder({
       // button is stuck. Clear it ourselves.
       console.error('[DownloadButton] pullModelWithMetadata failed:', error)
       removeLocalDownloadingModel(modelId)
+      clearDownloadOrigin(modelId)
       markResumableDownload(modelId)
       toast.error(t('hub:downloadFailed'), {
         description: error instanceof Error ? error.message : String(error),

@@ -3,6 +3,7 @@ import { NavChats } from './NavChats'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { cn } from '@/lib/utils'
 
 import {
   Sidebar,
@@ -17,7 +18,21 @@ export function LeftSidebar() {
   return (
     <div className="relative z-50">
       <Sidebar variant="floating" collapsible="offcanvas">
-        <SidebarHeader className="flex flex-col gap-1 px-1">
+        {/*
+          On macOS the window uses ``titleBarStyle: "Overlay"`` (see
+          ``src-tauri/tauri.macos.conf.json``), so the red/yellow/green
+          traffic-light controls are painted on top of our chrome at
+          ~y=14, x=14-66 of the window. The floating sidebar's inner
+          panel starts at ~x=8 due to its ``p-2`` wrapper, which means
+          the header's first row would otherwise share its Y-coord with
+          the system buttons and look visually cramped. ``pt-7`` pushes
+          the header content below the traffic-light cluster so the
+          buttons (download + sidebar toggle) and the Atomic Chat logo
+          beneath them have proper vertical clearance.
+        */}
+        <SidebarHeader
+          className={cn('flex flex-col gap-1 px-1', IS_MACOS && 'pt-7')}
+        >
           <div className="flex w-full items-center justify-end">
             {isLeftPanelOpen && <DownloadManagement />}
             <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
