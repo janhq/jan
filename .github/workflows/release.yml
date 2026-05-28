@@ -745,6 +745,16 @@ jobs:
             patchelf \
             unzip
 
+      - name: Install Python dependencies
+        # `yarn build:icon` calls scripts/build-macos-app-icon.py which
+        # imports PIL — same as macOS / Windows jobs. On ubuntu-22.04 the
+        # system `pip` writes to /usr/lib/python3/dist-packages (root-only),
+        # so we install into the runner user's ~/.local site via --user.
+        # Pip 22.0.2 doesn't know `--break-system-packages` (added in 23),
+        # and PEP 668 isn't enforced on the runner image yet, so --user is
+        # the portable choice that survives future pip upgrades.
+        run: python3 -m pip install --user Pillow
+
       - name: Update version in project files
         env:
           NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
@@ -816,6 +826,33 @@ jobs:
           # `build:tauri:linux` script in package.json.
           NO_STRIP: "1"
         run: yarn build:tauri:linux
+
+      - name: Recreate updater signature after AppImage repackage
+        # `buildAppImage.sh` deletes the AppImage that `tauri build`
+        # produced and repacks a new one with bun bundled in. The
+        # original `.AppImage.sig` was signed against the deleted
+        # AppImage, so we must re-sign the post-repackage file or the
+        # Tauri updater will reject it as invalid. Symmetric to the
+        # Windows job's "Recreate updater signature after code signing"
+        # step.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for app in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            [ -f "$app" ] || continue
+            sigfile="${app}.sig"
+            if [ -f "$sigfile" ]; then
+              rm "$sigfile"
+              echo "Removed stale .sig: $sigfile"
+            fi
+            echo "Recreating updater signature for: $(basename "$app")"
+            yarn tauri signer sign \
+              --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+              --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+              "$app"
+            echo "Created new .sig for: $(basename "$app")"
+          done
 
       - name: Collect artifact metadata
         id: metadata
