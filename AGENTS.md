@@ -111,7 +111,16 @@ exposed by the desktop app at `http://localhost:1337/v1`.
 - **Active branch:** `feature/turboquant-kv-cache`.
 - **Target hardware (per platform policy):**
   - **macOS (Apple Silicon, Metal) — our fork** `atomic-llama-cpp-turboquant`.
-  - **Linux (CUDA / Vulkan / HIP / CPU) — our fork** `atomic-llama-cpp-turboquant`.
+  - **Linux (x86_64 AppImage, Vulkan / CPU) — official upstream
+    [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp)**, *not*
+    our TurboQuant fork. Vulkan is the **sole** GPU path — NVIDIA, AMD,
+    and Intel users all share the single `linux-vulkan-x64` build because
+    upstream publishes no `ubuntu-cuda-*` asset. ROCm 7.2 and OpenVINO
+    2026.0 are upstream-available but excluded from Phase 1. CUDA / HIP
+    are not supported on Linux today. See ADR 2026-05-28 *Linux ships only
+    `llamacpp-upstream` (AppImage, upstream `ggml-org/llama.cpp`); Vulkan
+    is the sole GPU path* in §7. (This supersedes the earlier
+    macOS / Linux row of this table.)
   - **Windows (x64, CUDA / Vulkan / CPU) — official upstream
     [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp)**, *not*
     our TurboQuant fork. Windows does **not** get TurboQuant KV / weights,
@@ -119,14 +128,24 @@ exposed by the desktop app at `http://localhost:1337/v1`.
     upstream llama.cpp* in §7.
 - **How it ships in Atomic Chat:**
  - Pre-built `llama-server` / library binaries are downloaded per platform
- by `scripts/download-bin.mjs` / `scripts/download-lib.mjs`. The download
- manifest picks our fork's release on macOS / Linux and the official
- `ggml-org/llama.cpp` release on Windows.
- - `extensions/llamacpp-extension/` is the TS driver that selects the
- correct backend build (CPU / CUDA / Vulkan) per host and supervises the
- process. Features gated to the fork (TurboQuant `-ctk`/`-ctv`, `--mtp-head`,
- `--spec-type mtp|nextn`) must be guarded behind a platform / backend-build
- check before they are surfaced to the UI.
+ by `scripts/download-bin.mjs` / `scripts/download-lib.mjs` and the
+ platform-specific `Makefile` targets (`download-llamacpp-backend` for
+ the turboquant fork, `download-llamacpp-upstream-backend` for the
+ official upstream). The download manifest picks our fork's release
+ **only on macOS**; **Windows and Linux pull the official
+ `ggml-org/llama.cpp` release** (per the 2026-05-22 and 2026-05-28 ADRs
+ in §7). The `download-llamacpp-backend` make target is a no-op on
+ Windows and skips on Linux for the same reason.
+ - `extensions/llamacpp-extension/` is the TS driver for the turboquant
+ fork; it is the **only** llama.cpp driver on macOS for the fork side
+ and is **excluded from the Windows and Linux installer bundles** (see
+ `package.json :: build:extensions:{win32,linux}`). On Windows and
+ Linux the sole driver is `extensions/llamacpp-upstream-extension/`
+ (registered provider id `llamacpp-upstream`); on macOS both drivers
+ ship side-by-side. Features gated to the fork (TurboQuant `-ctk`/
+ `-ctv`, `--mtp-head`, `--spec-type mtp|nextn`) must be guarded behind a
+ platform / backend-build check before they are surfaced to the UI —
+ they are simply unavailable on Windows and Linux today.
  - **macOS also ships the vanilla upstream `ggml-org/llama.cpp` build as a
  second, parallel provider** named "Llama.cpp", driven by
  `extensions/llamacpp-upstream-extension/` + the sibling Rust plugin
