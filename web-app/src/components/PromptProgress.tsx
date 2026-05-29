@@ -3,8 +3,8 @@ import { Loader } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 
 export function PromptProgress() {
-  const params = useParams({ from: '/threads/$threadId', shouldThrow: false })
-  const threadId = params?.threadId
+  const params = useParams({ strict: false })
+  const threadId = (params as { threadId?: string })?.threadId
   const promptProgress = useAppState((state) =>
     (threadId ? state.promptProgresses[threadId] : undefined) ??
     state.promptProgress
