@@ -104,6 +104,11 @@
   </keywords>
 
   <releases>
+    <release version="0.8.1" date="2026-05-29">
+      <description>
+        <p>Anthropic-compatible custom providers, provider-aware sampling controls, media-only messages, an overhauled llama.cpp settings UX, and many stability and error-handling fixes</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-05-22">
       <description>
         <p>Multi-Token Prediction, a unified llama.cpp router process, inline MCP tool approval with citation cards, model fit labels, and audio attachments</p>
