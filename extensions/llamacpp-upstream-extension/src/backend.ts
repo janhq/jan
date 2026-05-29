@@ -1,5 +1,7 @@
 import { getJanDataFolderPath, fs, joinPath } from '@janhq/core'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { getSystemInfo } from './hardware'
+import { getProxyConfig } from './util'
 import {
   getLocalInstalledBackendsInternal,
   normalizeFeatures,
@@ -54,6 +56,49 @@ const LINUX_BACKEND_BY_UPSTREAM_ASSET: Record<string, string> = Object.fromEntri
 )
 
 /**
+ * Maps the app's stored proxy config (`getProxyConfig`, shaped for the Rust
+ * `download_files` command) onto the option shape `@tauri-apps/plugin-http`'s
+ * `fetch` expects. Returns `{}` when no proxy is enabled so the caller can
+ * spread it unconditionally.
+ */
+function buildHttpProxyOptions(): {
+  proxy?: {
+    all: {
+      url: string
+      basicAuth?: { username: string; password: string }
+      noProxy?: string
+    }
+  }
+  danger?: { acceptInvalidCerts?: boolean; acceptInvalidHostnames?: boolean }
+} {
+  const cfg = getProxyConfig()
+  if (!cfg || typeof cfg.url !== 'string' || !cfg.url) {
+    return {}
+  }
+
+  const proxyConfig: {
+    url: string
+    basicAuth?: { username: string; password: string }
+    noProxy?: string
+  } = { url: cfg.url }
+
+  if (typeof cfg.username === 'string' && typeof cfg.password === 'string') {
+    proxyConfig.basicAuth = { username: cfg.username, password: cfg.password }
+  }
+  if (Array.isArray(cfg.no_proxy) && cfg.no_proxy.length > 0) {
+    proxyConfig.noProxy = (cfg.no_proxy as string[]).join(',')
+  }
+
+  if (cfg.ignore_ssl === true) {
+    return {
+      proxy: { all: proxyConfig },
+      danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true },
+    }
+  }
+  return { proxy: { all: proxyConfig } }
+}
+
+/**
  * Fetches the list of available backend builds from ggml-org/llama.cpp
  * GitHub releases for the current platform/arch.
  *
@@ -99,9 +144,16 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     const timeout = setTimeout(() => controller.abort(), 15_000)
     let resp: Response
     try {
-      resp = await fetch(LLAMACPP_RELEASES_API, {
+      // Use the Tauri HTTP client (reqwest) so we can (a) honor the
+      // user-configured HTTPS proxy from Settings → Proxy and (b) apply a
+      // hard `connectTimeout`. The plain WebView `fetch` ignores the app's
+      // proxy config, which made this lookup fail on GitHub-restricted
+      // networks even when the user had a working proxy set up.
+      resp = await tauriFetch(LLAMACPP_RELEASES_API, {
         headers: { 'User-Agent': 'atomic-chat' },
         signal: controller.signal,
+        connectTimeout: 15_000,
+        ...buildHttpProxyOptions(),
       })
     } finally {
       clearTimeout(timeout)
@@ -216,6 +268,20 @@ export function getBackendDownloadUrl(
     return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${linuxInfix}.tar.gz`
   }
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.zip`
+}
+
+/**
+ * Maps an internal backend id (e.g. `win-cuda-13.1-x64`, `linux-vulkan-x64`)
+ * to a short human-friendly variant label used by the "Latest <variant>"
+ * dropdown entries. Falls back to the raw id for anything unrecognised.
+ */
+export function friendlyBackendLabel(backend: string): string {
+  const id = backend.replace(/\uFEFF/g, '').trim()
+  if (id.endsWith('cpu-x64')) return 'CPU'
+  if (id.includes('cuda-13')) return 'CUDA 13.1'
+  if (id.includes('cuda-12')) return 'CUDA 12.4'
+  if (id.includes('vulkan')) return 'Vulkan'
+  return id
 }
 
 /**

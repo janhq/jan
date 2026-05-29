@@ -180,6 +180,7 @@ function ProviderDetail() {
     recheckOptimalBackend,
     downloadRecommendedBackend,
     recommendationPhase,
+    selectManualBackend,
   } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const navigate = useNavigate()
@@ -1239,6 +1240,33 @@ function ProviderDetail() {
                             isHiddenByDflash && 'hidden'
                           )}
                           onChange={(newValue) => {
+                            // Manual "Latest <variant>" picks carry a
+                            // `latest/<backend>` sentinel. Route them through
+                            // the same animated download → hot-swap flow as
+                            // the "Find optimal backend" button instead of
+                            // silently persisting the sentinel: resolve to a
+                            // concrete release tag, surface the global
+                            // <BackendUpdater /> dialog, download, and let
+                            // updateBackend() persist + reflect the result
+                            // back into this dropdown.
+                            if (
+                              setting.key === 'version_backend' &&
+                              typeof newValue === 'string' &&
+                              newValue.startsWith('latest/')
+                            ) {
+                              void selectManualBackend(newValue).catch(
+                                (err) => {
+                                  console.error(
+                                    'Manual backend download failed:',
+                                    err
+                                  )
+                                  toast.error(
+                                    t('settings:backendUpdater.downloadFailed')
+                                  )
+                                }
+                              )
+                              return
+                            }
                             if (provider) {
                               const newSettings = [...provider.settings]
                               // Handle different value types by forcing the type
