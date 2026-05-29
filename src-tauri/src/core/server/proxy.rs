@@ -255,6 +255,28 @@ pub(crate) fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<
     Some(result)
 }
 
+/// Helper to strip the Anthropic billing header from message content.
+/// Claude Code injects this header into the first message or system prompt,
+/// which causes API cache misses due to its random values.
+pub(crate) fn strip_anthropic_billing_header(text: &str) -> &str {
+    if text.starts_with("x-anthropic-billing-header:") {
+        // The billing header is typically 2 lines:
+        // x-anthropic-billing-header:
+        //    cc_version=...; cc_entrypoint=...; cch=...;
+        let mut lines = text.splitn(3, '\n');
+        let line1 = lines.next();
+        let line2 = lines.next();
+        if let Some(rest) = lines.next() {
+            if line1 == Some("x-anthropic-billing-header:")
+                && line2.map_or(false, |l| l.contains("cc_version="))
+            {
+                return rest;
+            }
+        }
+    }
+    text
+}
+
 /// Convert Anthropic message format to OpenAI format
 pub(crate) fn convert_messages(
     anth_messages: &serde_json::Value,
@@ -268,7 +290,7 @@ pub(crate) fn convert_messages(
         if let Some(text) = system.as_str() {
             openai_messages.push(serde_json::json!({
                 "role": "system",
-                "content": text
+                "content": strip_anthropic_billing_header(text)
             }));
         } else if let Some(blocks) = system.as_array() {
             let text: String = blocks
@@ -279,17 +301,24 @@ pub(crate) fn convert_messages(
             if !text.is_empty() {
                 openai_messages.push(serde_json::json!({
                     "role": "system",
-                    "content": text
+                    "content": strip_anthropic_billing_header(&text)
                 }));
             }
         }
     }
 
-    for msg in messages_array {
+    for (i, msg) in messages_array.iter().enumerate() {
         let role = msg.get("role")?.as_str()?;
         let content = msg.get("content")?;
 
         if content.is_string() {
+            let text = content.as_str().unwrap();
+            let cleaned_text = if i == 0 {
+                strip_anthropic_billing_header(text)
+            } else {
+                text
+            };
+
             let openai_role = match role {
                 "user" => "user",
                 "assistant" => "assistant",
@@ -299,7 +328,7 @@ pub(crate) fn convert_messages(
             };
             openai_messages.push(serde_json::json!({
                 "role": openai_role,
-                "content": content
+                "content": cleaned_text
             }));
             continue;
         }
@@ -381,9 +410,14 @@ pub(crate) fn convert_messages(
                         }
                         "text" => {
                             if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
+                                let cleaned_text = if i == 0 {
+                                    strip_anthropic_billing_header(text)
+                                } else {
+                                    text
+                                };
                                 text_parts.push(serde_json::json!({
                                     "type": "text",
-                                    "text": text
+                                    "text": cleaned_text
                                 }));
                             }
                         }

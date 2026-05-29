@@ -271,19 +271,40 @@ struct AnthropicMessageStopEvent: Codable {
 
 // MARK: - Conversion: Anthropic → Internal
 
+/// Helper to strip the Anthropic billing header from message content.
+/// Claude Code injects this header into the first message or system prompt,
+/// which causes API cache misses due to its random values.
+func stripAnthropicBillingHeader(_ text: String) -> String {
+    if text.hasPrefix("x-anthropic-billing-header:") {
+        // The billing header is typically 2 lines:
+        // x-anthropic-billing-header:
+        //    cc_version=...; cc_entrypoint=...; cch=...;
+        let lines = text.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false)
+        if lines.count >= 3 {
+            let line1 = String(lines[0])
+            let line2 = String(lines[1])
+            if line1 == "x-anthropic-billing-header:" && line2.contains("cc_version=") {
+                return String(lines[2])
+            }
+        }
+    }
+    return text
+}
+
 /// Convert an Anthropic /v1/messages request to the internal [ChatMessage] format.
 func anthropicToInternalMessages(request: AnthropicRequest) -> [ChatMessage] {
     var messages: [ChatMessage] = []
 
     // System prompt becomes a leading system-role message
     if let system = request.system {
-        messages.append(ChatMessage(role: "system", content: .string(system.text)))
+        messages.append(ChatMessage(role: "system", content: .string(stripAnthropicBillingHeader(system.text))))
     }
 
-    for msg in request.messages {
+    for (i, msg) in request.messages.enumerated() {
         switch msg.content {
         case .text(let text):
-            messages.append(ChatMessage(role: msg.role, content: .string(text)))
+            let cleanedText = (i == 0) ? stripAnthropicBillingHeader(text) : text
+            messages.append(ChatMessage(role: msg.role, content: .string(cleanedText)))
 
         case .blocks(let blocks):
             var textParts: [String] = []
@@ -291,10 +312,11 @@ func anthropicToInternalMessages(request: AnthropicRequest) -> [ChatMessage] {
             var toolCalls: [ToolCallInfo] = []
             var hasNonToolResult = false
 
-            for block in blocks {
+            for (j, block) in blocks.enumerated() {
                 switch block {
                 case .text(let tc):
-                    textParts.append(tc.text)
+                    let cleanedText = (i == 0 && j == 0) ? stripAnthropicBillingHeader(tc.text) : tc.text
+                    textParts.append(cleanedText)
                     hasNonToolResult = true
 
                 case .image(let ic):

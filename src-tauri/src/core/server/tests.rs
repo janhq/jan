@@ -757,6 +757,43 @@ mod server_tests {
     }
 
     #[test]
+    fn convert_messages_strips_anthropic_billing_header() {
+        let billing_header = "x-anthropic-billing-header:\n   cc_version=2.1.150.d66; cc_entrypoint=cli; cch=934c8;\n";
+        let actual_content = "You are Claude Code, Anthropic's official CLI for Claude.";
+        let full_content = format!("{}{}", billing_header, actual_content);
+
+        // Test stripping from first user message
+        let msgs = json!([
+            {"role": "user", "content": full_content},
+            {"role": "user", "content": full_content} // Should not be stripped from second message
+        ]);
+        let out = proxy::convert_messages(&msgs, None).unwrap();
+        let arr = out.as_array().unwrap();
+        assert_eq!(arr[0]["content"], actual_content);
+        assert_eq!(arr[1]["content"], full_content);
+
+        // Test stripping from system prompt
+        let system = json!(full_content);
+        let out = proxy::convert_messages(&json!([{"role": "user", "content": "hi"}]), Some(&system)).unwrap();
+        let arr = out.as_array().unwrap();
+        assert_eq!(arr[0]["role"], "system");
+        assert_eq!(arr[0]["content"], actual_content);
+
+        // Test stripping from array content
+        let msgs_array = json!([
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": full_content}
+                ]
+            }
+        ]);
+        let out = proxy::convert_messages(&msgs_array, None).unwrap();
+        let arr = out.as_array().unwrap();
+        assert_eq!(arr[0]["content"], actual_content);
+    }
+
+    #[test]
     fn transform_anthropic_to_openai_basic() {
         let body = json!({
             "model": "claude-x",
