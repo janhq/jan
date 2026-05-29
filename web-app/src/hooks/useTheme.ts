@@ -56,6 +56,15 @@ export const useTheme = create<ThemeState>()(
     {
       name: localStorageKey.theme,
       storage: createJSONStorage(() => localStorage),
+      // Persisted isDark from the previous session can be stale (user changed
+      // OS theme while the app was closed). Re-derive on hydration so the
+      // initial render matches reality; the Tauri portal listener corrects
+      // Linux where matchMedia is unreliable.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        if (state.activeTheme === 'auto') state.isDark = checkOSDarkMode()
+        else state.isDark = state.activeTheme === 'dark'
+      },
     }
   )
 )

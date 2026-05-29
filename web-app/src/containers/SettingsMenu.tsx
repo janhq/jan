@@ -15,6 +15,7 @@ import {
   IconLock,
   IconCpu,
   IconWorld,
+  IconPaperclip,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -176,6 +177,11 @@ const SettingsMenu = () => {
       icon: IconPalette,
     },
     { title: 'common:assistants', route: route.settings.assistant, icon: IconFeather },
+    {
+      title: 'common:attachments',
+      route: route.settings.attachments,
+      icon: IconPaperclip,
+    },
     {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,

@@ -544,7 +544,7 @@ export const MessageItem = memo(
     return (
       <div
         className={cn(
-          'w-full mb-4',
+          'w-full mb-4 group/message',
           message.role === 'user' && !isFirstMessage && 'mt-8'
         )}
       >
@@ -589,7 +589,7 @@ export const MessageItem = memo(
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
-          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs">
+          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
             <span className="text-muted-foreground">
               {formatDate(createdAt)}
             </span>
