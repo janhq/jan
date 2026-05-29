@@ -1,0 +1,101 @@
+---
+title: "Jan v0.8.1: Anthropic-Compatible Custom Providers, Per-Message Errors & llama.cpp Settings Overhaul"
+version: 0.8.1
+description: "Jan v0.8.1 adds Anthropic-compatible custom providers, OS-native TLS trust, a composer-anchored sampler popover with capability gating, persistent per-thread and per-message errors, and a major llama.cpp settings overhaul with split version/backend selectors, file-backed persistence, and per-model context sizing."
+date: 2026-05-29
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.1: Anthropic-Compatible Custom Providers, Per-Message Errors & llama.cpp Settings Overhaul"
+  date="2026-05-29"
+/>
+
+# Highlights
+
+**Anthropic-Compatible Custom Providers**
+
+You can now point Jan at any endpoint that speaks the Anthropic Messages API wire format, including LiteLLM, Bedrock proxies, and self-hosted Claude gateways. The Add Provider dialog gained an API-format selector (OpenAI or Anthropic), and the built-in Anthropic provider is backfilled by an automatic store migration. The dialog also now requires an API key up front, matching backend gates that previously refused to register or list models for key-less providers.
+
+**OS-Native TLS Trust**
+
+Desktop HTTP clients now use the operating system's native trust store (macOS Keychain, Linux `/etc/ssl/certs`, Windows certificate store) instead of a bundled Mozilla CA list. HTTPS endpoints signed by private or corporate CAs (homelab vLLM, internal LiteLLM gateways, etc.) now work without manual certificate wrangling.
+
+**llama.cpp Settings Overhaul**
+
+The llama.cpp engine's configuration surface has been rewritten:
+
+- The composite `version_backend` setting is split into independent `llamacpp_version` and `llamacpp_backend` selectors, with an automatic migration from prior values.
+- Backend settings now live in `<jan_data>/llamacpp/settings.json` with atomic writes, so they survive localStorage wipes and can be inspected or edited as a file.
+- A new `check_for_updates` toggle (on by default) gates background release fetches. `auto_update_engine` now requires it. The manual "Check for Updates" button always hits the network.
+- Backend dependency verification gained a user-facing toggle (on by default) and is scoped to GPU backend libraries (CUDA, Vulkan) only, eliminating noisy false positives from probing `llama-server` itself. Verification is auto-skipped on Linux Flatpak builds where sandbox layout made the checker unreliable.
+- Recommended backend hints are now computed only from upstream releases, so side-loaded "Install from File" backends no longer skew the recommendation.
+- The macOS "Install from File" picker now accepts `.tar.gz` backend archives.
+
+**Per-Model Context Sizing**
+
+Auto-fit context sizing is off by default on all platforms. Per-model `ctx_len` now owns context sizing and defaults to 8192. A persist migration seeds empty `ctx_len` values, replacing the older v2/v3 fit migration paths.
+
+**Provider-Aware Sampler Popover**
+
+The sampler editor moved out of the model sidebar into a composer-anchored popover scoped to the active assistant. New behavior:
+
+- A categorized "Add parameter" menu, with grouped blocks for coupled samplers (mirostat, dry, xtc, dynatemp).
+- A provider/model capability table gates which parameters are exposed, with live mutual-exclusion handling (mirostat shadows top-k / top-p / min-p, Anthropic's temperature and top_p are mutually exclusive, etc.).
+- Family-specific rejections are encoded for OpenAI o-series and gpt-5* (which reject temperature, top_p, and penalties), and for grok-3-mini and grok-4 quirks.
+- Unsupported sampler keys are stripped at the dispatch chokepoint. If an upstream still rejects a request as a sampling error, Jan retries once with all injected sampling params stripped and shows a toast explaining what happened.
+- The sampler UI and stored overrides are now hidden and stripped for predefined remote providers (like Gemini) that reject unknown JSON fields, preventing local-model overrides from leaking into remote requests.
+- The popover trigger is disabled while the assistant is still hydrating, so edits cannot land on hardcoded defaults and get clobbered when persisted assistants load from disk.
+
+**Per-Thread and Per-Message Error Persistence**
+
+OOM and backend error banners now persist per-thread across restart by stamping `metadata.oomError` and `metadata.backendError` onto the last user message. This fixes the lost-banner-on-restart bug and the cross-thread banner leak.
+
+Per-message inline error cards now render under the user message that triggered a failure, with a wired Regenerate button, replacing the old transient global error banner. Successful regeneration strips the prior `metadata.error` so resolved failures stop showing the card, and editing a user message also clears it.
+
+Errored generations no longer persist as empty assistant rows on disk, and existing empty assistant rows from previous versions are cleaned up on thread load. Message persistence now upserts on `modify_message` and dedupes on `create_message`, fixing a JSONL race where error metadata stamped immediately after sending could be silently dropped.
+
+**llama.cpp Error Scoping**
+
+The llama.cpp router error banner, implicit stop, and Reload button now only fire on llama.cpp-backed threads. A router-side Metal crash no longer surfaces on top of working MLX, OpenAI, or Anthropic chats.
+
+**Media-Only Messages**
+
+Multimodal models can now be sent image-only or audio-only messages without requiring placeholder text in the prompt.
+
+**Bug Fixes**
+
+- Updating settings like `ctx_size`, `n_gpu_layers`, and `flash_attn` now correctly triggers a router restart. Previously they were persisted but never applied to the running router until next launch.
+- Multimodal VRAM precheck now includes the size of the sibling `mmproj.gguf` projector file, preventing OOM crashes on multimodal models that previously slipped past the gate.
+- The router's `models_max` slot accounting caps the embedding bonus at +1, so installed embedders no longer prevent eviction of stale chat models.
+- The startup backend update check is skipped when auto-update is disabled, so the BackendUpdater dialog no longer hits the network behind the user's back.
+- Imported GGUF models now use the `general.name` field from GGUF metadata for display, falling back to the filename and then to the model id.
+- Extension logger formats `Error` and object arguments properly instead of writing `[object Object]` to the log file.
+- The MCP auto-reconnect health probe interval was raised from 2 seconds to 30 seconds, cutting probe spam in the log.
+- STDIO MCP stderr lines are now routed through the level token the server itself prints (defaulting to INFO), so Python MCP servers no longer flood the log with WARN entries.
+- The model picker in MCP and router flows deduplicates entries by provider and id, fixing duplicate React keys when a model appears in both the registry and as a local import.
+- Provider refetches no longer carry stale `recommended` or `options` metadata across requests; only the user's selected `value` is preserved.
+- Dropdowns with a single option now render as inert plain text without a chevron or popover.
+- The model dropdown's compatibility indicator switched from the heavy `isModelSupported` probe (which ran `read_gguf_metadata` on every selection change) to the lightweight `estimateModelFit` heuristic the Hub already uses, and the tooltip is now labeled as an estimate. The context value was removed from the tooltip to reduce noise.
+- The `refresh_system_info` Tauri command is now properly registered in the hardware plugin's ACL, fixing a "not allowed by ACL" error fired by the visibility-change handler.
+- A single failing extension `onLoad` no longer blocks the entire app from finishing setup. Load failures are isolated, logged by name, and other providers (MLX, OpenAI, Anthropic, etc.) continue to load.
+- The llama.cpp extension's `list()` is hardened so a single malformed `model.yml` or unreadable entry can no longer cause Settings to render zero models.
+- Soft-deleted local models that are later re-downloaded are scrubbed from the `deletedModels` tombstone list automatically, fixing an empty Settings > llama.cpp view after re-download.
+- The ThreadList no longer overwrites a newly created thread's in-memory messages with the empty array fetched from disk, fixing a wipe race on brand-new threads.
+- The chat input reasoning toggle was realigned to match its sibling icon buttons.
+- Dark mode now applies synchronously on launch, eliminating a brief light-theme flash before the saved theme loads.
+- NVIDIA and Vulkan GPU probes are skipped on macOS, where they cannot succeed and produced spurious errors in the hardware view.
+- User-message action buttons (edit, copy, delete) now reveal on hover only instead of always being visible.
+- `PromptProgress` no longer trips a router invariant when navigating between threads while a load is in flight.
+- The Attachments entry was restored to the Settings sidebar; the route had been left reachable only by URL after the recent settings-navigation reorg.
+
+**Localization**
+
+Italian translations were added across assistants, chat interface, common terms, the Hub, the no-logs message, MCP servers, model errors, providers, and settings.
+
+---
+
+Update your Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.1)

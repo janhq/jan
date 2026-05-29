@@ -17,24 +17,42 @@ import { Callout } from 'nextra/components'
 
 # Agents
 
-Jan supports autonomous AI agents that run entirely on your own hardware — no cloud required.
+You can run autonomous coding agents against a model served locally by Jan — keeping inference on
+your own hardware while using the agent tooling you already know.
 
-<Callout type="warning">
-The OpenClaw agent integration was removed in **Jan v0.7.9** due to resource usage and security concerns in local AI environments. Agent support is being redesigned for a simpler, safer experience in a future release.
+<Callout type="info">
+The **in-app** OpenClaw integration was removed in **Jan v0.7.9** due to resource usage and security
+concerns. Jan no longer runs agents inside the desktop app. Instead, agents run as **external
+programs** that you point at a local Jan model via the CLI, as described below.
 </Callout>
 
-## Launch Agents via CLI
+## How It Works
 
-You can run agents directly from your terminal using the Jan CLI. The `jan launch` command starts a local model and wires it to an agent automatically — no manual configuration needed.
+The `jan launch` command starts a local model server and then launches an agent CLI with everything
+pre-wired:
+
+1. Jan starts the model and serves it on a local OpenAI- and Anthropic-compatible endpoint.
+2. Jan sets the agent's connection details automatically — environment variables like
+   `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`, the API key, and the model name (for OpenClaw, Jan
+   writes a provider entry to `~/.openclaw/openclaw.json` instead).
+3. The agent runs in your terminal, sending its requests to your local model.
+
+The agent itself (Claude Code, OpenClaw) is a **separate tool you install yourself** — Jan only
+supplies the model backend and the wiring.
+
+## Launch an Agent
 
 ```bash
 jan launch claude                                       # pick a model, then run Claude Code against it
 jan launch claude --model janhq/Jan-code-4b-gguf        # use a specific model with Claude Code
-jan launch openclaw --model janhq/Jan-code-4b-gguf      # wire openclaw to a local model
+jan launch openclaw --model janhq/Jan-code-4b-gguf      # wire OpenClaw to a local model
 ```
 
-See the [Jan CLI](/docs/desktop/cli) documentation for full options.
+Run `jan launch` with no agent to pick one interactively. See the [Jan CLI](/docs/desktop/cli)
+documentation for full options (port, context size, GPU layers, and more).
 
-## What's Next
-
-We're exploring a simpler, safer approach to agentic workflows in Jan. Stay tuned for updates.
+<Callout type="warning">
+Install the agent CLI first. For example, install [Claude Code](https://docs.claude.com/en/docs/claude-code)
+or OpenClaw per their own instructions — `jan launch` runs them, but doesn't install them. (If
+OpenClaw isn't installed, Jan falls back to running it via `npx`.)
+</Callout>

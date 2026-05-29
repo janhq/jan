@@ -36,6 +36,12 @@ const systemsTemplate: SystemType[] = [
     fileFormat: 'Jan_{tag}_x64-setup.exe',
   },
   {
+    name: 'Download for Linux (Flatpak)',
+    logo: FaLinux,
+    fileFormat: '',
+    href: 'https://flathub.org/apps/ai.jan.Jan',
+  },
+  {
     name: 'Download for Linux (AppImage)',
     logo: FaLinux,
     fileFormat: 'Jan_{tag}_amd64.AppImage',
@@ -63,8 +69,8 @@ const DropdownDownload = ({ lastRelease }: Props) => {
       // windows user
       setDefaultSystem(systems[1])
     } else if (userAgent.includes('Linux')) {
-      // linux user
-      setDefaultSystem(systems[3])
+      // linux user - prefer Flatpak (Flathub)
+      setDefaultSystem(systems[2])
     } else if (userAgent.includes('Mac OS')) {
       setDefaultSystem(systems[0])
     } else {
@@ -130,6 +136,9 @@ const DropdownDownload = ({ lastRelease }: Props) => {
           : lastRelease.tag_name
 
         const updatedSystems = systems.map((system) => {
+          if (!system.fileFormat) {
+            return system
+          }
           const downloadUrl = system.fileFormat.replace('{tag}', tag)
 
           // Find the corresponding asset to get the file size
