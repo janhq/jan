@@ -84,6 +84,11 @@ Multimodal models can now be sent image-only or audio-only messages without requ
 - Soft-deleted local models that are later re-downloaded are scrubbed from the `deletedModels` tombstone list automatically, fixing an empty Settings > llama.cpp view after re-download.
 - The ThreadList no longer overwrites a newly created thread's in-memory messages with the empty array fetched from disk, fixing a wipe race on brand-new threads.
 - The chat input reasoning toggle was realigned to match its sibling icon buttons.
+- Dark mode now applies synchronously on launch, eliminating a brief light-theme flash before the saved theme loads.
+- NVIDIA and Vulkan GPU probes are skipped on macOS, where they cannot succeed and produced spurious errors in the hardware view.
+- User-message action buttons (edit, copy, delete) now reveal on hover only instead of always being visible.
+- `PromptProgress` no longer trips a router invariant when navigating between threads while a load is in flight.
+- The Attachments entry was restored to the Settings sidebar; the route had been left reachable only by URL after the recent settings-navigation reorg.
 
 **Localization**
 
