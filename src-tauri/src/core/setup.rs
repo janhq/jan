@@ -390,51 +390,34 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         .build(app)
 }
 
-/// Install a real GTK `HeaderBar` on the main window so GNOME (and any other
-/// CSD-only compositor) gets native min/max/close buttons, drag, system menu,
-/// and proper shadows instead of wry's bare-bones default CSD. KDE/XFCE keep
-/// using SSD; this only takes effect when GTK falls back to CSD.
+/// Tidy up tao's Wayland CSD titlebar: shrink it from ~46px to ~24px via a
+/// screen-level CSS provider, and clear its hardcoded `decoration_layout` so
+/// the buttons follow GNOME's `org.gnome.desktop.wm.preferences button-layout`.
+/// tao installs a draggable `HeaderBar` (EventBox-wrapped) as the titlebar on
+/// Wayland; calling `set_titlebar` ourselves replaces it and kills window
+/// drag/double-click, so we only restyle the bar tao already built. KDE/XFCE
+/// keep SSD and are left untouched.
 #[cfg(target_os = "linux")]
-pub fn install_gtk_headerbar<R: Runtime>(app: &App<R>) {
+pub fn shrink_gtk_headerbar<R: Runtime>(app: &App<R>) {
     use gtk::prelude::*;
 
-    // CSD-only DEs (GNOME, Pantheon) need a real HeaderBar; KDE/XFCE provide
-    // SSD via xdg-decoration and would render a double titlebar if we install
-    // one here. Match the desktop session to keep this opt-in.
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let is_csd_desktop = desktop
         .split(':')
         .any(|d| matches!(d, "GNOME" | "GNOME-Classic" | "Unity" | "Pantheon"));
     if !is_csd_desktop {
         log::info!(
-            "install_gtk_headerbar: skipping on XDG_CURRENT_DESKTOP={desktop:?} (not CSD-only)"
+            "shrink_gtk_headerbar: skipping on XDG_CURRENT_DESKTOP={desktop:?} (not CSD-only)"
         );
         return;
     }
 
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let gtk_window = match window.gtk_window() {
-        Ok(w) => w,
-        Err(e) => {
-            log::warn!("install_gtk_headerbar: gtk_window() failed: {e}");
-            return;
-        }
-    };
-
-    let header = gtk::HeaderBar::builder()
-        .show_close_button(true)
-        .title("Jan")
-        .build();
-
-    // Shrink the headerbar: default Adwaita is ~46px, this brings it to ~24px.
     let css = gtk::CssProvider::new();
     let style = b"headerbar { min-height: 24px; padding: 0 4px; } \
                   headerbar button { min-height: 20px; min-width: 20px; padding: 0 4px; } \
                   headerbar .title { font-size: 0.9em; }";
     if let Err(e) = css.load_from_data(style) {
-        log::warn!("install_gtk_headerbar: css load failed: {e}");
+        log::warn!("shrink_gtk_headerbar: css load failed: {e}");
     } else if let Some(screen) = gtk::gdk::Screen::default() {
         gtk::StyleContext::add_provider_for_screen(
             &screen,
@@ -443,8 +426,21 @@ pub fn install_gtk_headerbar<R: Runtime>(app: &App<R>) {
         );
     }
 
-    header.show_all();
-    gtk_window.set_titlebar(Some(&header));
+    // `None` decoration_layout falls back to the gtk-decoration-layout setting,
+    // which GNOME keeps in sync with its button-layout preference.
+    let header = app
+        .get_webview_window("main")
+        .and_then(|w| w.gtk_window().ok())
+        .and_then(|gw| gw.titlebar())
+        .and_then(|tb| tb.downcast::<gtk::EventBox>().ok())
+        .and_then(|eb| eb.child())
+        .and_then(|c| c.downcast::<gtk::HeaderBar>().ok());
+    match header {
+        Some(h) => h.set_decoration_layout(None::<&str>),
+        None => {
+            log::warn!("shrink_gtk_headerbar: titlebar not the expected EventBox>HeaderBar shape")
+        }
+    }
 }
 
 pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
@@ -505,9 +501,9 @@ async fn read_xdg_portal_color_scheme() -> Result<Option<&'static str>, Box<dyn 
     })
 }
 
-/// Flip GTK's `gtk-application-prefer-dark-theme` so the native HeaderBar
-/// installed by `install_gtk_headerbar` follows the app's effective theme
-/// (user override or system). No-op on non-Linux.
+/// Flip GTK's `gtk-application-prefer-dark-theme` so the native Wayland
+/// HeaderBar follows the app's effective theme (user override or system).
+/// No-op on non-Linux.
 #[tauri::command]
 pub fn set_gtk_prefer_dark(dark: bool) {
     #[cfg(target_os = "linux")]

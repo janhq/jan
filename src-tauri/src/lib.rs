@@ -340,7 +340,7 @@ pub fn run() {
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             #[cfg(target_os = "linux")]
-            setup::install_gtk_headerbar(app);
+            setup::shrink_gtk_headerbar(app);
             Ok(())
         })
         .build(tauri::generate_context!())
