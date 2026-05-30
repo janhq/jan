@@ -4,9 +4,10 @@ use std::{
     io::Read,
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
+use tauri::{App, AppHandle, Emitter, Listener, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(feature = "desktop")]
 use tauri::{
@@ -317,12 +318,28 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
     });
 }
 
+/// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window
+/// that never signals still proceeds).
+async fn wait_for_app_ready<R: Runtime>(app: &AppHandle<R>, timeout: Duration) {
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let handler = app.once_any("app-ready", move |_| {
+        let _ = tx.send(());
+    });
+    if tokio::time::timeout(timeout, rx).await.is_err() {
+        log::info!("app-ready not received within {timeout:?}; starting MCP servers anyway");
+        app.unlisten(handler);
+    }
+}
+
 pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         use crate::core::mcp::lockfile::cleanup_all_stale_locks;
+
+        // Defer past first paint so npx/uvx spawns don't starve cold start.
+        wait_for_app_ready(&app_handle, Duration::from_secs(30)).await;
 
         // Create default mcp_config.json if it doesn't exist
         let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
@@ -390,13 +407,9 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         .build(app)
 }
 
-/// Tidy up tao's Wayland CSD titlebar: shrink it from ~46px to ~24px via a
-/// screen-level CSS provider, and clear its hardcoded `decoration_layout` so
-/// the buttons follow GNOME's `org.gnome.desktop.wm.preferences button-layout`.
-/// tao installs a draggable `HeaderBar` (EventBox-wrapped) as the titlebar on
-/// Wayland; calling `set_titlebar` ourselves replaces it and kills window
-/// drag/double-click, so we only restyle the bar tao already built. KDE/XFCE
-/// keep SSD and are left untouched.
+/// Shrink tao's Wayland CSD titlebar (~46px → ~24px) and clear its hardcoded
+/// `decoration_layout` so buttons follow GNOME. Do NOT `set_titlebar` here —
+/// that replaces tao's drag-enabled HeaderBar and breaks drag/double-click.
 #[cfg(target_os = "linux")]
 pub fn shrink_gtk_headerbar<R: Runtime>(app: &App<R>) {
     use gtk::prelude::*;
@@ -426,8 +439,7 @@ pub fn shrink_gtk_headerbar<R: Runtime>(app: &App<R>) {
         );
     }
 
-    // `None` decoration_layout falls back to the gtk-decoration-layout setting,
-    // which GNOME keeps in sync with its button-layout preference.
+    // `None` layout falls back to gtk-decoration-layout, synced from GNOME.
     let header = app
         .get_webview_window("main")
         .and_then(|w| w.gtk_window().ok())
