@@ -2262,7 +2262,6 @@ export default class llamacpp_extension extends AIEngine {
           onProgress
         )
       } catch (error) {
-        logger.error('Error downloading model:', modelId, opts, error)
         const errorMessage =
           error instanceof Error ? error.message : String(error)
 
@@ -2280,21 +2279,19 @@ export default class llamacpp_extension extends AIEngine {
           errorMessage.includes('Size verification failed') ||
           errorMessage.includes('Failed to verify file')
 
+        // Pause and cancel both surface here as a cancellation; treat as a
+        // stop (emit stopped, return) so it never becomes an error toast.
         if (isCancellationError) {
-          logger.info('Download cancelled for model:', modelId)
-          // Emit download stopped event instead of error
+          logger.info('Download stopped for model:', modelId)
           events.emit(DownloadEvent.onFileDownloadStopped, {
             modelId,
             downloadType: 'Model',
           })
-        } else if (isValidationError) {
-          logger.error(
-            'Validation failed for model:',
-            modelId,
-            'Error:',
-            errorMessage
-          )
+          return
+        }
 
+        logger.error('Error downloading model:', modelId, opts, error)
+        if (isValidationError) {
           // Cancel any other download tasks for this model
           try {
             this.abortImport(modelId)
@@ -2462,6 +2459,15 @@ export default class llamacpp_extension extends AIEngine {
 
     // Delete the entire model folder if it exists (for validation failures)
     await this.deleteModelFolder(modelId)
+  }
+
+  override async pauseImport(modelId: string): Promise<void> {
+    const taskId = this.createDownloadTaskId(modelId)
+    const downloadManager = window.core.extensionManager.getByName(
+      '@janhq/download-extension'
+    )
+    // Pause keeps the partial .tmp for resume; the model folder is preserved.
+    await downloadManager.pauseDownload(taskId)
   }
 
   private async getRandomPort(): Promise<number> {

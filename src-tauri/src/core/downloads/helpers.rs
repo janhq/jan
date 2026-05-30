@@ -674,11 +674,9 @@ async fn download_single_file(
     // write chunk to file
     while let Some(chunk) = stream.next().await {
         if cancel_token.is_cancelled() {
-            if !should_resume {
-                if let Some(parent) = save_path.parent() {
-                    tokio::fs::remove_dir_all(parent).await.ok();
-                }
-            }
+            // Keep the partial .tmp on disk so the download can be resumed;
+            // a true cancel deletes it in the download_files command.
+            writer.flush().await.ok();
             log::info!("Download cancelled: {}", item.url);
             return Err("Download cancelled".to_string());
         }

@@ -101,6 +101,7 @@ macro_rules! invoke_commands_with_extras {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::commands::pause_download_task,
         // App lifecycle
         confirm_exit,
         // Theme

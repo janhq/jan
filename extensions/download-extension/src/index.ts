@@ -89,6 +89,15 @@ export default class DownloadManager extends BaseExtension {
     }
   }
 
+  async pauseDownload(taskId: string) {
+    try {
+      await invoke<void>('pause_download_task', { taskId })
+    } catch (error) {
+      console.error('Error pausing download:', error)
+      throw error
+    }
+  }
+
   _getHeaders() {
     return {
       ...(this.hfToken && { Authorization: `Bearer ${this.hfToken}` }),

@@ -28,6 +28,7 @@ export const ModelDownloadAction = ({
     localDownloadingModels,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
+    setResumeParams,
   } = useDownloadStore()
   const downloadProcesses = useMemo(
     () =>
@@ -61,17 +62,23 @@ export const ModelDownloadAction = ({
 
   const handleDownloadModel = useCallback(async () => {
     addLocalDownloadingModel(variant.model_id)
+    const mmprojPath = (
+      model.mmproj_models?.find(
+        (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+      ) || model.mmproj_models?.[0]
+    )?.path
+    setResumeParams(variant.model_id, {
+      modelPath: variant.path,
+      mmprojPath,
+      hfToken: huggingfaceToken,
+    })
     try {
       await serviceHub
         .models()
         .pullModelWithMetadata(
           variant.model_id,
           variant.path,
-          (
-            model.mmproj_models?.find(
-              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-            ) || model.mmproj_models?.[0]
-          )?.path,
+          mmprojPath,
           huggingfaceToken
         )
     } catch (err) {
@@ -90,6 +97,7 @@ export const ModelDownloadAction = ({
     model.mmproj_models,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
+    setResumeParams,
     t,
   ])
 

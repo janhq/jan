@@ -343,6 +343,18 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
+  async pauseDownload(id: string): Promise<void> {
+    const llamacppEngine = this.getEngine('llamacpp')
+    const mlxEngine = this.getEngine('mlx')
+    // No stopped event here: the backend cancel surfaces via the import path,
+    // and the UI keeps the entry visible as paused for resume.
+    await Promise.allSettled(
+      [llamacppEngine?.pauseImport(id), mlxEngine?.pauseImport(id)].filter(
+        Boolean
+      )
+    )
+  }
+
   async deleteModel(id: string, provider?: string): Promise<void> {
     return this.getEngine(provider)?.delete(id)
   }
