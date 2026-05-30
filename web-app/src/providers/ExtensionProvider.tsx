@@ -49,9 +49,17 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
   }, [])
 
   useEffect(() => {
-    setupExtensions()
+    // Watchdog: a hung extension (stuck migration, blocked invoke) must never
+    // leave the app on a blank window. Setup still completes in the background.
+    const watchdog = setTimeout(() => {
+      console.warn('Extension setup exceeded timeout; rendering UI anyway.')
+      setFinishedSetup(true)
+    }, 20000)
+
+    setupExtensions().finally(() => clearTimeout(watchdog))
 
     return () => {
+      clearTimeout(watchdog)
       if (isMainWindow()) {
         ExtensionManager.getInstance().unload()
       }

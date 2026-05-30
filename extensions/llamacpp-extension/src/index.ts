@@ -344,6 +344,10 @@ export default class llamacpp_extension extends AIEngine {
   private userModelsMax: number = 1
   private loadedChatOrder: string[] = []
 
+  // Backend discovery + router spawn run off the onLoad critical path; awaited
+  // via ensureRouterReady() before any model load so inference never races it.
+  private backgroundInit?: Promise<void>
+
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
 
@@ -414,20 +418,20 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    // configureBackends is async; await it so the router has a backend to
-    // launch. Failures here previously surfaced via unhandled rejection — the
-    // try/catch below preserves that fail-soft behavior for the router step.
-    try {
-      await this.configureBackends()
-    } catch (e) {
-      logger.error('configureBackends failed during onLoad:', e)
-    }
-
-    try {
-      await this.startRouter()
-    } catch (e) {
-      logger.error('Router failed to start during onLoad:', e)
-    }
+    // Defer the slow, fail-soft startup (network + subprocess) off onLoad so
+    // the UI unblocks; performLoad awaits it via ensureRouterReady().
+    this.backgroundInit = (async () => {
+      try {
+        await this.configureBackends()
+      } catch (e) {
+        logger.error('configureBackends failed during onLoad:', e)
+      }
+      try {
+        await this.startRouter()
+      } catch (e) {
+        logger.error('Router failed to start during onLoad:', e)
+      }
+    })()
   }
 
   override async getSettings(): Promise<SettingComponentProps[]> {
@@ -1534,6 +1538,12 @@ export default class llamacpp_extension extends AIEngine {
       this.unlistenValidationStarted()
     }
 
+    // Let any in-flight deferred startup finish so stop_router can't race a
+    // concurrent startRouter and leave an orphaned process.
+    if (this.backgroundInit) {
+      await this.backgroundInit.catch(() => undefined)
+    }
+
     try {
       await invoke('plugin:llamacpp|stop_router')
     } catch (e) {
@@ -2503,10 +2513,22 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  // Awaits the deferred startup, then makes one direct attempt if the router
+  // still isn't up. Idempotent: startRouter stops any existing router first.
+  private async ensureRouterReady(): Promise<void> {
+    if (this.backgroundInit) {
+      await this.backgroundInit.catch(() => undefined)
+    }
+    if (!(await this.getRouterInfo())) {
+      await this.startRouter()
+    }
+  }
+
   private async performLoad(
     modelId: string,
     isEmbedding: boolean = false
   ): Promise<SessionInfo> {
+    await this.ensureRouterReady()
     const router = await this.getRouterInfo()
     if (!router) {
       throw new Error(
