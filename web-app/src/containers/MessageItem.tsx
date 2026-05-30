@@ -244,7 +244,7 @@ export const MessageItem = memo(
         <div key={`${message.id}-${partIndex}`} className="w-full">
           {message.role === 'user' ? (
             <div className="flex justify-end w-full h-full text-start wrap-break-word whitespace-normal">
-              <div className="bg-secondary relative text-foreground p-2 rounded-md inline-block max-w-[80%]">
+              <div className="bg-primary relative text-primary-foreground p-2 rounded-md inline-block max-w-[80%]">
                 {/* Show attached files if any */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
