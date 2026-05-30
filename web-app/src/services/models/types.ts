@@ -139,6 +139,10 @@ export interface ModelsService {
     model: string,
     bypassAutoUnload?: boolean
   ): Promise<SessionInfo | undefined>
+  reloadModel(
+    provider: ProviderObject,
+    model: string
+  ): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(
     modelId: string,

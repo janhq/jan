@@ -352,9 +352,6 @@ export function createCustomFetch(
     if (res.ok) return res
 
     const isLlamacpp500 = keepLlamacppOnly && res.status === 500
-    if (isLlamacpp500) {
-      onLlamacppServerError?.()
-    }
 
     let parsed: { error?: { message?: unknown; [k: string]: unknown } } | null =
       null
@@ -373,6 +370,8 @@ export function createCustomFetch(
         : null
 
     if (isLlamacpp500 && !innerMessage) {
+      // 500 with no JSON body = router couldn't reach the child (crash). Recover.
+      onLlamacppServerError?.()
       const synthMessage =
         'The model crashed and is being reloaded. Please retry.'
       const nextBody = JSON.stringify({
@@ -703,9 +702,9 @@ export class ModelFactory {
             try {
               const { useServiceStore } = await import('@/hooks/useServiceHub')
               const hub = useServiceStore.getState().serviceHub
-              await hub?.models().startModel(provider, modelId)
+              await hub?.models().reloadModel(provider, modelId)
             } catch (e) {
-              console.warn('[llamacpp] reload after 500 failed:', e)
+              console.warn('[llamacpp] reload after crash failed:', e)
             }
           })()
         }

@@ -315,17 +315,17 @@ describe('createCustomFetch — llamacpp 500 handling', () => {
     expect(onErr).toHaveBeenCalledTimes(1)
   })
 
-  it('triggers the reload callback on llamacpp 500 even when the body parses', async () => {
+  it('does not trigger reload on llamacpp 500 carrying a JSON error body (child alive, not a crash)', async () => {
     const onErr = vi.fn()
     const body = JSON.stringify({
-      error: { code: 500, message: 'some inner crash', type: 'server_error' },
+      error: { code: 500, message: 'some inner error', type: 'server_error' },
     })
     const wrapped = createCustomFetch(fetchReturning(500, body), {}, true, onErr)
     await wrapped('http://test/v1/chat/completions', {
       method: 'POST',
       body: '{}',
     })
-    expect(onErr).toHaveBeenCalledTimes(1)
+    expect(onErr).not.toHaveBeenCalled()
   })
 
   it('does not trigger the reload callback or synthesize a body for non-llamacpp 500', async () => {

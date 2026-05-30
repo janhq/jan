@@ -157,6 +157,31 @@ describe('DefaultModelsService - additional coverage', () => {
     })
   })
 
+  describe('reloadModel', () => {
+    it('unloads before loading and dedupes concurrent calls', async () => {
+      const order: string[] = []
+      mockEngine.getLoadedModels.mockResolvedValue([])
+      mockEngine.unload.mockImplementation(async () => {
+        order.push('unload')
+      })
+      mockEngine.load.mockImplementation(async () => {
+        order.push('load')
+        return { model_id: 'm1' }
+      })
+      const provider = { provider: 'llamacpp', models: [{ id: 'm1' }] } as any
+
+      const [a, b] = await Promise.all([
+        svc.reloadModel(provider, 'm1'),
+        svc.reloadModel(provider, 'm1'),
+      ])
+
+      expect(order).toEqual(['unload', 'load'])
+      expect(mockEngine.unload).toHaveBeenCalledTimes(1)
+      expect(mockEngine.load).toHaveBeenCalledTimes(1)
+      expect(a).toBe(b)
+    })
+  })
+
   describe('checkMmprojExists', () => {
     it.each([
       ['confirms', true, true],

@@ -412,6 +412,27 @@ export class DefaultModelsService implements ModelsService {
       })
   }
 
+  private reloadingModels = new Map<
+    string,
+    Promise<SessionInfo | undefined>
+  >()
+
+  // Force unload first: a crashed model still reports "loaded", so load() alone no-ops.
+  async reloadModel(
+    provider: ProviderObject,
+    model: string
+  ): Promise<SessionInfo | undefined> {
+    const key = `${provider.provider}:${model}`
+    const inflight = this.reloadingModels.get(key)
+    if (inflight) return inflight
+    const p = (async () => {
+      await this.stopModel(model, provider.provider).catch(() => {})
+      return this.startModel(provider, model)
+    })().finally(() => this.reloadingModels.delete(key))
+    this.reloadingModels.set(key, p)
+    return p
+  }
+
   async isToolSupported(modelId: string): Promise<boolean> {
     const engine = this.getEngine()
     if (!engine) return false
