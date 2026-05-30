@@ -13,7 +13,7 @@
   {
     "key": "llamacpp_backend",
     "title": "Backend",
-    "description": "Hardware backend for llama.cpp (CUDA, Vulkan, CPU, etc.)",
+    "description": "Hardware backend for llama.cpp (CUDA, HIP/ROCm, Vulkan, CPU, etc.)",
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "none",
