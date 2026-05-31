@@ -14,12 +14,17 @@ vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: { getState: () => ({ selectedModel: null, selectedProvider: '', getProviderByName: () => null }) },
 }))
 
+const mockState = vi.hoisted(() => ({
+  currentAssistant: null as unknown,
+  threads: {} as Record<string, unknown>,
+}))
+
 vi.mock('@/hooks/useAssistant', () => ({
-  useAssistant: { getState: () => ({ currentAssistant: null }) },
+  useAssistant: { getState: () => ({ currentAssistant: mockState.currentAssistant }) },
 }))
 
 vi.mock('@/hooks/useThreads', () => ({
-  useThreads: { getState: () => ({ threads: {} }) },
+  useThreads: { getState: () => ({ threads: mockState.threads }) },
 }))
 
 vi.mock('@/hooks/useAttachments', () => ({
@@ -50,6 +55,8 @@ describe('CustomChatTransport', () => {
   let transport: CustomChatTransport
 
   beforeEach(() => {
+    mockState.currentAssistant = null
+    mockState.threads = {}
     transport = new CustomChatTransport('You are helpful', 'thread-1')
   })
 
@@ -125,6 +132,38 @@ describe('CustomChatTransport', () => {
     ] as any
     const result = transport.mapUserInlineAttachments(messages)
     expect(result[0].parts[0].text).toBe('Check')
+  })
+
+  describe('inference params follow the thread assistant', () => {
+    type Resolvable = {
+      getActiveInferenceParams: () => Record<string, unknown>
+    }
+    const resolve = (t: CustomChatTransport = transport) =>
+      (t as unknown as Resolvable).getActiveInferenceParams()
+
+    it('reads params from the thread assistant when set', () => {
+      mockState.currentAssistant = { id: 'default', parameters: { temperature: 0.1 } }
+      mockState.threads = {
+        'thread-1': { assistants: [{ id: 'agent-b', parameters: { temperature: 0.9 } }] },
+      }
+      expect(resolve()).toEqual({ temperature: 0.9 })
+    })
+
+    it('uses no params for a model-only thread, ignoring the global default', () => {
+      mockState.currentAssistant = { id: 'default', parameters: { temperature: 0.1 } }
+      mockState.threads = { 'thread-1': { assistants: [{ id: 'model-only' }] } }
+      expect(resolve()).toEqual({})
+    })
+
+    it('falls back to the global assistant only when off-thread', () => {
+      mockState.currentAssistant = { id: 'default', parameters: { temperature: 0.1 } }
+      mockState.threads = {}
+      expect(resolve(new CustomChatTransport('sys'))).toEqual({ temperature: 0.1 })
+    })
+
+    it('returns an empty object when nothing is set', () => {
+      expect(resolve(new CustomChatTransport('sys'))).toEqual({})
+    })
   })
 })
 

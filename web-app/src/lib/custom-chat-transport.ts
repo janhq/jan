@@ -566,6 +566,24 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.systemMessage = systemMessage
   }
 
+  // Inference params follow the thread's assigned assistant so in-chat agent
+  // switches take effect immediately. A thread with no real assistant
+  // (model-only / "None") uses no assistant params — matching the switcher.
+  // Only off-thread (no threadId / thread not yet in store) do we fall back to
+  // the global current assistant.
+  private getActiveInferenceParams(): Record<string, unknown> {
+    const thread = this.threadId
+      ? useThreads.getState().threads[this.threadId]
+      : undefined
+    if (thread) {
+      const threadAssistant = thread.assistants?.[0]
+      return threadAssistant && threadAssistant.id !== 'model-only'
+        ? (threadAssistant.parameters ?? {})
+        : {}
+    }
+    return useAssistant.getState().currentAssistant?.parameters ?? {}
+  }
+
   setOnTokenUsage(callback: TokenUsageCallback | undefined) {
     this.onTokenUsage = callback
   }
@@ -832,8 +850,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         .getState()
         .getProviderByName(providerId)
 
-      const currentAssistant = useAssistant.getState().currentAssistant
-      const inferenceParams = currentAssistant?.parameters
+      const inferenceParams = this.getActiveInferenceParams()
 
       const selectedModel = useModelProvider.getState().selectedModel
       const reasoningParams = buildLlamacppReasoningParams(
@@ -942,7 +959,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     })()
 
-    const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
+    const inferenceParams = this.getActiveInferenceParams()
 
     const selectedModel = useModelProvider.getState().selectedModel
 

@@ -71,13 +71,44 @@ export function SamplerPopover({
     return providers.filter((p) => p.active)
   }, [providers, providerId])
 
-  const params = currentAssistant?.parameters ?? {}
+  // The header must match the switcher's checkmark in every context:
+  //  - inside a thread: the thread's assigned assistant, including "None"
+  //    (model-only) which must NOT fall back to the global default;
+  //  - off-thread with a switcher (home screen): the dropdown selection
+  //    (selectedAssistantId), since that's what a new chat will use;
+  //  - no switcher at all: the global current assistant.
+  const inThread = !!assistantSwitcher?.currentThread
+  const threadAssistant = assistantSwitcher?.currentThread?.assistants?.[0]
+  const isThreadAssistant =
+    !!threadAssistant && threadAssistant.id !== 'model-only'
+  const selectedAssistant = assistantSwitcher
+    ? assistantSwitcher.assistants.find(
+        (a) => a.id === assistantSwitcher.selectedAssistantId
+      )
+    : currentAssistant
+  const activeAssistant: Assistant | undefined = inThread
+    ? isThreadAssistant
+      ? threadAssistant
+      : undefined
+    : selectedAssistant
+
+  const params = activeAssistant?.parameters ?? {}
   const samplerKeys = Object.keys(params).filter((k) => k in paramsSettings)
   const hasOverrides = samplerKeys.length > 0
 
   const writeParams = (next: Record<string, unknown>) => {
-    if (!currentAssistant) return
-    updateAssistant({ ...currentAssistant, parameters: next })
+    if (!activeAssistant) return
+    const updated = { ...activeAssistant, parameters: next }
+    if (isThreadAssistant && assistantSwitcher) {
+      // Sync the thread's copy so inference picks it up immediately; mirror
+      // into the canonical assistant only when it still exists.
+      assistantSwitcher.updateCurrentThreadAssistant(updated)
+      if (assistantSwitcher.assistants.some((a) => a.id === updated.id)) {
+        updateAssistant(updated)
+      }
+    } else {
+      updateAssistant(updated)
+    }
   }
 
   const handleToggle = (def: ParamDef) => {
@@ -122,8 +153,8 @@ export function SamplerPopover({
 
   const triggerLabel = assistantsLoading
     ? 'Loading assistant…'
-    : currentAssistant
-      ? `Sampling — ${currentAssistant.name}`
+    : activeAssistant
+      ? `Sampling — ${activeAssistant.name}`
       : 'Sampling'
 
   return (
@@ -169,7 +200,7 @@ export function SamplerPopover({
       >
         <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2 border-b">
           <AssistantHeader
-            currentAssistant={currentAssistant}
+            currentAssistant={activeAssistant}
             assistantSwitcher={assistantSwitcher}
           />
           <div className="flex items-center gap-1 shrink-0">
@@ -192,7 +223,7 @@ export function SamplerPopover({
             </Tooltip>
           </div>
         </div>
-        {currentAssistant ? (
+        {activeAssistant ? (
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
             <ParametersSection
               params={params}
