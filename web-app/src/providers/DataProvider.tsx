@@ -1,6 +1,7 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
@@ -94,6 +95,7 @@ export function DataProvider() {
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
+  const autoUpdateCheck = useGeneralSetting((s) => s.autoUpdateCheck)
   const { setServers, setSettings } = useMCPServers()
   const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
@@ -191,7 +193,7 @@ export function DataProvider() {
     // Only check for updates if the auto updater is not disabled
     // App might be distributed via other package managers
     // or methods that handle updates differently
-    if (isDev()) {
+    if (isDev() || !autoUpdateCheck) {
       return
     }
 
@@ -208,7 +210,7 @@ export function DataProvider() {
     return () => {
       clearInterval(intervalId)
     }
-  }, [checkForUpdate])
+  }, [checkForUpdate, autoUpdateCheck])
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {
