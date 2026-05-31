@@ -197,8 +197,13 @@ export function DataProvider() {
       return
     }
 
-    // Initial check on mount
-    checkForUpdate()
+    // Defer the initial check until the browser is idle (after first paint) so
+    // the network round-trip and any resulting dialog don't compete with the
+    // initial render.
+    const ric = window.requestIdleCallback
+    const idleHandle = ric
+      ? ric(() => checkForUpdate(), { timeout: 3000 })
+      : window.setTimeout(() => checkForUpdate(), 0)
 
     // Set up periodic update checks (singleton - only runs in DataProvider)
     const intervalId = setInterval(() => {
@@ -208,6 +213,8 @@ export function DataProvider() {
 
     // Cleanup interval on unmount
     return () => {
+      if (ric) window.cancelIdleCallback(idleHandle as number)
+      else window.clearTimeout(idleHandle as number)
       clearInterval(intervalId)
     }
   }, [checkForUpdate, autoUpdateCheck])
