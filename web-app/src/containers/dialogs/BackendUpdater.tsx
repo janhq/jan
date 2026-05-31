@@ -35,12 +35,12 @@ const BackendUpdater = () => {
   // doesn't compete with the initial render.
   useEffect(() => {
     if (!updateState.autoUpdateEnabled) return
-    const ric = window.requestIdleCallback
-    const idleHandle = ric
-      ? ric(() => checkForUpdate(), { timeout: 3000 })
+    const hasRic = typeof window.requestIdleCallback === 'function'
+    const idleHandle = hasRic
+      ? window.requestIdleCallback(() => checkForUpdate(), { timeout: 3000 })
       : window.setTimeout(() => checkForUpdate(), 0)
     return () => {
-      if (ric) window.cancelIdleCallback(idleHandle as number)
+      if (hasRic) window.cancelIdleCallback(idleHandle as number)
       else window.clearTimeout(idleHandle as number)
     }
   }, [checkForUpdate, isLlamacppEnabled, updateState.autoUpdateEnabled])

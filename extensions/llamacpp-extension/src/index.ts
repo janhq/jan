@@ -1196,8 +1196,8 @@ export default class llamacpp_extension extends AIEngine {
           // Advisory and fail-soft — defer to browser idle so it yields to the
           // router (already up by now) and the UI instead of running inline.
           const verify = () => void this.verifyBackendDeps(backend, version)
-          const ric = window.requestIdleCallback
-          if (ric) ric(verify, { timeout: 3000 })
+          if (typeof window.requestIdleCallback === 'function')
+            window.requestIdleCallback(verify, { timeout: 3000 })
           else setTimeout(verify, 0)
         }
       }
