@@ -15,10 +15,13 @@ use indicatif::{ProgressBar, ProgressStyle};
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_data_folder, cli_get_thread,
     cli_list_messages, cli_list_threads, discover_llamacpp_binary,
-    discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
-    init_mlx_state, list_models, load_mlx_model_impl,
-    looks_like_hf_repo, resolve_model_by_id, resolve_model_engine, HfFileInfo,
-    MlxConfig,
+    download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
+    list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
+};
+// MLX is macOS-only; these CLI symbols don't exist on other platforms.
+#[cfg(target_os = "macos")]
+use app_lib::core::cli::{
+    discover_mlx_binary, init_mlx_state, load_mlx_model_impl, resolve_model_by_id, MlxConfig,
 };
 use tauri_plugin_llamacpp::router as llamacpp_router;
 use tauri_plugin_llamacpp::state::LlamacppState;
@@ -201,6 +204,7 @@ enum ModelsCommands {
         args: ServeArgs,
     },
     /// Load an MLX model directly (macOS / Apple Silicon only)
+    #[cfg(target_os = "macos")]
     LoadMlx {
         /// Model ID as shown by `jan models list --engine mlx`
         #[arg(long)]
@@ -364,6 +368,7 @@ async fn handle_models(cmd: ModelsCommands) {
 
         ModelsCommands::Load { args } => handle_serve(args).await,
 
+        #[cfg(target_os = "macos")]
         ModelsCommands::LoadMlx {
             model_id,
             model_path,
@@ -867,6 +872,14 @@ async fn handle_serve(args: ServeArgs) {
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
     if engine == "mlx" {
+        #[cfg(not(target_os = "macos"))]
+        {
+            finish_progress(pb, "✗ MLX is only supported on macOS");
+            eprintln!("MLX models require macOS / Apple Silicon. Use a llama.cpp (GGUF) model instead.");
+            std::process::exit(1);
+        }
+        #[cfg(target_os = "macos")]
+        {
         use std::path::Path;
 
         let bin_path = match bin {
@@ -917,6 +930,7 @@ async fn handle_serve(args: ServeArgs) {
                 );
                 std::process::exit(1);
             }
+        }
         }
     } else {
         // LlamaCPP path
@@ -1314,6 +1328,14 @@ async fn start_model_server(
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
     if engine == "mlx" {
+        #[cfg(not(target_os = "macos"))]
+        {
+            finish_progress(pb, "✗ MLX is only supported on macOS");
+            eprintln!("MLX models require macOS / Apple Silicon. Use a llama.cpp (GGUF) model instead.");
+            std::process::exit(1)
+        }
+        #[cfg(target_os = "macos")]
+        {
         use std::path::Path;
         let bin_path = match bin.or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned())) {
             Some(p) => p,
@@ -1348,6 +1370,7 @@ async fn start_model_server(
         let url = format!("http://127.0.0.1:{}", info.port);
         finish_progress(pb, format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
+        }
     } else {
         let bin_path = match bin.or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned())) {
             Some(p) => p,
