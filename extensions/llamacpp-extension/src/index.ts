@@ -1193,7 +1193,12 @@ export default class llamacpp_extension extends AIEngine {
         // "b4589/linux-cuda-12"). Any other shape silently skips verification.
         const [version, backend] = effectiveBackendString.split('/')
         if (version && backend) {
-          await this.verifyBackendDeps(backend, version)
+          // Advisory and fail-soft — defer to browser idle so it yields to the
+          // router (already up by now) and the UI instead of running inline.
+          const verify = () => void this.verifyBackendDeps(backend, version)
+          const ric = window.requestIdleCallback
+          if (ric) ric(verify, { timeout: 3000 })
+          else setTimeout(verify, 0)
         }
       }
     } finally {
