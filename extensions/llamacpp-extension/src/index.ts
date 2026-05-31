@@ -420,18 +420,66 @@ export default class llamacpp_extension extends AIEngine {
 
     // Defer the slow, fail-soft startup (network + subprocess) off onLoad so
     // the UI unblocks; performLoad awaits it via ensureRouterReady().
+    //
+    // When a usable backend is already installed, start the router first so
+    // inference is available without waiting on the network-bound update check,
+    // then run configureBackends and restart the router only if the update
+    // swapped the backend. On a fresh install (no backend yet) configureBackends
+    // must run first to download one before the router can start.
     this.backgroundInit = (async () => {
-      try {
-        await this.configureBackends()
-      } catch (e) {
-        logger.error('configureBackends failed during onLoad:', e)
-      }
-      try {
-        await this.startRouter()
-      } catch (e) {
-        logger.error('Router failed to start during onLoad:', e)
+      if (await this.hasInstalledBackend()) {
+        const before = this.config?.version_backend
+        try {
+          await this.startRouter()
+        } catch (e) {
+          logger.error('Router failed to start during onLoad:', e)
+        }
+        try {
+          await this.configureBackends()
+        } catch (e) {
+          logger.error('configureBackends failed during onLoad:', e)
+        }
+        const after = this.config?.version_backend
+        if (
+          after &&
+          after !== 'none' &&
+          after.includes('/') &&
+          after !== before
+        ) {
+          try {
+            await this.startRouter()
+          } catch (e) {
+            logger.error('Router restart after backend update failed:', e)
+          }
+        }
+      } else {
+        try {
+          await this.configureBackends()
+        } catch (e) {
+          logger.error('configureBackends failed during onLoad:', e)
+        }
+        try {
+          await this.startRouter()
+        } catch (e) {
+          logger.error('Router failed to start during onLoad:', e)
+        }
       }
     })()
+  }
+
+  // True when config.version_backend names a backend that's already downloaded,
+  // so the router can spawn without waiting on configureBackends.
+  private async hasInstalledBackend(): Promise<boolean> {
+    const vb = this.config?.version_backend
+    if (!vb || vb === 'none' || !vb.includes('/')) return false
+    const [version, backend] = vb.split('/')
+    if (!version || !backend) return false
+    try {
+      return await isBackendInstalled(backend, version)
+    } catch (e) {
+      logger.warn('isBackendInstalled probe failed during onLoad:', e)
+      return false
+    }
   }
 
   override async getSettings(): Promise<SettingComponentProps[]> {
