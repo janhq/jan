@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-mlx"
-version = "0.6.599"
+version = "0.8.2"
 authors = ["Jan <service@jan.ai>"]
 description = "Tauri plugin for managing MLX-Swift server processes and model loading on Apple Silicon"
 license = "MIT"
