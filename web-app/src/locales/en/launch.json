@@ -1,6 +1,8 @@
 {
   "title": "Launch",
   "subtitle": "Install external coding agents and assistants, then point them at your local Atomic Chat models with one click.",
+  "serverSection": "Local API Server",
+  "serverSectionDesc": "Run an OpenAI-compatible server for your local models, then point the agents below at it.",
   "codingAgents": "Coding Agents",
   "codingAgentsDesc": "Coding assistants that can read, modify, and execute code in your projects.",
   "assistants": "Assistants",
@@ -11,6 +13,7 @@
   "installing": "Installing...",
   "enable": "Run",
   "enabling": "Running...",
+  "installAndRun": "Install & Run",
   "docs": "Docs",
   "usingRunningModel": "Using running model",
   "noRunningModel": "No running model",

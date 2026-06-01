@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import {
   IconChevronDown,
   IconExternalLink,
+  IconLoader2,
   IconTerminal2,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
@@ -22,6 +23,7 @@ import {
 } from '@/constants/integrations'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card } from '@/containers/Card'
+import { LocalApiServerPanel } from '@/containers/LocalApiServerPanel'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -34,6 +36,10 @@ import { cn, getModelDisplayName } from '@/lib/utils'
 export const Route = createFileRoute(route.launch.index as any)({
   component: LaunchPage,
 })
+
+// Only reveal the in-button spinner once an action has been running longer
+// than this; near-instant config writes finish first and never flash it.
+const SPINNER_DELAY_MS = 350
 
 function IconBox({
   children,
@@ -198,22 +204,27 @@ function LaunchPage() {
   const { providers } = useModelProvider()
 
   const [installed, setInstalled] = useState<Record<string, boolean>>({})
-  const [installing, setInstalling] = useState<Record<string, boolean>>({})
-  const [enabling, setEnabling] = useState<Record<string, boolean>>({})
+  const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [spinning, setSpinning] = useState<Record<string, boolean>>({})
   const [runningModels, setRunningModels] = useState<string[]>([])
   const [logs, setLogs] = useState<Record<string, string[]>>({})
   const [openLog, setOpenLog] = useState<Record<string, boolean>>({})
 
-  const detect = useCallback(async (agent: IntegrationAgent) => {
-    try {
-      const ok = await invoke<boolean>('detect_agent_installed', {
-        bin: agent.detectBin,
-      })
-      setInstalled((prev) => ({ ...prev, [agent.id]: ok }))
-    } catch {
-      setInstalled((prev) => ({ ...prev, [agent.id]: false }))
-    }
-  }, [])
+  const detect = useCallback(
+    async (agent: IntegrationAgent): Promise<boolean> => {
+      try {
+        const ok = await invoke<boolean>('detect_agent_installed', {
+          bin: agent.detectBin,
+        })
+        setInstalled((prev) => ({ ...prev, [agent.id]: ok }))
+        return ok
+      } catch {
+        setInstalled((prev) => ({ ...prev, [agent.id]: false }))
+        return false
+      }
+    },
+    []
+  )
 
   const refreshRunningModels = useCallback(async () => {
     try {
@@ -275,9 +286,11 @@ function LaunchPage() {
     setServerStatus,
   ])
 
-  const handleInstall = useCallback(
-    async (agent: IntegrationAgent) => {
-      setInstalling((prev) => ({ ...prev, [agent.id]: true }))
+  // Install the agent's binary, streaming its installer log. Returns whether
+  // the install succeeded. Does NOT manage the shared busy/spinner state —
+  // `handleRun` owns that so install + configure read as one action.
+  const installAgent = useCallback(
+    async (agent: IntegrationAgent): Promise<boolean> => {
       setLogs((prev) => ({ ...prev, [agent.id]: [] }))
       setOpenLog((prev) => ({ ...prev, [agent.id]: true }))
 
@@ -299,20 +312,83 @@ function LaunchPage() {
           }),
         })
         await detect(agent)
+        return true
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         toast.error(t('launch:toast.installFailed', { name: agent.name }), {
           description: msg,
         })
+        return false
       } finally {
         unlisten?.()
-        setInstalling((prev) => ({ ...prev, [agent.id]: false }))
       }
     },
     [detect, t]
   )
 
-  const handleEnable = useCallback(
+  // Write the agent's config so it points at the local server. Throws on
+  // failure so the caller can surface a single error toast.
+  const configureAgent = useCallback(
+    async (agent: IntegrationAgent, model: string | null) => {
+      if (serverStatus !== 'running') {
+        toast.info(t('launch:toast.serverStarting'), {
+          description: t('launch:toast.serverStartingDesc', {
+            name: agent.name,
+          }),
+        })
+        await ensureServerRunning()
+      }
+
+      // `serverHost` may be a bind-all address (0.0.0.0 / ::) which clients
+      // cannot connect to; agents need a real loopback address.
+      const connectHost =
+        serverHost === '0.0.0.0' || (serverHost as string) === '::'
+          ? '127.0.0.1'
+          : serverHost
+      const base = `http://${connectHost}:${serverPort}`
+      const apiUrl = agent.endpointWithPrefix ? `${base}${apiPrefix}` : base
+      const key = apiKey || undefined
+
+      switch (agent.id) {
+        case 'claude-code':
+          await invoke('launch_claude_code_with_config', {
+            apiUrl,
+            apiKey: key,
+            customEnvVars: [],
+          })
+          break
+        case 'codex':
+          await invoke('configure_codex', { apiUrl, model, apiKey: key })
+          break
+        case 'opencode':
+          await invoke('configure_opencode', { apiUrl, model, apiKey: key })
+          break
+        case 'hermes':
+          await invoke('configure_hermes_agent', {
+            apiUrl,
+            model,
+            apiKey: key,
+            contextLength: 20000,
+          })
+          break
+        case 'openclaw':
+          await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
+          break
+        default:
+          throw new Error(`Unknown agent: ${agent.id}`)
+      }
+
+      toast.success(t('launch:toast.configured', { name: agent.name }), {
+        description: t('launch:toast.configuredDesc', { name: agent.name }),
+        duration: 8000,
+      })
+    },
+    [serverStatus, ensureServerRunning, serverHost, serverPort, apiPrefix, apiKey, t]
+  )
+
+  // Single entry point behind the unified button: install first if the agent
+  // isn't present yet, then configure it to use the running model.
+  const handleRun = useCallback(
     async (agent: IntegrationAgent) => {
       const model = activeModel
       if (agent.requiresModel && !model) {
@@ -320,73 +396,33 @@ function LaunchPage() {
         return
       }
 
-      setEnabling((prev) => ({ ...prev, [agent.id]: true }))
+      setBusy((prev) => ({ ...prev, [agent.id]: true }))
+      const spinTimer = setTimeout(
+        () => setSpinning((prev) => ({ ...prev, [agent.id]: true })),
+        SPINNER_DELAY_MS
+      )
       try {
-        if (serverStatus !== 'running') {
-          toast.info(t('launch:toast.serverStarting'), {
-            description: t('launch:toast.serverStartingDesc', {
-              name: agent.name,
-            }),
-          })
-          await ensureServerRunning()
+        let present = installed[agent.id]
+        if (present === undefined) present = await detect(agent)
+
+        if (agent.installable && !present) {
+          const ok = await installAgent(agent)
+          if (!ok) return
         }
 
-        const base = `http://${serverHost}:${serverPort}`
-        const apiUrl = agent.endpointWithPrefix ? `${base}${apiPrefix}` : base
-        const key = apiKey || undefined
-
-        switch (agent.id) {
-          case 'claude-code':
-            await invoke('launch_claude_code_with_config', {
-              apiUrl,
-              apiKey: key,
-              customEnvVars: [],
-            })
-            break
-          case 'codex':
-            await invoke('configure_codex', { apiUrl, model, apiKey: key })
-            break
-          case 'opencode':
-            await invoke('configure_opencode', { apiUrl, model, apiKey: key })
-            break
-          case 'hermes':
-            await invoke('configure_hermes_agent', {
-              apiUrl,
-              model,
-              apiKey: key,
-              contextLength: 20000,
-            })
-            break
-          case 'openclaw':
-            await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
-            break
-          default:
-            throw new Error(`Unknown agent: ${agent.id}`)
-        }
-
-        toast.success(t('launch:toast.configured', { name: agent.name }), {
-          description: t('launch:toast.configuredDesc', { name: agent.name }),
-          duration: 8000,
-        })
+        await configureAgent(agent, model)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         toast.error(t('launch:toast.configureFailed', { name: agent.name }), {
           description: msg,
         })
       } finally {
-        setEnabling((prev) => ({ ...prev, [agent.id]: false }))
+        clearTimeout(spinTimer)
+        setBusy((prev) => ({ ...prev, [agent.id]: false }))
+        setSpinning((prev) => ({ ...prev, [agent.id]: false }))
       }
     },
-    [
-      activeModel,
-      serverStatus,
-      ensureServerRunning,
-      serverHost,
-      serverPort,
-      apiPrefix,
-      apiKey,
-      t,
-    ]
+    [activeModel, installed, detect, installAgent, configureAgent, t]
   )
 
   const coding = INTEGRATION_AGENTS.filter((a) => a.kind === 'coding')
@@ -394,8 +430,8 @@ function LaunchPage() {
 
   const renderAgent = (agent: IntegrationAgent) => {
     const isInstalled = installed[agent.id]
-    const isInstalling = installing[agent.id]
-    const isEnabling = enabling[agent.id]
+    const isBusy = busy[agent.id]
+    const isSpinning = spinning[agent.id]
     const agentLogs = logs[agent.id] ?? []
 
     return (
@@ -455,25 +491,17 @@ function LaunchPage() {
               )}
 
               <div className="ml-auto flex items-center gap-2">
-                {agent.installable && !isInstalled && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleInstall(agent)}
-                    disabled={isInstalling}
-                  >
-                    {isInstalling
-                      ? t('launch:installing')
-                      : t('launch:install')}
-                  </Button>
-                )}
                 {agent.configurable && (
                   <Button
                     size="sm"
-                    onClick={() => handleEnable(agent)}
-                    disabled={isEnabling || isInstalling}
+                    className="min-w-[112px] justify-center gap-1.5"
+                    onClick={() => handleRun(agent)}
+                    disabled={isBusy}
                   >
-                    {isEnabling ? t('launch:enabling') : t('launch:enable')}
+                    {isBusy && isSpinning && (
+                      <IconLoader2 size={14} className="animate-spin" />
+                    )}
+                    {t('launch:enable')}
                   </Button>
                 )}
               </div>
@@ -524,7 +552,17 @@ function LaunchPage() {
       </HeaderPage>
       <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
-          <p className="text-sm text-muted-foreground">{t('launch:subtitle')}</p>
+          <section className="flex flex-col gap-3">
+            <div>
+              <h1 className="font-studio text-lg font-medium text-foreground">
+                {t('launch:serverSection')}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {t('launch:serverSectionDesc')}
+              </p>
+            </div>
+            <LocalApiServerPanel />
+          </section>
 
           <section className="flex flex-col gap-3">
             <div>

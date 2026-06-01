@@ -905,17 +905,17 @@ pub fn configure_hermes_agent(
         .lines()
         .map(|line| {
             let trimmed = line.trim();
-            if !did_default && trimmed.starts_with("default:") && trimmed.contains('"') {
+            if !did_default && trimmed.starts_with("default:") {
                 did_default = true;
-                return replace_yaml_quoted_value(line, &model);
+                return replace_yaml_scalar_value(line, &model);
             }
-            if !did_provider && trimmed.starts_with("provider:") && trimmed.contains('"') {
+            if !did_provider && trimmed.starts_with("provider:") {
                 did_provider = true;
-                return replace_yaml_quoted_value(line, "custom");
+                return replace_yaml_scalar_value(line, "custom");
             }
-            if !did_base_url && trimmed.starts_with("base_url:") && trimmed.contains('"') {
+            if !did_base_url && trimmed.starts_with("base_url:") {
                 did_base_url = true;
-                return replace_yaml_quoted_value(line, &api_url);
+                return replace_yaml_scalar_value(line, &api_url);
             }
             line.to_string()
         })
@@ -932,10 +932,20 @@ pub fn configure_hermes_agent(
         ctx,
     );
 
-    let final_content = if content.ends_with('\n') && !after_cp.ends_with('\n') {
-        format!("{}\n", after_cp)
+    // Seed a per-request timeout for the `custom` provider (the id our model
+    // section uses). Hermes reads `providers.<id>.request_timeout_seconds`
+    // (run_agent.py::get_provider_request_timeout); without it the legacy
+    // 1800s default applies. Any value the user already set is preserved.
+    let after_timeout = upsert_provider_request_timeout(
+        &after_cp,
+        "custom",
+        HERMES_REQUEST_TIMEOUT_SECONDS,
+    );
+
+    let final_content = if content.ends_with('\n') && !after_timeout.ends_with('\n') {
+        format!("{}\n", after_timeout)
     } else {
-        after_cp
+        after_timeout
     };
 
     std::fs::write(&config_path, &final_content)
@@ -996,17 +1006,17 @@ pub fn clear_hermes_agent_config() -> Result<(), String> {
         .lines()
         .map(|line| {
             let trimmed = line.trim();
-            if !did_default && trimmed.starts_with("default:") && trimmed.contains('"') {
+            if !did_default && trimmed.starts_with("default:") {
                 did_default = true;
-                return replace_yaml_quoted_value(line, "anthropic/claude-opus-4.6");
+                return replace_yaml_scalar_value(line, "anthropic/claude-opus-4.6");
             }
-            if !did_provider && trimmed.starts_with("provider:") && trimmed.contains('"') {
+            if !did_provider && trimmed.starts_with("provider:") {
                 did_provider = true;
-                return replace_yaml_quoted_value(line, "auto");
+                return replace_yaml_scalar_value(line, "auto");
             }
-            if !did_base_url && trimmed.starts_with("base_url:") && trimmed.contains('"') {
+            if !did_base_url && trimmed.starts_with("base_url:") {
                 did_base_url = true;
-                return replace_yaml_quoted_value(line, "https://openrouter.ai/api/v1");
+                return replace_yaml_scalar_value(line, "https://openrouter.ai/api/v1");
             }
             line.to_string()
         })
@@ -1052,24 +1062,24 @@ pub fn clear_hermes_agent_config() -> Result<(), String> {
     Ok(())
 }
 
-/// Replace the quoted value in a YAML line like `  key: "old"` -> `  key: "new"`,
-/// preserving leading whitespace and the key name.
-fn replace_yaml_quoted_value(line: &str, new_value: &str) -> String {
-    if let Some(first_quote) = line.find('"') {
-        if let Some(second_quote) = line[first_quote + 1..].find('"') {
-            let end = first_quote + 1 + second_quote;
-            return format!(
-                "{}\"{}\"{}",
-                &line[..first_quote],
-                new_value,
-                &line[end + 1..],
-            );
-        }
+/// Replace the scalar value of a `key: value` YAML line, preserving the leading
+/// indentation and the key. Handles both quoted (`key: "old"`) and bare
+/// (`key: old`) values; the new value is written unquoted to match Hermes'
+/// default config style (model ids, providers, and URLs are all valid plain
+/// scalars). Lines without a `:` separator are returned unchanged.
+fn replace_yaml_scalar_value(line: &str, new_value: &str) -> String {
+    match line.find(':') {
+        Some(colon) => format!("{} {}", &line[..=colon], new_value),
+        None => line.to_string(),
     }
-    line.to_string()
 }
 
 const ATOMIC_PROVIDER_NAME: &str = "atomic-chat";
+
+/// Default per-request timeout (seconds) seeded for Hermes' `custom` provider.
+/// Hermes otherwise defaults to 1800s (`HERMES_API_TIMEOUT`); a tighter cap
+/// lets a wedged local turn fail fast without waiting half an hour.
+const HERMES_REQUEST_TIMEOUT_SECONDS: u32 = 180;
 
 /// Split the config into (before, entries, after) around `custom_providers:`.
 /// `entries` is a Vec of Vec<String>, one per YAML list item.
@@ -1208,6 +1218,98 @@ fn remove_atomic_provider(content: &str) -> String {
     let (before, mut entries, after) = split_custom_providers(content);
     entries.retain(|e| !entry_is_ours(e));
     rebuild_custom_providers(&before, &entries, &after)
+}
+
+/// Return true for a YAML line that begins a top-level (column-0) mapping key,
+/// i.e. not indented, not a list item, not a comment, not blank.
+fn is_top_level_yaml_key(line: &str) -> bool {
+    match line.chars().next() {
+        Some(c) => c != ' ' && c != '\t' && c != '-' && c != '#',
+        None => false,
+    }
+}
+
+/// Ensure `providers.<provider_id>.request_timeout_seconds: <seconds>` exists in
+/// the Hermes config, creating the `providers:` map and the provider sub-block
+/// as needed. A value the user has already set under that provider is left
+/// untouched (we only fill the gap, never clobber).
+fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u32) -> String {
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+    let prov_key_line = format!("  {}:", provider_id);
+    let field_line = format!("    request_timeout_seconds: {}", seconds);
+
+    // Locate a top-level `providers:` mapping (also tolerate an empty `{}` form).
+    let providers_idx = lines.iter().position(|l| {
+        let t = l.trim_end();
+        is_top_level_yaml_key(l)
+            && (t == "providers:" || t == "providers: {}" || t == "providers:{}")
+    });
+
+    match providers_idx {
+        None => {
+            while lines.last().map_or(false, |l| l.trim().is_empty()) {
+                lines.pop();
+            }
+            lines.push("providers:".to_string());
+            lines.push(prov_key_line);
+            lines.push(field_line);
+        }
+        Some(pidx) => {
+            if lines[pidx].trim_end() != "providers:" {
+                lines[pidx] = "providers:".to_string();
+            }
+
+            // Extent of the providers block: until the next top-level key.
+            let mut block_end = lines.len();
+            for i in (pidx + 1)..lines.len() {
+                if is_top_level_yaml_key(&lines[i]) {
+                    block_end = i;
+                    break;
+                }
+            }
+
+            // Find the provider sub-key at 2-space indent.
+            let prov_idx =
+                (pidx + 1..block_end).find(|&i| lines[i].trim_end() == prov_key_line);
+
+            match prov_idx {
+                None => {
+                    lines.insert(pidx + 1, field_line);
+                    lines.insert(pidx + 1, prov_key_line);
+                }
+                Some(pk) => {
+                    // Extent of this provider's sub-block: until the next key at
+                    // indent <= 2 (a sibling provider) or the block end.
+                    let mut sub_end = block_end;
+                    for i in (pk + 1)..block_end {
+                        let l = &lines[i];
+                        if l.trim().is_empty() {
+                            continue;
+                        }
+                        let indent = l.len() - l.trim_start().len();
+                        if indent <= 2 {
+                            sub_end = i;
+                            break;
+                        }
+                    }
+                    let has_field = (pk + 1..sub_end).any(|i| {
+                        lines[i].trim_start().starts_with("request_timeout_seconds:")
+                    });
+                    if !has_field {
+                        lines.insert(pk + 1, field_line);
+                    }
+                }
+            }
+        }
+    }
+
+    let out = lines.join("\n");
+    if out.ends_with('\n') {
+        out
+    } else {
+        format!("{}\n", out)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1578,6 +1680,12 @@ pub fn configure_openclaw(
     let defaults_obj = defaults
         .as_object_mut()
         .ok_or_else(|| "agents.defaults is not a JSON object".to_string())?;
+    // Small local models can exceed OpenClaw's short default request timeout
+    // once wrapped in the agent system prompt + tools. Seed a generous default
+    // (preserving any value the user already set).
+    defaults_obj
+        .entry("timeoutSeconds")
+        .or_insert_with(|| serde_json::json!(240));
     let allow = defaults_obj
         .entry("models")
         .or_insert_with(|| serde_json::json!({}));

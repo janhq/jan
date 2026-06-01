@@ -353,6 +353,19 @@ Append-only. Newest at top. Each entry follows this shape:
  - **API key** from `useLocalApiServer` is passed automatically when set;
  it is usually empty, so Codex omits auth and OpenCode/OpenClaw fall back
  to a placeholder key.
+ - **Per-agent request timeouts are seeded for local models.** Small local
+ GGUF/MLX models, once wrapped in an agent's system prompt + tools, take
+ longer per turn than these agents' cloud-tuned defaults expect.
+ `configure_openclaw` seeds `agents.defaults.timeoutSeconds = 240` (its
+ default is far shorter). `configure_hermes_agent` seeds
+ `providers.custom.request_timeout_seconds = 180` — note Hermes' own
+ default is the opposite extreme (1800s via `HERMES_API_TIMEOUT`), so for
+ Hermes this is a *tightening* so a wedged turn fails fast rather than
+ hanging 30 min. The key is the resolved provider id (Hermes reads
+ `providers.<id>.request_timeout_seconds` in
+ `run_agent.py::get_provider_request_timeout`; our model uses provider
+ `custom`). Both writers **preserve any value the user already set** —
+ they only fill the gap, never clobber.
 - **Owner:** team.
 - **Links:** docs.ollama.com/integrations,
  [`web-app/src/routes/launch/index.tsx`](web-app/src/routes/launch/index.tsx),
