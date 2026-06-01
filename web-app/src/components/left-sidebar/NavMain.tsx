@@ -1,5 +1,4 @@
-import { LucideIcon } from 'lucide-react'
-import { IconPlugConnected } from '@tabler/icons-react'
+import { LucideIcon, Plug } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -137,7 +136,7 @@ const getNavMainItems = (
   {
     title: 'common:launch',
     url: route.launch.index,
-    icon: IconPlugConnected,
+    icon: Plug,
   },
   {
     title: 'common:settings',
