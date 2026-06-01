@@ -1,0 +1,77 @@
+---
+title: "Jan v0.8.2: Faster Startup, AMD ROCm/HIP on Linux & Resumable Downloads"
+version: 0.8.2
+description: "Jan v0.8.2 adds AMD ROCm/HIP backend support on Linux, a branded phased-startup loader with work deferred past first paint, pause/resume model downloads, a safer default context size, and a batch of chat, provider, and toast fixes."
+date: 2026-06-01
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.2: Faster Startup, AMD ROCm/HIP on Linux & Resumable Downloads"
+  date="2026-06-01"
+/>
+
+# Highlights
+
+**AMD ROCm/HIP Backend (Experimental, Linux)**
+
+Jan now detects AMD GPUs and offers a HIP (ROCm) llama.cpp backend on **Linux**. The new `hip` backend is wired through detection, naming, prioritization (ranked above Vulkan when VRAM is sufficient), download/extract, and dependency verification. Both Jan's own asset format and the official llama.cpp ROCm asset names are folded onto a single canonical backend id, so listing, update checks, and migration treat every HIP variant as one.
+
+> **Experimental:** The entire ROCm/HIP backend is experimental in this release. Only **Linux** is shipped and supported — Windows ROCm/HIP is **not shipped**. If you run into problems, please [report them on GitHub](https://github.com/janhq/jan/issues) so we can stabilize AMD GPU support faster.
+
+**Branded Startup Loader & Faster First Paint**
+
+Startup was reworked so the window paints immediately instead of waiting on extension initialization:
+
+- A branded loader with phased status messages replaces the blank boot screen, with a watchdog against a hung blank window.
+- The initial app update check, the llama.cpp backend dependency verification, and the MCP setup are all deferred until after first paint / browser idle, so a cold start is no longer blocked on network probes and version checks.
+- The dark theme is applied synchronously on launch (carried over and hardened), and the loader logo/caption spacing was tightened and centered.
+
+**Pause & Resume Model Downloads**
+
+Model downloads can now be paused and resumed directly from the Hub panel, so a large GGUF pull no longer has to restart from zero after an interruption.
+
+**Safer Default Context Size**
+
+When no context size is set and auto-fit is off, the llama.cpp router now defaults `ctx-size` to **8192** instead of letting llama.cpp load the model's full trained context (often 128k+), which could OOM on large-context models. User and per-model values still override this default.
+
+**Automatic Update Check Toggle**
+
+Settings gained a toggle for the automatic app update check. When disabled, Jan no longer hits the network for updates behind the scenes; the manual check still works on demand.
+
+**Provider & Key Management**
+
+- API key inputs now have copy and reveal buttons (a new secret-input component).
+- Transport-level request failures (connection refused, DNS, TLS) now surface a friendly, actionable message instead of a raw error.
+- MLX models are listed in the Local API Server's default model picker.
+
+**Bug Fixes**
+
+- **Sampler settings now persist across restart.** Thread updates previously rebuilt the assistant from a field whitelist that dropped `parameters`, so sampler overrides (temperature, top_p, top_k, etc.) set in the composer were lost on relaunch. The assistant is now persisted intact.
+- **MLX commands fixed on macOS.** The MLX capability was moved into its own macOS-scoped file during the macOS-only build split but never added to the security allowlist, causing a "not allowed by ACL" error when loading MLX models. The capability is now registered.
+- Notification toasts are visible and theme-aware again: the previously page-colored (invisible) card is themed via popover tokens and the active theme with an elevation shadow, and neutral toasts pick up the Appearance accent color.
+- Toast styling is restored on Windows/WebView2. Sonner's CSS is shipped via the linked app bundle, and the accent tint moved from an inline style prop to a CSS class so WebView2's hashed `style-src` CSP no longer drops it.
+- CSP no longer blocks runtime inline styles: Tauri's automatic nonce injection on `style-src` is disabled so `'unsafe-inline'` stays effective, fixing the wave of "inline style violates CSP" errors (Google Fonts, dropdowns, etc.).
+- The thread's selected agent is now authoritative, so switching the assistant mid-chat works as expected.
+- Prompt-too-big errors are routed to the "Increase Context Size" banner instead of a generic failure.
+- Crashed models are recovered and mid-request crashes are surfaced rather than hanging silently.
+- The router is started before the backend update check is deferred, avoiding a race where the engine wasn't ready.
+- `requestIdleCallback` is bound to `window` to avoid an "Illegal invocation" error in the updater.
+- The user message bubble and attachment chip text use the primary color and are legible.
+- Linux: tao's draggable Wayland titlebar is preserved and follows the GNOME button-layout setting.
+
+**Localization**
+
+Italian was added to the in-app language switcher, and the Catalan locale code was corrected (`ct` → `ca`).
+
+**Engineering**
+
+- The MLX plugin and extension are built on macOS only, keeping `tauri-plugin-mlx` and its guest-js bindings out of Linux and Windows builds.
+- The llama.cpp extension test suite now runs as part of the global `yarn test`.
+
+---
+
+Update your Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.2)
