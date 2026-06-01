@@ -34,6 +34,8 @@ import {
   getBackendExePath,
   getBackendDir,
   getLocalInstalledBackends,
+  fetchRemoteBackends,
+  friendlyBackendLabel,
   getBackendDownloadUrl,
   getCudartDownloadUrl,
   getCudartArchiveName,
@@ -689,9 +691,35 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // bundled-backend extraction, settings registration, and
       // version auto-upgrade for the same backend family.
 
+      // Static "Latest <variant>" dropdown entries for every variant the
+      // upstream release stream ships on this OS. Built from the compile-time
+      // `IS_WINDOWS` / `IS_LINUX` constants (no network, no hardware probe) so
+      // they ALWAYS appear — even when the remote backend fetch below hangs or
+      // fails. Each carries a `latest/<backend>` sentinel; `onSettingUpdate`
+      // resolves it to the newest release tag at selection time. The set is
+      // intentionally unfiltered by hardware — a deliberate manual override so
+      // the user can force-install e.g. CUDA even when the driver gate would
+      // normally hide it.
+      const staticVariants: string[] = IS_WINDOWS
+        ? [
+            'win-cpu-x64',
+            'win-cuda-12.4-x64',
+            'win-cuda-13.1-x64',
+            'win-vulkan-x64',
+          ]
+        : IS_LINUX
+          ? ['linux-cpu-x64', 'linux-vulkan-x64']
+          : []
+      const latestEntries = staticVariants.map((backend) => ({
+        value: `latest/${backend}`,
+        name: `Latest ${friendlyBackendLabel(backend)}`,
+      }))
+
       // --- Early settings registration with bundled backend ---
-      // Register settings with at least the bundled backend so the UI
-      // isn't stuck in "loading" while the GitHub API responds.
+      // Register settings with the static "Latest" entries plus at least the
+      // bundled backend so the UI isn't stuck in "loading" — and so the
+      // manual-variant picker is usable — while the GitHub API responds (or
+      // hangs).
       if (bundledBackendString) {
         const earlySettings = structuredClone(SETTINGS)
         const earlyBackendIdx = earlySettings.findIndex(
@@ -700,11 +728,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
         if (earlyBackendIdx !== -1) {
           const earlySetting = earlySettings[earlyBackendIdx]
           const currentVB = this.config.version_backend || ''
-          const earlyOptions = [
-            { value: bundledBackendString, name: bundledBackendString },
-          ]
-          if (currentVB && currentVB !== bundledBackendString) {
-            earlyOptions.unshift({ value: currentVB, name: currentVB })
+          const earlyOptions = [...latestEntries]
+          if (
+            currentVB &&
+            currentVB !== bundledBackendString &&
+            !earlyOptions.some((o) => o.value === currentVB)
+          ) {
+            earlyOptions.push({ value: currentVB, name: currentVB })
+          }
+          if (!earlyOptions.some((o) => o.value === bundledBackendString)) {
+            earlyOptions.push({
+              value: bundledBackendString,
+              name: bundledBackendString,
+            })
           }
           earlySetting.controllerProps.options = earlyOptions
           earlySetting.controllerProps.value = currentVB || bundledBackendString
@@ -838,10 +874,40 @@ export default class llamacpp_upstream_extension extends AIEngine {
         originalDefaultBackendValue = backendSetting.controllerProps
           .value as string
 
-        backendSetting.controllerProps.options = version_backends.map((b) => {
-          const key = `${b.version}/${b.backend}`
-          return { value: key, name: key }
-        })
+        // Build the dropdown option-litany in two tiers:
+        //   1. The STATIC "Latest <variant>" entries computed near the top of
+        //      this method (also used by the early registration above).
+        //   2. The versions already installed on disk, shown raw below.
+        let installedEntries: Array<{ value: string; name: string }> = []
+        try {
+          installedEntries = (await getLocalInstalledBackends()).map((b) => {
+            const key = `${b.version}/${b.backend}`
+            return { value: key, name: key }
+          })
+        } catch (err) {
+          logger.warn(
+            `[configureBackends] Failed to list installed backends: ${
+              err instanceof Error ? err.message : err
+            }`
+          )
+        }
+
+        let backendOptions: Array<{ value: string; name: string }> = [
+          ...latestEntries,
+          ...installedEntries,
+        ]
+
+        // Last-resort fallback: if we somehow produced no options at all
+        // (e.g. unsupported OS and nothing installed), fall back to the
+        // hardware-gated merged list so the dropdown is never empty.
+        if (backendOptions.length === 0) {
+          backendOptions = version_backends.map((b) => {
+            const key = `${b.version}/${b.backend}`
+            return { value: key, name: key }
+          })
+        }
+
+        backendSetting.controllerProps.options = backendOptions
 
         // Always surface the installed-on-disk saved backend in the dropdown,
         // even when the remote list (e.g. GitHub) didn't return it. Without
@@ -1169,14 +1235,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return null
       }
 
-      // Linux fallthrough — preserved for future Linux wiring; matches the
-      // primary turboquant extension's naming.
-      const prefix = 'linux'
-      if (features.cuda13) return `${prefix}-cuda-13-common_cpus-${archSuffix}`
-      if (features.cuda12) return `${prefix}-cuda-12-common_cpus-${archSuffix}`
-      if (features.cuda11) return `${prefix}-cuda-11-common_cpus-${archSuffix}`
-      if (features.vulkan && hasEnoughVram)
-        return `${prefix}-vulkan-common_cpus-${archSuffix}`
+      // Linux — per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*,
+      // the only GPU-accelerated backend `ggml-org/llama.cpp` publishes for
+      // Linux is Vulkan. There are no `ubuntu-cuda-*` release artefacts,
+      // so even on NVIDIA hosts the optimal upgrade path is Vulkan (which
+      // works with the proprietary NVIDIA driver's Vulkan ICD just fine).
+      // `features.vulkan` is only `true` when libvulkan.so.1 loaded AND
+      // `vkEnumeratePhysicalDevices` returned ≥1 GPU — so this branch
+      // never recommends Vulkan on a host that can't actually run it.
+      //
+      // The `cuda*` feature flags are intentionally ignored here; they
+      // can still be true on a Linux box with a recent NVIDIA driver,
+      // but recommending a CUDA backend we don't ship would just produce
+      // a 404 at download time. `determine_supported_backends` in the
+      // Rust plugin mirrors this matrix.
+      if (sysInfo.os_type === 'linux') {
+        if (features.vulkan && hasEnoughVram && archSuffix === 'x64') {
+          return 'linux-vulkan-x64'
+        }
+        return null
+      }
 
       return null
     } catch (err) {
@@ -1762,6 +1840,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
     if (key === 'version_backend' && typeof value === 'string') {
       value = stripBom(value) as T
     }
+    const previousVersionBackend =
+      key === 'version_backend'
+        ? stripBom(this.config.version_backend || '')
+        : undefined
     this.config[key] = value
 
     if (key === 'version_backend') {
@@ -1769,6 +1851,25 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // Async logic wrapped in IIFE since onSettingUpdate is void
       ;(async () => {
         try {
+          // "Latest <variant>" dropdown entries carry a `latest/<backend>`
+          // sentinel (they are listed statically, even offline). Resolve the
+          // sentinel to the newest concrete release tag now, then route
+          // through updateBackend() so the resolved tag is downloaded,
+          // persisted, and reflected back into the dropdown selection.
+          if (valueStr.startsWith('latest/')) {
+            const backendId = valueStr.slice('latest/'.length).trim()
+            const resolved = await this.resolveLatestBackendString(backendId)
+            if (!resolved) {
+              logger.error(
+                `Could not resolve the latest release for '${backendId}' — the ggml-org release stream is unreachable. Backend left unchanged.`
+              )
+              this.config.version_backend = previousVersionBackend ?? ''
+              return
+            }
+            await this.updateBackend(resolved)
+            return
+          }
+
           const currentStored = this.getStoredBackendType() || undefined
           const result = await handleSettingUpdate(key, valueStr, currentStored)
 
@@ -1791,6 +1892,215 @@ export default class llamacpp_upstream_extension extends AIEngine {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
       this.timeout = value as number
+    }
+  }
+
+  /**
+   * Resolves a "Latest <variant>" sentinel backend id (e.g.
+   * `win-cuda-13.1-x64`) to a concrete `<tag>/<backend>` string by looking
+   * up the newest release tag from the ggml-org/llama.cpp release stream.
+   * Returns `null` when the release stream is unreachable or the variant is
+   * not present in the latest release assets.
+   */
+  private async resolveLatestBackendString(
+    backend: string
+  ): Promise<string | null> {
+    try {
+      const remote = await fetchRemoteBackends()
+      const match = remote.find((b) => b.backend === backend)
+      if (match?.version) {
+        return `${match.version}/${backend}`
+      }
+      logger.warn(
+        `[resolveLatestBackendString] '${backend}' not found in latest release assets`
+      )
+    } catch (err) {
+      logger.warn(
+        `[resolveLatestBackendString] Failed to fetch latest release for '${backend}': ${
+          err instanceof Error ? err.message : err
+        }`
+      )
+    }
+    return null
+  }
+
+  /**
+   * Returns the newest locally-installed version of a backend family
+   * (e.g. `win-cuda-12.4-x64`) as a `<version>/<backend>` string, or `null`
+   * when no version of that family is installed. Used as the offline
+   * fallback for "Latest <variant>" selections when the ggml-org release
+   * stream is unreachable / rate-limited — better to hot-swap to the newest
+   * copy the user already has than to dead-end with an error.
+   *
+   * Version tags are ggml-org build numbers (`b9310`, `b9284`, …); we sort
+   * by the trailing integer so `b9310` ranks above `b9284`.
+   */
+  /**
+   * Resolves `p`, but never waits longer than `ms`. On timeout — or if `p`
+   * rejects — resolves to `fallback`. Used to cap the ggml-org release lookup
+   * in `downloadManualBackend()`: that lookup is routed through the Tauri
+   * HTTP layer (reqwest), where a stalled TCP/TLS connection can outlive
+   * `fetchRemoteBackends()`'s own JS `AbortController`, leaving the awaiting
+   * promise pending forever. The dangling `p` is allowed to settle in the
+   * background; we simply stop waiting on it.
+   */
+  private withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+    return Promise.race([
+      p.catch(() => fallback),
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ])
+  }
+
+  private async newestInstalledOfFamily(
+    backendId: string
+  ): Promise<string | null> {
+    try {
+      const installed = await getLocalInstalledBackends()
+      const sameFamily = installed.filter(
+        (b) => stripBom(b.backend) === backendId
+      )
+      if (sameFamily.length === 0) return null
+      const buildNumber = (v: string): number => {
+        const m = /(\d+)/.exec(stripBom(v))
+        return m ? parseInt(m[1], 10) : 0
+      }
+      sameFamily.sort((a, b) => buildNumber(b.version) - buildNumber(a.version))
+      return `${stripBom(sameFamily[0].version)}/${backendId}`
+    } catch (err) {
+      logger.warn(`newestInstalledOfFamily('${backendId}') failed:`, err)
+      return null
+    }
+  }
+
+  /**
+   * Drives a manual "Latest <variant>" dropdown selection (sentinel
+   * `latest/<backend>`) through the same download → hot-swap → completed
+   * dialog the "Find optimal backend" button uses — but triggered by hand.
+   *
+   * The whole flow is keyed on the sentinel string so the globally-mounted
+   * `<BackendUpdater />` dialog (a separate `useBackendUpdater` instance) can
+   * follow it via Tauri events alone:
+   *   1. Emit `onManualBackendDownloading` immediately so the dialog opens in
+   *      its spinning "downloading" state the instant the user picks a variant
+   *      — no dead air while we resolve the release tag over the (sometimes
+   *      slow) network.
+   *   2. Resolve the concrete `<tag>/<backend>`: prefer the newest ggml-org
+   *      release; if that stream is unreachable / rate-limited, fall back to
+   *      the newest copy of this family already installed locally.
+   *   3. Download only when the resolved target is NOT already installed —
+   *      an already-installed pick just hot-swaps (no redundant fetch).
+   *   4. `onBackendDownloadFinished` advances the dialog to "hot-swapping",
+   *      then `applyBackendLive()` unloads running models, persists the
+   *      resolved `version_backend` (emitting `settingsChanged` so the
+   *      dropdown reflects the concrete tag), and dispatches
+   *      `app:backend-hotswapped` which the dialog turns into its green
+   *      "completed" state.
+   *
+   * Throws (after emitting `onManualBackendFailed` to dismiss the dialog)
+   * when the target can be neither resolved online nor satisfied from a local
+   * install, so the caller can surface a toast.
+   */
+  async downloadManualBackend(selection: string): Promise<void> {
+    const sentinel = stripBom(selection)
+    const isSentinel = sentinel.startsWith('latest/')
+    const backendId = isSentinel
+      ? sentinel.slice('latest/'.length).trim()
+      : (sentinel.split('/')[1] || '').trim()
+    const dialogKey = sentinel
+    const label = friendlyBackendLabel(backendId)
+    const current = stripBom(this.config.version_backend || '')
+
+    // 1. Instant feedback: open the global recommendation dialog straight
+    //    into its "downloading" spinner via a dedicated event the hook turns
+    //    into `recommendation = payload` + `phase = 'downloading'` in a single
+    //    handler. Going through `onBetterBackendDetected` + a separate
+    //    `onBackendDownloadStarted` would race (the started handler reads a
+    //    not-yet-committed `recommendation`) and leave the dialog stuck on
+    //    the "recommend" confirm screen. The payload is keyed on the sentinel
+    //    so the later finish / hot-swap events line up.
+    if (events && typeof events.emit === 'function') {
+      events.emit('onManualBackendDownloading', {
+        currentBackend: current,
+        recommendedBackend: dialogKey,
+        recommendedCategory: label,
+      })
+    }
+
+    try {
+      // 2. Resolve a concrete <tag>/<backend>: ggml-org latest first, then
+      //    fall back to the newest locally-installed copy of this family.
+      //    fetchRemoteBackends() now bounds itself at ~15s (connectTimeout +
+      //    AbortController) and routes through the configured proxy, so this
+      //    outer cap is only a last-resort safety net against a wedged
+      //    promise. It MUST sit comfortably above that 15s budget — an 8s cap
+      //    here would preempt a slow-but-valid proxied lookup and force
+      //    backends with no local copy (e.g. win-vulkan-x64) to dead-end even
+      //    though GitHub would have answered in time.
+      const MANUAL_RESOLVE_TIMEOUT_MS = 20000
+      let concrete: string | null = null
+      if (isSentinel) {
+        concrete = await this.withTimeout(
+          this.resolveLatestBackendString(backendId),
+          MANUAL_RESOLVE_TIMEOUT_MS,
+          null
+        )
+        if (!concrete) {
+          concrete = await this.newestInstalledOfFamily(backendId)
+          if (concrete) {
+            logger.warn(
+              `downloadManualBackend: ggml-org unreachable/slow for '${backendId}', falling back to newest installed ${concrete}`
+            )
+          }
+        }
+      } else {
+        concrete = sentinel
+      }
+
+      if (!concrete) {
+        throw new Error(
+          `Could not resolve a release for '${backendId}': the ggml-org release stream is unreachable and no version of this backend is installed locally.`
+        )
+      }
+
+      // 3. Download only if the resolved target isn't already on disk.
+      const [tag, btype] = concrete.split('/')
+      const alreadyInstalled = await isBackendInstalled(btype, tag)
+      if (alreadyInstalled) {
+        logger.info(
+          `downloadManualBackend: ${concrete} already installed — switching without download`
+        )
+      } else {
+        logger.info(`downloadManualBackend: downloading ${concrete}`)
+        await this.downloadAndInstallBackend(concrete)
+      }
+
+      // 4. Advance the dialog to "hot-swapping" (no-op if the inner
+      //    download already emitted a concrete finish that moved us there).
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBackendDownloadFinished, {
+          backend: dialogKey,
+          status: 'completed',
+        })
+      }
+
+      // 5. Live hot-swap: unload models, persist version_backend (emits
+      //    settingsChanged → dropdown updates), dispatch app:backend-hotswapped
+      //    (→ dialog "completed"). updateBackend()'s own ensureBackendReady()
+      //    is a no-op here since the backend is now installed.
+      await this.applyBackendLive(concrete)
+      logger.info(`downloadManualBackend: applied ${concrete} live`)
+    } catch (err) {
+      logger.error('downloadManualBackend failed:', err)
+      // Dismiss the dialog cleanly (back to idle) rather than dropping into
+      // the "recommend" confirm screen a generic `failed` download event
+      // would trigger. The caller surfaces the error toast.
+      if (events && typeof events.emit === 'function') {
+        events.emit('onManualBackendFailed', {
+          backend: dialogKey,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+      throw err
     }
   }
 
@@ -3039,7 +3349,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       ) as
         | {
             downloadFiles?: (
-              items: { url: string; save_path: string }[],
+              items: DownloadItem[],
               taskId: string,
               onProgress?: (transferred: number, total: number) => void,
               resume?: boolean
@@ -3058,9 +3368,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
         }
       }
 
+      // Route through the configured HTTPS proxy (Settings → Proxy) just
+      // like model downloads do. Without this, users behind a proxy /
+      // in GitHub-restricted networks get a raw TCP timeout (os error
+      // 10060) because the backend archive request bypasses the proxy.
+      const proxy = getProxyConfig() ?? undefined
+
       if (downloadManager?.downloadFiles) {
         await downloadManager.downloadFiles(
-          [{ url, save_path: archivePath }],
+          [{ url, save_path: archivePath, proxy }],
           taskId,
           onProgress,
           false
@@ -3073,7 +3389,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           'download-extension not available, falling back to raw download_files invoke'
         )
         await invoke<void>('download_files', {
-          items: [{ url, save_path: archivePath }],
+          items: [{ url, save_path: archivePath, proxy }],
           taskId,
           headers: {},
           resume: false,
@@ -3280,7 +3596,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     ) as
       | {
           downloadFiles?: (
-            items: { url: string; save_path: string }[],
+            items: DownloadItem[],
             taskId: string,
             onProgress?: (transferred: number, total: number) => void,
             resume?: boolean
@@ -3299,10 +3615,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
+    // Honor the configured HTTPS proxy for the cudart DLL fetch too,
+    // mirroring the main backend archive download.
+    const proxy = getProxyConfig() ?? undefined
+
     try {
       if (downloadManager?.downloadFiles) {
         await downloadManager.downloadFiles(
-          [{ url: cudartUrl, save_path: cudartArchivePath }],
+          [{ url: cudartUrl, save_path: cudartArchivePath, proxy }],
           taskId,
           onProgress,
           false
@@ -3312,7 +3632,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           'download-extension not available, falling back to raw download_files invoke for cudart'
         )
         await invoke<void>('download_files', {
-          items: [{ url: cudartUrl, save_path: cudartArchivePath }],
+          items: [{ url: cudartUrl, save_path: cudartArchivePath, proxy }],
           taskId,
           headers: {},
           resume: false,

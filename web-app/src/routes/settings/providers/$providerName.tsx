@@ -180,6 +180,7 @@ function ProviderDetail() {
     recheckOptimalBackend,
     downloadRecommendedBackend,
     recommendationPhase,
+    selectManualBackend,
   } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const navigate = useNavigate()
@@ -1239,6 +1240,33 @@ function ProviderDetail() {
                             isHiddenByDflash && 'hidden'
                           )}
                           onChange={(newValue) => {
+                            // Manual "Latest <variant>" picks carry a
+                            // `latest/<backend>` sentinel. Route them through
+                            // the same animated download → hot-swap flow as
+                            // the "Find optimal backend" button instead of
+                            // silently persisting the sentinel: resolve to a
+                            // concrete release tag, surface the global
+                            // <BackendUpdater /> dialog, download, and let
+                            // updateBackend() persist + reflect the result
+                            // back into this dropdown.
+                            if (
+                              setting.key === 'version_backend' &&
+                              typeof newValue === 'string' &&
+                              newValue.startsWith('latest/')
+                            ) {
+                              void selectManualBackend(newValue).catch(
+                                (err) => {
+                                  console.error(
+                                    'Manual backend download failed:',
+                                    err
+                                  )
+                                  toast.error(
+                                    t('settings:backendUpdater.downloadFailed')
+                                  )
+                                }
+                              )
+                              return
+                            }
                             if (provider) {
                               const newSettings = [...provider.settings]
                               // Handle different value types by forcing the type
@@ -1441,15 +1469,18 @@ function ProviderDetail() {
                                     uses the separate turboquant
                                     pipeline with no alternate backend
                                     matrix. */}
-                                {/* On Windows the local llama.cpp provider is
-                                    `llamacpp-upstream` (sole survivor of the
-                                    upstream-only consolidation). On Linux it
-                                    is still the turboquant `llamacpp`. macOS
-                                    has no alternate-backend matrix here. */}
-                                {((IS_WINDOWS &&
-                                  provider?.provider === 'llamacpp-upstream') ||
-                                  (IS_LINUX &&
-                                    provider?.provider === 'llamacpp')) && (
+                                {/* Both Windows and Linux ship the
+                                    upstream `ggml-org/llama.cpp` provider
+                                    (`llamacpp-upstream`) as the only
+                                    local llama.cpp option — see ADRs
+                                    2026-05-22 (Windows) and 2026-05-28
+                                    (Linux). `LOCAL_LLAMACPP_PROVIDER`
+                                    is the single source of truth for
+                                    "which provider id is local on this
+                                    OS"; reuse it instead of hard-coding
+                                    the id per branch. */}
+                                {(IS_WINDOWS || IS_LINUX) &&
+                                  provider?.provider === LOCAL_LLAMACPP_PROVIDER && (
                                     <Button
                                       variant="outline"
                                       size="sm"

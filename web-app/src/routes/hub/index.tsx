@@ -203,13 +203,22 @@ function HubContent() {
     )
   }, [sortSelected, sources])
 
-  // Filtered models (debounced search)
+  // Filtered models (debounced search). MiniSearch resolves a query against
+  // ~3k models in single-digit ms, so the historical 300ms debounce only
+  // bought a visible window during which the previous query's results were
+  // still on screen — perceived as a flicker on fast typing. 80ms is enough
+  // to coalesce a held key without stalling the eye. Clearing the field
+  // bypasses debounce entirely so "show me everything" feels instant.
   const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
 
   useEffect(() => {
+    if (searchValue === '') {
+      setDebouncedSearchValue('')
+      return
+    }
     const handler = setTimeout(() => {
       setDebouncedSearchValue(searchValue)
-    }, 300)
+    }, 80)
     return () => clearTimeout(handler)
   }, [searchValue])
 
@@ -390,7 +399,18 @@ function HubContent() {
           : sortSelected === 'gguf'
             ? huggingFaceRepo.is_mlx !== true
             : true
-      if (matchesEngineFilter) {
+      const hfName = huggingFaceRepo.model_name.toLowerCase()
+      const alreadyPresent = filtered.some(
+        (m) => m.model_name.toLowerCase() === hfName
+      )
+      // Only surface the single exact-repo card at the top when the curated
+      // catalog is sparse for this query. ``fetchHuggingFaceModel`` resolves
+      // asynchronously (500ms debounce + network), so prepending it once it
+      // lands would jump a card to the very top and shove an already-rendered
+      // list of catalog hits down — perceived as a flicker on keyword search.
+      // Mirrors the ``filteredModels.length >= 5`` suppression used by the
+      // ``hfCandidates`` long-tail fallback below.
+      if (matchesEngineFilter && !alreadyPresent && filtered.length < 5) {
         filtered = [huggingFaceRepo, ...filtered]
       }
     }
@@ -590,12 +610,20 @@ function HubContent() {
   }
 
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.value
     setIsSearching(false)
-    setSearchValue(e.target.value)
-    setHuggingFaceRepo(null) // Clear previous repo info
+    setSearchValue(next)
+    // Only drop the "found outside catalog" card when the new query can
+    // not yield a result anyway (matches the ``< 3`` early-return in
+    // ``fetchHuggingFaceModel``). Clearing it on every keystroke made the
+    // card disappear → reappear on fast typing, which read as a flicker
+    // even when the underlying repo was still relevant.
+    if (next.trim().length < 3) {
+      setHuggingFaceRepo(null)
+    }
 
     if (!showOnlyDownloaded) {
-      fetchHuggingFaceModel(e.target.value)
+      fetchHuggingFaceModel(next)
     }
   }
 

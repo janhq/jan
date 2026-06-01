@@ -18,6 +18,10 @@ on:
         description: "Build Windows (temporarily disabled)"
         type: boolean
         default: false
+      build_linux:
+        description: "Build Linux x86_64 (AppImage)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -680,14 +684,243 @@ jobs:
           asset_content_type: text/plain
 
   # ──────────────────────────────────────────────────────────────
-  # Tauri updater manifest  (macOS + Windows; tolerant of either being skipped)
+  # Linux  (x86_64 — AppImage, upstream ggml-org/llama.cpp, CPU-only bundled)
+  # ──────────────────────────────────────────────────────────────
+  build-linux-x64:
+    if: github.event_name == 'push' || inputs.build_linux
+    # Pinned to ubuntu-22.04 (glibc 2.35) so the produced AppImage stays
+    # compatible with Ubuntu 22.04 / 24.04 / Debian 12 / Fedora 40 /
+    # Mint / Pop!_OS / Arch — per 2026-05-28 ADR
+    # "Linux ships only `llamacpp-upstream`".
+    runs-on: ubuntu-22.04
+    needs: create-draft-release
+    outputs:
+      linux_sig: ${{ steps.metadata.outputs.linux_sig }}
+      appimage_name: ${{ steps.metadata.outputs.appimage_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-linux-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-linux-
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install Linux system dependencies
+        # WebKitGTK 4.1 stack + Tauri AppImage build deps. Ubuntu 22.04
+        # ships `libwebkit2gtk-4.1-dev` as expected by Tauri 2.x.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            patchelf \
+            unzip
+
+      - name: Install Python dependencies
+        # `yarn build:icon` calls scripts/build-macos-app-icon.py which
+        # imports PIL — same as macOS / Windows jobs. On ubuntu-22.04 the
+        # system `pip` writes to /usr/lib/python3/dist-packages (root-only),
+        # so we install into the runner user's ~/.local site via --user.
+        # Pip 22.0.2 doesn't know `--break-system-packages` (added in 23),
+        # and PEP 668 isn't enforced on the runner image yet, so --user is
+        # the portable choice that survives future pip upgrades.
+        run: python3 -m pip install --user Pillow
+
+      - name: Update version in project files
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Install dependencies and build core
+        run: |
+          yarn install
+          yarn build:tauri:plugin:api
+          yarn build:core
+          yarn build:extensions
+
+      - name: Download binaries (bun, uv, sqlite-vec)
+        run: yarn download:bin
+
+      - name: Assert sqlite-vec was bundled
+        # `scripts/download-bin.mjs` treats sqlite-vec as non-fatal (it
+        # logs and continues if the GitHub release lookup or download
+        # fails). Once it's listed in `tauri.linux.conf.json :: resources`
+        # though, `tauri build` fails with an opaque path-not-found if
+        # the file is missing — so fail fast here with a clear message
+        # instead of letting the bundler surface a confusing error 200
+        # lines deeper.
+        run: |
+          if [ ! -f src-tauri/resources/bin/sqlite-vec.so ]; then
+            echo "::error::sqlite-vec.so not found after yarn download:bin."
+            echo "          Vector DB ANN acceleration would be missing from the AppImage."
+            echo "          Check the previous step's logs for the sqlite-vec download failure."
+            exit 1
+          fi
+          echo "sqlite-vec.so present: $(ls -l src-tauri/resources/bin/sqlite-vec.so)"
+
+      - name: Download upstream llamacpp backend (ggml-org/llama.cpp, linux-cpu-x64)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Per 2026-05-28 ADR: Linux installer ships the CPU-only build.
+        # Vulkan GPU backend is fetched at runtime by the user via
+        # "Find optimal backend" when `tauri-plugin-hardware` reports a
+        # working Vulkan loader.
+        run: make download-llamacpp-upstream-backend
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Copy assets to Tauri
+        run: yarn copy:assets:tauri
+
+      - name: Build CLI (Linux)
+        run: |
+          mkdir -p src-tauri/resources/bin
+          cd src-tauri && cargo build --release --features cli --bin jan-cli
+          cp target/release/jan-cli resources/bin/jan-cli
+          chmod +x resources/bin/jan-cli
+
+      - name: Build app (AppImage)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # NO_STRIP=1 keeps `linuxdeploy` from stripping symbols that
+          # the bundled `bun` runtime needs; see the existing
+          # `build:tauri:linux` script in package.json.
+          NO_STRIP: "1"
+        run: yarn build:tauri:linux
+
+      - name: Recreate updater signature after AppImage repackage
+        # `buildAppImage.sh` deletes the AppImage that `tauri build`
+        # produced and repacks a new one with bun bundled in. The
+        # original `.AppImage.sig` was signed against the deleted
+        # AppImage, so we must re-sign the post-repackage file or the
+        # Tauri updater will reject it as invalid. Symmetric to the
+        # Windows job's "Recreate updater signature after code signing"
+        # step.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for app in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            [ -f "$app" ] || continue
+            sigfile="${app}.sig"
+            if [ -f "$sigfile" ]; then
+              rm "$sigfile"
+              echo "Removed stale .sig: $sigfile"
+            fi
+            echo "Recreating updater signature for: $(basename "$app")"
+            yarn tauri signer sign \
+              --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+              --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+              "$app"
+            echo "Created new .sig for: $(basename "$app")"
+          done
+
+      - name: Collect artifact metadata
+        id: metadata
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          echo "=== bundle/appimage/ contents ==="
+          ls -la
+          APPIMAGE_NAME=$(ls *.AppImage | head -1)
+          if [ -z "$APPIMAGE_NAME" ]; then
+            echo "ERROR: no .AppImage produced"
+            exit 1
+          fi
+          LINUX_SIG=""
+          if [ -f "${APPIMAGE_NAME}.sig" ]; then
+            LINUX_SIG=$(cat "${APPIMAGE_NAME}.sig")
+          else
+            echo "Warning: no ${APPIMAGE_NAME}.sig (Tauri updater signature missing)"
+          fi
+          echo "appimage_name=${APPIMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "linux_sig=${LINUX_SIG}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .AppImage to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.metadata.outputs.appimage_name }}
+          asset_name: ${{ steps.metadata.outputs.appimage_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload .AppImage updater signature to release
+        if: steps.metadata.outputs.linux_sig != ''
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.metadata.outputs.appimage_name }}.sig
+          asset_name: ${{ steps.metadata.outputs.appimage_name }}.sig
+          asset_content_type: text/plain
+
+  # ──────────────────────────────────────────────────────────────
+  # Tauri updater manifest  (macOS + Windows + Linux; tolerant of any being skipped)
   # ──────────────────────────────────────────────────────────────
   publish-latest-json:
     if: |
       always() && needs.create-draft-release.result == 'success' &&
-      (needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+      (needs.build-macos.result == 'success' || needs.build-windows.result == 'success' || needs.build-linux-x64.result == 'success')
     runs-on: ubuntu-latest
-    needs: [create-draft-release, build-macos, build-windows]
+    needs: [create-draft-release, build-macos, build-windows, build-linux-x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -701,10 +934,14 @@ jobs:
           WIN_SIG: ${{ needs.build-windows.outputs.win_sig }}
           EXE_NAME: ${{ needs.build-windows.outputs.exe_name }}
           WIN_RESULT: ${{ needs.build-windows.result }}
+          LINUX_SIG: ${{ needs.build-linux-x64.outputs.linux_sig }}
+          APPIMAGE_NAME: ${{ needs.build-linux-x64.outputs.appimage_name }}
+          LINUX_RESULT: ${{ needs.build-linux-x64.result }}
         run: |
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
           WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
+          LINUX_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${APPIMAGE_NAME// /.}"
 
           # Fill in the platform blocks only for jobs that actually
           # succeeded; delete the others so Tauri's updater doesn't see a
@@ -715,8 +952,11 @@ jobs:
              --arg darwin_url "$DARWIN_URL" \
              --arg win_sig "$WIN_SIG" \
              --arg win_url "$WIN_URL" \
+             --arg linux_sig "$LINUX_SIG" \
+             --arg linux_url "$LINUX_URL" \
              --arg mac_result "$MAC_RESULT" \
              --arg win_result "$WIN_RESULT" \
+             --arg linux_result "$LINUX_RESULT" \
              '.version = $version
               | .pub_date = $pub_date
               | (if $mac_result == "success" then
@@ -733,6 +973,12 @@ jobs:
                   | .platforms["windows-x86_64"].url = $win_url
                 else
                   del(.platforms["windows-x86_64"])
+                end)
+              | (if $linux_result == "success" then
+                  .platforms["linux-x86_64"].signature = $linux_sig
+                  | .platforms["linux-x86_64"].url = $linux_url
+                else
+                  del(.platforms["linux-x86_64"])
                 end)' \
              src-tauri/latest.json.template > latest.json
 

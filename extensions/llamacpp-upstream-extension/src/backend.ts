@@ -1,5 +1,7 @@
 import { getJanDataFolderPath, fs, joinPath } from '@janhq/core'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { getSystemInfo } from './hardware'
+import { getProxyConfig } from './util'
 import {
   getLocalInstalledBackendsInternal,
   normalizeFeatures,
@@ -33,6 +35,70 @@ export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
 // <Jan's data folder>/llamacpp-upstream/backends/<backend_version>/<backend_type>
 
 /**
+ * Mapping from internal Linux backend id → ggml-org upstream asset name
+ * infix (the part between `bin-` and `.tar.gz`). Upstream calls its
+ * Linux builds `ubuntu-*`; we surface them as `linux-*` to keep the
+ * Rust matrix in `tauri-plugin-llamacpp-upstream` consistent and to
+ * leave room for non-Ubuntu Linux variants if we ever ship them.
+ *
+ * Whitelist is deliberately narrow: `s390x`, `arm64`, `rocm-7.2-x64`,
+ * `openvino-2026.0-x64`, and `vulkan-arm64` are dropped here. Adding
+ * one is a one-line edit in this map + a feature detector in the Rust
+ * `get_supported_features`.
+ */
+const LINUX_UPSTREAM_ASSET_BY_BACKEND: Record<string, string> = {
+  'linux-cpu-x64': 'ubuntu-x64',
+  'linux-vulkan-x64': 'ubuntu-vulkan-x64',
+}
+
+const LINUX_BACKEND_BY_UPSTREAM_ASSET: Record<string, string> = Object.fromEntries(
+  Object.entries(LINUX_UPSTREAM_ASSET_BY_BACKEND).map(([k, v]) => [v, k])
+)
+
+/**
+ * Maps the app's stored proxy config (`getProxyConfig`, shaped for the Rust
+ * `download_files` command) onto the option shape `@tauri-apps/plugin-http`'s
+ * `fetch` expects. Returns `{}` when no proxy is enabled so the caller can
+ * spread it unconditionally.
+ */
+function buildHttpProxyOptions(): {
+  proxy?: {
+    all: {
+      url: string
+      basicAuth?: { username: string; password: string }
+      noProxy?: string
+    }
+  }
+  danger?: { acceptInvalidCerts?: boolean; acceptInvalidHostnames?: boolean }
+} {
+  const cfg = getProxyConfig()
+  if (!cfg || typeof cfg.url !== 'string' || !cfg.url) {
+    return {}
+  }
+
+  const proxyConfig: {
+    url: string
+    basicAuth?: { username: string; password: string }
+    noProxy?: string
+  } = { url: cfg.url }
+
+  if (typeof cfg.username === 'string' && typeof cfg.password === 'string') {
+    proxyConfig.basicAuth = { username: cfg.username, password: cfg.password }
+  }
+  if (Array.isArray(cfg.no_proxy) && cfg.no_proxy.length > 0) {
+    proxyConfig.noProxy = (cfg.no_proxy as string[]).join(',')
+  }
+
+  if (cfg.ignore_ssl === true) {
+    return {
+      proxy: { all: proxyConfig },
+      danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true },
+    }
+  }
+  return { proxy: { all: proxyConfig } }
+}
+
+/**
  * Fetches the list of available backend builds from ggml-org/llama.cpp
  * GitHub releases for the current platform/arch.
  *
@@ -44,6 +110,10 @@ export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
  * Windows: returns the ggml-org Windows assets (CPU / CUDA 12.4 / CUDA 13.1
  * / Vulkan) so the runtime update flow can fetch fresh builds without
  * shipping a new installer.
+ *
+ * Linux: returns the ggml-org Ubuntu assets (CPU + Vulkan, x64 only) so
+ * the runtime update flow can fetch fresh builds. See the 2026-05-28 ADR
+ * *Linux ships only `llamacpp-upstream`*.
  *
  * Returns `[]` on network failure so the app can still work offline with
  * only bundled/local backends.
@@ -61,11 +131,7 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     return []
   }
 
-  // Currently only Windows uses the upstream provider at runtime. Linux
-  // stays on the primary `llamacpp` provider (turboquant fork) and never
-  // hits this code path. Bail early on anything else so we don't surface
-  // surprising backend lists.
-  if (osType !== 'windows') {
+  if (osType !== 'windows' && osType !== 'linux') {
     return []
   }
 
@@ -78,9 +144,16 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     const timeout = setTimeout(() => controller.abort(), 15_000)
     let resp: Response
     try {
-      resp = await fetch(LLAMACPP_RELEASES_API, {
+      // Use the Tauri HTTP client (reqwest) so we can (a) honor the
+      // user-configured HTTPS proxy from Settings → Proxy and (b) apply a
+      // hard `connectTimeout`. The plain WebView `fetch` ignores the app's
+      // proxy config, which made this lookup fail on GitHub-restricted
+      // networks even when the user had a working proxy set up.
+      resp = await tauriFetch(LLAMACPP_RELEASES_API, {
         headers: { 'User-Agent': 'atomic-chat' },
         signal: controller.signal,
+        connectTimeout: 15_000,
+        ...buildHttpProxyOptions(),
       })
     } finally {
       clearTimeout(timeout)
@@ -98,39 +171,70 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     if (!tag) return []
 
     const assets: { name: string }[] = release.assets ?? []
+    const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-    // ggml-org Windows assets are zip archives named
-    // `llama-{tag}-bin-{backend}.zip` (e.g.
-    // `llama-b9284-bin-win-cuda-12.4-x64.zip`). Capture the backend infix.
-    const re = new RegExp(
-      `^llama-${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-bin-(win-.+)\\.zip$`
-    )
+    if (osType === 'windows') {
+      // ggml-org Windows assets are zip archives named
+      // `llama-{tag}-bin-{backend}.zip` (e.g.
+      // `llama-b9284-bin-win-cuda-12.4-x64.zip`). Capture the backend infix.
+      const re = new RegExp(`^llama-${escapedTag}-bin-(win-.+)\\.zip$`)
 
-    // Whitelist of ggml-org Windows backend ids we surface to the user.
-    // Keeps less-relevant variants (hip-radeon / sycl / opencl-adreno /
-    // arm64) hidden until we explicitly support them in the Rust matrix.
-    const allowedBackends = new Set<string>([
-      'win-cpu-x64',
-      'win-cuda-12.4-x64',
-      'win-cuda-13.1-x64',
-      'win-vulkan-x64',
-    ])
+      // Whitelist of ggml-org Windows backend ids we surface to the user.
+      // Keeps less-relevant variants (hip-radeon / sycl / opencl-adreno /
+      // arm64) hidden until we explicitly support them in the Rust matrix.
+      const allowedBackends = new Set<string>([
+        'win-cpu-x64',
+        'win-cuda-12.4-x64',
+        'win-cuda-13.1-x64',
+        'win-vulkan-x64',
+      ])
 
+      const backends: BackendVersion[] = []
+
+      for (const asset of assets) {
+        const match = re.exec(asset.name)
+        if (!match) continue
+
+        const backendName = match[1]
+        if (!allowedBackends.has(backendName)) continue
+        if (!backendName.endsWith(`-${archSuffix}`)) continue
+
+        backends.push({ version: tag, backend: backendName, order: 0 })
+      }
+
+      console.info(
+        `[fetchRemoteBackends] Found ${backends.length} remote backends for win-${archSuffix}:`,
+        backends.map((b) => b.backend)
+      )
+      return backends
+    }
+
+    // Linux: assets are gzipped tarballs named
+    // `llama-{tag}-bin-ubuntu-{variant}.tar.gz` (e.g.
+    // `llama-b9371-bin-ubuntu-vulkan-x64.tar.gz`). x86_64 only in Phase 1.
+    if (archSuffix !== 'x64') {
+      console.info(
+        `[fetchRemoteBackends] Linux ${archSuffix} not supported in Phase 1; returning no remote backends`
+      )
+      return []
+    }
+
+    const re = new RegExp(`^llama-${escapedTag}-bin-(ubuntu-.+)\\.tar\\.gz$`)
     const backends: BackendVersion[] = []
 
     for (const asset of assets) {
       const match = re.exec(asset.name)
       if (!match) continue
 
-      const backendName = match[1]
-      if (!allowedBackends.has(backendName)) continue
-      if (!backendName.endsWith(`-${archSuffix}`)) continue
+      const upstreamInfix = match[1]
+      const backendName = LINUX_BACKEND_BY_UPSTREAM_ASSET[upstreamInfix]
+      if (!backendName) continue
 
       backends.push({ version: tag, backend: backendName, order: 0 })
     }
 
     console.info(
-      `[fetchRemoteBackends] Found ${backends.length} remote backends for win-${archSuffix}:`,
+      `[fetchRemoteBackends] Found ${backends.length} remote backends for linux-${archSuffix}:`,
       backends.map((b) => b.backend)
     )
     return backends
@@ -146,8 +250,12 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
  * Asset naming differs by platform:
  *   - macOS: `llama-{tag}-bin-macos-{arm64,x64}.zip`
  *   - Windows: `llama-{tag}-bin-win-{variant}.zip`
- * Both formats are `.zip` (the Tauri `decompress` command handles both
- * `.tar.gz` and `.zip`).
+ *   - Linux: `llama-{tag}-bin-ubuntu-{variant}.tar.gz` (note: internal
+ *     backend ids are `linux-*` but upstream filenames carry `ubuntu-*`;
+ *     `LINUX_UPSTREAM_ASSET_BY_BACKEND` provides the mapping).
+ *
+ * macOS / Windows use `.zip`, Linux uses `.tar.gz`. The Tauri `decompress`
+ * command handles both formats transparently.
  */
 export function getBackendDownloadUrl(
   version: string,
@@ -155,7 +263,25 @@ export function getBackendDownloadUrl(
 ): string {
   version = version.replace(/\uFEFF/g, '').trim()
   backend = backend.replace(/\uFEFF/g, '').trim()
+  const linuxInfix = LINUX_UPSTREAM_ASSET_BY_BACKEND[backend]
+  if (linuxInfix) {
+    return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${linuxInfix}.tar.gz`
+  }
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.zip`
+}
+
+/**
+ * Maps an internal backend id (e.g. `win-cuda-13.1-x64`, `linux-vulkan-x64`)
+ * to a short human-friendly variant label used by the "Latest <variant>"
+ * dropdown entries. Falls back to the raw id for anything unrecognised.
+ */
+export function friendlyBackendLabel(backend: string): string {
+  const id = backend.replace(/\uFEFF/g, '').trim()
+  if (id.endsWith('cpu-x64')) return 'CPU'
+  if (id.includes('cuda-13')) return 'CUDA 13.1'
+  if (id.includes('cuda-12')) return 'CUDA 12.4'
+  if (id.includes('vulkan')) return 'Vulkan'
+  return id
 }
 
 /**

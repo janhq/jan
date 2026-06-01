@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { HardwareData, SystemUsage } from '@/services/hardware/types'
-import { cn, formatMegaBytes } from '@/lib/utils'
+import { cn, formatMegaBytes, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
@@ -38,7 +38,19 @@ function HardwareContent() {
   } = useHardware()
 
   const { providers } = useModelProvider()
-  const llamacpp = providers.find((p) => p.provider === 'llamacpp')
+  // Look up the locally-running llama.cpp provider by the OS-appropriate
+  // id, not the hardcoded string 'llamacpp'. On Windows / Linux the
+  // turboquant `@janhq/llamacpp-extension` is NOT installed (see the
+  // 2026-05-22 ADR *Windows ships only `llamacpp-upstream`* and the
+  // matching Linux story), and the only registered provider is
+  // `llamacpp-upstream`. Without this fix, the entire GPU section of
+  // this screen was render-gated by `llamacpp && (...)` to `false` on
+  // Windows and Linux — which is why end users on Windows reported
+  // "GPUs not shown at all" in Settings → Hardware even when the
+  // llama.cpp backend was running on GPU happily.
+  const llamacpp = providers.find(
+    (p) => p.provider === LOCAL_LLAMACPP_PROVIDER
+  )
 
   // Llamacpp devices hook
   const llamacppDevicesResult = useLlamacppDevices()

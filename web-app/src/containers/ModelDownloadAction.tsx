@@ -29,10 +29,13 @@ export const ModelDownloadAction = ({
     downloads,
     localDownloadingModels,
     resumableDownloads,
+    downloadOriginByModelId,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
+    setDownloadOrigin,
+    clearDownloadOrigin,
   } = useDownloadStore()
   const downloadProcesses = useMemo(
     () =>
@@ -113,6 +116,7 @@ export const ModelDownloadAction = ({
   const handleDownloadModel = useCallback(async () => {
     clearResumableDownload(variant.model_id)
     addLocalDownloadingModel(variant.model_id)
+    setDownloadOrigin(variant.model_id, model.model_name)
     try {
       await serviceHub
         .models()
@@ -134,6 +138,7 @@ export const ModelDownloadAction = ({
       // is stuck in a permanent "downloading" state. Clear it ourselves.
       console.error('[ModelDownloadAction] pullModelWithMetadata failed:', error)
       removeLocalDownloadingModel(variant.model_id)
+      clearDownloadOrigin(variant.model_id)
       markResumableDownload(variant.model_id)
       toast.error(t('hub:downloadFailed'), {
         description: error instanceof Error ? error.message : String(error),
@@ -145,10 +150,13 @@ export const ModelDownloadAction = ({
     variant.model_id,
     huggingfaceToken,
     model.mmproj_models,
+    model.model_name,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
+    setDownloadOrigin,
+    clearDownloadOrigin,
     resumableDownloads,
     t,
   ])
@@ -159,9 +167,15 @@ export const ModelDownloadAction = ({
     void serviceHub.models().abortDownload(variant.model_id)
   }, [markResumableDownload, serviceHub, variant.model_id])
 
+  // See ``DownloadButton.tsx`` for the rationale -- defensive UI guard
+  // against catalog-level ``quant.model_id`` collisions across repos.
+  const downloadOrigin = downloadOriginByModelId[variant.model_id]
+  const isOriginConflict =
+    downloadOrigin !== undefined && downloadOrigin !== model.model_name
   const isDownloading =
-    localDownloadingModels.has(variant.model_id) ||
-    downloadProcesses.some((e) => e.id === variant.model_id)
+    !isOriginConflict &&
+    (localDownloadingModels.has(variant.model_id) ||
+      downloadProcesses.some((e) => e.id === variant.model_id))
   const downloadProgress =
     downloadProcesses.find((e) => e.id === variant.model_id)?.progress || 0
   const isDownloaded = useModelProvider((state) =>

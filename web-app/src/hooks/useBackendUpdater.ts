@@ -78,6 +78,7 @@ interface LlamacppExtension {
   configureBackends?(): Promise<void>
   downloadRecommendedBackend?(backendString: string): Promise<void>
   recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
+  downloadManualBackend?(selection: string): Promise<void>
 }
 
 export interface BackendDownloadState {
@@ -299,6 +300,39 @@ export const useBackendUpdater = () => {
     }
   }, [clearHotswapTimeout, clearCompletedTimeout])
 
+  // Manual "Latest <variant>" selection flow (extension-driven). The
+  // extension's `downloadManualBackend()` emits these dedicated events so the
+  // dialog can open straight into the 'downloading' spinner without the
+  // 'recommend' confirm flash / event-ordering race that reusing
+  // `onBetterBackendDetected` + `onBackendDownloadStarted` would incur.
+  //   - `onManualBackendDownloading`: set recommendation + phase in one go.
+  //   - `onManualBackendFailed`: dismiss the dialog (offline + nothing
+  //     installed to fall back to). The subsequent download / hot-swap
+  //     progression reuses the standard `onBackendDownloadFinished` +
+  //     `app:backend-hotswapped` listeners above.
+  useEffect(() => {
+    const handleManualDownloading = (payload: BetterBackendRecommendation) => {
+      clearHotswapTimeout()
+      clearCompletedTimeout()
+      setRecommendation(payload)
+      setRecommendationPhase('downloading')
+    }
+    const handleManualFailed = () => {
+      clearHotswapTimeout()
+      clearCompletedTimeout()
+      setRecommendation(null)
+      setRecommendationPhase('idle')
+    }
+
+    events.on('onManualBackendDownloading', handleManualDownloading)
+    events.on('onManualBackendFailed', handleManualFailed)
+
+    return () => {
+      events.off('onManualBackendDownloading', handleManualDownloading)
+      events.off('onManualBackendFailed', handleManualFailed)
+    }
+  }, [clearHotswapTimeout, clearCompletedTimeout])
+
   // Listen for backend update state sync events
   useEffect(() => {
     const handleUpdateStateSync = (newState: Partial<BackendUpdateState>) => {
@@ -378,6 +412,45 @@ export const useBackendUpdater = () => {
     },
     [recommendation]
   )
+
+  /// Manual counterpart to the "Find optimal backend" button: routes a
+  /// "Latest <variant>" dropdown sentinel (`latest/<backend>`) through the
+  /// extension's `downloadManualBackend()` orchestrator, which drives the
+  /// same animated download → hot-swap → completed progression surfaced by
+  /// the global `<BackendUpdater />` dialog (entirely via Tauri events, so
+  /// this hook only needs to invoke it). Already-installed picks switch
+  /// without re-downloading.
+  ///
+  /// Throws when the target can be neither resolved online nor satisfied
+  /// from a local install, so the caller can toast.
+  const selectManualBackend = useCallback(async (selection: string) => {
+    const allExtensions = ExtensionManager.getInstance().listExtensions()
+    const primary = ExtensionManager.getInstance().getByName(
+      LOCAL_LLAMACPP_EXTENSION_NAME
+    )
+
+    let extensionToUse = primary
+
+    if (!primary) {
+      const possibleExtension = allExtensions.find(
+        (ext) =>
+          ext.constructor.name.toLowerCase().includes('llamacpp') ||
+          (ext.type &&
+            ext.type()?.toString().toLowerCase().includes('inference'))
+      )
+      if (!possibleExtension) {
+        throw new Error('LlamaCpp extension not found')
+      }
+      extensionToUse = possibleExtension
+    }
+
+    if (!extensionToUse || !('downloadManualBackend' in extensionToUse)) {
+      throw new Error('Extension does not support downloadManualBackend')
+    }
+
+    const extension = extensionToUse as LlamacppExtension
+    await extension.downloadManualBackend?.(selection)
+  }, [])
 
   /// Tracks whether the post-upgrade auto-recheck has been attempted this
   /// session. Used as a process-local guard on top of the
@@ -768,5 +841,6 @@ export const useBackendUpdater = () => {
     dismissRecommendation,
     downloadRecommendedBackend,
     recheckOptimalBackend,
+    selectManualBackend,
   }
 }
