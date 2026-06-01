@@ -137,6 +137,24 @@
     display: inline-block;
   }
 
+  /*
+   * Streamdown highlights code with shiki dual themes: each token gets an
+   * inline *light* color plus a `--shiki-dark` custom property, and relies on
+   * Tailwind `dark:text-(--shiki-dark)!` utilities (scanned from node_modules)
+   * to swap palettes. Those utilities aren't emitted in this build, so under
+   * our class-based dark theme the tokens kept their light colors and became
+   * unreadable (dark text on a dark block). Force the dark palette here, with
+   * the theme foreground (white) as a fallback for tokens without the var.
+   */
+  :where(.dark) & [data-streamdown="code-block-body"] {
+    background-color: var(--shiki-dark-bg, var(--secondary)) !important;
+    color: var(--shiki-dark, var(--foreground)) !important;
+  }
+
+  :where(.dark) & [data-streamdown="code-block-body"] span {
+    color: var(--shiki-dark, var(--foreground)) !important;
+  }
+
   /* Links */
   a {
     color: var(--color-primary);
