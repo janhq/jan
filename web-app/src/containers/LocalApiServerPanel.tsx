@@ -1,5 +1,3 @@
-import { Link } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
 import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -17,7 +15,6 @@ import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { CopyButton } from '@/containers/CopyButton'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { LogViewer } from '@/components/LogViewer'
 import { ensureModelForServer } from '@/utils/ensureModelForServer'
 import {
   hydrateActiveModelsForRunningServer,
@@ -29,13 +26,6 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from '@/components/ui/collapsible'
-import {
-  IconChevronDown,
-  IconChevronUp,
   IconExternalLink,
   IconLoader2,
   IconSettings2,
@@ -353,17 +343,36 @@ export function LocalApiServerPanel() {
     <div className="flex flex-col gap-4 gap-y-3 w-full">
       <Card
         header={
-          <div className="mb-3 flex w-full items-center border-b pb-2">
-            <div className="w-full space-y-2">
+          <div className="mb-3 flex w-full items-start justify-between gap-2 border-b pb-2">
+            <div className="space-y-1">
               <h1 className="text-base font-medium text-foreground font-studio">
                 {t('settings:localApiServer.title')}
               </h1>
-              <p className="text-muted-foreground mb-2">
-                {t('settings:localApiServer.description')}
-              </p>
+              {isServerRunning && (
+                <span className="text-xs font-mono flex items-center gap-1">
+                  <a
+                    href={localServerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    {localServerUrl}
+                  </a>
+                  <CopyButton text={localServerUrl} />
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {configurationPopover}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenLogs}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <IconExternalLink size={14} className="mr-1" />
+                Open logs
+              </Button>
               <Button
                 onClick={toggleAPIServer}
                 variant={isServerRunning ? 'destructive' : 'default'}
@@ -377,32 +386,7 @@ export function LocalApiServerPanel() {
         }
       >
         <CardItem
-          title={t('settings:localApiServer.defaultModel')}
-          description={
-            <>
-              {t('settings:localApiServer.defaultModelDesc')}{' '}
-              {t('settings:localApiServer.defaultModelDescHint')}
-              {defaultModelLocalApiServer?.provider ? (
-                <Link
-                  to={route.settings.providers}
-                  params={{
-                    providerName: defaultModelLocalApiServer.provider,
-                  }}
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  {t('settings:localApiServer.defaultModelDescProvidersLink')}
-                </Link>
-              ) : (
-                <Link
-                  to={route.settings.model_providers}
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  {t('settings:localApiServer.defaultModelDescProvidersLink')}
-                </Link>
-              )}
-              .
-            </>
-          }
+          title={t('settings:localApiServer.currentModel')}
           actions={
             <span className="text-sm text-muted-foreground truncate max-w-60">
               {defaultModelLocalApiServer?.model ??
@@ -410,60 +394,6 @@ export function LocalApiServerPanel() {
             </span>
           }
         />
-      </Card>
-
-      <Card>
-        <CardItem
-          title="Server Status"
-          description={
-            isServerRunning ? (
-              <div className="space-y-1">
-                <div>The server is currently running.</div>
-                <div className="text-xs font-mono flex items-center gap-1">
-                  <a
-                    href={localServerUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    {localServerUrl}
-                  </a>
-                  <CopyButton text={localServerUrl} />
-                </div>
-              </div>
-            ) : (
-              'The server is stopped.'
-            )
-          }
-        />
-      </Card>
-
-      <Card>
-        <Collapsible defaultOpen={false}>
-          <div className="flex items-center justify-between">
-            <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline data-[state=open]:[&>svg.chevron-down]:hidden data-[state=closed]:[&>svg.chevron-up]:hidden">
-              <IconChevronDown size={16} className="chevron-down" />
-              <IconChevronUp size={16} className="chevron-up" />
-              <span className="font-medium text-sm">Server Log</span>
-            </CollapsibleTrigger>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenLogs}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <IconExternalLink size={14} className="mr-1" />
-              Open in New Window
-            </Button>
-          </div>
-          <CollapsibleContent>
-            <div className="pt-3">
-              <div className="h-[200px]">
-                <LogViewer />
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
       </Card>
     </div>
   )

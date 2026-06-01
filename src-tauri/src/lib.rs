@@ -118,6 +118,7 @@ pub fn run() {
         core::system::commands::configure_codex,
         core::system::commands::configure_opencode,
         core::system::commands::configure_openclaw,
+        core::system::commands::open_agent_terminal,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -213,6 +214,7 @@ pub fn run() {
         core::system::commands::configure_codex,
         core::system::commands::configure_opencode,
         core::system::commands::configure_openclaw,
+        core::system::commands::open_agent_terminal,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,

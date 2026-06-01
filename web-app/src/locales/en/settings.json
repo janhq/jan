@@ -216,7 +216,8 @@
     "defaultModelDesc": "Local model to load automatically when the server starts.",
     "defaultModelDescHint": "To change it, update your default chat model in ",
     "defaultModelDescProvidersLink": "Model Providers",
-    "defaultModelPlaceholder": "Select a local model"
+    "defaultModelPlaceholder": "Select a local model",
+    "currentModel": "Current Model"
   },
   "privacy": {
     "analytics": "Analytics",

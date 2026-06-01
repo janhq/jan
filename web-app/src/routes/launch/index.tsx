@@ -1,11 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -28,9 +22,8 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { cn, getModelDisplayName } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.launch.index as any)({
@@ -201,7 +194,6 @@ function LaunchPage() {
   } = useLocalApiServer()
   const { serverStatus, setServerStatus } = useAppState()
   const serviceHub = useServiceHub()
-  const { providers } = useModelProvider()
 
   const [installed, setInstalled] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
@@ -244,14 +236,6 @@ function LaunchPage() {
   }, [refreshRunningModels, serverStatus])
 
   const activeModel = runningModels[0] ?? null
-  const activeModelLabel = useMemo(() => {
-    if (!activeModel) return null
-    for (const p of providers) {
-      const m = p.models.find((mm) => mm.id === activeModel)
-      if (m) return getModelDisplayName(m)
-    }
-    return activeModel
-  }, [activeModel, providers])
 
   const ensureServerRunning = useCallback(async () => {
     if (serverStatus === 'running') return
@@ -411,6 +395,18 @@ function LaunchPage() {
         }
 
         await configureAgent(agent, model)
+
+        // Config is written; open a terminal running the agent so the user can
+        // start immediately. A terminal failure must not fail the whole Run.
+        try {
+          await invoke('open_agent_terminal', { command: agent.detectBin })
+        } catch (termErr) {
+          const tmsg =
+            termErr instanceof Error ? termErr.message : String(termErr)
+          toast.warning(t('launch:toast.terminalFailed', { name: agent.name }), {
+            description: tmsg,
+          })
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         toast.error(t('launch:toast.configureFailed', { name: agent.name }), {
@@ -436,120 +432,87 @@ function LaunchPage() {
 
     return (
       <Card key={agent.id} className="bg-card rounded-lg">
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-3">
           <AgentIcon agent={agent} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="font-studio text-base font-medium text-foreground">
-                {agent.name}
-              </h2>
-              {isInstalled !== undefined && (
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                    isInstalled
-                      ? 'bg-emerald-500/10 text-emerald-600'
-                      : 'bg-muted text-muted-foreground'
-                  )}
-                >
-                  {isInstalled
-                    ? t('launch:installed')
-                    : t('launch:notInstalled')}
-                </span>
+          <h2 className="font-studio truncate text-base font-medium text-foreground">
+            {agent.name}
+          </h2>
+          {isInstalled !== undefined && (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                isInstalled
+                  ? 'bg-emerald-500/10 text-emerald-600'
+                  : 'bg-muted text-muted-foreground'
               )}
-            </div>
-            <p className="mt-0.5 text-sm leading-normal text-muted-foreground">
-              {agent.description}
-            </p>
+            >
+              {isInstalled ? t('launch:installed') : t('launch:notInstalled')}
+            </span>
+          )}
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openUrl(agent.docsUrl)}
+            >
+              <IconExternalLink size={14} className="text-muted-foreground" />
+              {t('launch:docs')}
+            </Button>
+            {agent.configurable && (
               <Button
-                variant="ghost"
                 size="sm"
-                onClick={() => openUrl(agent.docsUrl)}
+                className="min-w-[112px] justify-center gap-1.5"
+                onClick={() => handleRun(agent)}
+                disabled={isBusy}
               >
-                <IconExternalLink size={14} className="text-muted-foreground" />
-                {t('launch:docs')}
+                {isBusy && isSpinning && (
+                  <IconLoader2 size={14} className="animate-spin" />
+                )}
+                {t('launch:enable')}
               </Button>
-
-              {activeModelLabel ? (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-                  {t('launch:usingRunningModel')}:
-                  <span
-                    className="max-w-[200px] truncate font-medium text-foreground"
-                    title={activeModel ?? undefined}
-                  >
-                    {activeModelLabel}
-                  </span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-                  {t('launch:noRunningModel')}
-                </span>
-              )}
-
-              <div className="ml-auto flex items-center gap-2">
-                {agent.configurable && (
-                  <Button
-                    size="sm"
-                    className="min-w-[112px] justify-center gap-1.5"
-                    onClick={() => handleRun(agent)}
-                    disabled={isBusy}
-                  >
-                    {isBusy && isSpinning && (
-                      <IconLoader2 size={14} className="animate-spin" />
-                    )}
-                    {t('launch:enable')}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {agentLogs.length > 0 && (
-              <div className="mt-3">
-                <button
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    setOpenLog((prev) => ({
-                      ...prev,
-                      [agent.id]: !prev[agent.id],
-                    }))
-                  }
-                >
-                  <IconTerminal2 size={14} />
-                  {t('launch:installLog')}
-                  <IconChevronDown
-                    size={14}
-                    className={cn(
-                      'transition-transform',
-                      openLog[agent.id] && 'rotate-180'
-                    )}
-                  />
-                </button>
-                {openLog[agent.id] && (
-                  <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-secondary/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
-                    {agentLogs.join('\n')}
-                  </pre>
-                )}
-              </div>
             )}
           </div>
         </div>
+        <p className="mt-2 text-sm leading-normal text-muted-foreground">
+          {agent.description}
+        </p>
+
+        {agentLogs.length > 0 && (
+          <div className="mt-3">
+            <button
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                setOpenLog((prev) => ({
+                  ...prev,
+                  [agent.id]: !prev[agent.id],
+                }))
+              }
+            >
+              <IconTerminal2 size={14} />
+              {t('launch:installLog')}
+              <IconChevronDown
+                size={14}
+                className={cn(
+                  'transition-transform',
+                  openLog[agent.id] && 'rotate-180'
+                )}
+              />
+            </button>
+            {openLog[agent.id] && (
+              <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-secondary/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
+                {agentLogs.join('\n')}
+              </pre>
+            )}
+          </div>
+        )}
       </Card>
     )
   }
 
   return (
     <div className="flex h-svh w-full flex-col">
-      <HeaderPage>
-        <div className="flex w-full items-center gap-2">
-          <span className="font-studio text-base font-medium">
-            {t('launch:title')}
-          </span>
-        </div>
-      </HeaderPage>
+      <HeaderPage />
       <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           <section className="flex flex-col gap-3">

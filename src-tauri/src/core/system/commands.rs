@@ -1719,3 +1719,82 @@ pub fn configure_openclaw(
     log::info!("OpenClaw configured: baseUrl={}, model={}", api_url, model);
     Ok(())
 }
+
+/// Open the OS terminal and run `command` interactively, so the user can start
+/// using a just-configured agent in one click. The terminal stays open after
+/// the command (it launches an interactive TUI agent like codex/claude).
+#[tauri::command]
+pub fn open_agent_terminal(command: String) -> Result<(), String> {
+    let command = command.trim().to_string();
+    if command.is_empty() {
+        return Err("Empty terminal command".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Escape for an AppleScript double-quoted string literal.
+        let escaped = command.replace('\\', "\\\\").replace('"', "\\\"");
+        // When Terminal.app is *not* already running, `activate` opens a default
+        // empty window and `do script` opens a second one — two windows. So we
+        // branch: if it was already running, open a fresh window (don't hijack
+        // an existing session); if it was cold, reuse the auto-opened window 1.
+        let script = format!(
+            "set wasRunning to application \"Terminal\" is running\n\
+             tell application \"Terminal\"\n\
+             activate\n\
+             if wasRunning then\n\
+             do script \"{cmd}\"\n\
+             else\n\
+             delay 0.2\n\
+             do script \"{cmd}\" in window 1\n\
+             end if\n\
+             end tell",
+            cmd = escaped
+        );
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+        log::info!("Opened Terminal with command: {}", command);
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // `start "" cmd /K <cmd>` opens a fresh console that stays open so the
+        // interactive agent keeps running. The empty "" is the window title arg.
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", "cmd", "/K", &command])
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+        log::info!("Opened cmd with command: {}", command);
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // `exec $SHELL` keeps the window open after the agent exits.
+        let inner = format!("{}; exec $SHELL", command);
+        let candidates: &[(&str, &[&str])] = &[
+            ("x-terminal-emulator", &["-e"]),
+            ("gnome-terminal", &["--"]),
+            ("konsole", &["-e"]),
+            ("xfce4-terminal", &["-e"]),
+            ("xterm", &["-e"]),
+        ];
+        for (term, pre) in candidates {
+            let mut cmd = std::process::Command::new(term);
+            cmd.args(*pre);
+            cmd.args(["bash", "-lc", &inner]);
+            if cmd.spawn().is_ok() {
+                log::info!("Opened {} with command: {}", term, command);
+                return Ok(());
+            }
+        }
+        return Err("No supported terminal emulator found".to_string());
+    }
+
+    #[allow(unreachable_code)]
+    Ok(())
+}

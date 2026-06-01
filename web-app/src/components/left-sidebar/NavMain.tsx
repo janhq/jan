@@ -1,4 +1,5 @@
-import { LucideIcon, Rocket } from 'lucide-react'
+import { LucideIcon } from 'lucide-react'
+import { IconPlugConnected } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -136,7 +137,7 @@ const getNavMainItems = (
   {
     title: 'common:launch',
     url: route.launch.index,
-    icon: Rocket,
+    icon: IconPlugConnected,
   },
   {
     title: 'common:settings',

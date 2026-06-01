@@ -1,5 +1,5 @@
 {
-  "title": "Launch",
+  "title": "Integrations",
   "subtitle": "Install external coding agents and assistants, then point them at your local Atomic Chat models with one click.",
   "serverSection": "Local API Server",
   "serverSectionDesc": "Run an OpenAI-compatible server for your local models, then point the agents below at it.",
@@ -27,7 +27,8 @@
     "installSuccessDesc": "{{name}} was installed successfully.",
     "installFailed": "Failed to install {{name}}",
     "configured": "{{name}} configured",
-    "configuredDesc": "{{name}} now points at your local Atomic Chat server. Relaunch it in a new terminal window.",
-    "configureFailed": "Failed to configure {{name}}"
+    "configuredDesc": "{{name}} now points at your local Atomic Chat server. Opening a terminal so you can start using it.",
+    "configureFailed": "Failed to configure {{name}}",
+    "terminalFailed": "Couldn't open a terminal for {{name}}"
   }
 }
