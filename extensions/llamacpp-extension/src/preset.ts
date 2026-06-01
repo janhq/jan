@@ -44,7 +44,7 @@ const DEFAULT_EMBEDDING_UBATCH = 2048
 
 // Fallback context size when the user hasn't set one, to avoid loading a
 // model's full trained context (which can OOM on large-context models).
-const DEFAULT_CTX_SIZE = 4096
+const DEFAULT_CTX_SIZE = 8192
 
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
@@ -135,7 +135,7 @@ export async function generatePreset(
     lines.push(`fit-ctx = ${fitCtxNum}`)
   }
   // ctx-size: llama.cpp's own default loads the model's full trained context,
-  // which can OOM on large-context models. Default to 4096 when the user hasn't
+  // which can OOM on large-context models. Default to 8192 when the user hasn't
   // set a positive value. Skip entirely when auto-fit is enabled — fit owns
   // context sizing and an explicit ctx-size would override it.
   const fitEnabled = config.fit !== false
