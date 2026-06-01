@@ -288,6 +288,10 @@ vi.mock('@tabler/icons-react', () => ({
   IconTrash: () => <span />,
   IconCircle: () => <span />,
   IconCircleCheck: () => <span />,
+  IconEye: () => <span />,
+  IconEyeOff: () => <span />,
+  IconCopy: () => <span />,
+  IconCopyCheck: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({

@@ -20,7 +20,7 @@ import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/ui/secret-input'
 import { Switch } from '@/components/ui/switch'
 import {
   IconCircleCheck,
@@ -1001,8 +1001,7 @@ function ProviderDetail() {
                       </div>
                       {!showAdvancedApiKeys && (
                         <div className="flex flex-col gap-2">
-                          <Input
-                            type="password"
+                          <SecretInput
                             className="font-mono"
                             placeholder={t('providers:apiKeys.primaryPlaceholder')}
                             value={primaryKeyDraft}
@@ -1092,8 +1091,7 @@ function ProviderDetail() {
                                   </div>
 
                                   <div className="min-w-0">
-                                    <Input
-                                      type="password"
+                                    <SecretInput
                                       className="font-mono w-full"
                                       placeholder={t('providers:apiKeys.keyPlaceholder')}
                                       value={keyValue}
