@@ -1,4 +1,4 @@
-import { LucideIcon, Server } from 'lucide-react'
+import { LucideIcon, Rocket, Server } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -132,6 +132,11 @@ const getNavMainItems = (
     title: 'common:models',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
+  },
+  {
+    title: 'common:launch',
+    url: route.launch.index,
+    icon: Rocket,
   },
   {
     title: 'common:local_api_server',

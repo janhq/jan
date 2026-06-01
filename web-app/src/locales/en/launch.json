@@ -1,0 +1,30 @@
+{
+  "title": "Launch",
+  "subtitle": "Install external coding agents and assistants, then point them at your local Atomic Chat models with one click.",
+  "codingAgents": "Coding Agents",
+  "codingAgentsDesc": "Coding assistants that can read, modify, and execute code in your projects.",
+  "assistants": "Assistants",
+  "assistantsDesc": "AI assistants that help with everyday tasks.",
+  "installed": "Installed",
+  "notInstalled": "Not installed",
+  "install": "Install",
+  "installing": "Installing...",
+  "enable": "Run",
+  "enabling": "Running...",
+  "docs": "Docs",
+  "usingRunningModel": "Using running model",
+  "noRunningModel": "No running model",
+  "installLog": "Install log",
+  "noRunningModelToast": "No model is running. Load a model in a chat first, then enable {{name}}.",
+  "experimental": "Experimental",
+  "toast": {
+    "serverStarting": "Starting local server...",
+    "serverStartingDesc": "Preparing the Atomic Chat server for {{name}}",
+    "installSuccess": "{{name}} installed",
+    "installSuccessDesc": "{{name}} was installed successfully.",
+    "installFailed": "Failed to install {{name}}",
+    "configured": "{{name}} configured",
+    "configuredDesc": "{{name}} now points at your local Atomic Chat server. Relaunch it in a new terminal window.",
+    "configureFailed": "Failed to configure {{name}}"
+  }
+}

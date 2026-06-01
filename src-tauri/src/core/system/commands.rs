@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
@@ -1208,4 +1208,389 @@ fn remove_atomic_provider(content: &str) -> String {
     let (before, mut entries, after) = split_custom_providers(content);
     entries.retain(|e| !entry_is_ours(e));
     rebuild_custom_providers(&before, &entries, &after)
+}
+
+// ---------------------------------------------------------------------------
+// External coding-agent / assistant integrations (Launch page)
+// ---------------------------------------------------------------------------
+
+const ATOMIC_MANAGED_BEGIN: &str = "# >>> Atomic Chat (managed) >>>";
+const ATOMIC_MANAGED_END: &str = "# <<< Atomic Chat (managed) <<<";
+
+/// Resolve the user's home directory in a platform-aware way.
+fn agent_home_dir() -> Result<String, String> {
+    if cfg!(windows) {
+        std::env::var("USERPROFILE").map_err(|e| e.to_string())
+    } else {
+        std::env::var("HOME").map_err(|e| e.to_string())
+    }
+}
+
+/// Remove a previously written `# >>> Atomic Chat (managed) >>> ... <<<` block.
+fn strip_atomic_managed_block(content: &str) -> String {
+    if let (Some(start), Some(end)) = (
+        content.find(ATOMIC_MANAGED_BEGIN),
+        content.find(ATOMIC_MANAGED_END),
+    ) {
+        if end >= start {
+            let end_idx = end + ATOMIC_MANAGED_END.len();
+            let mut result = String::with_capacity(content.len());
+            result.push_str(&content[..start]);
+            result.push_str(&content[end_idx..]);
+            return result;
+        }
+    }
+    content.to_string()
+}
+
+/// Installer spec for an agent: (program, args, prerequisite_binary, docs_url).
+/// Verified against each vendor's official install path:
+///   - Claude Code / Codex / OpenCode / OpenClaw ship as global npm packages.
+///   - Hermes is a Python project installed via its official shell / PowerShell
+///     bootstrap script (NOT npm).
+fn agent_install_spec(
+    agent_id: &str,
+) -> Result<(String, Vec<String>, &'static str, &'static str), String> {
+    let npm = |pkg: &str| {
+        (
+            "npm".to_string(),
+            vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
+        )
+    };
+
+    match agent_id {
+        "claude-code" => {
+            let (p, a) = npm("@anthropic-ai/claude-code");
+            Ok((p, a, "npm", "https://docs.anthropic.com/en/docs/claude-code"))
+        }
+        "codex" => {
+            let (p, a) = npm("@openai/codex");
+            Ok((p, a, "npm", "https://github.com/openai/codex"))
+        }
+        "opencode" => {
+            let (p, a) = npm("opencode-ai");
+            Ok((p, a, "npm", "https://opencode.ai"))
+        }
+        "openclaw" => {
+            let (p, a) = npm("openclaw");
+            Ok((p, a, "npm", "https://docs.openclaw.ai"))
+        }
+        "hermes" => {
+            let (program, args): (String, Vec<String>) = if cfg!(windows) {
+                (
+                    "powershell".to_string(),
+                    vec![
+                        "-NoProfile".to_string(),
+                        "-Command".to_string(),
+                        "iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)".to_string(),
+                    ],
+                )
+            } else {
+                (
+                    "sh".to_string(),
+                    vec![
+                        "-c".to_string(),
+                        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash".to_string(),
+                    ],
+                )
+            };
+            let prereq = if cfg!(windows) { "powershell" } else { "curl" };
+            Ok((program, args, prereq, "https://github.com/NousResearch/hermes-agent"))
+        }
+        other => Err(format!("Unknown or non-installable agent id: {}", other)),
+    }
+}
+
+/// Probe whether a CLI binary is reachable on PATH (`which` / `where`).
+#[tauri::command]
+pub async fn detect_agent_installed(bin: String) -> bool {
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    let mut cmd = std::process::Command::new(which_cmd);
+    cmd.arg(&bin);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    matches!(
+        tokio::task::spawn_blocking(move || cmd.output()).await,
+        Ok(Ok(out))
+            if out.status.success()
+                && !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    )
+}
+
+/// Install an external agent by spawning its official installer, streaming
+/// stdout/stderr to the UI via the `agent_install_log:<agent_id>` event.
+#[tauri::command]
+pub async fn install_agent<R: Runtime>(
+    app_handle: AppHandle<R>,
+    agent_id: String,
+) -> Result<(), String> {
+    let (program, args, prereq, docs) = agent_install_spec(&agent_id)?;
+
+    if !detect_agent_installed(prereq.to_string()).await {
+        return Err(format!(
+            "'{}' is required to install this agent but was not found on PATH. \
+             Install it first, then try again: {}",
+            prereq, docs
+        ));
+    }
+
+    let event = format!("agent_install_log:{}", agent_id);
+    let agent_id_log = agent_id.clone();
+
+    let success = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn '{}': {}", program, e))?;
+
+        if let Some(stdout) = child.stdout.take() {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = app_handle.emit(&event, line);
+            }
+        }
+        if let Some(stderr) = child.stderr.take() {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = app_handle.emit(&event, line);
+            }
+        }
+
+        let status = child.wait().map_err(|e| e.to_string())?;
+        Ok(status.success())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    if success {
+        log::info!("Agent '{}' installed successfully", agent_id_log);
+        Ok(())
+    } else {
+        Err(format!(
+            "The installer for '{}' exited with a non-zero status. See the install log for details.",
+            agent_id_log
+        ))
+    }
+}
+
+/// Configure Codex CLI by upserting a managed block in `~/.codex/config.toml`.
+#[tauri::command]
+pub fn configure_codex(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".codex");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.codex: {}", e))?;
+    let path = dir.join("config.toml");
+
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let cleaned = strip_atomic_managed_block(&existing);
+
+    let mut block = String::new();
+    block.push_str(ATOMIC_MANAGED_BEGIN);
+    block.push('\n');
+    block.push_str("[model_providers.atomic]\n");
+    block.push_str("name = \"Atomic Chat\"\n");
+    block.push_str(&format!("base_url = \"{}\"\n", api_url));
+    if api_key.as_deref().filter(|k| !k.is_empty()).is_some() {
+        // Codex reads the secret from the env var named here, not inline.
+        block.push_str("env_key = \"ATOMIC_CHAT_API_KEY\"\n");
+    }
+    block.push('\n');
+    block.push_str("[profiles.atomic]\n");
+    block.push_str(&format!("model = \"{}\"\n", model));
+    block.push_str("model_provider = \"atomic\"\n");
+    block.push_str(ATOMIC_MANAGED_END);
+    block.push('\n');
+
+    let final_content = if cleaned.trim().is_empty() {
+        block
+    } else {
+        format!("{}\n{}", cleaned.trim_end(), block)
+    };
+
+    std::fs::write(&path, final_content)
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("Codex configured: base_url={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure OpenCode by upserting `provider.atomic` in
+/// `~/.config/opencode/opencode.json` (strict JSON, other providers preserved).
+#[tauri::command]
+pub fn configure_opencode(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".config").join("opencode");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.config/opencode: {}", e))?;
+    let path = dir.join("opencode.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "opencode.json is not a JSON object".to_string())?;
+    obj.entry("$schema")
+        .or_insert_with(|| serde_json::json!("https://opencode.ai/config.json"));
+
+    let provider = obj
+        .entry("provider")
+        .or_insert_with(|| serde_json::json!({}));
+    if !provider.is_object() {
+        *provider = serde_json::json!({});
+    }
+
+    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let mut models = serde_json::Map::new();
+    models.insert(model.clone(), serde_json::json!({ "name": model }));
+
+    provider.as_object_mut().unwrap().insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Atomic Chat",
+            "options": { "baseURL": api_url, "apiKey": key_val },
+            "models": serde_json::Value::Object(models),
+        }),
+    );
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("OpenCode configured: baseURL={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure OpenClaw by upserting `models.providers.atomic` plus the
+/// `agents.defaults.models` allowlist entry in `~/.openclaw/openclaw.json`.
+#[tauri::command]
+pub fn configure_openclaw(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let config_path = std::env::var("OPENCLAW_CONFIG_PATH")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(&home).join(".openclaw").join("openclaw.json")
+        });
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+    }
+
+    let mut root: serde_json::Value = if config_path.exists() {
+        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|_| {
+                format!(
+                    "Could not parse {} as JSON (it may contain JSON5 comments). \
+                     Please add the Atomic provider manually under models.providers.",
+                    config_path.display()
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "openclaw.json is not a JSON object".to_string())?;
+
+    let model_ref = format!("atomic/{}", model);
+    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+
+    let models = obj.entry("models").or_insert_with(|| serde_json::json!({}));
+    let models_obj = models
+        .as_object_mut()
+        .ok_or_else(|| "models is not a JSON object".to_string())?;
+    models_obj
+        .entry("mode")
+        .or_insert_with(|| serde_json::json!("merge"));
+    let providers = models_obj
+        .entry("providers")
+        .or_insert_with(|| serde_json::json!({}));
+    let providers_obj = providers
+        .as_object_mut()
+        .ok_or_else(|| "models.providers is not a JSON object".to_string())?;
+    providers_obj.insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "baseUrl": api_url,
+            "apiKey": key_val,
+            "api": "openai-completions",
+            "models": [ { "id": model_ref, "name": model } ],
+        }),
+    );
+
+    let agents = obj.entry("agents").or_insert_with(|| serde_json::json!({}));
+    let agents_obj = agents
+        .as_object_mut()
+        .ok_or_else(|| "agents is not a JSON object".to_string())?;
+    let defaults = agents_obj
+        .entry("defaults")
+        .or_insert_with(|| serde_json::json!({}));
+    let defaults_obj = defaults
+        .as_object_mut()
+        .ok_or_else(|| "agents.defaults is not a JSON object".to_string())?;
+    let allow = defaults_obj
+        .entry("models")
+        .or_insert_with(|| serde_json::json!({}));
+    let allow_obj = allow
+        .as_object_mut()
+        .ok_or_else(|| "agents.defaults.models is not a JSON object".to_string())?;
+    allow_obj
+        .entry(model_ref)
+        .or_insert_with(|| serde_json::json!({}));
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&config_path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
+    log::info!("OpenClaw configured: baseUrl={}, model={}", api_url, model);
+    Ok(())
 }

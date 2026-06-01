@@ -113,6 +113,11 @@ pub fn run() {
         core::system::commands::clear_claude_code_env,
         core::system::commands::configure_hermes_agent,
         core::system::commands::clear_hermes_agent_config,
+        core::system::commands::detect_agent_installed,
+        core::system::commands::install_agent,
+        core::system::commands::configure_codex,
+        core::system::commands::configure_opencode,
+        core::system::commands::configure_openclaw,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -203,6 +208,11 @@ pub fn run() {
         core::system::commands::clear_claude_code_env,
         core::system::commands::configure_hermes_agent,
         core::system::commands::clear_hermes_agent_config,
+        core::system::commands::detect_agent_installed,
+        core::system::commands::install_agent,
+        core::system::commands::configure_codex,
+        core::system::commands::configure_opencode,
+        core::system::commands::configure_openclaw,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,

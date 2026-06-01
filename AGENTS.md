@@ -45,6 +45,7 @@ Top-level layout (only the directories agents touch regularly):
 | Path                         | What lives there                                                                                                       |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `web-app/`                   | Frontend (React + Vite + TanStack Router, Tailwind, shadcn). Workspace `@janhq/web-app`.                               |
+| `web-app/src/routes/launch/` | Top-level "Launch" page: install + configure external coding agents / assistants (Claude Code, Codex CLI, OpenCode, Hermes, OpenClaw) against the local API. Catalog in `web-app/src/constants/integrations.ts`; install/configure commands in `src-tauri/src/core/system/commands.rs`. |
 | `core/`                      | Shared TS core: types, browser-side runtime, extension contracts. Built and `yarn pack`'d, consumed by extensions.     |
 | `extensions/`                | Pluggable backend extensions (TS, rolldown-bundled). Each has its own `src/`, `package.json`, `settings.json`.         |
 | `extensions/llamacpp-extension/` | Driver for the `atomic-llama-cpp-turboquant` backend.                                                              |
@@ -298,6 +299,67 @@ Append-only. Newest at top. Each entry follows this shape:
 > a one-line index here.
 
 ---
+
+### 2026-06-01 — Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API
+- **Context:** To use Atomic Chat's local models from external agents
+ (Claude Code, Codex CLI, OpenCode, Hermes, OpenClaw) users had to
+ hand-edit each agent's config to point at `http://localhost:1337/v1`.
+ Ollama solves the same problem with `ollama launch <agent>`
+ (docs.ollama.com/integrations). We wanted the same one-click ergonomics
+ without inventing a new CLI surface. The repo already had the building
+ blocks: a Settings → Integrations section, the Rust writers
+ `launch_claude_code_with_config` / `configure_hermes_agent`, and the
+ `start_server` / `get_server_status` commands.
+- **Decision:** Ship a **buttons-only, top-level "Launch" page** (no new
+ CLI binary — "Variant A"). Each agent card has two actions:
+ **Install** (`install_agent` spawns the agent's official installer via
+ `std::process::Command`, streaming stdout/stderr to the UI through the
+ `agent_install_log:<id>` Tauri event; a missing prerequisite such as
+ `npm` returns a clear error with the agent's docs URL — no browser
+ auto-open) and **Enable** (ensures the local server is running, then
+ writes the agent's config pointing at
+ `http://${serverHost}:${serverPort}${apiPrefix}`). New Rust commands in
+ `src-tauri/src/core/system/commands.rs`: `detect_agent_installed`,
+ `install_agent`, `configure_codex` (`~/.codex/config.toml`, managed
+ block), `configure_opencode` (`~/.config/opencode/opencode.json`, strict
+ JSON merge, always sets `provider.atomic.name` so options forward),
+ `configure_openclaw` (`~/.openclaw/openclaw.json` + the
+ `agents.defaults.models` allowlist; honours `OPENCLAW_CONFIG_PATH`).
+ Claude Code and Hermes reuse the existing writers. First iteration =
+ Claude Code, Codex CLI, OpenCode (coding) + Hermes, OpenClaw
+ (assistants). New frontend: route `web-app/src/routes/launch/index.tsx`,
+ sidebar item in `NavMain.tsx`, catalog `web-app/src/constants/integrations.ts`,
+ locale namespace `web-app/src/locales/en/launch.json`.
+- **Consequences:**
+ - Reuses the established Rust home-dir config-writer pattern; no new
+ top-level folders or dependencies. The whole surface is gated behind a
+ single new top-level page marked "Experimental".
+ - **No CLI surface.** A future CLI epic (`atomic-chat-cli launch <agent>`)
+ can reuse the same Rust config-writers; the logic deliberately lives in
+ `core/system/commands.rs` rather than a UI-only path.
+ - **Install depends on host tooling.** Install paths verified against each
+ vendor (2026-06-01): Claude Code (`npm i -g @anthropic-ai/claude-code`),
+ Codex (`npm i -g @openai/codex`), OpenCode (`npm i -g opencode-ai`) and
+ OpenClaw (`npm i -g openclaw`, needs Node 22+) ship as global npm
+ packages. **Hermes is a Python project**, installed via its official
+ bootstrap script (`curl -fsSL .../scripts/install.sh | bash` on Unix,
+ `iex (irm .../scripts/install.ps1)` on Windows) — so `install_agent`
+ spawns that script for Hermes instead of npm; its prerequisite is
+ `curl` (Unix) / `powershell` (Windows).
+ - **OpenClaw config is JSON5** but we parse/merge with `serde_json`; if a
+ user's file contains comments/trailing commas the parse fails and we
+ return an actionable error instead of clobbering it (no `json5` dep
+ added).
+ - **API key** from `useLocalApiServer` is passed automatically when set;
+ it is usually empty, so Codex omits auth and OpenCode/OpenClaw fall back
+ to a placeholder key.
+- **Owner:** team.
+- **Links:** docs.ollama.com/integrations,
+ [`web-app/src/routes/launch/index.tsx`](web-app/src/routes/launch/index.tsx),
+ [`web-app/src/constants/integrations.ts`](web-app/src/constants/integrations.ts),
+ [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs),
+ [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs),
+ [`web-app/src/components/left-sidebar/NavMain.tsx`](web-app/src/components/left-sidebar/NavMain.tsx).
 
 ### 2026-05-28 — Linux ships only `llamacpp-upstream` (AppImage, upstream `ggml-org/llama.cpp`); Vulkan is the sole GPU path
 - **Context:** Atomic Chat had no Linux release channel at all — the only
