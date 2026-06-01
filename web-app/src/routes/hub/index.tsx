@@ -8,38 +8,19 @@ import {
   useState,
   useMemo,
   useEffect,
+  useLayoutEffect,
   ChangeEvent,
   useCallback,
   useRef,
   useTransition,
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { Card, CardItem } from '@/containers/Card'
-import {
-  extractModelName,
-  extractDescription,
-  getTotalDownloadFileSize,
-  getMlxTotalFileSize,
-} from '@/lib/models'
+import { extractModelName } from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
-import {
-  IconChevronDown,
-  IconChevronUp,
-  IconDownload,
-  IconFileCode,
-  IconEye,
-  IconSearch,
-  IconTool,
-} from '@tabler/icons-react'
+import { IconSearch } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import { RecommendedModelChip } from '@/components/RecommendedModelChip'
 import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommendedModelChip'
-import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,15 +35,11 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelCatalogStore } from '@/stores/model-catalog-store'
 import { getModelSearchService } from '@/services/model-search'
-import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
-import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
-import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { switchToModel } from '@/utils/switchModel'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
-import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
+import { HubModelCard } from '@/containers/HubModelCard'
 
 type SearchParams = {
   repo: string
@@ -161,9 +138,6 @@ function HubContent() {
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
     null
   )
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
-  >({})
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -523,35 +497,68 @@ function HubContent() {
     return tail.length > 0 ? [...filteredModels, ...tail] : filteredModels
   }, [filteredModels, hfCandidates])
 
-  // Dynamic estimate size based on model state
-  const estimateSize = useCallback(
-    (index: number) => {
-      const model = virtualListModels[index]
-      if (!model) return 100
-      // Base height + variants height if expanded
-      const baseHeight = 95
-      const variantHeight = 36
-      const expanded = expandedModels[model.model_name]
-      return expanded && (model.quants?.length ?? 0) > 1
-        ? baseHeight + (model.quants?.length ?? 0) * variantHeight
-        : baseHeight
-    },
-    [expandedModels, virtualListModels]
-  )
+  //* Стабильная и РЕАЛИСТИЧНАЯ оценка высоты строки. Реальная высота карточки
+  //* ~141–175px (замерено), поэтому старые 95px давали огромную ошибку: при
+  //* скролле каждая измеренная карточка резко «дорастала», getTotalSize скакал,
+  //* а скролл-anchoring браузера дрался с виртуализатором — отсюда пустоты
+  //* сверху и «пропадающие» карточки. Держим оценку близкой к факту и НЕ
+  //* зависящей от раскрытия (раскрытие меряется measureElement по факту), чтобы
+  //* не пересоздавать опции виртуализатора на каждый тоггл.
+  const estimateSize = useCallback(() => 152, [])
 
-  // The virtualizer - only enable when we have models
-  const rowVirtualizer = useVirtualizer(
-    virtualListModels.length > 0
-      ? {
-          count: virtualListModels.length,
-          getScrollElement: () => parentRef.current,
-          estimateSize,
-          overscan: 8,
-          measureElement: (el: HTMLElement) =>
-            el.getBoundingClientRect().height,
-        }
-      : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
-  )
+  //* Виртуальный список лежит НЕ в начале скролл-контейнера: над ним блок
+  //* Recommended + заголовок «All Models». Без scrollMargin виртуализатор
+  //* считает координаты от верха контейнера, поэтому верхние карточки
+  //* «исчезают» слишком рано и сверху появляется пустота. Меряем смещение
+  //* контейнера списка и отдаём его как scrollMargin.
+  const listRef = useRef<HTMLDivElement>(null)
+  const [listScrollMargin, setListScrollMargin] = useState(0)
+
+  //* Оставляем дефолтную компенсацию скролла react-virtual: она двигает скролл
+  //* только когда РАЗМЕР МЕНЯЕТСЯ У СТРОКИ ВЫШЕ текущего оффсета (чтобы вьюпорт
+  //* не «съезжал» при доизмерении карточек на скролле). Раскрытие вариантов у
+  //* видимой карточки её не триггерит (start >= scrollOffset), поэтому скачка
+  //* при тоггле нет — при условии точной estimateSize (см. выше).
+  // The virtualizer - count is 0 (renders nothing) when there are no models
+  const rowVirtualizer = useVirtualizer({
+    count: virtualListModels.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize,
+    overscan: 8,
+    scrollMargin: listScrollMargin,
+    measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
+  })
+
+  //* Меряем, насколько контейнер списка смещён от верха скролл-контейнера
+  //* (высота блока Recommended + заголовка). rAF-троттлинг + порог >1px, чтобы
+  //* не дёргать стейт; ResizeObserver на контенте над списком ловит изменения
+  //* его высоты (подгрузка рекомендаций, аватарок, ресайз окна).
+  useLayoutEffect(() => {
+    const el = listRef.current
+    const parent = parentRef.current as HTMLElement | null
+    if (!el || !parent) return
+    let raf = 0
+    const measure = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const top =
+          el.getBoundingClientRect().top -
+          parent.getBoundingClientRect().top +
+          parent.scrollTop
+        setListScrollMargin((prev) => (Math.abs(prev - top) > 1 ? top : prev))
+      })
+    }
+    measure()
+    const above = parent.firstElementChild
+    const ro = new ResizeObserver(measure)
+    if (above) ro.observe(above)
+    window.addEventListener('resize', measure)
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [showRecommendedBlock, recommendedItems.length, isInitialLoad, loading])
 
   useEffect(() => {
     // Use startTransition to keep UI responsive during data fetch
@@ -733,43 +740,6 @@ function HubContent() {
     [providers]
   )
 
-  const checkModelSupport = useCallback(
-    async (variant: any) => {
-      const modelKey = variant.model_id
-
-      // Don't check again if already checking or checked
-      if (modelSupportStatus[modelKey]) {
-        return
-      }
-
-      // Set loading state
-      setModelSupportStatus((prev) => ({
-        ...prev,
-        [modelKey]: 'LOADING',
-      }))
-
-      try {
-        // Use the HuggingFace path for the model
-        const modelPath = variant.path
-        const supportStatus = await serviceHub
-          .models()
-          .isModelSupported(modelPath, 8192)
-
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: supportStatus,
-        }))
-      } catch (error) {
-        console.error('Error checking model support:', error)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: 'RED',
-        }))
-      }
-    },
-    [modelSupportStatus, serviceHub]
-  )
-
   // Check if we're on the last step
   const renderFilter = () => {
     return (
@@ -870,14 +840,7 @@ function HubContent() {
                 </h2>
                 <div className="flex flex-col gap-1">
                   {recommendedItems.map(({ rec, model }) => {
-                    const goToModel = () => {
-                      navigate({
-                        to: route.hub.model,
-                        params: {
-                          modelId: model ? model.model_name : rec.modelName,
-                        },
-                      })
-                    }
+                    const key = `${rec.modelName}-${rec.descriptionKey}`
                     const recChip = (
                       <RecommendedModelChip
                         variant={chipVariantForRecommendedDescriptionKey(
@@ -888,348 +851,56 @@ function HubContent() {
                         {t(rec.descriptionKey)}
                       </RecommendedModelChip>
                     )
-                    const defaultVariant = model
-                      ? pickDefaultQuant(model)
-                      : undefined
-                    const downloadSize = model
-                      ? model.is_mlx
-                        ? getMlxTotalFileSize(model)
-                        : getTotalDownloadFileSize(model, defaultVariant)
-                      : undefined
-                    const downloadedModel = model
-                      ? getDownloadedModel(model, defaultVariant)
-                      : undefined
-                    return model ? (
-                      <div key={`${rec.modelName}-${rec.descriptionKey}`}>
-                        <Card
-                          header={
-                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                              <div
-                                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
-                                onClick={goToModel}
-                              >
-                                <h1
-                                  className={cn(
-                                    'min-w-0 shrink truncate text-foreground font-medium text-base capitalize',
-                                    isRecommendedModel(model.model_name)
-                                      ? 'hub-model-card-step'
-                                      : ''
-                                  )}
-                                  title={
-                                    extractModelName(model.model_name) || ''
-                                  }
-                                >
-                                  {extractModelName(model.model_name) || ''}
-                                </h1>
-                                {recChip}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 justify-end shrink-0">
-                                <span className="text-muted-foreground font-medium text-xs whitespace-nowrap">
-                                  {downloadSize}
-                                </span>
-                                {downloadedModel && (
-                                  <DialogDeleteModel
-                                    provider={downloadedModel.provider}
-                                    modelId={downloadedModel.modelId}
-                                  />
-                                )}
-                                <ModelInfoHoverCard
-                                  model={model}
-                                  defaultModelQuantizations={
-                                    DEFAULT_MODEL_QUANTIZATIONS
-                                  }
-                                  variant={defaultVariant}
-                                  isDefaultVariant={true}
-                                  modelSupportStatus={modelSupportStatus}
-                                  onCheckModelSupport={checkModelSupport}
-                                />
-                                {model.is_mlx ? (
-                                  <MlxModelDownloadAction model={model} />
-                                ) : (
-                                  <DownloadButtonPlaceholder
-                                    model={model}
-                                    handleUseModel={handleUseModel}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          }
+                    //* Модель ещё не разрешилась из catalog/HF — лёгкая
+                    //* заглушка в стиле новой карточки, пока подтянутся данные.
+                    if (!model) {
+                      return (
+                        <div
+                          key={key}
+                          className="bg-card rounded-2xl border border-border px-[18px] py-4 shadow-sm"
                         >
-                          <div
-                            className="line-clamp-2 mt-3 text-muted-foreground leading-normal cursor-pointer"
-                            onClick={(e) => {
-                              if (!(e.target as HTMLElement).closest('a')) {
-                                goToModel()
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h1
+                              className="min-w-0 truncate text-foreground font-semibold text-base capitalize cursor-pointer"
+                              title={
+                                extractModelName(rec.modelName) || rec.modelName
                               }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                goToModel()
+                              onClick={() =>
+                                navigate({
+                                  to: route.hub.model,
+                                  params: { modelId: rec.modelName },
+                                })
                               }
-                            }}
-                            role="button"
-                            tabIndex={0}
-                          >
-                            <RenderMarkdown
-                              className="select-none reset-heading"
-                              components={{
-                                a: ({ ...props }) => (
-                                  <a
-                                    {...props}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                ),
-                              }}
-                              content={
-                                extractDescription(model?.description) || ''
-                              }
-                            />
+                            >
+                              {extractModelName(rec.modelName) || rec.modelName}
+                            </h1>
+                            {recChip}
                           </div>
-                          <div
-                            className="flex items-center gap-2 mt-2 cursor-pointer"
-                            onClick={goToModel}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                goToModel()
-                              }
-                            }}
-                            role="button"
-                            tabIndex={0}
-                          >
-                            <span className="capitalize text-foreground">
-                              {t('hub:by')} {model?.developer}
-                            </span>
-                            <div className="flex items-center gap-4 ml-2">
-                              <div className="flex items-center gap-1">
-                                <IconDownload
-                                  size={18}
-                                  className="text-muted-foreground"
-                                  title={t('hub:downloads')}
-                                />
-                                <span className="text-foreground">
-                                  {model.downloads || 0}
-                                </span>
-                              </div>
-                              {!model.is_mlx && (
-                                <div className="flex items-center gap-1">
-                                  <IconFileCode
-                                    size={20}
-                                    className="text-muted-foreground"
-                                    title={t('hub:variants')}
-                                  />
-                                  <span className="text-foreground">
-                                    {model.quants?.length || 0}
-                                  </span>
-                                </div>
-                              )}
-                              {model.is_mlx && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
-                                      MLX
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>
-                                      Requires MLX engine (Apple Silicon only)
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                              <div className="flex gap-1.5 items-center">
-                                {(model.num_mmproj ?? 0) > 0 && (
-                                  <div className="flex items-center gap-1">
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div>
-                                          <IconEye
-                                            size={17}
-                                            className="text-muted-foreground"
-                                          />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{t('vision')}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-                                )}
-                                {model.tools && (
-                                  <div className="flex items-center gap-1">
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div>
-                                          <IconTool
-                                            size={17}
-                                            className="text-muted-foreground"
-                                          />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{t('tools')}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            {(model.quants?.length ?? 0) > 1 && (
-                              <button
-                                className="flex items-center gap-1 hub-show-variants-step ml-auto"
-                                onClick={() =>
-                                  toggleModelExpansion(model.model_name)
-                                }
-                              >
-                                <span className="text-foreground">
-                                  {t('hub:showVariants')}
-                                </span>
-                                {expandedModels[model.model_name] ? (
-                                  <IconChevronUp
-                                    size={18}
-                                    className="text-muted-foreground"
-                                  />
-                                ) : (
-                                  <IconChevronDown
-                                    size={18}
-                                    className="text-muted-foreground"
-                                  />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                          {expandedModels[model.model_name] &&
-                            (model.quants?.length ?? 0) > 0 && (
-                              <div className="mt-5">
-                                {model.quants?.map((variant) => (
-                                  <CardItem
-                                    key={variant.model_id}
-                                    title={
-                                      <>
-                                        <div className="flex items-center gap-1">
-                                          <span className="mr-2">
-                                            {variant.model_id}
-                                          </span>
-                                          {(model.num_mmproj ?? 0) > 0 && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconEye
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('vision')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                          {model.tools && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconTool
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('tools')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </>
-                                    }
-                                    actions={
-                                      <div className="flex items-center gap-2">
-                                        <p className="text-muted-foreground font-medium text-xs">
-                                          {getTotalDownloadFileSize(
-                                            model,
-                                            variant
-                                          )}
-                                        </p>
-                                        {(() => {
-                                          const downloadedModel =
-                                            getDownloadedModel(model, variant)
-
-                                          return downloadedModel ? (
-                                            <DialogDeleteModel
-                                              provider={
-                                                downloadedModel.provider
-                                              }
-                                              modelId={downloadedModel.modelId}
-                                            />
-                                          ) : null
-                                        })()}
-                                        <ModelInfoHoverCard
-                                          model={model}
-                                          variant={variant}
-                                          defaultModelQuantizations={
-                                            DEFAULT_MODEL_QUANTIZATIONS
-                                          }
-                                          modelSupportStatus={
-                                            modelSupportStatus
-                                          }
-                                          onCheckModelSupport={
-                                            checkModelSupport
-                                          }
-                                        />
-                                        {model.is_mlx ? (
-                                          <MlxModelDownloadAction
-                                            model={model}
-                                          />
-                                        ) : (
-                                          <ModelDownloadAction
-                                            variant={variant}
-                                            model={model}
-                                          />
-                                        )}
-                                      </div>
-                                    }
-                                  />
-                                ))}
-                              </div>
-                            )}
-                        </Card>
-                      </div>
-                    ) : (
-                      <div key={`${rec.modelName}-${rec.descriptionKey}`}>
-                        <Card
-                          header={
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                              <div
-                                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5"
-                                onClick={goToModel}
-                              >
-                                <h1 className="min-w-0 shrink truncate text-foreground font-medium text-base capitalize">
-                                  {extractModelName(rec.modelName) ||
-                                    rec.modelName}
-                                </h1>
-                                {recChip}
-                              </div>
-                            </div>
-                          }
-                        >
-                          {/* fallback-карточка появляется, пока модель не разрешилась
-                              из catalog/HF; описание из README ещё недоступно — не
-                              дублируем сюда t(rec.descriptionKey), он уже в чипе. */}
-                          <p
-                            className="mt-3 text-xs text-muted-foreground cursor-pointer"
-                            onClick={goToModel}
-                          >
+                          <p className="text-[13px] text-muted-foreground mt-1">
                             {t('hub:by')} {rec.modelName.split('/')[0]}
                           </p>
-                        </Card>
-                      </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <HubModelCard
+                        key={key}
+                        model={model}
+                        expanded={!!expandedModels[model.model_name]}
+                        isRecommended={isRecommendedModel(model.model_name)}
+                        chip={recChip}
+                        onToggleVariants={() =>
+                          toggleModelExpansion(model.model_name)
+                        }
+                        onOpenModel={() =>
+                          navigate({
+                            to: route.hub.model,
+                            params: { modelId: model.model_name },
+                          })
+                        }
+                        handleUseModel={handleUseModel}
+                        getDownloadedModel={getDownloadedModel}
+                      />
                     )
                   })}
                 </div>
@@ -1283,6 +954,7 @@ function HubContent() {
                   {renderFilter()}
                 </div>
                 <div
+                  ref={listRef}
                   style={{
                     height: `${rowVirtualizer.getTotalSize()}px`,
                     width: '100%',
@@ -1299,370 +971,41 @@ function HubContent() {
                         top: 0,
                         left: 0,
                         width: '100%',
-                        transform: `translateY(${virtualItem.start}px)`,
+                        //* start включает scrollMargin — вычитаем его, т.к.
+                        //* контейнер списка уже начинается со смещения.
+                        transform: `translateY(${virtualItem.start - listScrollMargin}px)`,
                         //* Симметрия вокруг разделителя: раньше был только paddingBottom — зазор визуально смещался вниз
                         paddingTop: 4,
                         paddingBottom: 0,
                       }}
                     >
-                      <Card
-                        header={
-                          <div className="flex items-center justify-between gap-x-2">
-                            <div
-                              className="cursor-pointer"
-                              onClick={() => {
-                                navigate({
-                                  to: route.hub.model,
-                                  params: {
-                                    modelId:
-                                      virtualListModels[virtualItem.index]
-                                        .model_name,
-                                  },
-                                })
-                              }}
-                            >
-                              <h1
-                                className={cn(
-                                  'text-foreground font-medium text-base capitalize sm:max-w-none',
-                                  isRecommendedModel(
-                                    virtualListModels[virtualItem.index]
-                                      .model_name
-                                  )
-                                    ? 'hub-model-card-step'
-                                    : ''
-                                )}
-                                title={
-                                  extractModelName(
-                                    virtualListModels[virtualItem.index]
-                                      .model_name
-                                  ) || ''
-                                }
-                              >
-                                {extractModelName(
-                                  virtualListModels[virtualItem.index]
-                                    .model_name
-                                ) || ''}
-                              </h1>
-                            </div>
-                            <div className="shrink-0 space-x-3 flex items-center">
-                              <span className="text-muted-foreground font-medium text-xs">
-                                {virtualListModels[virtualItem.index].is_mlx
-                                  ? getMlxTotalFileSize(
-                                      virtualListModels[virtualItem.index]
-                                    )
-                                  : getTotalDownloadFileSize(
-                                      virtualListModels[virtualItem.index],
-                                      pickDefaultQuant(
-                                        virtualListModels[virtualItem.index]
-                                      )
-                                    )}
-                              </span>
-                              {(() => {
-                                const defaultVariant = pickDefaultQuant(
-                                  virtualListModels[virtualItem.index]
-                                )
-                                const downloadedModel = getDownloadedModel(
-                                  virtualListModels[virtualItem.index],
-                                  defaultVariant
-                                )
-
-                                return downloadedModel ? (
-                                  <DialogDeleteModel
-                                    provider={downloadedModel.provider}
-                                    modelId={downloadedModel.modelId}
-                                  />
-                                ) : null
-                              })()}
-                              <ModelInfoHoverCard
-                                model={virtualListModels[virtualItem.index]}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
-                                }
-                                variant={pickDefaultQuant(
-                                  virtualListModels[virtualItem.index]
-                                )}
-                                isDefaultVariant={true}
-                                modelSupportStatus={modelSupportStatus}
-                                onCheckModelSupport={checkModelSupport}
-                              />
-                              {virtualListModels[virtualItem.index].is_mlx ? (
-                                <MlxModelDownloadAction
-                                  model={virtualListModels[virtualItem.index]}
-                                />
-                              ) : (
-                                <DownloadButtonPlaceholder
-                                  model={virtualListModels[virtualItem.index]}
-                                  handleUseModel={handleUseModel}
-                                />
-                              )}
-                            </div>
-                          </div>
+                      <HubModelCard
+                        model={virtualListModels[virtualItem.index]}
+                        expanded={
+                          !!expandedModels[
+                            virtualListModels[virtualItem.index].model_name
+                          ]
                         }
-                      >
-                        <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
-                          <RenderMarkdown
-                            className="select-none reset-heading"
-                            components={{
-                              a: ({ ...props }) => (
-                                <a
-                                  {...props}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                />
-                              ),
-                            }}
-                            content={
-                              extractDescription(
-                                virtualListModels[virtualItem.index]
-                                  ?.description
-                              ) || ''
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          {virtualListModels[virtualItem.index]?.developer && (
-                            <span className="capitalize text-foreground">
-                              {t('hub:by')}{' '}
-                              {virtualListModels[virtualItem.index].developer}
-                            </span>
-                          )}
-                          <div className="flex items-center gap-4 ml-2">
-                            {(virtualListModels[virtualItem.index].downloads ??
-                              0) > 0 && (
-                              <div className="flex items-center gap-1">
-                                <IconDownload
-                                  size={18}
-                                  className="text-muted-foreground"
-                                  title={t('hub:downloads')}
-                                />
-                                <span className="text-foreground">
-                                  {
-                                    virtualListModels[virtualItem.index]
-                                      .downloads
-                                  }
-                                </span>
-                              </div>
-                            )}
-                            {!virtualListModels[virtualItem.index].is_mlx && (
-                              <div className="flex items-center gap-1">
-                                <IconFileCode
-                                  size={20}
-                                  className="text-muted-foreground"
-                                  title={t('hub:variants')}
-                                />
-                                <span className="text-foreground">
-                                  {virtualListModels[virtualItem.index].quants
-                                    ?.length || 0}
-                                </span>
-                              </div>
-                            )}
-                            {virtualListModels[virtualItem.index].is_mlx && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
-                                    MLX
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>
-                                    Requires MLX engine (Apple Silicon only)
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                            <div className="flex gap-1.5 items-center">
-                              {(virtualListModels[virtualItem.index]
-                                .num_mmproj ?? 0) > 0 && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconEye
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('vision')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              )}
-                              {virtualListModels[virtualItem.index].tools && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconTool
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('tools')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          {(virtualListModels[virtualItem.index].quants
-                            ?.length ?? 0) > 1 && (
-                            <button
-                              className="flex items-center gap-1 hub-show-variants-step ml-auto"
-                              onClick={() =>
-                                toggleModelExpansion(
-                                  virtualListModels[virtualItem.index]
-                                    .model_name
-                                )
-                              }
-                            >
-                              <span className="text-foreground">
-                                {t('hub:showVariants')}
-                              </span>
-                              {expandedModels[
-                                virtualListModels[virtualItem.index].model_name
-                              ] ? (
-                                <IconChevronUp
-                                  size={18}
-                                  className="text-muted-foreground"
-                                />
-                              ) : (
-                                <IconChevronDown
-                                  size={18}
-                                  className="text-muted-foreground"
-                                />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                        {expandedModels[
+                        isRecommended={isRecommendedModel(
                           virtualListModels[virtualItem.index].model_name
-                        ] &&
-                          (virtualListModels[virtualItem.index].quants
-                            ?.length ?? 0) > 0 && (
-                            <div className="mt-5">
-                              {virtualListModels[virtualItem.index].quants?.map(
-                                (variant) => (
-                                  <CardItem
-                                    key={variant.model_id}
-                                    title={
-                                      <>
-                                        <div className="flex items-center gap-1">
-                                          <span className="mr-2">
-                                            {variant.model_id}
-                                          </span>
-                                          {(virtualListModels[virtualItem.index]
-                                            .num_mmproj ?? 0) > 0 && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconEye
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('vision')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                          {virtualListModels[virtualItem.index]
-                                            .tools && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconTool
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('tools')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </>
-                                    }
-                                    actions={
-                                      <div className="flex items-center gap-2">
-                                        <p className="text-muted-foreground font-medium text-xs">
-                                          {getTotalDownloadFileSize(
-                                            virtualListModels[
-                                              virtualItem.index
-                                            ],
-                                            variant
-                                          )}
-                                        </p>
-                                        {(() => {
-                                          const downloadedModel =
-                                            getDownloadedModel(
-                                              virtualListModels[
-                                                virtualItem.index
-                                              ],
-                                              variant
-                                            )
-
-                                          return downloadedModel ? (
-                                            <DialogDeleteModel
-                                              provider={
-                                                downloadedModel.provider
-                                              }
-                                              modelId={downloadedModel.modelId}
-                                            />
-                                          ) : null
-                                        })()}
-                                        <ModelInfoHoverCard
-                                          model={
-                                            virtualListModels[virtualItem.index]
-                                          }
-                                          variant={variant}
-                                          defaultModelQuantizations={
-                                            DEFAULT_MODEL_QUANTIZATIONS
-                                          }
-                                          modelSupportStatus={
-                                            modelSupportStatus
-                                          }
-                                          onCheckModelSupport={
-                                            checkModelSupport
-                                          }
-                                        />
-                                        {virtualListModels[virtualItem.index]
-                                          .is_mlx ? (
-                                          <MlxModelDownloadAction
-                                            model={
-                                              virtualListModels[
-                                                virtualItem.index
-                                              ]
-                                            }
-                                          />
-                                        ) : (
-                                          <ModelDownloadAction
-                                            variant={variant}
-                                            model={
-                                              virtualListModels[
-                                                virtualItem.index
-                                              ]
-                                            }
-                                          />
-                                        )}
-                                      </div>
-                                    }
-                                  />
-                                )
-                              )}
-                            </div>
-                          )}
-                      </Card>
+                        )}
+                        onToggleVariants={() =>
+                          toggleModelExpansion(
+                            virtualListModels[virtualItem.index].model_name
+                          )
+                        }
+                        onOpenModel={() =>
+                          navigate({
+                            to: route.hub.model,
+                            params: {
+                              modelId:
+                                virtualListModels[virtualItem.index].model_name,
+                            },
+                          })
+                        }
+                        handleUseModel={handleUseModel}
+                        getDownloadedModel={getDownloadedModel}
+                      />
                     </div>
                   ))}
                 </div>
