@@ -17,9 +17,13 @@ import { toast } from 'sonner'
 export const ModelDownloadAction = ({
   variant,
   model,
+  asButton = false,
 }: {
   variant: { model_id: string; path: string }
   model: CatalogModel
+  // Render the idle state as a labelled outline "Download" button (Hub v12
+  // variant rows) instead of the compact icon used elsewhere (SetupScreen).
+  asButton?: boolean
 }) => {
   const serviceHub = useServiceHub()
 
@@ -217,6 +221,21 @@ export const ModelDownloadAction = ({
         title={t('hub:useModel')}
       >
         {t('hub:newChat')}
+      </Button>
+    )
+  }
+
+  if (asButton) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleDownloadModel}
+        title={t('hub:downloadModel')}
+        className="font-semibold"
+      >
+        {t('hub:download')}
       </Button>
     )
   }
