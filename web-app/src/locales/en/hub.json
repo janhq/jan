@@ -10,6 +10,8 @@
   "downloads": "Downloads",
   "variants": "Variants",
   "showVariants": "Show variants",
+  "hideVariants": "Hide variants",
+  "viewOnHuggingFace": "View on Hugging Face",
   "useModel": "Use this model",
   "downloadModel": "Download model",
   "modelInfo": "Model information",

@@ -245,3 +245,38 @@
     padding: 6px 16px !important;
   }
 }
+
+/*
+ * HTML artifact "Print / Save as PDF". When the user prints an artifact, the
+ * app adds `.artifact-printing` to <body> and `.artifact-print-region` to the
+ * preview wrapper. We hide all app chrome and blow the preview iframe up to a
+ * full page so only the rendered artifact is captured.
+ */
+@media print {
+  body.artifact-printing * {
+    visibility: hidden !important;
+  }
+
+  body.artifact-printing .artifact-print-region,
+  body.artifact-printing .artifact-print-region * {
+    visibility: visible !important;
+  }
+
+  body.artifact-printing .artifact-print-region {
+    display: block !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    z-index: 2147483647 !important;
+    background: #fff !important;
+  }
+
+  body.artifact-printing .artifact-print-region iframe {
+    width: 100% !important;
+    height: 100% !important;
+    border: 0 !important;
+  }
+}

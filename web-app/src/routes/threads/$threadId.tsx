@@ -66,6 +66,8 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { ArtifactPanel } from '@/containers/ArtifactPanel'
+import { useArtifactStore } from '@/stores/artifact-store'
 import posthog from 'posthog-js'
 
 const CHAT_STATUS = {
@@ -514,6 +516,14 @@ function ThreadDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Close the artifact side panel when switching threads or leaving the page
+  // so a preview from one conversation never lingers in another.
+  useEffect(() => {
+    const close = useArtifactStore.getState().close
+    close()
+    return () => close()
+  }, [threadId])
 
   // Consolidated function to process and send a message
   const processAndSendMessage = useCallback(
@@ -996,7 +1006,8 @@ function ThreadDetail() {
           <DropdownModelProvider />
         </div>
       </HeaderPage>
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
         {/* Messages Area */}
         <div className="flex-1 relative">
           <Conversation className="absolute inset-0 text-start">
@@ -1142,6 +1153,8 @@ function ThreadDetail() {
             chatStatus={status}
           />
         </div>
+        </div>
+        <ArtifactPanel />
       </div>
     </div>
   )

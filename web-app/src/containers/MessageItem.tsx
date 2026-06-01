@@ -207,6 +207,7 @@ export const MessageItem = memo(
               isStreaming={isStreaming && isLastBlock}
               messageId={message.id}
               isAnimating={isAnimating}
+              enableHtmlPreview
             />
           )}
         </div>
