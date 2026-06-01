@@ -48,7 +48,7 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import { OUT_OF_CONTEXT_SIZE, isContextOverflowMessage } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -1240,6 +1240,14 @@ function ThreadDetail() {
     if (!targetId) return
     const errMessage =
       error instanceof Error ? error.message : String(error || 'Error')
+    // Context overflow is owned by the global "Increase Context Size" banner;
+    // a per-message Regenerate would just re-overflow the same prompt.
+    if (isContextOverflowMessage(errMessage)) {
+      stampContextErrorOnThread(threadId)
+      setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+      useMessageErrors.getState().clearError(targetId)
+      return
+    }
     useMessageErrors.getState().setError(targetId, errMessage)
     const tm = useMessages.getState().getMessages(threadId).find(
       (m) => m.id === targetId

@@ -42,6 +42,8 @@ function General() {
   const {
     spellCheckChatInput,
     setSpellCheckChatInput,
+    autoUpdateCheck,
+    setAutoUpdateCheck,
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
@@ -229,23 +231,36 @@ function General() {
                 }
               />
               {!AUTO_UPDATER_DISABLED && (
-                <CardItem
-                  title={t('settings:general.checkForUpdates')}
-                  description={t('settings:general.checkForUpdatesDesc')}
-                  className="items-center flex-row gap-y-2"
-                  actions={
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleCheckForUpdate}
-                      disabled={isCheckingUpdate}
-                    >
-                      {isCheckingUpdate
-                        ? t('settings:general.checkingForUpdates')
-                        : t('settings:general.checkForUpdates')}
-                    </Button>
-                  }
-                />
+                <>
+                  <CardItem
+                    title={t('settings:general.autoUpdateCheck')}
+                    description={t('settings:general.autoUpdateCheckDesc')}
+                    className="items-center flex-row gap-y-2"
+                    actions={
+                      <Switch
+                        checked={autoUpdateCheck}
+                        onCheckedChange={(e) => setAutoUpdateCheck(e)}
+                      />
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:general.checkForUpdates')}
+                    description={t('settings:general.checkForUpdatesDesc')}
+                    className="items-center flex-row gap-y-2"
+                    actions={
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleCheckForUpdate}
+                        disabled={isCheckingUpdate}
+                      >
+                        {isCheckingUpdate
+                          ? t('settings:general.checkingForUpdates')
+                          : t('settings:general.checkForUpdates')}
+                      </Button>
+                    }
+                  />
+                </>
               )}
               <CardItem
                 title={t('common:language')}

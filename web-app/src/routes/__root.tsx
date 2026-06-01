@@ -21,7 +21,6 @@ import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
-import { useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
@@ -110,29 +109,6 @@ function RootLayout() {
       pathname === route.appLogs
     )
   }
-
-  useEffect(() => {
-    // Wait for the UI to be fully rendered before hiding the loader
-    const hideLoader = () => {
-      requestAnimationFrame(() => {
-        // Hide the HTML loader
-        document.body.classList.add('loaded')
-
-        // Remove the HTML loader element after transition
-        const loader = document.getElementById('initial-loader')
-        if (loader) {
-          setTimeout(() => {
-            loader.remove()
-          }, 300)
-        }
-      })
-    }
-
-    // Give providers time to initialize and paint
-    const timer = setTimeout(hideLoader, 200)
-
-    return () => clearTimeout(timer)
-  }, [])
 
   const IS_LOGS_ROUTE = getInitialLayoutType()
 

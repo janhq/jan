@@ -9,8 +9,11 @@ const hoisted = vi.hoisted(() => ({
     downloads: {} as Record<string, any>,
     updateProgress: vi.fn(),
     localDownloadingModels: new Set<string>(),
+    resumeParams: {} as Record<string, any>,
     removeDownload: vi.fn(),
     removeLocalDownloadingModel: vi.fn(),
+    setPaused: vi.fn(),
+    addLocalDownloadingModel: vi.fn(),
   },
   updateState: {
     isDownloading: false,
@@ -27,15 +30,19 @@ const hoisted = vi.hoisted(() => ({
     dismiss: vi.fn(),
   },
   abortDownloadMock: vi.fn().mockResolvedValue(undefined),
+  pauseDownloadMock: vi.fn().mockResolvedValue(undefined),
+  pullModelMock: vi.fn().mockResolvedValue(undefined),
   cancelDownloadMock: vi.fn(),
   eventHandlers: {} as Record<string, any>,
 }))
 
 vi.mock('sonner', () => ({ toast: hoisted.toastMock }))
 
-vi.mock('@/hooks/useDownloadStore', () => ({
-  useDownloadStore: () => hoisted.downloadStore,
-}))
+vi.mock('@/hooks/useDownloadStore', () => {
+  const useDownloadStore: any = () => hoisted.downloadStore
+  useDownloadStore.getState = () => hoisted.downloadStore
+  return { useDownloadStore }
+})
 
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({ updateState: hoisted.updateState }),
@@ -43,7 +50,11 @@ vi.mock('@/hooks/useAppUpdater', () => ({
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
-    models: () => ({ abortDownload: hoisted.abortDownloadMock }),
+    models: () => ({
+      abortDownload: hoisted.abortDownloadMock,
+      pauseDownload: hoisted.pauseDownloadMock,
+      pullModelWithMetadata: hoisted.pullModelMock,
+    }),
   }),
 }))
 
@@ -114,6 +125,7 @@ describe('DownloadManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     hoisted.downloadStore.downloads = {}
+    hoisted.downloadStore.resumeParams = {}
     hoisted.downloadStore.localDownloadingModels = new Set()
     hoisted.updateState = {
       isDownloading: false,
@@ -270,5 +282,106 @@ describe('DownloadManagement', () => {
     render(<DownloadManagement />)
     hoisted.eventHandlers['aude']()
     expect(hoisted.toastMock.error).toHaveBeenCalled()
+  })
+
+  it('pauses a model download and marks it paused', async () => {
+    hoisted.downloadStore.downloads = {
+      'cloud-model': {
+        name: 'cloud-model',
+        progress: 0.3,
+        current: 3,
+        total: 10,
+      },
+    }
+    render(<DownloadManagement />)
+    fireEvent.click(screen.getByTitle('Pause download').closest('button')!)
+    expect(hoisted.downloadStore.setPaused).toHaveBeenCalledWith(
+      'cloud-model',
+      true
+    )
+    await waitFor(() =>
+      expect(hoisted.pauseDownloadMock).toHaveBeenCalledWith('cloud-model')
+    )
+  })
+
+  it('resumes a paused download via pullModelWithMetadata', async () => {
+    hoisted.downloadStore.downloads = {
+      'cloud-model': {
+        name: 'cloud-model',
+        progress: 0.3,
+        current: 3,
+        total: 10,
+        paused: true,
+      },
+    }
+    hoisted.downloadStore.resumeParams = {
+      'cloud-model': {
+        modelPath: 'https://hf/model.gguf',
+        mmprojPath: undefined,
+        hfToken: 'tok',
+      },
+    }
+    render(<DownloadManagement />)
+    fireEvent.click(screen.getByTitle('Resume download').closest('button')!)
+    expect(hoisted.downloadStore.setPaused).toHaveBeenCalledWith(
+      'cloud-model',
+      false
+    )
+    expect(hoisted.downloadStore.addLocalDownloadingModel).toHaveBeenCalledWith(
+      'cloud-model'
+    )
+    await waitFor(() =>
+      expect(hoisted.pullModelMock).toHaveBeenCalledWith(
+        'cloud-model',
+        'https://hf/model.gguf',
+        undefined,
+        'tok'
+      )
+    )
+  })
+
+  it('errors when resuming with no stored params', () => {
+    hoisted.downloadStore.downloads = {
+      'cloud-model': {
+        name: 'cloud-model',
+        progress: 0.3,
+        current: 3,
+        total: 10,
+        paused: true,
+      },
+    }
+    render(<DownloadManagement />)
+    fireEvent.click(screen.getByTitle('Resume download').closest('button')!)
+    expect(hoisted.pullModelMock).not.toHaveBeenCalled()
+    expect(hoisted.toastMock.error).toHaveBeenCalled()
+  })
+
+  it('keeps the entry on stopped event when paused', () => {
+    hoisted.downloadStore.downloads = {
+      'cloud-model': { name: 'cloud-model', progress: 0.3, paused: true },
+    }
+    render(<DownloadManagement />)
+    hoisted.eventHandlers['fdx']({ modelId: 'cloud-model' })
+    expect(hoisted.downloadStore.removeDownload).not.toHaveBeenCalled()
+  })
+
+  it('removes the entry on stopped event when not paused', () => {
+    hoisted.downloadStore.downloads = {
+      'cloud-model': { name: 'cloud-model', progress: 0.3 },
+    }
+    render(<DownloadManagement />)
+    hoisted.eventHandlers['fdx']({ modelId: 'cloud-model' })
+    expect(hoisted.downloadStore.removeDownload).toHaveBeenCalledWith(
+      'cloud-model'
+    )
+  })
+
+  it('does not show pause/resume for llamacpp direct downloads', () => {
+    hoisted.downloadStore.downloads = {
+      'llamacpp/foo': { name: 'llamacpp/foo', progress: 0.1, total: 10 },
+    }
+    render(<DownloadManagement />)
+    expect(screen.queryByTitle('Pause download')).not.toBeInTheDocument()
+    expect(screen.getByTitle('Cancel download')).toBeInTheDocument()
   })
 })

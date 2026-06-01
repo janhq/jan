@@ -290,6 +290,47 @@ export function cleanUpstreamErrorMessage(raw: string): string {
 }
 
 /**
+ * Map a transport-level fetch failure (no HTTP response — DNS, connect, TLS,
+ * timeout, dropped connection) to an actionable message. `@tauri-apps/plugin-http`
+ * rethrows reqwest's raw "error sending request for url …" string, which isn't
+ * useful to users. Returns null when `err` is not a recognised transport error.
+ */
+export function describeTransportError(err: unknown): string | null {
+  const raw = err instanceof Error ? err.message : String(err)
+  if (typeof raw !== 'string' || !raw) return null
+  const m = raw.toLowerCase()
+
+  const isTransport =
+    /error sending request/.test(m) ||
+    /error trying to connect/.test(m) ||
+    /failed to fetch|networkerror|load failed/.test(m) ||
+    /connection (refused|reset|closed|aborted)/.test(m) ||
+    /connection error|broken pipe/.test(m) ||
+    /dns error|failed to lookup|name resolution/.test(m) ||
+    /(operation|request|connection) timed out|timeout/.test(m) ||
+    /tls|certificate|ssl|handshake/.test(m) ||
+    /unreachable/.test(m)
+  if (!isTransport) return null
+
+  if (/dns error|failed to lookup|name resolution|unreachable/.test(m)) {
+    return "Couldn't reach the provider — the address could not be resolved. Check the provider's Base URL and your internet connection."
+  }
+  if (/timed out|timeout/.test(m)) {
+    return 'The provider took too long to respond and the request timed out. It may be overloaded or slow to start — try again.'
+  }
+  if (/tls|certificate|ssl|handshake/.test(m)) {
+    return "Couldn't establish a secure connection to the provider (TLS/certificate error). Verify the endpoint URL."
+  }
+  return "Couldn't reach the provider — the connection failed. Check the provider's Base URL and your internet connection, then try again."
+}
+
+function requestUrlOf(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.toString()
+  return (input as Request).url ?? ''
+}
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
@@ -348,13 +389,17 @@ export function createCustomFetch(
       init = { ...init, body: JSON.stringify(buildBody(rawBody!, true)) }
     }
 
-    const res = await baseFetch(input, init)
+    let res: Response
+    try {
+      res = await baseFetch(input, init)
+    } catch (err) {
+      const friendly = describeTransportError(err)
+      if (!friendly) throw err
+      throw new Error(`${friendly} (${requestUrlOf(input)})`)
+    }
     if (res.ok) return res
 
     const isLlamacpp500 = keepLlamacppOnly && res.status === 500
-    if (isLlamacpp500) {
-      onLlamacppServerError?.()
-    }
 
     let parsed: { error?: { message?: unknown; [k: string]: unknown } } | null =
       null
@@ -373,6 +418,8 @@ export function createCustomFetch(
         : null
 
     if (isLlamacpp500 && !innerMessage) {
+      // 500 with no JSON body = router couldn't reach the child (crash). Recover.
+      onLlamacppServerError?.()
       const synthMessage =
         'The model crashed and is being reloaded. Please retry.'
       const nextBody = JSON.stringify({
@@ -703,9 +750,9 @@ export class ModelFactory {
             try {
               const { useServiceStore } = await import('@/hooks/useServiceHub')
               const hub = useServiceStore.getState().serviceHub
-              await hub?.models().startModel(provider, modelId)
+              await hub?.models().reloadModel(provider, modelId)
             } catch (e) {
-              console.warn('[llamacpp] reload after 500 failed:', e)
+              console.warn('[llamacpp] reload after crash failed:', e)
             }
           })()
         }

@@ -32,12 +32,14 @@ export function DownloadButtonPlaceholder({
     localDownloadingModels,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
+    setResumeParams,
   } = useDownloadStore(
     useShallow((state) => ({
       downloads: state.downloads,
       localDownloadingModels: state.localDownloadingModels,
       addLocalDownloadingModel: state.addLocalDownloadingModel,
       removeLocalDownloadingModel: state.removeLocalDownloadingModel,
+      setResumeParams: state.setResumeParams,
     }))
   )
   const { t } = useTranslation()
@@ -129,6 +131,11 @@ export function DownloadButtonPlaceholder({
         (e) => e.model_id.toLowerCase() === 'mmproj-f16'
       ) || model.mmproj_models?.[0]
     )?.path
+    setResumeParams(modelId, {
+      modelPath: modelUrl,
+      mmprojPath,
+      hfToken: huggingfaceToken,
+    })
     try {
       await serviceHub
         .models()

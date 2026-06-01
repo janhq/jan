@@ -189,7 +189,8 @@ export async function downloadBackend(
     }
 
     for (const { save_path } of itemsWithProxy) {
-      if (save_path.endsWith('.tar.gz')) {
+      // Official Windows HIP assets ship as .zip; everything else is .tar.gz.
+      if (save_path.endsWith('.tar.gz') || save_path.endsWith('.zip')) {
         const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })
         await fs.rm(save_path)

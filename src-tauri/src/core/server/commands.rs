@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::state::LlamacppState;
-use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -39,8 +38,18 @@ pub async fn start_server<R: Runtime>(
     let llama_state: State<Arc<LlamacppState>> = app_handle.state();
     let llama_state_arc = llama_state.inner().clone();
 
-    let mlx_state: State<MlxState> = app_handle.state();
-    let mlx_sessions = mlx_state.mlx_server_process.clone();
+    // MLX is macOS-only; elsewhere the session map is permanently empty.
+    #[cfg(target_os = "macos")]
+    let mlx_sessions = {
+        let mlx_state: State<tauri_plugin_mlx::state::MlxState> = app_handle.state();
+        mlx_state.mlx_server_process.clone()
+    };
+    #[cfg(not(target_os = "macos"))]
+    let mlx_sessions: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<i32, crate::core::server::MlxBackendSession>,
+        >,
+    > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     let actual_port = proxy::start_server(
         server_handle,

@@ -1,6 +1,6 @@
 {
   "name": "@janhq/tauri-plugin-llamacpp-api",
-  "version": "0.6.6",
+  "version": "0.8.2",
   "private": true,
   "description": "",
   "type": "module",

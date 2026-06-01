@@ -42,6 +42,10 @@ export const MTP_MIN_BUILD = 9193
 
 const DEFAULT_EMBEDDING_UBATCH = 2048
 
+// Fallback context size when the user hasn't set one, to avoid loading a
+// model's full trained context (which can OOM on large-context models).
+const DEFAULT_CTX_SIZE = 8192
+
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
   // and strip stray newlines that would break parsing.
@@ -130,16 +134,17 @@ export async function generatePreset(
   if (Number.isFinite(fitCtxNum) && fitCtxNum > 0 && fitCtxNum !== 4096) {
     lines.push(`fit-ctx = ${fitCtxNum}`)
   }
-  // ctx-size default = 0 (loaded from model); any positive user value is intent.
-  // Skip when auto-fit is enabled — fit owns context sizing and an explicit
-  // ctx-size would override it.
+  // ctx-size: llama.cpp's own default loads the model's full trained context,
+  // which can OOM on large-context models. Default to 8192 when the user hasn't
+  // set a positive value. Skip entirely when auto-fit is enabled — fit owns
+  // context sizing and an explicit ctx-size would override it.
   const fitEnabled = config.fit !== false
-  if (
-    !fitEnabled &&
-    typeof config.ctx_size === 'number' &&
-    config.ctx_size > 0
-  ) {
-    lines.push(`ctx-size = ${config.ctx_size}`)
+  if (!fitEnabled) {
+    const ctxSize =
+      typeof config.ctx_size === 'number' && config.ctx_size > 0
+        ? config.ctx_size
+        : DEFAULT_CTX_SIZE
+    lines.push(`ctx-size = ${ctxSize}`)
   }
   // n-gpu-layers default = 0 / auto; emit any non-negative explicit value.
   if (typeof config.n_gpu_layers === 'number' && config.n_gpu_layers >= 0) {

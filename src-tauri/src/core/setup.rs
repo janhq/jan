@@ -4,9 +4,10 @@ use std::{
     io::Read,
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
+use tauri::{App, AppHandle, Emitter, Listener, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(feature = "desktop")]
 use tauri::{
@@ -317,12 +318,28 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
     });
 }
 
+/// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window
+/// that never signals still proceeds).
+async fn wait_for_app_ready<R: Runtime>(app: &AppHandle<R>, timeout: Duration) {
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let handler = app.once_any("app-ready", move |_| {
+        let _ = tx.send(());
+    });
+    if tokio::time::timeout(timeout, rx).await.is_err() {
+        log::info!("app-ready not received within {timeout:?}; starting MCP servers anyway");
+        app.unlisten(handler);
+    }
+}
+
 pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         use crate::core::mcp::lockfile::cleanup_all_stale_locks;
+
+        // Defer past first paint so npx/uvx spawns don't starve cold start.
+        wait_for_app_ready(&app_handle, Duration::from_secs(30)).await;
 
         // Create default mcp_config.json if it doesn't exist
         let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
@@ -390,51 +407,30 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         .build(app)
 }
 
-/// Install a real GTK `HeaderBar` on the main window so GNOME (and any other
-/// CSD-only compositor) gets native min/max/close buttons, drag, system menu,
-/// and proper shadows instead of wry's bare-bones default CSD. KDE/XFCE keep
-/// using SSD; this only takes effect when GTK falls back to CSD.
+/// Shrink tao's Wayland CSD titlebar (~46px → ~24px) and clear its hardcoded
+/// `decoration_layout` so buttons follow GNOME. Do NOT `set_titlebar` here —
+/// that replaces tao's drag-enabled HeaderBar and breaks drag/double-click.
 #[cfg(target_os = "linux")]
-pub fn install_gtk_headerbar<R: Runtime>(app: &App<R>) {
+pub fn shrink_gtk_headerbar<R: Runtime>(app: &App<R>) {
     use gtk::prelude::*;
 
-    // CSD-only DEs (GNOME, Pantheon) need a real HeaderBar; KDE/XFCE provide
-    // SSD via xdg-decoration and would render a double titlebar if we install
-    // one here. Match the desktop session to keep this opt-in.
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let is_csd_desktop = desktop
         .split(':')
         .any(|d| matches!(d, "GNOME" | "GNOME-Classic" | "Unity" | "Pantheon"));
     if !is_csd_desktop {
         log::info!(
-            "install_gtk_headerbar: skipping on XDG_CURRENT_DESKTOP={desktop:?} (not CSD-only)"
+            "shrink_gtk_headerbar: skipping on XDG_CURRENT_DESKTOP={desktop:?} (not CSD-only)"
         );
         return;
     }
 
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let gtk_window = match window.gtk_window() {
-        Ok(w) => w,
-        Err(e) => {
-            log::warn!("install_gtk_headerbar: gtk_window() failed: {e}");
-            return;
-        }
-    };
-
-    let header = gtk::HeaderBar::builder()
-        .show_close_button(true)
-        .title("Jan")
-        .build();
-
-    // Shrink the headerbar: default Adwaita is ~46px, this brings it to ~24px.
     let css = gtk::CssProvider::new();
     let style = b"headerbar { min-height: 24px; padding: 0 4px; } \
                   headerbar button { min-height: 20px; min-width: 20px; padding: 0 4px; } \
                   headerbar .title { font-size: 0.9em; }";
     if let Err(e) = css.load_from_data(style) {
-        log::warn!("install_gtk_headerbar: css load failed: {e}");
+        log::warn!("shrink_gtk_headerbar: css load failed: {e}");
     } else if let Some(screen) = gtk::gdk::Screen::default() {
         gtk::StyleContext::add_provider_for_screen(
             &screen,
@@ -443,8 +439,20 @@ pub fn install_gtk_headerbar<R: Runtime>(app: &App<R>) {
         );
     }
 
-    header.show_all();
-    gtk_window.set_titlebar(Some(&header));
+    // `None` layout falls back to gtk-decoration-layout, synced from GNOME.
+    let header = app
+        .get_webview_window("main")
+        .and_then(|w| w.gtk_window().ok())
+        .and_then(|gw| gw.titlebar())
+        .and_then(|tb| tb.downcast::<gtk::EventBox>().ok())
+        .and_then(|eb| eb.child())
+        .and_then(|c| c.downcast::<gtk::HeaderBar>().ok());
+    match header {
+        Some(h) => h.set_decoration_layout(None::<&str>),
+        None => {
+            log::warn!("shrink_gtk_headerbar: titlebar not the expected EventBox>HeaderBar shape")
+        }
+    }
 }
 
 pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
@@ -505,9 +513,9 @@ async fn read_xdg_portal_color_scheme() -> Result<Option<&'static str>, Box<dyn 
     })
 }
 
-/// Flip GTK's `gtk-application-prefer-dark-theme` so the native HeaderBar
-/// installed by `install_gtk_headerbar` follows the app's effective theme
-/// (user override or system). No-op on non-Linux.
+/// Flip GTK's `gtk-application-prefer-dark-theme` so the native Wayland
+/// HeaderBar follows the app's effective theme (user override or system).
+/// No-op on non-Linux.
 #[tauri::command]
 pub fn set_gtk_prefer_dark(dark: bool) {
     #[cfg(target_os = "linux")]

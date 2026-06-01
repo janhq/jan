@@ -63,6 +63,8 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
     setSpellCheckChatInput: vi.fn(),
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
+    autoUpdateCheck: true,
+    setAutoUpdateCheck: vi.fn(),
   }),
 }))
 

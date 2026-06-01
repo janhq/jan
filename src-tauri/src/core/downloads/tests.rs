@@ -363,6 +363,7 @@ fn test_convert_headers_invalid_header_value() {
 fn test_download_manager_state_default() {
     let state = DownloadManagerState::default();
     assert!(state.cancel_tokens.is_empty());
+    assert!(state.paused_tasks.is_empty());
 }
 
 #[test]
@@ -661,4 +662,5 @@ fn test_download_event_zero_values() {
 fn test_download_manager_state_default_is_empty() {
     let s = DownloadManagerState::default();
     assert_eq!(s.cancel_tokens.len(), 0);
+    assert_eq!(s.paused_tasks.len(), 0);
 }

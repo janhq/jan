@@ -302,6 +302,10 @@ export abstract class AIEngine extends BaseExtension {
    */
   abstract abortImport(modelId: string): Promise<void>
 
+  // Stops an import but keeps the partial download so it can be resumed.
+  // Default no-op for engines without resumable downloads.
+  async pauseImport(_modelId: string): Promise<void> {}
+
   /**
    * Get currently loaded models
    */

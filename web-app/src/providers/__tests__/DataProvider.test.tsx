@@ -350,10 +350,15 @@ describe('DataProvider', () => {
     expect(h.checkForUpdate).not.toHaveBeenCalled()
   })
 
-  it('runs initial update check and schedules periodic checks outside dev', async () => {
+  it('defers initial update check off mount and schedules periodic checks outside dev', async () => {
     vi.useFakeTimers()
     h.isDev.mockReturnValue(false)
     render(<DataProvider />)
+    // Initial check is deferred to idle (setTimeout fallback in jsdom), not on mount
+    expect(h.checkForUpdate).not.toHaveBeenCalled()
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
     expect(h.checkForUpdate).toHaveBeenCalledTimes(1)
     await act(async () => {
       vi.advanceTimersByTime(60_000)

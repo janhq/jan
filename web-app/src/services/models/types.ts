@@ -130,6 +130,7 @@ export interface ModelsService {
     skipVerification?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
+  pauseDownload(id: string): Promise<void>
   deleteModel(id: string, provider?: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
@@ -138,6 +139,10 @@ export interface ModelsService {
     provider: ProviderObject,
     model: string,
     bypassAutoUnload?: boolean
+  ): Promise<SessionInfo | undefined>
+  reloadModel(
+    provider: ProviderObject,
+    model: string
   ): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(

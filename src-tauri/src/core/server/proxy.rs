@@ -591,7 +591,7 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
-use tauri_plugin_mlx::state::MlxBackendSession;
+use crate::core::server::MlxBackendSession;
 
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 

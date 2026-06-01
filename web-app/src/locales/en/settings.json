@@ -241,6 +241,8 @@
     "checkForUpdates": "Check for Updates",
     "checkForUpdatesDesc": "Check if a newer version of Jan is available.",
     "checkingForUpdates": "Checking for updates...",
+    "autoUpdateCheck": "Automatic Update Check",
+    "autoUpdateCheckDesc": "Automatically check for updates on startup and periodically.",
     "copied": "Copied",
     "copyPath": "Copy Path",
     "changeLocation": "Change Location",

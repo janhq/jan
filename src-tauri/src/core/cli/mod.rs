@@ -14,9 +14,12 @@ use crate::core::threads::{
     utils::{ensure_data_dirs, get_data_dir, get_thread_dir, get_thread_metadata_path},
 };
 use tauri_plugin_llamacpp::state::LlamacppState;
+#[cfg(target_os = "macos")]
 use tauri_plugin_mlx::state::MlxState;
 
+#[cfg(target_os = "macos")]
 pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
+#[cfg(target_os = "macos")]
 pub use tauri_plugin_mlx::state::SessionInfo;
 
 // ── State constructors ─────────────────────────────────────────────────────
@@ -25,6 +28,7 @@ pub fn init_llamacpp_state() -> LlamacppState {
     LlamacppState::new()
 }
 
+#[cfg(target_os = "macos")]
 pub fn init_mlx_state() -> MlxState {
     MlxState::new()
 }
@@ -91,38 +95,6 @@ pub fn cli_get_thread(thread_id: &str) -> Result<serde_json::Value, String> {
 }
 
 // ── Server operations ──────────────────────────────────────────────────────
-
-/// Start the OpenAI-compatible proxy server. Returns the port it's listening on.
-#[allow(clippy::too_many_arguments)]
-pub async fn cli_start_server(
-    app_state: Arc<AppState>,
-    llama_state: Arc<LlamacppState>,
-    mlx_state: Arc<MlxState>,
-    host: String,
-    port: u16,
-    prefix: String,
-    api_key: String,
-    proxy_timeout: u64,
-) -> Result<u16, String> {
-    proxy::start_server(
-        app_state.server_handle.clone(),
-        llama_state.clone(),
-        mlx_state.mlx_server_process.clone(),
-        host,
-        port,
-        prefix,
-        api_key,
-        vec![vec![]],
-        proxy_timeout,
-        app_state.provider_configs.clone(),
-        app_state.mcp_servers.clone(),
-        app_state.mcp_settings.clone(),
-        resolve_jan_data_folder().to_string_lossy().into_owned(),
-        false,
-    )
-    .await
-    .map_err(|e| e.to_string())
-}
 
 /// Stop the running proxy server.
 pub async fn cli_stop_server(app_state: Arc<AppState>) -> Result<(), String> {
@@ -333,6 +305,7 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
 /// Checks standard locations in order:
 ///   1. `/Applications/Jan.app/Contents/Resources/bin/mlx-server` (installed app)
 ///   2. Next to the running binary (for dev/custom installs)
+#[cfg(target_os = "macos")]
 pub fn discover_mlx_binary() -> Option<PathBuf> {
     // 1. Standard macOS app bundle locations (try both path variants)
     for candidate in &[
@@ -673,6 +646,7 @@ mod tests {
     #[test]
     fn state_constructors_do_not_panic() {
         let _ = init_llamacpp_state();
+        #[cfg(target_os = "macos")]
         let _ = init_mlx_state();
     }
 

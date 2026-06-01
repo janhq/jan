@@ -16,12 +16,92 @@
       href="/images/jan-logo.png"
     />
     <link rel="apple-touch-icon" href="/images/jan-logo.png" />
+    <link
+      rel="preload"
+      as="image"
+      href="/images/jan-logo.png"
+      fetchpriority="high"
+    />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover"
     />
     <title>Jan</title>
-    <link rel="stylesheet" href="/src/loader.css" />
+    <style>
+      /* Inlined so it applies on first paint (external CSS is injected late). */
+      #initial-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        background: hsl(0, 0%, 100%);
+        z-index: 9999;
+        opacity: 1;
+        transition: opacity 0.3s ease-in-out;
+      }
+      .dark #initial-loader {
+        background: rgb(25, 25, 25);
+      }
+      #initial-loader img {
+        width: 5rem;
+        height: 5rem;
+        /* Static first; waves only if setup runs past the delay. */
+        animation: wave 2s ease-in-out 2.5s infinite;
+        transform-origin: 70% 70%;
+      }
+      @keyframes wave {
+        0%,
+        100% {
+          transform: rotate(0deg);
+        }
+        10%,
+        30% {
+          transform: rotate(14deg);
+        }
+        20% {
+          transform: rotate(-8deg);
+        }
+        40%,
+        60% {
+          transform: rotate(14deg);
+        }
+        50% {
+          transform: rotate(-8deg);
+        }
+        70% {
+          transform: rotate(0deg);
+        }
+      }
+      #initial-loader-caption {
+        margin: 0;
+        text-align: center;
+        line-height: 1;
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+          sans-serif;
+        font-size: 0.875rem;
+        font-weight: 400;
+        color: hsl(0, 0%, 45%);
+        opacity: 0;
+        /* Delayed so fast starts never flash the caption. */
+        animation: caption-fade-in 0.3s ease-in-out 1s forwards;
+      }
+      .dark #initial-loader-caption {
+        color: hsl(0, 0%, 65%);
+      }
+      @keyframes caption-fade-in {
+        to {
+          opacity: 1;
+        }
+      }
+      .loaded #initial-loader {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
     <script>
       // Apply dark class synchronously before first paint to avoid a
       // light-mode flash when the user's effective theme is dark. Truth is
@@ -49,6 +129,7 @@
   <body>
     <div id="initial-loader">
       <img src="/images/jan-logo.png" alt="Jan Logo" />
+      <p id="initial-loader-caption">Booting up Jan…</p>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

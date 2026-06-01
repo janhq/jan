@@ -344,6 +344,10 @@ export default class llamacpp_extension extends AIEngine {
   private userModelsMax: number = 1
   private loadedChatOrder: string[] = []
 
+  // Backend discovery + router spawn run off the onLoad critical path; awaited
+  // via ensureRouterReady() before any model load so inference never races it.
+  private backgroundInit?: Promise<void>
+
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
 
@@ -414,19 +418,67 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(DownloadEvent.onModelValidationStarted, event.payload)
     })
 
-    // configureBackends is async; await it so the router has a backend to
-    // launch. Failures here previously surfaced via unhandled rejection — the
-    // try/catch below preserves that fail-soft behavior for the router step.
-    try {
-      await this.configureBackends()
-    } catch (e) {
-      logger.error('configureBackends failed during onLoad:', e)
-    }
+    // Defer the slow, fail-soft startup (network + subprocess) off onLoad so
+    // the UI unblocks; performLoad awaits it via ensureRouterReady().
+    //
+    // When a usable backend is already installed, start the router first so
+    // inference is available without waiting on the network-bound update check,
+    // then run configureBackends and restart the router only if the update
+    // swapped the backend. On a fresh install (no backend yet) configureBackends
+    // must run first to download one before the router can start.
+    this.backgroundInit = (async () => {
+      if (await this.hasInstalledBackend()) {
+        const before = this.config?.version_backend
+        try {
+          await this.startRouter()
+        } catch (e) {
+          logger.error('Router failed to start during onLoad:', e)
+        }
+        try {
+          await this.configureBackends()
+        } catch (e) {
+          logger.error('configureBackends failed during onLoad:', e)
+        }
+        const after = this.config?.version_backend
+        if (
+          after &&
+          after !== 'none' &&
+          after.includes('/') &&
+          after !== before
+        ) {
+          try {
+            await this.startRouter()
+          } catch (e) {
+            logger.error('Router restart after backend update failed:', e)
+          }
+        }
+      } else {
+        try {
+          await this.configureBackends()
+        } catch (e) {
+          logger.error('configureBackends failed during onLoad:', e)
+        }
+        try {
+          await this.startRouter()
+        } catch (e) {
+          logger.error('Router failed to start during onLoad:', e)
+        }
+      }
+    })()
+  }
 
+  // True when config.version_backend names a backend that's already downloaded,
+  // so the router can spawn without waiting on configureBackends.
+  private async hasInstalledBackend(): Promise<boolean> {
+    const vb = this.config?.version_backend
+    if (!vb || vb === 'none' || !vb.includes('/')) return false
+    const [version, backend] = vb.split('/')
+    if (!version || !backend) return false
     try {
-      await this.startRouter()
+      return await isBackendInstalled(backend, version)
     } catch (e) {
-      logger.error('Router failed to start during onLoad:', e)
+      logger.warn('isBackendInstalled probe failed during onLoad:', e)
+      return false
     }
   }
 
@@ -1141,7 +1193,12 @@ export default class llamacpp_extension extends AIEngine {
         // "b4589/linux-cuda-12"). Any other shape silently skips verification.
         const [version, backend] = effectiveBackendString.split('/')
         if (version && backend) {
-          await this.verifyBackendDeps(backend, version)
+          // Advisory and fail-soft — defer to browser idle so it yields to the
+          // router (already up by now) and the UI instead of running inline.
+          const verify = () => void this.verifyBackendDeps(backend, version)
+          if (typeof window.requestIdleCallback === 'function')
+            window.requestIdleCallback(verify, { timeout: 3000 })
+          else setTimeout(verify, 0)
         }
       }
     } finally {
@@ -1532,6 +1589,12 @@ export default class llamacpp_extension extends AIEngine {
     // Clean up validation event listeners
     if (this.unlistenValidationStarted) {
       this.unlistenValidationStarted()
+    }
+
+    // Let any in-flight deferred startup finish so stop_router can't race a
+    // concurrent startRouter and leave an orphaned process.
+    if (this.backgroundInit) {
+      await this.backgroundInit.catch(() => undefined)
     }
 
     try {
@@ -2252,7 +2315,6 @@ export default class llamacpp_extension extends AIEngine {
           onProgress
         )
       } catch (error) {
-        logger.error('Error downloading model:', modelId, opts, error)
         const errorMessage =
           error instanceof Error ? error.message : String(error)
 
@@ -2270,21 +2332,19 @@ export default class llamacpp_extension extends AIEngine {
           errorMessage.includes('Size verification failed') ||
           errorMessage.includes('Failed to verify file')
 
+        // Pause and cancel both surface here as a cancellation; treat as a
+        // stop (emit stopped, return) so it never becomes an error toast.
         if (isCancellationError) {
-          logger.info('Download cancelled for model:', modelId)
-          // Emit download stopped event instead of error
+          logger.info('Download stopped for model:', modelId)
           events.emit(DownloadEvent.onFileDownloadStopped, {
             modelId,
             downloadType: 'Model',
           })
-        } else if (isValidationError) {
-          logger.error(
-            'Validation failed for model:',
-            modelId,
-            'Error:',
-            errorMessage
-          )
+          return
+        }
 
+        logger.error('Error downloading model:', modelId, opts, error)
+        if (isValidationError) {
           // Cancel any other download tasks for this model
           try {
             this.abortImport(modelId)
@@ -2454,6 +2514,15 @@ export default class llamacpp_extension extends AIEngine {
     await this.deleteModelFolder(modelId)
   }
 
+  override async pauseImport(modelId: string): Promise<void> {
+    const taskId = this.createDownloadTaskId(modelId)
+    const downloadManager = window.core.extensionManager.getByName(
+      '@janhq/download-extension'
+    )
+    // Pause keeps the partial .tmp for resume; the model folder is preserved.
+    await downloadManager.pauseDownload(taskId)
+  }
+
   private async getRandomPort(): Promise<number> {
     return 49152 + Math.floor(Math.random() * (65535 - 49152))
   }
@@ -2503,10 +2572,22 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  // Awaits the deferred startup, then makes one direct attempt if the router
+  // still isn't up. Idempotent: startRouter stops any existing router first.
+  private async ensureRouterReady(): Promise<void> {
+    if (this.backgroundInit) {
+      await this.backgroundInit.catch(() => undefined)
+    }
+    if (!(await this.getRouterInfo())) {
+      await this.startRouter()
+    }
+  }
+
   private async performLoad(
     modelId: string,
     isEmbedding: boolean = false
   ): Promise<SessionInfo> {
+    await this.ensureRouterReady()
     const router = await this.getRouterInfo()
     if (!router) {
       throw new Error(

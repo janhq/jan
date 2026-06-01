@@ -1,6 +1,6 @@
 [package]
 name = "Jan"
-version = "0.6.599"
+version = "0.8.2"
 description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
 authors = ["Jan <service@jan.ai>"]
 license = "MIT"
@@ -33,11 +33,11 @@ default = [
 ]
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
-mlx = ["dep:tauri-plugin-mlx"]
+# MLX (tauri-plugin-mlx) is Apple-Silicon-only; it's a macOS-target dependency
+# (see [target.'cfg(target_os = "macos")'.dependencies]) rather than a feature.
 desktop = [
     "deep-link",
     "hardware",
-    "mlx",
 ]
 mobile = [
     "tauri/protocol-asset",
@@ -54,7 +54,6 @@ test-tauri = [
     "tauri/test",
     "deep-link",
     "hardware",
-    "mlx",
 ]
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 
@@ -95,7 +94,6 @@ zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
-tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
 # `default-features = false` drops the plugin's default `rustls-tls` (bundled
@@ -158,6 +156,10 @@ gtk = "0.18"
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
 windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
+
+# MLX runs only on Apple Silicon, so the plugin is built solely for macOS.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls"] }

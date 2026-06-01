@@ -334,8 +334,6 @@ const ChatInput = memo(function ChatInput({
         return
       }
 
-      const assistant = currentThread?.assistants?.[0]
-      setCurrentAssistant(assistant)
       const imageFiles = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
         .map((att) => ({

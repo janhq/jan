@@ -41,6 +41,15 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     if line_lower.contains("ggml_metal") && line_lower.contains("error") {
         return true;
     }
+    // GPU device loss (vk::DeviceLostError / ErrorDeviceLost, CUDA device-lost)
+    // and any uncaught C++ exception abort the child mid-request — surface them
+    // so a crash during prompt processing still reaches the UI.
+    if line_lower.contains("devicelost") || line_lower.contains("device lost") {
+        return true;
+    }
+    if line_lower.contains("terminate called after throwing") {
+        return true;
+    }
     false
 }
 
@@ -625,5 +634,23 @@ mod tests {
         let args = router_args(&preset, 8080, "k", 0, &[]);
         let joined = args.join(" ");
         assert!(joined.contains("--models-max 0"));
+    }
+
+    #[test]
+    fn classifies_backend_crash_lines() {
+        // Inputs arrive already lowercased from the caller.
+        assert!(is_backend_error_line(
+            "what():  vk::device::waitforfences: errordevicelost"
+        ));
+        assert!(is_backend_error_line(
+            "terminate called after throwing an instance of 'vk::devicelosterror'"
+        ));
+        assert!(is_backend_error_line("cuda error: out of memory"));
+        assert!(is_backend_error_line("ggml_assert(cond) failed"));
+        assert!(!is_backend_error_line(
+            "srv log_server_r: request: post /v1/chat/completions"
+        ));
+        // OOM is classified on its own path.
+        assert!(is_oom_line("erroroutofdevicememory"));
     }
 }

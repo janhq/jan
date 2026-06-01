@@ -31,9 +31,18 @@ const BackendUpdater = () => {
   // Check when the shell mounts or when the llamacpp provider is toggled on/off.
   // Skipped when auto-update is disabled — users opt into checks via the manual
   // "Check for Updates" button in provider settings.
+  // Deferred to browser idle (after first paint) so the network round-trip
+  // doesn't compete with the initial render.
   useEffect(() => {
     if (!updateState.autoUpdateEnabled) return
-    checkForUpdate()
+    const hasRic = typeof window.requestIdleCallback === 'function'
+    const idleHandle = hasRic
+      ? window.requestIdleCallback(() => checkForUpdate(), { timeout: 3000 })
+      : window.setTimeout(() => checkForUpdate(), 0)
+    return () => {
+      if (hasRic) window.cancelIdleCallback(idleHandle as number)
+      else window.clearTimeout(idleHandle as number)
+    }
   }, [checkForUpdate, isLlamacppEnabled, updateState.autoUpdateEnabled])
 
   const [backendUpdateState, setBackendUpdateState] = useState({

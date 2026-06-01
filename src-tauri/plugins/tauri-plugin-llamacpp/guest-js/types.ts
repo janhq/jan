@@ -149,6 +149,7 @@ export type BackendFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  hip: boolean
 }
 
 export type SupportedFeatures = {
