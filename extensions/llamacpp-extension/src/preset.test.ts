@@ -106,3 +106,33 @@ describe('generatePreset MTP emission', () => {
     expect(ini).not.toContain('spec-draft-p-min')
   })
 })
+
+describe('generatePreset ctx-size default', () => {
+  it('emits ctx-size = 4096 in [*] when fit is off and no ctx_size is set', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: false } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('ctx-size = 4096')
+  })
+
+  it('uses the user ctx_size over the default', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: false, ctx_size: 8192 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('ctx-size = 8192')
+    expect(ini).not.toContain('ctx-size = 4096')
+  })
+
+  it('omits ctx-size when auto-fit is enabled', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: true } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('ctx-size = 4096')
+  })
+})
