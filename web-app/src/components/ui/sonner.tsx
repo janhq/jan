@@ -10,9 +10,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
       className="toaster group"
       style={
         {
-          '--normal-bg': 'var(--popover)',
+          // Neutral toasts pick up the accent tint (Appearance > Accent color,
+          // exposed as --primary). richColors typed toasts keep their semantics.
+          '--normal-bg':
+            'color-mix(in oklch, var(--popover) 92%, var(--primary))',
           '--normal-text': 'var(--popover-foreground)',
-          '--normal-border': 'var(--border)',
+          '--normal-border':
+            'color-mix(in oklch, var(--border) 55%, var(--primary))',
         } as React.CSSProperties
       }
       {...props}
