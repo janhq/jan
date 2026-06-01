@@ -47,8 +47,8 @@ function InterfaceSettings() {
                 actions={<FontSizeSwitcher />}
               />
               <CardItem
-                title="Accent color"
-                description="Customize the accent color of the application."
+                title={t('settings:interface.accentColor')}
+                description={t('settings:interface.accentColorDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<AccentColorPicker />}
               />

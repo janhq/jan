@@ -88,6 +88,8 @@
     "themeDesc": "Match the OS theme.",
     "fontSize": "Font Size",
     "fontSizeDesc": "Adjust the app's font size.",
+    "accentColor": "Accent color",
+    "accentColorDesc": "Customize the accent color of the application.",
     "notificationPosition": "Notification position",
     "notificationPositionDesc": "Where toast notifications appear. On Windows, the default is bottom-right so popups do not cover the window controls.",
     "notificationPositionTopRight": "Top right",
