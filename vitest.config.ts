@@ -8,6 +8,9 @@ export default defineConfig({
 
       // Web-app package - use its own vitest config
       './web-app',
+
+      // Extensions that ship their own tests
+      './extensions/llamacpp-extension',
     ],
     coverage: {
       provider: 'v8',
