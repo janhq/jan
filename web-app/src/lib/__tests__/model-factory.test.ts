@@ -3,6 +3,7 @@ import {
   ModelFactory,
   cleanUpstreamErrorMessage,
   createCustomFetch,
+  describeTransportError,
 } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
@@ -230,6 +231,54 @@ describe('cleanUpstreamErrorMessage', () => {
   it('returns non-string inputs as-is', () => {
     // @ts-expect-error intentional misuse
     expect(cleanUpstreamErrorMessage(null)).toBe(null)
+  })
+})
+
+describe('describeTransportError', () => {
+  it('maps reqwest "error sending request" to a connection message', () => {
+    const msg = describeTransportError(
+      new Error('error sending request for url (https://x/v1/chat/completions)')
+    )
+    expect(msg).toMatch(/connection failed|couldn't reach/i)
+  })
+
+  it('maps DNS failures to an address-resolution message', () => {
+    const msg = describeTransportError(new Error('dns error: failed to lookup address'))
+    expect(msg).toMatch(/could not be resolved/i)
+  })
+
+  it('maps timeouts to a timeout message', () => {
+    expect(describeTransportError(new Error('operation timed out'))).toMatch(/timed out/i)
+  })
+
+  it('maps TLS errors to a secure-connection message', () => {
+    expect(describeTransportError(new Error('invalid certificate'))).toMatch(/secure connection/i)
+  })
+
+  it('returns null for non-transport errors (HTTP/app errors)', () => {
+    expect(describeTransportError(new Error('400 Bad Request: invalid model'))).toBeNull()
+  })
+})
+
+describe('createCustomFetch — transport error wrapping', () => {
+  it('rethrows transport failures with a friendly message and the url', async () => {
+    const baseFetch: typeof globalThis.fetch = (async () => {
+      throw new Error('error sending request for url (https://up/v1/chat/completions)')
+    }) as typeof globalThis.fetch
+    const wrapped = createCustomFetch(baseFetch, {}, true)
+    await expect(
+      wrapped('https://up/v1/chat/completions', { method: 'POST', body: '{}' })
+    ).rejects.toThrow(/couldn't reach the provider.*https:\/\/up/i)
+  })
+
+  it('rethrows non-transport errors unchanged', async () => {
+    const baseFetch: typeof globalThis.fetch = (async () => {
+      throw new Error('boom unexpected')
+    }) as typeof globalThis.fetch
+    const wrapped = createCustomFetch(baseFetch, {}, true)
+    await expect(
+      wrapped('https://up/v1/chat/completions', { method: 'POST', body: '{}' })
+    ).rejects.toThrow('boom unexpected')
   })
 })
 
