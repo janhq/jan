@@ -1328,21 +1328,26 @@ fn agent_home_dir() -> Result<String, String> {
     }
 }
 
-/// Remove a previously written `# >>> Atomic Chat (managed) >>> ... <<<` block.
+/// Remove every previously written `# >>> Atomic Chat (managed) >>> ... <<<`
+/// block. Some agents (e.g. Codex) need two managed regions — a root-level
+/// activation key at the very top of the file and a tables block at the
+/// bottom — so this strips them all, not just the first.
 fn strip_atomic_managed_block(content: &str) -> String {
-    if let (Some(start), Some(end)) = (
-        content.find(ATOMIC_MANAGED_BEGIN),
-        content.find(ATOMIC_MANAGED_END),
+    let mut result = content.to_string();
+    while let (Some(start), Some(end)) = (
+        result.find(ATOMIC_MANAGED_BEGIN),
+        result.find(ATOMIC_MANAGED_END),
     ) {
-        if end >= start {
-            let end_idx = end + ATOMIC_MANAGED_END.len();
-            let mut result = String::with_capacity(content.len());
-            result.push_str(&content[..start]);
-            result.push_str(&content[end_idx..]);
-            return result;
+        if end < start {
+            break;
         }
+        let end_idx = end + ATOMIC_MANAGED_END.len();
+        let mut next = String::with_capacity(result.len());
+        next.push_str(&result[..start]);
+        next.push_str(&result[end_idx..]);
+        result = next;
     }
-    content.to_string()
+    result
 }
 
 /// Installer spec for an agent: (program, args, prerequisite_binary, docs_url).
@@ -1507,6 +1512,22 @@ pub fn configure_codex(
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     let cleaned = strip_atomic_managed_block(&existing);
 
+    // Codex 0.135+ removed the legacy root-level `profile` selector (named
+    // profiles now live in separate `~/.codex/<name>.config.toml` files chosen
+    // via `--profile`) and dropped `wire_api = "chat"` entirely. So we make
+    // Atomic the *default* provider via the root keys `model` / `model_provider`
+    // — bare TOML keys that must precede any `[table]`, hence a top region —
+    // plus the `[model_providers.atomic]` table below. `wire_api` is left at
+    // its default (`responses`), the only wire API Codex still supports.
+    // `strip_atomic_managed_block` removes both regions on rerun.
+    let mut head = String::new();
+    head.push_str(ATOMIC_MANAGED_BEGIN);
+    head.push('\n');
+    head.push_str(&format!("model = \"{}\"\n", model));
+    head.push_str("model_provider = \"atomic\"\n");
+    head.push_str(ATOMIC_MANAGED_END);
+    head.push('\n');
+
     let mut block = String::new();
     block.push_str(ATOMIC_MANAGED_BEGIN);
     block.push('\n');
@@ -1517,17 +1538,13 @@ pub fn configure_codex(
         // Codex reads the secret from the env var named here, not inline.
         block.push_str("env_key = \"ATOMIC_CHAT_API_KEY\"\n");
     }
-    block.push('\n');
-    block.push_str("[profiles.atomic]\n");
-    block.push_str(&format!("model = \"{}\"\n", model));
-    block.push_str("model_provider = \"atomic\"\n");
     block.push_str(ATOMIC_MANAGED_END);
     block.push('\n');
 
     let final_content = if cleaned.trim().is_empty() {
-        block
+        format!("{}\n{}", head, block)
     } else {
-        format!("{}\n{}", cleaned.trim_end(), block)
+        format!("{}\n{}\n{}", head, cleaned.trim_end(), block)
     };
 
     std::fs::write(&path, final_content)
