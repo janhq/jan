@@ -18,17 +18,22 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 </p>
 
 ---
-
 ### Download
 
-|                       |                                                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS (Universal)** | [Atomic.Chat_1.1.83_universal.dmg](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.83/Atomic.Chat_1.1.83_universal.dmg) |
-| **Windows (x64)**     | [Atomic.Chat_1.1.83_x64-setup.exe](https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.83/Atomic.Chat_1.1.83_x64-setup.exe) |
-| **Linux (x86_64)**    | `.AppImage` — published with the next tagged release; see [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases) and the *Running on Linux* section below |
-| **iOS**               | [App Store](https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226)                                           |
+<p align="left"><b>Desktop</b></p>
+<p align="left">
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.90/Atomic.Chat_1.1.90_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.90/Atomic.Chat_1.1.90_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.90/Atomic.Chat_1.1.90_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
+</p>
 
-Download from [atomic.chat](https://atomic.chat/) or [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases) — latest: [v1.1.83](https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.1.83).
+<p align="left"><b>Mobile</b></p>
+<p align="left">
+  <a href="https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226"><img src="https://img.shields.io/badge/iOS-App_Store-0D96F6?style=for-the-badge&logo=appstore&logoColor=white" height="46" alt="Download for iOS" /></a>&nbsp;
+  <a href="https://play.google.com/store/apps/details?id=chat.atomic.app"><img src="https://img.shields.io/badge/Android-Google_Play-414141?style=for-the-badge&logo=googleplay&logoColor=white" height="46" alt="Download for Android" /></a>
+</p>
+
+<sub>or grab any build from <a href="https://atomic.chat/">atomic.chat</a> · <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases">GitHub Releases</a> — latest: <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.1.90"><b>v1.1.90</b></a></sub>
 
 ---
 
