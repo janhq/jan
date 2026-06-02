@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
@@ -907,17 +907,17 @@ pub fn configure_hermes_agent(
         .lines()
         .map(|line| {
             let trimmed = line.trim();
-            if !did_default && trimmed.starts_with("default:") && trimmed.contains('"') {
+            if !did_default && trimmed.starts_with("default:") {
                 did_default = true;
-                return replace_yaml_quoted_value(line, &model);
+                return replace_yaml_scalar_value(line, &model);
             }
-            if !did_provider && trimmed.starts_with("provider:") && trimmed.contains('"') {
+            if !did_provider && trimmed.starts_with("provider:") {
                 did_provider = true;
-                return replace_yaml_quoted_value(line, "custom");
+                return replace_yaml_scalar_value(line, "custom");
             }
-            if !did_base_url && trimmed.starts_with("base_url:") && trimmed.contains('"') {
+            if !did_base_url && trimmed.starts_with("base_url:") {
                 did_base_url = true;
-                return replace_yaml_quoted_value(line, &api_url);
+                return replace_yaml_scalar_value(line, &api_url);
             }
             line.to_string()
         })
@@ -934,10 +934,20 @@ pub fn configure_hermes_agent(
         ctx,
     );
 
-    let final_content = if content.ends_with('\n') && !after_cp.ends_with('\n') {
-        format!("{}\n", after_cp)
+    // Seed a per-request timeout for the `custom` provider (the id our model
+    // section uses). Hermes reads `providers.<id>.request_timeout_seconds`
+    // (run_agent.py::get_provider_request_timeout); without it the legacy
+    // 1800s default applies. Any value the user already set is preserved.
+    let after_timeout = upsert_provider_request_timeout(
+        &after_cp,
+        "custom",
+        HERMES_REQUEST_TIMEOUT_SECONDS,
+    );
+
+    let final_content = if content.ends_with('\n') && !after_timeout.ends_with('\n') {
+        format!("{}\n", after_timeout)
     } else {
-        after_cp
+        after_timeout
     };
 
     std::fs::write(&config_path, &final_content)
@@ -998,17 +1008,17 @@ pub fn clear_hermes_agent_config() -> Result<(), String> {
         .lines()
         .map(|line| {
             let trimmed = line.trim();
-            if !did_default && trimmed.starts_with("default:") && trimmed.contains('"') {
+            if !did_default && trimmed.starts_with("default:") {
                 did_default = true;
-                return replace_yaml_quoted_value(line, "anthropic/claude-opus-4.6");
+                return replace_yaml_scalar_value(line, "anthropic/claude-opus-4.6");
             }
-            if !did_provider && trimmed.starts_with("provider:") && trimmed.contains('"') {
+            if !did_provider && trimmed.starts_with("provider:") {
                 did_provider = true;
-                return replace_yaml_quoted_value(line, "auto");
+                return replace_yaml_scalar_value(line, "auto");
             }
-            if !did_base_url && trimmed.starts_with("base_url:") && trimmed.contains('"') {
+            if !did_base_url && trimmed.starts_with("base_url:") {
                 did_base_url = true;
-                return replace_yaml_quoted_value(line, "https://openrouter.ai/api/v1");
+                return replace_yaml_scalar_value(line, "https://openrouter.ai/api/v1");
             }
             line.to_string()
         })
@@ -1054,24 +1064,24 @@ pub fn clear_hermes_agent_config() -> Result<(), String> {
     Ok(())
 }
 
-/// Replace the quoted value in a YAML line like `  key: "old"` -> `  key: "new"`,
-/// preserving leading whitespace and the key name.
-fn replace_yaml_quoted_value(line: &str, new_value: &str) -> String {
-    if let Some(first_quote) = line.find('"') {
-        if let Some(second_quote) = line[first_quote + 1..].find('"') {
-            let end = first_quote + 1 + second_quote;
-            return format!(
-                "{}\"{}\"{}",
-                &line[..first_quote],
-                new_value,
-                &line[end + 1..],
-            );
-        }
+/// Replace the scalar value of a `key: value` YAML line, preserving the leading
+/// indentation and the key. Handles both quoted (`key: "old"`) and bare
+/// (`key: old`) values; the new value is written unquoted to match Hermes'
+/// default config style (model ids, providers, and URLs are all valid plain
+/// scalars). Lines without a `:` separator are returned unchanged.
+fn replace_yaml_scalar_value(line: &str, new_value: &str) -> String {
+    match line.find(':') {
+        Some(colon) => format!("{} {}", &line[..=colon], new_value),
+        None => line.to_string(),
     }
-    line.to_string()
 }
 
 const ATOMIC_PROVIDER_NAME: &str = "atomic-chat";
+
+/// Default per-request timeout (seconds) seeded for Hermes' `custom` provider.
+/// Hermes otherwise defaults to 1800s (`HERMES_API_TIMEOUT`); a tighter cap
+/// lets a wedged local turn fail fast without waiting half an hour.
+const HERMES_REQUEST_TIMEOUT_SECONDS: u32 = 180;
 
 /// Split the config into (before, entries, after) around `custom_providers:`.
 /// `entries` is a Vec of Vec<String>, one per YAML list item.
@@ -1210,4 +1220,774 @@ fn remove_atomic_provider(content: &str) -> String {
     let (before, mut entries, after) = split_custom_providers(content);
     entries.retain(|e| !entry_is_ours(e));
     rebuild_custom_providers(&before, &entries, &after)
+}
+
+/// Return true for a YAML line that begins a top-level (column-0) mapping key,
+/// i.e. not indented, not a list item, not a comment, not blank.
+fn is_top_level_yaml_key(line: &str) -> bool {
+    match line.chars().next() {
+        Some(c) => c != ' ' && c != '\t' && c != '-' && c != '#',
+        None => false,
+    }
+}
+
+/// Ensure `providers.<provider_id>.request_timeout_seconds: <seconds>` exists in
+/// the Hermes config, creating the `providers:` map and the provider sub-block
+/// as needed. A value the user has already set under that provider is left
+/// untouched (we only fill the gap, never clobber).
+fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u32) -> String {
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+    let prov_key_line = format!("  {}:", provider_id);
+    let field_line = format!("    request_timeout_seconds: {}", seconds);
+
+    // Locate a top-level `providers:` mapping (also tolerate an empty `{}` form).
+    let providers_idx = lines.iter().position(|l| {
+        let t = l.trim_end();
+        is_top_level_yaml_key(l)
+            && (t == "providers:" || t == "providers: {}" || t == "providers:{}")
+    });
+
+    match providers_idx {
+        None => {
+            while lines.last().map_or(false, |l| l.trim().is_empty()) {
+                lines.pop();
+            }
+            lines.push("providers:".to_string());
+            lines.push(prov_key_line);
+            lines.push(field_line);
+        }
+        Some(pidx) => {
+            if lines[pidx].trim_end() != "providers:" {
+                lines[pidx] = "providers:".to_string();
+            }
+
+            // Extent of the providers block: until the next top-level key.
+            let mut block_end = lines.len();
+            for i in (pidx + 1)..lines.len() {
+                if is_top_level_yaml_key(&lines[i]) {
+                    block_end = i;
+                    break;
+                }
+            }
+
+            // Find the provider sub-key at 2-space indent.
+            let prov_idx =
+                (pidx + 1..block_end).find(|&i| lines[i].trim_end() == prov_key_line);
+
+            match prov_idx {
+                None => {
+                    lines.insert(pidx + 1, field_line);
+                    lines.insert(pidx + 1, prov_key_line);
+                }
+                Some(pk) => {
+                    // Extent of this provider's sub-block: until the next key at
+                    // indent <= 2 (a sibling provider) or the block end.
+                    let mut sub_end = block_end;
+                    for i in (pk + 1)..block_end {
+                        let l = &lines[i];
+                        if l.trim().is_empty() {
+                            continue;
+                        }
+                        let indent = l.len() - l.trim_start().len();
+                        if indent <= 2 {
+                            sub_end = i;
+                            break;
+                        }
+                    }
+                    let has_field = (pk + 1..sub_end).any(|i| {
+                        lines[i].trim_start().starts_with("request_timeout_seconds:")
+                    });
+                    if !has_field {
+                        lines.insert(pk + 1, field_line);
+                    }
+                }
+            }
+        }
+    }
+
+    let out = lines.join("\n");
+    if out.ends_with('\n') {
+        out
+    } else {
+        format!("{}\n", out)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// External coding-agent / assistant integrations (Launch page)
+// ---------------------------------------------------------------------------
+
+const ATOMIC_MANAGED_BEGIN: &str = "# >>> Atomic Chat (managed) >>>";
+const ATOMIC_MANAGED_END: &str = "# <<< Atomic Chat (managed) <<<";
+
+/// Resolve the user's home directory in a platform-aware way.
+fn agent_home_dir() -> Result<String, String> {
+    if cfg!(windows) {
+        std::env::var("USERPROFILE").map_err(|e| e.to_string())
+    } else {
+        std::env::var("HOME").map_err(|e| e.to_string())
+    }
+}
+
+/// Remove every previously written `# >>> Atomic Chat (managed) >>> ... <<<`
+/// block. Some agents (e.g. Codex) need two managed regions — a root-level
+/// activation key at the very top of the file and a tables block at the
+/// bottom — so this strips them all, not just the first.
+fn strip_atomic_managed_block(content: &str) -> String {
+    let mut result = content.to_string();
+    while let (Some(start), Some(end)) = (
+        result.find(ATOMIC_MANAGED_BEGIN),
+        result.find(ATOMIC_MANAGED_END),
+    ) {
+        if end < start {
+            break;
+        }
+        let end_idx = end + ATOMIC_MANAGED_END.len();
+        let mut next = String::with_capacity(result.len());
+        next.push_str(&result[..start]);
+        next.push_str(&result[end_idx..]);
+        result = next;
+    }
+    result
+}
+
+/// Installer spec for an agent: (program, args, prerequisite_binary, docs_url).
+/// Verified against each vendor's official install path:
+///   - Claude Code / Codex / OpenCode / OpenClaw ship as global npm packages.
+///   - Hermes is a Python project installed via its official shell / PowerShell
+///     bootstrap script (NOT npm).
+fn agent_install_spec(
+    agent_id: &str,
+) -> Result<(String, Vec<String>, &'static str, &'static str), String> {
+    let npm = |pkg: &str| {
+        (
+            "npm".to_string(),
+            vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
+        )
+    };
+
+    match agent_id {
+        "claude-code" => {
+            let (p, a) = npm("@anthropic-ai/claude-code");
+            Ok((p, a, "npm", "https://docs.anthropic.com/en/docs/claude-code"))
+        }
+        "codex" => {
+            let (p, a) = npm("@openai/codex");
+            Ok((p, a, "npm", "https://github.com/openai/codex"))
+        }
+        "opencode" => {
+            let (p, a) = npm("opencode-ai");
+            Ok((p, a, "npm", "https://opencode.ai"))
+        }
+        "copilot" => {
+            let (p, a) = npm("@github/copilot");
+            Ok((
+                p,
+                a,
+                "npm",
+                "https://docs.github.com/en/copilot/how-tos/copilot-cli",
+            ))
+        }
+        "openclaw" => {
+            let (p, a) = npm("openclaw");
+            Ok((p, a, "npm", "https://docs.openclaw.ai"))
+        }
+        "hermes" => {
+            let (program, args): (String, Vec<String>) = if cfg!(windows) {
+                (
+                    "powershell".to_string(),
+                    vec![
+                        "-NoProfile".to_string(),
+                        "-Command".to_string(),
+                        "iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)".to_string(),
+                    ],
+                )
+            } else {
+                (
+                    "sh".to_string(),
+                    vec![
+                        "-c".to_string(),
+                        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash".to_string(),
+                    ],
+                )
+            };
+            let prereq = if cfg!(windows) { "powershell" } else { "curl" };
+            Ok((program, args, prereq, "https://github.com/NousResearch/hermes-agent"))
+        }
+        other => Err(format!("Unknown or non-installable agent id: {}", other)),
+    }
+}
+
+/// Probe whether a CLI binary is reachable on PATH (`which` / `where`).
+#[tauri::command]
+pub async fn detect_agent_installed(bin: String) -> bool {
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    let mut cmd = std::process::Command::new(which_cmd);
+    cmd.arg(&bin);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    matches!(
+        tokio::task::spawn_blocking(move || cmd.output()).await,
+        Ok(Ok(out))
+            if out.status.success()
+                && !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    )
+}
+
+/// Install an external agent by spawning its official installer, streaming
+/// stdout/stderr to the UI via the `agent_install_log:<agent_id>` event.
+#[tauri::command]
+pub async fn install_agent<R: Runtime>(
+    app_handle: AppHandle<R>,
+    agent_id: String,
+) -> Result<(), String> {
+    let (program, args, prereq, docs) = agent_install_spec(&agent_id)?;
+
+    if !detect_agent_installed(prereq.to_string()).await {
+        return Err(format!(
+            "'{}' is required to install this agent but was not found on PATH. \
+             Install it first, then try again: {}",
+            prereq, docs
+        ));
+    }
+
+    let event = format!("agent_install_log:{}", agent_id);
+    let agent_id_log = agent_id.clone();
+
+    let success = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn '{}': {}", program, e))?;
+
+        if let Some(stdout) = child.stdout.take() {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = app_handle.emit(&event, line);
+            }
+        }
+        if let Some(stderr) = child.stderr.take() {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = app_handle.emit(&event, line);
+            }
+        }
+
+        let status = child.wait().map_err(|e| e.to_string())?;
+        Ok(status.success())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    if success {
+        log::info!("Agent '{}' installed successfully", agent_id_log);
+        Ok(())
+    } else {
+        Err(format!(
+            "The installer for '{}' exited with a non-zero status. See the install log for details.",
+            agent_id_log
+        ))
+    }
+}
+
+/// Configure Codex CLI by upserting a managed block in `~/.codex/config.toml`.
+#[tauri::command]
+pub fn configure_codex(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".codex");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.codex: {}", e))?;
+    let path = dir.join("config.toml");
+
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let cleaned = strip_atomic_managed_block(&existing);
+
+    // Codex 0.135+ removed the legacy root-level `profile` selector (named
+    // profiles now live in separate `~/.codex/<name>.config.toml` files chosen
+    // via `--profile`) and dropped `wire_api = "chat"` entirely. So we make
+    // Atomic the *default* provider via the root keys `model` / `model_provider`
+    // — bare TOML keys that must precede any `[table]`, hence a top region —
+    // plus the `[model_providers.atomic]` table below. `wire_api` is left at
+    // its default (`responses`), the only wire API Codex still supports.
+    // `strip_atomic_managed_block` removes both regions on rerun.
+    let mut head = String::new();
+    head.push_str(ATOMIC_MANAGED_BEGIN);
+    head.push('\n');
+    head.push_str(&format!("model = \"{}\"\n", model));
+    head.push_str("model_provider = \"atomic\"\n");
+    head.push_str(ATOMIC_MANAGED_END);
+    head.push('\n');
+
+    let mut block = String::new();
+    block.push_str(ATOMIC_MANAGED_BEGIN);
+    block.push('\n');
+    block.push_str("[model_providers.atomic]\n");
+    block.push_str("name = \"Atomic Chat\"\n");
+    block.push_str(&format!("base_url = \"{}\"\n", api_url));
+    if api_key.as_deref().filter(|k| !k.is_empty()).is_some() {
+        // Codex reads the secret from the env var named here, not inline.
+        block.push_str("env_key = \"ATOMIC_CHAT_API_KEY\"\n");
+    }
+    block.push_str(ATOMIC_MANAGED_END);
+    block.push('\n');
+
+    let final_content = if cleaned.trim().is_empty() {
+        format!("{}\n{}", head, block)
+    } else {
+        format!("{}\n{}\n{}", head, cleaned.trim_end(), block)
+    };
+
+    std::fs::write(&path, final_content)
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("Codex configured: base_url={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure OpenCode by upserting `provider.atomic` in
+/// `~/.config/opencode/opencode.json` (strict JSON, other providers preserved).
+#[tauri::command]
+pub fn configure_opencode(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".config").join("opencode");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.config/opencode: {}", e))?;
+    let path = dir.join("opencode.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "opencode.json is not a JSON object".to_string())?;
+    obj.entry("$schema")
+        .or_insert_with(|| serde_json::json!("https://opencode.ai/config.json"));
+
+    let provider = obj
+        .entry("provider")
+        .or_insert_with(|| serde_json::json!({}));
+    if !provider.is_object() {
+        *provider = serde_json::json!({});
+    }
+
+    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let mut models = serde_json::Map::new();
+    models.insert(model.clone(), serde_json::json!({ "name": model }));
+
+    provider.as_object_mut().unwrap().insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Atomic Chat",
+            "options": { "baseURL": api_url, "apiKey": key_val },
+            "models": serde_json::Value::Object(models),
+        }),
+    );
+
+    // Select Atomic as the active default model so OpenCode opens on it without
+    // a manual `/models` pick. Format is `<providerId>/<modelId>`. Pressing Run
+    // is an explicit "use this", so we overwrite any prior selection.
+    obj.insert(
+        "model".to_string(),
+        serde_json::json!(format!("atomic/{}", model)),
+    );
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("OpenCode configured: baseURL={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure OpenClaw by upserting `models.providers.atomic` plus the
+/// `agents.defaults.models` allowlist entry in `~/.openclaw/openclaw.json`.
+#[tauri::command]
+pub fn configure_openclaw(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let config_path = std::env::var("OPENCLAW_CONFIG_PATH")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(&home).join(".openclaw").join("openclaw.json")
+        });
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+    }
+
+    let mut root: serde_json::Value = if config_path.exists() {
+        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|_| {
+                format!(
+                    "Could not parse {} as JSON (it may contain JSON5 comments). \
+                     Please add the Atomic provider manually under models.providers.",
+                    config_path.display()
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "openclaw.json is not a JSON object".to_string())?;
+
+    let model_ref = format!("atomic/{}", model);
+    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+
+    let models = obj.entry("models").or_insert_with(|| serde_json::json!({}));
+    let models_obj = models
+        .as_object_mut()
+        .ok_or_else(|| "models is not a JSON object".to_string())?;
+    models_obj
+        .entry("mode")
+        .or_insert_with(|| serde_json::json!("merge"));
+    let providers = models_obj
+        .entry("providers")
+        .or_insert_with(|| serde_json::json!({}));
+    let providers_obj = providers
+        .as_object_mut()
+        .ok_or_else(|| "models.providers is not a JSON object".to_string())?;
+    providers_obj.insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "baseUrl": api_url,
+            "apiKey": key_val,
+            "api": "openai-completions",
+            "models": [ { "id": model_ref, "name": model } ],
+        }),
+    );
+
+    let agents = obj.entry("agents").or_insert_with(|| serde_json::json!({}));
+    let agents_obj = agents
+        .as_object_mut()
+        .ok_or_else(|| "agents is not a JSON object".to_string())?;
+    let defaults = agents_obj
+        .entry("defaults")
+        .or_insert_with(|| serde_json::json!({}));
+    let defaults_obj = defaults
+        .as_object_mut()
+        .ok_or_else(|| "agents.defaults is not a JSON object".to_string())?;
+    // Small local models can exceed OpenClaw's short default request timeout
+    // once wrapped in the agent system prompt + tools. Seed a generous default
+    // (preserving any value the user already set).
+    defaults_obj
+        .entry("timeoutSeconds")
+        .or_insert_with(|| serde_json::json!(240));
+    let allow = defaults_obj
+        .entry("models")
+        .or_insert_with(|| serde_json::json!({}));
+    let allow_obj = allow
+        .as_object_mut()
+        .ok_or_else(|| "agents.defaults.models is not a JSON object".to_string())?;
+    allow_obj
+        .entry(model_ref)
+        .or_insert_with(|| serde_json::json!({}));
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&config_path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
+    log::info!("OpenClaw configured: baseUrl={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure Claude Code by upserting `~/.claude/settings.json` so it points at
+/// the local Atomic Chat server and uses the active model. Values go into the
+/// `env` block — Claude reads it at startup regardless of how `claude` was
+/// launched, and `ANTHROPIC_MODEL` there overrides any stale top-level `model`.
+/// All other user settings are preserved.
+#[tauri::command]
+pub fn configure_claude_code(
+    api_url: String,
+    model: Option<String>,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".claude");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.claude: {}", e))?;
+    let path = dir.join("settings.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
+
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    let env = obj.entry("env").or_insert_with(|| serde_json::json!({}));
+    if !env.is_object() {
+        *env = serde_json::json!({});
+    }
+    let env_obj = env.as_object_mut().unwrap();
+    // Claude Code appends its own `/v1`, so `api_url` here is the bare host:port.
+    env_obj.insert(
+        "ANTHROPIC_BASE_URL".to_string(),
+        serde_json::json!(api_url),
+    );
+    env_obj.insert(
+        "ANTHROPIC_AUTH_TOKEN".to_string(),
+        serde_json::json!(key_val),
+    );
+
+    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
+        // ANTHROPIC_MODEL overrides the `model` setting; the tier aliases make
+        // every Opus/Sonnet/Haiku request route to the single local model too.
+        env_obj.insert("ANTHROPIC_MODEL".to_string(), serde_json::json!(model));
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
+            serde_json::json!(model),
+        );
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            serde_json::json!(model),
+        );
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+            serde_json::json!(model),
+        );
+        obj.insert("model".to_string(), serde_json::json!(model));
+    }
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!(
+        "Claude Code configured: base_url={}, model={:?}",
+        api_url,
+        model
+    );
+    Ok(())
+}
+
+/// Upsert a marked `export KEY='VALUE'` block into a shell rc file. Removes any
+/// previous block carrying the same `marker` plus stray `export <prefix>...`
+/// lines, then appends a fresh block. Generalizes `write_env_to_shell` (which is
+/// hardcoded to the legacy Jan / Claude Code marker) for Atomic-branded agents.
+fn write_marked_env_to_shell(
+    env_file_path: &str,
+    marker: &str,
+    export_prefix: &str,
+    env_vars: &[(String, String)],
+) -> Result<(), String> {
+    let new_entries: String = env_vars
+        .iter()
+        .map(|(k, v)| format!("export {}='{}'\n", k, v))
+        .collect();
+
+    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
+    let export_line = format!("export {}", export_prefix);
+    let cleaned: Vec<&str> = existing_content
+        .split('\n')
+        .filter(|line| !line.starts_with(marker) && !line.starts_with(export_line.as_str()))
+        .collect();
+
+    let new_block = format!("{}\n{}\n{}\n", marker, new_entries, marker);
+    let final_content = cleaned.join("\n") + &new_block;
+    std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Configure GitHub Copilot CLI to use the local Atomic Chat server via its BYOK
+/// environment variables. Copilot has no provider config file — it reads these
+/// from the environment at launch — so we persist them to the user's shell rc
+/// (Windows: `setx`). The auto-opened terminal then sources them. `COPILOT_OFFLINE`
+/// is on so no GitHub sign-in is required and traffic stays on the local provider.
+#[tauri::command]
+pub fn configure_copilot(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
+    env_vars.push(("COPILOT_PROVIDER_BASE_URL".to_string(), api_url.clone()));
+    env_vars.push(("COPILOT_PROVIDER_TYPE".to_string(), "openai".to_string()));
+    env_vars.push(("COPILOT_MODEL".to_string(), model.clone()));
+    env_vars.push(("COPILOT_OFFLINE".to_string(), "true".to_string()));
+    if let Some(key) = api_key.as_deref().filter(|k| !k.is_empty()) {
+        env_vars.push((
+            "COPILOT_PROVIDER_API_KEY".to_string(),
+            key.to_string(),
+        ));
+    }
+
+    const MARKER: &str = "# Atomic Chat - Copilot CLI Config";
+
+    if cfg!(target_os = "windows") {
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
+        log::info!(
+            "Copilot configured (Windows env): base_url={}, model={}",
+            api_url,
+            model
+        );
+        return Ok(());
+    }
+
+    let home = agent_home_dir()?;
+    let is_macos = cfg!(target_os = "macos");
+    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
+    write_marked_env_to_shell(&env_file_path, MARKER, "COPILOT_", &env_vars)?;
+    log::info!(
+        "Copilot configured: base_url={}, model={}, rc={}",
+        api_url,
+        model,
+        env_file_path
+    );
+    Ok(())
+}
+
+/// Open the OS terminal and run `command` interactively, so the user can start
+/// using a just-configured agent in one click. The terminal stays open after
+/// the command (it launches an interactive TUI agent like codex/claude).
+#[tauri::command]
+pub fn open_agent_terminal(command: String) -> Result<(), String> {
+    let command = command.trim().to_string();
+    if command.is_empty() {
+        return Err("Empty terminal command".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Escape for an AppleScript double-quoted string literal.
+        let escaped = command.replace('\\', "\\\\").replace('"', "\\\"");
+        // When Terminal.app is *not* already running, `activate` opens a default
+        // empty window and `do script` opens a second one — two windows. So we
+        // branch: if it was already running, open a fresh window (don't hijack
+        // an existing session); if it was cold, reuse the auto-opened window 1.
+        let script = format!(
+            "set wasRunning to application \"Terminal\" is running\n\
+             tell application \"Terminal\"\n\
+             activate\n\
+             if wasRunning then\n\
+             do script \"{cmd}\"\n\
+             else\n\
+             delay 0.2\n\
+             do script \"{cmd}\" in window 1\n\
+             end if\n\
+             end tell",
+            cmd = escaped
+        );
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+        log::info!("Opened Terminal with command: {}", command);
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // `start "" cmd /K <cmd>` opens a fresh console that stays open so the
+        // interactive agent keeps running. The empty "" is the window title arg.
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", "cmd", "/K", &command])
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+        log::info!("Opened cmd with command: {}", command);
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // `exec $SHELL` keeps the window open after the agent exits.
+        let inner = format!("{}; exec $SHELL", command);
+        let candidates: &[(&str, &[&str])] = &[
+            ("x-terminal-emulator", &["-e"]),
+            ("gnome-terminal", &["--"]),
+            ("konsole", &["-e"]),
+            ("xfce4-terminal", &["-e"]),
+            ("xterm", &["-e"]),
+        ];
+        for (term, pre) in candidates {
+            let mut cmd = std::process::Command::new(term);
+            cmd.args(*pre);
+            cmd.args(["bash", "-lc", &inner]);
+            if cmd.spawn().is_ok() {
+                log::info!("Opened {} with command: {}", term, command);
+                return Ok(());
+            }
+        }
+        return Err("No supported terminal emulator found".to_string());
+    }
+
+    #[allow(unreachable_code)]
+    Ok(())
 }

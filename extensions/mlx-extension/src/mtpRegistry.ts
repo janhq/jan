@@ -2,14 +2,21 @@
  * MTP (Multi-Token Prediction) draft model registry.
  *
  * A pure, network-free static manifest mapping base MLX model identifiers to
- * the matching `mlx-community/gemma-4-*-it-assistant-bf16` drafters from
- * Google's Gemma 4 MTP collection. Reference:
- * https://ai.google.dev/gemma/docs/mtp/mtp.
+ * matching MTP drafters. Three drafter families share the single `mtp`
+ * `--draft-kind` (mlx-vlm auto-detects the exact head from the drafter's
+ * `config.json :: model_type`):
+ *   - Gemma 4 "assistant" heads (`mlx-community/gemma-4-*-it-assistant-bf16`,
+ *     `model_type: gemma4_assistant`) — https://ai.google.dev/gemma/docs/mtp/mtp.
+ *   - Qwen 3.5 / 3.6 MTP heads (`mlx-community/Qwen3.*-MTP-bf16`,
+ *     `model_type: qwen3_5_mtp`) — split out of the UDT target weights and
+ *     republished as standalone drafter repos by `mlx-community`.
+ *   - DeepSeek V4 Flash MTP head (`mlx-community/DeepSeek-V4-Flash-MTP-bf16`,
+ *     `model_type: deepseek_v4_mtp`).
  *
- * Mirrors the shape of `dflashRegistry.ts` so the MLX extension can route
- * both speculative-decoding kinds through the same local-first resolution
- * and direct-download path. This module only carries the static lookup
- * data; no `huggingface.co/api/...` calls happen here.
+ * Mirrors the shape of `dflashRegistry.ts` / `eagle3Registry.ts` so the MLX
+ * extension can route every speculative-decoding kind through the same
+ * local-first resolution and direct-download path. This module only carries
+ * the static lookup data; no `huggingface.co/api/...` calls happen here.
  */
 import {
   type DraftRepoManifest,
@@ -55,6 +62,40 @@ export const STATIC_MTP_MAP: Record<string, DraftRepoManifest> = {
     required: DEFAULT_REQUIRED,
     optional: DEFAULT_OPTIONAL,
   },
+
+  /// Qwen 3.5 / 3.6 MTP heads (`model_type: qwen3_5_mtp`). The drafter is the
+  /// MTP module split out of the corresponding UDT target and republished as a
+  /// standalone single-file `model.safetensors` + `config.json` repo. Verified
+  /// against the `mlx-community` MTP collection. The tokenizer comes from the
+  /// target model, so only the two weight/config files are required.
+  'qwen3.5-4b': {
+    repo: 'mlx-community/Qwen3.5-4B-MTP-bf16',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  'qwen3.5-9b': {
+    repo: 'mlx-community/Qwen3.5-9B-MTP-bf16',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  'qwen3.6-27b': {
+    repo: 'mlx-community/Qwen3.6-27B-MTP-bf16',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  'qwen3.6-35b-a3b': {
+    repo: 'mlx-community/Qwen3.6-35B-A3B-MTP-bf16',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+
+  /// DeepSeek V4 Flash MTP head (`model_type: deepseek_v4_mtp`). Same
+  /// split-and-republish story as the Qwen heads.
+  'deepseek-v4-flash': {
+    repo: 'mlx-community/DeepSeek-V4-Flash-MTP-bf16',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
 }
 
 /**
@@ -65,11 +106,11 @@ export const STATIC_MTP_MAP: Record<string, DraftRepoManifest> = {
  * pairing.
  */
 export function resolveMtpDraft(modelId: string): DraftResolution | null {
-  /// Reverse lookup: caller already passed a fully-qualified
-  /// `mlx-community/gemma-4-*-it-assistant-*` id — match against manifest
+  /// Reverse lookup: caller already passed a fully-qualified drafter id
+  /// (Gemma `*-it-assistant-*` or a `*-MTP-*` head) — match against manifest
   /// values rather than running it through `normalizeBaseId` (which would
   /// strip the `-bf16` suffix and try to look it up as a target).
-  if (/-assistant(?:-|$)/i.test(modelId)) {
+  if (/-assistant(?:-|$)/i.test(modelId) || /-mtp(?:-|$)/i.test(modelId)) {
     const target = modelId.toLowerCase()
     for (const manifest of Object.values(STATIC_MTP_MAP)) {
       if (manifest.repo.toLowerCase() === target) {

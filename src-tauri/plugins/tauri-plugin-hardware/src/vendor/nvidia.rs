@@ -7,10 +7,24 @@ use {
     std::sync::RwLock,
 };
 
+/// Tri-state for the NVML handle. We must distinguish "never tried" from
+/// "tried and failed": without this, every System Monitor poll (~every 5s)
+/// re-attempts `Nvml::init()` on hosts that have no `nvml.dll` /
+/// `libnvidia-ml.so` (e.g. all macOS machines, or Windows/Linux without an
+/// NVIDIA card) and re-logs the failure forever. `Failed` short-circuits the
+/// retry so the warning is emitted exactly once per process (or once per
+/// resume on Linux, where `invalidate_nvml` resets to `Uninit`).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+enum NvmlState {
+    Uninit,
+    Failed,
+    Ready(Nvml),
+}
+
 /// NVML handle. On Linux we use RwLock so we can invalidate after sleep/resume
 /// and re-initialize when the driver is ready again.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-static NVML: RwLock<Option<Nvml>> = RwLock::new(None);
+static NVML: RwLock<NvmlState> = RwLock::new(NvmlState::Uninit);
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NvidiaInfo {
@@ -24,17 +38,21 @@ fn with_nvml<F, R>(f: F) -> R
 where
     F: FnOnce(Option<&Nvml>) -> R,
 {
-    // Try read first for the common case (already initialized)
+    // Try read first for the common case (already resolved, either way)
     {
         let guard = NVML.read().expect("RwLock poisoned");
-        if guard.is_some() {
-            return f(guard.as_ref());
+        match &*guard {
+            NvmlState::Ready(nvml) => return f(Some(nvml)),
+            // Already attempted and failed — return without re-trying or
+            // re-logging. This is what stops the per-poll log spam.
+            NvmlState::Failed => return f(None),
+            NvmlState::Uninit => {}
         }
     }
-    // Not initialized or was invalidated: try to init
+    // Not initialized or was invalidated: try to init exactly once.
     {
         let mut guard = NVML.write().expect("RwLock poisoned");
-        if guard.is_none() {
+        if matches!(&*guard, NvmlState::Uninit) {
             let result = Nvml::init().or_else(|e| {
                 if cfg!(target_os = "linux") {
                     log::debug!("NVML init failed, trying Linux fallback: {}", e);
@@ -47,19 +65,24 @@ where
             match result {
                 Ok(nvml) => {
                     log::debug!("NVML initialized successfully");
-                    *guard = Some(nvml);
+                    *guard = NvmlState::Ready(nvml);
                 }
                 Err(e) => {
-                    // Promoted from `debug!` to `warn!` so the failure is
-                    // visible in release-build logs (which default to
-                    // INFO+). Without this, "no NVIDIA GPUs detected" is
-                    // indistinguishable from "NVML didn't load" in user
-                    // bug reports.
+                    // Logged at `warn!` so the failure is visible in
+                    // release-build logs (which default to INFO+), but only
+                    // ONCE: the `Failed` state below short-circuits every
+                    // subsequent poll. Without this, "no NVIDIA GPUs
+                    // detected" is indistinguishable from "NVML didn't load"
+                    // in user bug reports.
                     log::warn!("Unable to initialize NVML: {}", e);
+                    *guard = NvmlState::Failed;
                 }
             }
         }
-        return f(guard.as_ref());
+        match &*guard {
+            NvmlState::Ready(nvml) => f(Some(nvml)),
+            _ => f(None),
+        }
     }
 }
 
@@ -68,7 +91,7 @@ where
 #[cfg(target_os = "linux")]
 pub fn invalidate_nvml() {
     let mut guard = NVML.write().expect("RwLock poisoned");
-    *guard = None;
+    *guard = NvmlState::Uninit;
     log::debug!("NVML invalidated (e.g. after resume); will re-init on next use");
 }
 
@@ -151,11 +174,11 @@ fn get_nvidia_gpus_internal() -> Vec<GpuInfo> {
         let nvml = match nvml {
             Some(n) => n,
             None => {
-                // Promoted from `debug!` to `warn!` — same rationale as the
-                // NVML init failure path above. This is the single point
-                // where every NVIDIA-aware code path silently gives up on
-                // hosts without a working `nvml.dll` / `libnvidia-ml.so`.
-                log::warn!("NVML not available — NVIDIA GPUs will not be enumerated");
+                // `trace!`, not `warn!`: this branch is hit on EVERY poll
+                // when NVML is unavailable, so warning here spams the log.
+                // The actual reason was already logged once at `warn!` by
+                // the init-failure path in `with_nvml`.
+                log::trace!("NVML not available — NVIDIA GPUs will not be enumerated");
                 return vec![];
             }
         };

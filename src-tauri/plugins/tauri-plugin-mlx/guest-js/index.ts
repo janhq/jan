@@ -15,6 +15,8 @@ export function normalizeMlxConfig(config: any): MlxConfig {
     draft_model_path: config.draft_model_path ?? '',
     block_size: asNumber(config.block_size),
     draft_kind: config.draft_kind ?? '',
+    kv_bits: asNumber(config.kv_bits),
+    kv_quant_scheme: config.kv_quant_scheme ?? '',
   }
 }
 

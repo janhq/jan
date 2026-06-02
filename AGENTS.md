@@ -45,6 +45,7 @@ Top-level layout (only the directories agents touch regularly):
 | Path                         | What lives there                                                                                                       |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `web-app/`                   | Frontend (React + Vite + TanStack Router, Tailwind, shadcn). Workspace `@janhq/web-app`.                               |
+| `web-app/src/routes/launch/` | Top-level "Launch" page: install + configure external coding agents / assistants (Claude Code, Codex CLI, OpenCode, Hermes, OpenClaw) against the local API. Catalog in `web-app/src/constants/integrations.ts`; install/configure commands in `src-tauri/src/core/system/commands.rs`. |
 | `core/`                      | Shared TS core: types, browser-side runtime, extension contracts. Built and `yarn pack`'d, consumed by extensions.     |
 | `extensions/`                | Pluggable backend extensions (TS, rolldown-bundled). Each has its own `src/`, `package.json`, `settings.json`.         |
 | `extensions/llamacpp-extension/` | Driver for the `atomic-llama-cpp-turboquant` backend.                                                              |
@@ -94,15 +95,24 @@ exposed by the desktop app at `http://localhost:1337/v1`.
   - Continuous batching (text-only + image requests in the same batch).
   - Automatic Prefix Caching (APC), warm-memory + warm-disk tiers.
   - KV-cache quantization, including **TurboQuant** (`--kv-bits 3.5
-    --kv-quant-scheme turboquant`).
+    --kv-quant-scheme turboquant`). Surfaced in the UI via the MLX
+    provider's **KV Cache Quantization** (off / turboquant / uniform) +
+    **KV Cache Bits** settings, plumbed through `MlxConfig.kv_quant_scheme`
+    / `MlxConfig.kv_bits` in `tauri-plugin-mlx`.
   - Vision feature LRU cache for multi-turn image chats.
-  - Speculative decoding: DFlash (Qwen3.5) and Gemma 4 MTP drafters.
+  - Speculative decoding across three drafter families, all selected via
+    `--draft-kind` (auto-detected from the drafter's HF `model_type` when
+    omitted): **DFlash** (`z-lab/*`, Qwen3.5/3.6 + gpt-oss + Llama),
+    **MTP** (Gemma 4 `*-assistant-*` plus the split-out Qwen 3.5/3.6 and
+    DeepSeek-V4 `*-MTP-bf16` heads) and **EAGLE-3** (Gemma 4
+    `RedHatAI/*-speculator.eagle3`).
   - OpenAI-compatible `/v1/chat/completions` and `/v1/responses`,
     structured outputs (`json_schema`), per-token logprobs.
 - **CLI surface we care about** (server side):
   `mlx_vlm.server --model <hf|path> [--adapter-path …] [--draft-model …]
-  [--draft-kind dflash|mtp] [--kv-bits N] [--kv-quant-scheme uniform|turboquant]
-  [--enable-thinking] [--top-logprobs-k K]`.
+  [--draft-kind dflash|eagle3|mtp] [--draft-block-size N] [--kv-bits N]
+  [--kv-quant-scheme uniform|turboquant] [--enable-thinking]
+  [--top-logprobs-k K]`.
 
 ### 4.2 LLM backend — `AtomicBot-ai/atomic-llama-cpp-turboquant`
 
@@ -298,6 +308,372 @@ Append-only. Newest at top. Each entry follows this shape:
 > a one-line index here.
 
 ---
+
+### 2026-06-02 — Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models
+- **Context:** Codex CLI (added as a Launch integration in the 2026-06-01 ADR
+  below) failed at the first turn against a local GGUF model with
+  `unexpected status 404 Not Found, url: http://127.0.0.1:1337/v1/responses`.
+  Root cause is twofold. (1) Codex speaks **only** the OpenAI **Responses**
+  wire protocol: its `model_providers.<id>.wire_api` setting accepts
+  `responses` as *the single supported value* and it is the default
+  ([Codex config reference](https://developers.openai.com/codex/config-reference)).
+  The legacy `wire_api = "chat"` escape hatch was removed, so Codex cannot be
+  pointed at a Chat Completions endpoint from its own config — the
+  `configure_codex` comment that says as much is correct. (2) The `404` was
+  emitted by **our own proxy**, not the backend:
+  [`proxy.rs::allowed_methods_for_path`](src-tauri/src/core/server/proxy.rs)
+  did not know the `/responses` path, so the request fell through to the
+  catch-all `_ =>` arm and returned `404 "Not Found"`. The turboquant /
+  upstream llama.cpp backends implement only `/v1/chat/completions`; only the
+  MLX sidecar serves `/v1/responses` natively (see §4.1), and even that was
+  unreachable because the proxy never routed the path. Net effect: every
+  Responses-only client (Codex, and any other tool that hard-codes the
+  Responses API) was dead on arrival against the Local API server.
+- **Decision:** Implement a bidirectional **Responses ↔ Chat Completions**
+  translation shim in the proxy rather than shipping a custom Codex config or
+  telling users "MLX only".
+  1. **Routing.** `/responses` is added to `allowed_methods_for_path`
+     (`POST`) and `endpoint_from_path` (`"responses"`, for analytics) in
+     [`proxy.rs`](src-tauri/src/core/server/proxy.rs). A dedicated branch in
+     `inner_proxy_request` intercepts `POST /responses` *before* the main
+     chat-completions match and dispatches to a new self-contained
+     `handle_responses_request`, which **returns early** so the shim never
+     threads through the chat-completions auto-increase-ctx retry machinery
+     (it has its own forwarding).
+  2. **Backend split.** `handle_responses_request` resolves the target with
+     the same remote-provider → llama → upstream → MLX precedence as
+     `/chat/completions`. Backends that serve Responses natively — the **MLX**
+     sidecar and **remote providers** (real OpenAI-compatible endpoints) — get
+     a byte-for-byte **passthrough** to their `/v1/responses` (reusing
+     `build_streaming_response`). The **llama.cpp** turboquant and upstream
+     backends are **translated** to `/v1/chat/completions`.
+  3. **Pure transforms.** New module
+     [`src-tauri/src/core/server/responses_shim.rs`](src-tauri/src/core/server/responses_shim.rs)
+     holds the side-effect-free conversions (unit-tested in `tests.rs`):
+     - `responses_request_to_chat` — flattens `instructions` → leading system
+       message; `input` (string or typed item array) → chat `messages`,
+       mapping `function_call` → assistant `tool_calls`, `function_call_output`
+       → `role:"tool"` messages, dropping `reasoning` items; flat Responses
+       function tools → nested chat `tools`; `max_output_tokens` → `max_tokens`;
+       `text.format` (json_schema/json_object) → `response_format`. Sets
+       `stream_options.include_usage` on streaming requests so the final usage
+       survives.
+     - `chat_response_to_responses` — non-streaming chat JSON → a `response`
+       object with `output` items (`message` + `function_call`) and mapped
+       `usage` (`prompt_tokens`→`input_tokens`, etc.).
+     - `ResponsesStreamConverter` — a stateful chat-SSE → Responses-SSE event
+       machine emitting the sequence Codex consumes: `response.created`,
+       `response.output_item.added` / `response.content_part.added`,
+       `response.output_text.delta`, `response.function_call_arguments.delta`,
+       the matching `*.done` events, and a terminal `response.completed`
+       carrying the full `output` + `usage`. SSE lines are reassembled from a
+       byte buffer split on `\n` (not lossy per-chunk string slicing) so
+       multibyte tokens spanning network chunks aren't corrupted.
+- **Consequences:**
+  - **Codex works on local GGUF models.** `POST /v1/responses` against a
+    turboquant/upstream llama.cpp session now streams a valid Responses event
+    sequence; `configure_codex` is unchanged (its root `model` /
+    `model_provider` + `[model_providers.atomic]` block already point Codex at
+    `http://127.0.0.1:1337/v1`, `wire_api` left at the only supported value
+    `responses`).
+  - **No auto-increase-ctx on the Responses path.** The shim forwards on its
+    own and does not participate in the `finish_reason=length` /
+    context-limit retry that `/chat/completions` enjoys. Codex manages its own
+    context window; revisit if Responses clients start hitting silent
+    truncation.
+  - **Lossy by design for non-text modalities.** Image/file `input` parts and
+    Responses-only `reasoning` items are dropped in the llama.cpp translation
+    (Chat Completions has no equivalent reasoning-input slot). MLX/remote
+    passthrough preserves full fidelity. Built-in Responses tools
+    (`web_search`, etc.) are dropped — only `type:"function"` tools translate.
+  - **Model-capability caveat.** Codex needs tool-calling + streaming; a small
+    GGUF without function-calling support will surface Codex's own error, not
+    a shim failure.
+  - **Test coverage.** 6 new unit tests in
+    [`tests.rs`](src-tauri/src/core/server/tests.rs) pin the request transform
+    (string + item-array + tools), the non-streaming response transform (text
+    + tool_call), and the streaming converter (text sequence + tool-call
+    sequence). Full `core::server` suite: 60 passing.
+- **Owner:** team.
+- **Links:** §4 *Inference backends*, the 2026-06-01 ADR *Add a "Launch" page …*,
+  [Codex config reference](https://developers.openai.com/codex/config-reference),
+  files: [`src-tauri/src/core/server/responses_shim.rs`](src-tauri/src/core/server/responses_shim.rs),
+  [`src-tauri/src/core/server/proxy.rs`](src-tauri/src/core/server/proxy.rs)
+  (`handle_responses_request`, `allowed_methods_for_path`, `endpoint_from_path`),
+  [`src-tauri/src/core/server/mod.rs`](src-tauri/src/core/server/mod.rs),
+  [`src-tauri/src/core/server/tests.rs`](src-tauri/src/core/server/tests.rs).
+
+### 2026-06-02 — Fix MTP speculative rollback crash on Gemma 4 + DeepSeek-V4 (`'list' object has no attribute 'max'`)
+- **Context:** Enabling **MTP** speculative decoding on a Gemma 4 target
+  (e.g. `gemma-4-e4b-it-4bit` + the `*-assistant` drafter) crashed the
+  generation thread mid-stream with
+  `AttributeError: 'list' object has no attribute 'max'` at
+  `mlx_vlm/models/gemma4/language.py::rollback_speculative_cache`
+  (a secondary `RuntimeError: There is no Stream(gpu, 1)` followed as the
+  `BatchGenerator.__del__` cleanup unwound on the wrong thread). Root cause:
+  the MTP batch driver `speculative/mtp.py::_mtp_rounds_batch` passes
+  `accepted` as a **Python list** of per-row accepted counts, but Gemma 4's
+  (and DeepSeek-V4's) `rollback_speculative_cache` only special-cased `int`
+  and otherwise assumed an `mx.array`, immediately calling `accepted.max()`.
+  The reference `qwen3_5` implementation already normalized `int` / `mx.array`
+  / `list`; Gemma 4 and DeepSeek-V4 did not. (The EAGLE-3 path is unaffected —
+  `speculative/eagle3.py` wraps `mx.array(accepted_list)` before the call.)
+- **Decision:** Coerce `accepted` to an `int32` `mx.array` up front in both
+  `mlx_vlm/models/gemma4/language.py` and
+  `mlx_vlm/models/deepseek_v4/language.py`
+  (`elif not isinstance(accepted, mx.array): accepted = mx.array(list(accepted), dtype=mx.int32)`),
+  matching the qwen3_5 convention. Minimal, local, array-path-preserving.
+- **Consequences:**
+  - **Gemma 4 MTP and DeepSeek-V4 MTP now run** instead of crashing on the
+    first speculative round; the cascade `Stream(gpu, 1)` cleanup error is
+    gone once the primary exception no longer fires. Qwen MTP was already
+    correct (qwen3_5 hook) and is unchanged. DFlash / EAGLE-3 paths untouched.
+  - Fix lives in the **`AtomicBot-ai/mlx-vlm` fork** — it takes effect for
+    dev runs from source on the next sidecar restart, and reaches the shipped
+    app only after the fork is committed + a new sidecar release is built via
+    `build-mlxvlm-macos.yml` (see the v0.6.0 sync ADR below). `py_compile`
+    passes on both edited modules.
+- **Owner:** team.
+- **Links:** the 2026-06-02 v0.6.0 sync ADR below,
+  `mlx-vlm` `mlx_vlm/models/gemma4/language.py::rollback_speculative_cache`,
+  `mlx-vlm` `mlx_vlm/models/deepseek_v4/language.py::rollback_speculative_cache`,
+  `mlx-vlm` `mlx_vlm/models/qwen3_5/language.py` (reference impl),
+  `mlx-vlm` `mlx_vlm/speculative/mtp.py::_mtp_rounds_batch`.
+
+### 2026-06-02 — Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting
+- **Context:** The MLX backend (`AtomicBot-ai/mlx-vlm`) supports KV-cache
+  quantization on its CLI (`--kv-bits <float> --kv-quant-scheme
+  uniform|turboquant`; the server only sets `KV_BITS` when `--kv-bits` is
+  passed, so the cache is full-precision by default). After the v0.6.0 sync
+  the engine capability was present but **nothing in the desktop app drove
+  it** — the `tauri-plugin-mlx` Rust shim only emitted `--max-kv-size`,
+  `--draft-model`, `--draft-kind`, `--draft-block-size`. Users could not opt
+  into TurboQuant KV (the recommended `--kv-bits 3.5 --kv-quant-scheme
+  turboquant`, ~4.3× smaller cache) to fit longer contexts.
+- **Decision:** Add two MLX provider settings and plumb them end-to-end as a
+  **load-time** arg (mirrors `ctx_size`: applied on the next model load, no
+  mid-session auto-reload like the drafter block-size path):
+  - `extensions/mlx-extension/settings.json`: `kv_quant_scheme` dropdown
+    (`off` (default) / `turboquant` / `uniform`) + `kv_bits` number input
+    (default `3.5`, range 0–8).
+  - `performLoad` in `extensions/mlx-extension/src/index.ts` normalizes
+    `off` → `''` and forces `kv_bits = 0` when the scheme is off, so a stale
+    bit-width can't leak; both ride the existing `MlxConfig` IPC.
+  - `tauri-plugin-mlx` `MlxConfig` gains `kv_bits: f32` + `kv_quant_scheme:
+    String` (both `#[serde(default)]`); `load_mlx_model_impl` emits
+    `--kv-bits <bits> --kv-quant-scheme <scheme>` **only** when the scheme is
+    `uniform`/`turboquant` AND `kv_bits > 0.0`. guest-js `types.ts` /
+    `normalizeMlxConfig` carry the matching fields.
+- **Consequences:**
+  - Backwards-compatible: empty/legacy configs (and `off`) emit no KV flags,
+    so the server keeps its full-precision default — no behavior change for
+    existing users. The single source of truth for "is KV quant on" is the
+    Rust guard (scheme ∈ {uniform, turboquant} && bits > 0).
+  - Quality/latency trade-off is the user's: TurboQuant @ 3.5 bits is the
+    documented sweet spot; uniform pairs with 4/8. Wrong pairings only cost
+    quality, never correctness.
+  - macOS-only surface (MLX provider is Apple-Silicon-only); Windows/Linux
+    unaffected. `cargo check` on `tauri-plugin-mlx` passes.
+  - Not done: no per-keystroke auto-reload (intentional — KV geometry is
+    fixed at cache allocation); no `--kv-group-size` / `--quantized-kv-start`
+    exposure (kept on mlx-vlm defaults, can be added later if needed).
+- **Owner:** team.
+- **Links:** §4.1 *MLX backend*,
+  [`extensions/mlx-extension/settings.json`](extensions/mlx-extension/settings.json),
+  [`extensions/mlx-extension/src/index.ts`](extensions/mlx-extension/src/index.ts),
+  [`src-tauri/plugins/tauri-plugin-mlx/src/commands.rs`](src-tauri/plugins/tauri-plugin-mlx/src/commands.rs),
+  [`src-tauri/plugins/tauri-plugin-mlx/guest-js/types.ts`](src-tauri/plugins/tauri-plugin-mlx/guest-js/types.ts).
+
+### 2026-06-02 — Sync `AtomicBot-ai/mlx-vlm` fork to upstream v0.6.0 and surface a third speculative drafter family (EAGLE-3) + Qwen / DeepSeek-V4 MTP
+- **Context:** The MLX backend fork (`AtomicBot-ai/mlx-vlm`) was **+8 / -105**
+  vs `Blaizzy/mlx-vlm` `upstream/main` (= **v0.6.0 + 1 commit**). The headline
+  wins in v0.6.0 are all engine-layer: the new drafter auto-detect path
+  (upstream #1125), a third speculative family (`eagle3`), spec-decode
+  sampling fixes (#1188/#1210/#1259), spec-compliant streaming usage/timings
+  (#1216), and `chat_template_kwargs` support (#1130). The crux of the merge
+  was upstream PR #1203, which **deleted the 3778-line monolith
+  `mlx_vlm/server.py`** and split it into a package `mlx_vlm/server/`
+  (`app.py`, `cli.py`, `openai.py`, `anthropic.py`, `generation.py`,
+  `runtime.py`, `responses_state.py`, `schemas.py`, `__main__.py`,
+  `__init__.py`). Our 8 commits lived almost entirely in `server.py`, so the
+  merge produced a **modify/delete conflict** that had to be hand-ported into
+  the new modules. Our Rust facade (`src-tauri/src/core/server/proxy.rs`)
+  owns the public `/v1` contract (incl. its own Anthropic `/v1/messages`
+  transform), so v0.6.0's value to us is the engine, not the new server
+  protocol surface.
+- **Decision:** Merge `upstream/main` into the fork and re-port only the
+  fork-specific behaviour that upstream still doesn't cover; then extend the
+  downstream MLX extension/UI from a 2-family to a 3-family drafter system.
+
+  **Fork sync (`AtomicBot-ai/mlx-vlm`):**
+  - **Kept / re-ported into `mlx_vlm/server/`:**
+    - `MLX_VLM_SINGLE_MODEL` single-model guard → re-ported into
+      `server/app.py::get_cached_model` (the desktop sidecar pins one model
+      and must ignore arbitrary `model` labels in incoming request bodies,
+      else it 401s trying to fetch a non-existent HF repo).
+    - EOS aggregation (`_collect_stop_tokens` / `_coerce_eos_to_set`) →
+      re-ported into `server/generation.py`. Upstream still doesn't robustly
+      union `eos_token_id` across `config.json` / `text_config` /
+      `generation_config.json` / tokenizer for VLM/omni configs.
+    - `chat_template_kwargs` nesting → re-ported into `server/app.py`
+      `_build_gen_args` (kept as a thin precedence shim over the now-native
+      upstream fields, so `enable_thinking` / `thinking_budget` keep flowing).
+    - `in_thinking` prompt-seed → re-ported into `server/openai.py` streaming
+      path (many chat templates inject the opening `<think>` /
+      `<|channel>thought` marker into the *prompt*, so without seeding the
+      reasoning/content split the whole CoT leaks into `delta.content`).
+  - **Dropped (superseded by upstream):** the `top_p_sampling` arbitrary-batch
+    patch (#docstring already documents `[B,T,vocab]`), the lossless
+    spec-decode target-sampling patch (#1188/#1210/#1259), and the
+    fork's `_make_sampler(temp=0)` spec-decode override (upstream's verify
+    path is fixed). The bespoke final-SSE-chunk TPS/usage frame was dropped in
+    favour of upstream's spec-compliant `stream_options.include_usage` →
+    `GenerationTimings` (see the downstream `includeUsage` fix below).
+  - **Fork infra preserved:** `_entry_server.py` (`from mlx_vlm.server import
+    main` resolves against the new `__init__.py`), the CI workflows
+    (`build-mlxvlm-macos.yml` + the two `*.disabled`), and `uv.lock`
+    regenerated keeping `llguidance` + `mlx-audio` (now also in upstream's
+    `requirements.txt`).
+
+  **Downstream (`Atomic-Chat`):**
+  - **TPS regression fix:** `web-app/src/lib/model-factory.ts::createMlxModel`
+    now sets `includeUsage: true`. v0.6.0 (#1216) made the streaming
+    `usage`/`timings` frame opt-in via `stream_options.include_usage`; the
+    pre-v0.6.0 fork emitted it unconditionally, so the UI used to get
+    `timings.predicted_per_second` for free. Without the flag the decode-rate
+    readout would silently fall back to a wall-clock estimate.
+  - **Third drafter family surfaced (EAGLE-3) + new MTP pairings:**
+    - New `extensions/mlx-extension/src/eagle3Registry.ts` mapping the two
+      Gemma 4 targets → `RedHatAI/gemma-4-{31B,26B-A4B}-it-speculator.eagle3`
+      (mirrors `dflashRegistry.ts`; E2B/E4B have no EAGLE-3 head and keep
+      using the MTP assistant).
+    - `extensions/mlx-extension/src/mtpRegistry.ts` extended with the
+      split-out, separately-published `mlx-community/*-MTP-bf16` heads:
+      Qwen `3.5-4B`, `3.5-9B`, `3.6-27B`, `3.6-35B-A3B` (`model_type:
+      qwen3_5_mtp`) and `DeepSeek-V4-Flash` (`model_type: deepseek_v4_mtp`).
+      All three families share `--draft-kind` values, so they all resolve via
+      the same `mtp` kind; the reverse-lookup was generalised from
+      `-assistant` to also match `-MTP-` ids. Every repo id was verified
+      against the live HF API — no fabricated repos.
+    - `extensions/mlx-extension/src/index.ts`: the 2-way (`mtp|dflash`)
+      `performLoad` resolver became a 3-way (`mtp|eagle3|dflash`, fixed
+      precedence `mtp > eagle3 > dflash`); `ensureDraftDownloaded`'s `kind`
+      union, the `onSettingUpdate` block-size debounce map, and the
+      enable/disable mutex now cover `eagle3`. New `enableEagle3` /
+      `disableEagle3` / `checkEagle3Support` mirror the MTP trio. EAGLE-3's
+      block size defaults to `0` = "use the speculator's built-in depth"
+      (the Rust shim only emits `--draft-block-size` when > 0).
+    - `extensions/mlx-extension/settings.json`: added `eagle3_enabled` +
+      `eagle3_block_size` toggles. UI: new
+      `web-app/src/containers/dialogs/Eagle3UnsupportedDialog.tsx`, an
+      EAGLE-3 Switch + handler in
+      `web-app/src/routes/settings/providers/$providerName.tsx` (mutually
+      exclusive with DFlash/MTP, MLX-provider-gated), and `eagle3*` i18n keys
+      in `web-app/src/locales/en/settings.json`.
+  - **Rust contract:** `tauri-plugin-mlx::MlxConfig.draft_kind` was already a
+    verbatim passthrough to `--draft-kind`; only its doc comments were updated
+    to enumerate the third family. No behavioural Rust change was needed.
+- **Consequences:**
+  - macOS users get auto-detected drafter loading, the upstream spec-decode
+    correctness fixes, and a third drafter family in the MLX provider
+    settings. Coverage now spans DFlash + MTP (Gemma 4 / Qwen / DeepSeek-V4) +
+    EAGLE-3 (Gemma 4), each guarded behind a static, network-free registry
+    with local-first resolution and direct `/resolve/main/<file>` downloads.
+  - The public `localhost:1337/v1` contract is unchanged — the Rust proxy
+    still owns it; `/chat/completions` and `/v1/messages` behave as before.
+  - The three drafter families share one on-disk cache
+    (`mlx/draft-models/<repo>/`); collisions are impossible because the repo
+    prefixes are disjoint (`z-lab/…`, `mlx-community/…`, `RedHatAI/…`).
+  - **Not done:** TurboQuant-for-MLX weight quant and any non-macOS MLX path
+    remain out of scope (MLX is Apple-Silicon-only). The fork is **not yet
+    committed** — changes await explicit approval per the plan's verification
+    ritual.
+- **Owner:** team.
+- **Links:** [AtomicBot-ai/mlx-vlm](https://github.com/AtomicBot-ai/mlx-vlm),
+  [Blaizzy/mlx-vlm](https://github.com/Blaizzy/mlx-vlm) (v0.6.0, PRs #1125,
+  #1130, #1188, #1203, #1210, #1216, #1259), §4.1 *MLX backend*,
+  files: `extensions/mlx-extension/src/eagle3Registry.ts`,
+  `extensions/mlx-extension/src/mtpRegistry.ts`,
+  `extensions/mlx-extension/src/index.ts`,
+  `extensions/mlx-extension/settings.json`,
+  `web-app/src/containers/dialogs/Eagle3UnsupportedDialog.tsx`,
+  `web-app/src/routes/settings/providers/$providerName.tsx`,
+  `web-app/src/lib/model-factory.ts`,
+  `src-tauri/plugins/tauri-plugin-mlx/src/commands.rs`.
+
+### 2026-06-01 — Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API
+- **Context:** To use Atomic Chat's local models from external agents
+ (Claude Code, Codex CLI, OpenCode, Hermes, OpenClaw) users had to
+ hand-edit each agent's config to point at `http://localhost:1337/v1`.
+ Ollama solves the same problem with `ollama launch <agent>`
+ (docs.ollama.com/integrations). We wanted the same one-click ergonomics
+ without inventing a new CLI surface. The repo already had the building
+ blocks: a Settings → Integrations section, the Rust writers
+ `launch_claude_code_with_config` / `configure_hermes_agent`, and the
+ `start_server` / `get_server_status` commands.
+- **Decision:** Ship a **buttons-only, top-level "Launch" page** (no new
+ CLI binary — "Variant A"). Each agent card has two actions:
+ **Install** (`install_agent` spawns the agent's official installer via
+ `std::process::Command`, streaming stdout/stderr to the UI through the
+ `agent_install_log:<id>` Tauri event; a missing prerequisite such as
+ `npm` returns a clear error with the agent's docs URL — no browser
+ auto-open) and **Enable** (ensures the local server is running, then
+ writes the agent's config pointing at
+ `http://${serverHost}:${serverPort}${apiPrefix}`). New Rust commands in
+ `src-tauri/src/core/system/commands.rs`: `detect_agent_installed`,
+ `install_agent`, `configure_codex` (`~/.codex/config.toml`, managed
+ block), `configure_opencode` (`~/.config/opencode/opencode.json`, strict
+ JSON merge, always sets `provider.atomic.name` so options forward),
+ `configure_openclaw` (`~/.openclaw/openclaw.json` + the
+ `agents.defaults.models` allowlist; honours `OPENCLAW_CONFIG_PATH`).
+ Claude Code and Hermes reuse the existing writers. First iteration =
+ Claude Code, Codex CLI, OpenCode (coding) + Hermes, OpenClaw
+ (assistants). New frontend: route `web-app/src/routes/launch/index.tsx`,
+ sidebar item in `NavMain.tsx`, catalog `web-app/src/constants/integrations.ts`,
+ locale namespace `web-app/src/locales/en/launch.json`.
+- **Consequences:**
+ - Reuses the established Rust home-dir config-writer pattern; no new
+ top-level folders or dependencies. The whole surface is gated behind a
+ single new top-level page marked "Experimental".
+ - **No CLI surface.** A future CLI epic (`atomic-chat-cli launch <agent>`)
+ can reuse the same Rust config-writers; the logic deliberately lives in
+ `core/system/commands.rs` rather than a UI-only path.
+ - **Install depends on host tooling.** Install paths verified against each
+ vendor (2026-06-01): Claude Code (`npm i -g @anthropic-ai/claude-code`),
+ Codex (`npm i -g @openai/codex`), OpenCode (`npm i -g opencode-ai`) and
+ OpenClaw (`npm i -g openclaw`, needs Node 22+) ship as global npm
+ packages. **Hermes is a Python project**, installed via its official
+ bootstrap script (`curl -fsSL .../scripts/install.sh | bash` on Unix,
+ `iex (irm .../scripts/install.ps1)` on Windows) — so `install_agent`
+ spawns that script for Hermes instead of npm; its prerequisite is
+ `curl` (Unix) / `powershell` (Windows).
+ - **OpenClaw config is JSON5** but we parse/merge with `serde_json`; if a
+ user's file contains comments/trailing commas the parse fails and we
+ return an actionable error instead of clobbering it (no `json5` dep
+ added).
+ - **API key** from `useLocalApiServer` is passed automatically when set;
+ it is usually empty, so Codex omits auth and OpenCode/OpenClaw fall back
+ to a placeholder key.
+ - **Per-agent request timeouts are seeded for local models.** Small local
+ GGUF/MLX models, once wrapped in an agent's system prompt + tools, take
+ longer per turn than these agents' cloud-tuned defaults expect.
+ `configure_openclaw` seeds `agents.defaults.timeoutSeconds = 240` (its
+ default is far shorter). `configure_hermes_agent` seeds
+ `providers.custom.request_timeout_seconds = 180` — note Hermes' own
+ default is the opposite extreme (1800s via `HERMES_API_TIMEOUT`), so for
+ Hermes this is a *tightening* so a wedged turn fails fast rather than
+ hanging 30 min. The key is the resolved provider id (Hermes reads
+ `providers.<id>.request_timeout_seconds` in
+ `run_agent.py::get_provider_request_timeout`; our model uses provider
+ `custom`). Both writers **preserve any value the user already set** —
+ they only fill the gap, never clobber.
+- **Owner:** team.
+- **Links:** docs.ollama.com/integrations,
+ [`web-app/src/routes/launch/index.tsx`](web-app/src/routes/launch/index.tsx),
+ [`web-app/src/constants/integrations.ts`](web-app/src/constants/integrations.ts),
+ [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs),
+ [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs),
+ [`web-app/src/components/left-sidebar/NavMain.tsx`](web-app/src/components/left-sidebar/NavMain.tsx).
 
 ### 2026-05-28 — Linux ships only `llamacpp-upstream` (AppImage, upstream `ggml-org/llama.cpp`); Vulkan is the sole GPU path
 - **Context:** Atomic Chat had no Linux release channel at all — the only

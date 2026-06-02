@@ -85,7 +85,12 @@ fn get_vulkan_gpus_internal() -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>
     //? Пустой список GPU — ожидаемый путь: дальше используется unified memory / RAM.
     #[cfg(target_os = "macos")]
     {
-        log::debug!("Skipping Vulkan GPU probe on macOS (Metal backend; avoids MoltenVK dlopen under hardened runtime)");
+        // Logged once per process — this path is hit on every poll (~5s),
+        // so an unconditional `debug!` here spams the log.
+        static LOG_ONCE: std::sync::Once = std::sync::Once::new();
+        LOG_ONCE.call_once(|| {
+            log::debug!("Skipping Vulkan GPU probe on macOS (Metal backend; avoids MoltenVK dlopen under hardened runtime)");
+        });
         return Ok(vec![]);
     }
 
