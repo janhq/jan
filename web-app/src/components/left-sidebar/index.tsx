@@ -22,22 +22,24 @@ export function LeftSidebar() {
           On macOS the window uses ``titleBarStyle: "Overlay"`` (see
           ``src-tauri/tauri.macos.conf.json``), so the red/yellow/green
           traffic-light controls are painted on top of our chrome at
-          ~y=14, x=14-66 of the window. The floating sidebar's inner
-          panel starts at ~x=8 due to its ``p-2`` wrapper, which means
-          the header's first row would otherwise share its Y-coord with
-          the system buttons and look visually cramped. ``pt-7`` pushes
-          the header content below the traffic-light cluster so the
-          buttons (download + sidebar toggle) and the Atomic Chat logo
-          beneath them have proper vertical clearance.
+          ~y=14, x=14-66 of the window. The first header row (download +
+          sidebar toggle) is right-aligned, so it sits well clear of the
+          left-edge traffic-light cluster and can share the same Y-coord
+          with the system buttons. We therefore keep that row at the top
+          and instead push only the left-aligned Atomic Chat logo row
+          below the traffic-light band, so it doesn't collide.
         */}
-        <SidebarHeader
-          className={cn('flex flex-col gap-1 px-1', IS_MACOS && 'pt-7')}
-        >
+        <SidebarHeader className="flex flex-col gap-1 px-1">
           <div className="flex w-full items-center justify-end">
             {isLeftPanelOpen && <DownloadManagement />}
             <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
           </div>
-          <div className="mt-1 flex w-full items-center justify-start gap-2 pl-2">
+          <div
+            className={cn(
+              'mt-1 flex w-full items-center justify-start gap-2 pl-2',
+              IS_MACOS && 'mt-3'
+            )}
+          >
             <div
               className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none"
               title="Atomic Bot"

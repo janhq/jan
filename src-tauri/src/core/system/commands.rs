@@ -1611,6 +1611,14 @@ pub fn configure_opencode(
         }),
     );
 
+    // Select Atomic as the active default model so OpenCode opens on it without
+    // a manual `/models` pick. Format is `<providerId>/<modelId>`. Pressing Run
+    // is an explicit "use this", so we overwrite any prior selection.
+    obj.insert(
+        "model".to_string(),
+        serde_json::json!(format!("atomic/{}", model)),
+    );
+
     let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
     std::fs::write(&path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;

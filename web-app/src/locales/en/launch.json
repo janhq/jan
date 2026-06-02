@@ -14,6 +14,12 @@
   "enable": "Run",
   "enabling": "Running...",
   "installAndRun": "Install & Run",
+  "installSteps": {
+    "installing": "Installing…",
+    "downloading": "Downloading…",
+    "building": "Building…",
+    "settingUp": "Setting up…"
+  },
   "docs": "Docs",
   "usingRunningModel": "Using running model",
   "noRunningModel": "No running model",

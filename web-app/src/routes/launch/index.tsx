@@ -140,6 +140,40 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
   }
 }
 
+// Installs are indeterminate (npm / curl script) with no progress %, so the
+// button cycles short status messages to make it clear work is ongoing.
+const INSTALL_STEP_KEYS = [
+  'launch:installSteps.installing',
+  'launch:installSteps.downloading',
+  'launch:installSteps.building',
+  'launch:installSteps.settingUp',
+] as const
+
+function InstallingLabel() {
+  const { t } = useTranslation()
+  const [step, setStep] = useState(0)
+  useEffect(() => {
+    const id = setInterval(
+      () => setStep((s) => (s + 1) % INSTALL_STEP_KEYS.length),
+      4000
+    )
+    return () => clearInterval(id)
+  }, [])
+  // Fixed, compact width so the label + spinner fit inside the same-size
+  // (Run-width) button and it never jumps as the text changes.
+  // `key={step}` remounts the node on each change so the browser repaints it
+  // cleanly — without it the previous frame's text was left as a stale-paint
+  // rectangle next to the spinning (`animate-spin`) icon's compositing layer.
+  return (
+    <span
+      key={step}
+      className="pointer-events-none inline-block w-[68px] select-none truncate text-center text-xs leading-none"
+    >
+      {t(INSTALL_STEP_KEYS[step])}
+    </span>
+  )
+}
+
 function LaunchPage() {
   const { t } = useTranslation()
   const {
@@ -159,6 +193,9 @@ function LaunchPage() {
   const [installed, setInstalled] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [spinning, setSpinning] = useState<Record<string, boolean>>({})
+  const [phase, setPhase] = useState<
+    Record<string, 'installing' | 'configuring' | undefined>
+  >({})
   const [runningModels, setRunningModels] = useState<string[]>([])
   const [logs, setLogs] = useState<Record<string, string[]>>({})
   const [openLog, setOpenLog] = useState<Record<string, boolean>>({})
@@ -351,10 +388,12 @@ function LaunchPage() {
         if (present === undefined) present = await detect(agent)
 
         if (agent.installable && !present) {
+          setPhase((prev) => ({ ...prev, [agent.id]: 'installing' }))
           const ok = await installAgent(agent)
           if (!ok) return
         }
 
+        setPhase((prev) => ({ ...prev, [agent.id]: 'configuring' }))
         await configureAgent(agent, model)
 
         // Config is written; open a terminal running the agent so the user can
@@ -377,6 +416,7 @@ function LaunchPage() {
         clearTimeout(spinTimer)
         setBusy((prev) => ({ ...prev, [agent.id]: false }))
         setSpinning((prev) => ({ ...prev, [agent.id]: false }))
+        setPhase((prev) => ({ ...prev, [agent.id]: undefined }))
       }
     },
     [activeModel, installed, detect, installAgent, configureAgent, t]
@@ -389,6 +429,7 @@ function LaunchPage() {
     const isInstalled = installed[agent.id]
     const isBusy = busy[agent.id]
     const isSpinning = spinning[agent.id]
+    const runPhase = phase[agent.id]
     const agentLogs = logs[agent.id] ?? []
 
     return (
@@ -423,14 +464,26 @@ function LaunchPage() {
             {agent.configurable && (
               <Button
                 size="sm"
-                className="min-w-[112px] justify-center gap-1.5"
+                className="w-[112px] transform-gpu justify-center gap-1.5 select-none"
                 onClick={() => handleRun(agent)}
                 disabled={isBusy}
               >
-                {isBusy && isSpinning && (
-                  <IconLoader2 size={14} className="animate-spin" />
+                {runPhase === 'installing' ? (
+                  <>
+                    <IconLoader2
+                      size={14}
+                      className="pointer-events-none animate-spin"
+                    />
+                    <InstallingLabel />
+                  </>
+                ) : (
+                  <>
+                    {runPhase === 'configuring' && isSpinning && (
+                      <IconLoader2 size={14} className="animate-spin" />
+                    )}
+                    {t('launch:enable')}
+                  </>
                 )}
-                {t('launch:enable')}
               </Button>
             )}
           </div>
