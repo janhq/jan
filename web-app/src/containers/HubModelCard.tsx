@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   IconChevronDown,
   IconChevronUp,
   IconDownload,
   IconCpu,
   IconCode,
-  IconCheck,
-  IconExclamationMark,
-  IconX,
   IconExternalLink,
 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
@@ -19,8 +16,6 @@ import {
   getTotalDownloadFileSize,
 } from '@/lib/models'
 import {
-  cardDescription,
-  fetchReadmeDescription,
   fetchModelStats,
   type ModelStats,
   deriveCapabilities,
@@ -56,9 +51,6 @@ export type HubModelCardProps = {
   model: CatalogModel
   expanded: boolean
   isRecommended?: boolean
-  //* Доп. бейдж рядом с названием (например, категория рекомендации
-  //* «Everyday use» / «For MLX»). Для блока All Models не передаётся.
-  chip?: ReactNode
   onToggleVariants: () => void
   onOpenModel: () => void
   handleUseModel: (modelId: string) => void
@@ -120,25 +112,59 @@ const FIT_BADGE_CLASS: Record<HardwareFit, string> = {
 }
 
 const FIT_ICON_CLASS: Record<HardwareFit, string> = {
-  ok: 'bg-emerald-500',
-  maybe: 'bg-amber-500',
-  no: 'bg-red-400',
+  ok: 'bg-[#22b264]',
+  maybe: 'bg-[#e0991f]',
+  no: 'bg-[#e0564e]',
+}
+
+// Inline glyphs (not icon-font) for crisp, bold, perfectly centered strokes.
+// Stroke width goes through inline `style` so the global `svg { stroke-width: 2 }`
+// rule in index.css can't override it (a stylesheet rule beats the SVG attribute).
+function FitGlyph({ fit }: { fit: HardwareFit }) {
+  const common = {
+    width: 11,
+    height: 11,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: '#fff',
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+  }
+  if (fit === 'ok') {
+    return (
+      <svg {...common} style={{ strokeWidth: 3.5 }}>
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    )
+  }
+  if (fit === 'maybe') {
+    return (
+      <svg {...common} style={{ strokeWidth: 3 }}>
+        <line x1="12" y1="5" x2="12" y2="13" />
+        <line x1="12" y1="18" x2="12" y2="18" />
+      </svg>
+    )
+  }
+  return (
+    <svg {...common} style={{ strokeWidth: 3.5 }}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
 }
 
 /** Per-quant traffic-light status icon with HF-wording tooltip. */
 function StatusIcon({ fit }: { fit: HardwareFit }) {
-  const Glyph =
-    fit === 'ok' ? IconCheck : fit === 'maybe' ? IconExclamationMark : IconX
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
           className={cn(
-            'inline-flex items-center justify-center size-[17px] rounded-[5px] text-white',
+            'inline-flex items-center justify-center size-[17px] rounded-[5px]',
             FIT_ICON_CLASS[fit]
           )}
         >
-          <Glyph size={12} stroke={3} />
+          <FitGlyph fit={fit} />
         </span>
       </TooltipTrigger>
       <TooltipContent>
@@ -152,7 +178,6 @@ export function HubModelCard({
   model,
   expanded,
   isRecommended,
-  chip,
   onToggleVariants,
   onOpenModel,
   handleUseModel,
@@ -190,23 +215,6 @@ export function HubModelCard({
   const params = stats.params ?? deriveParams(model)
   const context = stats.context ?? deriveContext(model)
 
-  //* Описание: берём человеческий первый абзац. Если в каталоге лежит только
-  //* ссылка на README (или ничего полезного), подтягиваем README с HF и
-  //* вытаскиваем первый абзац (с кэшем). Иначе используем то, что уже есть.
-  const existingDescription = useMemo(() => cardDescription(model), [model])
-  const [fetchedDescription, setFetchedDescription] = useState('')
-  useEffect(() => {
-    if (existingDescription) return
-    let active = true
-    fetchReadmeDescription(model.model_name).then((text) => {
-      if (active) setFetchedDescription(text)
-    })
-    return () => {
-      active = false
-    }
-  }, [existingDescription, model.model_name])
-  const description = existingDescription || fetchedDescription
-
   const defaultVariant = pickDefaultQuant(model)
   const sizeText = model.is_mlx
     ? getMlxTotalFileSize(model)
@@ -236,29 +244,42 @@ export function HubModelCard({
             className="mt-0.5"
           />
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1
-                className={cn(
-                  'text-foreground font-semibold text-base truncate cursor-pointer capitalize',
-                  isRecommended && 'hub-model-card-step'
-                )}
-                title={name}
-                onClick={onOpenModel}
-              >
-                {name}
-              </h1>
-              <FormatBadge format={format} />
-              {chip}
+            <h1
+              className={cn(
+                'text-foreground font-semibold text-base truncate cursor-pointer capitalize',
+                isRecommended && 'hub-model-card-step'
+              )}
+              title={name}
+              onClick={onOpenModel}
+            >
+              {name}
+            </h1>
+            {/* By author · downloads · params · context. params/context
+                подгружаются с HF после маунта и лишь дополняют строку — высота
+                не меняется, поэтому виртуальный список не дёргается. */}
+            <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-foreground/70 mt-1 min-h-[18px]">
+              {model.developer && (
+                <span className="capitalize">
+                  {t('hub:by')} {model.developer}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1.5">
+                <IconDownload size={14} className="text-muted-foreground" />
+                {formatDownloads(model.downloads)}
+              </span>
+              {params && (
+                <span className="inline-flex items-center gap-1.5">
+                  <IconCpu size={14} className="text-muted-foreground" />
+                  {params} params
+                </span>
+              )}
+              {context && (
+                <span className="inline-flex items-center gap-1.5">
+                  <IconCode size={14} className="text-muted-foreground" />
+                  {context} context
+                </span>
+              )}
             </div>
-            {/* Резервируем высоту в одну строку: описание (README) и
-                params/context подгружаются с HF уже после маунта карточки.
-                Без фиксированной высоты карточка «подрастает» при загрузке,
-                из-за чего виртуальный список переразмеряет десятки строк во
-                время скролла — это и есть «дёрганый» скролл. min-h держит
-                высоту строки стабильной независимо от того, есть текст или нет. */}
-            <p className="text-[13px] text-muted-foreground mt-1 line-clamp-1 min-h-[18px]">
-              {description}
-            </p>
           </div>
         </div>
         <div className="shrink-0">
@@ -280,9 +301,10 @@ export function HubModelCard({
         </div>
       </div>
 
-      {/* Capabilities */}
-      {caps.length > 0 && (
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
+      {/* Format badge + capability tags + actions */}
+      <div className="flex items-center justify-between gap-3 mt-4 pt-3 border-t border-border">
+        <div className="flex items-center gap-2 flex-wrap">
+          <FormatBadge format={format} />
           {caps.map((c) => (
             <span
               key={c.label}
@@ -294,33 +316,6 @@ export function HubModelCard({
               {c.label}
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Meta + actions */}
-      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-border">
-        <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-foreground/70">
-          {model.developer && (
-            <span className="capitalize">
-              {t('hub:by')} {model.developer}
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1.5">
-            <IconDownload size={14} className="text-muted-foreground" />
-            {formatDownloads(model.downloads)}
-          </span>
-          {params && (
-            <span className="inline-flex items-center gap-1.5">
-              <IconCpu size={14} className="text-muted-foreground" />
-              {params} params
-            </span>
-          )}
-          {context && (
-            <span className="inline-flex items-center gap-1.5">
-              <IconCode size={14} className="text-muted-foreground" />
-              {context} context
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-4 shrink-0">

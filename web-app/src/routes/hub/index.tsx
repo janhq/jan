@@ -19,8 +19,6 @@ import { extractModelName } from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import { IconSearch } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
-import { RecommendedModelChip } from '@/components/RecommendedModelChip'
-import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommendedModelChip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -841,16 +839,6 @@ function HubContent() {
                 <div className="flex flex-col gap-1">
                   {recommendedItems.map(({ rec, model }) => {
                     const key = `${rec.modelName}-${rec.descriptionKey}`
-                    const recChip = (
-                      <RecommendedModelChip
-                        variant={chipVariantForRecommendedDescriptionKey(
-                          rec.descriptionKey
-                        )}
-                        title={t(rec.descriptionKey)}
-                      >
-                        {t(rec.descriptionKey)}
-                      </RecommendedModelChip>
-                    )
                     //* Модель ещё не разрешилась из catalog/HF — лёгкая
                     //* заглушка в стиле новой карточки, пока подтянутся данные.
                     if (!model) {
@@ -874,7 +862,6 @@ function HubContent() {
                             >
                               {extractModelName(rec.modelName) || rec.modelName}
                             </h1>
-                            {recChip}
                           </div>
                           <p className="text-[13px] text-muted-foreground mt-1">
                             {t('hub:by')} {rec.modelName.split('/')[0]}
@@ -888,7 +875,6 @@ function HubContent() {
                         model={model}
                         expanded={!!expandedModels[model.model_name]}
                         isRecommended={isRecommendedModel(model.model_name)}
-                        chip={recChip}
                         onToggleVariants={() =>
                           toggleModelExpansion(model.model_name)
                         }

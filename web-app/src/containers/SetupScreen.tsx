@@ -27,6 +27,7 @@ import { useShallow } from 'zustand/shallow'
 import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
 import { RecommendedModelChip } from '@/components/RecommendedModelChip'
 import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommendedModelChip'
+import { modelFamilyLogoSrc } from '@/lib/model-logo'
 
 //* Вариант загрузки: приоритет квантов как в Hub
 function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
@@ -44,17 +45,8 @@ function formatDownloadGb(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(2)
 }
 
-//* Иконка бренда по id репозитория HF (public/svg)
-function recommendedSetupModelIconSrc(hfRepoId: string): string | null {
-  const id = hfRepoId.toLowerCase()
-  //? Distill-Qwen в названии DeepSeek — сначала deepseek, иначе попадём в Qwen
-  if (id.includes('deepseek')) return '/svg/deepseek-color.svg'
-  if (id.includes('gemma')) return '/svg/gemma-color.svg'
-  if (id.includes('qwen')) return '/svg/qwen-color.svg'
-  if (id.includes('llama') || id.includes('meta-llama'))
-    return '/svg/meta-color.svg'
-  return null
-}
+//* Иконка бренда по id репозитория HF (см. modelFamilyLogoSrc)
+const recommendedSetupModelIconSrc = modelFamilyLogoSrc
 
 type SetupScreenProps = {
   onSkipped?: () => void
