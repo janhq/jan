@@ -1728,6 +1728,94 @@ pub fn configure_openclaw(
     Ok(())
 }
 
+/// Configure Claude Code by upserting `~/.claude/settings.json` so it points at
+/// the local Atomic Chat server and uses the active model. Values go into the
+/// `env` block — Claude reads it at startup regardless of how `claude` was
+/// launched, and `ANTHROPIC_MODEL` there overrides any stale top-level `model`.
+/// All other user settings are preserved.
+#[tauri::command]
+pub fn configure_claude_code(
+    api_url: String,
+    model: Option<String>,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".claude");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.claude: {}", e))?;
+    let path = dir.join("settings.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
+
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    let env = obj.entry("env").or_insert_with(|| serde_json::json!({}));
+    if !env.is_object() {
+        *env = serde_json::json!({});
+    }
+    let env_obj = env.as_object_mut().unwrap();
+    // Claude Code appends its own `/v1`, so `api_url` here is the bare host:port.
+    env_obj.insert(
+        "ANTHROPIC_BASE_URL".to_string(),
+        serde_json::json!(api_url),
+    );
+    env_obj.insert(
+        "ANTHROPIC_AUTH_TOKEN".to_string(),
+        serde_json::json!(key_val),
+    );
+
+    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
+        // ANTHROPIC_MODEL overrides the `model` setting; the tier aliases make
+        // every Opus/Sonnet/Haiku request route to the single local model too.
+        env_obj.insert("ANTHROPIC_MODEL".to_string(), serde_json::json!(model));
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
+            serde_json::json!(model),
+        );
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            serde_json::json!(model),
+        );
+        env_obj.insert(
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+            serde_json::json!(model),
+        );
+        obj.insert("model".to_string(), serde_json::json!(model));
+    }
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!(
+        "Claude Code configured: base_url={}, model={:?}",
+        api_url,
+        model
+    );
+    Ok(())
+}
+
 /// Open the OS terminal and run `command` interactively, so the user can start
 /// using a just-configured agent in one click. The terminal stays open after
 /// the command (it launches an interactive TUI agent like codex/claude).

@@ -333,10 +333,10 @@ function LaunchPage() {
 
       switch (agent.id) {
         case 'claude-code':
-          await invoke('launch_claude_code_with_config', {
+          await invoke('configure_claude_code', {
             apiUrl,
+            model: model ?? undefined,
             apiKey: key,
-            customEnvVars: [],
           })
           break
         case 'codex':
