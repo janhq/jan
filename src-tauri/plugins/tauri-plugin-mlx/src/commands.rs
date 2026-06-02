@@ -34,9 +34,12 @@ pub struct MlxConfig {
     pub draft_model_path: String,
     #[serde(default)]
     pub block_size: i32,
-    /// Drafter family — "dflash" (default) or "mtp" (Gemma 4 assistant).
+    /// Drafter family — "dflash" (default), "mtp" (Gemma 4 assistant +
+    /// Qwen / DeepSeek-V4 MTP heads) or "eagle3" (Gemma 4 speculator).
     /// Empty string is treated as "dflash" so pre-update callers keep
-    /// working without churn.
+    /// working without churn. The value is passed verbatim to mlx-vlm's
+    /// `--draft-kind` (choices: dflash | eagle3 | mtp); mlx-vlm also
+    /// auto-corrects it from the drafter's HF `model_type` if it disagrees.
     #[serde(default)]
     pub draft_kind: String,
 }
@@ -116,9 +119,9 @@ pub async fn load_mlx_model_impl(
     //   * `ctx_size`   → `--max-kv-size`
     //   * `block_size` → `--draft-block-size`
     //   * `draft_model_path` non-empty → `--draft-model ... --draft-kind <kind>`
-    //   * `draft_kind` selects between mlx-vlm's two drafter families
-    //     ("dflash" or "mtp"); empty string falls back to "dflash" so
-    //     legacy callers (and stale persisted configs) keep working.
+    //   * `draft_kind` selects mlx-vlm's drafter family ("dflash", "mtp" or
+    //     "eagle3"); empty string falls back to "dflash" so legacy callers
+    //     (and stale persisted configs) keep working.
     // Keeping the TS-side names stable avoids churning the extension /
     // settings.json schema and the autoIncreaseCtx test suite.
     let mut args: Vec<String> = vec![

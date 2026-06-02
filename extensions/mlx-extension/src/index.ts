@@ -38,6 +38,13 @@ import {
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 import { resolveMtpDraft } from './mtpRegistry'
+import { resolveEagle3Draft } from './eagle3Registry'
+
+/// The three mutually-exclusive speculative-decoding families surfaced by
+/// the MLX extension. Maps 1:1 onto mlx-vlm's `--draft-kind` choices
+/// (`dflash | eagle3 | mtp`). The empty string is the "no drafter" state
+/// used internally by `performLoad`.
+type DraftKind = 'dflash' | 'mtp' | 'eagle3'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -113,6 +120,7 @@ export default class mlx_extension extends AIEngine {
   private blockReloadTimers: {
     dflash?: ReturnType<typeof setTimeout>
     mtp?: ReturnType<typeof setTimeout>
+    eagle3?: ReturnType<typeof setTimeout>
   } = {}
 
   /// Per-family in-flight reload promises. We serialise reloads inside a
@@ -121,6 +129,7 @@ export default class mlx_extension extends AIEngine {
   private blockReloadInFlight: {
     dflash?: Promise<void>
     mtp?: Promise<void>
+    eagle3?: Promise<void>
   } = {}
 
   private static readonly BLOCK_RELOAD_DEBOUNCE_MS = 800
@@ -203,7 +212,7 @@ export default class mlx_extension extends AIEngine {
       this.unlistenAutoIncreaseCtx()
       this.unlistenAutoIncreaseCtx = undefined
     }
-    for (const family of ['dflash', 'mtp'] as const) {
+    for (const family of ['dflash', 'mtp', 'eagle3'] as const) {
       const t = this.blockReloadTimers[family]
       if (t) clearTimeout(t)
       delete this.blockReloadTimers[family]
@@ -226,8 +235,17 @@ export default class mlx_extension extends AIEngine {
     /// — otherwise the new value is just stored in `this.config` and
     /// will be picked up the next time the user toggles the drafter on
     /// from the SetupScreen.
-    if (key === 'block_size' || key === 'mtp_block_size') {
-      const family: 'dflash' | 'mtp' = key === 'block_size' ? 'dflash' : 'mtp'
+    if (
+      key === 'block_size' ||
+      key === 'mtp_block_size' ||
+      key === 'eagle3_block_size'
+    ) {
+      const family: DraftKind =
+        key === 'block_size'
+          ? 'dflash'
+          : key === 'mtp_block_size'
+            ? 'mtp'
+            : 'eagle3'
       const numValue = Number(value)
       if (!Number.isFinite(numValue) || numValue < 1) return
       this.scheduleBlockReload(family, numValue)
@@ -239,7 +257,7 @@ export default class mlx_extension extends AIEngine {
   /// stream because the underlying `enableDflash` / `enableMtp` calls
   /// SIGTERM the mlx-server process before respawning it with the new
   /// `--draft-block-size` flag.
-  private scheduleBlockReload(family: 'dflash' | 'mtp', value: number): void {
+  private scheduleBlockReload(family: DraftKind, value: number): void {
     const existing = this.blockReloadTimers[family]
     if (existing) clearTimeout(existing)
 
@@ -248,6 +266,7 @@ export default class mlx_extension extends AIEngine {
 
       if (family === 'dflash' && !this.config.dflash_enabled) return
       if (family === 'mtp' && !this.config.mtp_enabled) return
+      if (family === 'eagle3' && !this.config.eagle3_enabled) return
 
       const modelId = this.lastActiveModelId
       if (!modelId) {
@@ -290,8 +309,10 @@ export default class mlx_extension extends AIEngine {
         try {
           if (family === 'dflash') {
             await this.enableDflash(modelId, value)
-          } else {
+          } else if (family === 'mtp') {
             await this.enableMtp(modelId, value)
+          } else {
+            await this.enableEagle3(modelId, value)
           }
         } catch (e) {
           logger.error(`block_size auto-reload failed (${family}): ${e}`)
@@ -498,47 +519,69 @@ export default class mlx_extension extends AIEngine {
       }
     }
 
-    /// Speculative decoding has two mutually exclusive families:
-    /// DFlash (`z-lab/*`) and MTP (`mlx-community/gemma-4-*-assistant-*`).
-    /// The UI guarantees only one toggle is on at a time, but we
-    /// defensively prefer MTP if a stale config has both true and log a
-    /// warning. When neither is on, draft path / block size are forced
-    /// empty so a leftover `draft_model_path` cannot leak into the next
-    /// session.
+    /// Speculative decoding has three mutually exclusive families:
+    /// DFlash (`z-lab/*`), MTP (`mlx-community/*-assistant-*` for Gemma 4
+    /// plus the `*-MTP-bf16` Qwen / DeepSeek-V4 heads) and EAGLE-3
+    /// (`RedHatAI/*-speculator.eagle3` for Gemma 4). The UI guarantees only
+    /// one toggle is on at a time, but we defensively pick a single family
+    /// with a fixed precedence (`mtp > eagle3 > dflash`) and log a warning
+    /// if a stale config has more than one true. When none is on, draft
+    /// path / block size are forced empty so a leftover `draft_model_path`
+    /// cannot leak into the next session.
     const dflashOn = !!cfg.dflash_enabled
     const mtpOn = !!cfg.mtp_enabled
-    if (dflashOn && mtpOn) {
+    const eagle3On = !!cfg.eagle3_enabled
+    const enabledCount =
+      (dflashOn ? 1 : 0) + (mtpOn ? 1 : 0) + (eagle3On ? 1 : 0)
+    if (enabledCount > 1) {
       logger.warn(
-        'Both dflash_enabled and mtp_enabled are true; preferring MTP.'
+        `Multiple speculative drafters enabled (dflash=${dflashOn} ` +
+          `mtp=${mtpOn} eagle3=${eagle3On}); precedence mtp > eagle3 > dflash.`
       )
     }
-    let draftPath = dflashOn || mtpOn ? String(cfg.draft_model_path ?? '') : ''
-    const draftKind = mtpOn ? 'mtp' : dflashOn ? 'dflash' : ''
-    const blockSize = mtpOn
-      ? Number(cfg.mtp_block_size ?? 4)
-      : dflashOn
-        ? Number(cfg.block_size ?? 16)
-        : 0
+    /// `draftKind` is '' only when no family is enabled.
+    const draftKind: DraftKind | '' = mtpOn
+      ? 'mtp'
+      : eagle3On
+        ? 'eagle3'
+        : dflashOn
+          ? 'dflash'
+          : ''
+    const anyDrafterOn = draftKind !== ''
+    let draftPath = anyDrafterOn ? String(cfg.draft_model_path ?? '') : ''
+    /// EAGLE-3 has no fork-tuned default block size — `0` means "let the
+    /// drafter use its own configured depth" (the Rust shim only emits
+    /// `--draft-block-size` when the value is > 0).
+    const blockSize =
+      draftKind === 'mtp'
+        ? Number(cfg.mtp_block_size ?? 4)
+        : draftKind === 'dflash'
+          ? Number(cfg.block_size ?? 16)
+          : draftKind === 'eagle3'
+            ? Number(cfg.eagle3_block_size ?? 0)
+            : 0
 
-    /// Cold-start auto-restore: `dflash_enabled` / `mtp_enabled` are
-    /// persisted by `registerSettings`, but `draft_model_path` lives only
-    /// in the in-memory `this.config` and gets wiped on app restart. If
-    /// a toggle is on but no path is known yet, re-resolve via the
-    /// matching registry and reuse the cached draft (or download it).
-    /// On any failure we fall back to running without the drafter so the
-    /// model load itself is never blocked by a missing/unreachable
-    /// assistant. Both MTP and DFlash now accept quantized targets — the
-    /// mlx-vlm server forces `temp=0` on the speculative path so a
-    /// quantization mismatch with the bf16 drafter only reduces the
-    /// acceptance rate, never corrupts output.
-    if ((dflashOn || mtpOn) && !draftPath) {
+    /// Cold-start auto-restore: the `*_enabled` flags are persisted by
+    /// `registerSettings`, but `draft_model_path` lives only in the
+    /// in-memory `this.config` and gets wiped on app restart. If a toggle
+    /// is on but no path is known yet, re-resolve via the matching registry
+    /// and reuse the cached draft (or download it). On any failure we fall
+    /// back to running without the drafter so the model load itself is
+    /// never blocked by a missing/unreachable drafter. All three families
+    /// accept quantized targets — the mlx-vlm server forces `temp=0` on the
+    /// speculative path so a quantization mismatch with the bf16 drafter
+    /// only reduces the acceptance rate, never corrupts output.
+    if (anyDrafterOn && !draftPath) {
       try {
-        const resolution = mtpOn
-          ? resolveMtpDraft(modelId)
-          : resolveDflashDraft(modelId)
+        const resolution =
+          draftKind === 'mtp'
+            ? resolveMtpDraft(modelId)
+            : draftKind === 'eagle3'
+              ? resolveEagle3Draft(modelId)
+              : resolveDflashDraft(modelId)
         if (resolution) {
           const restored = await this.ensureDraftDownloaded(
-            mtpOn ? 'mtp' : 'dflash',
+            draftKind as DraftKind,
             resolution.repo,
             resolution.required,
             resolution.optional
@@ -1515,7 +1558,7 @@ export default class mlx_extension extends AIEngine {
   }
 
   /// ──────────────────────────────────────────────────────────────────
-  /// Speculative decoding orchestration (DFlash + MTP)
+  /// Speculative decoding orchestration (DFlash + MTP + EAGLE-3)
   /// ──────────────────────────────────────────────────────────────────
   ///
   /// The provider-level toggles in the UI call into these methods. The
@@ -1523,10 +1566,11 @@ export default class mlx_extension extends AIEngine {
   /// plumbed through `performLoad` via `MlxConfig.draft_model_path` and
   /// `MlxConfig.draft_kind` (see commands.rs).
   ///
-  /// DFlash and MTP share the same on-disk cache layout
-  /// (`mlx/draft-models/<repo>/`); collisions are impossible because
-  /// the repo path is unique per drafter family
-  /// (`z-lab/...` vs `mlx-community/gemma-4-...-assistant-...`).
+  /// All three families share the same on-disk cache layout
+  /// (`mlx/draft-models/<repo>/`); collisions are impossible because the
+  /// repo path is unique per drafter family (`z-lab/...` for DFlash,
+  /// `mlx-community/*-assistant-*` + `*-MTP-bf16` for MTP, and
+  /// `RedHatAI/*-speculator.eagle3` for EAGLE-3).
 
   /**
    * Local folder where auto-downloaded drafts are cached. Lives
@@ -1846,6 +1890,7 @@ export default class mlx_extension extends AIEngine {
       await this.load(modelId, {
         dflash_enabled: true,
         mtp_enabled: false,
+        eagle3_enabled: false,
         draft_model_path: draftDir,
         block_size: blockSize,
       })
@@ -1854,10 +1899,11 @@ export default class mlx_extension extends AIEngine {
 
     /// Update in-memory config so subsequent `performLoad` calls (e.g. from
     /// auto-increase-ctx, or a fresh start) keep DFlash enabled. Mutex:
-    /// turning DFlash on forces MTP off — both flags can never be true at
-    /// the same time.
+    /// turning DFlash on forces MTP and EAGLE-3 off — at most one drafter
+    /// family can be true at a time.
     this.config.dflash_enabled = true
     this.config.mtp_enabled = false
+    this.config.eagle3_enabled = false
     this.config.draft_model_path = draftDir
     this.config.block_size = blockSize
   }
@@ -1999,15 +2045,17 @@ export default class mlx_extension extends AIEngine {
       await this.load(modelId, {
         dflash_enabled: false,
         mtp_enabled: true,
+        eagle3_enabled: false,
         draft_model_path: draftDir,
         mtp_block_size: blockSize,
       })
       logger.info(`enableMtp: ${modelId} reloaded with MTP`)
     }
 
-    /// Mutex: turning MTP on forces DFlash off.
+    /// Mutex: turning MTP on forces DFlash and EAGLE-3 off.
     this.config.mtp_enabled = true
     this.config.dflash_enabled = false
+    this.config.eagle3_enabled = false
     this.config.draft_model_path = draftDir
     this.config.mtp_block_size = blockSize
   }
@@ -2031,6 +2079,162 @@ export default class mlx_extension extends AIEngine {
     }
 
     this.config.mtp_enabled = false
+    this.config.draft_model_path = ''
+  }
+
+  /// ──────────────────────────────────────────────────────────────────
+  /// EAGLE-3 (Gemma 4 speculator) speculative decoding
+  /// ──────────────────────────────────────────────────────────────────
+  ///
+  /// Mirrors the DFlash / MTP trios: a static registry
+  /// (`eagle3Registry.ts`) resolves the `RedHatAI/*-speculator.eagle3`
+  /// repo from the active MLX model id; `ensureDraftDownloaded` pulls it
+  /// from `huggingface.co/<repo>/resolve/main/<file>` (or reuses a local
+  /// copy); the live session is unloaded + reloaded with
+  /// `--draft-kind eagle3`.
+  ///
+  /// Mutually exclusive with DFlash and MTP: enabling EAGLE-3 clears both
+  /// other flags, and `performLoad` deterministically resolves a single
+  /// family (precedence `mtp > eagle3 > dflash`) if a stale config has more
+  /// than one true.
+
+  /**
+   * Whether the given MLX model has a known EAGLE-3 speculator sibling.
+   *
+   * Pure / synchronous registry lookup — never touches the network. The
+   * resolved manifest is returned alongside so the caller can hand it
+   * back to `enableEagle3` without re-resolving.
+   */
+  async checkEagle3Support(modelId: string): Promise<{
+    supported: boolean
+    repo?: string
+    required?: string[]
+    optional?: string[]
+    /// True iff a usable speculator directory is already present on disk.
+    local?: boolean
+    localPath?: string
+  }> {
+    logger.info(`checkEagle3Support: resolving EAGLE-3 speculator for ${modelId}`)
+    try {
+      const resolution = resolveEagle3Draft(modelId)
+      if (!resolution) {
+        logger.info(`checkEagle3Support: ${modelId} unsupported`)
+        return { supported: false }
+      }
+      const localPath = await this.resolveLocalDraftDir(resolution.repo)
+      logger.info(
+        `checkEagle3Support: ${modelId} -> ${resolution.repo}` +
+          (localPath ? ` (local: ${localPath})` : ' (needs download)')
+      )
+      return {
+        supported: true,
+        repo: resolution.repo,
+        required: resolution.required,
+        optional: resolution.optional,
+        local: localPath !== null,
+        localPath: localPath ?? undefined,
+      }
+    } catch (e) {
+      logger.warn(`checkEagle3Support failed for ${modelId}: ${e}`)
+      return { supported: false }
+    }
+  }
+
+  /**
+   * Enable EAGLE-3 for `modelId`: resolve the speculator manifest, ensure
+   * the draft directory exists locally (download if needed), unload the
+   * active session, and reload it with `--draft-kind eagle3`.
+   *
+   * `blockSize` of `0` (the default) leaves `--draft-block-size` off so the
+   * speculator uses its own configured depth. `prefetched` lets callers
+   * reuse the result of `checkEagle3Support` so the static lookup is not
+   * repeated.
+   */
+  async enableEagle3(
+    modelId: string,
+    blockSize: number = 0,
+    prefetched?: {
+      repo: string
+      required?: string[]
+      optional?: string[]
+    }
+  ): Promise<void> {
+    let resolution: DraftResolution
+    if (prefetched?.repo) {
+      resolution = {
+        repo: prefetched.repo,
+        required: prefetched.required ?? [],
+        optional: prefetched.optional ?? [],
+      }
+      /// Empty `required` would short-circuit local lookup; pull the
+      /// canonical manifest so we still know what to verify.
+      if (resolution.required.length === 0) {
+        const fresh = resolveEagle3Draft(prefetched.repo)
+        if (fresh) {
+          resolution = fresh
+        }
+      }
+    } else {
+      const fresh = resolveEagle3Draft(modelId)
+      if (!fresh) {
+        throw new Error(`Model ${modelId} does not support EAGLE-3`)
+      }
+      resolution = fresh
+    }
+
+    const draftDir = await this.ensureDraftDownloaded(
+      'eagle3',
+      resolution.repo,
+      resolution.required,
+      resolution.optional
+    )
+    logger.info(`enableEagle3: draft ready at ${draftDir}`)
+
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      logger.info(`enableEagle3: reloading ${modelId} with EAGLE-3`)
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`enableEagle3: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        dflash_enabled: false,
+        mtp_enabled: false,
+        eagle3_enabled: true,
+        draft_model_path: draftDir,
+        eagle3_block_size: blockSize,
+      })
+      logger.info(`enableEagle3: ${modelId} reloaded with EAGLE-3`)
+    }
+
+    /// Mutex: turning EAGLE-3 on forces DFlash and MTP off.
+    this.config.eagle3_enabled = true
+    this.config.dflash_enabled = false
+    this.config.mtp_enabled = false
+    this.config.draft_model_path = draftDir
+    this.config.eagle3_block_size = blockSize
+  }
+
+  /**
+   * Disable EAGLE-3 for `modelId`: unload + reload as plain MLX.
+   */
+  async disableEagle3(modelId: string): Promise<void> {
+    const sInfo = await this.findSessionByModel(modelId)
+    if (sInfo) {
+      try {
+        await this.unload(modelId)
+      } catch (e) {
+        logger.warn(`disableEagle3: unload failed for ${modelId}: ${e}`)
+      }
+      await this.load(modelId, {
+        eagle3_enabled: false,
+        draft_model_path: '',
+        eagle3_block_size: 0,
+      })
+    }
+
+    this.config.eagle3_enabled = false
     this.config.draft_model_path = ''
   }
 }

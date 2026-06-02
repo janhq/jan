@@ -53,5 +53,27 @@
       "min": 1,
       "max": 16
     }
+  },
+  {
+    "key": "eagle3_enabled",
+    "title": "EAGLE-3 Speculative Decoding (Gemma 4)",
+    "description": "Enable EAGLE-3 speculative decoding for Gemma 4 targets. The matching `RedHatAI/*-speculator.eagle3` drafter is auto-downloaded for the currently running MLX model. Mutually exclusive with DFlash and MTP.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "eagle3_block_size",
+    "title": "EAGLE-3 Block Size",
+    "description": "Override the number of speculatively drafted tokens per round for the EAGLE-3 speculator. 0 (default) uses the speculator's own configured depth; raise for larger drafts at the cost of latency.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "0",
+      "value": "0",
+      "type": "number",
+      "min": 0,
+      "max": 16
+    }
   }
 ]

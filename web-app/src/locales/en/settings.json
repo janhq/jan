@@ -380,5 +380,14 @@
   "mtpLoadingDraft": "Loading MTP assistant for {{modelId}}...",
   "mtpEnableSuccess": "MTP enabled",
   "mtpDisableSuccess": "MTP disabled",
-  "mtpEnableFailed": "Failed to toggle MTP"
+  "mtpEnableFailed": "Failed to toggle MTP",
+  "eagle3UnsupportedTitle": "EAGLE-3 isn't available for this model",
+  "eagle3UnsupportedDescPrefix": "{{modelId}} doesn't have a paired EAGLE-3 speculator. Pick a supported Gemma 4 target (31B or 26B-A4B) from ",
+  "eagle3UnsupportedDescSuffix": " to enable EAGLE-3 speculative decoding.",
+  "eagle3NoActiveModel": "Start an MLX model first.",
+  "eagle3DownloadingDraft": "Downloading EAGLE-3 speculator for {{modelId}}...",
+  "eagle3LoadingDraft": "Loading EAGLE-3 speculator for {{modelId}}...",
+  "eagle3EnableSuccess": "EAGLE-3 enabled",
+  "eagle3DisableSuccess": "EAGLE-3 disabled",
+  "eagle3EnableFailed": "Failed to toggle EAGLE-3"
 }

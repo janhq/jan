@@ -784,6 +784,14 @@ export class ModelFactory {
         const url = new URL(`${baseUrl}/v1${path}`)
         return url.toString()
       },
+      // mlx-vlm v0.6.0 (PR #1216) made the streaming `usage`/`timings` frame
+      // spec-compliant: it is emitted only when the client opts in via
+      // `stream_options.include_usage`. The pre-v0.6.0 fork emitted it
+      // unconditionally, so this path used to get TPS for free. Set the flag
+      // explicitly (as the llamacpp factory already does) so the
+      // `providerMetadataExtractor` keeps receiving `timings.predicted_per_second`
+      // and the UI shows the real decode rate instead of a wall-clock estimate.
+      includeUsage: true,
       fetch: customFetch,
       metadataExtractor: providerMetadataExtractor,
     })

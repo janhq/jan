@@ -24,6 +24,7 @@ import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelD
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedDialog'
 import { MtpUnsupportedDialog } from '@/containers/dialogs/MtpUnsupportedDialog'
+import { Eagle3UnsupportedDialog } from '@/containers/dialogs/Eagle3UnsupportedDialog'
 import { LlamacppMtpUnsupportedDialog } from '@/containers/dialogs/LlamacppMtpUnsupportedDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
@@ -169,6 +170,15 @@ function ProviderDetail() {
   const [mtpUnsupportedModel, setMtpUnsupportedModel] = useState<string | null>(
     null
   )
+  /// EAGLE-3 mirror of the MTP state. `isTogglingEagle3` drives the inline
+  /// spinner next to the EAGLE-3 Switch; `isEagle3Downloading` keeps the
+  /// Switch disabled while the HF download is in flight (progress is owned
+  /// by the global DownloadManagement panel).
+  const [isTogglingEagle3, setIsTogglingEagle3] = useState(false)
+  const [isEagle3Downloading, setIsEagle3Downloading] = useState(false)
+  const [eagle3UnsupportedModel, setEagle3UnsupportedModel] = useState<
+    string | null
+  >(null)
   /// Upstream-llama MTP toggle state. Mirrors the MLX MTP shape but
   /// targets `llamacpp-upstream`'s `mtp` setting key (no separate downloader
   /// — the MTP head ships inside the same GGUF as the target).
@@ -304,8 +314,8 @@ function ProviderDetail() {
   }, [importingModel])
 
   /// Track the currently-running MLX model id (if this provider is `mlx`).
-  /// Whenever it changes we reset both `dflash_enabled` and `mtp_enabled`
-  /// to `false` because:
+  /// Whenever it changes we reset `dflash_enabled`, `mtp_enabled` and
+  /// `eagle3_enabled` to `false` because:
   ///   1. The new session was just started fresh without `--draft-model`,
   ///      so the UI flags would otherwise lie about the server state.
   ///   2. The previous draft repo is almost certainly wrong for the new
@@ -343,10 +353,18 @@ function ProviderDetail() {
     const mtpOn = !!(
       mtpSetting?.controller_props as { value?: boolean } | undefined
     )?.value
-    if (!dflashOn && !mtpOn) return
+    const eagle3Setting = provider.settings.find(
+      (s) => s.key === 'eagle3_enabled'
+    )
+    const eagle3On = !!(
+      eagle3Setting?.controller_props as { value?: boolean } | undefined
+    )?.value
+    if (!dflashOn && !mtpOn && !eagle3On) return
 
     const next = provider.settings.map((s) =>
-      s.key === 'dflash_enabled' || s.key === 'mtp_enabled'
+      s.key === 'dflash_enabled' ||
+      s.key === 'mtp_enabled' ||
+      s.key === 'eagle3_enabled'
         ? {
             ...s,
             controller_props: {
@@ -521,7 +539,9 @@ function ProviderDetail() {
         isTogglingDflash ||
         isDflashDownloading ||
         isTogglingMtp ||
-        isMtpDownloading
+        isMtpDownloading ||
+        isTogglingEagle3 ||
+        isEagle3Downloading
       )
         return
 
@@ -566,6 +586,10 @@ function ProviderDetail() {
         provider.settings.find((s) => s.key === 'mtp_enabled')
           ?.controller_props as { value?: boolean } | undefined
       )?.value
+      const eagle3CurrentlyOn = !!(
+        provider.settings.find((s) => s.key === 'eagle3_enabled')
+          ?.controller_props as { value?: boolean } | undefined
+      )?.value
 
       setIsTogglingDflash(true)
       try {
@@ -589,6 +613,11 @@ function ProviderDetail() {
           /// `enableDflash` instead) — only the metadata flips here.
           if (mtpCurrentlyOn) {
             writeSetting('mtp_enabled', false)
+          }
+          /// Same mutex against EAGLE-3 — `enableDflash` also wipes
+          /// `eagle3_enabled` server-side; flip the UI flag here.
+          if (eagle3CurrentlyOn) {
+            writeSetting('eagle3_enabled', false)
           }
 
           /// When the draft is already cached on disk the MLX server can
@@ -668,6 +697,8 @@ function ProviderDetail() {
       isDflashDownloading,
       isTogglingMtp,
       isMtpDownloading,
+      isTogglingEagle3,
+      isEagle3Downloading,
     ]
   )
 
@@ -684,7 +715,9 @@ function ProviderDetail() {
         isTogglingMtp ||
         isMtpDownloading ||
         isTogglingDflash ||
-        isDflashDownloading
+        isDflashDownloading ||
+        isTogglingEagle3 ||
+        isEagle3Downloading
       )
         return
 
@@ -729,6 +762,10 @@ function ProviderDetail() {
         provider.settings.find((s) => s.key === 'dflash_enabled')
           ?.controller_props as { value?: boolean } | undefined
       )?.value
+      const eagle3CurrentlyOn = !!(
+        provider.settings.find((s) => s.key === 'eagle3_enabled')
+          ?.controller_props as { value?: boolean } | undefined
+      )?.value
 
       setIsTogglingMtp(true)
       try {
@@ -749,6 +786,10 @@ function ProviderDetail() {
           /// flip the UI flag.
           if (dflashCurrentlyOn) {
             writeSetting('dflash_enabled', false)
+          }
+          /// Same mutex against EAGLE-3.
+          if (eagle3CurrentlyOn) {
+            writeSetting('eagle3_enabled', false)
           }
 
           toast.info(
@@ -811,6 +852,171 @@ function ProviderDetail() {
       serviceHub,
       updateProvider,
       t,
+      isTogglingMtp,
+      isMtpDownloading,
+      isTogglingDflash,
+      isDflashDownloading,
+      isTogglingEagle3,
+      isEagle3Downloading,
+    ]
+  )
+
+  /// Toggle the EAGLE-3 speculative-decoding flag on the MLX provider.
+  /// Mirrors `handleToggleMtp` 1:1 against the `RedHatAI/*-speculator.eagle3`
+  /// registry.
+  ///
+  /// Mutex with DFlash and MTP: if either is on and the user enables
+  /// EAGLE-3, we silently disable them first (single Switch flip → all
+  /// flags reconciled).
+  const handleToggleEagle3 = useCallback(
+    async (nextEnabled: boolean) => {
+      if (provider?.provider !== 'mlx' || !provider) return
+      if (
+        isTogglingEagle3 ||
+        isEagle3Downloading ||
+        isTogglingMtp ||
+        isMtpDownloading ||
+        isTogglingDflash ||
+        isDflashDownloading
+      )
+        return
+
+      const writeSetting = (key: string, value: unknown) => {
+        const next = provider.settings.map((s) =>
+          s.key === key
+            ? {
+                ...s,
+                controller_props: {
+                  ...s.controller_props,
+                  value: value as never,
+                },
+              }
+            : s
+        )
+        serviceHub.providers().updateSettings(providerName, next)
+        updateProvider(providerName, { ...provider, settings: next })
+      }
+
+      const currentBlockSizeRaw = provider.settings.find(
+        (s) => s.key === 'eagle3_block_size'
+      )?.controller_props?.value
+      /// `0` is a valid value (= use the speculator's built-in depth), so
+      /// fall back to 0 rather than a non-zero default.
+      const parsedBlock = Number(currentBlockSizeRaw)
+      const currentBlockSize = Number.isFinite(parsedBlock) ? parsedBlock : 0
+
+      const errTitle = t('settings:eagle3EnableFailed', {
+        defaultValue: 'Failed to toggle EAGLE-3',
+      })
+      const noActive = t('settings:eagle3NoActiveModel', {
+        defaultValue: 'Start an MLX model first.',
+      })
+
+      const mlxEngine: any = EngineManager.instance().get('mlx')
+      if (!mlxEngine) {
+        toast.error(errTitle, { description: noActive })
+        return
+      }
+
+      const loadedModels: string[] = (await mlxEngine.getLoadedModels?.()) ?? []
+      const activeMlxModel = loadedModels[0]
+
+      const dflashCurrentlyOn = !!(
+        provider.settings.find((s) => s.key === 'dflash_enabled')
+          ?.controller_props as { value?: boolean } | undefined
+      )?.value
+      const mtpCurrentlyOn = !!(
+        provider.settings.find((s) => s.key === 'mtp_enabled')
+          ?.controller_props as { value?: boolean } | undefined
+      )?.value
+
+      setIsTogglingEagle3(true)
+      try {
+        if (nextEnabled) {
+          if (!activeMlxModel) {
+            toast.error(errTitle, { description: noActive })
+            return
+          }
+
+          const support = await mlxEngine.checkEagle3Support(activeMlxModel)
+          if (!support?.supported) {
+            setEagle3UnsupportedModel(activeMlxModel)
+            return
+          }
+
+          /// Mutex: silently turn DFlash and MTP off before enabling
+          /// EAGLE-3. The single MLX reload happens inside `enableEagle3`;
+          /// here we only flip the UI flags.
+          if (dflashCurrentlyOn) {
+            writeSetting('dflash_enabled', false)
+          }
+          if (mtpCurrentlyOn) {
+            writeSetting('mtp_enabled', false)
+          }
+
+          toast.info(
+            support.local
+              ? t('settings:eagle3LoadingDraft', {
+                  defaultValue: 'Loading EAGLE-3 speculator for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+              : t('settings:eagle3DownloadingDraft', {
+                  defaultValue:
+                    'Downloading EAGLE-3 speculator for {{modelId}}...',
+                  modelId: activeMlxModel,
+                })
+          )
+
+          if (!support.local) {
+            setIsEagle3Downloading(true)
+            setIsTogglingEagle3(false)
+          }
+
+          try {
+            await mlxEngine.enableEagle3(activeMlxModel, currentBlockSize, {
+              repo: support.repo,
+              required: support.required,
+              optional: support.optional,
+            })
+          } finally {
+            if (!support.local) setIsEagle3Downloading(false)
+          }
+          writeSetting('eagle3_enabled', true)
+
+          toast.success(
+            t('settings:eagle3EnableSuccess', {
+              defaultValue: 'EAGLE-3 enabled',
+            })
+          )
+        } else {
+          if (activeMlxModel) {
+            await mlxEngine.disableEagle3(activeMlxModel)
+          }
+          writeSetting('eagle3_enabled', false)
+
+          toast.success(
+            t('settings:eagle3DisableSuccess', {
+              defaultValue: 'EAGLE-3 disabled',
+            })
+          )
+        }
+      } catch (error) {
+        console.error('Failed to toggle EAGLE-3:', error)
+        toast.error(errTitle, {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setIsTogglingEagle3(false)
+      }
+    },
+    [
+      provider,
+      providerName,
+      serviceHub,
+      updateProvider,
+      t,
+      isTogglingEagle3,
+      isEagle3Downloading,
       isTogglingMtp,
       isMtpDownloading,
       isTogglingDflash,
@@ -1117,17 +1323,23 @@ function ProviderDetail() {
                     provider?.settings.find((s) => s.key === 'mtp_enabled')
                       ?.controller_props as { value?: boolean } | undefined
                   )?.value
+                  const eagle3EnabledOn = !!(
+                    provider?.settings.find((s) => s.key === 'eagle3_enabled')
+                      ?.controller_props as { value?: boolean } | undefined
+                  )?.value
                   const isHiddenByDflash =
                     (!dflashEnabledOn && setting.key === 'block_size') ||
-                    (!mtpEnabledOn && setting.key === 'mtp_block_size')
+                    (!mtpEnabledOn && setting.key === 'mtp_block_size') ||
+                    (!eagle3EnabledOn && setting.key === 'eagle3_block_size')
 
-                  // The dflash_enabled / mtp_enabled checkboxes are
-                  // rendered as Switches with custom side-effecting
-                  // handlers that reload the live MLX session, so we
-                  // short-circuit the generic DynamicControllerSetting
-                  // path for them.
+                  // The dflash_enabled / mtp_enabled / eagle3_enabled
+                  // checkboxes are rendered as Switches with custom
+                  // side-effecting handlers that reload the live MLX
+                  // session, so we short-circuit the generic
+                  // DynamicControllerSetting path for them.
                   const isDflashToggle = setting.key === 'dflash_enabled'
                   const isMtpToggle = setting.key === 'mtp_enabled'
+                  const isEagle3Toggle = setting.key === 'eagle3_enabled'
                   /// Upstream llama.cpp uses the bare key `mtp` (set in
                   /// extensions/llamacpp-upstream-extension/settings.json).
                   /// The MLX MTP key is `mtp_enabled`, so the two never
@@ -1163,7 +1375,9 @@ function ProviderDetail() {
                               isTogglingDflash ||
                               isDflashDownloading ||
                               isTogglingMtp ||
-                              isMtpDownloading
+                              isMtpDownloading ||
+                              isTogglingEagle3 ||
+                              isEagle3Downloading
                             }
                             onCheckedChange={(checked) => {
                               handleToggleDflash(checked)
@@ -1195,13 +1409,44 @@ function ProviderDetail() {
                               isTogglingMtp ||
                               isMtpDownloading ||
                               isTogglingDflash ||
-                              isDflashDownloading
+                              isDflashDownloading ||
+                              isTogglingEagle3 ||
+                              isEagle3Downloading
                             }
                             onCheckedChange={(checked) => {
                               handleToggleMtp(checked)
                             }}
                           />
                           {isTogglingMtp && (
+                            <IconLoader
+                              size={14}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          )}
+                        </div>
+                      ) : isEagle3Toggle ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={
+                              !!(
+                                setting.controller_props as {
+                                  value?: boolean
+                                }
+                              ).value
+                            }
+                            disabled={
+                              isTogglingEagle3 ||
+                              isEagle3Downloading ||
+                              isTogglingMtp ||
+                              isMtpDownloading ||
+                              isTogglingDflash ||
+                              isDflashDownloading
+                            }
+                            onCheckedChange={(checked) => {
+                              handleToggleEagle3(checked)
+                            }}
+                          />
+                          {isTogglingEagle3 && (
                             <IconLoader
                               size={14}
                               className="animate-spin text-muted-foreground"
@@ -1844,6 +2089,13 @@ function ProviderDetail() {
           if (!open) setDflashUnsupportedModel(null)
         }}
         modelId={dflashUnsupportedModel ?? ''}
+      />
+      <Eagle3UnsupportedDialog
+        open={eagle3UnsupportedModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setEagle3UnsupportedModel(null)
+        }}
+        modelId={eagle3UnsupportedModel ?? ''}
       />
       <MtpUnsupportedDialog
         open={mtpUnsupportedModel !== null}
