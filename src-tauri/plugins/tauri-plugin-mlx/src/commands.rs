@@ -42,6 +42,17 @@ pub struct MlxConfig {
     /// auto-corrects it from the drafter's HF `model_type` if it disagrees.
     #[serde(default)]
     pub draft_kind: String,
+    /// KV-cache quantization bit-width (e.g. 3.5 for TurboQuant). `0.0`
+    /// (default) disables quantization. Emitted as `--kv-bits` only when
+    /// `> 0.0` and `kv_quant_scheme` selects a real scheme.
+    #[serde(default)]
+    pub kv_bits: f32,
+    /// KV-cache quantization scheme — "" / "off" (no quantization, default),
+    /// "uniform" or "turboquant". When a real scheme is set together with a
+    /// positive `kv_bits`, both are passed to mlx-vlm as `--kv-quant-scheme`
+    /// + `--kv-bits`; otherwise the server stays on its un-quantized default.
+    #[serde(default)]
+    pub kv_quant_scheme: String,
 }
 
 /// Core model-loading logic, decoupled from Tauri AppHandle.
@@ -122,6 +133,10 @@ pub async fn load_mlx_model_impl(
     //   * `draft_kind` selects mlx-vlm's drafter family ("dflash", "mtp" or
     //     "eagle3"); empty string falls back to "dflash" so legacy callers
     //     (and stale persisted configs) keep working.
+    //   * `kv_quant_scheme` ("uniform" | "turboquant") + `kv_bits` (> 0) →
+    //     `--kv-quant-scheme ... --kv-bits ...` (KV-cache quantization,
+    //     incl. TurboQuant). Any other scheme / non-positive bits leaves the
+    //     server on its un-quantized default.
     // Keeping the TS-side names stable avoids churning the extension /
     // settings.json schema and the autoIncreaseCtx test suite.
     let mut args: Vec<String> = vec![
@@ -169,6 +184,18 @@ pub async fn load_mlx_model_impl(
     if config.block_size > 0 {
         args.push("--draft-block-size".to_string());
         args.push(config.block_size.to_string());
+    }
+
+    // KV-cache quantization (TurboQuant / uniform). Only emitted when a real
+    // scheme is selected together with a positive bit-width; "off" / "" or a
+    // non-positive `kv_bits` leaves mlx-vlm on its full-precision KV default
+    // (the server only sets KV_BITS when `--kv-bits` is passed).
+    let kv_scheme = config.kv_quant_scheme.as_str();
+    if matches!(kv_scheme, "uniform" | "turboquant") && config.kv_bits > 0.0 {
+        args.push("--kv-bits".to_string());
+        args.push(config.kv_bits.to_string());
+        args.push("--kv-quant-scheme".to_string());
+        args.push(kv_scheme.to_string());
     }
 
     log::info!("MLX server arguments: {:?}", args);

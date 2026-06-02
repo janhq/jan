@@ -34,8 +34,8 @@
   },
   {
     "key": "mtp_enabled",
-    "title": "MTP Speculative Decoding (Gemma 4)",
-    "description": "Enable Multi-Token Prediction speculative decoding for Gemma 4 targets. The matching `mlx-community/gemma-4-*-it-assistant-bf16` drafter is auto-downloaded for the currently running MLX model. Mutually exclusive with DFlash.",
+    "title": "MTP Speculative Decoding (Gemma 4 · Qwen · DeepSeek V4)",
+    "description": "Enable Multi-Token Prediction speculative decoding. Covers three drafter families, with the matching head auto-downloaded for the currently running MLX model: Gemma 4 (`mlx-community/gemma-4-*-it-assistant-bf16`), Qwen 3.5/3.6 (`mlx-community/Qwen3.*-MTP-bf16`) and DeepSeek V4 Flash (`mlx-community/DeepSeek-V4-Flash-MTP-bf16`). Mutually exclusive with DFlash and EAGLE-3.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
@@ -44,7 +44,7 @@
   {
     "key": "mtp_block_size",
     "title": "MTP Block Size",
-    "description": "Number of speculatively drafted tokens per round for the Gemma 4 MTP drafter. Default 4 (matches the README perf table); raise for larger drafts at the cost of latency.",
+    "description": "Number of speculatively drafted tokens per round for the MTP drafter (Gemma 4, Qwen 3.5/3.6 or DeepSeek V4). Default 4 (matches the Gemma 4 README perf table); raise for larger drafts at the cost of latency.",
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "4",
@@ -74,6 +74,33 @@
       "type": "number",
       "min": 0,
       "max": 16
+    }
+  },
+  {
+    "key": "kv_quant_scheme",
+    "title": "KV Cache Quantization",
+    "description": "Quantize the KV cache to shrink memory and fit longer contexts. `Off` keeps the full-precision cache. `TurboQuant` (WHT-rotated low-bit, pair with ~3.5 bits) gives the best quality-per-byte; `Uniform` is plain group quantization (pair with 4 or 8 bits). Applies on the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "off",
+      "options": [
+        { "value": "off", "name": "Off" },
+        { "value": "turboquant", "name": "TurboQuant" },
+        { "value": "uniform", "name": "Uniform" }
+      ]
+    }
+  },
+  {
+    "key": "kv_bits",
+    "title": "KV Cache Bits",
+    "description": "Bit-width for KV cache quantization when a scheme is selected above. 3.5 is the recommended TurboQuant default; 4 or 8 suit Uniform. Ignored when KV Cache Quantization is Off.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "3.5",
+      "value": "3.5",
+      "type": "number",
+      "min": 0,
+      "max": 8
     }
   }
 ]

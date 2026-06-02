@@ -95,7 +95,10 @@ exposed by the desktop app at `http://localhost:1337/v1`.
   - Continuous batching (text-only + image requests in the same batch).
   - Automatic Prefix Caching (APC), warm-memory + warm-disk tiers.
   - KV-cache quantization, including **TurboQuant** (`--kv-bits 3.5
-    --kv-quant-scheme turboquant`).
+    --kv-quant-scheme turboquant`). Surfaced in the UI via the MLX
+    provider's **KV Cache Quantization** (off / turboquant / uniform) +
+    **KV Cache Bits** settings, plumbed through `MlxConfig.kv_quant_scheme`
+    / `MlxConfig.kv_bits` in `tauri-plugin-mlx`.
   - Vision feature LRU cache for multi-turn image chats.
   - Speculative decoding across three drafter families, all selected via
     `--draft-kind` (auto-detected from the drafter's HF `model_type` when
@@ -305,6 +308,87 @@ Append-only. Newest at top. Each entry follows this shape:
 > a one-line index here.
 
 ---
+
+### 2026-06-02 — Fix MTP speculative rollback crash on Gemma 4 + DeepSeek-V4 (`'list' object has no attribute 'max'`)
+- **Context:** Enabling **MTP** speculative decoding on a Gemma 4 target
+  (e.g. `gemma-4-e4b-it-4bit` + the `*-assistant` drafter) crashed the
+  generation thread mid-stream with
+  `AttributeError: 'list' object has no attribute 'max'` at
+  `mlx_vlm/models/gemma4/language.py::rollback_speculative_cache`
+  (a secondary `RuntimeError: There is no Stream(gpu, 1)` followed as the
+  `BatchGenerator.__del__` cleanup unwound on the wrong thread). Root cause:
+  the MTP batch driver `speculative/mtp.py::_mtp_rounds_batch` passes
+  `accepted` as a **Python list** of per-row accepted counts, but Gemma 4's
+  (and DeepSeek-V4's) `rollback_speculative_cache` only special-cased `int`
+  and otherwise assumed an `mx.array`, immediately calling `accepted.max()`.
+  The reference `qwen3_5` implementation already normalized `int` / `mx.array`
+  / `list`; Gemma 4 and DeepSeek-V4 did not. (The EAGLE-3 path is unaffected —
+  `speculative/eagle3.py` wraps `mx.array(accepted_list)` before the call.)
+- **Decision:** Coerce `accepted` to an `int32` `mx.array` up front in both
+  `mlx_vlm/models/gemma4/language.py` and
+  `mlx_vlm/models/deepseek_v4/language.py`
+  (`elif not isinstance(accepted, mx.array): accepted = mx.array(list(accepted), dtype=mx.int32)`),
+  matching the qwen3_5 convention. Minimal, local, array-path-preserving.
+- **Consequences:**
+  - **Gemma 4 MTP and DeepSeek-V4 MTP now run** instead of crashing on the
+    first speculative round; the cascade `Stream(gpu, 1)` cleanup error is
+    gone once the primary exception no longer fires. Qwen MTP was already
+    correct (qwen3_5 hook) and is unchanged. DFlash / EAGLE-3 paths untouched.
+  - Fix lives in the **`AtomicBot-ai/mlx-vlm` fork** — it takes effect for
+    dev runs from source on the next sidecar restart, and reaches the shipped
+    app only after the fork is committed + a new sidecar release is built via
+    `build-mlxvlm-macos.yml` (see the v0.6.0 sync ADR below). `py_compile`
+    passes on both edited modules.
+- **Owner:** team.
+- **Links:** the 2026-06-02 v0.6.0 sync ADR below,
+  `mlx-vlm` `mlx_vlm/models/gemma4/language.py::rollback_speculative_cache`,
+  `mlx-vlm` `mlx_vlm/models/deepseek_v4/language.py::rollback_speculative_cache`,
+  `mlx-vlm` `mlx_vlm/models/qwen3_5/language.py` (reference impl),
+  `mlx-vlm` `mlx_vlm/speculative/mtp.py::_mtp_rounds_batch`.
+
+### 2026-06-02 — Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting
+- **Context:** The MLX backend (`AtomicBot-ai/mlx-vlm`) supports KV-cache
+  quantization on its CLI (`--kv-bits <float> --kv-quant-scheme
+  uniform|turboquant`; the server only sets `KV_BITS` when `--kv-bits` is
+  passed, so the cache is full-precision by default). After the v0.6.0 sync
+  the engine capability was present but **nothing in the desktop app drove
+  it** — the `tauri-plugin-mlx` Rust shim only emitted `--max-kv-size`,
+  `--draft-model`, `--draft-kind`, `--draft-block-size`. Users could not opt
+  into TurboQuant KV (the recommended `--kv-bits 3.5 --kv-quant-scheme
+  turboquant`, ~4.3× smaller cache) to fit longer contexts.
+- **Decision:** Add two MLX provider settings and plumb them end-to-end as a
+  **load-time** arg (mirrors `ctx_size`: applied on the next model load, no
+  mid-session auto-reload like the drafter block-size path):
+  - `extensions/mlx-extension/settings.json`: `kv_quant_scheme` dropdown
+    (`off` (default) / `turboquant` / `uniform`) + `kv_bits` number input
+    (default `3.5`, range 0–8).
+  - `performLoad` in `extensions/mlx-extension/src/index.ts` normalizes
+    `off` → `''` and forces `kv_bits = 0` when the scheme is off, so a stale
+    bit-width can't leak; both ride the existing `MlxConfig` IPC.
+  - `tauri-plugin-mlx` `MlxConfig` gains `kv_bits: f32` + `kv_quant_scheme:
+    String` (both `#[serde(default)]`); `load_mlx_model_impl` emits
+    `--kv-bits <bits> --kv-quant-scheme <scheme>` **only** when the scheme is
+    `uniform`/`turboquant` AND `kv_bits > 0.0`. guest-js `types.ts` /
+    `normalizeMlxConfig` carry the matching fields.
+- **Consequences:**
+  - Backwards-compatible: empty/legacy configs (and `off`) emit no KV flags,
+    so the server keeps its full-precision default — no behavior change for
+    existing users. The single source of truth for "is KV quant on" is the
+    Rust guard (scheme ∈ {uniform, turboquant} && bits > 0).
+  - Quality/latency trade-off is the user's: TurboQuant @ 3.5 bits is the
+    documented sweet spot; uniform pairs with 4/8. Wrong pairings only cost
+    quality, never correctness.
+  - macOS-only surface (MLX provider is Apple-Silicon-only); Windows/Linux
+    unaffected. `cargo check` on `tauri-plugin-mlx` passes.
+  - Not done: no per-keystroke auto-reload (intentional — KV geometry is
+    fixed at cache allocation); no `--kv-group-size` / `--quantized-kv-start`
+    exposure (kept on mlx-vlm defaults, can be added later if needed).
+- **Owner:** team.
+- **Links:** §4.1 *MLX backend*,
+  [`extensions/mlx-extension/settings.json`](extensions/mlx-extension/settings.json),
+  [`extensions/mlx-extension/src/index.ts`](extensions/mlx-extension/src/index.ts),
+  [`src-tauri/plugins/tauri-plugin-mlx/src/commands.rs`](src-tauri/plugins/tauri-plugin-mlx/src/commands.rs),
+  [`src-tauri/plugins/tauri-plugin-mlx/guest-js/types.ts`](src-tauri/plugins/tauri-plugin-mlx/guest-js/types.ts).
 
 ### 2026-06-02 — Sync `AtomicBot-ai/mlx-vlm` fork to upstream v0.6.0 and surface a third speculative drafter family (EAGLE-3) + Qwen / DeepSeek-V4 MTP
 - **Context:** The MLX backend fork (`AtomicBot-ai/mlx-vlm`) was **+8 / -105**

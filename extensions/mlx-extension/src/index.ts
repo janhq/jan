@@ -611,11 +611,26 @@ export default class mlx_extension extends AIEngine {
     const effectiveDraftKind = draftPath ? draftKind : ''
     const effectiveBlockSize = draftPath ? blockSize : 0
 
+    /// KV-cache quantization is a load-time arg, like `ctx_size`: it takes
+    /// effect on the next model load (no mid-session auto-reload). 'off' (or
+    /// unset) leaves the mlx-vlm server on its full-precision KV default;
+    /// 'uniform' / 'turboquant' emit `--kv-quant-scheme` + `--kv-bits` via
+    /// the Rust shim. Normalize 'off' → '' here so the shim's guard
+    /// (scheme ∈ {uniform, turboquant} && bits > 0) is the single source of
+    /// truth and a stale `kv_bits` can't leak when the scheme is off.
+    const kvScheme =
+      cfg.kv_quant_scheme && cfg.kv_quant_scheme !== 'off'
+        ? String(cfg.kv_quant_scheme)
+        : ''
+    const kvBits = kvScheme ? Number(cfg.kv_bits ?? 0) : 0
+
     const mlxConfig: MlxConfig = {
       ctx_size: Number(cfg.ctx_size ?? 4096),
       draft_model_path: draftPath,
       block_size: effectiveBlockSize,
       draft_kind: effectiveDraftKind,
+      kv_bits: kvBits,
+      kv_quant_scheme: kvScheme,
     }
 
     logger.info(
