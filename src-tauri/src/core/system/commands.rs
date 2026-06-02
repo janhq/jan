@@ -138,7 +138,9 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
         if let Err(e) = cleanup_own_locks(&app_handle) {
             log::warn!("Failed to cleanup lock files: {}", e);
         }
+        // Clean up both llama.cpp providers' process maps.
         let _ = cleanup_llama_processes(app_handle.clone()).await;
+        let _ = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(app_handle.clone()).await;
 
         // Windows needs time to release file handles after TerminateProcess
         #[cfg(windows)]

@@ -424,7 +424,6 @@ pub fn run() {
             tokio::task::block_in_place(|| {
                 tauri::async_runtime::block_on(async {
                     use crate::core::mcp::helpers::background_cleanup_mcp_servers;
-                    use tauri_plugin_llamacpp::cleanup_llama_processes;
 
                     let state = app_handle.state::<AppState>();
 
@@ -437,10 +436,23 @@ pub fn run() {
                         Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
                     }
 
-                    if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to cleanup llama processes: {}", e);
+                    // Both llama.cpp providers keep their own process map, so clean
+                    // up each one to avoid orphaned llama-server processes on quit.
+                    if let Err(e) =
+                        tauri_plugin_llamacpp::cleanup_llama_processes(app_handle.clone()).await
+                    {
+                        log::warn!("Failed to cleanup llamacpp processes: {}", e);
                     } else {
-                        log::info!("Llama processes cleaned up successfully");
+                        log::info!("llamacpp processes cleaned up successfully");
+                    }
+
+                    if let Err(e) =
+                        tauri_plugin_llamacpp_upstream::cleanup_llama_processes(app_handle.clone())
+                            .await
+                    {
+                        log::warn!("Failed to cleanup llamacpp-upstream processes: {}", e);
+                    } else {
+                        log::info!("llamacpp-upstream processes cleaned up successfully");
                     }
 
                     #[cfg(feature = "mlx")]
