@@ -13,8 +13,9 @@ type ArtifactState = {
   sourceId: string | null
   code: string
   title: string
-  open: (sourceId: string, code: string, title?: string) => void
-  update: (sourceId: string, code: string) => void
+  streaming: boolean
+  open: (sourceId: string, code: string, streaming?: boolean) => void
+  update: (sourceId: string, code: string, streaming?: boolean) => void
   close: () => void
 }
 
@@ -23,14 +24,18 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
   sourceId: null,
   code: '',
   title: 'HTML',
-  open: (sourceId, code, title = 'HTML') =>
-    set({ isOpen: true, sourceId, code, title }),
-  update: (sourceId, code) => {
+  streaming: false,
+  open: (sourceId, code, streaming = false) =>
+    set({ isOpen: true, sourceId, code, streaming }),
+  update: (sourceId, code, streaming) => {
     const state = get()
-    if (!state.isOpen || state.sourceId !== sourceId || state.code === code) {
-      return
+    if (!state.isOpen || state.sourceId !== sourceId) return
+    const next: Partial<ArtifactState> = {}
+    if (state.code !== code) next.code = code
+    if (streaming !== undefined && state.streaming !== streaming) {
+      next.streaming = streaming
     }
-    set({ code })
+    if (Object.keys(next).length > 0) set(next)
   },
-  close: () => set({ isOpen: false, sourceId: null, code: '' }),
+  close: () => set({ isOpen: false, sourceId: null, code: '', streaming: false }),
 }))

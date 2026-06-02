@@ -10,26 +10,49 @@ import { isPlatformTauri } from '@/lib/platform/utils'
 interface HtmlArtifactProps {
   code: string
   className?: string
-  /**
-   * Fill the parent height instead of using a fixed-height card. Used when the
-   * artifact is hosted inside the side panel.
-   */
   fill?: boolean
-  /** When provided, renders a close button in the toolbar (side-panel mode). */
   onClose?: () => void
+  streaming?: boolean
 }
 
 const DEFAULT_FILENAME = 'artifact.html'
 
-/**
- * Wrap/normalize the model output into a complete HTML document for the iframe.
- * The original `code` is never mutated — this is only used to build the preview.
- */
 function buildPreviewDocument(code: string): string {
   const isFullDocument = /<html[\s>]/i.test(code) || /<!doctype/i.test(code)
   if (isFullDocument) return code
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base target="_blank"></head><body>${code}</body></html>`
+}
+
+export function estimateHtmlProgress(code: string): number {
+  if (!code) return 0.04
+
+  const has = (re: RegExp) => re.test(code)
+  if (has(/<\/html>/i)) return 1
+  if (has(/<\/body>/i)) return 0.95
+
+  let base = 0.06
+  let ceil = 0.18
+  if (has(/<!doctype|<html[\s>]/i)) {
+    base = 0.12
+    ceil = 0.3
+  }
+  if (has(/<head[\s>]/i)) {
+    base = 0.22
+    ceil = 0.45
+  }
+  if (has(/<\/head>/i)) {
+    base = 0.45
+    ceil = 0.6
+  }
+  if (has(/<body[\s>]/i)) {
+    base = 0.6
+    ceil = 0.92
+  }
+
+  // Asymptotic creep toward (but never reaching) the next milestone.
+  const creep = 1 - 1 / (1 + code.length / 2200)
+  return Math.min(ceil, base + (ceil - base) * creep)
 }
 
 type ArtifactTab = 'preview' | 'code'
@@ -39,10 +62,13 @@ function HtmlArtifactComponent({
   className,
   fill = false,
   onClose,
+  streaming = false,
 }: HtmlArtifactProps) {
   const [tab, setTab] = useState<ArtifactTab>('preview')
   const [copied, setCopied] = useState(false)
   const [blobUrl, setBlobUrl] = useState<string>('')
+  const [frameLoaded, setFrameLoaded] = useState(false)
+  const [progress, setProgress] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const previewWrapRef = useRef<HTMLDivElement>(null)
 
@@ -60,7 +86,36 @@ function HtmlArtifactComponent({
     return () => clearTimeout(timer)
   }, [code])
 
-  // Revoke the last object URL on unmount.
+  // Watchdog forces the loader to clear if the iframe never fires `load`.
+  useEffect(() => {
+    if (!blobUrl) return
+    setFrameLoaded(false)
+    const watchdog = setTimeout(() => setFrameLoaded(true), 4000)
+    return () => clearTimeout(watchdog)
+  }, [blobUrl])
+
+  const [codeIdle, setCodeIdle] = useState(false)
+  useEffect(() => {
+    setCodeIdle(false)
+    const timer = setTimeout(() => setCodeIdle(true), 2000)
+    return () => clearTimeout(timer)
+  }, [code])
+
+  // Don't trust `streaming` alone; it can stay stuck true after a re-mount.
+  const docComplete = /<\/html>/i.test(code)
+  const generating = streaming && !docComplete && !codeIdle
+
+  useEffect(() => {
+    if (!generating) {
+      setProgress(1)
+      return
+    }
+    setProgress((previous) => Math.max(previous, estimateHtmlProgress(code)))
+  }, [code, generating])
+
+  const showPreviewLoader = generating || !blobUrl || !frameLoaded
+  const progressPct = Math.round((generating ? progress : 1) * 100)
+
   useEffect(() => {
     return () => {
       setBlobUrl((previous) => {
@@ -82,8 +137,6 @@ function HtmlArtifactComponent({
   }, [code])
 
   const handleDownload = useCallback(async () => {
-    // Desktop: native save dialog + filesystem write. The dialog returns null
-    // when the user cancels, in which case we do nothing.
     if (isPlatformTauri()) {
       try {
         const path = await getServiceHub()
@@ -118,13 +171,6 @@ function HtmlArtifactComponent({
   }, [code])
 
   const handlePrint = useCallback(() => {
-    // Print from the parent window (where the user gesture lives) rather than
-    // calling print() inside the sandboxed, opaque-origin iframe — that frame
-    // has no user activation and WKWebView/WebView2 may silently ignore it.
-    // A print-only stylesheet (see index.css `.artifact-printing`) hides the
-    // app chrome and blows the preview iframe up to full page; the iframe's
-    // painted content (incl. JS-rendered output) is captured as normal embedded
-    // content even though it is cross-origin.
     const region = previewWrapRef.current
     if (!region) return
 
@@ -163,8 +209,8 @@ function HtmlArtifactComponent({
       )}
       data-artifact="html"
     >
-      <div className="flex items-center justify-between gap-2 border-border border-b bg-muted/60 px-2 py-1.5">
-        <div className="inline-flex overflow-hidden rounded-md border border-border text-xs">
+      <div className="@container flex items-center justify-between gap-2 border-border border-b bg-muted/60 px-2 py-1.5">
+        <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border text-xs">
           <button
             type="button"
             onClick={() => setTab('preview')}
@@ -175,7 +221,7 @@ function HtmlArtifactComponent({
                 : 'text-muted-foreground hover:bg-background/60'
             )}
           >
-            <Eye size={14} />
+            <Eye size={14} className="shrink-0" />
             Preview
           </button>
           <button
@@ -188,12 +234,12 @@ function HtmlArtifactComponent({
                 : 'text-muted-foreground hover:bg-background/60'
             )}
           >
-            <Code2 size={14} />
+            <Code2 size={14} className="shrink-0" />
             Code
           </button>
         </div>
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button
             size="sm"
             variant="ghost"
@@ -201,8 +247,10 @@ function HtmlArtifactComponent({
             onClick={handleCopy}
             title="Copy code"
           >
-            <CopyIcon size={14} />
-            {copied ? 'Copied' : 'Copy'}
+            <CopyIcon size={14} className="shrink-0" />
+            <span className="hidden @[26rem]:inline">
+              {copied ? 'Copied' : 'Copy'}
+            </span>
           </Button>
           <Button
             size="sm"
@@ -211,8 +259,8 @@ function HtmlArtifactComponent({
             onClick={handleDownload}
             title="Download as .html"
           >
-            <Download size={14} />
-            Download
+            <Download size={14} className="shrink-0" />
+            <span className="hidden @[26rem]:inline">Download</span>
           </Button>
           <Button
             size="sm"
@@ -221,14 +269,14 @@ function HtmlArtifactComponent({
             onClick={handlePrint}
             title="Print / Save as PDF"
           >
-            <Printer size={14} />
-            Print
+            <Printer size={14} className="shrink-0" />
+            <span className="hidden @[26rem]:inline">Print</span>
           </Button>
           {onClose && (
             <Button
               size="icon"
               variant="ghost"
-              className="ml-1 h-7 w-7"
+              className="ml-1 h-7 w-7 shrink-0"
               onClick={onClose}
               title="Close"
             >
@@ -249,8 +297,7 @@ function HtmlArtifactComponent({
         <iframe
           ref={iframeRef}
           src={blobUrl || undefined}
-          // Isolated preview: scripts may run, but the frame has no access to
-          // app data, cookies, or the parent DOM (no allow-same-origin).
+          onLoad={() => setFrameLoaded(true)}
           sandbox="allow-scripts allow-modals allow-forms allow-popups"
           title="HTML preview"
           className={cn(
@@ -258,6 +305,21 @@ function HtmlArtifactComponent({
             fill ? 'h-full' : 'h-[440px]'
           )}
         />
+        {showPreviewLoader && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-8 text-muted-foreground">
+            <div className="h-1.5 w-full max-w-[240px] overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <span className="text-sm tabular-nums">
+              {generating
+                ? `Generating preview… ${progressPct}%`
+                : 'Rendering preview…'}
+            </span>
+          </div>
+        )}
       </div>
 
       <div
@@ -276,5 +338,8 @@ function HtmlArtifactComponent({
 
 export const HtmlArtifact = memo(
   HtmlArtifactComponent,
-  (prev, next) => prev.code === next.code && prev.className === next.className
+  (prev, next) =>
+    prev.code === next.code &&
+    prev.className === next.className &&
+    prev.streaming === next.streaming
 )
