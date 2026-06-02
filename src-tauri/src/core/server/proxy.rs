@@ -117,6 +117,7 @@ fn sse_chunk_has_visible_content(chunk: &[u8]) -> bool {
 fn endpoint_from_path(path: &str) -> &'static str {
     match path {
         "/chat/completions" => "chat/completions",
+        "/responses" => "responses",
         "/messages" => "messages",
         "/completions" => "completions",
         "/embeddings" => "embeddings",
@@ -555,6 +556,7 @@ pub fn allowed_methods_for_path(path: &str) -> Option<&'static [&'static str]> {
         "/models" | "/metrics" => Some(&["GET"]),
         "/messages"
         | "/chat/completions"
+        | "/responses"
         | "/completions"
         | "/embeddings"
         | "/messages/count_tokens" => Some(&["POST"]),
@@ -1024,6 +1026,348 @@ fn build_streaming_response(
     builder.body(body).unwrap()
 }
 
+/// Handle a POST to `/responses`. Backends that serve the Responses API
+/// natively (MLX sidecar, remote OpenAI-compatible providers) get a byte-for-
+/// byte passthrough; the llama.cpp backends, which only speak Chat Completions,
+/// are bridged through [`responses_shim`] in both directions (request body and
+/// the streamed / non-streamed reply). See the 2026-06-02 ADR in `AGENTS.md`.
+#[allow(clippy::too_many_arguments)]
+async fn handle_responses_request(
+    state: &mut EmitState,
+    body: Body,
+    headers: &hyper::HeaderMap,
+    host_header: &str,
+    origin_header: &str,
+    config: &ProxyConfig,
+    local_client: &Client,
+    client: &Client,
+    sessions: &Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    sessions_upstream: &Arc<Mutex<HashMap<i32, LLamaUpstreamBackendSession>>>,
+    mlx_sessions: &Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    provider_configs: &Arc<Mutex<HashMap<String, ProviderConfig>>>,
+) -> Result<Response<Body>, hyper::Error> {
+    use crate::core::server::responses_shim;
+
+    state.endpoint = Some("responses");
+
+    let make_err = |status: StatusCode, msg: &str| -> Response<Body> {
+        let mut b = Response::builder().status(status);
+        b = add_cors_headers_with_host_and_origin(b, host_header, origin_header, &config.trusted_hosts);
+        b.body(Body::from(msg.to_string())).unwrap()
+    };
+
+    let body_bytes = match hyper::body::to_bytes(body).await {
+        Ok(b) => b,
+        Err(_) => {
+            state.error_kind = Some("bad_request");
+            return Ok(make_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to read request body",
+            ));
+        }
+    };
+
+    let json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            state.error_kind = Some("bad_request");
+            return Ok(make_err(
+                StatusCode::BAD_REQUEST,
+                &format!("Invalid JSON body: {e}"),
+            ));
+        }
+    };
+
+    let stream = json
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    state.stream = stream;
+
+    let model_id = match json.get("model").and_then(|v| v.as_str()) {
+        Some(m) => m.to_string(),
+        None => {
+            state.error_kind = Some("bad_request");
+            return Ok(make_err(
+                StatusCode::BAD_REQUEST,
+                "Request body must contain a 'model' field",
+            ));
+        }
+    };
+    state.model_id = Some(model_id.clone());
+
+    enum Target {
+        Passthrough { url: String, api_key: Option<String> },
+        Translate { url: String, api_key: Option<String> },
+    }
+
+    // Remote provider takes precedence (same resolution as /chat/completions).
+    let provider_name = {
+        let pc = provider_configs.lock().await;
+        pc.iter()
+            .find(|(_, c)| c.models.iter().any(|m| m == &model_id))
+            .map(|(_, c)| c.provider.clone())
+            .or_else(|| {
+                if let Some(sep) = model_id.find('/') {
+                    let p = &model_id[..sep];
+                    if pc.contains_key(p) {
+                        return Some(p.to_string());
+                    }
+                }
+                pc.get(&model_id).map(|c| c.provider.clone())
+            })
+    };
+
+    let target = if let Some(p) = provider_name {
+        state.backend = "remote";
+        state.provider = Some(p.clone());
+        let cfg = {
+            let pc = provider_configs.lock().await;
+            pc.get(&p).cloned()
+        };
+        match cfg {
+            Some(c) => match c.base_url {
+                Some(base) => Target::Passthrough {
+                    url: format!("{}/responses", base.trim_end_matches('/')),
+                    api_key: c.api_key,
+                },
+                None => {
+                    state.error_kind = Some("upstream");
+                    return Ok(make_err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Provider has no base_url",
+                    ));
+                }
+            },
+            None => {
+                state.error_kind = Some("upstream");
+                return Ok(make_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Provider config not found",
+                ));
+            }
+        }
+    } else {
+        let llama = {
+            let g = sessions.lock().await;
+            g.values()
+                .find(|s| model_ids_match(&s.info.model_id, &model_id))
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        };
+        let upstream = if llama.is_none() {
+            let g = sessions_upstream.lock().await;
+            g.values()
+                .find(|s| model_ids_match(&s.info.model_id, &model_id))
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        } else {
+            None
+        };
+        let mlx = {
+            let g = mlx_sessions.lock().await;
+            g.values()
+                .find(|s| model_ids_match(&s.info.model_id, &model_id))
+                .map(|s| (s.info.port, s.info.api_key.clone()))
+        };
+
+        if let Some((port, key)) = llama {
+            state.backend = "llamacpp";
+            Target::Translate {
+                url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
+                api_key: Some(key),
+            }
+        } else if let Some((port, key)) = upstream {
+            state.backend = "llamacpp-upstream";
+            Target::Translate {
+                url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
+                api_key: Some(key),
+            }
+        } else if let Some((port, key)) = mlx {
+            state.backend = "mlx";
+            Target::Passthrough {
+                url: format!("http://127.0.0.1:{port}/v1/responses"),
+                api_key: Some(key),
+            }
+        } else {
+            state.error_kind = Some("not_found");
+            return Ok(make_err(
+                StatusCode::NOT_FOUND,
+                &format!("No running session found for model '{model_id}'"),
+            ));
+        }
+    };
+
+    match target {
+        Target::Passthrough { url, api_key } => {
+            log::info!("Proxying /responses passthrough to {url} (backend={})", state.backend);
+            let effective_client = if is_local_url(&url) { local_client } else { client };
+            let mut req = effective_client
+                .post(&url)
+                .header("Content-Type", "application/json");
+            for (name, value) in headers.iter() {
+                if name != hyper::header::HOST
+                    && name != hyper::header::AUTHORIZATION
+                    && name != hyper::header::CONTENT_LENGTH
+                    && name != hyper::header::CONTENT_TYPE
+                {
+                    req = req.header(name, value);
+                }
+            }
+            if let Some(key) = api_key {
+                req = req.header("Authorization", format!("Bearer {key}"));
+            }
+            match req.body(body_bytes).send().await {
+                Ok(resp) => Ok(build_streaming_response(
+                    resp,
+                    host_header,
+                    origin_header,
+                    &config.trusted_hosts,
+                )),
+                Err(e) => {
+                    state.error_kind = Some("upstream");
+                    Ok(make_err(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("Proxy request to model failed: {e}"),
+                    ))
+                }
+            }
+        }
+        Target::Translate { url, api_key } => {
+            log::info!(
+                "Bridging /responses -> /chat/completions at {url} (backend={}, stream={stream})",
+                state.backend
+            );
+            let chat_body = responses_shim::responses_request_to_chat(&json);
+            let mut req = local_client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .header("Accept-Encoding", "identity");
+            if let Some(key) = api_key {
+                req = req.header("Authorization", format!("Bearer {key}"));
+            }
+            let resp = match req.body(chat_body.to_string()).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    state.error_kind = Some("upstream");
+                    return Ok(make_err(
+                        StatusCode::BAD_GATEWAY,
+                        &format!("Proxy request to model failed: {e}"),
+                    ));
+                }
+            };
+
+            let status = resp.status();
+            if !status.is_success() {
+                state.error_kind = Some("upstream");
+                let err_body = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|e| format!("Failed to read error body: {e}"));
+                let code =
+                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+                return Ok(make_err(code, &err_body));
+            }
+
+            let response_id = responses_shim::new_response_id();
+
+            if !stream {
+                let bytes = resp.bytes().await.unwrap_or_default();
+                let chat_json: serde_json::Value =
+                    serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+                let responses_obj = responses_shim::chat_response_to_responses(
+                    &chat_json,
+                    &response_id,
+                    &model_id,
+                );
+                let mut b = Response::builder()
+                    .status(StatusCode::OK)
+                    .header(hyper::header::CONTENT_TYPE, "application/json");
+                b = add_cors_headers_with_host_and_origin(
+                    b,
+                    host_header,
+                    origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(b.body(Body::from(responses_obj.to_string())).unwrap());
+            }
+
+            let mut b = Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+                .header(hyper::header::CACHE_CONTROL, "no-cache");
+            b = add_cors_headers_with_host_and_origin(
+                b,
+                host_header,
+                origin_header,
+                &config.trusted_hosts,
+            );
+
+            let (mut sender, resp_body) = Body::channel();
+            let model_for_conv = model_id.clone();
+            tokio::spawn(async move {
+                let mut conv =
+                    responses_shim::ResponsesStreamConverter::new(response_id, model_for_conv);
+                if sender
+                    .send_data(sse_event(&conv.created_event()))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+
+                let mut upstream = resp.bytes_stream();
+                let mut buf: Vec<u8> = Vec::new();
+                let mut usage: Option<serde_json::Value> = None;
+
+                'outer: while let Some(chunk) = upstream.next().await {
+                    let bytes = match chunk {
+                        Ok(b) => b,
+                        Err(e) => {
+                            log::error!("/responses upstream stream error: {e}");
+                            break;
+                        }
+                    };
+                    buf.extend_from_slice(&bytes);
+
+                    while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                        let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+                        let line = String::from_utf8_lossy(&line_bytes);
+                        let line = line.trim();
+                        if !line.starts_with("data:") {
+                            continue;
+                        }
+                        let data = line["data:".len()..].trim();
+                        if data == "[DONE]" {
+                            for ev in conv.finish(usage.as_ref()) {
+                                let _ = sender.send_data(sse_event(&ev)).await;
+                            }
+                            return;
+                        }
+                        if let Ok(j) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(u) = j.get("usage") {
+                                if !u.is_null() {
+                                    usage = Some(u.clone());
+                                }
+                            }
+                            for ev in conv.on_chunk(&j) {
+                                if sender.send_data(sse_event(&ev)).await.is_err() {
+                                    break 'outer;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Upstream closed without an explicit [DONE]; flush closers.
+                for ev in conv.finish(usage.as_ref()) {
+                    let _ = sender.send_data(sse_event(&ev)).await;
+                }
+            });
+
+            Ok(b.body(resp_body).unwrap())
+        }
+    }
+}
+
 /// High-level wrapper around `acquire_auto_increase_slot` +
 /// `trigger_auto_increase`. Skips remote providers and embedding sessions
 /// up front; coordinates concurrent waiters through the shared `Notify`.
@@ -1461,6 +1805,29 @@ async fn inner_proxy_request<R: Runtime>(
             &config.trusted_hosts,
         );
         return Ok(error_response.body(Body::from("Not Found")).unwrap());
+    }
+
+    // Codex CLI (and other Responses-only clients) hit `/responses`, which the
+    // llama.cpp backends do not implement. Handle it in a self-contained
+    // branch: passthrough for backends that serve it natively (MLX, remote
+    // providers), translate to `/chat/completions` for llama.cpp. Returns
+    // early so it never threads through the chat-completions retry machinery.
+    if method == hyper::Method::POST && path == "/responses" {
+        return handle_responses_request(
+            state,
+            body,
+            &headers,
+            &host_header,
+            &origin_header,
+            &config,
+            &local_client,
+            &client,
+            &sessions,
+            &sessions_upstream,
+            &mlx_sessions,
+            &provider_configs,
+        )
+        .await;
     }
 
     let original_path = parts.uri.path();
