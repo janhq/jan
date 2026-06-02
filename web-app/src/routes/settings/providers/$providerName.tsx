@@ -1332,6 +1332,14 @@ function ProviderDetail() {
                     (!mtpEnabledOn && setting.key === 'mtp_block_size') ||
                     (!eagle3EnabledOn && setting.key === 'eagle3_block_size')
 
+                  // Temporarily hide the DFlash Draft feature on the MLX
+                  // provider: hide both the `dflash_enabled` toggle and its
+                  // companion `block_size` row regardless of persisted value.
+                  const isDflashFeatureHidden =
+                    provider?.provider === 'mlx' &&
+                    (setting.key === 'dflash_enabled' ||
+                      setting.key === 'block_size')
+
                   // The dflash_enabled / mtp_enabled / eagle3_enabled
                   // checkboxes are rendered as Switches with custom
                   // side-effecting handlers that reload the live MLX
@@ -1482,7 +1490,8 @@ function ProviderDetail() {
                           className={cn(
                             setting.key === 'device' && 'hidden',
                             isHiddenByConcurrentMode && 'hidden',
-                            isHiddenByDflash && 'hidden'
+                            isHiddenByDflash && 'hidden',
+                            isDflashFeatureHidden && 'hidden'
                           )}
                           onChange={(newValue) => {
                             // Manual "Latest <variant>" picks carry a
@@ -1625,6 +1634,7 @@ function ProviderDetail() {
                         setting.key === 'device' && 'hidden',
                         isHiddenByConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
+                        isDflashFeatureHidden && 'hidden',
                         isManagedByConcurrentMode &&
                           'opacity-60 pointer-events-none'
                       )}

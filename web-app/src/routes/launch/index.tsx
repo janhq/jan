@@ -570,17 +570,19 @@ function LaunchPage() {
             {coding.map(renderAgent)}
           </section>
 
-          <section className="flex flex-col gap-3">
-            <div>
-              <h1 className="font-studio text-lg font-medium text-foreground">
-                {t('launch:assistants')}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {t('launch:assistantsDesc')}
-              </p>
-            </div>
-            {assistants.map(renderAgent)}
-          </section>
+          {assistants.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h1 className="font-studio text-lg font-medium text-foreground">
+                  {t('launch:assistants')}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t('launch:assistantsDesc')}
+                </p>
+              </div>
+              {assistants.map(renderAgent)}
+            </section>
+          )}
         </div>
       </div>
     </div>

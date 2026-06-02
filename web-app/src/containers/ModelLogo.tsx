@@ -22,7 +22,7 @@ export function ModelLogo({ author, name, className }: ModelLogoProps) {
   return (
     <div
       className={cn(
-        'size-[46px] rounded-[10px] overflow-hidden shrink-0 flex items-center justify-center bg-secondary text-muted-foreground font-semibold text-sm border border-border',
+        'size-[46px] rounded-[10px] overflow-hidden shrink-0 flex items-center justify-center bg-secondary text-muted-foreground font-semibold text-sm border border-border dark:bg-input/30 dark:border-input',
         className
       )}
       title={author || ''}

@@ -70,35 +70,20 @@ function pickDefaultQuant(model: CatalogModel): ModelQuant | undefined {
   )
 }
 
-/** Rectangular format badge: GGUF = soft orange, MLX = metallic. */
+/**
+ * Rectangular format badge — outlined-tinted, with proper light + dark variants
+ * (same canon as the capability badges / FIT_BADGE_CLASS). GGUF = orange,
+ * MLX = neutral slate.
+ */
 function FormatBadge({ format }: { format: 'gguf' | 'mlx' }) {
   const base =
-    'text-[10px] font-extrabold tracking-wider px-2 py-0.5 rounded-[6px] uppercase leading-tight inline-block'
-  if (format === 'mlx') {
-    return (
-      <span
-        className={cn(base, 'border')}
-        style={{
-          color: '#3a3e45',
-          background:
-            'linear-gradient(135deg,#eef0f3 0%,#ced3da 45%,#b0b6bf 70%,#cfd3da 100%)',
-          borderColor: '#bcc1c9',
-          boxShadow:
-            'inset 0 1px 0 rgba(255,255,255,.8), 0 1px 2px rgba(0,0,0,.10)',
-          textShadow: '0 1px 0 rgba(255,255,255,.5)',
-        }}
-      >
-        MLX
-      </span>
-    )
-  }
+    'text-[10px] font-extrabold tracking-wider px-2 py-0.5 rounded-[6px] uppercase leading-tight inline-block border'
+  const color =
+    format === 'mlx'
+      ? 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200'
+      : 'border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-950/45 dark:text-orange-200'
   return (
-    <span
-      className={cn(base, 'border')}
-      style={{ color: '#c2620a', background: '#ffe9d2', borderColor: '#fbd6ad' }}
-    >
-      GGUF
-    </span>
+    <span className={cn(base, color)}>{format === 'mlx' ? 'MLX' : 'GGUF'}</span>
   )
 }
 

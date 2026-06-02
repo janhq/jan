@@ -148,10 +148,9 @@ export type Capability = {
   className: string
 }
 
-//* Палитра как у RecommendedModelChip: border + светлый фон/тёмный текст в
-//* light и translucent тёмный фон/светлый текст в dark — так бейджи остаются
-//* выразительными на тёмной теме (а не блёклыми bg-*-100). Цвет каждой
-//* способности сохранён (amber/blue/fuchsia/teal).
+//* Outlined-tinted палитра с light + dark вариантами — тот же канон, что у
+//* FIT_BADGE_CLASS: светлый pill в light-теме и приглушённый тёмный с светлым
+//* текстом в dark. Цвет каждой способности сохранён (amber/blue/fuchsia/teal).
 const CAP_COLORS = {
   vision:
     'border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/45 dark:text-amber-200',
