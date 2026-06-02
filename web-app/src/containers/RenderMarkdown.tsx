@@ -156,6 +156,7 @@ function RenderMarkdownComponent({
   components,
   messageId,
   isAnimating,
+  isStreaming,
   enableHtmlPreview
 }: MarkdownProps) {
 
@@ -239,7 +240,7 @@ function RenderMarkdownComponent({
       const codeText = extractCodeText(children)
 
       if (HTML_LANGUAGES.has(language)) {
-        return <ArtifactTrigger code={codeText} />
+        return <ArtifactTrigger code={codeText} streaming={!!isStreaming} />
       }
 
       // Delegate every other code block (incl. mermaid) to streamdown.
@@ -249,7 +250,7 @@ function RenderMarkdownComponent({
     }
 
     return { code: CodeRenderer, ...(components ?? {}) }
-  }, [enableHtmlPreview, components, delegateProps])
+  }, [enableHtmlPreview, components, delegateProps, isStreaming])
 
   if (content.length > 0 && content.length < 32) {
     return (
@@ -302,5 +303,8 @@ export const RenderMarkdown = memo(
   RenderMarkdownComponent,
   (prevProps, nextProps) =>
     prevProps.content === nextProps.content &&
-    prevProps.enableHtmlPreview === nextProps.enableHtmlPreview
+    prevProps.enableHtmlPreview === nextProps.enableHtmlPreview &&
+    // With HTML preview on, re-render on streaming→done to drop the loader.
+    (!nextProps.enableHtmlPreview ||
+      prevProps.isStreaming === nextProps.isStreaming)
 )

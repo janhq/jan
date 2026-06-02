@@ -268,6 +268,8 @@ const ChatInput = memo(function ChatInput({
     !!selectedModel?.id &&
     !activeModels.includes(selectedModel.id)
 
+  const blockSendUntilModelReady = isLocalModelNotReady && !!onSubmit
+
   const [selectedAssistant, setSelectedAssistant] = useState<
     Assistant | undefined
   >(() => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0])
@@ -1923,7 +1925,7 @@ const ChatInput = memo(function ChatInput({
                     !isStreaming &&
                     prompt.trim() &&
                     !isAttachmentPipelineBusy &&
-                    !isLocalModelNotReady
+                    !blockSendUntilModelReady
                   ) {
                     handleSendMessage(prompt)
                   }
@@ -2326,7 +2328,7 @@ const ChatInput = memo(function ChatInput({
                   disabled={
                     !prompt.trim() ||
                     isAttachmentPipelineBusy ||
-                    isLocalModelNotReady
+                    blockSendUntilModelReady
                   }
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
