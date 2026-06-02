@@ -63,6 +63,18 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: true,
   },
   {
+    id: 'copilot',
+    name: 'Copilot CLI',
+    description: "GitHub's agentic coding tool, in your terminal.",
+    kind: 'coding',
+    detectBin: 'copilot',
+    docsUrl: 'https://docs.github.com/en/copilot/how-tos/copilot-cli',
+    installable: true,
+    configurable: true,
+    requiresModel: true,
+    endpointWithPrefix: true,
+  },
+  {
     id: 'hermes',
     name: 'Hermes Agent',
     description: 'Self-improving AI agent built by Nous Research.',

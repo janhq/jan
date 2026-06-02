@@ -1378,6 +1378,15 @@ fn agent_install_spec(
             let (p, a) = npm("opencode-ai");
             Ok((p, a, "npm", "https://opencode.ai"))
         }
+        "copilot" => {
+            let (p, a) = npm("@github/copilot");
+            Ok((
+                p,
+                a,
+                "npm",
+                "https://docs.github.com/en/copilot/how-tos/copilot-cli",
+            ))
+        }
         "openclaw" => {
             let (p, a) = npm("openclaw");
             Ok((p, a, "npm", "https://docs.openclaw.ai"))
@@ -1812,6 +1821,92 @@ pub fn configure_claude_code(
         "Claude Code configured: base_url={}, model={:?}",
         api_url,
         model
+    );
+    Ok(())
+}
+
+/// Upsert a marked `export KEY='VALUE'` block into a shell rc file. Removes any
+/// previous block carrying the same `marker` plus stray `export <prefix>...`
+/// lines, then appends a fresh block. Generalizes `write_env_to_shell` (which is
+/// hardcoded to the legacy Jan / Claude Code marker) for Atomic-branded agents.
+fn write_marked_env_to_shell(
+    env_file_path: &str,
+    marker: &str,
+    export_prefix: &str,
+    env_vars: &[(String, String)],
+) -> Result<(), String> {
+    let new_entries: String = env_vars
+        .iter()
+        .map(|(k, v)| format!("export {}='{}'\n", k, v))
+        .collect();
+
+    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
+    let export_line = format!("export {}", export_prefix);
+    let cleaned: Vec<&str> = existing_content
+        .split('\n')
+        .filter(|line| !line.starts_with(marker) && !line.starts_with(export_line.as_str()))
+        .collect();
+
+    let new_block = format!("{}\n{}\n{}\n", marker, new_entries, marker);
+    let final_content = cleaned.join("\n") + &new_block;
+    std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Configure GitHub Copilot CLI to use the local Atomic Chat server via its BYOK
+/// environment variables. Copilot has no provider config file — it reads these
+/// from the environment at launch — so we persist them to the user's shell rc
+/// (Windows: `setx`). The auto-opened terminal then sources them. `COPILOT_OFFLINE`
+/// is on so no GitHub sign-in is required and traffic stays on the local provider.
+#[tauri::command]
+pub fn configure_copilot(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
+    env_vars.push(("COPILOT_PROVIDER_BASE_URL".to_string(), api_url.clone()));
+    env_vars.push(("COPILOT_PROVIDER_TYPE".to_string(), "openai".to_string()));
+    env_vars.push(("COPILOT_MODEL".to_string(), model.clone()));
+    env_vars.push(("COPILOT_OFFLINE".to_string(), "true".to_string()));
+    if let Some(key) = api_key.as_deref().filter(|k| !k.is_empty()) {
+        env_vars.push((
+            "COPILOT_PROVIDER_API_KEY".to_string(),
+            key.to_string(),
+        ));
+    }
+
+    const MARKER: &str = "# Atomic Chat - Copilot CLI Config";
+
+    if cfg!(target_os = "windows") {
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
+        log::info!(
+            "Copilot configured (Windows env): base_url={}, model={}",
+            api_url,
+            model
+        );
+        return Ok(());
+    }
+
+    let home = agent_home_dir()?;
+    let is_macos = cfg!(target_os = "macos");
+    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
+    write_marked_env_to_shell(&env_file_path, MARKER, "COPILOT_", &env_vars)?;
+    log::info!(
+        "Copilot configured: base_url={}, model={}, rc={}",
+        api_url,
+        model,
+        env_file_path
     );
     Ok(())
 }
