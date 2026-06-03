@@ -104,6 +104,11 @@
   </keywords>
 
   <releases>
+    <release version="0.8.2" date="2026-06-01">
+      <description>
+        <p>Experimental AMD ROCm/HIP backend on Linux, a branded phased-startup loader with faster first paint, pause/resume model downloads, a safer default context size, and a batch of chat, provider, and toast fixes</p>
+      </description>
+    </release>
     <release version="0.8.1" date="2026-05-29">
       <description>
         <p>Anthropic-compatible custom providers, provider-aware sampling controls, media-only messages, an overhauled llama.cpp settings UX, and many stability and error-handling fixes</p>
