@@ -2,7 +2,7 @@
 
 # Atomic Chat
 
-Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with full control and privacy.
+Local AI app and inference engine for agents. Run open-weight LLMs locally — private, on your machine.
 
 <a href="https://github.com/AtomicBot-ai/Atomic-Chat/stargazers"><img src="https://img.shields.io/github/stars/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Stars&color=f5c542" alt="Stars" /></a>&nbsp;
 <a href="https://github.com/AtomicBot-ai/Atomic-Chat/network/members"><img src="https://img.shields.io/github/forks/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Forks&color=4ac1f2" alt="Forks" /></a>&nbsp;
@@ -14,7 +14,7 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 [Getting Started](https://atomic.chat/) · [Discord](https://discord.com/invite/8wGSsvmg4V) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
 
 <p align="center">
-  <img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/preview.png" width="100%" alt="Atomic Chat Interface" />
+  <img src="https://github.com/AtomicBot-ai/.github/raw/main/assets/0529_final.gif" width="100%" alt="Atomic Chat — local AI chat in action" />
 </p>
 
 ---
@@ -22,9 +22,9 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
 
 <p align="left"><b>Desktop</b></p>
 <p align="left">
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.90/Atomic.Chat_1.1.90_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.90/Atomic.Chat_1.1.90_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.90/Atomic.Chat_1.1.90_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.95/Atomic.Chat_1.1.95_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.95/Atomic.Chat_1.1.95_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
+  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v1.1.95/Atomic.Chat_1.1.95_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
 </p>
 
 <p align="left"><b>Mobile</b></p>
@@ -33,7 +33,7 @@ Open-source ChatGPT alternative. Run local LLMs or connect cloud models — with
   <a href="https://play.google.com/store/apps/details?id=chat.atomic.app"><img src="https://img.shields.io/badge/Android-Google_Play-414141?style=for-the-badge&logo=googleplay&logoColor=white" height="46" alt="Download for Android" /></a>
 </p>
 
-<sub>or grab any build from <a href="https://atomic.chat/">atomic.chat</a> · <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases">GitHub Releases</a> — latest: <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.1.90"><b>v1.1.90</b></a></sub>
+or grab any build from <a href="https://atomic.chat/">atomic.chat</a> · <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases">GitHub Releases</a> — latest: <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v1.1.95"><b>v1.1.95</b></a>
 
 ---
 
@@ -63,6 +63,9 @@ Atomic Chat is built by a small team and a handful of community contributors. Pu
 - Flash Attention toggle (`on` / `off` / `auto`)
 - Automatic reasoning-context tracking for chain-of-thought models
 - Auto context-window expansion with overflow notifications
+- EAGLE-3 speculative decoding for Gemma 4 on Apple Silicon (MLX)
+- MTP on MLX for Qwen 3.5 / 3.6 and DeepSeek V4
+- TurboQuant KV cache on MLX-VLM — smaller memory footprint via RHT-correct fast paths
 
 **Cloud models**
 
@@ -71,6 +74,8 @@ Atomic Chat is built by a small team and a handful of community contributors. Pu
 
 **Tools & integrations**
 
+- One-click agent launch — launch OpenCode and GitHub Copilot CLI agents in one click from the Integrations tab
+- Artifacts — live preview panel for HTML/CSS/JS code with copy, download and print
 - Connect multiple [MCP](https://modelcontextprotocol.io/) servers — bring your own tools, file access, web search
 - In-app log viewer for MCP tool calls
 - Custom assistants with per-assistant system prompts
@@ -172,57 +177,20 @@ yarn dev
 - **Windows**: 10/11 x64 (same RAM recommendations as macOS)
 - **Linux**: x86_64, glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch, Mint, Pop!_OS — same RAM recommendations as macOS). Optional: a Vulkan loader (`vulkan-1` package, or `mesa-vulkan-drivers` / proprietary NVIDIA driver) for GPU acceleration.
 - **iOS**: 17+ (download from App Store)
+- **Android**: download from Google Play
 
 ---
 
 ### Running on Linux
 
-Atomic Chat ships on Linux as a single self-contained `.AppImage` —
-one file, no installer, no root, works on every mainstream distro
-above. To run:
+Atomic Chat ships as a single self-contained `.AppImage` — no installer, no root:
 
 ```bash
 chmod +x Atomic.Chat_*_amd64.AppImage
 ./Atomic.Chat_*_amd64.AppImage
 ```
 
-If your distro asks about FUSE on first launch, install it
-(`sudo apt install fuse libfuse2` on Debian/Ubuntu, `sudo dnf install fuse fuse-libs` on Fedora).
-
-**GPU acceleration on Linux.** The installer bundles a CPU-only
-backend. On first launch (or via *Settings → Providers → Llama.cpp
-→ Find optimal backend*), Atomic Chat detects whether a Vulkan
-loader is available and offers to download the `linux-vulkan-x64`
-build of `llama-server` from
-[`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp/releases).
-NVIDIA, AMD, and Intel GPUs all share the same Vulkan path —
-upstream `llama.cpp` does not publish CUDA binaries for Linux, so
-Vulkan is the single supported GPU backend today. Expect roughly
-10–20 % slower decode than CUDA on the same NVIDIA card; if that
-gap matters to you, build our `atomic-llama-cpp-turboquant` fork
-manually for the time being (a CUDA-on-Linux release is a separate
-follow-up epic).
-
-**Auto-updates.** The built-in updater pulls
-`latest.json` from GitHub Releases and verifies every new
-`.AppImage` against our [minisign](https://jedisct1.github.io/minisign/)
-public key — the same key that signs macOS and Windows builds. The
-updater can only replace the AppImage **in place**, which means the
-running file must be writable by the current user. This is the
-default when you launch from `~/Downloads/`, `~/Applications/`, or
-anywhere else inside your home directory; it does *not* work when an
-admin has installed the AppImage to a system path like `/opt/` or
-`/usr/local/bin/` (read-only for non-root users). In that case the
-updater will surface an error — re-download the new AppImage
-manually from [GitHub Releases](https://github.com/AtomicBot-ai/Atomic-Chat/releases)
-and replace the old one. We do *not* ship `.deb` / `.rpm` / Flatpak
-/ Snap packages — see [`AGENTS.md`](AGENTS.md) ADR 2026-05-28 for
-the reasoning.
-
-**Models on Linux.** Only GGUF models are supported (same as
-Windows). MLX models — they require Apple Silicon — are filtered
-out of the Hub on Linux automatically; you can still browse them
-manually, but they won't run.
+If prompted about FUSE on first launch: `sudo apt install fuse libfuse2` (Debian/Ubuntu) or `sudo dnf install fuse fuse-libs` (Fedora). GPU acceleration (Vulkan) is auto-detected on first launch; only GGUF models run on Linux.
 
 ---
 
