@@ -1000,7 +1000,8 @@ function ThreadDetail() {
   )
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
+    <div className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <DropdownModelProvider />
@@ -1154,8 +1155,9 @@ function ThreadDetail() {
           />
         </div>
         </div>
-        <ArtifactPanel />
       </div>
+      </div>
+      <ArtifactPanel />
     </div>
   )
 }

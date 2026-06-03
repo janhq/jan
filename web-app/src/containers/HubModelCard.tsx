@@ -353,7 +353,7 @@ export function HubModelCard({
 
       {/* Variants (LM Studio style) */}
       {expanded && hasVariants && cardFit !== 'no' && (
-        <div className="mt-3 pt-1">
+        <div className="mt-3 pt-1 animate-in fade-in-0 slide-in-from-top-1 duration-300 ease-out">
           {model.quants?.map((variant, idx) => {
             const vSizeText = getTotalDownloadFileSize(model, variant)
             const vFit = estimateFit(

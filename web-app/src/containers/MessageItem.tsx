@@ -309,7 +309,7 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
-          <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
+          <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs mt-1">
             <div
               className={cn(
                 'flex items-center gap-1',

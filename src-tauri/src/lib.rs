@@ -37,6 +37,7 @@ pub fn run() {
     }
 
     let mut app_builder = builder
+        .register_uri_scheme_protocol("artifact", core::artifact::handle_artifact_request)
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -162,6 +163,9 @@ pub fn run() {
         // HTTP (bypasses tauri_plugin_http fetch interception)
         core::http::post_local_http,
         core::http::stream_local_http,
+        // HTML artifact preview (served via the artifact:// protocol)
+        core::artifact::set_artifact_html,
+        core::artifact::clear_artifact_html,
         // Tray status (desktop only runtime behaviour; the symbol exists on mobile as a no-op)
         core::tray_status::update_tray_status,
     ]);
@@ -255,6 +259,9 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        // HTML artifact preview (served via the artifact:// protocol)
+        core::artifact::set_artifact_html,
+        core::artifact::clear_artifact_html,
         // Tray status (no-op on mobile; kept registered so the frontend can invoke it uniformly)
         core::tray_status::update_tray_status,
     ]);
