@@ -9,7 +9,7 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     // Upstream provider serves two platforms with different naming streams:
     //   - macOS keeps the existing `macos-{arm64,x64}` ggml-org tarball names.
     //   - Windows uses ggml-org native zip names: `win-cpu-x64`,
-    //     `win-cuda-12.4-x64`, `win-cuda-13.1-x64`, `win-vulkan-x64`.
+    //     `win-cuda-12.4-x64`, `win-cuda-13.3-x64`, `win-vulkan-x64`.
     //
     // This function exists mainly for legacy janhq-mirror entries that may
     // have been persisted in user settings before the Windows switch to
@@ -39,7 +39,7 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     if is_windows
         && (old_backend == "win-cpu-x64"
             || old_backend.contains("cuda-12.4")
-            || old_backend.contains("cuda-13.1")
+            || old_backend.contains("cuda-13.3")
             || old_backend == "win-vulkan-x64")
     {
         return old_backend;
@@ -51,7 +51,7 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     //   - `win-noavx-cuda-cu{11.7,12.0,13.0}-x64` (contains `cu{11,12,13}`)
     // Match both, mapping each to its closest ggml-org tier.
     if is_windows && (old_backend.contains("cuda-13") || old_backend.contains("cu13")) {
-        return format!("win-cuda-13.1-{}", arch);
+        return format!("win-cuda-13.3-{}", arch);
     }
     if is_windows && (old_backend.contains("cuda-12") || old_backend.contains("cu12")) {
         return format!("win-cuda-12.4-{}", arch);
@@ -261,7 +261,7 @@ pub fn determine_supported_backends(
                 supported_backends.push("win-cuda-12.4-x64".to_string());
             }
             if features.cuda13 {
-                supported_backends.push("win-cuda-13.1-x64".to_string());
+                supported_backends.push("win-cuda-13.3-x64".to_string());
             }
             if features.vulkan {
                 supported_backends.push("win-vulkan-x64".to_string());
@@ -512,7 +512,7 @@ pub async fn is_cuda_installed(
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
     // Define library name lookup table. ggml-org publishes Windows cudart
-    // archives for CUDA 12.4 and 13.1 only; legacy CUDA 11 entries are
+    // archives for CUDA 12.4 and 13.3 only; legacy CUDA 11 entries are
     // retained for callers that may still pass an old toolkit version.
     let mut libname_lookup: HashMap<String, &str> = HashMap::new();
     libname_lookup.insert("windows-11.7".to_string(), "cudart64_110.dll");
@@ -520,6 +520,7 @@ pub async fn is_cuda_installed(
     libname_lookup.insert("windows-12.4".to_string(), "cudart64_12.dll");
     libname_lookup.insert("windows-13.0".to_string(), "cudart64_13.dll");
     libname_lookup.insert("windows-13.1".to_string(), "cudart64_13.dll");
+    libname_lookup.insert("windows-13.3".to_string(), "cudart64_13.dll");
     libname_lookup.insert("linux-11.7".to_string(), "libcudart.so.11.0");
     libname_lookup.insert("linux-12.0".to_string(), "libcudart.so.12");
     libname_lookup.insert("linux-13.0".to_string(), "libcudart.so.13");
@@ -628,14 +629,14 @@ pub async fn prioritize_backends(
     }
 
     // Priority list based on GPU memory. The upstream provider sees
-    // ggml-org native backend names on Windows (`cuda-cu13.1`,
+    // ggml-org native backend names on Windows (`cuda-cu13.3`,
     // `cuda-cu12.4`, `vulkan`, `cpu`) and janhq/macos-style names on the
     // older code paths (`cuda-cu12.0`, `common_cpus`). Both forms are
     // listed so `get_backend_category` matches work regardless of which
     // generation of backend ids ended up in the version_backends slice.
     let backend_priorities: Vec<&str> = if has_enough_gpu_memory {
         vec![
-            "cuda-cu13.1",
+            "cuda-cu13.3",
             "cuda-cu13.0",
             "cuda-cu12.4",
             "cuda-cu12.0",
@@ -652,7 +653,7 @@ pub async fn prioritize_backends(
         ]
     } else {
         vec![
-            "cuda-cu13.1",
+            "cuda-cu13.3",
             "cuda-cu13.0",
             "cuda-cu12.4",
             "cuda-cu12.0",
@@ -712,9 +713,12 @@ pub async fn prioritize_backends(
 
 fn get_backend_category(backend_string: &str) -> Option<String> {
     // ggml-org native Windows names (matched before legacy janhq patterns
-    // to avoid `cu13.1`/`cu12.4` falling through to the older categories):
-    if backend_string.contains("cuda-13.1") {
-        return Some("cuda-cu13.1".to_string());
+    // to avoid `cu13.3`/`cu12.4` falling through to the older categories).
+    // `cuda-13.1` is the pre-b9495 ggml-org minor — still recognized so
+    // already-installed `win-cuda-13.1-x64` folders keep their category
+    // after the 13.3 bump.
+    if backend_string.contains("cuda-13.3") || backend_string.contains("cuda-13.1") {
+        return Some("cuda-cu13.3".to_string());
     }
     if backend_string.contains("cuda-12.4") {
         return Some("cuda-cu12.4".to_string());
@@ -1219,10 +1223,10 @@ mod tests {
             map_old_backend_to_new("win-cuda-12-common_cpus-x64".to_string()),
             "win-cuda-12.4-x64"
         );
-        // Legacy janhq CUDA 13 → ggml-org CUDA 13.1.
+        // Legacy janhq CUDA 13 → ggml-org CUDA 13.3.
         assert_eq!(
             map_old_backend_to_new("win-cuda-13-common_cpus-x64".to_string()),
-            "win-cuda-13.1-x64"
+            "win-cuda-13.3-x64"
         );
         // Already-new ggml-org names round-trip unchanged.
         assert_eq!(
@@ -1230,8 +1234,14 @@ mod tests {
             "win-cuda-12.4-x64"
         );
         assert_eq!(
+            map_old_backend_to_new("win-cuda-13.3-x64".to_string()),
+            "win-cuda-13.3-x64"
+        );
+        // Pre-b9495 ggml-org minor migrates forward to the current 13.3 tier
+        // (ggml-org renamed the Windows CUDA-13 asset 13.1 → 13.3).
+        assert_eq!(
             map_old_backend_to_new("win-cuda-13.1-x64".to_string()),
-            "win-cuda-13.1-x64"
+            "win-cuda-13.3-x64"
         );
     }
 
@@ -1472,7 +1482,7 @@ mod tests {
         assert!(result.contains(&"win-cpu-x64".to_string()));
         assert!(result.contains(&"win-cuda-12.4-x64".to_string()));
         assert!(result.contains(&"win-vulkan-x64".to_string()));
-        assert!(!result.contains(&"win-cuda-13.1-x64".to_string()));
+        assert!(!result.contains(&"win-cuda-13.3-x64".to_string()));
         assert!(!result.iter().any(|b| b.contains("cuda-11")));
     }
 

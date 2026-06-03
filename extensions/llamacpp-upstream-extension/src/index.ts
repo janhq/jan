@@ -144,7 +144,8 @@ function stripBom(s: string): string {
 
 function backendCategoryToLabel(category: string): string {
   switch (category) {
-    case 'cuda-cu13.1': return 'CUDA 13'
+    case 'cuda-cu13.3': return 'CUDA 13'
+    case 'cuda-cu13.1': return 'CUDA 13' // legacy on-disk installs
     case 'cuda-cu13.0': return 'CUDA 13'
     case 'cuda-cu12.4': return 'CUDA 12'
     case 'cuda-cu12.0': return 'CUDA 12'
@@ -155,9 +156,12 @@ function backendCategoryToLabel(category: string): string {
 }
 
 function get_backend_category(backend: string): string {
-  // ggml-org native Windows names (matched first so `cu13.1` / `cu12.4`
-  // don't fall through to the legacy janhq categories).
-  if (backend.includes('cuda-13.1')) return 'cuda-cu13.1'
+  // ggml-org native Windows names (matched first so `cu13.3` / `cu12.4`
+  // don't fall through to the legacy janhq categories). `cuda-13.1` is the
+  // pre-b9495 ggml-org minor — still recognized so already-installed
+  // `win-cuda-13.1-x64` folders keep their category after the 13.3 bump.
+  if (backend.includes('cuda-13.3') || backend.includes('cuda-13.1'))
+    return 'cuda-cu13.3'
   if (backend.includes('cuda-12.4')) return 'cuda-cu12.4'
   // Legacy janhq mirror names.
   if (backend.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
@@ -704,7 +708,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         ? [
             'win-cpu-x64',
             'win-cuda-12.4-x64',
-            'win-cuda-13.1-x64',
+            'win-cuda-13.3-x64',
             'win-vulkan-x64',
           ]
         : IS_LINUX
@@ -1174,10 +1178,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /**
    * Uses hardware detection (CUDA/Vulkan driver info) to determine the ideal
    * backend type for this machine. Returns the backend name string
-   * (e.g. "win-cuda-13.1-x64") or null if CPU is already optimal.
+   * (e.g. "win-cuda-13.3-x64") or null if CPU is already optimal.
    *
    * Naming differs by platform — Windows uses ggml-org native ids
-   * (`win-cuda-{12.4,13.1}-x64`, `win-vulkan-x64`); Linux still uses the
+   * (`win-cuda-{12.4,13.3}-x64`, `win-vulkan-x64`); Linux still uses the
    * janhq-mirror names (`linux-cuda-{12,13}-common_cpus-x64`) because the
    * upstream extension is currently only wired on macOS and Windows.
    */
@@ -1204,7 +1208,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
       if (sysInfo.os_type === 'windows') {
-        // ggml-org publishes Windows CUDA builds for 13.1 and 12.4 only —
+        // ggml-org publishes Windows CUDA builds for 13.3 and 12.4 only —
         // CUDA 11 has been dropped upstream. Hosts with driver too old
         // for CUDA 12.4 (~551.61) fall through to Vulkan/CPU below via
         // the feature-flag gating in `get_supported_features`.
@@ -1221,7 +1225,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // `--list-devices` alone as a degrade trigger would push those
         // users off a working CUDA-13.1 onto CUDA-12.4 / Vulkan / CPU.
         const tiers: string[] = []
-        if (features.cuda13) tiers.push(`win-cuda-13.1-${archSuffix}`)
+        if (features.cuda13) tiers.push(`win-cuda-13.3-${archSuffix}`)
         if (features.cuda12) tiers.push(`win-cuda-12.4-${archSuffix}`)
         if (features.vulkan && hasEnoughVram)
           tiers.push(`win-vulkan-${archSuffix}`)
@@ -1897,7 +1901,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
   /**
    * Resolves a "Latest <variant>" sentinel backend id (e.g.
-   * `win-cuda-13.1-x64`) to a concrete `<tag>/<backend>` string by looking
+   * `win-cuda-13.3-x64`) to a concrete `<tag>/<backend>` string by looking
    * up the newest release tag from the ggml-org/llama.cpp release stream.
    * Returns `null` when the release stream is unreachable or the variant is
    * not present in the latest release assets.
@@ -3207,7 +3211,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * it in `download-${taskId}` and feeds it to Tauri's `listen()`) does
    * not get rejected by Tauri's event-name validator. Tauri restricts
    * event names to `[A-Za-z0-9_/:-]`. ggml-org Windows backends contain
-   * `.` (`win-cuda-12.4-x64`, `win-cuda-13.1-x64`), so we must strip dots
+   * `.` (`win-cuda-12.4-x64`, `win-cuda-13.3-x64`), so we must strip dots
    * out of the backend / version portion before constructing a taskId.
    *
    * The taskId is opaque to downstream consumers — nothing parses it
@@ -3321,7 +3325,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // `cancelDownload(taskId)` instead of the model-abort path.
     //
     // Sanitize `version`/`backend` separately because both can now
-    // carry dots after the ggml-org switch (e.g. `win-cuda-13.1-x64`),
+    // carry dots after the ggml-org switch (e.g. `win-cuda-13.3-x64`),
     // and Tauri's `listen()` — invoked under the hood by
     // `download-extension` with `download-${taskId}` — rejects dots.
     //
@@ -3523,7 +3527,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * `<targetDir>/build/bin/`.
    *
    * No-op (returns immediately) when:
-   *   - `backend` is not a Windows CUDA backend (`win-cuda-{12.4,13.1}-x64`)
+   *   - `backend` is not a Windows CUDA backend (`win-cuda-{12.4,13.3}-x64`)
    *   - cudart DLLs are already present (checked via the Rust
    *     `plugin:llamacpp-upstream|is_cuda_installed` command, which also
    *     handles a legacy `<jan>/llamacpp/lib/` -> `build/bin/` migration).
@@ -3585,7 +3589,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     )
 
     // Same Tauri event-name sanitization as the backend download path —
-    // ggml-org CUDA backends carry dots (e.g. `win-cuda-13.1-x64`) which
+    // ggml-org CUDA backends carry dots (e.g. `win-cuda-13.3-x64`) which
     // `listen('download-${taskId}', …)` in `download-extension` rejects
     // with "Event name must include only alphanumeric characters, …".
     const taskId = `llamacpp-cudart-${this.sanitizeForTauriEvent(

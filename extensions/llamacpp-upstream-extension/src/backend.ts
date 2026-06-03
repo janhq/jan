@@ -107,7 +107,7 @@ function buildHttpProxyOptions(): {
  * only get the bundled (re-codesigned) build that ships with each Atomic
  * Chat release.
  *
- * Windows: returns the ggml-org Windows assets (CPU / CUDA 12.4 / CUDA 13.1
+ * Windows: returns the ggml-org Windows assets (CPU / CUDA 12.4 / CUDA 13.3
  * / Vulkan) so the runtime update flow can fetch fresh builds without
  * shipping a new installer.
  *
@@ -185,7 +185,7 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       const allowedBackends = new Set<string>([
         'win-cpu-x64',
         'win-cuda-12.4-x64',
-        'win-cuda-13.1-x64',
+        'win-cuda-13.3-x64',
         'win-vulkan-x64',
       ])
 
@@ -271,27 +271,27 @@ export function getBackendDownloadUrl(
 }
 
 /**
- * Maps an internal backend id (e.g. `win-cuda-13.1-x64`, `linux-vulkan-x64`)
+ * Maps an internal backend id (e.g. `win-cuda-13.3-x64`, `linux-vulkan-x64`)
  * to a short human-friendly variant label used by the "Latest <variant>"
  * dropdown entries. Falls back to the raw id for anything unrecognised.
  */
 export function friendlyBackendLabel(backend: string): string {
   const id = backend.replace(/\uFEFF/g, '').trim()
   if (id.endsWith('cpu-x64')) return 'CPU'
-  if (id.includes('cuda-13')) return 'CUDA 13.1'
+  if (id.includes('cuda-13')) return 'CUDA 13.3'
   if (id.includes('cuda-12')) return 'CUDA 12.4'
   if (id.includes('vulkan')) return 'Vulkan'
   return id
 }
 
 /**
- * Maps a Windows CUDA backend variant id (e.g. `win-cuda-13.1-x64`) to
+ * Maps a Windows CUDA backend variant id (e.g. `win-cuda-13.3-x64`) to
  * the matching cudart asset on the same ggml-org/llama.cpp release.
  *
- * The main `llama-{tag}-bin-win-cuda-{12.4,13.1}-x64.zip` archives ship
+ * The main `llama-{tag}-bin-win-cuda-{12.4,13.3}-x64.zip` archives ship
  * only the llama-server executable and its direct deps; the CUDA Toolkit
  * runtime DLLs (cudart64_*.dll, cublas64_*.dll, cublasLt64_*.dll, …)
- * live in a sibling `cudart-llama-bin-win-cuda-{12.4,13.1}-x64.zip`.
+ * live in a sibling `cudart-llama-bin-win-cuda-{12.4,13.3}-x64.zip`.
  * Without those DLLs, `llama-server.exe --list-devices` returns an empty
  * device list on machines that don't have the CUDA Toolkit installed
  * system-wide (GitHub issue AtomicBot-ai/Atomic-Chat#14).
@@ -300,30 +300,30 @@ export function friendlyBackendLabel(backend: string): string {
  * shipped is CUDA 12.4. Hosts whose driver only supports CUDA 11 fall
  * back to the CPU build via runtime driver-version gating.
  */
-const WINDOWS_CUDART_FILENAME: Record<'cuda-12.4' | 'cuda-13.1', string> = {
+const WINDOWS_CUDART_FILENAME: Record<'cuda-12.4' | 'cuda-13.3', string> = {
   'cuda-12.4': 'cudart-llama-bin-win-cuda-12.4-x64.zip',
-  'cuda-13.1': 'cudart-llama-bin-win-cuda-13.1-x64.zip',
+  'cuda-13.3': 'cudart-llama-bin-win-cuda-13.3-x64.zip',
 }
 
 /**
  * Same mapping in CUDA-toolkit version form, for callers that need to
  * talk to `plugin:llamacpp-upstream|is_cuda_installed` (which keys on
- * the cudart version string, e.g. `12.4` / `13.1`) rather than the
+ * the cudart version string, e.g. `12.4` / `13.3`) rather than the
  * backend variant id.
  */
-const WINDOWS_CUDA_TOOLKIT_VERSION: Record<'cuda-12.4' | 'cuda-13.1', string> = {
+const WINDOWS_CUDA_TOOLKIT_VERSION: Record<'cuda-12.4' | 'cuda-13.3', string> = {
   'cuda-12.4': '12.4',
-  'cuda-13.1': '13.1',
+  'cuda-13.3': '13.3',
 }
 
-const WINDOWS_CUDA_BACKEND_RE = /^win-(cuda-(?:12\.4|13\.1))-/
+const WINDOWS_CUDA_BACKEND_RE = /^win-(cuda-(?:12\.4|13\.3))-/
 
 function matchWindowsCudaBackend(
   backend: string
-): 'cuda-12.4' | 'cuda-13.1' | null {
+): 'cuda-12.4' | 'cuda-13.3' | null {
   const match = WINDOWS_CUDA_BACKEND_RE.exec(backend.replace(/\uFEFF/g, '').trim())
   if (!match) return null
-  return match[1] as 'cuda-12.4' | 'cuda-13.1'
+  return match[1] as 'cuda-12.4' | 'cuda-13.3'
 }
 
 /**
@@ -353,7 +353,7 @@ export function getCudartArchiveName(backend: string): string | null {
 }
 
 /**
- * Returns the CUDA Toolkit version string (e.g. `13.1`) that the Rust
+ * Returns the CUDA Toolkit version string (e.g. `13.3`) that the Rust
  * `is_cuda_installed` command expects for a given Windows CUDA backend.
  * `null` for non-CUDA backends.
  */
