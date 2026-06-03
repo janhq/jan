@@ -376,6 +376,41 @@ mod tests {
     }
 
     #[test]
+    fn responses_request_merges_multiple_system_messages() {
+        // `instructions` plus a developer/system input item must collapse into a
+        // single leading system message so strict Qwen3 templates don't raise
+        // "System message must be at the beginning".
+        let req = json!({
+            "model": "m",
+            "instructions": "base policy",
+            "input": [
+                {"type": "message", "role": "developer",
+                 "content": [{"type": "input_text", "text": "project rules"}]},
+                {"type": "message", "role": "user",
+                 "content": [{"type": "input_text", "text": "hi"}]},
+                {"type": "message", "role": "system",
+                 "content": [{"type": "input_text", "text": "late system"}]}
+            ]
+        });
+        let chat = responses_request_to_chat(&req);
+        let msgs = chat["messages"].as_array().unwrap();
+        // Exactly one system message, at index 0; all system/developer text merged.
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(
+            msgs[0]["content"],
+            "base policy\n\nproject rules\n\nlate system"
+        );
+        assert_eq!(msgs[1]["role"], "user");
+        assert_eq!(msgs[1]["content"], "hi");
+        let system_count = msgs
+            .iter()
+            .filter(|m| m["role"] == "system")
+            .count();
+        assert_eq!(system_count, 1);
+    }
+
+    #[test]
     fn responses_request_items_and_tools_to_chat() {
         let req = json!({
             "model": "m",

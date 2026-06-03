@@ -328,6 +328,12 @@ function ProviderDetail() {
     return activeModels.find((id) => mlxIds.has(id))
   }, [activeModels, provider])
 
+  /// Set by `handleStartWithDflash` to the model id it just started *with* a
+  /// DFlash draft, so the reset effect below skips its one-shot flag wipe for
+  /// that session (the session genuinely started with `--draft-model`, unlike
+  /// a plain start). Cleared the moment the effect honors it.
+  const startedWithDflashRef = useRef<string | null>(null)
+
   const prevActiveMlxModelRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (provider?.provider !== 'mlx' || !provider) {
@@ -342,6 +348,13 @@ function ProviderDetail() {
     /// we don't want to nuke the user's choice just because we mounted.
     if (prev === undefined) return
     if (prev === activeMlxModelId) return
+
+    /// This session was deliberately started with a DFlash draft (via the
+    /// "DFlash unavailable" dialog's Start action), so don't wipe the flag.
+    if (activeMlxModelId && activeMlxModelId === startedWithDflashRef.current) {
+      startedWithDflashRef.current = null
+      return
+    }
 
     const dflashSetting = provider.settings.find(
       (s) => s.key === 'dflash_enabled'
@@ -700,6 +713,99 @@ function ProviderDetail() {
       isTogglingEagle3,
       isEagle3Downloading,
     ]
+  )
+
+  /// Start an MLX model *with* its DFlash draft from the "DFlash unavailable"
+  /// dialog: select it, stop any live session, download/attach the paired
+  /// draft, then load via the shared `switchToModel` path — without navigating
+  /// to a new chat. Routing through `switchToModel` (rather than a bare
+  /// `startModel`) is what updates the global `activeModels` / `loadingModel` /
+  /// server status, so the MLX Models tab actually reflects the loading →
+  /// running model. The DFlash UI flag is flipped only after the load resolves,
+  /// and the `startedWithDflashRef` guard keeps the reset effect from wiping it
+  /// once the session becomes active.
+  const handleStartWithDflash = useCallback(
+    async (modelId: string) => {
+      if (provider?.provider !== 'mlx' || !provider) return
+
+      const errTitle = t('settings:dflashEnableFailed', {
+        defaultValue: 'Failed to toggle DFlash',
+      })
+      const mlxEngine: any = EngineManager.instance().get('mlx')
+      if (!mlxEngine) {
+        toast.error(errTitle)
+        return
+      }
+
+      const blockSizeRaw = provider.settings.find(
+        (s) => s.key === 'block_size'
+      )?.controller_props?.value
+      const blockSize = Number(blockSizeRaw) || 16
+
+      setLoadingModels((prev) =>
+        prev.includes(modelId) ? prev : [...prev, modelId]
+      )
+      try {
+        useModelProvider.getState().selectModelProvider('mlx', modelId)
+
+        const support = await mlxEngine.checkDflashSupport?.(modelId)
+        if (support?.supported) {
+          /// Stop any live session first so `enableDflash` only records the
+          /// draft config (it reloads in place when a session already exists).
+          /// `switchToModel` below then performs a single load that already
+          /// carries `--draft-model`.
+          await serviceHub.models().stopAllModels()
+          await mlxEngine.enableDflash(modelId, blockSize, {
+            repo: support.repo,
+            required: support.required,
+            optional: support.optional,
+          })
+          startedWithDflashRef.current = modelId
+        }
+
+        /// Use the shared switch path (not a bare `startModel`) so the global
+        /// `activeModels` / `loadingModel` / server status update and the MLX
+        /// Models tab reflects the loading → running model. It does not
+        /// navigate to a new chat.
+        await switchToModel({ modelId, providerName: 'mlx', serviceHub })
+
+        /// Flip the UI flag only after the session is actually running with the
+        /// draft, so the toggle never shows "on" while the model is still
+        /// loading/downloading.
+        if (support?.supported) {
+          const next = provider.settings.map((s) =>
+            s.key === 'dflash_enabled'
+              ? {
+                  ...s,
+                  controller_props: { ...s.controller_props, value: true as never },
+                }
+              : s.key === 'mtp_enabled' || s.key === 'eagle3_enabled'
+                ? {
+                    ...s,
+                    controller_props: {
+                      ...s.controller_props,
+                      value: false as never,
+                    },
+                  }
+                : s
+          )
+          serviceHub.providers().updateSettings(providerName, next)
+          updateProvider(providerName, { ...provider, settings: next })
+          toast.success(
+            t('settings:dflashEnableSuccess', { defaultValue: 'DFlash enabled' })
+          )
+        }
+      } catch (error) {
+        startedWithDflashRef.current = null
+        console.error('Failed to start with DFlash:', error)
+        toast.error(errTitle, {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setLoadingModels((prev) => prev.filter((id) => id !== modelId))
+      }
+    },
+    [provider, providerName, serviceHub, updateProvider, t]
   )
 
   /// Toggle the MTP (Multi-Token Prediction) speculative-decoding flag on
@@ -1332,14 +1438,6 @@ function ProviderDetail() {
                     (!mtpEnabledOn && setting.key === 'mtp_block_size') ||
                     (!eagle3EnabledOn && setting.key === 'eagle3_block_size')
 
-                  // Temporarily hide the DFlash Draft feature on the MLX
-                  // provider: hide both the `dflash_enabled` toggle and its
-                  // companion `block_size` row regardless of persisted value.
-                  const isDflashFeatureHidden =
-                    provider?.provider === 'mlx' &&
-                    (setting.key === 'dflash_enabled' ||
-                      setting.key === 'block_size')
-
                   // The dflash_enabled / mtp_enabled / eagle3_enabled
                   // checkboxes are rendered as Switches with custom
                   // side-effecting handlers that reload the live MLX
@@ -1490,8 +1588,7 @@ function ProviderDetail() {
                           className={cn(
                             setting.key === 'device' && 'hidden',
                             isHiddenByConcurrentMode && 'hidden',
-                            isHiddenByDflash && 'hidden',
-                            isDflashFeatureHidden && 'hidden'
+                            isHiddenByDflash && 'hidden'
                           )}
                           onChange={(newValue) => {
                             // Manual "Latest <variant>" picks carry a
@@ -1634,7 +1731,6 @@ function ProviderDetail() {
                         setting.key === 'device' && 'hidden',
                         isHiddenByConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
-                        isDflashFeatureHidden && 'hidden',
                         isManagedByConcurrentMode &&
                           'opacity-60 pointer-events-none'
                       )}
@@ -2099,6 +2195,7 @@ function ProviderDetail() {
           if (!open) setDflashUnsupportedModel(null)
         }}
         modelId={dflashUnsupportedModel ?? ''}
+        onStartWithDflash={handleStartWithDflash}
       />
       <Eagle3UnsupportedDialog
         open={eagle3UnsupportedModel !== null}

@@ -926,7 +926,9 @@ pub fn configure_hermes_agent(
     let after_model_patch = patched.join("\n");
 
     // --- Upsert only our entry in custom_providers (preserves user's other providers) ---
-    let ctx = context_length.unwrap_or(20000);
+    // Hermes Agent rejects any model whose context window is below 64K, so the
+    // fallback must satisfy that floor too (the UI passes 65536 explicitly).
+    let ctx = context_length.unwrap_or(65536);
     let after_cp = upsert_atomic_provider(
         &after_model_patch,
         &api_url,
@@ -1361,10 +1363,28 @@ fn agent_install_spec(
     agent_id: &str,
 ) -> Result<(String, Vec<String>, &'static str, &'static str), String> {
     let npm = |pkg: &str| {
-        (
-            "npm".to_string(),
-            vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
-        )
+        if cfg!(windows) {
+            // On Windows `npm` is `npm.cmd` (a batch shim). Rust's
+            // `std::process::Command` spawns via `CreateProcessW`, which only
+            // resolves `.exe` on PATH and refuses to execute `.cmd`/`.bat`
+            // directly (rust-lang/rust#37519). Route through `cmd.exe` so the
+            // shim is found and run.
+            (
+                "cmd".to_string(),
+                vec![
+                    "/C".to_string(),
+                    "npm".to_string(),
+                    "install".to_string(),
+                    "-g".to_string(),
+                    pkg.to_string(),
+                ],
+            )
+        } else {
+            (
+                "npm".to_string(),
+                vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
+            )
+        }
     };
 
     match agent_id {
@@ -1380,6 +1400,15 @@ fn agent_install_spec(
             let (p, a) = npm("opencode-ai");
             Ok((p, a, "npm", "https://opencode.ai"))
         }
+        "droid" => {
+            let (p, a) = npm("droid");
+            Ok((
+                p,
+                a,
+                "npm",
+                "https://docs.factory.ai/cli/getting-started/quickstart",
+            ))
+        }
         "copilot" => {
             let (p, a) = npm("@github/copilot");
             Ok((
@@ -1394,13 +1423,19 @@ fn agent_install_spec(
             Ok((p, a, "npm", "https://docs.openclaw.ai"))
         }
         "hermes" => {
+            // `--skip-setup`/`-SkipSetup` skips the post-install interactive
+            // setup wizard, and `--non-interactive`/`-NonInteractive` makes any
+            // remaining prompt fall back to its default. Without these the
+            // installer's wizard reads from /dev/tty and hangs forever when we
+            // spawn it from the app — we write the agent's config ourselves via
+            // `configure_hermes_agent`, so the wizard is redundant here.
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
                     vec![
                         "-NoProfile".to_string(),
                         "-Command".to_string(),
-                        "iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)".to_string(),
+                        "iex \"& { $(irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1) } -SkipSetup -NonInteractive\"".to_string(),
                     ],
                 )
             } else {
@@ -1408,7 +1443,7 @@ fn agent_install_spec(
                     "sh".to_string(),
                     vec![
                         "-c".to_string(),
-                        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash".to_string(),
+                        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup --non-interactive".to_string(),
                     ],
                 )
             };
@@ -1637,6 +1672,102 @@ pub fn configure_opencode(
     Ok(())
 }
 
+/// Configure Factory.ai Droid by upserting our entry in the `customModels`
+/// array of `~/.factory/settings.json` (strict JSON, other models preserved).
+/// Droid speaks OpenAI Chat Completions via `generic-chat-completion-api`, so
+/// `api_url` carries the `/v1` suffix.
+#[tauri::command]
+pub fn configure_droid(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    const DISPLAY_NAME: &str = "Atomic Chat";
+
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".factory");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.factory: {}", e))?;
+    let path = dir.join("settings.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
+
+    let custom_models = obj
+        .entry("customModels")
+        .or_insert_with(|| serde_json::json!([]));
+    if !custom_models.is_array() {
+        *custom_models = serde_json::json!([]);
+    }
+    let arr = custom_models.as_array_mut().unwrap();
+
+    // Droid rejects an empty apiKey, so use a non-empty placeholder when the
+    // local server runs without a key.
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    let entry = serde_json::json!({
+        "model": model,
+        "displayName": DISPLAY_NAME,
+        "baseUrl": api_url,
+        "apiKey": key_val,
+        "provider": "generic-chat-completion-api",
+        "maxOutputTokens": 16384
+    });
+
+    // Upsert by displayName (our managed marker); preserve any other models.
+    let idx = arr
+        .iter()
+        .position(|m| m.get("displayName").and_then(|v| v.as_str()) == Some(DISPLAY_NAME));
+    let idx = match idx {
+        Some(i) => {
+            arr[i] = entry;
+            i
+        }
+        None => {
+            arr.push(entry);
+            arr.len() - 1
+        }
+    };
+
+    // Select our model as the default so the session opens on it without a
+    // manual `/model` pick. Droid's custom selector is
+    // `custom:<displayName with spaces->dashes>-<index>`.
+    let selector = format!("custom:{}-{}", DISPLAY_NAME.replace(' ', "-"), idx);
+    obj.insert("model".to_string(), serde_json::json!(selector));
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!(
+        "Droid configured: baseUrl={}, model={}, selector={}",
+        api_url,
+        model,
+        selector
+    );
+    Ok(())
+}
+
 /// Configure OpenClaw by upserting `models.providers.atomic` plus the
 /// `agents.defaults.models` allowlist entry in `~/.openclaw/openclaw.json`.
 #[tauri::command]
@@ -1696,15 +1827,44 @@ pub fn configure_openclaw(
     let providers_obj = providers
         .as_object_mut()
         .ok_or_else(|| "models.providers is not a JSON object".to_string())?;
+    // The catalog entry's `id` is the bare model id our /v1 server reports;
+    // OpenClaw builds the model ref as `<providerId>/<id>` (= `model_ref`), so
+    // prefixing here would double it to `atomic/atomic/...` and break lookup.
     providers_obj.insert(
         "atomic".to_string(),
         serde_json::json!({
             "baseUrl": api_url,
             "apiKey": key_val,
             "api": "openai-completions",
-            "models": [ { "id": model_ref, "name": model } ],
+            "models": [ { "id": model, "name": model } ],
         }),
     );
+
+    // OpenClaw's local gateway (ws://127.0.0.1:18789) refuses to open its
+    // websocket without connection auth. For our loopback-only setup, seed
+    // "none" (private-ingress open auth) so the agent is reachable with no
+    // token/password. Preserve any auth mode the user set deliberately.
+    let gateway = obj
+        .entry("gateway")
+        .or_insert_with(|| serde_json::json!({}));
+    let gateway_obj = gateway
+        .as_object_mut()
+        .ok_or_else(|| "gateway is not a JSON object".to_string())?;
+    // `openclaw gateway` only starts when gateway.mode is "local"; the TUI also
+    // needs this to treat the loopback gateway as locally managed. Seed it
+    // (preserving an explicit "remote" the user may have configured).
+    gateway_obj
+        .entry("mode")
+        .or_insert_with(|| serde_json::json!("local"));
+    let auth = gateway_obj
+        .entry("auth")
+        .or_insert_with(|| serde_json::json!({}));
+    let auth_obj = auth
+        .as_object_mut()
+        .ok_or_else(|| "gateway.auth is not a JSON object".to_string())?;
+    auth_obj
+        .entry("mode")
+        .or_insert_with(|| serde_json::json!("none"));
 
     let agents = obj.entry("agents").or_insert_with(|| serde_json::json!({}));
     let agents_obj = agents
@@ -1722,6 +1882,10 @@ pub fn configure_openclaw(
     defaults_obj
         .entry("timeoutSeconds")
         .or_insert_with(|| serde_json::json!(240));
+    // Select our model as the agent's primary default (string form sets
+    // `model.primary`), so OpenClaw runs on it instead of dropping into
+    // "configure a model" mode. Run is an explicit "use this", so overwrite.
+    defaults_obj.insert("model".to_string(), serde_json::json!(model_ref.clone()));
     let allow = defaults_obj
         .entry("models")
         .or_insert_with(|| serde_json::json!({}));

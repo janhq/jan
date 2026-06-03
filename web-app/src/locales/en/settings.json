@@ -365,6 +365,8 @@
   "dflashUnsupportedDesc": "{{modelId}} doesn't have a paired draft model. Pick a supported one from the z-lab/dflash collection to enable faster generation.",
   "dflashUnsupportedDescPrefix": "{{modelId}} doesn't have a paired draft model. Pick a supported one from the ",
   "dflashUnsupportedDescSuffix": " collection to enable faster generation.",
+  "dflashSupportedListTitle": "Supported models",
+  "dflashSupportedListAction": "Download MLX build",
   "dflashNoActiveModel": "Start an MLX model first.",
   "dflashDownloadingDraft": "Downloading DFlash draft for {{modelId}}...",
   "dflashLoadingDraft": "Loading DFlash draft for {{modelId}}...",

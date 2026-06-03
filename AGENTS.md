@@ -309,6 +309,158 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-03 — Fix OpenClaw Launch integration: select the model as primary, use the bare catalog id, and seed `gateway.auth.mode: "none"` on loopback
+- **Context:** After installing OpenClaw via the Launch page and pressing
+  Run, the CLI still booted into "deterministic typed commands until we
+  configure a model" and could not reach its local gateway. Three distinct
+  bugs in `configure_openclaw`
+  ([`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs)),
+  all confirmed against OpenClaw's own bundled docs
+  (`docs/gateway/config-agents.md`, `docs/gateway/local-model-services.md`,
+  `docs/gateway/openai-http-api.md`, `docs/gateway/remote.md`):
+  1. We wrote the `agents.defaults.models` **allowlist** but never set
+     `agents.defaults.model` (the primary selector), so no model was active.
+  2. The provider catalog entry used `id: "atomic/<model>"`. OpenClaw builds
+     a model ref as `<providerId>/<id>`, so the prefix doubled to
+     `atomic/atomic/<model>` and lookup failed. The `id` must be the **bare**
+     model id our `/v1` server reports (matching the `inferrs` example where
+     `id: "google/gemma-4-E2B-it"` yields ref `inferrs/google/gemma-4-E2B-it`).
+  3. OpenClaw's local gateway (`ws://127.0.0.1:18789`) refuses to open its
+     websocket without connection auth (`gateway.auth.*`), which was unset.
+- **Decision:**
+  - Set `agents.defaults.model = "atomic/<model>"` (string form = `model.primary`)
+    on every Run — Run is an explicit "use this", so it overwrites.
+  - Write the provider catalog entry with the bare id (`{ id: model, name: model }`);
+    the `atomic/<model>` ref form is used only for the primary selector and the
+    `/model` allowlist key.
+  - Seed `gateway.auth.mode: "none"` (private-ingress open auth) via `or_insert`
+    so the loopback-only gateway is reachable with no token/password. This is
+    documented as valid for loopback binds; **non-loopback binds still require
+    token/password/trusted-proxy** and we never touch those. We preserve any
+    `gateway.auth` mode a user set deliberately (seed-only, never clobber).
+  - Seed `gateway.mode: "local"` (seed-only): `openclaw gateway` only starts in
+    local mode, and the TUI needs it to treat the loopback gateway as locally
+    managed.
+  - **Launch `openclaw chat`, not bare `openclaw`.** Bare `openclaw` (once the
+    config has authored settings) starts **Crestodian**, the configless-safe
+    setup/repair helper that interprets input as deterministic typed commands
+    (e.g. `yo` → a `status` report), not a conversation
+    (`docs/cli/crestodian.md`). `openclaw chat` (= `openclaw tui --local`) runs
+    the **embedded local agent runtime** (`docs/web/tui.md`), dropping the user
+    straight into a chat with agent `main` on the configured model — and it
+    needs **no gateway at all**. So the Launch page's auto-opened terminal runs
+    `openclaw chat` for OpenClaw (other agents still launch their `detectBin`).
+    This makes the gateway irrelevant to the default flow; the
+    `gateway.mode`/`gateway.auth.mode` seeds above are kept only as
+    forward-compat for users who manually run `openclaw` / `openclaw tui`.
+    (An earlier iteration started `openclaw gateway` as a terminal background
+    job via an `open_agent_terminal` `background` arg; that was removed once
+    `openclaw chat` proved it needs no gateway.)
+- **Consequences:** Pressing Run installs (if needed), configures, and opens a
+  terminal where the user can immediately chat with the local model — verified
+  end-to-end on macOS: `openclaw chat --local --message "…PONG"` replies `PONG`
+  on agent `main` using `atomic/Qwen3.5-4B-MLX-4bit` via `:1337/v1`, with no
+  gateway running. The loopback `auth.mode: "none"` seed is a security
+  relaxation scoped to `127.0.0.1` only and only matters if the user opts into
+  gateway mode manually; non-loopback binds still require explicit auth, which
+  our seed-only logic leaves intact. Windows uses the same `openclaw chat`
+  command (npm install path) but is **not yet validated**; flagged for a
+  Windows test pass.
+- **Owner:** team.
+- **Links:** the 2026-06-01 ADR *Add a "Launch" page …*,
+  [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs)
+  (`configure_openclaw`, `open_agent_terminal`),
+  [`web-app/src/routes/launch/index.tsx`](web-app/src/routes/launch/index.tsx)
+  (OpenClaw launches `openclaw chat`), OpenClaw bundled docs `docs/gateway/*`,
+  `docs/start/openclaw.md`, `docs/platforms/macos.md`, `docs/cli/crestodian.md`,
+  `docs/web/tui.md`.
+
+### 2026-06-03 — Expand the MLX DFlash draft registry to the full z-lab collection (incl. Gemma 4) and fix the broken sharded Kimi-K2.5 entry
+- **Context:** The DFlash auto-setup registry
+  (`extensions/mlx-extension/src/dflashRegistry.ts`) carried 14 of the 20
+  drafts published in the curated
+  [z-lab/dflash](https://huggingface.co/collections/z-lab/dflash) collection.
+  Six were missing — including the two most-downloaded heads in the whole
+  collection (`Qwen3.6-27B-DFlash` ~80k, `gemma-4-31B-it-DFlash` ~37k). A live
+  HF-API check of every new repo also revealed that **two Kimi drafts ship
+  sharded safetensors** (`Kimi-K2.5-DFlash` = 2 shards + index, `Kimi-K2.6-DFlash`
+  = 3 shards + index), not a single `model.safetensors`. The pre-existing
+  `kimi-k2.5` entry used the default single-file `required` set, so its
+  auto-download was **silently broken** — `ensureDraftDownloaded` would 404 on
+  the non-existent `model.safetensors` (a hard error for a `required` file) and
+  never fetch the shards.
+- **Decision:** Add all six missing drafts and repair the sharded set.
+  - New keys (normalized via `normalizeBaseId`, verified against EAGLE-3's
+    existing gemma keys): `qwen3.6-27b`, `gemma-4-31b`, `gemma-4-26b-a4b`,
+    `kimi-k2.6`, `minimax-m2.5`, `minimax-m2.7`.
+  - **Gemma 4 gains a third speculative path.** Gemma 4 targets were previously
+    served only by MTP (`*-assistant`) and EAGLE-3 (`RedHatAI/*-speculator.eagle3`).
+    They now also resolve a DFlash draft (`z-lab/gemma-4-{31B,26B-A4B}-it-DFlash`),
+    keyed `gemma-4-31b` / `gemma-4-26b-a4b` to mirror `eagle3Registry.ts`
+    (the trailing `-it` is stripped by `TRAIL_HINT_RE`). The three families stay
+    mutually exclusive via the existing UI mutex in
+    `web-app/src/routes/settings/providers/$providerName.tsx`; the
+    `performLoad` precedence (`mtp > eagle3 > dflash`) is unchanged.
+  - **Sharded manifest helper.** New `shardedRequired(total)` generates
+    `config.json` + `model.safetensors.index.json` + N
+    `model-XXXXX-of-YYYYY.safetensors` files. `kimi-k2.5` now uses
+    `shardedRequired(2)` (fixing the latent download bug) and `kimi-k2.6` uses
+    `shardedRequired(3)`. The other five new repos ship a single
+    `model.safetensors` (verified) and keep `DEFAULT_REQUIRED`.
+- **Consequences:**
+  - DFlash auto-setup now covers the entire z-lab collection (20/20). The two
+    highest-traffic drafts and the Gemma 4 family are reachable; Kimi drafts
+    actually download instead of erroring. All six repo file sets were confirmed
+    against the live HF API (no fabricated filenames).
+  - **Product caveat (not addressed here):** a DFlash draft is only useful when
+    the matching base MLX model exists and runs locally. MiniMax / Kimi are
+    large MoE targets; their entries are present for completeness but their
+    practical reach depends on the user having a runnable MLX build of the base
+    model. No gating was added — parity with the rest of the registry.
+  - Pure data + one local helper; no network calls added to the resolution
+    path, no Rust/contract changes. No registry unit tests exist yet.
+- **Amendment (same day) — turn the "DFlash unavailable" dialog into an
+  inline quant-picker + download/start surface, and close the normalization
+  gaps it exposed.** `DflashUnsupportedDialog` now renders every supported base
+  model as a Hub-style row (brand `ModelLogo` + name + a quantization
+  `<select>` + the shared `MlxModelDownloadAction`). The quant picker is
+  populated from the **clean precision builds that actually exist** on
+  `mlx-community` (verified against the live HF API — bf16 / mxfp8 / 8/6/5/4/3
+  bit / MXFP4 variants per model), ordered highest-first so the default is the
+  largest build (bf16 where published).   Each row downloads in place via the shared
+  `MlxModelDownloadAction` (progress/cancel) and flips to its own **"New chat"
+  (start)** button the moment a matching build is already on disk — matched
+  **fuzzily by base prefix + quant tokens** (`localIdMatches`), not by exact
+  repo id, so an alternate packaging the user already has (e.g.
+  `Qwen3.5-4B-MLX-4bit` when we offer `Qwen3.5-4B-4bit`) is recognized and
+  started directly — no navigation to the Hub. The **Start** action launches
+  the local build **with its DFlash draft already attached** and stays put (no
+  new chat): a new parent handler `handleStartWithDflash` selects the model,
+  `enableDflash` downloads/attaches the paired draft (writing engine config
+  when no session exists yet, reloading in place if one does), then the
+  idempotent `startModel` performs a single draft-carrying load. A
+  `startedWithDflashRef` guard in the MLX flag-reset effect stops it from
+  wiping `dflash_enabled` when that session becomes active, so the provider
+  toggle correctly reflects the running draft. Verifying the repos surfaced gaps where ids did **not**
+  normalize back to a registry key (so a draft would never pair): `gpt-oss-*`
+  ships only `MXFP4-*` quants, `Kimi-K2.6` only `mxfp8`, and the only published
+  `Qwen3-Coder-30B-A3B` MLX repos carry an `-Instruct` infix. Fixes: added
+  `mxfp4` / `mxfp8` to `QUANT_SUFFIX_RE` (legitimate quant suffixes, stripped
+  only at end → no false positives) and a `qwen3-coder-30b-a3b-instruct` alias
+  key. All 107 offered quant repos now normalize to a `STATIC_DRAFT_MAP` key
+  (verified by harness). The model→quant list is mirrored in web-app
+  (`DflashUnsupportedDialog.tsx`) because web-app can't import the extension
+  bundle; it MUST be kept in sync with the registry. New i18n key
+  `settings:dflashSupportedListTitle` (EN + RU); the per-row action label comes
+  from the shared `MlxModelDownloadAction` (`hub:download` / `hub:newChat`).
+- **Owner:** team.
+- **Links:** §4.1 *MLX backend*, the 2026-06-02 v0.6.0 sync ADR (EAGLE-3 / MTP
+  drafter families), [z-lab/dflash](https://huggingface.co/collections/z-lab/dflash),
+  files: [`extensions/mlx-extension/src/dflashRegistry.ts`](extensions/mlx-extension/src/dflashRegistry.ts),
+  [`extensions/mlx-extension/src/eagle3Registry.ts`](extensions/mlx-extension/src/eagle3Registry.ts)
+  (key convention reference),
+  [`web-app/src/containers/dialogs/DflashUnsupportedDialog.tsx`](web-app/src/containers/dialogs/DflashUnsupportedDialog.tsx).
+
 ### 2026-06-02 — Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models
 - **Context:** Codex CLI (added as a Launch integration in the 2026-06-01 ADR
   below) failed at the first turn against a local GGUF model with

@@ -332,6 +332,8 @@
   "dflashUnsupportedDesc": "У модели {{modelId}} нет парного draft-веса. Выберите поддерживаемую модель из коллекции z-lab/dflash, чтобы ускорить генерацию.",
   "dflashUnsupportedDescPrefix": "У модели {{modelId}} нет парного draft-веса. Выберите поддерживаемую модель из коллекции ",
   "dflashUnsupportedDescSuffix": ", чтобы ускорить генерацию.",
+  "dflashSupportedListTitle": "Поддерживаемые модели",
+  "dflashSupportedListAction": "Скачать MLX-сборку",
   "dflashNoActiveModel": "Сначала запустите MLX-модель.",
   "dflashDownloadingDraft": "Скачивается DFlash draft для {{modelId}}…",
   "dflashLoadingDraft": "Загружается DFlash draft для {{modelId}}…",

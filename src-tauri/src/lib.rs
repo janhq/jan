@@ -121,6 +121,7 @@ pub fn run() {
         core::system::commands::configure_openclaw,
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
+        core::system::commands::configure_droid,
         core::system::commands::open_agent_terminal,
         // Server commands
         core::server::commands::start_server,
@@ -222,6 +223,7 @@ pub fn run() {
         core::system::commands::configure_openclaw,
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
+        core::system::commands::configure_droid,
         core::system::commands::open_agent_terminal,
         // Server commands
         core::server::commands::start_server,

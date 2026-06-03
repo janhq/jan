@@ -40,6 +40,19 @@ const DEFAULT_REQUIRED = ['config.json', 'model.safetensors']
 /// changing the type shape.
 const DEFAULT_OPTIONAL: string[] = []
 
+/// Build the required-file set for a sharded draft (weights split across N
+/// `model-XXXXX-of-YYYYY.safetensors` files plus a `model.safetensors.index.json`
+/// shard map) instead of a single `model.safetensors`. All shards and the
+/// index must be present for the draft directory to load.
+function shardedRequired(total: number): string[] {
+  const pad = (n: number) => String(n).padStart(5, '0')
+  const files = ['config.json', 'model.safetensors.index.json']
+  for (let i = 1; i <= total; i++) {
+    files.push(`model-${pad(i)}-of-${pad(total)}.safetensors`)
+  }
+  return files
+}
+
 /// Snapshot of https://huggingface.co/collections/z-lab/dflash.
 ///
 /// Keys are normalized base-model ids (lowercase, separators preserved as
@@ -56,8 +69,43 @@ export const STATIC_DRAFT_MAP: Record<string, DraftRepoManifest> = {
     required: DEFAULT_REQUIRED,
     optional: DEFAULT_OPTIONAL,
   },
+  'qwen3.6-27b': {
+    repo: 'z-lab/Qwen3.6-27B-DFlash',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  /// Gemma 4 also ships DFlash drafts (z-lab), giving Gemma 4 targets a third
+  /// speculative path alongside MTP (`*-assistant`) and EAGLE-3. Keys mirror
+  /// `eagle3Registry.ts` — `-it` is stripped by `TRAIL_HINT_RE`.
+  'gemma-4-31b': {
+    repo: 'z-lab/gemma-4-31B-it-DFlash',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  'gemma-4-26b-a4b': {
+    repo: 'z-lab/gemma-4-26B-A4B-it-DFlash',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  /// Kimi drafts ship sharded safetensors, so they need explicit per-shard
+  /// required sets (the default single `model.safetensors` would 404).
   'kimi-k2.5': {
     repo: 'z-lab/Kimi-K2.5-DFlash',
+    required: shardedRequired(2),
+    optional: DEFAULT_OPTIONAL,
+  },
+  'kimi-k2.6': {
+    repo: 'z-lab/Kimi-K2.6-DFlash',
+    required: shardedRequired(3),
+    optional: DEFAULT_OPTIONAL,
+  },
+  'minimax-m2.5': {
+    repo: 'z-lab/MiniMax-M2.5-DFlash',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
+  'minimax-m2.7': {
+    repo: 'z-lab/MiniMax-M2.7-DFlash',
     required: DEFAULT_REQUIRED,
     optional: DEFAULT_OPTIONAL,
   },
@@ -111,6 +159,14 @@ export const STATIC_DRAFT_MAP: Record<string, DraftRepoManifest> = {
     required: DEFAULT_REQUIRED,
     optional: DEFAULT_OPTIONAL,
   },
+  /// The published mlx-community repos carry an `-Instruct` infix
+  /// (`Qwen3-Coder-30B-A3B-Instruct-*`) that `normalizeBaseId` does not strip,
+  /// so alias the `-instruct` form to the same draft.
+  'qwen3-coder-30b-a3b-instruct': {
+    repo: 'z-lab/Qwen3-Coder-30B-A3B-DFlash',
+    required: DEFAULT_REQUIRED,
+    optional: DEFAULT_OPTIONAL,
+  },
   'llama3.1-8b-instruct': {
     repo: 'z-lab/LLaMA3.1-8B-Instruct-DFlash-UltraChat',
     required: DEFAULT_REQUIRED,
@@ -131,7 +187,7 @@ export const STATIC_DRAFT_MAP: Record<string, DraftRepoManifest> = {
 /// Quantization / format suffixes that should be stripped from a model id
 /// before attempting registry lookup. Order matters: longer first.
 const QUANT_SUFFIX_RE =
-  /-(?:4bit|8bit|6bit|5bit|3bit|2bit|q4_k_m|q4_k_s|q5_k_m|q5_k_s|q6_k|q8_0|fp16|bf16|fp8|mlx)(?:-[a-z0-9]+)?$/i
+  /-(?:4bit|8bit|6bit|5bit|3bit|2bit|q4_k_m|q4_k_s|q5_k_m|q5_k_s|q6_k|q8_0|fp16|bf16|fp8|mxfp4|mxfp8|mlx)(?:-[a-z0-9]+)?$/i
 
 /// Trailing dimensionality / dataset hints that occasionally appear in MLX
 /// repo names (e.g. `-128k`, `-it`, `-chat`). Stripped after quant suffixes.

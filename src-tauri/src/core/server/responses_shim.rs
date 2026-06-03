@@ -55,6 +55,8 @@ pub fn responses_request_to_chat(body: &Value) -> Value {
         _ => {}
     }
 
+    let messages = merge_system_messages(messages);
+
     let mut out = json!({ "messages": messages });
     let obj = out.as_object_mut().unwrap();
 
@@ -100,6 +102,38 @@ pub fn responses_request_to_chat(body: &Value) -> Value {
         }
     }
 
+    out
+}
+
+/// Collapse every `system`/`developer` message into a single leading `system`
+/// message. Strict chat templates (notably the Qwen3-family GGUFs) `raise`
+/// "System message must be at the beginning" whenever a request carries more
+/// than one system message or places one after the first turn — which Codex
+/// readily does by combining `instructions` with developer/system input items.
+/// Order of the remaining (non-system) messages is preserved.
+fn merge_system_messages(messages: Vec<Value>) -> Vec<Value> {
+    let mut system_parts: Vec<String> = Vec::new();
+    let mut rest: Vec<Value> = Vec::with_capacity(messages.len());
+
+    for msg in messages {
+        let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
+        if role == "system" || role == "developer" {
+            let text = flatten_content_to_text(msg.get("content"));
+            if !text.is_empty() {
+                system_parts.push(text);
+            }
+        } else {
+            rest.push(msg);
+        }
+    }
+
+    if system_parts.is_empty() {
+        return rest;
+    }
+
+    let mut out = Vec::with_capacity(rest.len() + 1);
+    out.push(json!({"role": "system", "content": system_parts.join("\n\n")}));
+    out.extend(rest);
     out
 }
 
