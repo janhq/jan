@@ -268,13 +268,13 @@ function HtmlArtifactComponent({
       )}
       data-artifact="html"
     >
-      <div className="@container flex items-center justify-between gap-2 border-border border-b bg-muted/60 px-2 py-1.5">
+      <div className="@container relative z-30 flex items-center justify-between gap-2 border-border border-b bg-muted/60 px-2 py-1.5">
         <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border text-xs">
           <button
             type="button"
             onClick={() => setTab('preview')}
             className={cn(
-              'inline-flex items-center gap-1 px-2.5 py-1 transition-colors',
+              'inline-flex items-center gap-1 px-2.5 py-1 transition-colors cursor-pointer',
               tab === 'preview'
                 ? 'bg-background text-foreground'
                 : 'text-muted-foreground hover:bg-background/60'
@@ -287,7 +287,7 @@ function HtmlArtifactComponent({
             type="button"
             onClick={() => setTab('code')}
             className={cn(
-              'inline-flex items-center gap-1 border-border border-l px-2.5 py-1 transition-colors',
+              'inline-flex items-center gap-1 border-border border-l px-2.5 py-1 transition-colors cursor-pointer',
               tab === 'code'
                 ? 'bg-background text-foreground'
                 : 'text-muted-foreground hover:bg-background/60'
@@ -387,8 +387,18 @@ function HtmlArtifactComponent({
           tab === 'code' ? 'block' : 'hidden'
         )}
       >
-        <div className={cn('overflow-auto', fill ? 'h-full' : 'max-h-[440px]')}>
-          <CodeBlock code={code} language="html" />
+        <div
+          className={cn(
+            'overflow-y-auto overflow-x-hidden',
+            fill ? 'h-full' : 'max-h-[440px]'
+          )}
+        >
+          <CodeBlock
+            code={code}
+            language="html"
+            showLineNumbers
+            className="[&_code]:whitespace-normal [&_.line]:block [&_.line]:whitespace-pre-wrap [&_.line]:pl-14 [&_.line]:-indent-14 [&_.line]:[overflow-wrap:anywhere]"
+          />
         </div>
       </div>
     </div>

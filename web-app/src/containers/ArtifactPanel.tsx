@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Code2, Eye } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
@@ -11,7 +11,6 @@ interface ArtifactTriggerProps {
   streaming?: boolean
 }
 
-// Inline card shown in place of a ```html block; opens the side-panel preview.
 export function ArtifactTrigger({
   code,
   className,
@@ -29,6 +28,20 @@ export function ArtifactTrigger({
 
   // Closing tag marks completion even if the `streaming` flag stays stuck true.
   const generating = streaming && !/<\/html>/i.test(code)
+
+  // Auto-open once this artifact's first generation settles; skip historical blocks.
+  const autoOpenedRef = useRef(false)
+  const wasGeneratingRef = useRef(false)
+  useEffect(() => {
+    if (generating) {
+      wasGeneratingRef.current = true
+      return
+    }
+    if (wasGeneratingRef.current && !autoOpenedRef.current && code) {
+      autoOpenedRef.current = true
+      open(id, code, false)
+    }
+  }, [generating, code, id, open])
 
   useEffect(() => {
     if (!generating) return
@@ -48,8 +61,8 @@ export function ArtifactTrigger({
       type="button"
       onClick={() => open(id, code, streaming)}
       className={cn(
-        'my-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-muted/40 p-3 text-left transition-colors hover:bg-muted/70',
-        isActive && 'border-primary/50 bg-muted/70',
+        'my-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-input bg-white p-3 text-left transition-colors hover:border-ring/60 dark:bg-input/30 dark:hover:border-ring/60',
+        isActive && 'border-primary/50',
         className
       )}
       data-artifact-trigger="html"
@@ -76,7 +89,17 @@ export function ArtifactTrigger({
   )
 }
 
-// Side panel hosting the live HTML preview; hidden on small screens.
+const MIN_PANEL_WIDTH = 360
+// Keep at least this much room for the chat column when resizing the panel.
+const MIN_CHAT_WIDTH = MIN_PANEL_WIDTH + 100
+// Matches the `duration-300` slide in/out below.
+const PANEL_ANIM_MS = 300
+
+function clampPanelWidth(px: number): number {
+  const max = Math.max(MIN_PANEL_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
+  return Math.min(max, Math.max(MIN_PANEL_WIDTH, px))
+}
+
 export function ArtifactPanel() {
   const { isOpen, sourceId, code, streaming, close } = useArtifactStore(
     useShallow((s) => ({
@@ -88,14 +111,84 @@ export function ArtifactPanel() {
     }))
   )
 
-  if (!isOpen) return null
+  const [width, setWidth] = useState(() =>
+    clampPanelWidth(window.innerWidth * 0.45)
+  )
+  const [dragging, setDragging] = useState(false)
+
+  // Animate width (not transform) so the chat reflows; transition only while animating.
+  const [render, setRender] = useState(isOpen)
+  const [expanded, setExpanded] = useState(false)
+  const [animating, setAnimating] = useState(false)
+  useEffect(() => {
+    if (isOpen) {
+      setRender(true)
+      setAnimating(true)
+      // Double rAF so the width:0 frame paints before transitioning to target.
+      let raf2 = 0
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setExpanded(true))
+      })
+      const t = setTimeout(() => setAnimating(false), PANEL_ANIM_MS + 60)
+      return () => {
+        cancelAnimationFrame(raf1)
+        cancelAnimationFrame(raf2)
+        clearTimeout(t)
+      }
+    }
+    setAnimating(true)
+    setExpanded(false)
+    const t = setTimeout(() => {
+      setRender(false)
+      setAnimating(false)
+    }, PANEL_ANIM_MS)
+    return () => clearTimeout(t)
+  }, [isOpen])
+
+  // Overlay (below) keeps mousemove/up firing while the iframe swallows pointer events.
+  useEffect(() => {
+    if (!dragging) return
+    const onMove = (e: MouseEvent) =>
+      setWidth(clampPanelWidth(window.innerWidth - e.clientX))
+    const onUp = () => setDragging(false)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [dragging])
+
+  // Freeze last artifact so content stays visible through the exit animation.
+  const lastShownRef = useRef({ sourceId, code, streaming })
+  if (isOpen) lastShownRef.current = { sourceId, code, streaming }
+  const view = isOpen ? { sourceId, code, streaming } : lastShownRef.current
+
+  if (!render) return null
 
   return (
-    <div className="hidden h-full w-[45%] min-w-[360px] max-w-[680px] shrink-0 border-border border-l md:flex">
+    <div
+      className={cn(
+        'relative hidden h-full shrink-0 overflow-hidden border-border border-l md:flex',
+        animating && 'transition-[width,opacity] duration-300 ease-out'
+      )}
+      style={{ width: expanded ? width : 0, opacity: expanded ? 1 : 0 }}
+    >
+      <div
+        onMouseDown={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        className="-left-1 absolute top-0 z-40 h-full w-2 cursor-col-resize transition-colors hover:bg-primary/30"
+        title="Drag to resize"
+      />
+      {dragging && (
+        <div className="fixed inset-0 z-50 cursor-col-resize select-none" />
+      )}
       <HtmlArtifact
-        key={sourceId ?? 'artifact'}
-        code={code}
-        streaming={streaming}
+        key={view.sourceId ?? 'artifact'}
+        code={view.code}
+        streaming={view.streaming}
         fill
         onClose={close}
         className="flex-1"
