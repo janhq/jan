@@ -64,6 +64,22 @@ function makeFence(source: string): string {
   return '`'.repeat(Math.max(3, longest + 1))
 }
 
+// Some models emit a full HTML document as raw text (no ```html fence),
+// especially when asked to "output only the document". Wrap it in a fence so
+// the artifact pipeline still renders a preview. Conservative: only when the
+// document is at the very start, and never when already fenced.
+function wrapBareHtmlDocument(content: string): string {
+  const leading = content.match(/^\s*/)?.[0] ?? ''
+  const rest = content.slice(leading.length)
+  if (rest.startsWith('```')) return content
+  const lower = rest.toLowerCase()
+  if (!lower.startsWith('<!doctype html') && !lower.startsWith('<html')) {
+    return content
+  }
+  const fence = makeFence(rest)
+  return `${leading}${fence}html\n${rest}\n${fence}`
+}
+
 /** Best-effort extraction of the raw text from a `code` element's children. */
 function extractCodeText(children: ReactNode): string {
   if (typeof children === 'string') return children
@@ -160,7 +176,10 @@ function RenderMarkdownComponent({
   enableHtmlPreview
 }: MarkdownProps) {
 
-  const normalizedContent = useMemo(() => normalizeLatex(content), [content])
+  const normalizedContent = useMemo(() => {
+    const prepared = enableHtmlPreview ? wrapBareHtmlDocument(content) : content
+    return normalizeLatex(prepared)
+  }, [content, enableHtmlPreview])
   const thetaMarked = useRef(false)
 
   useEffect(() => {

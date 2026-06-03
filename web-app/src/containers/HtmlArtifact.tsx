@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { Check, Code2, Copy, Download, Eye, Printer, X } from 'lucide-react'
 import { fs } from '@janhq/core'
 import { cn } from '@/lib/utils'
@@ -22,6 +23,24 @@ function buildPreviewDocument(code: string): string {
   if (isFullDocument) return code
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base target="_blank"></head><body>${code}</body></html>`
+}
+
+// The preview iframe is sandboxed without `allow-same-origin`; a blob: document
+// would inherit the strict main-window CSP and silently drop inline scripts. On
+// Tauri we instead serve the document through the `artifact://` protocol, which
+// carries its own permissive CSP. Windows exposes custom schemes as
+// `http://<scheme>.localhost`.
+function artifactBaseUrl(): string {
+  return navigator.userAgent.includes('Windows')
+    ? 'http://artifact.localhost'
+    : 'artifact://localhost'
+}
+
+function createArtifactId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `art-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 export function estimateHtmlProgress(code: string): number {
@@ -66,33 +85,14 @@ function HtmlArtifactComponent({
 }: HtmlArtifactProps) {
   const [tab, setTab] = useState<ArtifactTab>('preview')
   const [copied, setCopied] = useState(false)
-  const [blobUrl, setBlobUrl] = useState<string>('')
+  const [previewUrl, setPreviewUrl] = useState<string>('')
   const [frameLoaded, setFrameLoaded] = useState(false)
   const [progress, setProgress] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const previewWrapRef = useRef<HTMLDivElement>(null)
-
-  // Debounce document rebuilds so streaming output doesn't thrash the iframe.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const doc = buildPreviewDocument(code)
-      const url = URL.createObjectURL(new Blob([doc], { type: 'text/html' }))
-      setBlobUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous)
-        return url
-      })
-    }, 250)
-
-    return () => clearTimeout(timer)
-  }, [code])
-
-  // Watchdog forces the loader to clear if the iframe never fires `load`.
-  useEffect(() => {
-    if (!blobUrl) return
-    setFrameLoaded(false)
-    const watchdog = setTimeout(() => setFrameLoaded(true), 4000)
-    return () => clearTimeout(watchdog)
-  }, [blobUrl])
+  const artifactIdRef = useRef<string>('')
+  if (!artifactIdRef.current) artifactIdRef.current = createArtifactId()
+  const versionRef = useRef(0)
 
   const [codeIdle, setCodeIdle] = useState(false)
   useEffect(() => {
@@ -105,6 +105,61 @@ function HtmlArtifactComponent({
   const docComplete = /<\/html>/i.test(code)
   const generating = streaming && !docComplete && !codeIdle
 
+  // Web: blob preview is handled internally by the browser, so it's safe to
+  // refresh on every debounced change.
+  useEffect(() => {
+    if (isPlatformTauri()) return
+    const timer = setTimeout(() => {
+      const url = URL.createObjectURL(
+        new Blob([buildPreviewDocument(code)], { type: 'text/html' })
+      )
+      setPreviewUrl((previous) => {
+        if (previous.startsWith('blob:')) URL.revokeObjectURL(previous)
+        return url
+      })
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [code])
+
+  // Tauri: serve through the artifact:// protocol, but navigate the iframe only
+  // once the stream has settled. Re-navigating a custom-scheme iframe on every
+  // streamed token races WKURLSchemeTask in WKWebView and aborts the app, so we
+  // load the frame a single time per settled document (the loader covers the
+  // generating phase anyway).
+  const navigatedCodeRef = useRef('')
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+    if (generating || !code || navigatedCodeRef.current === code) return
+    let cancelled = false
+    void (async () => {
+      try {
+        await invoke('set_artifact_html', {
+          id: artifactIdRef.current,
+          html: buildPreviewDocument(code),
+        })
+        if (cancelled) return
+        navigatedCodeRef.current = code
+        versionRef.current += 1
+        setPreviewUrl(
+          `${artifactBaseUrl()}/${artifactIdRef.current}?v=${versionRef.current}`
+        )
+      } catch (error) {
+        console.error('Failed to register artifact preview:', error)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [code, generating])
+
+  // Watchdog forces the loader to clear if the iframe never fires `load`.
+  useEffect(() => {
+    if (!previewUrl) return
+    setFrameLoaded(false)
+    const watchdog = setTimeout(() => setFrameLoaded(true), 4000)
+    return () => clearTimeout(watchdog)
+  }, [previewUrl])
+
   useEffect(() => {
     if (!generating) {
       setProgress(1)
@@ -113,13 +168,17 @@ function HtmlArtifactComponent({
     setProgress((previous) => Math.max(previous, estimateHtmlProgress(code)))
   }, [code, generating])
 
-  const showPreviewLoader = generating || !blobUrl || !frameLoaded
+  const showPreviewLoader = generating || !previewUrl || !frameLoaded
   const progressPct = Math.round((generating ? progress : 1) * 100)
 
   useEffect(() => {
+    const id = artifactIdRef.current
     return () => {
-      setBlobUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous)
+      if (isPlatformTauri()) {
+        invoke('clear_artifact_html', { id }).catch(() => {})
+      }
+      setPreviewUrl((previous) => {
+        if (previous.startsWith('blob:')) URL.revokeObjectURL(previous)
         return ''
       })
     }
@@ -296,7 +355,7 @@ function HtmlArtifactComponent({
       >
         <iframe
           ref={iframeRef}
-          src={blobUrl || undefined}
+          src={previewUrl || undefined}
           onLoad={() => setFrameLoaded(true)}
           sandbox="allow-scripts allow-modals allow-forms allow-popups"
           title="HTML preview"
