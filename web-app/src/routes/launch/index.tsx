@@ -485,8 +485,13 @@ function LaunchPage() {
     ]
   )
 
-  const coding = INTEGRATION_AGENTS.filter((a) => a.kind === 'coding')
-  const assistants = INTEGRATION_AGENTS.filter((a) => a.kind === 'assistant')
+  // Temporarily hidden from the UI (still wired in the backend).
+  const hiddenAgentIds = new Set<string>(['openclaw'])
+  const visibleAgents = INTEGRATION_AGENTS.filter(
+    (a) => !hiddenAgentIds.has(a.id)
+  )
+  const coding = visibleAgents.filter((a) => a.kind === 'coding')
+  const assistants = visibleAgents.filter((a) => a.kind === 'assistant')
 
   const renderAgent = (agent: IntegrationAgent) => {
     const isInstalled = installed[agent.id]
