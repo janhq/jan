@@ -88,6 +88,9 @@
   "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
   "downloads": "Downloads",
   "downloading": "Downloading",
+  "initializingDownload": "Initializing download...",
+  "paused": "Paused",
+  "downloadProgress": "Your download progress will appear here",
   "uploadingAttachments": "Uploading attachments…",
   "cancelDownload": "Cancel download",
   "downloadCancelled": "Download Cancelled",
@@ -103,6 +106,9 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "reasoningForced": "Reasoning forced on for every request.",
+  "reasoningDisabled": "Reasoning disabled for every request.",
+  "reasoningAuto": "Reasoning auto-detected from the model's chat template.",
   "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",
@@ -513,5 +519,18 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "addFile": {
+    "addImages": "Add images",
+    "addAudio": "Add audio",
+    "indexDocuments": "Indexing documents…",
+    "addDocumentsOrFiles": "Add documents or files"
+  },
+  "contextWindow": {
+    "prompt": "Prompt",
+    "completion": "Completion",
+    "used": "Used",
+    "remaining": "Remaining",
+    "contextWindow": "Context window"
   }
 }

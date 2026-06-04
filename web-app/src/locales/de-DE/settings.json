@@ -214,7 +214,7 @@
     "defaultModelPlaceholder": "Wähle ein lokales Model",
     "serverStatus": "Server Status",
     "serverStatusRunning": "Der Server ist aktiv.",
-    "serverStatusStopped": "Der Server ist angehalten.",
+    "serverStatusStopped": "Der Server ist inaktiv.",
     "openInNewWindow": "In neuem Fenster öffnen",
     "mcpOnServer": "Erlaube Toolnutzung",
     "mcpOnServerDesc": "Erlaube Serverseitige Toolnutzung."

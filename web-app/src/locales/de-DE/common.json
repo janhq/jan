@@ -46,6 +46,11 @@
   "profile": "Profil",
   "reset": "Zurücksetzen",
   "search": "Suchen",
+  "searchThreads": "Durchsuche Threads...",
+  "toNavigate": "Zum Navigieren",
+  "toSelect": "Zum auswählen",
+  "toClose": "Zum Schließen",
+  "clearRecent": "Leeren",
   "name": "Name",
   "cancel": "Abbrechen",
   "create": "Anlegen",
@@ -76,7 +81,10 @@
   "noThreadsYet": "Keine Threads bisher",
   "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Threadverlauf hier anzuzeigen.",
   "downloads": "Downloads",
-  "downloading": "Downloading",
+  "downloading": "Herunterladen",
+  "initializingDownload": "Herunterladen gestartet...",
+  "paused": "Pausiert",
+  "downloadProgress": "Dein Downloadfortschritt wird hier angezeigt",
   "uploadingAttachments": "Anhänge werden hochgeladen…",
   "cancelDownload": "Download abbrechen",
   "downloadCancelled": "Download wurde abgebrochen",
@@ -91,6 +99,9 @@
   "tools": "Werkzeuge",
   "webSearch": "Web Suche",
   "reasoning": "Argumentation",
+  "reasoningForced": "Argumentation erzwingen für jede Anfrage.",
+  "reasoningDisabled": "Argumentation nicht benutzen.",
+  "reasoningAuto": "Argumentation automatisch aus dem Model Chattemplate erkennen.",
   "proactive": "Proaktiv",
   "selectAModel": "Wähle ein Modell",
   "noToolsAvailable": "Keine Werkzeuge verfügbar",
@@ -164,7 +175,7 @@
     "enterCommand": "Kommando eingeben",
     "arguments": "Argumente",
     "argument": "Argument {{index}}",
-    "envVars": "Umgebungs Variable",
+    "envVars": "Umgebungsvariable",
     "key": "Schlüssel",
     "value": "Wert",
     "save": "Speichern"
@@ -188,7 +199,7 @@
     "tools": "Werkzeuge",
     "vision": "Vision",
     "embeddings": "Einbettungen",
-    "notAvailable": "Nicht verfügbar bisher"
+    "notAvailable": "Bisher nicht verfügbar"
   },
   "outOfContextError": {
     "truncateInput": "Input verkleinern",
@@ -283,6 +294,10 @@
       "editTitle": "Projekt bearbeiten",
       "nameLabel": "Projektname",
       "namePlaceholder": "Projektname eingeben...",
+      "assistant": "Assistent",
+      "selectAssistant": "Wähle einen Assistenten (optional)",
+      "noAssistant": "Kein Assistent",
+      "addAssistant": "Assistenten hinzufügen",
       "createButton": "Erstellen",
       "updateButton": "Aktualisieren",
       "alreadyExists": "Projekt \"{{projectName}}\" existiert bereits",
@@ -292,7 +307,7 @@
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
     "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
     "conversationsIn": "Gespräche in {{projectName}}",
-    "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
+    "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiter zu chatten, oder starten Sie unten ein neues.",
     "thread": "Thread",
     "threads": "Threads",
     "updated": "Aktualisiert:",
@@ -305,6 +320,16 @@
     "uploadingFiles": "Dateien werden verarbeitet…",
     "processButton": "Hinzufügen"
   },
+  "attachmentsIngestion": {
+    "title": "Wähle, wie der Anhang verarbeitet werden soll",
+    "description": "Wähle, ob die Dateien direkt eingebunden oder per Index eingebettet werden sollen.",
+    "inline": "Direkt in den Chat einbinden",
+    "embeddings": "Einbetten"
+  },
+  "attachmentInjectedIndicator": "Direkt eingebunden in den Chat",
+  "attachmentEmbeddedIndicator": "Eingebettet für RAG",
+  "viewInjectedContent": "Zeige eingebundenen Inhalt",
+  "injectedContentTitle": "Eingebundener Dateiinhalt",
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
     "details": "Details"
@@ -400,10 +425,23 @@
     }
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp is still busy",
-    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
-    "forceQuit": "Force quit",
-    "forcing": "Force quitting…",
-    "shuttingDown": "Shutting down…"
+    "title": "llama.cpp ist noch aktiv",
+    "description": "Mindestens ein Model wurde nicht rechtzeitig beendet. Das erzwungene Beenden von llama.cpp kann die Antwortgenerierung unterbrechen.",
+    "forceQuit": "Beenden erzwingen",
+    "forcing": "Beenden erzwingen…",
+    "shuttingDown": "Herunterfahren…"
+  },
+  "addFile": {
+    "addImages": "Bild hinzufügen",
+    "addAudio": "Audio hinzufügen",
+    "indexDocuments": "Dokumente indexen…",
+    "addDocumentsOrFiles": "Dokumente oder Datei hinzufügen"
+  },
+  "contextWindow": {
+    "prompt": "Eingabe",
+    "completion": "Ausgabe",
+    "used": "Verwendet",
+    "remaining": "Verfügbar",
+    "contextWindow": "Kontextfenster"
   }
 }

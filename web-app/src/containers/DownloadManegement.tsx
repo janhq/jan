@@ -568,13 +568,13 @@ export function DownloadManagement() {
                           <p className="text-xs">
                             {download.paused
                               ? download.total > 0
-                                ? `Paused · ${Math.round(download.progress * 100)}%`
-                                : 'Paused'
+                                ? `${t('common:paused')} · ${Math.round(download.progress * 100)}%`
+                                : t('common:paused')
                               : download.total > 0
                                 ? `${Math.round(download.progress * 100)}%`
                                 : download.current > 0
-                                  ? 'Downloading...'
-                                  : 'Initializing download...'}
+                                  ? t('common:downloading')
+                                  : t('common:initializingDownload')}
                           </p>
                           <p className="text-xs">
                             {download.total > 0
@@ -605,7 +605,7 @@ export function DownloadManagement() {
               <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
                 <DownloadIcon className="text-muted-foreground/50 size-6" />
                 <p className="text-muted-foreground leading-normal">
-                  Your download progress <br /> will appear here
+                  {t('common:downloadProgress')}
                 </p>
               </div>
             )}

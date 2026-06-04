@@ -1783,7 +1783,7 @@ const ChatInput = memo(function ChatInput({
                     {hasMmproj && (
                       <DropdownMenuItem onClick={() => void openImagePicker()}>
                         <IconPhoto size={18} className="text-muted-foreground" />
-                        <span>Add Images</span>
+                        <span>{t('common:addFile.addImages')}</span>
                         <input
                           type="file"
                           ref={fileInputRef}
@@ -1796,7 +1796,7 @@ const ChatInput = memo(function ChatInput({
                     {audioSupported && (
                       <DropdownMenuItem onClick={() => void openAudioPicker()}>
                         <IconMusic size={18} className="text-muted-foreground" />
-                        <span>Add Audio</span>
+                        <span>{t('common:addFile.addAudio')}</span>
                         <input
                           type="file"
                           ref={audioInputRef}
@@ -1825,8 +1825,8 @@ const ChatInput = memo(function ChatInput({
                       )}
                       <span>
                         {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
+                          ? t('common:addFile.indexDocuments')
+                          : t('common:addFile.addDocumentsOrFiles')}
                       </span>
                     </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -2081,10 +2081,10 @@ const ChatInput = memo(function ChatInput({
                           : 'Auto'
                     const tooltipText =
                       reasoningValue === 'on'
-                        ? 'Reasoning forced on for every request.'
+                        ? {t('common:reasoningForced')}
                         : reasoningValue === 'off'
-                          ? 'Reasoning disabled for every request.'
-                          : "Reasoning auto-detected from the model's chat template."
+                          ? {t('common:reasoningDisabled')}
+                          : {t('common:reasoningAuto')}
                     return (
                       <DropdownMenu>
                         <Tooltip>

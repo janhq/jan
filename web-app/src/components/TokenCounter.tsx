@@ -20,6 +20,7 @@ import {
   IconMoon,
   IconAdjustmentsAlt,
 } from '@tabler/icons-react'
+import { useTranslation } from '@/i18n/react-i18next-compat.ts'
 
 interface TokenCounterProps {
   messages?: ThreadMessage[]
@@ -44,6 +45,7 @@ export const TokenCounter = memo(function TokenCounter({
   className,
   additionalTokens = 0,
 }: TokenCounterProps) {
+  const { t } = useTranslation()
   const { calculateTokens, ...tokenData } = useTokensCount(messages)
 
   const [isAnimating, setIsAnimating] = useState(false)
@@ -197,7 +199,7 @@ export const TokenCounter = memo(function TokenCounter({
             <IconBrain className="size-4 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-foreground">
-                Context window
+                {t('common:contextWindow.contextWindow')}
               </div>
               {modelDisplayName && (
                 <div className="text-[11px] text-muted-foreground truncate">
@@ -245,26 +247,26 @@ export const TokenCounter = memo(function TokenCounter({
             {typeof inputTokens === 'number' && inputTokens > 0 && (
               <Row
                 icon={<IconArrowUp className="size-3.5" />}
-                label="Prompt"
+                label={t('common:contextWindow.prompt')}
                 value={formatExact(inputTokens)}
               />
             )}
             {typeof outputTokens === 'number' && outputTokens > 0 && (
               <Row
                 icon={<IconArrowDown className="size-3.5" />}
-                label="Completion"
+                label={t('common:contextWindow.completion')}
                 value={formatExact(outputTokens)}
               />
             )}
             <Row
               icon={<IconSum className="size-3.5" />}
-              label="Used"
+              label={t('common:contextWindow.used')}
               value={formatExact(totalTokens)}
               strong
             />
             <Row
               icon={<IconRulerMeasure className="size-3.5" />}
-              label="Remaining"
+              label={t('common:contextWindow.remaining')}
               value={formatExact(remaining)}
             />
           </div>
