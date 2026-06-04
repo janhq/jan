@@ -511,26 +511,21 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // Define library name lookup table. ggml-org publishes Windows cudart
-    // archives for CUDA 12.4 and 13.3 only; legacy CUDA 11 entries are
-    // retained for callers that may still pass an old toolkit version.
-    let mut libname_lookup: HashMap<String, &str> = HashMap::new();
-    libname_lookup.insert("windows-11.7".to_string(), "cudart64_110.dll");
-    libname_lookup.insert("windows-12.0".to_string(), "cudart64_12.dll");
-    libname_lookup.insert("windows-12.4".to_string(), "cudart64_12.dll");
-    libname_lookup.insert("windows-13.0".to_string(), "cudart64_13.dll");
-    libname_lookup.insert("windows-13.1".to_string(), "cudart64_13.dll");
-    libname_lookup.insert("windows-13.3".to_string(), "cudart64_13.dll");
-    libname_lookup.insert("linux-11.7".to_string(), "libcudart.so.11.0");
-    libname_lookup.insert("linux-12.0".to_string(), "libcudart.so.12");
-    libname_lookup.insert("linux-13.0".to_string(), "libcudart.so.13");
-
-    let key = format!("{}-{}", os_type, version);
-
-    // Check if the OS-version combination is supported
-    let libname = match libname_lookup.get(&key) {
-        Some(name) => *name,
-        None => return Ok(false),
+    // Resolve runtime library name by CUDA major, not a hardcoded minor.
+    // This keeps future CUDA-13.x asset bumps from breaking the probe.
+    let major = version
+        .split('.')
+        .next()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    let libname = match (os_type.as_str(), major) {
+        ("windows", 11) => "cudart64_110.dll",
+        ("windows", 12) => "cudart64_12.dll",
+        ("windows", 13) => "cudart64_13.dll",
+        ("linux", 11) => "libcudart.so.11.0",
+        ("linux", 12) => "libcudart.so.12",
+        ("linux", 13) => "libcudart.so.13",
+        _ => return Ok(false),
     };
 
     // Expected new location: backend_dir/build/bin/libname
@@ -629,14 +624,14 @@ pub async fn prioritize_backends(
     }
 
     // Priority list based on GPU memory. The upstream provider sees
-    // ggml-org native backend names on Windows (`cuda-cu13.3`,
+    // ggml-org native backend names on Windows (`cuda-cu13`,
     // `cuda-cu12.4`, `vulkan`, `cpu`) and janhq/macos-style names on the
     // older code paths (`cuda-cu12.0`, `common_cpus`). Both forms are
     // listed so `get_backend_category` matches work regardless of which
     // generation of backend ids ended up in the version_backends slice.
     let backend_priorities: Vec<&str> = if has_enough_gpu_memory {
         vec![
-            "cuda-cu13.3",
+            "cuda-cu13",
             "cuda-cu13.0",
             "cuda-cu12.4",
             "cuda-cu12.0",
@@ -653,7 +648,7 @@ pub async fn prioritize_backends(
         ]
     } else {
         vec![
-            "cuda-cu13.3",
+            "cuda-cu13",
             "cuda-cu13.0",
             "cuda-cu12.4",
             "cuda-cu12.0",
@@ -717,8 +712,8 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     // `cuda-13.1` is the pre-b9495 ggml-org minor — still recognized so
     // already-installed `win-cuda-13.1-x64` folders keep their category
     // after the 13.3 bump.
-    if backend_string.contains("cuda-13.3") || backend_string.contains("cuda-13.1") {
-        return Some("cuda-cu13.3".to_string());
+    if backend_string.contains("cuda-13.") {
+        return Some("cuda-cu13".to_string());
     }
     if backend_string.contains("cuda-12.4") {
         return Some("cuda-cu12.4".to_string());

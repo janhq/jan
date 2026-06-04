@@ -144,8 +144,7 @@ function stripBom(s: string): string {
 
 function backendCategoryToLabel(category: string): string {
   switch (category) {
-    case 'cuda-cu13.3': return 'CUDA 13'
-    case 'cuda-cu13.1': return 'CUDA 13' // legacy on-disk installs
+    case 'cuda-cu13': return 'CUDA 13'
     case 'cuda-cu13.0': return 'CUDA 13'
     case 'cuda-cu12.4': return 'CUDA 12'
     case 'cuda-cu12.0': return 'CUDA 12'
@@ -156,12 +155,9 @@ function backendCategoryToLabel(category: string): string {
 }
 
 function get_backend_category(backend: string): string {
-  // ggml-org native Windows names (matched first so `cu13.3` / `cu12.4`
-  // don't fall through to the legacy janhq categories). `cuda-13.1` is the
-  // pre-b9495 ggml-org minor — still recognized so already-installed
-  // `win-cuda-13.1-x64` folders keep their category after the 13.3 bump.
-  if (backend.includes('cuda-13.3') || backend.includes('cuda-13.1'))
-    return 'cuda-cu13.3'
+  // ggml-org native Windows names (matched first so `cuda-13.x` / `cuda-12.4`
+  // don't fall through to the legacy janhq categories).
+  if (/cuda-13\.\d+/.test(backend)) return 'cuda-cu13'
   if (backend.includes('cuda-12.4')) return 'cuda-cu12.4'
   // Legacy janhq mirror names.
   if (backend.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
@@ -1178,7 +1174,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /**
    * Uses hardware detection (CUDA/Vulkan driver info) to determine the ideal
    * backend type for this machine. Returns the backend name string
-   * (e.g. "win-cuda-13.3-x64") or null if CPU is already optimal.
+   * (e.g. "win-cuda-13.4-x64") or null if CPU is already optimal.
    *
    * Naming differs by platform — Windows uses ggml-org native ids
    * (`win-cuda-{12.4,13.3}-x64`, `win-vulkan-x64`); Linux still uses the
@@ -1208,7 +1204,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
         arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
       if (sysInfo.os_type === 'windows') {
-        // ggml-org publishes Windows CUDA builds for 13.3 and 12.4 only —
+        const availableBackends = await listSupportedBackends()
+        const pickBackend = (pattern: RegExp): string | null => {
+          const candidate = availableBackends.find((b) => pattern.test(b.backend))
+          return candidate?.backend ?? null
+        }
+
+        const cuda13Backend = pickBackend(
+          new RegExp(`^win-cuda-13\\.\\d+-${archSuffix}$`)
+        )
+        const cuda12Backend = pickBackend(
+          new RegExp(`^win-cuda-12\\.4-${archSuffix}$`)
+        )
+        const vulkanBackend = pickBackend(
+          new RegExp(`^win-vulkan-${archSuffix}$`)
+        )
+
+        // ggml-org publishes Windows CUDA 13.x and 12.4 builds —
         // CUDA 11 has been dropped upstream. Hosts with driver too old
         // for CUDA 12.4 (~551.61) fall through to Vulkan/CPU below via
         // the feature-flag gating in `get_supported_features`.
@@ -1225,10 +1237,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // `--list-devices` alone as a degrade trigger would push those
         // users off a working CUDA-13.1 onto CUDA-12.4 / Vulkan / CPU.
         const tiers: string[] = []
-        if (features.cuda13) tiers.push(`win-cuda-13.3-${archSuffix}`)
-        if (features.cuda12) tiers.push(`win-cuda-12.4-${archSuffix}`)
-        if (features.vulkan && hasEnoughVram)
-          tiers.push(`win-vulkan-${archSuffix}`)
+        if (features.cuda13 && cuda13Backend) tiers.push(cuda13Backend)
+        if (features.cuda12 && cuda12Backend) tiers.push(cuda12Backend)
+        if (features.vulkan && hasEnoughVram && vulkanBackend)
+          tiers.push(vulkanBackend)
 
         for (const tier of tiers) {
           const probe = await this.tierEnumeratesDevices(tier, sysInfo)
@@ -1663,31 +1675,46 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
       const currentCat = get_backend_category(currentType)
-      if (idealCat === currentCat) {
-        // Already on the optimal family — no recommendation to surface.
+      const sameCategory = idealCat === currentCat
+      const sameBackendType = currentType === idealType
+      if (sameCategory && sameBackendType) {
+        // Already on the optimal exact backend — no recommendation to surface.
         logger.info(
-          `recheckOptimalBackend: already on optimal category ${currentCat} (${currentBackend})`
+          `recheckOptimalBackend: already on optimal backend ${currentBackend}`
         )
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
 
-      // Build the recommendation from the currently-installed backend
-      // version. We deliberately do NOT call `listSupportedBackends()`
-      // here — that round-trips to api.github.com and was observed to
-      // hang the manual "Find optimal backend" button under slow
-      // networks / rate-limited responses.
-      //
-      // Using the current version is safe because:
-      //   - Atomic Chat ships with a known bundled `version_backend`,
-      //     so `currentBackend.split('/')[0]` is always a real GitHub
-      //     release tag (e.g. `b8770`) with all per-platform variants.
-      //   - `configureBackends()` on the next launch resolves the
-      //     installed family to its latest version via
-      //     `findLatestVersionForBackend()` — version drift is
-      //     handled by the existing version-update toast, not here.
-      const fallbackVersion = currentBackend.split('/')[0] || 'latest'
-      const recommendedBackend = `${fallbackVersion}/${idealType}`
+      // Prefer the latest concrete backend for the detected ideal type.
+      // This handles in-family migrations such as CUDA 13.1 -> CUDA 13.3/13.4
+      // when the currently-selected backend is still "optimal category"
+      // but no longer the latest downloadable variant.
+      let recommendedBackend: string | null = null
+      try {
+        const versionBackends = await listSupportedBackends()
+        recommendedBackend = await findLatestVersionForBackend(
+          versionBackends,
+          idealType
+        )
+      } catch (err) {
+        logger.warn(
+          `recheckOptimalBackend: failed to resolve latest backend for ${idealType}, falling back to current version: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      }
+      if (!recommendedBackend) {
+        const fallbackVersion = currentBackend.split('/')[0] || 'latest'
+        recommendedBackend = `${fallbackVersion}/${idealType}`
+      }
+      if (recommendedBackend === currentBackend) {
+        logger.info(
+          `recheckOptimalBackend: latest resolved backend is already active (${currentBackend})`
+        )
+        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        return null
+      }
 
       const payload = {
         currentBackend,
