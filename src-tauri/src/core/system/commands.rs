@@ -1454,12 +1454,67 @@ fn agent_install_spec(
     }
 }
 
+/// Resolve the user's interactive login-shell PATH.
+///
+/// A GUI app launched from Finder/Dock inherits the minimal launchd PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), which excludes Homebrew
+/// (`/opt/homebrew/bin`), nvm, Volta, etc. — so `npm`/`node` and the agent
+/// binaries can't be found even when they are installed. Querying the login
+/// shell recovers the real PATH the user sees in their terminal. The result is
+/// cached for the process lifetime (one shell spawn, not one per probe).
+///
+/// A sentinel wraps the value so rc files that echo to stdout don't corrupt it.
+/// Returns `None` on probe failure; callers then fall back to the inherited PATH.
+#[cfg(not(windows))]
+fn login_shell_path() -> Option<String> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+            // `-l` sources login files (.zprofile/.bash_profile, where Homebrew
+            // shellenv usually lives); `-i` sources interactive rc files
+            // (.zshrc/.bashrc, where nvm usually lives).
+            let out = std::process::Command::new(&shell)
+                .args(["-lic", "printf '__OCPATH__%s__OCEND__' \"$PATH\""])
+                .output()
+                .ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            let s = String::from_utf8_lossy(&out.stdout);
+            let start = s.find("__OCPATH__")? + "__OCPATH__".len();
+            let end = s[start..].find("__OCEND__")? + start;
+            let path = s[start..end].trim().to_string();
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
+        })
+        .clone()
+}
+
+/// Augment a spawned command's PATH with the user's login-shell PATH so GUI
+/// builds can find user-installed tools (`npm`/`node`, agent binaries). No-op
+/// on Windows, where processes inherit the registry (user/system) PATH.
+#[cfg(not(windows))]
+fn apply_login_path(cmd: &mut std::process::Command) {
+    if let Some(path) = login_shell_path() {
+        cmd.env("PATH", path);
+    }
+}
+
+#[cfg(windows)]
+fn apply_login_path(_cmd: &mut std::process::Command) {}
+
 /// Probe whether a CLI binary is reachable on PATH (`which` / `where`).
 #[tauri::command]
 pub async fn detect_agent_installed(bin: String) -> bool {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     let mut cmd = std::process::Command::new(which_cmd);
     cmd.arg(&bin);
+    apply_login_path(&mut cmd);
 
     #[cfg(windows)]
     {
@@ -1503,6 +1558,9 @@ pub async fn install_agent<R: Runtime>(
         cmd.args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // Find `npm`/`curl`/`powershell` even when launched from Finder/Dock
+        // with a minimal PATH (macOS/Linux); no-op on Windows.
+        apply_login_path(&mut cmd);
 
         #[cfg(windows)]
         {

@@ -72,6 +72,22 @@ impl LlamacppError {
                 Some(stderr.into()),
             );
         }
+
+        // The multimodal projector (mmproj) declares a projector type the
+        // bundled llama.cpp/libmtmd build cannot build a graph for (e.g. the
+        // brand-new Gemma 4 `gemma4a` audio projector). libmtmd calls
+        // `ggml_abort` during clip warmup ("clip.cpp:NNNN: Unknown projector
+        // type"), taking down the whole llama-server with SIGABRT before the
+        // server reports ready. Surface this as an actionable, recoverable
+        // error so the caller can retry the load text-only (without --mmproj).
+        if lower_stderr.contains("unknown projector type") {
+            return Self::new(
+                ErrorCode::MultimodalProjectorLoadFailed,
+                "This model's multimodal projector isn't supported by the current llama.cpp backend. Vision/audio is unavailable for this model on this backend.".into(),
+                Some(stderr.into()),
+            );
+        }
+
         Self::new(
             ErrorCode::LlamaCppProcessError,
             "The model process encountered an unexpected error.".into(),

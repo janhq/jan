@@ -60,10 +60,10 @@ import { ttftMark } from '@/lib/ttft-timing'
 ///     `undefined`), regardless of the reasoning toggle, because gemma-4
 ///     and similar local models reliably auto-emit a chain-of-thought
 ///     block whenever the rendered prompt contains BOTH a system message
-///     and tools, even with `chat_template_kwargs.enable_thinking=false`;
-///   * tools are forwarded **only when reasoning is enabled**. With
-///     reasoning off the tool list is dropped so non-reasoning turns
-///     stay text-only and don't pay the CoT-on-tool-presence penalty.
+///     and tools, even with `chat_template_kwargs.enable_thinking=false`.
+/// Tool inclusion is **independent of the reasoning toggle** for all
+/// providers: tools are forwarded whenever the tools on/off setting has
+/// them enabled and the model supports tool calling.
 /// Remote providers (OpenAI, Anthropic, …) are unaffected.
 const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'mlx',
@@ -557,11 +557,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       : baseMessages
 
     // Local-providers ergonomics (mlx, llamacpp, llamacpp-upstream,
-    // foundation-models): always drop the system prompt, and forward
-    // tools only when reasoning is enabled. See LOCAL_INFERENCE_PROVIDERS
-    // for rationale.
-    const { disableReasoning, reasoningBudget } = useGeneralSetting.getState()
-    const reasoningDisabled = disableReasoning || reasoningBudget === 'off'
+    // foundation-models): always drop the system prompt, because gemma-4
+    // and similar local models reliably auto-emit a chain-of-thought block
+    // whenever the rendered prompt contains BOTH a system message and tools.
+    // See LOCAL_INFERENCE_PROVIDERS for rationale. Tool inclusion is
+    // independent of the reasoning toggle and governed solely by the tools
+    // on/off setting (via refreshTools -> useToolAvailable).
     const isLocalProvider =
       LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)
 
@@ -573,10 +574,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools =
-      hasTools &&
-      modelSupportsTools &&
-      (!isLocalProvider || !reasoningDisabled)
+    const shouldEnableTools = hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),

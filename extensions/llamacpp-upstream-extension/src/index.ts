@@ -104,6 +104,18 @@ const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
 /// stop driving further regeneration attempts.
 const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
 
+/// Error code (SCREAMING_SNAKE_CASE) surfaced by the Rust plugin's
+/// `LlamacppError` when an mmproj declares a projector type the bundled
+/// llama.cpp/libmtmd build cannot parse (e.g. Gemma 4 `gemma4a` audio).
+/// On this error we retry the load text-only (without --mmproj).
+const ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED = 'MULTIMODAL_PROJECTOR_LOAD_FAILED'
+/// Broadcast channel emitted after a model that crashed on an unsupported
+/// multimodal projector is successfully reloaded in text-only mode. The
+/// web-app shows a one-shot, non-fatal toast so the user knows vision/audio
+/// was disabled for this model on the current backend.
+const MULTIMODAL_DISABLED_FALLBACK =
+  'local_backend://multimodal_disabled_fallback'
+
 /**
  * Override the default app.log function to use Jan's logging system.
  * @param args
@@ -3022,6 +3034,51 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
       return sInfo
     } catch (error) {
+      // If the model crashed because its multimodal projector isn't supported
+      // by the current backend (e.g. Gemma 4 `gemma4a` audio projector on a
+      // libmtmd build that lacks its graph builder), retry once text-only by
+      // dropping --mmproj. This keeps the model usable instead of failing the
+      // whole load with an opaque error. See issue #44.
+      const code = (error as { code?: string } | undefined)?.code
+      if (
+        mmprojPath &&
+        code === ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED
+      ) {
+        logger.warn(
+          `Model "${modelId}" has an unsupported multimodal projector for backend "${backend}". Retrying text-only (without --mmproj).`
+        )
+        try {
+          const sInfo = await loadLlamaModel(
+            backendPath,
+            modelId,
+            modelPath,
+            port,
+            cfg,
+            envs,
+            undefined, // text-only: drop the unsupported mmproj
+            isEmbedding,
+            Number(this.timeout)
+          )
+          this.sessionCache.set(modelId, sInfo)
+          if (typeof cfg.ctx_size === 'number') {
+            this.modelCtxSize.set(modelId, cfg.ctx_size)
+          }
+          try {
+            await tauriEmit(MULTIMODAL_DISABLED_FALLBACK, { modelId })
+          } catch (emitErr) {
+            logger.warn(
+              `Failed to emit multimodal fallback notice for "${modelId}": ${emitErr}`
+            )
+          }
+          return sInfo
+        } catch (retryError) {
+          logger.error(
+            'Text-only retry after unsupported projector also failed:\n',
+            retryError
+          )
+          throw retryError
+        }
+      }
       logger.error('Error in load command:\n', error)
       throw error
     }
