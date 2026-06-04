@@ -376,6 +376,7 @@ export function DataProvider() {
     // Parallel native Tauri bus listener (extensions emit both channels).
     let unlistenTauri: (() => void) | undefined
     let unlistenAtMax: (() => void) | undefined
+    let unlistenMmprojFallback: (() => void) | undefined
     let cancelled = false
     ;(async () => {
       try {
@@ -446,6 +447,40 @@ export function DataProvider() {
             '[LocalAPI] Subscribed to Tauri event: local_backend://auto_increase_ctx_at_max'
           )
         }
+
+        /// A multimodal model crashed on an unsupported projector and was
+        /// transparently reloaded text-only by the backend extension. Surface
+        /// a one-shot, non-fatal notice so the user knows vision/audio is
+        /// disabled for this model on the current backend (issue #44). The
+        /// toast id is keyed on modelId so repeated loads don't stack.
+        const unsubMmprojFallback = await listen<{
+          modelId?: string
+        }>('local_backend://multimodal_disabled_fallback', (event) => {
+          const { modelId } = event.payload ?? {}
+          console.log(
+            '[LocalAPI] multimodal_disabled_fallback received (tauri)',
+            event.payload
+          )
+          if (!modelId) {
+            console.warn(
+              '[LocalAPI] multimodal_disabled_fallback (tauri): invalid payload',
+              event.payload
+            )
+            return
+          }
+          toast.warning(
+            `Vision/audio disabled for "${modelId}": this model's projector isn't supported by the current Llama.cpp backend. Loaded text-only.`,
+            { id: `mmproj-fallback-${modelId}` }
+          )
+        })
+        if (cancelled) {
+          unsubMmprojFallback()
+        } else {
+          unlistenMmprojFallback = unsubMmprojFallback
+          console.log(
+            '[LocalAPI] Subscribed to Tauri event: local_backend://multimodal_disabled_fallback'
+          )
+        }
       } catch (e) {
         console.warn(
           '[LocalAPI] Failed to subscribe to Tauri auto_increase_ctx_notify:',
@@ -459,6 +494,7 @@ export function DataProvider() {
       events.off(ModelEvent.OnAutoIncreasedCtxLen, handleFromEvents)
       if (unlistenTauri) unlistenTauri()
       if (unlistenAtMax) unlistenAtMax()
+      if (unlistenMmprojFallback) unlistenMmprojFallback()
     }
   }, [])
 
