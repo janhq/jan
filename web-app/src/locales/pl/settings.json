@@ -278,5 +278,19 @@
     "updateError": "Nie udało się zaktualizować Llamacpp"
   },
   "backendInstallSuccess": "Backend został pomyślnie zainstalowany",
-  "backendInstallError": "Nie udało się zainstalować backendu"
+  "backendInstallError": "Nie udało się zainstalować backendu",
+  "openui": {
+    "description": "Generuj interaktywne odpowiedzi asystenta z OpenUI Lang.",
+    "enableTitle": "Wlacz renderowanie OpenUI",
+    "enableDescription": "Dodaje wskazowki promptu OpenUI do zadan czatu i renderuje odpowiedzi OpenUI Lang jako interaktywny UI. Tryb Chat dodaje okolo 1 600 tokenow promptu na zadanie; tryb Standard dodaje okolo 5 000.",
+    "componentLibraryTitle": "Biblioteka komponentow",
+    "componentLibraryDescription": "Chat uzywa kompaktowego zestawu komponentow natywnych dla Jan. Standard laduje pelny pakiet komponentow i arkuszy stylow OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Prompt systemowy",
+    "systemPromptDescription": "Skopiuj wygenerowany prompt OpenUI, jesli chcesz uzyc go w asystencie lub innym kliencie.",
+    "promptCopied": "Prompt OpenUI skopiowany",
+    "aboutTitle": "O OpenUI",
+    "aboutDescription": "OpenUI pozwala modelowi opisywac elementy interfejsu w OpenUI Lang, dzieki czemu Jan moze renderowac odpowiedzi jako interaktywne komponenty zamiast zwyklego Markdown. Po wlaczeniu Jan dodaje wskazowki OpenUI do zadan czatu i przekazuje akcje z wygenerowanych kontrolek z powrotem do rozmowy."
+  }
 }

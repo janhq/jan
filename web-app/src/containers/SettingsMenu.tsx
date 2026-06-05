@@ -220,6 +220,19 @@ const SettingsMenu = () => {
         <img src="/images/code-claude.svg" width={size} height={size} className={cn(className, 'dark:invert opacity-60')} />
       ),
     },
+    {
+      title: 'common:openui',
+      route: route.settings.openui,
+      icon: ({ size, className }: { size?: number; className?: string }) => (
+        <img
+          src="/images/openui.svg"
+          alt=""
+          width={size ? size * 1.2 : undefined}
+          height={size ? size * 1.2 : undefined}
+          className={cn(className, 'dark:invert opacity-60')}
+        />
+      ),
+    },
   ]
 
   return (

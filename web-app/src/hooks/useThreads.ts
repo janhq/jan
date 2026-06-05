@@ -4,6 +4,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useOpenUISettings } from '@/hooks/useOpenUISettings'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -158,6 +159,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const { [threadId]: _, ...remainingThreads } = state.threads
 
       useAgentMode.getState().removeThread(threadId)
+      useOpenUISettings.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
       cleanupVectorDB(threadId)
@@ -196,6 +198,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Delete threads and clean up their vector DB collections
       threadsToDeleteIds.forEach((threadId) => {
+        useOpenUISettings.getState().removeThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
@@ -226,6 +229,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
+      useOpenUISettings.getState().clearAllThreads()
       allThreadIds.forEach((threadId) => {
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
@@ -254,6 +258,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       )
 
       threadsToDeleteIds.forEach((threadId) => {
+        useOpenUISettings.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
         cleanupVectorDB(threadId)

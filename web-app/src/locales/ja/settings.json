@@ -275,5 +275,19 @@
     "updateError": "Llamacppの更新に失敗しました"
   },
   "backendInstallSuccess": "バックエンドは正常にインストールされました",
-  "backendInstallError": "バックエンドのインストールに失敗しました"
+  "backendInstallError": "バックエンドのインストールに失敗しました",
+  "openui": {
+    "description": "OpenUI Lang からインタラクティブなアシスタント応答を生成します。",
+    "enableTitle": "OpenUI レンダリングを有効にする",
+    "enableDescription": "チャットリクエストに OpenUI のプロンプトガイダンスを追加し、OpenUI Lang の応答をインタラクティブな UI としてレンダリングします。Chat モードはリクエストごとに約 1,600 プロンプトトークン、Standard モードは約 5,000 を追加します。",
+    "componentLibraryTitle": "コンポーネントライブラリ",
+    "componentLibraryDescription": "Chat はコンパクトな Jan ネイティブのコンポーネントセットを使用します。Standard は OpenUI の完全なコンポーネントとスタイルシートのバンドルを読み込みます。",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "システムプロンプト",
+    "systemPromptDescription": "生成された OpenUI プロンプトをアシスタントや別のクライアントで使いたい場合はコピーしてください。",
+    "promptCopied": "OpenUI プロンプトをコピーしました",
+    "aboutTitle": "OpenUI について",
+    "aboutDescription": "OpenUI は、モデルが OpenUI Lang でインターフェイス要素を記述できるようにし、Jan がプレーンな Markdown ではなくインタラクティブなコンポーネントとして応答をレンダリングできるようにします。有効にすると、Jan はチャットリクエストに OpenUI ガイダンスを追加し、生成されたコントロールのアクションを会話に戻します。"
+  }
 }

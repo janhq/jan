@@ -74,6 +74,10 @@ import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
 } from '@/hooks/useChatAttachments'
+import {
+  OPENUI_CHAT_ACTION_EVENT,
+  isOpenUIChatActionEvent,
+} from '@/lib/openui-actions'
 
 import {
   Attachment,
@@ -84,6 +88,7 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useOpenUISettings } from '@/hooks/useOpenUISettings'
 
 type ChatInputProps = {
   className?: string
@@ -153,6 +158,16 @@ const ChatInput = memo(function ChatInput({
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
   }, [agentModeKey, toggleAgentMode])
+
+  const openUIThreadKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const isOpenUIEnabled = useOpenUISettings(
+    (state) => state.enabledThreads[openUIThreadKey] === true
+  )
+  const toggleOpenUI = useOpenUISettings((state) => state.toggleEnabled)
+
+  const handleOpenUIToggle = useCallback(() => {
+    toggleOpenUI(openUIThreadKey)
+  }, [openUIThreadKey, toggleOpenUI])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -440,6 +455,10 @@ const ChatInput = memo(function ChatInput({
           projectMetadata
         )
 
+        useOpenUISettings
+          .getState()
+          .transferThread(openUIThreadKey, newThread.id)
+
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
           useAgentMode.getState().setAgentMode(newThread.id, true)
@@ -466,6 +485,11 @@ const ChatInput = memo(function ChatInput({
       // processing is complete.
     }
   }
+  const handleSendMessageRef = useRef(handleSendMessage)
+
+  useEffect(() => {
+    handleSendMessageRef.current = handleSendMessage
+  })
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -1539,6 +1563,24 @@ const ChatInput = memo(function ChatInput({
 
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
+  useEffect(() => {
+    const handleOpenUIAction = (event: Event) => {
+      if (!isOpenUIChatActionEvent(event)) return
+
+      const nextPrompt = event.detail.prompt.trim()
+      if (!nextPrompt) return
+
+      event.preventDefault()
+      handleSendMessageRef.current(nextPrompt)
+    }
+
+    window.addEventListener(OPENUI_CHAT_ACTION_EVENT, handleOpenUIAction)
+
+    return () => {
+      window.removeEventListener(OPENUI_CHAT_ACTION_EVENT, handleOpenUIAction)
+    }
+  }, [])
+
   return (
     <div className="relative">
       <div className="relative">
@@ -2011,6 +2053,30 @@ const ChatInput = memo(function ChatInput({
                     </TooltipContent>
                   </Tooltip>
                 )}
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={isOpenUIEnabled ? 'default' : 'ghost'}
+                      size="icon-xs"
+                      onClick={handleOpenUIToggle}
+                      aria-label={t('common:openui')}
+                      className={cn(
+                        isOpenUIEnabled &&
+                          'text-primary bg-primary/10 hover:bg-primary/10'
+                      )}
+                    >
+                      <img
+                        src="/images/openui.svg"
+                        alt=""
+                        className="size-[18px] dark:invert"
+                      />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('common:openui')}</p>
+                  </TooltipContent>
+                </Tooltip>
 
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>

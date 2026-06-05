@@ -496,5 +496,19 @@
       "startSetup": "설정 시작",
       "connecting": "연결 중..."
     }
+  },
+  "openui": {
+    "description": "OpenUI Lang으로 대화형 어시스턴트 응답을 생성합니다.",
+    "enableTitle": "OpenUI 렌더링 활성화",
+    "enableDescription": "채팅 요청에 OpenUI 프롬프트 지침을 추가하고 OpenUI Lang 응답을 대화형 UI로 렌더링합니다. Chat 모드는 요청마다 약 1,600개의 프롬프트 토큰을 추가하고, Standard 모드는 약 5,000개를 추가합니다.",
+    "componentLibraryTitle": "컴포넌트 라이브러리",
+    "componentLibraryDescription": "Chat은 Jan 네이티브의 컴팩트한 컴포넌트 세트를 사용합니다. Standard는 전체 OpenUI 컴포넌트와 스타일시트 번들을 로드합니다.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "시스템 프롬프트",
+    "systemPromptDescription": "생성된 OpenUI 프롬프트를 어시스턴트나 다른 클라이언트에서 사용하려면 복사하세요.",
+    "promptCopied": "OpenUI 프롬프트가 복사되었습니다",
+    "aboutTitle": "OpenUI 소개",
+    "aboutDescription": "OpenUI는 모델이 OpenUI Lang으로 인터페이스 요소를 설명하게 하여 Jan이 일반 Markdown 대신 대화형 컴포넌트로 응답을 렌더링할 수 있게 합니다. 활성화하면 Jan은 채팅 요청에 OpenUI 지침을 추가하고 생성된 컨트롤의 액션을 대화로 다시 전달합니다."
   }
 }

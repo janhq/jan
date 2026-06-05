@@ -310,5 +310,19 @@
     "updateError": "Falha ao atualizar Llamacpp"
   },
   "backendInstallSuccess": "Backend instalado com sucesso",
-  "backendInstallError": "Falha ao instalar backend"
+  "backendInstallError": "Falha ao instalar backend",
+  "openui": {
+    "description": "Gere respostas interativas do assistente com OpenUI Lang.",
+    "enableTitle": "Ativar renderizacao OpenUI",
+    "enableDescription": "Adiciona orientacoes de prompt OpenUI as solicitacoes de chat e renderiza respostas OpenUI Lang como UI interativa. O modo Chat adiciona aproximadamente 1.600 tokens de prompt por solicitacao; o modo Standard adiciona aproximadamente 5.000.",
+    "componentLibraryTitle": "Biblioteca de componentes",
+    "componentLibraryDescription": "Chat usa um conjunto compacto de componentes nativos do Jan. Standard carrega o pacote completo de componentes e folhas de estilo do OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Prompt do sistema",
+    "systemPromptDescription": "Copie o prompt OpenUI gerado se quiser usa-lo em um assistente ou outro cliente.",
+    "promptCopied": "Prompt OpenUI copiado",
+    "aboutTitle": "Sobre o OpenUI",
+    "aboutDescription": "OpenUI permite que o modelo descreva elementos de interface em OpenUI Lang para que o Jan renderize respostas como componentes interativos em vez de Markdown simples. Quando ativado, o Jan adiciona a orientacao OpenUI as solicitacoes de chat e encaminha as acoes dos controles gerados de volta para a conversa."
+  }
 }

@@ -29,6 +29,7 @@ export const localStorageKey = {
   agentMode: 'agent-mode',
   latestJanModel: 'latest-jan-model',
   defaultEmbeddingModel: 'default-embedding-model',
+  openUI: 'openui-settings',
   pausedDownloads: 'paused-downloads',
 }
 

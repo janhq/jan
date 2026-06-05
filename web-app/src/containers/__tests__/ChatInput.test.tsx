@@ -98,6 +98,20 @@ vi.mock('@/hooks/useAgentMode', () => ({
     }),
 }))
 
+const toggleOpenUIMock = vi.fn()
+const transferOpenUIThreadMock = vi.fn()
+vi.mock('@/hooks/useOpenUISettings', () => {
+  const useOpenUISettings = (selector: any) =>
+    selector({
+      enabledThreads: {},
+      toggleEnabled: toggleOpenUIMock,
+    })
+  useOpenUISettings.getState = () => ({
+    transferThread: transferOpenUIThreadMock,
+  })
+  return { useOpenUISettings }
+})
+
 vi.mock('@/hooks/useMessages', () => ({
   useMessages: (selector: any) =>
     selector({
@@ -278,6 +292,7 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { dispatchOpenUIChatAction } from '@/lib/openui-actions'
 
 // Helpers -------------------------------------------------------------------
 
@@ -294,6 +309,8 @@ const resetAll = () => {
   setPromptMock.mockClear()
   addToHistoryMock.mockClear()
   navigateHistoryMock.mockClear()
+  toggleOpenUIMock.mockClear()
+  transferOpenUIThreadMock.mockClear()
   enqueueMock.mockClear()
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
@@ -379,6 +396,27 @@ describe('ChatInput', () => {
     ) as HTMLButtonElement
     fireEvent.click(btn)
     expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
+  })
+
+  it('submits OpenUI chat actions through the active input listener', () => {
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit })
+
+    let wasHandled = false
+    act(() => {
+      wasHandled = dispatchOpenUIChatAction('  Continue from OpenUI  ')
+    })
+
+    expect(wasHandled).toBe(true)
+    expect(onSubmit).toHaveBeenCalledWith('Continue from OpenUI', undefined)
+  })
+
+  it('toggles OpenUI for the active thread', () => {
+    renderInput()
+
+    fireEvent.click(screen.getByRole('button', { name: 'common:openui' }))
+
+    expect(toggleOpenUIMock).toHaveBeenCalledWith('thread-1')
   })
 
   it('shows stop button while streaming and hides the send button', () => {

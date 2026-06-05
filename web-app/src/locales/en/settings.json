@@ -226,6 +226,20 @@
     "promise4": "You can opt out anytime without losing functionality",
     "promise5": "We're transparent about what we collect and why"
   },
+  "openui": {
+    "description": "Generate interactive assistant responses from OpenUI Lang.",
+    "enableTitle": "Enable OpenUI rendering",
+    "enableDescription": "Add OpenUI prompt guidance to chat requests and render OpenUI Lang responses as interactive UI. Chat mode adds approximately 1,600 prompt tokens per request; Standard mode adds approximately 5,000.",
+    "componentLibraryTitle": "Component library",
+    "componentLibraryDescription": "Chat uses a compact Jan-native component set. Standard loads the full OpenUI component and stylesheet bundle.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "System prompt",
+    "systemPromptDescription": "Copy the generated OpenUI prompt if you want to use it in an assistant or another client.",
+    "promptCopied": "OpenUI prompt copied",
+    "aboutTitle": "About OpenUI",
+    "aboutDescription": "OpenUI lets the model describe interface elements in OpenUI Lang so Jan can render responses as interactive components instead of plain markdown. When enabled, Jan adds the OpenUI guidance to chat requests and routes actions from generated controls back into the conversation."
+  },
   "general": {
     "showInFinder": "Show in Finder",
     "showInFileExplorer": "Show in File Explorer",

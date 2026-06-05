@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { memo, useState, useCallback, useEffect } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
-import { RenderMarkdown } from './RenderMarkdown'
+import { OpenUIResponse } from './OpenUIResponse'
 import { cn } from '@/lib/utils'
 import { twMerge } from 'tailwind-merge'
 import {
@@ -276,7 +276,7 @@ export const MessageItem = memo(
             </div>
           ) : (
             <>
-              <RenderMarkdown
+              <OpenUIResponse
                 content={
                   grounding && !isStreaming
                     ? injectCitationMarkers(
