@@ -1848,16 +1848,21 @@ pub fn configure_openclaw(
             .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
     }
 
+    // OpenClaw reads this file as JSON5 (comments, unquoted keys, trailing
+    // commas), so we must parse with the same leniency or we reject configs
+    // OpenClaw happily accepts (ATO-87). json5 deserializes into the same
+    // serde_json::Value, and we always re-serialize as strict JSON on write,
+    // which normalizes (and silently drops comments from) the file.
     let mut root: serde_json::Value = if config_path.exists() {
         let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
         if text.trim().is_empty() {
             serde_json::json!({})
         } else {
-            serde_json::from_str(&text).map_err(|_| {
+            json5::from_str(&text).map_err(|e| {
                 format!(
-                    "Could not parse {} as JSON (it may contain JSON5 comments). \
-                     Please add the Atomic provider manually under models.providers.",
-                    config_path.display()
+                    "Could not parse {}: {}. Fix the reported location and try again.",
+                    config_path.display(),
+                    e
                 )
             })?
         }

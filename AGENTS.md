@@ -309,6 +309,109 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-05 — Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)
+- **Context:** Gemma 4 12B MLX (`gemma-4-12B-it-4bit`, `model_type:
+ gemma4_unified`) failed to load with `Model type gemma4_unified not
+ supported. Error: No module named 'mlx_vlm.speculative.drafters.gemma4_unified'`
+ ([ATO-88](https://linear.app/atomicchat/issue/ATO-88)). Confirmed against
+ sources: our fork `AtomicBot-ai/mlx-vlm` (`/Users/misha/Work/Atomic/mlx-vlm`,
+ branch `sync/v0.6.0` @ `aed5482`, `__version__ = "0.6.0"`) has
+ `mlx_vlm/models/gemma4` but **no** `gemma4_unified`. Upstream
+ `Blaizzy/mlx-vlm` added it in **0.6.1** (PR #1267, `608ce45`); the model
+ resolver (`mlx_vlm/utils.py::get_model_and_args`) auto-imports
+ `mlx_vlm.models.<type>` / `mlx_vlm.speculative.drafters.<type>`, so a missing
+ package = unsupported type. The bundled sidecar
+ (`mlxvlm-macos-arm64-aed5482`, 2026-06-02) predates the fix. ATO-88 head 2
+ (llama.cpp Gemma 4 MTP GGUF) is **upstream-blocked** (no llama.cpp release
+ supports it; WIP PR ggml-org/llama.cpp#23398) and was **deliberately
+ deferred** — not touched here.
+- **Decision:** Sync the fix into the fork by **cherry-picking a curated subset
+ of upstream/main onto a new branch `feat/gemma4-unified`** (off `sync/v0.6.0`),
+ rather than a full 33-commit merge (which would re-trigger the forked-server
+ re-port pain from the 2026-06-02 v0.6.0 sync). Picked, in order:
+ - `608ce45` PR #1267 — Add Gemma 4 Unified support (model dir + drafter
+ `gemma4_unified_assistant` + additive `gemma4/*`, `prompt_utils`,
+ `generate/*`; bumps `version.py` → `0.6.1`).
+ - `041f889` PR #1280 — Fix Gemma4 unified long-text prefill.
+ - `526c210` PR #1292 — Add video input support for Gemma 4 12B.
+ **Deliberately skipped `b3d2380` PR #1266** ("Fix Gemma 4 rollback handling +
+ streaming thinking splits"): our fork's rollback fix (2026-06-02 ADR) already
+ covers the list-coercion case **more generally** (`elif not isinstance(accepted,
+ mx.array)` vs upstream's `isinstance(accepted, (list, tuple))`), and #1266's
+ bulk is server-streaming changes (`anthropic.py`/`openai.py`/`responses_state.py`)
+ that would collide with our heavily-forked `mlx_vlm/server/`.
+- **Consequences:**
+ - All three cherry-picks applied **cleanly, zero conflicts**, including on the
+ two risk files `models/gemma4/language.py` (carries our MTP-rollback coercion
+ — verified preserved at lines ~723–729 post-merge) and `server/generation.py`
+ (our forked server). `python3 -m py_compile` passes on all 17 changed
+ modules; fork `version.py` is now `0.6.1`.
+ - **Text Gemma 4 12B Unified now resolves & loads under MLX.** Vision/long-text
+ covered by #1280/#1292; some vision edge cases may remain (upstream is still
+ iterating — see branches `pc/fix-gemma4-long-context`,
+ `pc/gemma4-quant-predicate-size`). Not pulling those yet.
+ - **Merged to fork `main`.** `feat/gemma4-unified` was fast-forwarded into
+ `main` (clean `aed5482..f42f567`, no force) and **pushed to
+ `origin/main`** of `AtomicBot-ai/mlx-vlm`; `main` now carries both the
+ prior v0.6.0 sync (already there at `aed5482`) and the three gemma4
+ commits. **Not yet shipped to the app:** a new sidecar release
+ `mlxvlm-macos-arm64-<sha>` must be built (CI `build-mlxvlm-macos.yml`) for
+ `f42f567`, then `make build-mlx-server` in Atomic-Chat (or the `-if-exists`
+ auto-update) pulls + re-codesigns it. **Runtime validation on Apple Silicon
+ (load + a text and an image turn on `gemma-4-12B-it-4bit`) is pending that
+ build** — not doable from the code port alone.
+ - No Atomic-Chat code changed for head 1 (the extension/plugin already resolve
+ by model_type via the sidecar). Head 2 remains open as a separate task.
+- **Owner:** team.
+- **Links:** [ATO-88](https://linear.app/atomicchat/issue/ATO-88), §4.1 *MLX
+ backend*, the 2026-06-02 ADRs *Sync `mlx-vlm` to v0.6.0* and *Fix MTP
+ speculative rollback crash on Gemma 4 + DeepSeek-V4*,
+ [Blaizzy/mlx-vlm PR #1267](https://github.com/Blaizzy/mlx-vlm/pull/1267),
+ [#1280](https://github.com/Blaizzy/mlx-vlm/pull/1280),
+ [#1292](https://github.com/Blaizzy/mlx-vlm/pull/1292),
+ [issue #1277](https://github.com/Blaizzy/mlx-vlm/issues/1277),
+ fork `AtomicBot-ai/mlx-vlm` branch `feat/gemma4-unified`, `Makefile`
+ (`build-mlx-server`).
+
+### 2026-06-05 — Parse `openclaw.json` with a JSON5-lenient parser (ATO-87)
+- **Context:** Atomic Chat and OpenClaw read the **same** file
+ `~/.openclaw/openclaw.json` with **different** parsers. OpenClaw uses
+ lenient **JSON5** (comments, unquoted keys, trailing commas); our
+ `configure_openclaw` in
+ [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs)
+ used strict `serde_json::from_str`. A user (Discord, via [ATO-87](https://linear.app/atomicchat/issue/ATO-87))
+ followed support advice to wrap `model` in `{ primary: ... }` with an
+ **unquoted** `primary` key — valid JSON5, invalid strict JSON. OpenClaw
+ accepted and reloaded the config (`config change applied`), while Atomic
+ Chat failed with `Could not parse … as JSON`, giving the user a
+ contradictory signal. The old error was also uninformative (no line/column)
+ and suggested a manual workaround instead of just parsing the file. This
+ **reverses** the 2026-06-01 ADR note ("no `json5` dep added") now that the
+ parser-strictness mismatch is a confirmed user-facing bug.
+- **Decision:** Add the `json5 = "0.4"` crate and read `openclaw.json` with
+ `json5::from_str::<serde_json::Value>` (single source of truth for parse
+ strictness with OpenClaw). On parse failure, surface the json5 error
+ verbatim (it carries the offending line/column) instead of the generic
+ "add the provider manually" advice. We still re-serialize as **strict**
+ pretty JSON on write, which normalizes the file (and silently drops any
+ JSON5 comments) — acceptable since JSON5 is a strict-JSON superset, so the
+ normalized output is still valid for OpenClaw.
+- **Consequences:** Configs OpenClaw accepts (unquoted keys, comments,
+ trailing commas) no longer break Atomic Chat's Launch-page OpenClaw flow.
+ Parse errors now point at a location. The write step rewrites the file as
+ strict JSON, so user comments are lost on the next `configure_openclaw`
+ run — a deliberate, self-healing trade-off. Scope is limited to OpenClaw;
+ the other agent config writers (Claude/Codex/OpenCode/Hermes/Droid) still
+ use strict `serde_json` and are untouched. The possible file-watcher
+ debounce loop noted in ATO-87 is **not** addressed here (separate ticket if
+ confirmed). `cargo check -p Atomic-Chat` passes.
+- **Owner:** team.
+- **Links:** [ATO-87](https://linear.app/atomicchat/issue/ATO-87),
+ the 2026-06-03 ADR *Fix OpenClaw Launch integration*, the 2026-06-01 ADR
+ *Add a "Launch" page …* (the "no `json5` dep" note this supersedes),
+ files: [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs)
+ (`configure_openclaw`), [`src-tauri/Cargo.toml`](src-tauri/Cargo.toml).
+
 ### 2026-06-04 — Resolve Windows CUDA-13 backend minor dynamically in `llamacpp-upstream`
 - **Context:** `ggml-org/llama.cpp` periodically renames Windows CUDA-13 assets by toolkit minor (`13.1` → `13.3` → future `13.x`). Hardcoded ids in `llamacpp-upstream` caused "Failed to download GPU backend" 404 when recommendation/config emitted a stale `win-cuda-13.<old>-x64`.
 - **Decision:**
