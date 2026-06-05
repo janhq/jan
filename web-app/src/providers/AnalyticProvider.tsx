@@ -61,8 +61,20 @@ export function AnalyticProvider() {
           if (id) posthog.identify(id)
         })
         .finally(() => {
+          const osPlatform = IS_MACOS
+            ? 'macos'
+            : IS_WINDOWS
+              ? 'windows'
+              : IS_LINUX
+                ? 'linux'
+                : IS_IOS
+                  ? 'ios'
+                  : IS_ANDROID
+                    ? 'android'
+                    : 'unknown'
+
           posthog.opt_in_capturing()
-          posthog.register({ app_version: VERSION })
+          posthog.register({ app_version: VERSION, platform: osPlatform })
           serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
 
           posthog.capture('app_opened')

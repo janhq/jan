@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import posthog from 'posthog-js'
 import { toast } from 'sonner'
 import {
   IconChevronDown,
@@ -424,6 +425,12 @@ function LaunchPage() {
         toast.error(t('launch:noRunningModelToast', { name: agent.name }))
         return
       }
+
+      posthog.capture('agent_run', {
+        agent_id: agent.id,
+        agent_name: agent.name,
+        agent_kind: agent.kind,
+      })
 
       setBusy((prev) => ({ ...prev, [agent.id]: true }))
       const spinTimer = setTimeout(
