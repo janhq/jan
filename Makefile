@@ -577,17 +577,27 @@ download-llamacpp-upstream-backend-win-cpu:
 		Write-Host 'Fetching latest release tag from ggml-org/llama.cpp...'; \
 		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
 		if ($$env:GH_TOKEN) { $$headers['Authorization'] = \"Bearer $$env:GH_TOKEN\" }; \
-		$$release = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers $$headers; \
-		$$tag = $$release.tag_name; \
-		if (-not $$tag) { throw 'Failed to fetch release tag' }; \
 		$$backend = 'win-cpu-x64'; \
+		$$releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers $$headers; \
+		$$tag = ''; \
+		foreach ($$r in $$releases) { \
+			if ($$r.draft -or $$r.prerelease) { continue }; \
+			$$want = \"llama-$$($$r.tag_name)-bin-$${backend}.zip\"; \
+			if ($$r.assets | Where-Object { $$_.name -eq $$want }) { $$tag = $$r.tag_name; break }; \
+		}; \
+		if (-not $$tag) { throw 'No recent ggml-org release carries the win-cpu-x64 asset yet (upstream asset upload may be in progress)' }; \
 		$$url = \"https://github.com/ggml-org/llama.cpp/releases/download/$$tag/llama-$${tag}-bin-$${backend}.zip\"; \
 		[System.IO.File]::WriteAllText(\"$$dir/version.txt\", $$tag); \
 		[System.IO.File]::WriteAllText(\"$$dir/backend.txt\", $$backend); \
 		Write-Host \"Release: $$tag  Backend: $$backend\"; \
 		Write-Host \"Downloading: $$url\"; \
 		$$tmp = \"$$env:TEMP\\llamacpp-upstream-backend.zip\"; \
-		Invoke-WebRequest -Uri $$url -OutFile $$tmp -UseBasicParsing; \
+		$$ok = $$false; \
+		for ($$i = 1; $$i -le 5; $$i++) { \
+			try { Invoke-WebRequest -Uri $$url -OutFile $$tmp -UseBasicParsing; $$ok = $$true; break } \
+			catch { Write-Host \"Download attempt $$i/5 failed: $$($$_.Exception.Message); retrying...\"; Start-Sleep -Seconds 3 } \
+		}; \
+		if (-not $$ok) { throw \"Failed to download $$url after 5 attempts\" }; \
 		Expand-Archive -Path $$tmp -DestinationPath $$dir -Force; \
 		Remove-Item $$tmp -Force -ErrorAction SilentlyContinue; \
 		if (-not (Test-Path \"$$dir/build/bin/llama-server.exe\")) { \
@@ -638,7 +648,7 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		echo "Fetching latest upstream llama.cpp release..."; \
 		TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-		API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"; \
+		API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"; \
 		_gh_get() { \
 			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
 				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
@@ -661,7 +671,7 @@ ifeq ($(shell uname -s),Darwin)
 			return 1; \
 		}; \
 		_tag_ok() { \
-			[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+			[ -s "$$1" ] && [ "$$(jq -r 'if type=="array" then length else 0 end' "$$1" 2>/dev/null)" -gt 0 ]; \
 		}; \
 		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
 		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
@@ -676,9 +686,9 @@ ifeq ($(shell uname -s),Darwin)
 			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			   rm -f "$$TMPREL"; exit 1 ;; \
 		esac; \
-		TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+		TAG=$$(jq -r --arg suf "-bin-$$BACKEND.tar.gz" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
 		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-			echo "Error: Failed to extract tag_name from upstream release response:"; \
+			echo "Error: no recent release carries asset llama-<tag>-bin-$$BACKEND.tar.gz (upstream asset upload may be in progress):"; \
 			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
@@ -689,7 +699,7 @@ ifeq ($(shell uname -s),Darwin)
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
 	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
+	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
 	tar -xzf /tmp/llamacpp-upstream-backend.tar.gz -C src-tauri/resources/llamacpp-backend-upstream/; \
 	rm -f /tmp/llamacpp-upstream-backend.tar.gz; \
 	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \
@@ -757,7 +767,7 @@ else ifeq ($(OS),Windows_NT)
 	fi; \
 	echo "Fetching latest llama.cpp release from ggml-org/llama.cpp..."; \
 	TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-	API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"; \
+	API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"; \
 	_gh_get() { \
 		if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
 			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
@@ -780,7 +790,7 @@ else ifeq ($(OS),Windows_NT)
 		return 1; \
 	}; \
 	_tag_ok() { \
-		[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+		[ -s "$$1" ] && [ "$$(jq -r 'if type=="array" then length else 0 end' "$$1" 2>/dev/null)" -gt 0 ]; \
 	}; \
 	USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
 	_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
@@ -795,9 +805,9 @@ else ifeq ($(OS),Windows_NT)
 		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 		   rm -f "$$TMPREL"; exit 1 ;; \
 	esac; \
-	TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+	TAG=$$(jq -r --arg suf "-bin-$$BACKEND.zip" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
 	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-		echo "Error: Failed to extract tag_name from upstream release response:"; \
+		echo "Error: no recent release carries asset llama-<tag>-bin-$$BACKEND.zip (upstream asset upload may be in progress):"; \
 		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 		rm -f "$$TMPREL"; exit 1; \
 	fi; \
@@ -807,7 +817,7 @@ else ifeq ($(OS),Windows_NT)
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
 	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/llamacpp-upstream-backend.zip; \
+	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-upstream-backend.zip; \
 	unzip -o /tmp/llamacpp-upstream-backend.zip -d src-tauri/resources/llamacpp-backend-upstream/; \
 	rm -f /tmp/llamacpp-upstream-backend.zip; \
 	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server.exe" ]; then \
@@ -839,7 +849,7 @@ else ifeq ($(shell uname -s),Linux)
 	else \
 		echo "Fetching latest upstream llama.cpp release..."; \
 		TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-		API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"; \
+		API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"; \
 		_gh_get() { \
 			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
 				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
@@ -862,7 +872,7 @@ else ifeq ($(shell uname -s),Linux)
 			return 1; \
 		}; \
 		_tag_ok() { \
-			[ -s "$$1" ] && [ -n "$$(jq -r '.tag_name // empty' "$$1" 2>/dev/null)" ]; \
+			[ -s "$$1" ] && [ "$$(jq -r 'if type=="array" then length else 0 end' "$$1" 2>/dev/null)" -gt 0 ]; \
 		}; \
 		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
 		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
@@ -877,9 +887,9 @@ else ifeq ($(shell uname -s),Linux)
 			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			   rm -f "$$TMPREL"; exit 1 ;; \
 		esac; \
-		TAG=$$(jq -r '.tag_name // empty' "$$TMPREL"); \
+		TAG=$$(jq -r --arg suf "-bin-$$UPSTREAM_INFIX.tar.gz" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
 		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-			echo "Error: Failed to extract tag_name from upstream release response:"; \
+			echo "Error: no recent release carries asset llama-<tag>-bin-$$UPSTREAM_INFIX.tar.gz (upstream asset upload may be in progress):"; \
 			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \
@@ -890,7 +900,7 @@ else ifeq ($(shell uname -s),Linux)
 	echo "$$BACKEND" > src-tauri/resources/llamacpp-backend-upstream/backend.txt; \
 	echo "Release: $$TAG  Backend: $$BACKEND"; \
 	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
+	curl -fSL --retry 5 --retry-delay 3 "$$URL" -o /tmp/llamacpp-upstream-backend.tar.gz; \
 	tar -xzf /tmp/llamacpp-upstream-backend.tar.gz -C src-tauri/resources/llamacpp-backend-upstream/; \
 	rm -f /tmp/llamacpp-upstream-backend.tar.gz; \
 	if [ ! -f "src-tauri/resources/llamacpp-backend-upstream/build/bin/llama-server" ]; then \

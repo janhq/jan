@@ -180,17 +180,27 @@ $backend = 'win-cpu-x64'
 if (Test-Path $llamacppDir) { Remove-Item $llamacppDir -Recurse -Force }
 New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
 
-$apiUrl = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
+# ATO-95: list recent releases and pick the newest one whose win-cpu-x64
+# asset is ACTUALLY uploaded. ggml-org marks a fresh bXXXX tag "latest" the
+# instant it's created, but uploads the per-platform assets minutes later, so
+# trusting /releases/latest then building the asset URL raced the upload and
+# returned 404.
+$apiUrl = 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20'
 $headers = @{ 'User-Agent' = 'atomic-chat-build' }
 if ($env:GH_TOKEN) {
     $headers['Authorization'] = "Bearer $env:GH_TOKEN"
 }
 
-Write-Host '  Fetching latest release tag...'
-$release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing
-$tag = $release.tag_name
+Write-Host '  Fetching recent releases...'
+$releases = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing
+$tag = ''
+foreach ($r in $releases) {
+    if ($r.draft -or $r.prerelease) { continue }
+    $want = "llama-$($r.tag_name)-bin-$backend.zip"
+    if ($r.assets | Where-Object { $_.name -eq $want }) { $tag = $r.tag_name; break }
+}
 if (-not $tag) {
-    Write-Host '[FATAL] Failed to fetch latest release tag' -ForegroundColor Red
+    Write-Host "[FATAL] No recent release carries asset llama-<tag>-bin-$backend.zip (upstream asset upload may be in progress)" -ForegroundColor Red
     exit 1
 }
 
@@ -202,7 +212,21 @@ $archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
 Write-Host "  Release: $tag  Backend: $backend"
 Write-Host "  Downloading: $archiveUrl"
 
-Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
+$downloaded = $false
+for ($i = 1; $i -le 5; $i++) {
+    try {
+        Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
+        $downloaded = $true
+        break
+    } catch {
+        Write-Host "  Download attempt $i/5 failed: $($_.Exception.Message); retrying..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 3
+    }
+}
+if (-not $downloaded) {
+    Write-Host "[FATAL] Failed to download $archiveUrl after 5 attempts" -ForegroundColor Red
+    exit 1
+}
 
 Set-Content -Path "$llamacppDir/version.txt" -Value $tag -NoNewline
 Set-Content -Path "$llamacppDir/backend.txt" -Value $backend -NoNewline
