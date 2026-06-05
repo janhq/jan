@@ -1567,6 +1567,31 @@ export default class llamacpp_upstream_extension extends AIEngine {
    */
   async downloadRecommendedBackend(backendString: string): Promise<void> {
     backendString = stripBom(backendString)
+
+    // The recommendation can carry a `latest/<backend>` sentinel (the
+    // static "Latest <variant>" dropdown entries, and the offline fallback
+    // in `recheckOptimalBackend`). `downloadAndInstallBackend` →
+    // `getBackendDownloadUrl` would otherwise build a 404 URL with the
+    // literal `latest` tag (ggml-org tags releases as `bXXXX`, never
+    // `latest`). Resolve it to a concrete `<tag>/<backend>` here — mirroring
+    // what `downloadManualBackend` already does — before anything touches
+    // the download URL. (ATO-95)
+    if (backendString.startsWith('latest/')) {
+      const backendId = backendString.slice('latest/'.length).trim()
+      const resolved =
+        (await this.resolveLatestBackendString(backendId)) ??
+        (await this.newestInstalledOfFamily(backendId))
+      if (!resolved) {
+        throw new Error(
+          `Could not resolve a release for '${backendId}': the ggml-org release stream is unreachable and no version of this backend is installed locally.`
+        )
+      }
+      logger.info(
+        `downloadRecommendedBackend: resolved sentinel ${backendString} -> ${resolved}`
+      )
+      backendString = resolved
+    }
+
     logger.info(`downloadRecommendedBackend: downloading ${backendString}`)
     localStorage.setItem('llama_cpp_pending_backend', backendString)
     try {
@@ -1717,8 +1742,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
         )
       }
       if (!recommendedBackend) {
-        const fallbackVersion = currentBackend.split('/')[0] || 'latest'
-        recommendedBackend = `${fallbackVersion}/${idealType}`
+        // `listSupportedBackends()` / `findLatestVersionForBackend()` came
+        // up empty (e.g. the ggml-org release fetch failed). Resolve a
+        // concrete release tag for the ideal type directly rather than
+        // emitting a `latest/<backend>` sentinel — the literal `latest`
+        // produces a 404 download URL downstream (ATO-95).
+        recommendedBackend = await this.resolveLatestBackendString(idealType)
+        if (!recommendedBackend) {
+          // Last resort: reuse the tag of the currently-installed backend,
+          // but only when we actually have one. A bare `latest` tag is never
+          // valid for ggml-org's `/releases/download/<tag>/...` asset path.
+          const fallbackVersion = currentBackend.split('/')[0]
+          if (!fallbackVersion) {
+            logger.warn(
+              `recheckOptimalBackend: could not resolve a concrete tag for ${idealType} and no current backend tag to fall back to — skipping recommendation`
+            )
+            localStorage.removeItem('llama_cpp_better_backend_recommendation')
+            return null
+          }
+          recommendedBackend = `${fallbackVersion}/${idealType}`
+        }
       }
       if (recommendedBackend === currentBackend) {
         logger.info(
@@ -3374,6 +3417,17 @@ export default class llamacpp_upstream_extension extends AIEngine {
       throw new Error(`Invalid backend string: ${backendString}`)
     }
     const [version, backend] = [stripBom(parts[0]), stripBom(parts[1])]
+
+    // Defense-in-depth (ATO-95): a `latest` tag is an unresolved sentinel —
+    // ggml-org has no `latest` release tag, so building a download URL with
+    // it always 404s. Callers must resolve the sentinel to a concrete
+    // `<tag>/<backend>` (via `resolveLatestBackendString`) before reaching
+    // here.
+    if (version === 'latest') {
+      throw new Error(
+        `downloadAndInstallBackend: refusing to download unresolved 'latest' tag for '${backend}'. Resolve the latest/<backend> sentinel to a concrete release tag first.`
+      )
+    }
 
     if (await isBackendInstalled(backend, version)) {
       logger.info(

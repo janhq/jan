@@ -1244,7 +1244,15 @@ function ProviderDetail() {
   )
 
   const handleInstallBackendFromFile = useCallback(async () => {
-    if (provider?.provider !== 'llamacpp' && provider?.provider !== 'mlx')
+    // On Windows/Linux the local llama.cpp provider id is `llamacpp-upstream`
+    // (`LOCAL_LLAMACPP_PROVIDER`), not `llamacpp`. The button is rendered for
+    // it, so the guard must accept it too — otherwise the click is a no-op
+    // ("does nothing") on those platforms (ATO-95).
+    if (
+      provider?.provider !== 'llamacpp' &&
+      provider?.provider !== LOCAL_LLAMACPP_PROVIDER &&
+      provider?.provider !== 'mlx'
+    )
       return
 
     setIsInstallingBackend(true)
@@ -1272,7 +1280,7 @@ function ProviderDetail() {
 
         // Capitalize provider name for display
         const providerDisplayName =
-          provider?.provider === 'llamacpp' ? 'Llamacpp' : 'MLX'
+          provider?.provider === 'mlx' ? 'MLX' : 'Llamacpp'
 
         toast.success(t('settings:backendInstallSuccess'), {
           description: `${providerDisplayName} ${fileName} installed`,

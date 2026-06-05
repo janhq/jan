@@ -265,6 +265,16 @@ export function getBackendDownloadUrl(
 ): string {
   version = version.replace(/\uFEFF/g, '').trim()
   backend = backend.replace(/\uFEFF/g, '').trim()
+  // Defense-in-depth (ATO-95): ggml-org tags releases as `bXXXX`. The
+  // `latest` keyword is only valid for the `/releases/latest` HTML page,
+  // NOT for the `/releases/download/<tag>/...` asset path. A literal
+  // `latest` here means an unresolved sentinel leaked through — fail loudly
+  // instead of silently building a guaranteed-404 URL.
+  if (version === 'latest') {
+    throw new Error(
+      `getBackendDownloadUrl: unresolved 'latest' tag for backend '${backend}'. The latest/<backend> sentinel must be resolved to a concrete release tag before download.`
+    )
+  }
   const linuxInfix = LINUX_UPSTREAM_ASSET_BY_BACKEND[backend]
   if (linuxInfix) {
     return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${linuxInfix}.tar.gz`
