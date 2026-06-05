@@ -41,7 +41,7 @@
     "errorMissingServerNameKey": "JSON muss als {\"serverName\": {config}} strukturiert sein - fehlender Servername-Schlüssel",
     "errorInvalidType": "Ungültiger Typ '{{type}}' für Server '{{serverName}}'. Typ muss 'stdio', 'http' oder 'sse' sein",
     "save": "Speichern",
-    "transportType": "Transport Methode"
+    "transportType": "Transportmethode"
   },
   "checkParams": "Bitte überprüfe die Parameter gemäß dem Tutorial.",
   "title": "MCP Server",
