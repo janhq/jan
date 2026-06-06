@@ -2,22 +2,22 @@
   "assistants": "Assistenten",
   "hardware": "Hardware",
   "mcp-servers": "MCP-Server",
-  "local_api_server": "Lokaler API Server",
-  "https_proxy": "HTTPS Proxy",
+  "local_api_server": "Lokaler API-Server",
+  "https_proxy": "HTTPS-Proxy",
   "extensions": "Erweiterungen",
   "attachments": "Anhänge",
   "experimental": "Experimentell",
   "general": "Allgemein",
   "settings": "Einstellungen",
-  "modelProviders": "Modell Anbieter",
+  "modelProviders": "Modell-Provider",
   "localProviders": "Lokal",
   "remoteProviders": "Remote",
-  "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} disabled",
-  "interface": "Erscheinung",
-  "appearance": "Erscheinung",
+  "manageProviders": "Provider verwalten",
+  "hiddenProviders": "{{count}} deaktiviert",
+  "interface": "Benutzeroberfläche",
+  "appearance": "Darstellung",
   "privacy": "Privatsphäre",
-  "keyboardShortcuts": "Shortcuts",
+  "keyboardShortcuts": "Tastenkürzel",
   "newChat": "Neuer Chat",
   "newAgentChat": "Neuer Agent-Chat",
   "chats": "Chats",
@@ -25,22 +25,22 @@
   "recents": "Kürzlich",
   "hub": "Hub",
   "helpSupport": "Hilfe & Support",
-  "helpUsImproveJan": "Hilf uns Jan zu verbessern",
-  "unstarAll": "Alle De-Favorisieren",
-  "unstar": "De-Favorisieren",
+  "helpUsImproveJan": "Hilf uns, Jan zu verbessern",
+  "unstarAll": "Alle aus Favoriten entfernen",
+  "unstar": "Aus Favoriten entfernen",
   "deleteAll": "Alles löschen",
-  "star": "Favorisieren",
+  "star": "Zu Favoriten hinzufügen",
   "rename": "Umbenennen",
   "delete": "Löschen",
   "copied": "Kopiert!",
-  "dataFolder": "Daten Ordner",
+  "dataFolder": "Datenordner",
   "others": "Andere",
   "language": "Sprache",
   "login": "Anmelden",
   "loginWith": "Anmelden mit {{provider}}",
   "loginFailed": "Anmeldung fehlgeschlagen",
   "logout": "Abmelden",
-  "loggingOut": "Melde ab...",
+  "loggingOut": "Wird abgemeldet…",
   "loggedOut": "Erfolgreich abgemeldet",
   "logoutFailed": "Abmeldung fehlgeschlagen",
   "profile": "Profil",
@@ -50,18 +50,18 @@
   "cancel": "Abbrechen",
   "create": "Anlegen",
   "save": "Speichern",
-  "edit": "Editieren",
+  "edit": "Bearbeiten",
   "copy": "Kopieren",
   "back": "Zurück",
   "close": "Schließen",
   "done": "Fertig",
-  "next": "Nächster",
+  "next": "Weiter",
   "finish": "Abschließen",
   "skip": "Überspringen",
   "allow": "Erlauben",
   "deny": "Verbieten",
   "start": "Start",
-  "stop": "Stop",
+  "stop": "Stopp",
   "preview": "Vorschau",
   "compactWidth": "Kompakte Breite",
   "fullWidth": "Volle Breite",
@@ -70,13 +70,13 @@
   "system": "System",
   "auto": "Automatisch",
   "english": "Englisch",
-  "medium": "Medium",
+  "medium": "Mittel",
   "newThread": "Neuer Thread",
   "noResultsFound": "Keine Ergebnisse gefunden",
-  "noThreadsYet": "Keine Threads bisher",
-  "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Threadverlauf hier anzuzeigen.",
+  "noThreadsYet": "Noch keine Threads",
+  "noThreadsYetDesc": "Starte eine neue Unterhaltung, um Deinen Threadverlauf hier anzuzeigen.",
   "downloads": "Downloads",
-  "downloading": "Downloading",
+  "downloading": "Wird heruntergeladen",
   "uploadingAttachments": "Anhänge werden hochgeladen…",
   "cancelDownload": "Download abbrechen",
   "downloadCancelled": "Download wurde abgebrochen",
@@ -89,12 +89,12 @@
   "vision": "Vision",
   "embeddings": "Einbettungen",
   "tools": "Werkzeuge",
-  "webSearch": "Web Suche",
+  "webSearch": "Websuche",
   "reasoning": "Argumentation",
   "proactive": "Proaktiv",
   "selectAModel": "Wähle ein Modell",
   "noToolsAvailable": "Keine Werkzeuge verfügbar",
-  "noModelsFoundFor": "Keine Modelle gefunden zu \"{{searchValue}}\"",
+  "noModelsFoundFor": "Keine Modelle gefunden für \"{{searchValue}}\"",
   "failedToLoadModels": "Modelle konnten nicht geladen werden",
   "noModels": "Keine Modelle gefunden",
   "customAvatar": "Benutzerdefinierter Avatar",
@@ -102,26 +102,26 @@
   "jan": "Jan",
   "metadata": "Metadaten",
   "regenerate": "Neu generieren",
-  "threadImage": "Thread Bild",
+  "threadImage": "Thread-Bild",
   "editMessage": "Nachricht bearbeiten",
   "deleteMessage": "Nachricht löschen",
   "deleteThread": "Thread löschen",
   "renameThread": "Thread umbenennen",
-  "threadTitle": "Thread Titel",
+  "threadTitle": "Thread-Titel",
   "deleteAllThreads": "Alle Threads löschen",
-  "allThreadsUnfavorited": "Alle Threads defavorisieren",
-  "deleteAllThreadsConfirm": "Bist Du sicher, daß Du alle Threads löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
-  "addProvider": "Anbieter hinzufügen",
-  "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
-  "enterNameForProvider": "Gib einen Namen ein für den Anbieter",
-  "providerAlreadyExists": "Ein Anbieter mit dem Namen \"{{name}}\" existiert bereits. Bitte wähle einen anderen Namen.",
+  "allThreadsUnfavorited": "Alle Threads aus Favoriten entfernt",
+  "deleteAllThreadsConfirm": "Bist Du sicher, dass Du alle Threads löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+  "addProvider": "Provider hinzufügen",
+  "addOpenAIProvider": "OpenAI-Provider hinzufügen",
+  "enterNameForProvider": "Gib einen Namen für den Provider ein",
+  "providerAlreadyExists": "Ein Provider mit dem Namen \"{{name}}\" existiert bereits. Bitte wähle einen anderen Namen.",
   "adjustFontSize": "Schriftgröße einstellen",
   "changeLanguage": "Sprache wechseln",
-  "editTheme": " Vorlage bearbeiten",
-  "editCodeBlockStyle": "Code Block Stil bearbeiten",
-  "editServerHost": "Server Host bearbeiten",
+  "editTheme": "Theme bearbeiten",
+  "editCodeBlockStyle": "Codeblock-Stil bearbeiten",
+  "editServerHost": "Server-Host bearbeiten",
   "pickColorWindowBackground": "Fensterhintergrundfarbe wählen",
-  "pickColorAppMainView": "Farben wählen für das Hauptfenster",
+  "pickColorAppMainView": "Farbe der App-Hauptansicht wählen",
   "pickColorAppPrimary": "Wähle primäre App-Farbe",
   "pickColorAppAccent": "Wähle hervorgehobene App-Farbe",
   "pickColorAppDestructive": "Wähle destruktive App-Farbe",
@@ -137,34 +137,34 @@
   "success": "Erfolg",
   "warning": "Warnung",
   "conversationNotAvailable": "Konversation nicht verfügbar",
-  "conversationNotAvailableDescription": "Die Konversation, auf die du zugreifen möchtest, ist nicht verfügbar oder wurde gelöscht.",
+  "conversationNotAvailableDescription": "Die Konversation, auf die Du zugreifen möchtest, ist nicht verfügbar oder wurde gelöscht.",
   "temporaryChat": "Temporärer Chat",
-  "temporaryChatTooltip": "Temporärer Chat erscheint nicht in deinem Verlauf",
-  "noResultsFoundDesc": "Wir konnten keinen Chat finden, welcher mit deiner Suche übereinstimmt. Versuche andere Schlüsselworte.",
-  "searchModels": "Suche Modelle...",
-  "searchStyles": "Suche Styles...",
+  "temporaryChatTooltip": "Temporärer Chat erscheint nicht in Deinem Verlauf",
+  "noResultsFoundDesc": "Wir konnten keinen Chat finden, welcher mit Deiner Suche übereinstimmt. Versuche andere Schlüsselworte.",
+  "searchModels": "Modelle durchsuchen…",
+  "searchStyles": "Stile durchsuchen…",
   "createAssistant": "Assistenten anlegen",
   "enterApiKey": "API Key eingeben",
   "scrollToBottom": "Zum Ende scrollen",
   "generateAiResponse": "KI-Antwort generieren",
   "addModel": {
     "title": "Modell hinzufügen",
-    "modelId": "Modell ID",
-    "enterModelId": "Modell ID eingeben",
+    "modelId": "Modell-ID",
+    "enterModelId": "Modell-ID eingeben",
     "addModel": "Modell hinzufügen",
-    "description": "Neues Modell zum Anbieter hinzufügen",
-    "exploreModels": "Modelle des Anbieters ansehen"
+    "description": "Neues Modell zum Provider hinzufügen",
+    "exploreModels": "Modelle des Providers ansehen"
   },
   "mcpServers": {
     "editServer": "Server bearbeiten",
     "addServer": "Server hinzufügen",
-    "serverName": "Server Name",
-    "enterServerName": "Server Namen eingeben",
-    "command": "Kommando",
+    "serverName": "Servername",
+    "enterServerName": "Servernamen eingeben",
+    "command": "Befehl",
     "enterCommand": "Kommando eingeben",
     "arguments": "Argumente",
     "argument": "Argument {{index}}",
-    "envVars": "Umgebungs Variable",
+    "envVars": "Umgebungsvariablen",
     "key": "Schlüssel",
     "value": "Wert",
     "save": "Speichern"
@@ -183,52 +183,64 @@
   },
   "editModel": {
     "title": "Modell bearbeiten: {{modelId}}",
-    "description": "Konfiguriere die Modelfähigkeiten durch Umschalten der untenstehenden Optionen.",
-    "capabilities": "Modelfähigkeiten",
+    "description": "Konfiguriere die Modellfähigkeiten durch Umschalten der untenstehenden Optionen.",
+    "capabilities": "Fähigkeiten",
     "tools": "Werkzeuge",
     "vision": "Vision",
     "embeddings": "Einbettungen",
-    "notAvailable": "Nicht verfügbar bisher"
+    "notAvailable": "Noch nicht verfügbar"
   },
   "outOfContextError": {
-    "truncateInput": "Input verkleinern",
-    "title": "Out of context error",
-    "description": "Dieser Chat erreicht das KI Speicher Limit. Wir können das Speicherfenster vergrößern (auch Kontextgröße genannt), so daß sich die KI an mehr erinnern kann, aber dies erfordert es mehr Speicher zu verwenden. Um Platz zu schaffen können wir auch den Input verkleinern, was bedeutet, daß die KI einen Teil seiner Chat-Historie vergisst.",
+    "truncateInput": "Eingabe kürzen",
+    "title": "Kontextlimit überschritten",
+    "description": "Dieser Chat erreicht das Speicherlimit der KI. Wir können das Speicherfenster vergrößern (auch Kontextgröße genannt), so dass sich die KI an mehr erinnern kann, dies verbraucht aber mehr Arbeitsspeicher. Um Platz zu schaffen, können wir auch die Eingabe kürzen, was bedeutet, dass die KI einen Teil ihres Chat-Verlaufs vergisst.",
     "increaseContextSizeDescription": "Möchtest Du die Kontextgröße erhöhen?",
     "increaseContextSize": "Kontextgröße erhöhen"
   },
   "toolApproval": {
     "title": "Anfrage für Werkzeugnutzung",
-    "description": "Der Assistant möchte <strong>{{toolName}}</strong> verwenden",
-    "securityNotice": "Erlaube nur Werkzeuge zu nutzen denen Du vertraust. Werkzeuge können auf deine Daten oder System zugreifen.",
+    "description": "Der Assistent möchte <strong>{{toolName}}</strong> verwenden",
+    "securityNotice": "Erlaube nur Werkzeuge, denen Du vertraust. Werkzeuge können auf Dein System und Deine Daten zugreifen.",
     "deny": "Ablehnen",
     "allowOnce": "Einmal erlauben",
     "alwaysAllow": "Immer erlauben"
   },
   "deleteModel": {
     "title": "Modell löschen: {{modelId}}",
-    "description": "Bist Du sicher, daß Du dieses Modell löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "description": "Bist Du sicher, dass Du dieses Modell löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
     "success": "Modell {{modelId}} wurde permanent gelöscht.",
     "cancel": "Abbrechen",
     "delete": "Löschen"
   },
   "deleteProvider": {
-    "title": "Anbieter löschen",
-    "description": "Lösche diesen Anbieter und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "success": "Anbieter {{provider}} wurde permanent gelöscht.",
-    "confirmTitle": "Anbieter löschen: {{provider}}",
-    "confirmDescription": "Bist Du sicher, daß Du diesen Anbieter löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "title": "Provider löschen",
+    "description": "Lösche diesen Provider und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "success": "Provider {{provider}} wurde permanent gelöscht.",
+    "confirmTitle": "Provider löschen: {{provider}}",
+    "confirmDescription": "Bist Du sicher, dass Du diesen Provider löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
     "cancel": "Abbrechen",
     "delete": "Löschen"
   },
   "modelSettings": {
-    "title": "Modell Einstellungen - {{modelId}}",
-    "description": "Modeleinstellungen konfigurieren, um die Leistung und das Verhalten zu optimieren."
+    "title": "Modelleinstellungen – {{modelId}}",
+    "description": "Modelleinstellungen konfigurieren, um die Leistung und das Verhalten zu optimieren.",
+    "mtp": {
+      "section": "Multi-Token-Vorhersage (MTP)",
+      "enable": "MTP aktivieren",
+      "enableDescription": "Nutze die im Modell integrierten MTP-Köpfe, um pro Schritt mehrere Tokens vorab zu erzeugen. Beschleunigt die Generierung, wenn das Modell MTP-Gewichte besitzt (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
+      "needsUpgrade": "Aktualisiere das llama.cpp-Backend auf Build b9193 oder neuer, um MTP zu aktivieren.",
+      "nMax": "Max. Entwurfs-Tokens",
+      "nMaxDescription": "Maximale Anzahl an Tokens, die pro Schritt vorab erzeugt werden. Standard 16.",
+      "nMin": "Min. Entwurfs-Tokens",
+      "nMinDescription": "Minimale Anzahl an Tokens, die pro Schritt vorab erzeugt werden. Standard 0.",
+      "pMin": "Min. Entwurfswahrscheinlichkeit",
+      "pMinDescription": "Mindestwahrscheinlichkeit für gieriges Entwerfen (0–1). Standard 0,75."
+    }
   },
   "dialogs": {
     "changeDataFolder": {
       "title": "Speicherort des Datenordners ändern",
-      "description": "Bist Du sicher den Speicherort des Datenordners zu ändern? Dies wird alle Daten zum neuen Speicherort verschieben und anschließend die Anwendung neu starten.",
+      "description": "Möchtest Du den Speicherort des Datenordners wirklich ändern? Dies verschiebt alle Daten an den neuen Speicherort und startet die Anwendung anschließend neu.",
       "currentLocation": "Aktueller Speicherort:",
       "newLocation": "Neuer Speicherort:",
       "cancel": "Abbrechen",
@@ -239,13 +251,17 @@
       "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "deleteThread": {
-      "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
+      "description": "Bist Du sicher, dass Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "editMessage": {
       "title": "Nachricht bearbeiten"
     },
     "messageMetadata": {
-      "title": "Nachricht Metadaten"
+      "title": "Nachrichten-Metadaten"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Alle Gespräche löschen",
+      "description": "{{count}} Gespräche in \"{{projectName}}\" werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
     }
   },
   "projects": {
@@ -261,7 +277,7 @@
     "enterProjectName": "Projektname eingeben...",
     "noProjectsAvailable": "Keine Projekte verfügbar",
     "noProjectsYet": "Noch keine Projekte",
-    "noProjectsYetDesc": "Starten Sie ein neues Projekt, indem Sie auf die Schaltfläche Projekt hinzufügen klicken.",
+    "noProjectsYetDesc": "Starte ein neues Projekt, indem Du auf die Schaltfläche \"Projekt hinzufügen\" klickst.",
     "projectNotFound": "Projekt nicht gefunden",
     "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
     "deleteProjectDialog": {
@@ -269,13 +285,13 @@
       "permanentDelete": "Dies wird alle Threads permanent löschen.",
       "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
       "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
-      "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
+      "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie in Deine Threadliste oder in ein anderes Projekt, bevor Du löschst.",
       "starredWarning": "Du hast noch favorisierte Threads innerhalb des Projekts.",
       "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
       "deleteButton": "Löschen",
       "successWithName": "Projekt \"{{projectName}}\" erfolgreich gelöscht",
       "successWithoutName": "Projekt erfolgreich gelöscht",
-      "error": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+      "error": "Projekt konnte nicht gelöscht werden. Bitte versuche es erneut.",
       "ariaLabel": "{{projectName}} löschen"
     },
     "addProjectDialog": {
@@ -287,12 +303,17 @@
       "updateButton": "Aktualisieren",
       "alreadyExists": "Projekt \"{{projectName}}\" existiert bereits",
       "createSuccess": "Projekt \"{{projectName}}\" erfolgreich erstellt",
-      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt",
+      "assistant": "Assistent",
+      "selectAssistant": "Einen Assistenten auswählen (optional)",
+      "noAssistant": "Kein Assistent",
+      "addAssistant": "Assistent hinzufügen",
+      "updateSuccess": "Projekt \"{{projectName}}\" erfolgreich aktualisiert"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
-    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
+    "startNewConversation": "Starte unten ein neues Gespräch mit {{projectName}}",
     "conversationsIn": "Gespräche in {{projectName}}",
-    "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
+    "conversationsDescription": "Klicke auf ein Gespräch, um weiterzuchatten, oder starte unten ein neues.",
     "thread": "Thread",
     "threads": "Threads",
     "updated": "Aktualisiert:",
@@ -301,9 +322,18 @@
     "update": "Aktualisieren",
     "searchProjects": "Projekte durchsuchen...",
     "noProjectsFound": "Keine Projekte gefunden",
-    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
+    "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
     "uploadingFiles": "Dateien werden verarbeitet…",
-    "processButton": "Hinzufügen"
+    "processButton": "Hinzufügen",
+    "selectAssistant": "Assistenten auswählen",
+    "noAssistantAssigned": "Diesem Projekt ist kein Assistent zugewiesen",
+    "files": "Dateien",
+    "filesDescription": "Füge PDFs, Dokumente oder anderen Text hinzu, auf den in diesem Projekt verwiesen werden soll.",
+    "conversation": "Gespräch",
+    "instructions": "Anweisungen",
+    "setup": "Einrichtung",
+    "instructionsDescription": "Ton und Stil der Antworten anpassen",
+    "manageInstructions": "Anweisungen verwalten"
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
@@ -311,8 +341,8 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Alle Threads De-Favorisieren ",
-      "description": "Alle deine Threads wurden defavorisiert."
+      "title": "Alle Threads aus Favoriten entfernt",
+      "description": "Alle Deine Threads wurden aus den Favoriten entfernt."
     },
     "projectCreated": {
       "title": "Projekt erstellt",
@@ -332,7 +362,7 @@
     },
     "projectDeleteFailed": {
       "title": "Löschen fehlgeschlagen",
-      "description": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut."
+      "description": "Projekt konnte nicht gelöscht werden. Bitte versuche es erneut."
     },
     "threadAssignedToProject": {
       "title": "Thread zugewiesen",
@@ -344,15 +374,15 @@
     },
     "deleteAllThreads": {
       "title": "Alle Threads löschen",
-      "description": "Alle deine Threads wurden permanent gelöscht."
+      "description": "Alle Deine Threads wurden permanent gelöscht."
     },
     "renameThread": {
       "title": "Thread umbenennen",
-      "description": "Thread Titel wurde umbenannt zu '{{title}}'"
+      "description": "Thread-Titel wurde umbenannt zu '{{title}}'"
     },
     "deleteThread": {
       "title": "Thread löschen",
-      "description": "This thread has been permanently deleted."
+      "description": "Dieser Thread wurde dauerhaft gelöscht."
     },
     "errorCopied": {
       "title": "Erfolgreich kopiert",
@@ -367,11 +397,11 @@
       "description": "Die Nachricht wurde erfolgreich bearbeitet. Bitte warte auf die Antwort des Models."
     },
     "appUpdateDownloaded": {
-      "title": "App Update heruntergeladen",
+      "title": "App-Update heruntergeladen",
       "description": "Das App-Update wurde erfolgreich heruntergeladen."
     },
     "appUpdateDownloadFailed": {
-      "title": "App Update Download fehlgeschlagen",
+      "title": "App-Update-Download fehlgeschlagen",
       "description": "Das App-Update konnte nicht heruntergeladen werden. Bitte versuche es noch einmal."
     },
     "downloadComplete": {
@@ -397,13 +427,93 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "fileUploaded": {
+      "title": "Datei verarbeitet",
+      "description": "Die Datei wurde erfolgreich verarbeitet und indexiert"
+    },
+    "uploadFailed": {
+      "title": "Verarbeitung fehlgeschlagen",
+      "description": "Datei konnte nicht verarbeitet werden",
+      "subjectThisFile": "Diese Datei",
+      "pdfMalformedXref": "{{subject}} hat eine fehlerhafte PDF-Querverweistabelle und konnte nicht verarbeitet werden. Öffne sie in einem PDF-Betrachter und speichere sie neu (Datei → Drucken → Als PDF speichern), und lade sie dann erneut hoch.",
+      "pdfScanned": "{{subject}} scheint ein gescanntes oder bildbasiertes PDF zu sein. OCR wird noch nicht unterstützt – bitte lade ein textbasiertes PDF hoch.",
+      "pdfEncrypted": "{{subject}} ist passwortgeschützt. Entferne das Passwort und versuche es erneut.",
+      "pdfGeneric": "{{subject}} konnte nicht als PDF verarbeitet werden. Die Datei ist möglicherweise beschädigt oder nutzt eine nicht unterstützte PDF-Funktion.",
+      "fileTooLarge": "{{subject}} ist zu groß. {{message}}.",
+      "unsupportedType": "Dateityp \"{{type}}\" wird nicht unterstützt.",
+      "ioError": "{{subject}} konnte nicht gelesen werden: {{message}}",
+      "parseGeneric": "{{subject}} konnte nicht verarbeitet werden: {{message}}",
+      "fallback": "{{subject}} konnte nicht verarbeitet werden."
+    },
+    "fileDeleted": {
+      "title": "Datei gelöscht",
+      "description": "Die Datei wurde aus dem Projekt entfernt"
+    },
+    "deleteFailed": {
+      "title": "Löschen fehlgeschlagen",
+      "description": "Datei konnte nicht gelöscht werden"
+    },
+    "fileAlreadyExists": {
+      "title": "Datei existiert bereits",
+      "description": "Die Datei ist diesem Projekt bereits angehängt"
+    },
+    "unsupportedFileType": {
+      "title": "Nicht unterstützter Dateityp",
+      "description": "Die Dateiendung \".{{extension}}\" wird für Projektverweise nicht unterstützt."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Anhänge deaktiviert",
+      "description": "Anhänge sind in den Einstellungen deaktiviert"
     }
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp is still busy",
-    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
-    "forceQuit": "Force quit",
-    "forcing": "Force quitting…",
-    "shuttingDown": "Shutting down…"
+    "title": "llama.cpp ist noch beschäftigt",
+    "description": "Ein oder mehrere Modelle wurden nicht rechtzeitig entladen. Das erzwungene Beenden beendet llama.cpp und kann aktive Antworten unterbrechen.",
+    "forceQuit": "Beenden erzwingen",
+    "forcing": "Beenden wird erzwungen…",
+    "shuttingDown": "Wird heruntergefahren…"
+  },
+  "remote_access": "Fernzugriff",
+  "integrations": "Integrationen",
+  "claude_code": "Claude Code",
+  "hideProvider": "Provider ausblenden",
+  "showProvider": "Provider einblenden",
+  "searchThreads": "Threads durchsuchen…",
+  "toNavigate": "zum Navigieren",
+  "toSelect": "zum Auswählen",
+  "toClose": "zum Schließen",
+  "clearRecent": "Leeren",
+  "dismiss": "Verwerfen",
+  "multimodal": "Multimodal",
+  "settingUpJan": "Jan wird gestartet…",
+  "registeringExtensions": "Erweiterungen werden registriert…",
+  "loadingExtensions": "Erweiterungen werden geladen… ({{done}}/{{total}})",
+  "continueAiResponse": "Mit KI-Antwort fortfahren",
+  "missingDependenciesDialog": {
+    "title": "Fehlende Systembibliotheken",
+    "description": "Das {{backend}} wurde installiert, aber einige erforderliche Systembibliotheken konnten nicht gefunden werden. Es greift möglicherweise auf die CPU zurück oder funktioniert nicht korrekt.",
+    "installLabel": "Installiere Folgendes, um das Problem zu beheben:",
+    "download": "Herunterladen",
+    "additionalLibraries": "Weitere fehlende Bibliotheken:",
+    "missingLibraries": "Fehlende Bibliotheken:",
+    "showRawLibraries": "{{count}} fehlende Bibliotheksnamen anzeigen"
+  },
+  "attachmentsIngestion": {
+    "title": "Wähle, wie Anhänge verarbeitet werden",
+    "description": "Wähle, ob diese Dateien direkt in den Chat eingefügt oder stattdessen als Embeddings indexiert werden sollen.",
+    "inline": "In den Chat einfügen",
+    "embeddings": "Embeddings verwenden"
+  },
+  "attachmentInjectedIndicator": "In den Chat eingefügt",
+  "attachmentEmbeddedIndicator": "Für RAG eingebettet",
+  "viewInjectedContent": "Eingefügten Inhalt anzeigen",
+  "injectedContentTitle": "Eingefügter Dateiinhalt",
+  "errors": {
+    "fileTooLarge": "Datei zu groß",
+    "fileTooLargeDescription": "{{fileName}} überschreitet das Limit von {{maxFileSizeMB}} MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} Chunks"
   }
 }
