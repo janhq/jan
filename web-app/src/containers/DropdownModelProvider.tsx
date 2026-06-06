@@ -264,9 +264,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     providers.forEach((provider) => {
       if (!provider.active) return
 
+      // Check if this provider has any manually-added/pinned models.
+      // If so, only show those in the dropdown to keep the list manageable.
+      const hasManualModels = provider.models.some(
+        (m) => (m as any).manuallyAdded === true
+      )
+
       provider.models.forEach((modelItem) => {
         // Skip embedding models - they can't be used for chat
         if (modelItem.embedding) return
+
+        // If the provider has pinned models, hide auto-fetched ones
+        if (hasManualModels) {
+          if ((modelItem as any).manuallyAdded !== true) return
+        }
 
         // Skip models that require API key but don't have one (except llamacpp)
         // For custom providers, allow if they have at least one model loaded

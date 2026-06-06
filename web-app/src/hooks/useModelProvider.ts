@@ -819,9 +819,35 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 17 && state?.providers) {
+          // Backfill manuallyAdded on models that were manually customized
+          // before the "manual filter" feature existed.  This preserves the
+          // user's curated selection when upgrading.
+          state.providers.forEach((provider) => {
+            if (!provider.models) return
+            provider.models.forEach((model) => {
+              const m = model as Model & Record<string, unknown>
+              if (
+                (m as any).manuallyAdded === true ||
+                (m as any).imported === true
+              ) {
+                return // already flagged
+              }
+              // Models that were added via the "Add Model" dialog, renamed, or
+              // had capabilities manually toggled should be considered manual.
+              if (
+                m.displayName ||
+                (m as any)._userConfiguredCapabilities === true
+              ) {
+                ;(m as any).manuallyAdded = true
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 17,
+      version: 18,
     }
   )
 )

@@ -40,10 +40,20 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     if (!modelId.trim()) return // Don't submit if model ID is empty
 
     if (provider.models.some((e) => e.id === modelId)) {
-      toast.error(t('providers:addModel.modelExists'), {
-        description: t('providers:addModel.modelExistsDesc'),
+      // Model already exists — upgrade it to manually-added so it appears
+      // in the "manual only" filter.  This handles the common case where a
+      // user wants to "pin" a model that was auto-fetched from a remote catalog.
+      const updatedModels = provider.models.map((m) =>
+        m.id === modelId ? { ...m, manuallyAdded: true } : m
+      )
+      updateProvider(provider.provider, {
+        ...provider,
+        models: updatedModels,
       })
-      return // Don't submit if model ID already exists
+      toast.success('Model added to your collection')
+      setModelId('')
+      setOpen(false)
+      return
     }
 
     // Create the new model
@@ -53,6 +63,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
       name: modelId,
       capabilities: getModelCapabilities(provider.provider, modelId),
       version: '1.0',
+      manuallyAdded: true,
     }
 
     // Update the provider with the new model
