@@ -1,5 +1,14 @@
 {
   "addProvider": "Anbieter hinzufügen",
-  "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
-  "enterNameForProvider": "Namen für Anbieter eingeben"
+  "addOpenAIProvider": "Benutzerdefinierten Anbieter hinzufügen",
+  "enterNameForProvider": "Anbietername (z. B. my-llm-server)",
+  "apiTypeLabel": "API-Format",
+  "apiTypeOpenAI": "OpenAI-kompatibel",
+  "apiTypeAnthropic": "Anthropic-kompatibel",
+  "baseUrlLabel": "Basis-URL",
+  "baseUrlPlaceholder": "https://dein-endpunkt/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API-Schlüssel",
+  "apiKeyPlaceholder": "Füge deinen API-Schlüssel ein",
+  "invalidBaseUrl": "Die Basis-URL muss eine gültige http(s)-URL sein"
 }
