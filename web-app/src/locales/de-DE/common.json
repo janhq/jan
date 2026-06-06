@@ -71,10 +71,10 @@
   "auto": "Automatisch",
   "english": "Englisch",
   "medium": "Mittel",
-  "newThread": "Neuer Thread",
+  "newThread": "Neuer Chat",
   "noResultsFound": "Keine Ergebnisse gefunden",
-  "noThreadsYet": "Noch keine Threads",
-  "noThreadsYetDesc": "Starte eine neue Unterhaltung, um Deinen Threadverlauf hier anzuzeigen.",
+  "noThreadsYet": "Noch keine Chats",
+  "noThreadsYetDesc": "Starte einen neuen Chat, um Deinen Chatverlauf hier anzuzeigen.",
   "downloads": "Downloads",
   "downloading": "Wird heruntergeladen",
   "uploadingAttachments": "Anhänge werden hochgeladen…",
@@ -102,15 +102,15 @@
   "jan": "Jan",
   "metadata": "Metadaten",
   "regenerate": "Neu generieren",
-  "threadImage": "Thread-Bild",
+  "threadImage": "Chat-Bild",
   "editMessage": "Nachricht bearbeiten",
   "deleteMessage": "Nachricht löschen",
-  "deleteThread": "Thread löschen",
-  "renameThread": "Thread umbenennen",
-  "threadTitle": "Thread-Titel",
-  "deleteAllThreads": "Alle Threads löschen",
-  "allThreadsUnfavorited": "Alle Threads aus Favoriten entfernt",
-  "deleteAllThreadsConfirm": "Bist Du sicher, dass Du alle Threads löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+  "deleteThread": "Chat löschen",
+  "renameThread": "Chat umbenennen",
+  "threadTitle": "Chat-Titel",
+  "deleteAllThreads": "Alle Chats löschen",
+  "allThreadsUnfavorited": "Alle Chats aus Favoriten entfernt",
+  "deleteAllThreadsConfirm": "Bist Du sicher, dass Du alle Chats löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
   "addProvider": "Provider hinzufügen",
   "addOpenAIProvider": "OpenAI-Provider hinzufügen",
   "enterNameForProvider": "Gib einen Namen für den Provider ein",
@@ -136,8 +136,8 @@
   "error": "Fehler",
   "success": "Erfolg",
   "warning": "Warnung",
-  "conversationNotAvailable": "Konversation nicht verfügbar",
-  "conversationNotAvailableDescription": "Die Konversation, auf die Du zugreifen möchtest, ist nicht verfügbar oder wurde gelöscht.",
+  "conversationNotAvailable": "Chat nicht verfügbar",
+  "conversationNotAvailableDescription": "Der Chat, auf den Du zugreifen möchtest, ist nicht verfügbar oder wurde gelöscht.",
   "temporaryChat": "Temporärer Chat",
   "temporaryChatTooltip": "Temporärer Chat erscheint nicht in Deinem Verlauf",
   "noResultsFoundDesc": "Wir konnten keinen Chat finden, welcher mit Deiner Suche übereinstimmt. Versuche andere Schlüsselworte.",
@@ -247,11 +247,11 @@
       "changeLocation": "Speicherort ändern"
     },
     "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+      "title": "Alle Chats löschen",
+      "description": "Alle Chats werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "deleteThread": {
-      "description": "Bist Du sicher, dass Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
+      "description": "Bist Du sicher, dass Du diesen Chat löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "editMessage": {
       "title": "Nachricht bearbeiten"
@@ -260,8 +260,8 @@
       "title": "Nachrichten-Metadaten"
     },
     "deleteAllThreadsInProject": {
-      "title": "Alle Gespräche löschen",
-      "description": "{{count}} Gespräche in \"{{projectName}}\" werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+      "title": "Alle Chats löschen",
+      "description": "{{count}} Chats in \"{{projectName}}\" werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
     }
   },
   "projects": {
@@ -282,11 +282,11 @@
     "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
     "deleteProjectDialog": {
       "title": "Projekt löschen",
-      "permanentDelete": "Dies wird alle Threads permanent löschen.",
-      "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
+      "permanentDelete": "Dies wird alle Chats permanent löschen.",
+      "permanentDeleteWarning": "Diese Aktion wird ALLE Chats innerhalb des Projekts permanent löschen!",
       "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
-      "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie in Deine Threadliste oder in ein anderes Projekt, bevor Du löschst.",
-      "starredWarning": "Du hast noch favorisierte Threads innerhalb des Projekts.",
+      "saveThreadsAdvice": "Um Chats zu speichern, verschiebe sie in Deine Chatliste oder in ein anderes Projekt, bevor Du löschst.",
+      "starredWarning": "Du hast noch favorisierte Chats innerhalb des Projekts.",
       "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
       "deleteButton": "Löschen",
       "successWithName": "Projekt \"{{projectName}}\" erfolgreich gelöscht",
@@ -310,12 +310,12 @@
       "addAssistant": "Assistent hinzufügen",
       "updateSuccess": "Projekt \"{{projectName}}\" erfolgreich aktualisiert"
     },
-    "noConversationsIn": "Keine Gespräche in {{projectName}}",
-    "startNewConversation": "Starte unten ein neues Gespräch mit {{projectName}}",
-    "conversationsIn": "Gespräche in {{projectName}}",
-    "conversationsDescription": "Klicke auf ein Gespräch, um weiterzuchatten, oder starte unten ein neues.",
-    "thread": "Thread",
-    "threads": "Threads",
+    "noConversationsIn": "Keine Chats in {{projectName}}",
+    "startNewConversation": "Starte unten einen neuen Chat mit {{projectName}}",
+    "conversationsIn": "Chats in {{projectName}}",
+    "conversationsDescription": "Klicke auf einen Chat, um weiterzuchatten, oder starte unten einen neuen.",
+    "thread": "Chat",
+    "threads": "Chats",
     "updated": "Aktualisiert:",
     "collapseProject": "Projekt einklappen",
     "expandProject": "Projekt ausklappen",
@@ -329,7 +329,7 @@
     "noAssistantAssigned": "Diesem Projekt ist kein Assistent zugewiesen",
     "files": "Dateien",
     "filesDescription": "Füge PDFs, Dokumente oder anderen Text hinzu, auf den in diesem Projekt verwiesen werden soll.",
-    "conversation": "Gespräch",
+    "conversation": "Chat",
     "instructions": "Anweisungen",
     "setup": "Einrichtung",
     "instructionsDescription": "Ton und Stil der Antworten anpassen",
@@ -341,8 +341,8 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Alle Threads aus Favoriten entfernt",
-      "description": "Alle Deine Threads wurden aus den Favoriten entfernt."
+      "title": "Alle Chats aus Favoriten entfernt",
+      "description": "Alle Deine Chats wurden aus den Favoriten entfernt."
     },
     "projectCreated": {
       "title": "Projekt erstellt",
@@ -365,24 +365,24 @@
       "description": "Projekt konnte nicht gelöscht werden. Bitte versuche es erneut."
     },
     "threadAssignedToProject": {
-      "title": "Thread zugewiesen",
-      "description": "Thread erfolgreich zu \"{{projectName}}\" hinzugefügt"
+      "title": "Chat zugewiesen",
+      "description": "Chat erfolgreich zu \"{{projectName}}\" hinzugefügt"
     },
     "threadRemovedFromProject": {
-      "title": "Thread entfernt",
-      "description": "Thread erfolgreich von \"{{projectName}}\" entfernt"
+      "title": "Chat entfernt",
+      "description": "Chat erfolgreich von \"{{projectName}}\" entfernt"
     },
     "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Deine Threads wurden permanent gelöscht."
+      "title": "Alle Chats löschen",
+      "description": "Alle Deine Chats wurden permanent gelöscht."
     },
     "renameThread": {
-      "title": "Thread umbenennen",
-      "description": "Thread-Titel wurde umbenannt zu '{{title}}'"
+      "title": "Chat umbenennen",
+      "description": "Chat-Titel wurde umbenannt zu '{{title}}'"
     },
     "deleteThread": {
-      "title": "Thread löschen",
-      "description": "Dieser Thread wurde dauerhaft gelöscht."
+      "title": "Chat löschen",
+      "description": "Dieser Chat wurde dauerhaft gelöscht."
     },
     "errorCopied": {
       "title": "Erfolgreich kopiert",
@@ -479,7 +479,7 @@
   "claude_code": "Claude Code",
   "hideProvider": "Provider ausblenden",
   "showProvider": "Provider einblenden",
-  "searchThreads": "Threads durchsuchen…",
+  "searchThreads": "Chats durchsuchen…",
   "toNavigate": "zum Navigieren",
   "toSelect": "zum Auswählen",
   "toClose": "zum Schließen",
