@@ -1,7 +1,7 @@
 {
-  "addProvider": "Provider hinzufügen",
-  "addOpenAIProvider": "Benutzerdefinierten Provider hinzufügen",
-  "enterNameForProvider": "Providername (z. B. my-llm-server)",
+  "addProvider": "Anbieter hinzufügen",
+  "addOpenAIProvider": "Benutzerdefinierten Anbieter hinzufügen",
+  "enterNameForProvider": "Anbietername (z. B. my-llm-server)",
   "apiTypeLabel": "API-Format",
   "apiTypeOpenAI": "OpenAI-kompatibel",
   "apiTypeAnthropic": "Anthropic-kompatibel",
