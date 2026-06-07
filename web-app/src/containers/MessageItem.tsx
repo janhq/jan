@@ -289,6 +289,7 @@ export const MessageItem = memo(
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
                 isAnimating={isAnimating}
+                copyableInlineCode
               />
             </>
           )}

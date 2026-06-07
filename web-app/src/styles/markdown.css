@@ -140,6 +140,15 @@
     display: inline-block;
   }
 
+  /* Click-to-copy inline code (assistant messages only) */
+  .copyable-inline-code [data-streamdown='inline-code'] {
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+  }
+  .copyable-inline-code [data-streamdown='inline-code']:hover {
+    @apply bg-secondary brightness-95;
+  }
+
   /* Links */
   a {
     color: var(--color-primary);
