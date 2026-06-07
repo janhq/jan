@@ -40,6 +40,7 @@ import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
+import { isManuallyAdded } from '@/lib/models'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
@@ -110,14 +111,9 @@ function ProviderDetail() {
         : allModels,
     [isLlamacpp, allModels]
   )
-  // Filter to only show manually-added models when the filter is active.
-  // A model counts as "manual" if it was explicitly added, edited (has a
-  // custom display name or user-configured capabilities), or was imported.
-  const isManuallyAdded = (m: Model) =>
-    (m as any).manuallyAdded === true ||
-    (m as any).imported === true ||
-    !!(m as any).displayName ||
-    (m as any)._userConfiguredCapabilities === true
+  // When the filter is active, show only models the user has curated.
+  // `isManuallyAdded` is the shared definition used by the chat dropdown too,
+  // so the two views stay consistent.
   const displayedChatModels = useMemo(
     () => (showManualOnly ? chatModels.filter(isManuallyAdded) : chatModels),
     [chatModels, showManualOnly]
@@ -1210,9 +1206,8 @@ function ProviderDetail() {
                           <Button
                             variant={showManualOnly ? 'default' : 'secondary'}
                             size="icon-xs"
-                            onClick={() => setShowManualOnly(true)}
-                            disabled={showManualOnly}
-                            title="Show manually added models only"
+                            onClick={() => setShowManualOnly((prev) => !prev)}
+                            title={t('providers:manualFilter.tooltip')}
                           >
                             <IconFilter
                               size={18}
@@ -1272,11 +1267,11 @@ function ProviderDetail() {
                     <div className="-mt-2">
                       <div className="flex items-center gap-2">
                         <h6 className="font-medium text-base">
-                          No manually added models
+                          {t('providers:manualFilter.emptyTitle')}
                         </h6>
                       </div>
                       <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                        Use the "Add Model" button to add models manually, or click the refresh button to show all models.
+                        {t('providers:manualFilter.emptyDescription')}
                       </p>
                     </div>
                   )}

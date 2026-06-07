@@ -42,6 +42,13 @@ type Model = {
   /** Whether this model was imported from a user-supplied local file
    *  (path lives outside the provider's managed models directory). */
   imported?: boolean
+  /** Whether the user explicitly curated this model — added/pinned it via the
+   *  Add Model dialog or edited it. Drives the "manual only" filter and the
+   *  chat dropdown. See `isManuallyAdded` in `@/lib/models`. */
+  manuallyAdded?: boolean
+  /** Whether the user manually toggled this model's capabilities in the Edit
+   *  Model dialog (vs. capabilities inferred from the provider catalog). */
+  _userConfiguredCapabilities?: boolean
 }
 
 /**

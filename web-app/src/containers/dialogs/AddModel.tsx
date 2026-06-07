@@ -50,7 +50,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
         ...provider,
         models: updatedModels,
       })
-      toast.success('Model added to your collection')
+      toast.success(t('providers:addModel.modelPinned'))
       setModelId('')
       setOpen(false)
       return

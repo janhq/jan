@@ -119,7 +119,7 @@ export const DialogEditModel = ({
       const capabilitiesChanged = JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
 
       // Build the update object for the selected model
-      const modelUpdate: Partial<Model> & { _userConfiguredCapabilities?: boolean; manuallyAdded?: boolean } = {}
+      const modelUpdate: Partial<Model> = {}
 
       if (nameChanged) {
         modelUpdate.displayName = displayName
