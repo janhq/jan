@@ -9,10 +9,10 @@
   "experimental": "Experimentell",
   "general": "Allgemein",
   "settings": "Einstellungen",
-  "modelProviders": "Modell-Provider",
+  "modelProviders": "Modellanbieter",
   "localProviders": "Lokal",
   "remoteProviders": "Remote",
-  "manageProviders": "Provider verwalten",
+  "manageProviders": "Anbieter verwalten",
   "hiddenProviders": "{{count}} deaktiviert",
   "interface": "Benutzeroberfläche",
   "appearance": "Darstellung",
@@ -111,10 +111,10 @@
   "deleteAllThreads": "Alle Chats löschen",
   "allThreadsUnfavorited": "Alle Chats aus Favoriten entfernt",
   "deleteAllThreadsConfirm": "Bist Du sicher, dass Du alle Chats löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
-  "addProvider": "Provider hinzufügen",
-  "addOpenAIProvider": "OpenAI-Provider hinzufügen",
-  "enterNameForProvider": "Gib einen Namen für den Provider ein",
-  "providerAlreadyExists": "Ein Provider mit dem Namen \"{{name}}\" existiert bereits. Bitte wähle einen anderen Namen.",
+  "addProvider": "Anbieter hinzufügen",
+  "addOpenAIProvider": "OpenAI-Anbieter hinzufügen",
+  "enterNameForProvider": "Gib einen Namen für den Anbieter ein",
+  "providerAlreadyExists": "Ein Anbieter mit dem Namen \"{{name}}\" existiert bereits. Bitte wähle einen anderen Namen.",
   "adjustFontSize": "Schriftgröße einstellen",
   "changeLanguage": "Sprache wechseln",
   "editTheme": "Theme bearbeiten",
@@ -152,8 +152,8 @@
     "modelId": "Modell-ID",
     "enterModelId": "Modell-ID eingeben",
     "addModel": "Modell hinzufügen",
-    "description": "Neues Modell zum Provider hinzufügen",
-    "exploreModels": "Modelle des Providers ansehen"
+    "description": "Neues Modell zum Anbieter hinzufügen",
+    "exploreModels": "Modelle des Anbieters ansehen"
   },
   "mcpServers": {
     "editServer": "Server bearbeiten",
@@ -161,7 +161,7 @@
     "serverName": "Servername",
     "enterServerName": "Servernamen eingeben",
     "command": "Befehl",
-    "enterCommand": "Kommando eingeben",
+    "enterCommand": "Befehl eingeben",
     "arguments": "Argumente",
     "argument": "Argument {{index}}",
     "envVars": "Umgebungsvariablen",
@@ -213,11 +213,11 @@
     "delete": "Löschen"
   },
   "deleteProvider": {
-    "title": "Provider löschen",
-    "description": "Lösche diesen Provider und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "success": "Provider {{provider}} wurde permanent gelöscht.",
-    "confirmTitle": "Provider löschen: {{provider}}",
-    "confirmDescription": "Bist Du sicher, dass Du diesen Provider löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "title": "Anbieter löschen",
+    "description": "Lösche diesen Anbieter und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "success": "Anbieter {{provider}} wurde permanent gelöscht.",
+    "confirmTitle": "Anbieter löschen: {{provider}}",
+    "confirmDescription": "Bist Du sicher, dass Du diesen Anbieter löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
     "cancel": "Abbrechen",
     "delete": "Löschen"
   },
@@ -287,7 +287,7 @@
       "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
       "saveThreadsAdvice": "Um Chats zu speichern, verschiebe sie in Deine Chatliste oder in ein anderes Projekt, bevor Du löschst.",
       "starredWarning": "Du hast noch favorisierte Chats innerhalb des Projekts.",
-      "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "description": "Bist Du sicher, dass Du dieses Projekt löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
       "deleteButton": "Löschen",
       "successWithName": "Projekt \"{{projectName}}\" erfolgreich gelöscht",
       "successWithoutName": "Projekt erfolgreich gelöscht",
@@ -394,7 +394,7 @@
     },
     "editMessage": {
       "title": "Nachricht bearbeiten",
-      "description": "Die Nachricht wurde erfolgreich bearbeitet. Bitte warte auf die Antwort des Models."
+      "description": "Die Nachricht wurde erfolgreich bearbeitet. Bitte warte auf die Antwort des Modells."
     },
     "appUpdateDownloaded": {
       "title": "App-Update heruntergeladen",
@@ -477,8 +477,8 @@
   "remote_access": "Fernzugriff",
   "integrations": "Integrationen",
   "claude_code": "Claude Code",
-  "hideProvider": "Provider ausblenden",
-  "showProvider": "Provider einblenden",
+  "hideProvider": "Anbieter ausblenden",
+  "showProvider": "Anbieter einblenden",
   "searchThreads": "Chats durchsuchen…",
   "toNavigate": "zum Navigieren",
   "toSelect": "zum Auswählen",
