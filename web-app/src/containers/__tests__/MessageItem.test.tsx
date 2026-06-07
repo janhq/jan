@@ -5,9 +5,15 @@ import '@testing-library/jest-dom'
 // ---- Module mocks ----------------------------------------------------------
 
 const selectedModelRef = vi.hoisted(() => ({ current: { id: 'm1' } as any }))
+const selectedProviderRef = vi.hoisted(() => ({ current: 'llamacpp' }))
+const providersRef = vi.hoisted(() => ({ current: [] as any[] }))
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
-    selector({ selectedModel: selectedModelRef.current }),
+    selector({
+      selectedModel: selectedModelRef.current,
+      selectedProvider: selectedProviderRef.current,
+      providers: providersRef.current,
+    }),
 }))
 
 // Stub heavy children: RenderMarkdown
@@ -115,6 +121,8 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
+    selectedProviderRef.current = 'llamacpp'
+    providersRef.current = []
   })
 
   it('renders assistant text via RenderMarkdown', () => {
@@ -127,6 +135,82 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.getByTestId('render-markdown')).toHaveTextContent('Hello assistant')
+  })
+
+  it('renders the model name label and provider logo from message metadata', () => {
+    providersRef.current = [
+      {
+        provider: 'anthropic',
+        models: [{ id: 'claude-x', displayName: 'Claude X' }],
+      },
+    ]
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            metadata: {
+              createdAt: new Date(),
+              modelId: 'claude-x',
+              modelProvider: 'anthropic',
+            },
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+      />
+    )
+    expect(screen.getByText('Claude X')).toBeInTheDocument()
+    expect(screen.getByAltText('Anthropic logo')).toBeInTheDocument()
+  })
+
+  it('falls back to the raw model id when metadata model is unknown', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            metadata: {
+              createdAt: new Date(),
+              modelId: 'mystery-model',
+              modelProvider: 'openai',
+            },
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+      />
+    )
+    expect(screen.getByText('mystery-model')).toBeInTheDocument()
+    expect(screen.getByAltText('OpenAI logo')).toBeInTheDocument()
+  })
+
+  it('falls back to current selection for the last message without metadata', () => {
+    selectedModelRef.current = { id: 'm1', displayName: 'Local Model' }
+    selectedProviderRef.current = 'llamacpp'
+    render(
+      <MessageItem
+        message={makeMsg() as any}
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.getByText('Local Model')).toBeInTheDocument()
+    expect(screen.getByAltText('Llama.cpp logo')).toBeInTheDocument()
+  })
+
+  it('does not render a model label for a non-last message without metadata', () => {
+    selectedModelRef.current = { id: 'm1', displayName: 'Local Model' }
+    render(
+      <MessageItem
+        message={makeMsg() as any}
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+      />
+    )
+    expect(screen.queryByText('Local Model')).not.toBeInTheDocument()
   })
 
   it('renders user message in a bubble (no markdown renderer)', () => {

@@ -87,6 +87,8 @@ export const MessageItem = memo(
     onDelete,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const selectedProvider = useModelProvider((state) => state.selectedProvider)
+    const providers = useModelProvider((state) => state.providers)
     const metadata = message.metadata as Record<string, unknown> | undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
@@ -97,7 +99,7 @@ export const MessageItem = memo(
 
     const modelDisplayName = useMemo(() => {
       if (messageModelId) {
-        const provider = useModelProvider.getState().providers.find(
+        const provider = providers.find(
           (p) => p.provider === messageModelProvider
         )
         const model = provider?.models.find((m) => m.id === messageModelId)
@@ -109,9 +111,15 @@ export const MessageItem = memo(
         return getModelDisplayName(selectedModel)
       }
       return null
-    }, [messageModelId, messageModelProvider, isLastMessage, selectedModel])
+    }, [messageModelId, messageModelProvider, isLastMessage, selectedModel, providers])
 
-    const modelProviderForDisplay = messageModelProvider ?? (isLastMessage ? undefined : undefined)
+    // Provider for the logo/badge: per-message metadata, falling back to the
+    // current selection for the streaming last message before metadata persists.
+    const modelProviderForDisplay =
+      messageModelProvider ?? (isLastMessage ? selectedProvider : undefined)
+    const modelProviderLogo = modelProviderForDisplay
+      ? getProviderLogo(modelProviderForDisplay)
+      : undefined
 
     const [previewImage, setPreviewImage] = useState<{
       url: string
@@ -575,10 +583,10 @@ export const MessageItem = memo(
         {/* Model name label for assistant messages */}
         {message.role === 'assistant' && modelDisplayName && (
           <div className="flex items-center gap-1.5 mb-1.5 text-xs text-muted-foreground">
-            {modelProviderForDisplay && getProviderLogo(modelProviderForDisplay) ? (
+            {modelProviderLogo ? (
               <img
-                src={getProviderLogo(modelProviderForDisplay)}
-                alt={`${getProviderTitle(modelProviderForDisplay)} logo`}
+                src={modelProviderLogo}
+                alt={`${getProviderTitle(modelProviderForDisplay!)} logo`}
                 className="size-4 object-contain rounded-sm"
               />
             ) : modelProviderForDisplay ? (
