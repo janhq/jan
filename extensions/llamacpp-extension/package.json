@@ -17,14 +17,14 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@vitest/ui": "2.1.9",
+    "@vitest/ui": "^4.1.0",
     "cpx": "1.5.0",
     "jsdom": "26.1.0",
     "rimraf": "3.0.2",
     "rolldown": "1.0.0-beta.1",
     "ts-loader": "^9.5.0",
     "typescript": "5.9.2",
-    "vitest": "3.2.4"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",

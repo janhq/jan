@@ -28,8 +28,8 @@
     "@npmcli/arborist": "^7.1.0",
     "@types/node": "^22.10.0",
     "@types/react": "19.1.2",
-    "@vitest/coverage-v8": "^2.1.8",
-    "@vitest/ui": "^2.1.8",
+    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/ui": "^4.1.0",
     "eslint": "8.57.0",
     "happy-dom": "^20.0.0",
     "pacote": "^21.0.0",
@@ -40,7 +40,7 @@
     "rolldown": "1.0.0-beta.1",
     "tslib": "^2.6.2",
     "typescript": "^5.8.3",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "rxjs": "^7.8.1",
