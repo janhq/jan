@@ -52,7 +52,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   useEffect(() => {
     if (!open) return
     const index = getThreadSearchIndex()
-    if (!index.hasPendingWork) {
+    if (!index.hasPendingWork(threads)) {
       setIndexReady(true)
       setIndexBuilding(false)
       return
@@ -158,12 +158,13 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const searchResults = useMemo(() => {
     if (!searchQuery) return { withProject: [], withoutProject: [] }
 
-    // Use full-text results when available; fall back to title-only search
+    // Once the index is ready, trust its (strict substring) results exclusively
+    // — including the empty set. Only fall back to fuzzy title-only search while
+    // the index is still building, so results stay consistent.
     let filteredThreads: Thread[]
-    if (fullTextResults.length > 0) {
+    if (indexReady) {
       filteredThreads = fullTextResults.map((r) => r.thread)
     } else {
-      // Fallback: title-only search if index isn't built yet
       filteredThreads = getFilteredThreads(searchQuery)
     }
 
@@ -179,7 +180,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
     filteredThreads.forEach((thread) => {
       const ftResult = fullTextResults.find((r) => r.thread.id === thread.id)
-      const snippet = ftResult?.matchSource === 'content' ? ftResult.snippet : undefined
+      const snippet = ftResult?.snippet
       const projectName = thread.metadata?.project?.name
       if (projectName) {
         withProject.push({ thread, projectName, snippet })
@@ -189,7 +190,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     })
 
     return { withProject, withoutProject }
-  }, [searchQuery, fullTextResults, getFilteredThreads])
+  }, [searchQuery, fullTextResults, getFilteredThreads, indexReady])
 
   // Calculate all selectable items for keyboard navigation
   const allItems = useMemo(() => {
@@ -297,8 +298,22 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
         {/* Results */}
         <div ref={listRef} className="max-h-80 overflow-y-auto px-1 py-2">
+          {/* Still-indexing state: avoid flashing "no results" before the
+              content corpus has finished loading. */}
+          {searchQuery && !hasResults && indexBuilding && (
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+              <IconLoader className="size-6 text-muted-foreground mb-2 animate-spin" />
+              <h3 className="text-base font-medium mb-1">
+                {t('common:searchIndexing')}
+              </h3>
+              <p className="text-xs leading-relaxed text-muted-foreground w-1/2 mx-auto">
+                {t('common:searchIndexingDesc')}
+              </p>
+            </div>
+          )}
+
           {/* Empty state when searching */}
-          {searchQuery && !hasResults && (
+          {searchQuery && !hasResults && !indexBuilding && (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <IconSearch className="size-6 text-muted-foreground mb-2" />
               <h3 className="text-base font-medium mb-1">

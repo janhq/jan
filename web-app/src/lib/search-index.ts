@@ -1,10 +1,11 @@
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { ContentType, type ThreadContent } from '@janhq/core'
 
 /**
  * Result from a full-text thread search.
  * `matchSource` indicates where the search term was found.
- * `snippet` is a short excerpt around the match (only present for content matches).
+ * `snippet` is a short excerpt around the match (present for any content match).
  */
 export interface ThreadSearchResult {
   thread: Thread
@@ -18,17 +19,29 @@ interface CorpusEntry {
   contentText: string
 }
 
+/** Per-thread content cap to prevent runaway memory use on very long chats. */
+const MAX_CONTENT_CHARS = 5000
+
+/**
+ * Upper bound on the number of threads kept in the in-memory corpus. When a
+ * user has more threads than this, only the most-recently-updated ones are
+ * indexed for content search (older threads still match by title via the fzf
+ * fallback in the search dialog). At the cap the corpus holds roughly
+ * MAX_INDEXED_THREADS * MAX_CONTENT_CHARS chars (~10 MB at the defaults).
+ */
+const MAX_INDEXED_THREADS = 2000
+
 /**
  * Extract plain text from a ThreadMessage's content array.
  * Only pulls text-type content parts and strips XML-like tags (e.g. think blocks).
  */
-function extractTextFromContent(
-  content: Array<{ type: string; text?: { value: string } }> | undefined
+export function extractTextFromContent(
+  content: ThreadContent[] | undefined
 ): string {
   if (!content) return ''
   const parts: string[] = []
   for (const c of content) {
-    if (c.type === 'text' && c.text?.value) {
+    if (c.type === ContentType.Text && c.text?.value) {
       // Strip reasoning blocks that may have been saved with think tags
       const clean = c.text.value
         .replace(/<(think|thinking|reasoning|analysis)[^>]*>[\s\S]*?<\/\1>/gi, '')
@@ -43,7 +56,7 @@ function extractTextFromContent(
  * Extract a short text snippet around the first match of `term` in `text`.
  * Returns a ~120-char window centred on the match.
  */
-function extractSnippet(text: string, term: string): string | undefined {
+export function extractSnippet(text: string, term: string): string | undefined {
   const lower = text.toLowerCase()
   const idx = lower.indexOf(term.toLowerCase())
   if (idx === -1) return undefined
@@ -59,14 +72,14 @@ function extractSnippet(text: string, term: string): string | undefined {
 
 /**
  * Fetch and concatenate the text content for a single thread from disk.
- * Capped at 5000 chars to prevent runaway memory use on very long chats.
+ * Capped at MAX_CONTENT_CHARS to prevent runaway memory use on very long chats.
  */
 async function buildEntryForThread(thread: Thread): Promise<CorpusEntry> {
   const messages = await getServiceHub().messages().fetchMessages(thread.id)
   const contentText = messages
-    .map((m) => extractTextFromContent(m.content as any))
+    .map((m) => extractTextFromContent(m.content))
     .join(' ')
-    .slice(0, 5000)
+    .slice(0, MAX_CONTENT_CHARS)
   return { thread, contentText }
 }
 
@@ -78,7 +91,7 @@ async function buildEntryForThread(thread: Thread): Promise<CorpusEntry> {
  * ```ts
  * const index = getThreadSearchIndex()
  * await index.build(threads)        // loads messages for all threads
- * const results = index.search(...) // fast fzf query
+ * const results = index.search(...) // fast substring query
  * index.invalidateThread(threadId)  // re-fetches just that thread next time
  * ```
  */
@@ -91,21 +104,50 @@ class ThreadSearchIndex {
   private deletedThreadIds = new Set<string>()
 
   private buildPromise: Promise<void> | null = null
+  /** Latest threads record seen by build(), used by in-flight rebuild loop. */
+  private latestThreads: Record<string, Thread> = {}
+
+  /**
+   * The threads eligible for content indexing: real threads with a title,
+   * capped to the MAX_INDEXED_THREADS most-recently-updated. Used by both
+   * doBuild() and hasPendingWork() so they always agree on the target set
+   * (otherwise capped-out threads would look perpetually "new").
+   */
+  private eligibleThreads(threads: Record<string, Thread>): Thread[] {
+    const list = Object.values(threads).filter(
+      (t) => t.id !== TEMPORARY_CHAT_ID && t.title
+    )
+    if (list.length <= MAX_INDEXED_THREADS) return list
+    return [...list]
+      .sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))
+      .slice(0, MAX_INDEXED_THREADS)
+  }
 
   /**
    * Build (or refresh) the search corpus.  Re-fetches messages for any
    * threads marked stale and for any new threads not yet in the index.
    * Safe to call multiple times — subsequent calls only do incremental work.
+   *
+   * If invalidations or new threads arrive *while* a build is in flight, the
+   * build loops again so that mid-build changes are never dropped.
    */
   async build(threads: Record<string, Thread>): Promise<void> {
+    this.latestThreads = threads
     if (this.buildPromise) return this.buildPromise
 
-    this.buildPromise = this.doBuild(threads)
-    try {
-      await this.buildPromise
-    } finally {
-      this.buildPromise = null
-    }
+    this.buildPromise = (async () => {
+      try {
+        // Keep building until no new work has accumulated. doBuild() consumes
+        // the stale/deleted sets; anything that arrived during the await shows
+        // up as pending work on the next iteration.
+        do {
+          await this.doBuild(this.latestThreads)
+        } while (this.hasPendingWork(this.latestThreads))
+      } finally {
+        this.buildPromise = null
+      }
+    })()
+    return this.buildPromise
   }
 
   private async doBuild(threads: Record<string, Thread>): Promise<void> {
@@ -117,9 +159,7 @@ class ThreadSearchIndex {
     this.deletedThreadIds.clear()
 
     // Determine which threads need (re)fetching
-    const threadList = Object.values(threads).filter(
-      (t) => t.id !== TEMPORARY_CHAT_ID && t.title
-    )
+    const threadList = this.eligibleThreads(threads)
     const toFetch: Thread[] = []
     for (const thread of threadList) {
       const isNew = !this.entriesByThreadId.has(thread.id)
@@ -128,8 +168,15 @@ class ThreadSearchIndex {
     }
     this.staleThreadIds.clear()
 
+    // Evict any threads that are no longer eligible (deleted or pushed past
+    // the cap by more-recent threads).
+    const liveIds = new Set(threadList.map((t) => t.id))
+    for (const id of this.entriesByThreadId.keys()) {
+      if (!liveIds.has(id)) this.entriesByThreadId.delete(id)
+    }
+
     if (toFetch.length === 0 && !isFirstBuild) {
-      // Nothing to do
+      // Nothing left to fetch (eviction above already applied).
       return
     }
 
@@ -144,28 +191,14 @@ class ThreadSearchIndex {
         }
       }
     }
-
-    // Also evict any threads that no longer exist in the threads record
-    const liveIds = new Set(threadList.map((t) => t.id))
-    for (const id of this.entriesByThreadId.keys()) {
-      if (!liveIds.has(id)) this.entriesByThreadId.delete(id)
-    }
-
-    this.rebuildIndex()
-  }
-
-  /** Rebuild after all fetches are complete. */
-  private rebuildIndex(): void {
-    if (!this.entriesByThreadId) return
-    // Entries are already in-place from doBuild(); just mark index as ready.
   }
 
   /**
    * Search both title and message content. Returns de-duplicated results
    * sorted by relevance (title matches first, then content matches).
    *
-   * Title matches use fuzzy matching (good for short text).
-   * Content matches use substring matching (better for prose / code).
+   * Both titles and content use case-insensitive substring matching, so there
+   * are no fuzzy false positives.
    */
   search(term: string): ThreadSearchResult[] {
     if (!term || !this.entriesByThreadId) return []
@@ -173,8 +206,6 @@ class ThreadSearchIndex {
 
     const results: ThreadSearchResult[] = []
 
-    // Substring search — no false positives.
-    // Titles use smart-case (case-insensitive unless the query has uppercase).
     for (const entry of this.entriesByThreadId.values()) {
       const titleMatch = entry.thread.title?.toLowerCase().includes(lowerTerm)
       const contentMatch = entry.contentText.toLowerCase().includes(lowerTerm)
@@ -182,7 +213,9 @@ class ThreadSearchIndex {
       results.push({
         thread: entry.thread,
         matchSource: titleMatch && contentMatch ? 'both' : titleMatch ? 'title' : 'content',
-        snippet: contentMatch && !titleMatch
+        // Show a content snippet whenever the term appears in the body, even
+        // if the title also matched — the snippet adds useful context.
+        snippet: contentMatch
           ? extractSnippet(entry.contentText, term)
           : undefined,
       })
@@ -221,13 +254,23 @@ class ThreadSearchIndex {
     return this.entriesByThreadId !== null
   }
 
-  /** Whether the next build() call would do any work. */
-  get hasPendingWork(): boolean {
-    return (
-      this.entriesByThreadId === null ||
-      this.staleThreadIds.size > 0 ||
-      this.deletedThreadIds.size > 0
-    )
+  /**
+   * Whether the next build() call would do any work for the given threads.
+   * Returns true if the index hasn't been built, if there are stale/deleted
+   * entries, or if `threads` contains eligible threads not yet indexed (or the
+   * indexed set otherwise diverges from the eligible set).
+   */
+  hasPendingWork(threads: Record<string, Thread>): boolean {
+    if (this.entriesByThreadId === null) return true
+    if (this.staleThreadIds.size > 0) return true
+    if (this.deletedThreadIds.size > 0) return true
+
+    const eligible = this.eligibleThreads(threads)
+    for (const t of eligible) {
+      if (!this.entriesByThreadId.has(t.id)) return true
+    }
+    // A size mismatch means some indexed thread is no longer eligible.
+    return this.entriesByThreadId.size !== eligible.length
   }
 }
 
@@ -237,4 +280,9 @@ let instance: ThreadSearchIndex | null = null
 export function getThreadSearchIndex(): ThreadSearchIndex {
   if (!instance) instance = new ThreadSearchIndex()
   return instance
+}
+
+/** Test-only: drop the singleton so each test starts from a clean index. */
+export function __resetThreadSearchIndexForTests(): void {
+  instance = null
 }
