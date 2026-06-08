@@ -36,8 +36,13 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     let arch = if is_x64 { "x64" } else { arch_suffix };
 
     // Windows ggml-org native names: already correct, return as-is.
+    // `win-cuda-13-x64` is the minor-less CUDA-13 family id emitted by
+    // `determine_supported_backends` (see ATO-105) — it must pass through
+    // untouched, otherwise the `cuda-13` folding below would rewrite it to
+    // a concrete minor that may not exist in the current release stream.
     if is_windows
         && (old_backend == "win-cpu-x64"
+            || old_backend == "win-cuda-13-x64"
             || old_backend.contains("cuda-12.4")
             || old_backend.contains("cuda-13.3")
             || old_backend == "win-vulkan-x64")
@@ -261,7 +266,12 @@ pub fn determine_supported_backends(
                 supported_backends.push("win-cuda-12.4-x64".to_string());
             }
             if features.cuda13 {
-                supported_backends.push("win-cuda-13.3-x64".to_string());
+                // Minor-less CUDA-13 family id (ATO-105). ggml-org bumps the
+                // toolkit minor in release assets (13.1 → 13.3 → 13.x); the
+                // concrete minor is resolved dynamically in `fetchRemoteBackends`
+                // and matched family-wise in the TS `listSupportedBackends`
+                // filter, so we must NOT hardcode a minor here.
+                supported_backends.push("win-cuda-13-x64".to_string());
             }
             if features.vulkan {
                 supported_backends.push("win-vulkan-x64".to_string());
@@ -1238,6 +1248,13 @@ mod tests {
             map_old_backend_to_new("win-cuda-13.1-x64".to_string()),
             "win-cuda-13.3-x64"
         );
+        // ATO-105: the minor-less CUDA-13 family id must round-trip
+        // unchanged — it is NOT a legacy id to be folded onto a concrete
+        // minor.
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-13-x64".to_string()),
+            "win-cuda-13-x64"
+        );
     }
 
     #[test]
@@ -1477,8 +1494,29 @@ mod tests {
         assert!(result.contains(&"win-cpu-x64".to_string()));
         assert!(result.contains(&"win-cuda-12.4-x64".to_string()));
         assert!(result.contains(&"win-vulkan-x64".to_string()));
-        assert!(!result.contains(&"win-cuda-13.3-x64".to_string()));
+        assert!(!result.iter().any(|b| b.contains("cuda-13")));
         assert!(!result.iter().any(|b| b.contains("cuda-11")));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_windows_cuda13_family_id() {
+        // ATO-105: the CUDA-13 entry must be the minor-less family id
+        // `win-cuda-13-x64` — never a hardcoded concrete minor like 13.3,
+        // which silently 404s once ggml-org bumps the toolkit minor.
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: true,
+            cuda13: true,
+            vulkan: false,
+        };
+
+        let result =
+            determine_supported_backends("windows".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(result.contains(&"win-cuda-13-x64".to_string()));
+        // No concrete minor must leak into the supported set.
+        assert!(!result.iter().any(|b| b.contains("cuda-13.")));
     }
 
     #[test]

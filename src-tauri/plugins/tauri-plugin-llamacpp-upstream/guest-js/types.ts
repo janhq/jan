@@ -53,6 +53,13 @@ export type LlamacppConfig = {
   flash_attn: string
   cont_batching: boolean
   mtp: boolean
+  /**
+   * Absolute path to a separate MTP draft head GGUF (Gemma 4 31B / 26B-A4B).
+   * When set (and `mtp` is on), the backend is launched with
+   * `--model-draft <path> --spec-type draft-mtp`. Empty for Qwen-style
+   * built-in MTP (head inside the same GGUF).
+   */
+  mtp_draft_path: string
   no_mmap: boolean
   mlock: boolean
   no_kv_offload: boolean
@@ -98,6 +105,12 @@ export interface ModelConfig {
   mmproj_sha256?: string
   mmproj_size_bytes?: number
   embedding?: boolean
+  /**
+   * Path (relative to Jan's data folder) to the downloaded Gemma 4 MTP draft
+   * head GGUF, if MTP was enabled for this model. Absent for non-MTP models
+   * and for Qwen-style built-in MTP.
+   */
+  mtp_draft_path?: string
 }
 
 export interface EmbeddingResponse {

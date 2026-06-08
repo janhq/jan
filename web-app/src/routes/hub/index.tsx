@@ -68,6 +68,32 @@ function isJanCatalogModel(model: CatalogModel) {
   )
 }
 
+// Base (non-instruction-tuned) Gemma 4 MLX builds (e.g.
+// `mlx-community/gemma-4-12B-4bit`, converted from `google/gemma-4-12B`)
+// ship no chat template and behave as raw text-completion models when used
+// in chat — garbled output (stray markup / wrong-script tokens) that never
+// stops. Only the `-it` instruction-tuned variants are usable. Hide the base
+// builds from the MLX catalog/search so they can't be picked by mistake.
+// Scoped to MLX (the reported failure) and to the speculative drafter / EAGLE
+// / MTP artifacts are explicitly kept (they carry their own markers and are
+// not standalone chat targets anyway).
+function isUnsupportedBaseGemmaMlx(model: CatalogModel) {
+  const is_mlx = model.is_mlx ?? model.library_name === 'mlx'
+  if (!is_mlx) return false
+  const name = (
+    extractModelName(model.model_name) ?? model.model_name
+  ).toLowerCase()
+  if (!/gemma[-_]?4/.test(name)) return false
+  const isInstruct = /(^|[-_])it([-_]|$)/.test(name)
+  const isDrafterArtifact =
+    name.includes('assistant') ||
+    name.includes('eagle3') ||
+    name.includes('speculator') ||
+    name.includes('dflash') ||
+    name.includes('-mtp')
+  return !isInstruct && !isDrafterArtifact
+}
+
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -386,7 +412,10 @@ function HubContent() {
         filtered = [huggingFaceRepo, ...filtered]
       }
     }
-    return filtered.filter((model) => !isJanCatalogModel(model))
+    return filtered.filter(
+      (model) =>
+        !isJanCatalogModel(model) && !isUnsupportedBaseGemmaMlx(model)
+    )
   }, [
     sortedModels,
     debouncedSearchValue,
@@ -490,7 +519,10 @@ function HubContent() {
     if (hfCandidates.length === 0) return filteredModels
     const seen = new Set(filteredModels.map((m) => m.model_name))
     const tail = hfCandidates.filter(
-      (c) => c.model_name && !seen.has(c.model_name)
+      (c) =>
+        c.model_name &&
+        !seen.has(c.model_name) &&
+        !isUnsupportedBaseGemmaMlx(c)
     )
     return tail.length > 0 ? [...filteredModels, ...tail] : filteredModels
   }, [filteredModels, hfCandidates])

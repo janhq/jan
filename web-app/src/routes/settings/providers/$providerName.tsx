@@ -1181,13 +1181,31 @@ function ProviderDetail() {
       setIsTogglingLlamacppMtp(true)
       try {
         if (nextEnabled) {
-          /// Capability check: the ggml-org collection always includes
-          /// "MTP" in the repo / file name. If the loaded model id doesn't
-          /// look MTP-capable, refuse the toggle and surface the popup —
-          /// don't write the setting (the Switch stays off).
-          if (activeModel && !activeModel.toLowerCase().includes('mtp')) {
-            setLlamacppMtpUnsupportedModel(activeModel)
-            return
+          /// Capability check. Two MTP shapes are supported:
+          ///  - Qwen built-in MTP: the ggml-org collection always includes
+          ///    "MTP" in the repo / file name (head inside the same GGUF).
+          ///  - Gemma 4 MTP (31B / 26B-A4B): needs a SEPARATE draft head GGUF
+          ///    downloaded next to the model (PR #23398).
+          /// If the loaded model id is neither, refuse the toggle and surface
+          /// the popup — don't write the setting (the Switch stays off).
+          if (activeModel) {
+            const isQwenMtp = activeModel.toLowerCase().includes('mtp')
+            if (!isQwenMtp) {
+              const isGemmaMtp =
+                (await engine.checkGemmaMtpSupport?.(activeModel)) ?? false
+              if (!isGemmaMtp) {
+                setLlamacppMtpUnsupportedModel(activeModel)
+                return
+              }
+              /// Gemma 4: download the draft head (idempotent) before
+              /// enabling so the reload below can attach `--model-draft`.
+              toast.info(
+                t('settings:llamacppMtpDownloadingDraft', {
+                  defaultValue: 'Downloading MTP draft head…',
+                })
+              )
+              await engine.ensureGemmaMtpDraft?.(activeModel)
+            }
           }
           writeSetting('mtp', true)
         } else {

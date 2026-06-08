@@ -1,4 +1,7 @@
 {
+  "llamacppMtpDownloadingDraft": "Загрузка MTP draft-головы…",
+  "llamacppMtpGemmaSupportedPrefix": "Gemma 4 31B и 26B-A4B также поддерживаются — их MTP draft-голова загружается автоматически из ",
+  "llamacppMtpGemmaSupportedSuffix": ".",
   "autoDownload": "Автоматически загружать новые обновления",
   "checkForUpdates": "Проверить обновления",
   "checkForUpdatesDesc": "Проверить, доступна ли более новая версия Atomic Bot.",

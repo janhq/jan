@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+import type { Components } from 'react-markdown'
 import { IconExternalLink, IconSparkles } from '@tabler/icons-react'
 import {
   Dialog,
@@ -11,11 +13,35 @@ import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useWhatsNew } from '@/hooks/useWhatsNew'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 const WhatsNewDialog = () => {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const { open, currentVersion, release, acknowledge, githubUrl } =
     useWhatsNew()
+
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      a: ({ href, children, ...props }) => (
+        <a
+          {...props}
+          href={href}
+          onClick={(event) => {
+            if (!href) return
+            event.preventDefault()
+            serviceHub
+              .opener()
+              .open(href)
+              .catch(() => window.open(href, '_blank'))
+          }}
+        >
+          {children}
+        </a>
+      ),
+    }),
+    [serviceHub]
+  )
 
   if (!release) return null
 
@@ -35,7 +61,11 @@ const WhatsNewDialog = () => {
         </DialogHeader>
 
         <div className="max-h-[55vh] overflow-y-auto pr-1">
-          <RenderMarkdown content={release.body ?? ''} isAnimating={false} />
+          <RenderMarkdown
+            content={release.body ?? ''}
+            isAnimating={false}
+            components={markdownComponents}
+          />
         </div>
 
         <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

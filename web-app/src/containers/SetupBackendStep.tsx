@@ -78,6 +78,10 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   } = useBackendUpdater()
 
   const [uiPhase, setUiPhase] = useState<StepUiPhase>('detecting')
+  /// Mirror of `uiPhase` for the watchdog timer, which is armed once on
+  /// mount and must read the latest phase without re-arming.
+  const uiPhaseRef = useRef(uiPhase)
+  uiPhaseRef.current = uiPhase
   /// Guards against double-firing `onDone` (e.g. if both a network call and
   /// a manual click resolve at the same tick).
   const finishedRef = useRef(false)
@@ -140,6 +144,25 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // ATO-104 watchdog: even though the extension now bounds its own
+  // detection, guarantee the user is never trapped on the "detecting"
+  // spinner. If detection hasn't moved past 'detecting' within the window,
+  // treat it as a failed detection (auto-advances to the model step via the
+  // effect below). CPU remains a usable fallback, so skipping is safe.
+  useEffect(() => {
+    const WATCHDOG_MS = 30_000
+    const timer = setTimeout(() => {
+      if (finishedRef.current) return
+      if (uiPhaseRef.current === 'detecting') {
+        console.warn(
+          '[SetupBackendStep] detection watchdog fired; advancing past hardware detection'
+        )
+        setUiPhase('detection-failed')
+      }
+    }, WATCHDOG_MS)
+    return () => clearTimeout(timer)
   }, [])
 
   // Translate `useBackendUpdater` state changes into our local UI phase.

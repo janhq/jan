@@ -309,6 +309,468 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-08 — Hide base (non-`-it`) Gemma 4 MLX models from Hub + recommend the `-it` variants (ATO-88 head 1, fourth follow-up)
+- **Context:** After the `<|turn>` template + `<turn|>` stop fix (ADR below),
+  `mlx-community/gemma-4-12B-4bit` *still* produced garbage on the sidecar
+  (`0a82347`) — stray MathML, wrong-script glyphs, fabricated dialogue. Root
+  cause is **not a code bug**: that repo's model card declares
+  `base_model: google/gemma-4-12B` — the **base (pretrain) model**, not the
+  instruction-tuned `…-it`. Base Gemma has **no chat template by design** and
+  only does raw text continuation, so it falls out of distribution in chat. The
+  earlier server-side template/suppress fixes only masked symptoms; nothing in
+  the engine can make a base model behave as an assistant. Confirmed: the user's
+  `-it` builds (`gemma-4-e2b-it-4bit`, `gemma-4-e4b-it-4bit`) work; only the base
+  `gemma-4-12B-4bit` fails. Sweeping the upstream `Blaizzy/mlx-vlm` delta (fork
+  is 69 commits behind, v0.6.2) found no fix for this — `cef92e2` (#1301) targets
+  `num_kv_shared_layers > 0` QAT loads (the 12B has `0`), `a4ddde9` is image/video
+  drop, the rest docs. Worse, **`atomic-chat-conf/models/recommended.json` itself
+  recommended the base e2b/e4b** (`mlx-community/gemma-4-e2b-4bit` /
+  `…-e4b-4bit`), and the recommended block resolves `model_name` verbatim
+  (`useResolvedRecommendedModels`), bypassing any Hub catalog filter.
+- **Decision:** Make base Gemma 4 MLX models unreachable in the UI; recommend the
+  `-it` variants. No backend/sidecar change.
+  1. **Data fix (`atomic-chat-conf/models/recommended.json`).**
+     `gemma-4-e2b-4bit` → `gemma-4-e2b-it-4bit`, `gemma-4-e4b-4bit` →
+     `gemma-4-e4b-it-4bit` (both verified live, HTTP 200); bumped `updated_at`.
+     The web-app offline constants (`RECOMMENDED_MODEL_FALLBACKS`,
+     `BASELINE_MODEL_CATALOG`) already used `-it` — untouched.
+  2. **Hub filter (`web-app/src/routes/hub/index.tsx`).** New predicate
+     `isUnsupportedBaseGemmaMlx(model)` (mirrors the existing `isJanCatalogModel`
+     style): hides a model when it is MLX (`is_mlx` / `library_name==='mlx'`) AND
+     its repo basename matches `gemma[-_]?4` AND it is **not** `-it`
+     (`/(^|[-_])it([-_]|$)/`, so `4bit`'s "it" is not a false positive) AND not a
+     drafter artifact (`assistant`/`eagle3`/`speculator`/`dflash`/`-mtp`). Applied
+     at the two aggregation chokepoints: the curated-catalog/​exact-repo filter
+     (`filteredModels`, alongside `!isJanCatalogModel`) and the long-tail HF
+     fallback tail (`virtualListModels`).
+- **Consequences:**
+  - Scoped to **MLX + Gemma 4** (the reported failure). GGUF base Gemma stays
+    visible (different surface, not reported); Gemma 3 base is out of scope.
+    Instruction-tuned `-it`, plus the MTP/EAGLE/DFlash drafter repos, stay
+    browsable/usable. Verified with a 14-case truth table (base hidden incl.
+    `google/gemma-4-12B`; every `-it`/drafter/non-MLX/non-Gemma kept); `ReadLints`
+    clean on the edited TSX; `recommended.json` valid JSON.
+  - The `recommended.json` change ships independently of an app release (12-hour
+    cron / dispatch in `atomic-chat-model-catalog`'s sibling flow); the Hub filter
+    ships with the next web-app build. Neither requires a sidecar rebuild.
+  - The prior server-side Gemma fixes (template/suppress/stop) remain correct and
+    useful for legitimately template-less `-it` MLX conversions; they are not
+    reverted.
+- **Owner:** team.
+- **Links:** [ATO-88](https://linear.app/atomicchat/issue/ATO-88), §4.1 *MLX
+  backend*, the three 2026-06-08 ADRs below, files:
+  [`atomic-chat-conf/models/recommended.json`](https://github.com/AtomicBot-ai/atomic-chat-conf),
+  `web-app/src/routes/hub/index.tsx` (`isUnsupportedBaseGemmaMlx`,
+  `filteredModels`, `virtualListModels`).
+
+### 2026-06-08 — Use the Gemma 4 `<|turn>` unified chat template (not Gemma 3's) for `gemma4_unified` + stop on `<turn|>` (ATO-88 head 1, third follow-up)
+- **Context:** The same-day `654a520` fix (immediately below) installed a Gemma
+  **3** turn template (`<start_of_turn>` / `<end_of_turn>` framing) as the
+  fallback for *every* template-less Gemma — including `gemma4_unified`. Live
+  testing of `gemma-4-12B-4bit` on the resulting sidecar
+  (`mlxvlm-macos-arm64-654a520`) showed the model now answered coherently **but
+  never stopped** — it emitted its answer and then ran on into an endless
+  fabricated self-dialogue (`…<end_of_turn>\n<start_of_turn>user\n…`). Root
+  cause: **Gemma 4 does not speak the Gemma 3 turn dialect.** Confirmed against
+  the live tokenizer + on-disk configs:
+  - Gemma 4's real turn tokens are **`<|turn>` (105)** / **`<turn|>` (106)** with
+    reasoning channels **`<|channel>` (100)** / **`<channel|>` (101)** — *not*
+    `<start_of_turn>`/`<end_of_turn>`. Encoding the literal string
+    `<end_of_turn>` against the Gemma 4 tokenizer splits into 7 sub-word pieces
+    and collapses to `<unk>` (id 3) — it is not a token. So the Gemma 3 template
+    fed the model out-of-distribution framing; the model echoed the literal
+    `<end_of_turn>` **as plain text** and, having no real turn-end token to emit,
+    never tripped a stop.
+  - `tokenizer_config.json` declares `eot_token: "<turn|>"` (= 106), but
+    `generation_config.json::eos_token_id` is just `[1]` (`<eos>`). The previous
+    `_collect_stop_tokens` mined only `eos_token_id`, so **106 was never a stop**
+    even once correct framing made the model want to emit it.
+  - Sibling builds **E2B/E4B** (`model_type: gemma4`) **ship their own
+    `chat_template.jinja`** — both already on the `<|turn>` dialect, byte-format
+    identical family to the 12B-it template — which is why they worked. **12B**
+    (`gemma4_unified`) ships **no template at all** (none in
+    `tokenizer_config.json`, no `chat_template.{json,jinja}`), so the fallback is
+    mandatory there.
+- **Decision:** Fix in `AtomicBot-ai/mlx-vlm` (`mlx_vlm/server/`), no Atomic-Chat
+  app change. Three edits:
+  1. **Authoritative Gemma 4 template.** `_chat_templates.py` gains
+     `GEMMA4_UNIFIED_CHAT_TEMPLATE`, embedded **byte-exact** (17 466 B,
+     `json.dumps`) from the published `mlx-community/gemma-4-12B-it-4bit`
+     `chat_template.jinja` (`<|turn>`/`<turn|>` framing, `<|channel>` reasoning
+     channels, tool macros, and the thinking-disabled generation-prompt seed
+     `<|turn>model\n<|channel>thought\n<channel|>`). The Gemma 3 template is
+     **kept** as `GEMMA_CHAT_TEMPLATE`, now correctly scoped.
+  2. **Family-correct selection.** `_GEMMA_TEMPLATE_MODEL_TYPES` (a flat set) is
+     replaced by `_GEMMA_TEMPLATE_BY_TYPE` mapping `gemma3`/`gemma3n` →
+     `GEMMA_CHAT_TEMPLATE` and `gemma4`/`gemma4_unified` →
+     `GEMMA4_UNIFIED_CHAT_TEMPLATE`. `_maybe_install_gemma_chat_template` picks by
+     `model_type`; still install-only-when-absent, idempotent, never clobbers a
+     shipped template (so E2B/E4B keep their own).
+  3. **Stop on `<turn|>`.** `_collect_stop_tokens` now also reads
+     `tokenizer_config.json::eot_token`, resolves it via the tokenizer
+     (`convert_tokens_to_ids`, guarded against `<unk>` / bools / negatives), and
+     unions the id (106) into the stop set. Generic across the Gemma family —
+     Gemma 3's `<end_of_turn>` (also 106) was already covered via
+     `generation_config`, so this is additive, not a regression there.
+- **Consequences:**
+  - **Validated** (isolated, no GPU — tokenizer + template only, to avoid
+    fighting the live sidecar): `_collect_stop_tokens(gemma-4-12B-4bit)` →
+    `{1, 106}`; the fallback installs the `<|turn>` template (asserted no
+    `<start_of_turn>` present); rendering a user turn yields
+    `<bos><|turn>user\n…<turn|>\n<|turn>model\n<|channel>thought\n<channel|>` and
+    re-encodes to the real single special tokens 105/100/101. `py_compile` clean;
+    `ruff format` + `ruff check` clean.
+  - **Committed `0a82347`, pushed to `origin/main`** (`654a520..0a82347`, no
+    force) → re-triggers `build-mlxvlm-macos.yml` → new sidecar release
+    **`mlxvlm-macos-arm64-0a82347`**. **Not yet shipped to the app:** run
+    `make build-mlx-server` (or `-if-exists` auto-update) so
+    `src-tauri/resources/bin/mlx-server-version.txt` flips `654a520 → 0a82347`,
+    then restart. Final runtime confirmation on Apple Silicon (coherent answer,
+    no leak, **halts cleanly at `<turn|>`**) is pending that bump.
+  - The unified template's thinking-disabled seed (`<|channel>thought\n<channel|>`)
+    relies on the fork's existing `in_thinking`/channel handling in
+    `server/openai.py`; E2B/E4B exercise the same path with their shipped copy,
+    so it is proven for this family.
+  - Sampling (ATO-99) remains a separate, still-open app-side matter (Gemma's
+    recommended temp 1.0 / top_k 64 / top_p 0.95 not yet wired per family).
+- **Owner:** team.
+- **Links:** [ATO-88](https://linear.app/atomicchat/issue/ATO-88), §4.1 *MLX
+  backend*, the 2026-06-08 ADR *Honor `…suppress_tokens` …* (immediately below,
+  whose Gemma-3-template clause this supersedes for `gemma4*`), fork commit
+  `0a82347`, files: `mlx_vlm/server/_chat_templates.py`
+  (`GEMMA4_UNIFIED_CHAT_TEMPLATE`), `mlx_vlm/server/generation.py`
+  (`_GEMMA_TEMPLATE_BY_TYPE`, `_maybe_install_gemma_chat_template`,
+  `_collect_stop_tokens`).
+
+### 2026-06-08 — Windows: fix clean-install config persistence (ATO-107), de-hardcode the CUDA-13 minor (ATO-105), and harden onboarding hardware detection against hangs (ATO-104)
+- **Context:** Three related Windows bugs from a single Discord report
+  (TechnicallyBen, RTX Quadro 6000, driver 596.59, 1.1.103, clean install):
+  - **[ATO-107](https://linear.app/atomicchat/issue/ATO-107) (Urgent, confirmed
+    by code + logs):** on a clean install `settings.json` was never written —
+    50+ repeats of `App config not found … Failed to create default config: The
+    system cannot find the path specified. (os error 3)`. Root cause: the config
+    path is `app_data_dir()` = `…\Roaming\chat.atomic.app`, which does not exist
+    yet on a fresh install, and both writers
+    ([`get_app_configurations`](src-tauri/src/core/app/commands.rs) and
+    [`update_app_configuration`](src-tauri/src/core/app/commands.rs)) called
+    `fs::write` **without** `create_dir_all` on the parent (the CLI path
+    `resolve_config_file_path` already did). Nothing persisted (backend choice,
+    onboarding completion, data_folder), and `Failed to add server config / MCP
+    config` cascaded from the same cause.
+  - **[ATO-105](https://linear.app/atomicchat/issue/ATO-105) (Medium, latent):**
+    [`determine_supported_backends`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs)
+    hardcoded `win-cuda-13.3-x64` while the rest of the Windows path was already
+    dynamic (`fetchRemoteBackends` whitelist `^win-cuda-13\.\d+-x64$`,
+    `get_backend_category`, cudart resolve). It only matched the live ggml-org
+    asset (`b9553` → `win-cuda-13.3-x64`) by accident; the next CUDA-13 minor
+    bump would silently drop CUDA for all Windows users (CPU fallback / 404).
+  - **[ATO-104](https://linear.app/atomicchat/issue/ATO-104) (High, not yet
+    root-caused to one commit):** clean-install onboarding hung on "Detecting
+    your hardware". Suspected mechanism is the ATO-107 config-persistence failure
+    plus an unbounded detection await; the ticket still wants user logs + a
+    release bisect (1.1.99–1.1.102) to nail the exact regressor.
+- **Decision:** One combined Windows fix set. ATO-104 is handled by *defensive
+  hardening* now (per maintainer direction), deferring the deep root-cause to
+  logs/bisect.
+  1. **ATO-107:** create the parent dir before every config write. Added
+     `if let Some(parent) = configuration_file.parent() { fs::create_dir_all(parent) }`
+     ahead of `fs::write` in both `get_app_configurations` (log-and-continue on
+     error, matching its existing non-fatal style) and `update_app_configuration`
+     (propagates the error via `?`).
+  2. **ATO-105:** make CUDA-13 a *family*, never a hardcoded minor.
+     `determine_supported_backends` now pushes the minor-less id
+     **`win-cuda-13-x64`** when `features.cuda13`. The TS filter in
+     [`listSupportedBackends`](extensions/llamacpp-upstream-extension/src/backend.ts)
+     accepts any concrete `win-cuda-13.<minor>-x64` remote asset when the family
+     `win-cuda-13-x64` is in the supported set (regex `^win-cuda-13\.\d+-(x64|arm64)$`),
+     and keeps passing the **concrete** id downstream so the correct asset is
+     downloaded. `map_old_backend_to_new` gained a pass-through so the new family
+     id round-trips unchanged; the legacy `cuda-13.x → 13.3` folding (migration of
+     persisted ids only, backstopped by `resolveLatestBackendString`) is left as-is.
+  3. **ATO-104:** guarantee onboarding detection terminates. In the extension,
+     `recheckOptimalBackend` now wraps `detectIdealBackendType()`,
+     `listSupportedBackends()`, and `resolveLatestBackendString()` in the existing
+     `withTimeout` (20s each → `null`/`[]` on timeout, i.e. "no GPU recommendation"
+     → CPU fallback) instead of awaiting unbounded. In the UI,
+     [`SetupBackendStep`](web-app/src/containers/SetupBackendStep.tsx) gained a 30s
+     watchdog that flips a still-`detecting` step to `detection-failed`
+     (auto-advances to the model step), so the user is never trapped on the spinner.
+     The `get_devices` probe is already bounded (30s, `device.rs`) and isn't even
+     invoked on a clean install (CUDA tier not installed yet); the ATO-95
+     hard-throw on an unresolved `latest` sentinel is already guarded and untouched.
+- **Consequences:**
+  - Clean Windows installs persist config on first launch (ATO-107). CUDA-13
+    survives future ggml-org minor bumps with no source edits (ATO-105).
+    Onboarding can no longer hang indefinitely on detection; worst case it
+    degrades to CPU and the user proceeds (ATO-104).
+  - **Deferred (non-code):** the exact 1.1.98→1.1.103 regressor for ATO-104 still
+    needs the user's `Settings → Logs` capture and a per-release bisect. The
+    hardening makes the symptom non-fatal but does not, by itself, prove the
+    original cause.
+  - **Verification:** `cargo check -p Atomic-Chat` and the upstream plugin both
+    compile (0 errors, pre-existing dead_code warnings only); `cargo test` in
+    `tauri-plugin-llamacpp-upstream` → 37 backend tests pass (incl. new
+    `test_determine_supported_backends_windows_cuda13_family_id` and the
+    `win-cuda-13-x64` map round-trip). `tsc --noEmit` clean on the upstream
+    extension; eslint clean on `SetupBackendStep.tsx`. macOS/Linux paths
+    untouched; no settings-schema, IPC, or on-disk-layout changes.
+- **Owner:** team.
+- **Links:** [ATO-107](https://linear.app/atomicchat/issue/ATO-107),
+  [ATO-105](https://linear.app/atomicchat/issue/ATO-105),
+  [ATO-104](https://linear.app/atomicchat/issue/ATO-104), the 2026-05-26 ADR
+  *Correct CUDA 13.1 driver gate …* and the 2026-06-05 ADRs *Resolve the
+  `latest/<backend>` sentinel …* / *Make the Windows release backend download
+  asset-aware …*, §4.2 *LLM backend*, files:
+  [`src-tauri/src/core/app/commands.rs`](src-tauri/src/core/app/commands.rs)
+  (`get_app_configurations`, `update_app_configuration`),
+  [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs)
+  (`determine_supported_backends`, `map_old_backend_to_new`),
+  [`extensions/llamacpp-upstream-extension/src/backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts)
+  (`listSupportedBackends`),
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`recheckOptimalBackend`),
+  [`web-app/src/containers/SetupBackendStep.tsx`](web-app/src/containers/SetupBackendStep.tsx).
+
+### 2026-06-08 — Honor `generation_config.json::suppress_tokens` and install a Gemma chat-template fallback in the `mlx-vlm` server (ATO-88 head 1, second follow-up)
+- **Context:** After the same-day #1288 cherry-pick fixed the *quant/prefill*
+  corruption (sidecar `mlxvlm-macos-arm64-88d260c`), live testing of
+  `gemma-4-12B-4bit` (`model_type: gemma4_unified`, an omni vision+audio build)
+  against the running dev app's `http://localhost:1337/v1` showed the model was
+  **still unusable**, but for two *new*, independent reasons — neither a quant
+  issue nor app-side. Empirical findings on the live sidecar:
+  - **temp=0 (greedy, the sidecar default):** repetition loops **plus** a flood
+    of leaked `<image>`/`<audio>` control tokens.
+  - **temp=1.0/top_k=64/top_p=0.95 (Gemma's own recommended sampling):** no
+    loops, no leak, but **incoherent rambling** — even "What is the capital of
+    France?" was never answered.
+  - Suppressing token ids `258883`/`258882` via a request `logit_bias` killed
+    the `<image>`/`<audio>` leak instantly; framing the prompt with the
+    canonical Gemma turn markers (sent as pre-framed content) made the model
+    answer **"The capital of France is Paris."** correctly.
+
+  Two root causes, both **server-side in the fork**, confirmed against the code:
+  1. **`suppress_tokens` ignored.** The model ships
+     `generation_config.json::suppress_tokens: [258883, 258882]` (its image/audio
+     soft-token ids, which must never appear in text). `_collect_stop_tokens`
+     mined that file **only** for `eos_token_id`; nothing applied
+     `suppress_tokens`, so they leaked.
+  2. **No `chat_template`.** This MLX conversion dropped `chat_template` from
+     `tokenizer_config.json` (and ships none in `tokenizer.json` or a separate
+     file). `prompt_utils.get_chat_template` then falls back to
+     `_messages_to_plain_prompt`, which for a single user turn returns the **raw
+     content with no `<start_of_turn>` framing**. The instruction-tuned model,
+     fed unframed text, does base-style document continuation (echo / ramble)
+     instead of answering. `add_special_tokens` only re-adds `<bos>`, not turn
+     markers. (All local Gemma 4 MLX builds — E2B/E4B/12B — lack the template.)
+- **Decision:** Fix both in `AtomicBot-ai/mlx-vlm` (`mlx_vlm/server/`), no
+  Atomic-Chat app change.
+  1. **Suppress tokens.** New `_collect_suppress_tokens(model_path)` reads
+     `generation_config.json::suppress_tokens` (mirrors the EOS collector's
+     hardening: int-only, drops bools). Stored on the generator as
+     `self.suppress_tokens` in `_initialize_model`. `_make_logits_processors`
+     merges them into the request's `logit_bias` at `-1e9` via `setdefault`
+     (large-but-finite to avoid post-temperature NaN; `setdefault` preserves any
+     explicit caller bias). Applies on every request through the non-speculative
+     continuous-batch path. *(Known limitation: the separate `_run_speculative`
+     loop samples without `_make_logits_processors`, so suppression does not yet
+     cover speculative decoding — irrelevant for the omni models in scope, which
+     run no draft.)*
+  2. **Gemma template fallback.** *(Partly superseded — see the 2026-06-08 ADR
+     above: the Gemma 3 `<start_of_turn>` template was the **wrong dialect** for
+     `gemma4*`, which use `<|turn>`/`<turn|>`; `gemma4*` now get a dedicated
+     `GEMMA4_UNIFIED_CHAT_TEMPLATE`. The Gemma 3 template below remains correct
+     for `gemma3`/`gemma3n`.)* New module
+     `mlx_vlm/server/_chat_templates.py` carries the authoritative Gemma turn
+     template (`<start_of_turn>` framing, emits its own `bos_token`), embedded
+     **byte-exact** (1532 B, `json.dumps`) from the non-gated published Gemma 3
+     IT template (identical turn structure across Gemma 2/3/4 text + image). New
+     `_maybe_install_gemma_chat_template(processor, config)` assigns it to the
+     processor **and** tokenizer in `_initialize_model`, but **only** when
+     `model_type ∈ {gemma3, gemma3n, gemma4, gemma4_unified}` **and** no template
+     is already present (never clobbers a real one; idempotent). The existing
+     `_cpu_preprocess` gate then sees a non-`None` `chat_template` and flips
+     `add_special_tokens` to `False`, so `<bos>` comes from the template — no
+     double BOS.
+- **Consequences:**
+  - **Validated** (without reloading the 12B, to avoid competing with the live
+    sidecar): `_collect_suppress_tokens` → `[258882, 258883]`;
+    `_maybe_install_gemma_chat_template` builds
+    `<bos><start_of_turn>user\n…<end_of_turn>\n<start_of_turn>model\n` for text
+    and folds system → first user turn with correct user/model alternation for
+    multi-turn; idempotent on second call. End-to-end on the live sidecar,
+    proper framing + suppression already yielded a correct, leak-free answer.
+    `py_compile` clean; lint clean.
+  - **Committed `654a520` and pushed to `origin/main`** (`88d260c..654a520`, no
+    force). The push re-triggers `build-mlxvlm-macos.yml` → a new sidecar release
+    **`mlxvlm-macos-arm64-654a520`**. **Not yet shipped to the app:** run
+    `make build-mlx-server` (or `-if-exists` auto-update) so
+    `src-tauri/resources/bin/mlx-server-version.txt` flips `88d260c → 654a520`,
+    then restart. Final runtime confirmation on Apple Silicon (coherent answer,
+    no `<image>`/`<audio>`, generation halts at `<end_of_turn>`) is pending that
+    bump.
+  - **Sampling (ATO-99) is a separate, still-open matter.** The template +
+    suppress fixes are necessary and sufficient for *coherence and cleanliness*;
+    Gemma still benefits from its recommended sampling (temp 1.0 / top_k 64 /
+    top_p 0.95) to avoid greedy repetition, which is an app-side default we have
+    not yet wired per model family.
+  - The Gemma-3 fallback template handles text + image (`<start_of_image>`) but
+    not audio framing; the omni audio-input path is not covered by the fallback
+    (text/image chat — the failing case — is). Fetching the exact Gemma 4 omni
+    template (gated) is a future refinement.
+- **Owner:** team.
+- **Links:** [ATO-88](https://linear.app/atomicchat/issue/ATO-88),
+  [ATO-99](https://linear.app/atomicchat/issue/ATO-99), §4.1 *MLX backend*, the
+  2026-06-08 ADR *Cherry-pick mlx-vlm #1288 …* (immediately below), fork commit
+  `654a520`, files: `mlx_vlm/server/_chat_templates.py`,
+  `mlx_vlm/server/generation.py`
+  (`_collect_suppress_tokens`, `_maybe_install_gemma_chat_template`,
+  `_make_logits_processors`, `_initialize_model`).
+
+### 2026-06-08 — Cherry-pick mlx-vlm #1288 into the fork to fix Gemma 4 12B MLX garbled generation (ATO-88 head 1 follow-up)
+- **Context:** After the 2026-06-05 ADR landed `gemma4_unified` in the fork
+  (sidecar `mlxvlm-macos-arm64-f42f567`), Gemma 4 12B **loads** under MLX but
+  **generates garbage** — incoherent text interleaved with leaked multimodal
+  special tokens (`<image>` / `<audio>`) and stray markup. Root cause: the
+  shipped sidecar predates upstream **`9c788e4` "Adjust Gemma4 quantization
+  predicate" ([Blaizzy/mlx-vlm #1288](https://github.com/Blaizzy/mlx-vlm/pull/1288))**,
+  which landed on `upstream/main` *after* our `f42f567`. #1288 carries two
+  fixes that both bite this symptom: (1) it **removes the forced 8-bit/group-64
+  override on Gemma 4 MLP proj layers** (`mlp.{gate,up,down}_proj`) in
+  `gemma4/language.py`'s quantization predicate — a mismatch between that
+  override and how the user's 4-bit repo was actually quantized corrupts the
+  loaded weights; (2) it adds a model-level **`chunked_prefill_policy`** to
+  `gemma4_unified.py` + `gemma4/language.py` (wired through `generate/ar.py`'s
+  new `_chunked_prefill_enabled`) that disables chunked prefill for the
+  vision-bidirectional / omni path, fixing prompt-prefill corruption.
+- **Decision:** Cherry-pick `9c788e4` whole onto a `fix/gemma4-quant-prefill`
+  branch off `main` (`f42f567`) in `AtomicBot-ai/mlx-vlm`, rather than a full
+  upstream re-sync (which would re-trigger the heavily-forked `server/` +
+  `ar.py` re-port pain). The pick applied **cleanly, zero conflicts**
+  (auto-merge of `ar.py`, `gemma4/language.py`, `test_generate.py`). Verified
+  post-pick: our MTP-rollback coercion is preserved
+  (`gemma4/language.py: accepted = mx.array(list(accepted), dtype=mx.int32)`),
+  the MLP quant override is gone, `chunked_prefill_policy` is present in both
+  modules, `py_compile` clean on all six changed files (incl. the unrelated
+  `hunyuan_vl/language.py` RoPE-dtype hunk that rode along in #1288).
+- **Consequences:**
+  - Fast-forwarded `fix/gemma4-quant-prefill` (`88d260c`) into `main` and
+    **pushed to `origin/main`** (`f42f567..88d260c`, no force). The push
+    triggers `build-mlxvlm-macos.yml` (paths `mlx_vlm/**`), which will tag a
+    new sidecar release **`mlxvlm-macos-arm64-88d260c`**.
+  - **Not yet shipped to the app:** Atomic-Chat must run `make build-mlx-server`
+    (or the `-if-exists` auto-update) to pull + re-codesign the new binary;
+    `src-tauri/resources/bin/mlx-server-version.txt` flips from `f42f567` to
+    `88d260c`. **Runtime validation on Apple Silicon** (load `gemma-4-12B-it`,
+    confirm coherent output) is pending that sidecar bump — not provable from
+    the code pick alone. If garbage persists, the next suspect is the
+    downloaded 4-bit repo itself (re-quantize under the new predicate).
+  - No Atomic-Chat app/extension/Rust code changed; this is a sidecar-only fix
+    (the MLX extension/plugin resolve by `model_type` via the sidecar).
+- **Owner:** team.
+- **Links:** [ATO-88](https://linear.app/atomicchat/issue/ATO-88), §4.1 *MLX
+  backend*, the 2026-06-05 ADR *Port `gemma4_unified` … into the `mlx-vlm`
+  fork*, [Blaizzy/mlx-vlm #1288](https://github.com/Blaizzy/mlx-vlm/pull/1288)
+  (`9c788e4`), [#1267](https://github.com/Blaizzy/mlx-vlm/pull/1267),
+  [#1280](https://github.com/Blaizzy/mlx-vlm/pull/1280),
+  [#1292](https://github.com/Blaizzy/mlx-vlm/pull/1292), fork
+  `AtomicBot-ai/mlx-vlm` `main` @ `88d260c`, `Makefile` (`build-mlx-server`).
+
+### 2026-06-08 — Add Gemma 4 MTP speculative decoding to `llamacpp-upstream` via a separate draft head (PR #23398; closes ATO-88 head 2)
+- **Context:** Upstream `ggml-org/llama.cpp` merged Gemma 4 Multi-Token
+  Prediction ([PR #23398](https://github.com/ggml-org/llama.cpp/pull/23398),
+  commit `04eb4c4`, first tagged release **`b9553`**). This was the
+  remaining blocker on **head 2 of [ATO-88](https://linear.app/atomicchat/issue/ATO-88)**
+  ("llama.cpp Gemma 4 MTP GGUF", previously upstream-blocked). Unlike Qwen
+  3.6 built-in MTP — where the head lives *inside* the same GGUF and we just
+  pass `--spec-type draft-mtp` (gate `MTP_MIN_BUILD=9180`,
+  [`args.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs)) —
+  Gemma 4 ships the MTP head as a **separate draft GGUF** loaded via
+  `--model-draft <head>`. Upstream MTP support covers **only Gemma 4 31B
+  (dense) and 26B-A4B (MoE)**; the E2B/E4B drafter was deferred upstream and
+  12B has no head. The same `b9553` bump also fixes plain Gemma 4 GGUF
+  loading and unblocks QAT (ATO-101/99) — that bundle bump is owned
+  separately; here we only encode the runtime wiring and a version gate.
+- **Decision:** Wire Gemma 4 MTP end-to-end in the **`llamacpp-upstream`**
+  provider, reusing the existing provider-level `mtp` toggle and
+  distinguishing the two shapes by the presence of a draft path:
+  1. **Head registry** (NEW
+     [`extensions/llamacpp-upstream-extension/src/gemmaMtpRegistry.ts`](extensions/llamacpp-upstream-extension/src/gemmaMtpRegistry.ts)):
+     static target→head map with HF-API-verified `sha256` + `size`.
+     **31B → `am17an/Gemma4-31B-it-GGUF` / `mtp-gemma-4-31B-it.gguf`** (the
+     PR author's reference head). **26B-A4B →
+     `AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF` /
+     `gemma-4-26B-A4B-it-assistant.Q8_0.gguf`** — am17an published *no* 26B
+     repo (the plan's `am17an/Gemma4-26B-A4B-it-GGUF` does not exist), so we
+     point at our **first-party** head, which is model-identical to the
+     upstream reference (the 31B AtomicChat `Q8_0` head matches am17an's head
+     byte-size) and guaranteed-stable as our own org. `barozp/*-mtp-BF16` and
+     any 12B/E2B/E4B head are deliberately **not** supported.
+  2. **Extension** ([`index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)):
+     new `mtp_draft_path` field in `model.yml`; `ensureGemmaMtpDraft(modelId)`
+     downloads the head (idempotent, sha256/size-validated, via
+     `@janhq/download-extension`) into
+     `<jan>/llamacpp/models/<id>/mtp-draft.gguf` and records the relative
+     path in `model.yml`; `performLoad` resolves it to an absolute
+     `cfg.mtp_draft_path` only when `cfg.mtp` is on. **Lazy resolution:** if
+     `cfg.mtp` is on, the model is a Gemma 4 31B/26B-A4B target, and no
+     `mtp_draft_path` is recorded yet, `performLoad` calls
+     `ensureGemmaMtpDraft` itself (then re-reads `model.yml`) — so the single
+     "Enable MTP" toggle is robust even when it was flipped on with no Gemma
+     model active (a download failure is logged and the load proceeds
+     text-only, never crashing). `checkGemmaMtpSupport` exposes the registry to
+     the UI.
+  3. **Rust** ([`args.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs)):
+     new `#[serde(default)] mtp_draft_path: String`; new constant
+     **`GEMMA_MTP_MIN_BUILD=9553`**; `add_mtp_args` now branches — with a
+     draft path it emits `--model-draft <path> --spec-type draft-mtp
+     --spec-draft-n-max 4` gated on `9553`; without one it keeps the Qwen
+     path (`--spec-type draft-mtp --spec-draft-n-max 2`, gate `9180`)
+     unchanged. **KV-quant guard:** when a draft path is set and `cache_type_k/v`
+     is non-`f16`, we `log::warn!` (PR #23398 reviewers reported q8_0 KV +
+     Vulkan dropping draft acceptance to ~0) — we warn, we do not override the
+     user's KV choice.
+  4. **guest-js** (`types.ts` + `normalizeLlamacppConfig`): `mtp_draft_path`
+     added to `LlamacppConfig` and `ModelConfig`.
+  5. **UI** ([`$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx)):
+     `handleToggleLlamacppMtp` gains a Gemma branch — if the active model
+     isn't Qwen-MTP (`id` contains "mtp"), it calls `checkGemmaMtpSupport`;
+     on a Gemma target it downloads the head (`ensureGemmaMtpDraft`) before
+     writing `mtp=true` and reloading; otherwise the existing
+     `LlamacppMtpUnsupportedDialog` is shown (now also lists the two Gemma
+     targets). New i18n keys `llamacppMtpDownloadingDraft` /
+     `llamacppMtpGemmaSupported*` (EN + RU).
+- **Consequences:**
+  - Gemma 4 **31B** and **26B-A4B** get MTP speculative decoding on
+    `llamacpp-upstream` once the bundle is `>= b9553`; on older bundles the
+    Gemma path is skipped with a `warn!` (no broken flag passed to
+    `llama-server`). Qwen built-in MTP is untouched (separate gate, no
+    `--model-draft`). MoE (26B-A4B) gains may be marginal — expected.
+  - The MTP head is small (~460–515 MB) and shares the existing model-folder
+    download/validation path; both providers share the GGUF tree
+    (`MODELS_PROVIDER_ROOT='llamacpp'`) so the head lives beside the target.
+  - **Deviation from the plan:** the plan named `am17an/Gemma4-26B-A4B-it-GGUF`
+    as the 26B source; it does not exist on HF. Verified-real first-party
+    `AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF` is used instead (no
+    fabricated repo). macOS turboquant `llamacpp` provider, MLX, and Windows
+    are unaffected (this is the upstream provider; the bundle gate keeps it
+    inert until `b9553`).
+  - **Verification:** new `args.rs` unit tests cover the Gemma path
+    (`--model-draft` + n-max 4 at b9553, skipped below b9553, Qwen path
+    unaffected, embedding-mode skip). Runtime validation on a `>= b9553`
+    bundle (draft acceptance > 0 on 31B) is pending that bundle bump
+    (ATO-101).
+- **Owner:** team.
+- **Links:** [PR #23398](https://github.com/ggml-org/llama.cpp/pull/23398),
+  [ATO-88](https://linear.app/atomicchat/issue/ATO-88),
+  [ATO-101](https://linear.app/atomicchat/issue/ATO-101),
+  [ATO-99](https://linear.app/atomicchat/issue/ATO-99), §4.2 *LLM backend*,
+  files: [`gemmaMtpRegistry.ts`](extensions/llamacpp-upstream-extension/src/gemmaMtpRegistry.ts),
+  [`index.ts`](extensions/llamacpp-upstream-extension/src/index.ts),
+  [`args.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs),
+  [`guest-js/types.ts`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/types.ts),
+  [`$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx),
+  [`LlamacppMtpUnsupportedDialog.tsx`](web-app/src/containers/dialogs/LlamacppMtpUnsupportedDialog.tsx).
+
 ### 2026-06-05 — Make the Windows release backend download asset-aware to beat the ggml-org "tag-marked-latest-before-asset-uploaded" race (ATO-95, CI)
 - **Context:** The `build-windows` job's inline "Download upstream llamacpp
   backend" step in [`.github/workflows/release.yml`](.github/workflows/release.yml)

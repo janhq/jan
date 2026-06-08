@@ -65,6 +65,13 @@ pub struct LlamacppConfig {
     /// only honored on backend builds >= `MTP_MIN_BUILD`.
     #[serde(default)]
     pub mtp: bool,
+    /// Absolute path to a SEPARATE MTP draft head GGUF (Gemma 4 31B / 26B-A4B,
+    /// upstream PR #23398). When non-empty (and `mtp` is on), the backend is
+    /// launched with `--model-draft <path> --spec-type draft-mtp`, gated on
+    /// builds >= `GEMMA_MTP_MIN_BUILD`. Empty for Qwen-style built-in MTP
+    /// (head inside the same GGUF), which keeps using the `MTP_MIN_BUILD` gate.
+    #[serde(default)]
+    pub mtp_draft_path: String,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
@@ -75,6 +82,12 @@ const FLASH_ATTN_STRING_ARG_MIN_BUILD: u32 = 6325;
 /// merge (PR #22673, commit 2555826, merged 2026-05-16, first tagged release
 /// b9180). On earlier builds the toggle is silently ignored.
 const MTP_MIN_BUILD: u32 = 9180;
+
+/// Minimum upstream build number that contains the Gemma 4 MTP merge
+/// (PR #23398, commit 04eb4c4, first tagged release b9553). Gemma 4 uses a
+/// SEPARATE draft head passed via `--model-draft`, distinct from Qwen's
+/// built-in MTP head; it needs a newer backend than `MTP_MIN_BUILD`.
+const GEMMA_MTP_MIN_BUILD: u32 = 9553;
 
 pub struct ArgumentBuilder {
     args: Vec<String>,
@@ -376,12 +389,18 @@ impl ArgumentBuilder {
     }
 
     /// Emits MTP speculative-decoding flags when the user enabled the
-    /// provider-level toggle AND the backend build is recent enough to
-    /// understand them. `--spec-draft-n-max 2` is the recommended default
-    /// from upstream PR #22673 (acceptance rate ~83% on Qwen3.6).
+    /// provider-level toggle AND the backend build is recent enough.
+    ///
+    /// Two distinct shapes share the `mtp` toggle:
+    /// * **Qwen built-in MTP** (head inside the same GGUF, `mtp_draft_path`
+    ///   empty): emits `--spec-type draft-mtp --spec-draft-n-max 2`, gated on
+    ///   `MTP_MIN_BUILD` (PR #22673, ~83% acceptance on Qwen3.6).
+    /// * **Gemma 4 MTP** (separate draft head, `mtp_draft_path` set): also
+    ///   emits `--model-draft <path>` and a larger `--spec-draft-n-max 4`,
+    ///   gated on the newer `GEMMA_MTP_MIN_BUILD` (PR #23398, 31B / 26B-A4B).
     ///
     /// Skipped for embedding servers (speculative decoding is a text-gen
-    /// concept) and for backend builds older than `MTP_MIN_BUILD` (we warn
+    /// concept) and for backend builds older than the relevant gate (we warn
     /// once instead of letting llama-server reject the flag).
     fn add_mtp_args(&mut self) {
         if !self.config.mtp {
@@ -390,10 +409,47 @@ impl ArgumentBuilder {
         if self.is_embedding {
             return;
         }
-        let build_ok = self
-            .parse_build_number()
-            .is_some_and(|b| b >= MTP_MIN_BUILD);
-        if !build_ok {
+
+        let build = self.parse_build_number();
+        let has_draft = !self.config.mtp_draft_path.is_empty();
+
+        if has_draft {
+            // Gemma 4: separate draft head via --model-draft.
+            if !build.is_some_and(|b| b >= GEMMA_MTP_MIN_BUILD) {
+                log::warn!(
+                    "Gemma 4 MTP requested but backend build {}/{} predates the Gemma MTP merge (b{}); skipping --model-draft / --spec-type draft-mtp",
+                    self.version,
+                    self.backend,
+                    GEMMA_MTP_MIN_BUILD
+                );
+                return;
+            }
+            // Some configs (q8_0 KV) + Vulkan regress to acceptance≈0 with
+            // Gemma MTP (PR #23398 review). Warn so the symptom is diagnosable;
+            // we don't override the user's KV choice.
+            let k = self.config.cache_type_k.as_str();
+            let v = self.config.cache_type_v.as_str();
+            let k_quantized = !k.is_empty() && k != "f16";
+            let v_quantized = !v.is_empty() && v != "f16";
+            if k_quantized || v_quantized {
+                log::warn!(
+                    "Gemma 4 MTP is enabled with quantized KV cache (k={}, v={}); on some backends (notably Vulkan) this can drop draft acceptance to ~0 and slow generation. Consider f16 KV if MTP underperforms.",
+                    if k.is_empty() { "f16" } else { k },
+                    if v.is_empty() { "f16" } else { v }
+                );
+            }
+
+            self.args.push("--model-draft".to_string());
+            self.args.push(self.config.mtp_draft_path.clone());
+            self.args.push("--spec-type".to_string());
+            self.args.push("draft-mtp".to_string());
+            self.args.push("--spec-draft-n-max".to_string());
+            self.args.push("4".to_string());
+            return;
+        }
+
+        // Qwen built-in MTP (head inside the same GGUF).
+        if !build.is_some_and(|b| b >= MTP_MIN_BUILD) {
             log::warn!(
                 "MTP requested but backend build {}/{} predates upstream MTP merge (b{}); skipping --spec-type draft-mtp",
                 self.version,
@@ -574,6 +630,7 @@ mod tests {
             concurrent_slots: 8,
             expose_metrics: false,
             mtp: false,
+            mtp_draft_path: String::new(),
         }
     }
 
@@ -1439,5 +1496,67 @@ mod tests {
 
         assert_no_flag(&args, "--spec-type");
         assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_gemma_mtp_emits_model_draft_and_spec_flags() {
+        let mut config = default_config();
+        config.version_backend = "b9553/standard".to_string();
+        config.mtp = true;
+        config.mtp_draft_path = "/path/to/mtp-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("gemma-4-31b-it", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--model-draft", "/path/to/mtp-draft.gguf");
+        assert_arg_pair(&args, "--spec-type", "draft-mtp");
+        assert_arg_pair(&args, "--spec-draft-n-max", "4");
+    }
+
+    #[test]
+    fn test_gemma_mtp_skipped_below_gemma_min_build() {
+        // b9180 is new enough for Qwen built-in MTP but predates the Gemma
+        // MTP merge (b9553): with a draft path it must be skipped entirely.
+        let mut config = default_config();
+        config.version_backend = "b9180/standard".to_string();
+        config.mtp = true;
+        config.mtp_draft_path = "/path/to/mtp-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("gemma-4-31b-it", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--spec-draft-n-max");
+    }
+
+    #[test]
+    fn test_qwen_mtp_unaffected_by_gemma_gate() {
+        // No draft path → Qwen path, gated on MTP_MIN_BUILD (b9180), no
+        // --model-draft, n-max stays 2.
+        let mut config = default_config();
+        config.version_backend = "b9180/standard".to_string();
+        config.mtp = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("qwen3.6-27b-mtp", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_arg_pair(&args, "--spec-type", "draft-mtp");
+        assert_arg_pair(&args, "--spec-draft-n-max", "2");
+    }
+
+    #[test]
+    fn test_gemma_mtp_skipped_in_embedding_mode() {
+        let mut config = default_config();
+        config.version_backend = "b9553/standard".to_string();
+        config.mtp = true;
+        config.mtp_draft_path = "/path/to/mtp-draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, true).unwrap();
+        let args = builder.build("gemma-4-31b-it", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
     }
 }

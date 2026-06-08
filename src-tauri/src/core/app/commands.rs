@@ -77,6 +77,15 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
 
         app_default_configuration.data_folder = default_data_folder;
 
+        // On a clean install the app-data directory (e.g. on Windows
+        // `…\Roaming\chat.atomic.app`) does not exist yet, so `fs::write`
+        // alone fails with os error 3 and the config is never persisted.
+        if let Some(parent) = configuration_file.parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                log::error!("Failed to create config dir {parent:?}: {err}");
+            }
+        }
+
         if let Err(err) = fs::write(
             &configuration_file,
             serde_json::to_string(&app_default_configuration).unwrap(),
@@ -113,6 +122,12 @@ pub fn update_app_configuration<R: Runtime>(
 ) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
     log::info!("update_app_configuration, configuration_file: {configuration_file:?}");
+
+    // Ensure the parent dir exists before writing — on a clean install it may
+    // not (os error 3), which silently drops every config update.
+    if let Some(parent) = configuration_file.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
 
     fs::write(
         configuration_file,

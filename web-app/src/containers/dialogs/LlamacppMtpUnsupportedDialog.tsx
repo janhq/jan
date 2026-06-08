@@ -71,6 +71,36 @@ export function LlamacppMtpUnsupportedDialog({
                   ' to enable Multi-Token Prediction speculative decoding.',
               })}
             </span>
+            <span className="mt-2 block">
+              {t('settings:llamacppMtpGemmaSupportedPrefix', {
+                defaultValue:
+                  'Gemma 4 31B and 26B-A4B are also supported — their MTP draft head is downloaded automatically from ',
+              })}
+            </span>
+            <a
+              href="https://huggingface.co/am17an/Gemma4-31B-it-GGUF"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#1F7CFF' }}
+              className="underline underline-offset-2 whitespace-nowrap"
+            >
+              am17an/Gemma4-31B-it-GGUF
+            </a>
+            <span> {t('common:and', { defaultValue: 'and' })} </span>
+            <a
+              href="https://huggingface.co/AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#1F7CFF' }}
+              className="underline underline-offset-2 whitespace-nowrap"
+            >
+              AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF
+            </a>
+            <span>
+              {t('settings:llamacppMtpGemmaSupportedSuffix', {
+                defaultValue: '.',
+              })}
+            </span>
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">

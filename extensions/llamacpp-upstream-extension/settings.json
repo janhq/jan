@@ -13,7 +13,7 @@
   {
     "key": "mtp",
     "title": "Enable MTP (Multi-Token Prediction)",
-    "description": "Speculative decoding via the model's built-in MTP head. Only works with MTP-capable GGUFs (e.g. [ggml-org/Qwen3.6-27B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-27B-MTP-GGUF), [ggml-org/Qwen3.6-35B-A3B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-35B-A3B-MTP-GGUF)).",
+    "description": "Speculative decoding via an MTP head. Works with built-in-MTP GGUFs (e.g. [ggml-org/Qwen3.6-27B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-27B-MTP-GGUF), [ggml-org/Qwen3.6-35B-A3B-MTP-GGUF](https://huggingface.co/ggml-org/Qwen3.6-35B-A3B-MTP-GGUF)) and with Gemma 4 31B ([am17an/Gemma4-31B-it-GGUF](https://huggingface.co/am17an/Gemma4-31B-it-GGUF)) / 26B-A4B ([AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF](https://huggingface.co/AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF)) — a separate draft head is downloaded automatically; requires backend build b9553+.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false

@@ -48,6 +48,12 @@ import {
   mergeEmbedResponses,
   type EmbedBatchResult,
 } from './util'
+import {
+  resolveGemmaMtpDraft,
+  checkGemmaMtpSupport,
+  gemmaMtpDraftUrl,
+  type GemmaMtpDraft,
+} from './gemmaMtpRegistry'
 import { basename } from '@tauri-apps/api/path'
 import { getSystemUsage, getSystemInfo } from './hardware'
 import {
@@ -1698,7 +1704,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
     try {
       logger.info('recheckOptimalBackend: detecting ideal backend type')
-      const idealType = await this.detectIdealBackendType()
+      // ATO-104: bound the whole hardware/backend detection so the
+      // onboarding "Detecting your hardware" step can never hang forever
+      // on a stalled IPC or network lookup. On timeout we behave as if no
+      // GPU backend was recommended (CPU is the safe fallback) instead of
+      // leaving the spinner up indefinitely.
+      const idealType = await this.withTimeout(
+        this.detectIdealBackendType(),
+        20_000,
+        null
+      )
       if (!idealType) {
         // CPU is already the best the hardware can do, or detection failed.
         logger.info(
@@ -1729,7 +1744,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // but no longer the latest downloadable variant.
       let recommendedBackend: string | null = null
       try {
-        const versionBackends = await listSupportedBackends()
+        // ATO-104: cap the supported-backends lookup (it fans out to a
+        // GitHub release fetch) so detection terminates even when the
+        // network stalls past the inner AbortController.
+        const versionBackends = await this.withTimeout(
+          listSupportedBackends(),
+          20_000,
+          []
+        )
         recommendedBackend = await findLatestVersionForBackend(
           versionBackends,
           idealType
@@ -1747,7 +1769,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // concrete release tag for the ideal type directly rather than
         // emitting a `latest/<backend>` sentinel — the literal `latest`
         // produces a 404 download URL downstream (ATO-95).
-        recommendedBackend = await this.resolveLatestBackendString(idealType)
+        recommendedBackend = await this.withTimeout(
+          this.resolveLatestBackendString(idealType),
+          20_000,
+          null
+        )
         if (!recommendedBackend) {
           // Last resort: reuse the tag of the currently-installed backend,
           // but only when we actually have one. A bare `latest` tag is never
@@ -2818,6 +2844,102 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
+   * Whether the given model id is a Gemma 4 MTP-capable target (31B / 26B-A4B).
+   * Used by the provider settings UI to decide between the Gemma download path
+   * and the Qwen built-in-MTP path / unsupported dialog.
+   */
+  async checkGemmaMtpSupport(modelId: string): Promise<boolean> {
+    return checkGemmaMtpSupport(modelId)
+  }
+
+  /**
+   * Ensure the Gemma 4 MTP draft head GGUF is present next to the target model
+   * and recorded in its `model.yml` (`mtp_draft_path`). Mirrors the MLX
+   * `ensureDraftDownloaded` flow: idempotent — if the head is already on disk
+   * and referenced in `model.yml`, it is a no-op.
+   *
+   * @param modelId A Gemma 4 31B or 26B-A4B target model id.
+   * @throws if the model id is not a Gemma 4 MTP target.
+   */
+  async ensureGemmaMtpDraft(modelId: string): Promise<void> {
+    const draft: GemmaMtpDraft | null = resolveGemmaMtpDraft(modelId)
+    if (!draft) {
+      throw new Error(
+        `Model "${modelId}" is not a Gemma 4 MTP-capable target (31B / 26B-A4B).`
+      )
+    }
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelsRoot = await this.getModelsRootPath()
+    const configPath = await joinPath([modelsRoot, modelId, 'model.yml'])
+    if (!(await fs.existsSync(configPath))) {
+      throw new Error(`Model ${modelId} is not installed`)
+    }
+
+    // Path relative to Jan's data folder (kept relative in model.yml, matching
+    // how `model_path` / `mmproj_path` are stored).
+    const relativeDraftPath = `${MODELS_PROVIDER_ROOT}/models/${modelId}/mtp-draft.gguf`
+    const absoluteDraftPath = await joinPath([
+      janDataFolderPath,
+      relativeDraftPath,
+    ])
+
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: configPath,
+    })
+
+    // Already downloaded + referenced → nothing to do.
+    if (
+      modelConfig.mtp_draft_path === relativeDraftPath &&
+      (await fs.existsSync(absoluteDraftPath))
+    ) {
+      return
+    }
+
+    if (!(await fs.existsSync(absoluteDraftPath))) {
+      const downloadItem: DownloadItem = {
+        url: gemmaMtpDraftUrl(draft),
+        save_path: relativeDraftPath,
+        proxy: getProxyConfig(),
+        sha256: draft.draftSha256,
+        size: draft.draftSize,
+        model_id: modelId,
+      }
+      const onProgress = (transferred: number, total: number) => {
+        events.emit(DownloadEvent.onFileDownloadUpdate, {
+          modelId,
+          percent: total > 0 ? transferred / total : 0,
+          size: { transferred, total },
+          downloadType: 'Model',
+        })
+      }
+      const downloadManager = window.core.extensionManager.getByName(
+        '@janhq/download-extension'
+      )
+      await downloadManager.downloadFiles(
+        [downloadItem],
+        this.createDownloadTaskId(`${modelId}-mtp-draft`),
+        onProgress,
+        false
+      )
+      events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+        modelId,
+        downloadType: 'Model',
+      })
+    }
+
+    // Record the head in model.yml so `performLoad` can resolve it.
+    const updatedConfig = {
+      ...modelConfig,
+      mtp_draft_path: relativeDraftPath,
+    } as ModelConfig
+    await invoke<void>('write_yaml', {
+      data: updatedConfig,
+      savePath: configPath,
+    })
+  }
+
+  /**
    * Deletes the entire model folder for a given modelId
    * @param modelId The model ID to delete
    */
@@ -3041,6 +3163,40 @@ export default class llamacpp_upstream_extension extends AIEngine {
     let mmprojPath: string | undefined = undefined
     if (modelConfig.mmproj_path) {
       mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
+    }
+
+    // Gemma 4 MTP: the draft head is a separate GGUF keyed to the loaded
+    // target, so resolve it lazily here rather than only at toggle time. If
+    // MTP is enabled, this model is a Gemma 4 31B / 26B-A4B target, and the
+    // head has not been downloaded/recorded yet (e.g. the user toggled MTP on
+    // with no Gemma model active), fetch it now before building args. This
+    // makes the single "Enable MTP" toggle robust regardless of which model
+    // was active when it was flipped. Qwen-style built-in MTP carries no draft
+    // path and is unaffected.
+    if (cfg.mtp && !modelConfig.mtp_draft_path && checkGemmaMtpSupport(modelId)) {
+      try {
+        await this.ensureGemmaMtpDraft(modelId)
+        const refreshed = await invoke<ModelConfig>('read_yaml', {
+          path: modelConfigPath,
+        })
+        modelConfig.mtp_draft_path = refreshed.mtp_draft_path
+      } catch (e) {
+        logger.warn(
+          `Failed to ensure Gemma MTP draft head for ${modelId}; loading without MTP:`,
+          e
+        )
+      }
+    }
+
+    // When the head is present (`mtp_draft_path` in model.yml), resolve it to
+    // an absolute path so the Rust arg builder can emit `--model-draft <path>`.
+    if (cfg.mtp && modelConfig.mtp_draft_path) {
+      cfg.mtp_draft_path = await joinPath([
+        janDataFolderPath,
+        modelConfig.mtp_draft_path,
+      ])
+    } else {
+      cfg.mtp_draft_path = ''
     }
 
     if (!this.modelMaxCtxTrain.has(modelId)) {

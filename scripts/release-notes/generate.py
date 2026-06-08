@@ -199,7 +199,9 @@ def _collect_contributors(
 def _render_contributors_section(logins: list[str]) -> str:
     if not logins:
         return ""
-    mentions = ", ".join(f"@{login}" for login in logins)
+    mentions = ", ".join(
+        f"[@{login}](https://github.com/{login})" for login in logins
+    )
     return (
         "\n\n## 🙏 Contributors\n\n"
         f"Thanks to {mentions} for their contributions to this release!"

@@ -409,15 +409,35 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
   }
 
   const supportedSet = new Set(supportedBackends)
+  // CUDA-13 is matched family-wise (ATO-105): ggml-org periodically bumps
+  // the toolkit minor (13.1 -> 13.3 -> 13.x) in its release assets, so the
+  // supported set carries the minor-less family id `win-cuda-13-x64` (emitted
+  // by `determine_supported_backends`) instead of a hardcoded concrete minor.
+  // Any concrete `win-cuda-13.<minor>-x64` asset is accepted when the family
+  // is supported, and the concrete id (e.g. `win-cuda-13.4-x64`) keeps
+  // flowing downstream unchanged so the right asset is downloaded.
+  const WIN_CUDA13_CONCRETE_RE = /^win-cuda-13\.\d+-(x64|arm64)$/
+  const isSupported = (rawBackend: string, normalizedBackend: string): boolean => {
+    if (supportedSet.has(normalizedBackend)) return true
+    const m = WIN_CUDA13_CONCRETE_RE.exec(rawBackend)
+    if (m) {
+      return supportedSet.has(`win-cuda-13-${m[1]}`)
+    }
+    return false
+  }
+
   const filteredBackends = await Promise.all(
     mergedBackends.map(async (backendInfo) => ({
       backendInfo,
+      rawBackend: backendInfo.backend.replace(/\uFEFF/g, '').trim(),
       normalizedBackend: await mapOldBackendToNew(backendInfo.backend),
     }))
   )
 
   const supportedMergedBackends = filteredBackends
-    .filter(({ normalizedBackend }) => supportedSet.has(normalizedBackend))
+    .filter(({ rawBackend, normalizedBackend }) =>
+      isSupported(rawBackend, normalizedBackend)
+    )
     .map(({ backendInfo }) => backendInfo)
 
   console.info(
