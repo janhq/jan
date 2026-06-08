@@ -133,6 +133,9 @@ class ThreadSearchIndex {
    */
   async build(threads: Record<string, Thread>): Promise<void> {
     this.latestThreads = threads
+    // Concurrent callers share the same promise. latestThreads is updated
+    // above so the in-flight loop will use the newest threads on its next
+    // iteration — the second caller's changes are not lost.
     if (this.buildPromise) return this.buildPromise
 
     this.buildPromise = (async () => {
