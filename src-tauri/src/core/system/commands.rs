@@ -1945,10 +1945,17 @@ pub fn configure_openclaw(
     defaults_obj
         .entry("timeoutSeconds")
         .or_insert_with(|| serde_json::json!(240));
-    // Select our model as the agent's primary default (string form sets
-    // `model.primary`), so OpenClaw runs on it instead of dropping into
-    // "configure a model" mode. Run is an explicit "use this", so overwrite.
-    defaults_obj.insert("model".to_string(), serde_json::json!(model_ref.clone()));
+    // Point the agent at our model via `model.primary` (object form; current
+    // OpenClaw rejects a plain string). Preserve sibling `model.*` keys and heal
+    // a stale string written by older builds. Run is explicit "use this", so we
+    // overwrite primary to keep it synced with the active model.
+    let model_entry = defaults_obj
+        .entry("model")
+        .or_insert_with(|| serde_json::json!({}));
+    if !model_entry.is_object() {
+        *model_entry = serde_json::json!({});
+    }
+    model_entry["primary"] = serde_json::json!(model_ref.clone());
     let allow = defaults_obj
         .entry("models")
         .or_insert_with(|| serde_json::json!({}));
