@@ -110,12 +110,13 @@ A few projects already ship first-class support with their own setup docs:
 | Tool | What it is | Setup |
 | --- | --- | --- |
 | **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Atomic Chat as a local provider in `opencode.json`. | [Setup&nbsp;guide&nbsp;→](https://opencode.ai/docs/providers/#atomic-chat) |
-| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider. | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers) |
 | **[Goose](https://github.com/block/goose)** | Open-source extensible AI agent (CLI, desktop, API). | [Setup&nbsp;guide&nbsp;→](https://goose-docs.ai/docs/getting-started/providers/#local-llms) |
-| **[Hermes Desktop](https://github.com/fathah/hermes-desktop)** | Native desktop companion for Hermes Agent. Includes an Atomic Chat local preset at `http://localhost:1337/v1`. | [Repo&nbsp;→](https://github.com/fathah/hermes-desktop) |
-| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend. | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace) |
 | **[nanobot](https://github.com/HKUDS/nanobot)** | Ultra-lightweight personal AI agent with chat channels, MCP, and WebUI. | [Repo&nbsp;→](https://github.com/HKUDS/nanobot) |
 | **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Atomic Chat as an MCP tool. | [Skill&nbsp;guide&nbsp;→](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
+| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider. | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers) |
+| **[Kilo Code](https://kilo.ai/)** | Open-source AI coding agent for VS Code, JetBrains, and CLI. Ships with first-class Atomic Chat provider support and auto-discovery. | [Setup&nbsp;guide&nbsp;→](https://kilo.ai/docs/ai-providers/atomic-chat) |
+| **[Hermes Desktop](https://github.com/fathah/hermes-desktop)** | Native desktop companion for Hermes Agent. Includes an Atomic Chat local preset at `http://localhost:1337/v1`. | [Repo&nbsp;→](https://github.com/fathah/hermes-desktop) |
+| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend. | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace) |
 
 > Built something that runs on Atomic Chat? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
 
