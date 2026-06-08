@@ -217,7 +217,7 @@
     "serverStatusStopped": "Der Server ist inaktiv.",
     "openInNewWindow": "In neuem Fenster öffnen",
     "mcpOnServer": "Erlaube Toolnutzung",
-    "mcpOnServerDesc": "Erlaube Serverseitige Toolnutzung."
+    "mcpOnServerDesc": "Erlaube serverseitige Toolnutzung."
   },
   "privacy": {
     "analytics": "Analytik",
@@ -289,7 +289,7 @@
     "subtitle": "Einstellungen für Dateianhänge, Dateigröße und Suche.",
     "featureTitle": "Feature",
     "enable": "Dateianhänge erlauben",
-    "enableDesc": "Erlaube das Hochladen sowie die Indexierung von Dokumente für die Suche.",
+    "enableDesc": "Erlaube das Hochladen sowie die Indexierung von Dokumenten für die Suche.",
     "parseMode": "Parser Einstellung",
     "parseModeDesc": "Wähle, wie geparste Dokumente zu Chats hinzugefügt werden sollen.",
     "parseModeAuto": "Automatisch",

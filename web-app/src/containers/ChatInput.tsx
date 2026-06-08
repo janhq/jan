@@ -2081,10 +2081,10 @@ const ChatInput = memo(function ChatInput({
                           : 'Auto'
                     const tooltipText =
                       reasoningValue === 'on'
-                        ? {t('common:reasoningForced')}
+                        ? t('common:reasoningForced')
                         : reasoningValue === 'off'
-                          ? {t('common:reasoningDisabled')}
-                          : {t('common:reasoningAuto')}
+                          ? t('common:reasoningDisabled')
+                          : t('common:reasoningAuto')
                     return (
                       <DropdownMenu>
                         <Tooltip>

@@ -514,7 +514,7 @@ function LocalAPIServerContent() {
                         </div>
                       </div>
                     ) : (
-                      {t('settings:localApiServer.serverStatusStopped')}
+                      t('settings:localApiServer.serverStatusStopped')
                     )
                   }
                 />
