@@ -256,6 +256,80 @@ pub async fn read_logs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> 
     }
 }
 
+/// Best-effort detection of how this build was installed (ATO-111 telemetry).
+/// Returns one of: "appimage" | "msi" | "setup_exe" | "dmg" | "unknown".
+/// No PII: only the install-channel enum is returned.
+#[tauri::command]
+pub fn get_installer_type() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        // The AppImage runtime exports APPIMAGE; nothing else does.
+        if std::env::var_os("APPIMAGE").is_some() {
+            return "appimage".to_string();
+        }
+        "unknown".to_string()
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        detect_windows_installer_type()
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Distinguishing a DMG-mounted copy from a manually-copied .app is not
+        // reliable; DMG is the shipped channel, so report it best-effort.
+        "dmg".to_string()
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        "unknown".to_string()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_windows_installer_type() -> String {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    const PRODUCT: &str = "Atomic Chat";
+    const UNINSTALL: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+
+    // NSIS (setup.exe) writes its uninstall key named after the product.
+    for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let root = RegKey::predef(hive);
+        if root.open_subkey(format!("{UNINSTALL}\\{PRODUCT}")).is_ok() {
+            return "setup_exe".to_string();
+        }
+    }
+
+    // WiX (MSI) registers a product-GUID uninstall key carrying
+    // WindowsInstaller=1; scan for a matching DisplayName.
+    for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let root = RegKey::predef(hive);
+        if let Ok(uninstall) = root.open_subkey(UNINSTALL) {
+            for key_name in uninstall.enum_keys().flatten() {
+                if let Ok(entry) = uninstall.open_subkey(&key_name) {
+                    let name: Result<String, _> = entry.get_value("DisplayName");
+                    if let Ok(name) = name {
+                        if name.starts_with(PRODUCT) {
+                            let is_msi: u32 = entry.get_value("WindowsInstaller").unwrap_or(0);
+                            return if is_msi == 1 {
+                                "msi".to_string()
+                            } else {
+                                "setup_exe".to_string()
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    "unknown".to_string()
+}
+
 // check if a system library is available
 #[tauri::command]
 pub fn is_library_available(library: &str) -> bool {

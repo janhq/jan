@@ -41,6 +41,13 @@ struct EmitState {
     is_anthropic_fallback: bool,
     error_kind: Option<&'static str>,
     skip_emit: bool,
+    // ATO-112: error-breakdown fields. `upstream_status` is the model's /
+    // provider's own HTTP status (distinct from the status we return to the
+    // client). The three booleans flag specific failure shapes for triage.
+    upstream_status: Option<u16>,
+    oom_detected: bool,
+    ctx_overflow_detected: bool,
+    server_bind_failed: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -56,6 +63,10 @@ struct ApiRequestEvent<'a> {
     latency_ms: u64,
     is_anthropic_fallback: bool,
     error_kind: Option<&'static str>,
+    upstream_status: Option<u16>,
+    oom_detected: bool,
+    ctx_overflow_detected: bool,
+    server_bind_failed: bool,
 }
 
 fn emit_api_request_event<R: Runtime>(app: &AppHandle<R>, event: ApiRequestEvent) {
@@ -649,6 +660,42 @@ fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
         || b.contains("too large")
 }
 
+/// ATO-112: local on-device engines vs remote cloud providers.
+fn is_local_backend(backend: &str) -> bool {
+    matches!(backend, "llamacpp" | "llamacpp-upstream" | "mlx")
+}
+
+/// ATO-112: error_kind for an upstream that responded with a non-2xx status.
+fn upstream_error_kind(backend: &str) -> &'static str {
+    if is_local_backend(backend) {
+        "local_model_error"
+    } else {
+        "remote_provider_error"
+    }
+}
+
+/// ATO-112: error_kind for an upstream we could not reach (transport error).
+fn unreachable_error_kind(backend: &str) -> &'static str {
+    if is_local_backend(backend) {
+        "local_model_unreachable"
+    } else {
+        "remote_provider_error"
+    }
+}
+
+/// ATO-112: best-effort OOM detection from an upstream error body, mirroring
+/// the patterns in `web-app/src/utils/switchModel.ts` and the backend
+/// `error.rs` classifiers. Used only to set the `oom_detected` analytics flag.
+fn body_indicates_oom(body: &str) -> bool {
+    let b = body.to_lowercase();
+    b.contains("out of memory")
+        || b.contains("outofmemory")
+        || b.contains("cuda_error_out_of_memory")
+        || b.contains("failed to allocate")
+        || b.contains("insufficient memory")
+        || b.contains("erroroutofdevicememory")
+}
+
 /// Parses the client's buffered request body and extracts `max_tokens` (or
 /// the newer `max_completion_tokens` alias that some OpenAI SDKs already
 /// emit). Returns `None` when the field is absent/invalid — meaning the
@@ -1132,7 +1179,7 @@ async fn handle_responses_request(
                     api_key: c.api_key,
                 },
                 None => {
-                    state.error_kind = Some("upstream");
+                    state.error_kind = Some("proxy_internal");
                     return Ok(make_err(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Provider has no base_url",
@@ -1140,7 +1187,7 @@ async fn handle_responses_request(
                 }
             },
             None => {
-                state.error_kind = Some("upstream");
+                state.error_kind = Some("proxy_internal");
                 return Ok(make_err(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Provider config not found",
@@ -1223,7 +1270,7 @@ async fn handle_responses_request(
                     &config.trusted_hosts,
                 )),
                 Err(e) => {
-                    state.error_kind = Some("upstream");
+                    state.error_kind = Some(unreachable_error_kind(state.backend));
                     Ok(make_err(
                         StatusCode::BAD_GATEWAY,
                         &format!("Proxy request to model failed: {e}"),
@@ -1247,7 +1294,7 @@ async fn handle_responses_request(
             let resp = match req.body(chat_body.to_string()).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    state.error_kind = Some("upstream");
+                    state.error_kind = Some(unreachable_error_kind(state.backend));
                     return Ok(make_err(
                         StatusCode::BAD_GATEWAY,
                         &format!("Proxy request to model failed: {e}"),
@@ -1257,11 +1304,14 @@ async fn handle_responses_request(
 
             let status = resp.status();
             if !status.is_success() {
-                state.error_kind = Some("upstream");
+                state.error_kind = Some(upstream_error_kind(state.backend));
+                state.upstream_status = Some(status.as_u16());
                 let err_body = resp
                     .text()
                     .await
                     .unwrap_or_else(|e| format!("Failed to read error body: {e}"));
+                state.oom_detected = body_indicates_oom(&err_body);
+                state.ctx_overflow_detected = is_context_limit_error(status, &err_body);
                 let code =
                     StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
                 return Ok(make_err(code, &err_body));
@@ -1516,6 +1566,10 @@ async fn proxy_request<R: Runtime>(
                 latency_ms: start.elapsed().as_millis() as u64,
                 is_anthropic_fallback: state.is_anthropic_fallback,
                 error_kind: state.error_kind,
+                upstream_status: state.upstream_status,
+                oom_detected: state.oom_detected,
+                ctx_overflow_detected: state.ctx_overflow_detected,
+                server_bind_failed: state.server_bind_failed,
             },
         );
     }
@@ -2244,6 +2298,9 @@ async fn inner_proxy_request<R: Runtime>(
         }
         (hyper::Method::GET, "/models") => {
             state.endpoint = Some("models");
+            // ATO-112: model-list polling is high-volume and not a product
+            // signal (clients refresh it constantly); suppress analytics.
+            state.skip_emit = true;
             log::debug!("Handling GET /v1/models request");
 
             // Get local llama.cpp (turboquant) sessions
@@ -2476,7 +2533,7 @@ async fn inner_proxy_request<R: Runtime>(
                     return Ok(response_builder.body(Body::from(bytes)).unwrap());
                 }
                 Err(e) => {
-                    state.error_kind = Some("upstream");
+                    state.error_kind = Some(unreachable_error_kind(state.backend));
                     log::warn!(
                         "Failed to fetch metrics for model '{metrics_model_id}': {e}"
                     );
@@ -2626,6 +2683,9 @@ async fn inner_proxy_request<R: Runtime>(
 
             state.endpoint = Some("other");
             state.error_kind = Some("not_found");
+            // ATO-112: catch-all 404s are dominated by background scanners /
+            // misconfigured clients and carry no product signal; suppress.
+            state.skip_emit = true;
             log::warn!("Unhandled method/path for dynamic routing: {method} {destination_path}");
             let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
             error_response = add_cors_headers_with_host_and_origin(
@@ -2641,7 +2701,7 @@ async fn inner_proxy_request<R: Runtime>(
     let upstream_url = match target_base_url.clone() {
         Some(p) => p,
         None => {
-            state.error_kind = Some("upstream");
+            state.error_kind = Some("proxy_internal");
             log::error!(
                 "Internal API server routing error: target is None after successful lookup"
             );
@@ -2682,7 +2742,7 @@ async fn inner_proxy_request<R: Runtime>(
     let outbound_req_with_body = if let Some(bytes) = buffered_body_for_req {
         outbound_req.body(bytes)
     } else {
-        state.error_kind = Some("upstream");
+        state.error_kind = Some("proxy_internal");
         log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
         let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
         error_response = add_cors_headers_with_host_and_origin(
@@ -2774,9 +2834,13 @@ async fn inner_proxy_request<R: Runtime>(
                         let fallback_status = res.status();
 
                         if !fallback_status.is_success() {
-                            state.error_kind = Some("upstream");
+                            state.error_kind = Some(upstream_error_kind(state.backend));
+                            state.upstream_status = Some(fallback_status.as_u16());
                             // Return fallback error to client
                             let fallback_error = res.text().await.unwrap_or_else(|e| format!("Failed to read error: {}", e));
+                            state.oom_detected = body_indicates_oom(&fallback_error);
+                            state.ctx_overflow_detected =
+                                is_context_limit_error(fallback_status, &fallback_error);
 
                             // Return the error to client
                             let mut error_response = Response::builder().status(fallback_status);
@@ -2834,7 +2898,10 @@ async fn inner_proxy_request<R: Runtime>(
                 }
 
                 // If fallback failed or wasn't attempted, return error to client
-                state.error_kind = Some("upstream");
+                state.error_kind = Some(upstream_error_kind(state.backend));
+                state.upstream_status = Some(status.as_u16());
+                state.oom_detected = body_indicates_oom(&error_body);
+                state.ctx_overflow_detected = is_context_limit_error(status, &error_body);
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -2917,7 +2984,10 @@ async fn inner_proxy_request<R: Runtime>(
                     }
                 }
 
-                state.error_kind = Some("upstream");
+                state.error_kind = Some(upstream_error_kind(state.backend));
+                state.upstream_status = Some(status.as_u16());
+                state.oom_detected = body_indicates_oom(&error_body);
+                state.ctx_overflow_detected = is_context_limit_error(status, &error_body);
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -3072,7 +3142,7 @@ async fn inner_proxy_request<R: Runtime>(
             Ok(builder.body(body).unwrap())
         }
         Err(e) => {
-            state.error_kind = Some("upstream");
+            state.error_kind = Some(unreachable_error_kind(state.backend));
             let error_msg = format!("Proxy request to model failed: {e}");
             log::error!("{error_msg}");
             let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
@@ -3203,6 +3273,10 @@ async fn start_server_internal<R: Runtime>(
         .no_proxy()
         .build()?;
 
+    // ATO-112: kept for the bind-failure analytics emit below, since `app_handle`
+    // is moved into `make_svc`.
+    let app_handle_for_bind = app_handle.clone();
+
     let make_svc = make_service_fn(move |_conn| {
         let client = client.clone();
         let local_client = local_client.clone();
@@ -3236,6 +3310,29 @@ async fn start_server_internal<R: Runtime>(
         Ok(builder) => builder.serve(make_svc),
         Err(e) => {
             log::error!("Failed to bind to {addr}: {e}");
+            // ATO-112: surface local-server bind failures (e.g. port already in
+            // use) as a dedicated analytics signal. This never rides a real
+            // request because binding fails before the proxy serves anything.
+            emit_api_request_event(
+                &app_handle_for_bind,
+                ApiRequestEvent {
+                    source: "local_api_server",
+                    endpoint: "other",
+                    method: "BIND",
+                    model_id: None,
+                    backend: "",
+                    provider: None,
+                    stream: false,
+                    status: 0,
+                    latency_ms: 0,
+                    is_anthropic_fallback: false,
+                    error_kind: Some("server_bind_failed"),
+                    upstream_status: None,
+                    oom_detected: false,
+                    ctx_overflow_detected: false,
+                    server_bind_failed: true,
+                },
+            );
             return Err(Box::new(e));
         }
     };

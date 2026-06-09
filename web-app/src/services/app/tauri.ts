@@ -43,6 +43,16 @@ export class TauriAppService extends DefaultAppService {
     return logData.split('\n').map(this.parseLogLine)
   }
 
+  async getInstallerType(): Promise<string | undefined> {
+    try {
+      const value = (await invoke('get_installer_type')) as string | null
+      return value ?? undefined
+    } catch (error) {
+      console.debug('get_installer_type unavailable:', error)
+      return undefined
+    }
+  }
+
   async getJanDataFolder(): Promise<string | undefined> {
     try {
       const appConfiguration: AppConfiguration | undefined =

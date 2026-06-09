@@ -24,6 +24,14 @@ import type {
   ModelValidationResult,
 } from './types'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
+import posthog from 'posthog-js'
+import {
+  isHfUrl,
+  markDownloadStart,
+  quantFromModelId,
+  sizeBucket,
+  urlHost,
+} from '@/lib/telemetry'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -467,6 +475,24 @@ export class DefaultModelsService implements ModelsService {
         )
         // Continue with download even if metadata fetch fails
       }
+    }
+
+    // ATO-109: model_download funnel entry. Terminal events are emitted from
+    // DownloadManagement listeners; this records the start (+ duration anchor).
+    try {
+      markDownloadStart(id)
+      posthog.capture('model_download', {
+        status: 'started',
+        download_kind: 'model',
+        model_id: id,
+        quant: quantFromModelId(id),
+        size_bucket: sizeBucket(modelSize),
+        is_hf_url: isHfUrl(modelPath),
+        resolved_asset_url_host: urlHost(modelPath),
+        hf_token_present: !!hfToken,
+      })
+    } catch (telemetryError) {
+      console.debug('model_download started telemetry failed:', telemetryError)
     }
 
     // Call the original pullModel with the fetched metadata

@@ -9,6 +9,84 @@ import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
+import posthog from 'posthog-js'
+import {
+  loadBackendFromProvider,
+  mmprojProjectorType,
+  oomSubtype,
+  sanitizeStderrTail,
+} from '@/lib/telemetry'
+
+type ModelSettingEntry = { controller_props?: { value?: unknown } }
+type LoadableModel = {
+  id: string
+  capabilities?: string[]
+  settings?: Record<string, ModelSettingEntry>
+}
+
+function settingNum(
+  settings: Record<string, ModelSettingEntry> | undefined,
+  key: string
+): number | null {
+  const value = settings?.[key]?.controller_props?.value
+  if (typeof value === 'number') return value
+  if (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))
+    return Number(value)
+  return null
+}
+
+function settingStr(
+  settings: Record<string, ModelSettingEntry> | undefined,
+  key: string
+): string | null {
+  const value = settings?.[key]?.controller_props?.value
+  return typeof value === 'string' && value ? value : null
+}
+
+/**
+ * ATO-109: emit the `model_load` telemetry event. Local engines only (cloud
+ * providers do not load weights). PII contract: only ids/enums/numbers; the
+ * stderr tail is byte-capped and PII-scrubbed by `sanitizeStderrTail`.
+ */
+function emitModelLoad(
+  status: 'success' | 'failed',
+  args: {
+    modelId: string
+    providerName: string
+    durationMs: number
+    model?: LoadableModel
+    error?: unknown
+  }
+): void {
+  try {
+    const settings = args.model?.settings
+    const props: Record<string, unknown> = {
+      status,
+      model_id: args.modelId,
+      backend: loadBackendFromProvider(args.providerName),
+      load_duration_ms: args.durationMs,
+      backend_version: settingStr(settings, 'version_backend'),
+      ctx: settingNum(settings, 'ctx_len') ?? settingNum(settings, 'ctx_size'),
+      n_gpu_layers:
+        settingNum(settings, 'ngl') ?? settingNum(settings, 'n_gpu_layers'),
+      is_multimodal:
+        (args.model?.capabilities || []).includes('vision') ||
+        settingStr(settings, 'mmproj_path') != null,
+      device_used: settingStr(settings, 'device'),
+    }
+    if (status === 'failed') {
+      const err = toErrorObject(args.error)
+      const haystack = err.details ?? err.message
+      props.error_code = err.code ?? null
+      props.oom_subtype = oomSubtype(haystack)
+      props.mmproj_projector_type = mmprojProjectorType(haystack)
+      props.stderr_tail = sanitizeStderrTail(haystack)
+    }
+    posthog.capture('model_load', props)
+  } catch (telemetryError) {
+    console.debug('model_load telemetry failed:', telemetryError)
+  }
+}
 
 // Local providers whose models are served by on-device engines (llamacpp /
 // llamacpp-upstream / mlx). Foundation Models is deliberately excluded here
@@ -172,6 +250,8 @@ async function doSwitchToModel(params: {
   const serverState = useLocalApiServer.getState()
 
   const isLocal = isLocalEngineProvider(providerName)
+  let loadStartTs = 0
+  let modelConfig: LoadableModel | undefined
 
   setServerStatus('pending')
   updateLoadingModel(true)
@@ -204,10 +284,20 @@ async function doSwitchToModel(params: {
     if (!provider) {
       throw new Error(`Provider '${providerName}' not found`)
     }
+    modelConfig = provider.models?.find((m) => m.id === modelId) as
+      | LoadableModel
+      | undefined
 
     if (isLocal) {
       // 4a. Local branch — load the model into its engine.
+      loadStartTs = Date.now()
       await serviceHub.models().startModel(provider, modelId, true)
+      emitModelLoad('success', {
+        modelId,
+        providerName,
+        durationMs: Date.now() - loadStartTs,
+        model: modelConfig,
+      })
       console.log('[switchToModel] Local model started:', modelId)
       await new Promise((resolve) => setTimeout(resolve, 500))
     } else {
@@ -258,6 +348,15 @@ async function doSwitchToModel(params: {
   } catch (error) {
     console.error('[switchToModel] Failed to switch model:', error)
     useAppState.getState().setServerStatus('stopped')
+    if (isLocal) {
+      emitModelLoad('failed', {
+        modelId,
+        providerName,
+        durationMs: loadStartTs ? Date.now() - loadStartTs : 0,
+        model: modelConfig,
+        error,
+      })
+    }
     reportModelLoadError(error)
     throw error
   } finally {

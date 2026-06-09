@@ -21,6 +21,16 @@ import {
   markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
+import posthog from 'posthog-js'
+import {
+  classifyDownloadFailure,
+  downloadKind,
+  finalizeDownloadOnce,
+  parseHttpStatus,
+  quantFromModelId,
+  sizeBucket,
+  takeDownloadDuration,
+} from '@/lib/telemetry'
 
 //* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
 const DOWNLOAD_PROGRESS_INDICATOR = 'bg-emerald-400/50 dark:bg-emerald-400/45'
@@ -30,6 +40,35 @@ function isCancellationLikeError(error?: string): boolean {
   return /abort|aborted|cancel|cancelled|canceled|stop|stopped|interrupt/i.test(
     error
   )
+}
+
+/**
+ * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
+ * success events don't double-count. PII contract: only ids/enums/buckets.
+ */
+function captureDownloadTerminal(
+  status: 'completed' | 'failed' | 'cancelled',
+  id: string,
+  opts: { downloadType?: string; error?: string; totalBytes?: number } = {}
+): void {
+  if (!finalizeDownloadOnce(id)) return
+  try {
+    posthog.capture('model_download', {
+      status,
+      download_kind: downloadKind(id, opts.downloadType),
+      model_id: id,
+      quant: quantFromModelId(id),
+      size_bucket: sizeBucket(opts.totalBytes),
+      duration_ms: takeDownloadDuration(id),
+      failure_reason:
+        status === 'completed'
+          ? undefined
+          : classifyDownloadFailure(opts.error),
+      http_status: parseHttpStatus(opts.error),
+    })
+  } catch (telemetryError) {
+    console.debug('model_download terminal telemetry failed:', telemetryError)
+  }
 }
 
 export function DownloadManagement() {
@@ -181,13 +220,22 @@ export function DownloadManagement() {
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
 
-      const anyState = state as unknown as { error?: string }
+      const anyState = state as unknown as {
+        error?: string
+        downloadType?: string
+      }
       const err = anyState?.error || ''
 
-      if (
+      const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
         isCancellationLikeError(err)
-      ) {
+      captureDownloadTerminal(cancelled ? 'cancelled' : 'failed', state.modelId, {
+        downloadType: anyState?.downloadType,
+        error: err,
+        totalBytes: state.size?.total,
+      })
+
+      if (cancelled) {
         markResumableDownload(state.modelId)
         toast.dismiss('download-failed')
         return
@@ -273,6 +321,11 @@ export function DownloadManagement() {
       // Dismiss the validation started toast
       toast.dismiss(`model-validation-started-${event.modelId}`)
 
+      captureDownloadTerminal('failed', event.modelId, {
+        downloadType: 'Model',
+        error: event.error || event.reason,
+      })
+
       clearResumableDownload(event.modelId)
       removeDownload(event.modelId)
       removeLocalDownloadingModel(event.modelId)
@@ -298,6 +351,11 @@ export function DownloadManagement() {
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadStopped', state)
+      captureDownloadTerminal('cancelled', state.modelId, {
+        downloadType: (state as unknown as { downloadType?: string })
+          ?.downloadType,
+        totalBytes: state.size?.total,
+      })
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
@@ -324,6 +382,12 @@ export function DownloadManagement() {
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
+
+      captureDownloadTerminal('completed', state.modelId, {
+        downloadType: (state as unknown as { downloadType?: string })
+          ?.downloadType,
+        totalBytes: state.size?.total,
+      })
 
       // Dismiss any validation started toast when download completes successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
@@ -352,6 +416,12 @@ export function DownloadManagement() {
   const onFileDownloadAndVerificationSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
+
+      captureDownloadTerminal('completed', state.modelId, {
+        downloadType: (state as unknown as { downloadType?: string })
+          ?.downloadType,
+        totalBytes: state.size?.total,
+      })
 
       // Dismiss any validation started toast when download and verification complete successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)

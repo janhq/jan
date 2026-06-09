@@ -39,4 +39,8 @@ export class DefaultAppService implements AppService {
     console.log('readYaml called with path:', path)
     throw new Error('readYaml not implemented in default app service')
   }
+
+  async getInstallerType(): Promise<string | undefined> {
+    return undefined
+  }
 }

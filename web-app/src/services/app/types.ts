@@ -17,4 +17,6 @@ export interface AppService {
   relocateJanDataFolder(path: string): Promise<void>
   getServerStatus(): Promise<boolean>
   readYaml<T = unknown>(path: string): Promise<T>
+  /** Best-effort installer channel of the running build (ATO-111 telemetry). */
+  getInstallerType(): Promise<string | undefined>
 }
