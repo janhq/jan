@@ -1,6 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { CustomChatTransport, normalizeToolInputSchema } from '../custom-chat-transport'
 
+const mockState = vi.hoisted(() => ({
+  currentAssistant: null as unknown,
+  threads: {} as Record<string, unknown>,
+  selectedProvider: '' as string,
+  selectedModel: null as Model | null,
+  provider: null as ModelProvider | null,
+}))
+
+const mockCodex = vi.hoisted(() => ({
+  sendCodexAppServerChatMessage: vi.fn(),
+  shutdownCodexAppServerChatSession: vi.fn(),
+}))
+
 // Mock all the heavy dependencies
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceStore: { getState: () => ({ serviceHub: null }) },
@@ -11,12 +24,13 @@ vi.mock('@/hooks/useToolAvailable', () => ({
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: { getState: () => ({ selectedModel: null, selectedProvider: '', getProviderByName: () => null }) },
-}))
-
-const mockState = vi.hoisted(() => ({
-  currentAssistant: null as unknown,
-  threads: {} as Record<string, unknown>,
+  useModelProvider: {
+    getState: () => ({
+      selectedModel: mockState.selectedModel,
+      selectedProvider: mockState.selectedProvider,
+      getProviderByName: () => mockState.provider,
+    }),
+  },
 }))
 
 vi.mock('@/hooks/useAssistant', () => ({
@@ -47,6 +61,12 @@ vi.mock('@/lib/mcp-router-model-filter', () => ({
   isRouterModelSelectable: () => false,
 }))
 
+vi.mock('@/lib/codex-app-server', () => ({
+  isCodexAppServerProvider: (providerId: string) => providerId === 'codex',
+  sendCodexAppServerChatMessage: mockCodex.sendCodexAppServerChatMessage,
+  shutdownCodexAppServerChatSession: mockCodex.shutdownCodexAppServerChatSession,
+}))
+
 vi.mock('./model-factory', () => ({
   ModelFactory: { createModel: vi.fn() },
 }))
@@ -57,6 +77,11 @@ describe('CustomChatTransport', () => {
   beforeEach(() => {
     mockState.currentAssistant = null
     mockState.threads = {}
+    mockState.selectedProvider = ''
+    mockState.selectedModel = null
+    mockState.provider = null
+    mockCodex.sendCodexAppServerChatMessage.mockReset()
+    mockCodex.shutdownCodexAppServerChatSession.mockReset()
     transport = new CustomChatTransport('You are helpful', 'thread-1')
   })
 
@@ -95,6 +120,53 @@ describe('CustomChatTransport', () => {
   it('reconnectToStream returns null', async () => {
     const result = await transport.reconnectToStream({ chatId: 'c1' } as any)
     expect(result).toBeNull()
+  })
+
+  it('routes codex provider requests through Codex app-server backend', async () => {
+    const stream = new ReadableStream()
+    mockState.selectedProvider = 'codex'
+    mockState.selectedModel = { id: 'gpt-5.1-codex-max' }
+    mockState.provider = {
+      active: true,
+      provider: 'codex',
+      api_key: 'test-key',
+      base_url: 'https://api.openai.com/v1',
+      settings: [],
+      models: [mockState.selectedModel],
+    }
+    mockCodex.sendCodexAppServerChatMessage.mockResolvedValue(stream)
+
+    const result = await transport.sendMessages({
+      chatId: 'thread-1',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          parts: [{ type: 'text', text: 'hello codex' }],
+        },
+      ],
+      abortSignal: undefined,
+      trigger: 'submit-message',
+      messageId: 'assistant-1',
+    } as any)
+
+    expect(result).toBe(stream)
+    expect(mockCodex.sendCodexAppServerChatMessage).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      messageId: 'assistant-1',
+      messages: expect.any(Array),
+      provider: mockState.provider,
+      model: mockState.selectedModel,
+      abortSignal: undefined,
+    })
+  })
+
+  it('shuts down Codex backend session for its thread', async () => {
+    await transport.shutdown()
+
+    expect(mockCodex.shutdownCodexAppServerChatSession).toHaveBeenCalledWith(
+      'thread-1'
+    )
   })
 
   it('mapUserInlineAttachments passes through non-user messages', () => {

@@ -10,7 +10,7 @@
         "minHeight": 740,
         "resizable": true,
         "fullscreen": false,
-        "zoomHotkeysEnabled": true,
+        "zoomHotkeysEnabled": false,
         "center": true,
         "hiddenTitle": true,
         "transparent": true,
@@ -30,7 +30,11 @@
   },
   "bundle": {
     "targets": ["nsis", "msi"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/LICENSE",
+      "resources/bin/jan-cli.exe"
+    ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "webviewInstallMode": {

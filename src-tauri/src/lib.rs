@@ -58,12 +58,33 @@ macro_rules! invoke_commands_with_extras {
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
+        core::system::commands::write_codex_provider_profile_artifacts,
+        core::system::commands::list_running_processes,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
         core::system::commands::check_jan_cli_installed,
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
+        // Studio runtime commands
+        core::studio::commands::probe_binary_on_path,
+        core::studio::commands::probe_openai_endpoint,
+        core::studio::commands::list_studio_runtime_processes,
+        core::studio::commands::spawn_studio_runtime,
+        core::studio::commands::stop_studio_runtime,
+        core::studio::commands::read_studio_runtime_logs,
+        core::studio::commands::write_codex_app_server_config,
+        core::studio::commands::start_codex_app_server,
+        core::studio::commands::write_codex_app_server_stdin,
+        core::studio::commands::stop_codex_app_server,
+        core::studio::commands::list_codex_app_server_processes,
+        // Terminal commands
+        core::terminal::commands::start_terminal_session,
+        core::terminal::commands::write_terminal_stdin,
+        core::terminal::commands::resize_terminal_session,
+        core::terminal::commands::stop_terminal_session,
+        core::terminal::commands::list_terminal_sessions,
+        core::terminal::commands::read_terminal_scrollback,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -202,7 +223,10 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
 )]
 pub fn run() {
     let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
+    // Single-instance only in release builds. Dev `cargo run` shares the same
+    // bundle id as the installed Jan.app and would otherwise exit immediately
+    // when another copy is already open.
+    #[cfg(all(desktop, not(debug_assertions)))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");

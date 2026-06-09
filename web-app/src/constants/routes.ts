@@ -6,6 +6,7 @@ export const route = {
   projectDetail: '/project/$projectId',
   settings: {
     index: '/settings',
+    studio: '/settings/studio',
     model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',

@@ -29,6 +29,9 @@ import {
   IconLoader2,
   IconWorld,
   IconBrandChrome,
+  IconFileText,
+  IconListDetails,
+  IconTerminal2,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
@@ -133,18 +136,14 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const { 
-    loading,
-    currentAssistant,
-    setCurrentAssistant,
-    assistants
-  } = useAssistant()
+  const { loading, currentAssistant, setCurrentAssistant, assistants } =
+    useAssistant()
 
   // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const isAgentMode = useAgentMode((state) =>
-    state.agentThreads[agentModeKey] === true
+  const isAgentMode = useAgentMode(
+    (state) => state.agentThreads[agentModeKey] === true
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
@@ -179,7 +178,9 @@ const ChatInput = memo(function ChatInput({
   const [hasMmproj, setHasMmproj] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
   // Check if selected model is currently loaded/active
-  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
+  const isModelActive = selectedModel?.id
+    ? activeModels.includes(selectedModel.id)
+    : false
   const [selectedAssistantId, setSelectedAssistantId] = useState<
     string | undefined
   >(loading ? undefined : currentAssistant?.id || '')
@@ -243,6 +244,14 @@ const ChatInput = memo(function ChatInput({
   const ingestingAny = attachments.some((a) => a.processing)
   const hasSendableMedia = attachments.some(
     (a) => (a.type === 'image' || a.type === 'audio') && !!a.dataUrl
+  )
+  const hasSendableContext = attachments.some(
+    (a) =>
+      a.type === 'browser-selection' ||
+      a.type === 'terminal-output' ||
+      a.type === 'runtime-log' ||
+      a.type === 'process-list' ||
+      a.type === 'context-brief'
   )
 
   const [, setFileIngestProgress] = useState<{
@@ -310,7 +319,7 @@ const ChatInput = memo(function ChatInput({
       setMessage('Please select a model to start chatting.')
       return
     }
-    if (!prompt.trim() && !hasSendableMedia) {
+    if (!prompt.trim() && !hasSendableMedia && !hasSendableContext) {
       return
     }
     if (ingestingAny) {
@@ -539,7 +548,13 @@ const ChatInput = memo(function ChatInput({
         }, 500)
       }
     },
-    [abortControllers, cancelToolCall, onStop, selectedModel?.id, selectedProvider]
+    [
+      abortControllers,
+      cancelToolCall,
+      onStop,
+      selectedModel?.id,
+      selectedProvider,
+    ]
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -905,201 +920,210 @@ const ChatInput = memo(function ChatInput({
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  const processImageFiles = useCallback(async (files: File[]) => {
-    const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-    const oversizedFiles: string[] = []
-    const invalidTypeFiles: string[] = []
+  const processImageFiles = useCallback(
+    async (files: File[]) => {
+      const maxSize = 10 * 1024 * 1024 // 10MB in bytes
+      const oversizedFiles: string[] = []
+      const invalidTypeFiles: string[] = []
 
-    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
-    const validFiles: File[] = []
+      const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+      const validFiles: File[] = []
 
-    // First pass: validate file size and type (no duplicate check yet)
-    Array.from(files).forEach((file) => {
-      // Check file size
-      if (file.size > maxSize) {
-        oversizedFiles.push(file.name)
-        return
-      }
-
-      // Get file type - use extension as fallback if MIME type is incorrect
-      const detectedType = file.type || getFileTypeFromExtension(file.name)
-      const actualType = getFileTypeFromExtension(file.name) || detectedType
-
-      // Check file type - images only
-      if (!allowedTypes.includes(actualType)) {
-        invalidTypeFiles.push(file.name)
-        return
-      }
-
-      validFiles.push(file)
-    })
-
-    // Process valid files into attachments
-    const preparedFiles: Attachment[] = []
-    for (const file of validFiles) {
-      const detectedType = file.type || getFileTypeFromExtension(file.name)
-      const actualType = getFileTypeFromExtension(file.name) || detectedType
-
-      const reader = new FileReader()
-      await new Promise<void>((resolve) => {
-        reader.onload = () => {
-          const result = reader.result
-          if (typeof result === 'string') {
-            const base64String = result.split(',')[1]
-            const att = createImageAttachment({
-              name: file.name,
-              size: file.size,
-              mimeType: actualType,
-              base64: base64String,
-              dataUrl: result,
-            })
-            preparedFiles.push(att)
-          }
-          resolve()
+      // First pass: validate file size and type (no duplicate check yet)
+      Array.from(files).forEach((file) => {
+        // Check file size
+        if (file.size > maxSize) {
+          oversizedFiles.push(file.name)
+          return
         }
-        reader.readAsDataURL(file)
+
+        // Get file type - use extension as fallback if MIME type is incorrect
+        const detectedType = file.type || getFileTypeFromExtension(file.name)
+        const actualType = getFileTypeFromExtension(file.name) || detectedType
+
+        // Check file type - images only
+        if (!allowedTypes.includes(actualType)) {
+          invalidTypeFiles.push(file.name)
+          return
+        }
+
+        validFiles.push(file)
       })
-    }
 
-    // Compute content hashes for deduplication (allows different images with same filename)
-    for (const att of preparedFiles) {
-      if (att.base64) {
-        att.contentHash = await hashBase64(att.base64)
+      // Process valid files into attachments
+      const preparedFiles: Attachment[] = []
+      for (const file of validFiles) {
+        const detectedType = file.type || getFileTypeFromExtension(file.name)
+        const actualType = getFileTypeFromExtension(file.name) || detectedType
+
+        const reader = new FileReader()
+        await new Promise<void>((resolve) => {
+          reader.onload = () => {
+            const result = reader.result
+            if (typeof result === 'string') {
+              const base64String = result.split(',')[1]
+              const att = createImageAttachment({
+                name: file.name,
+                size: file.size,
+                mimeType: actualType,
+                base64: base64String,
+                dataUrl: result,
+              })
+              preparedFiles.push(att)
+            }
+            resolve()
+          }
+          reader.readAsDataURL(file)
+        })
       }
-    }
 
-    const duplicates: string[] = []
-    const newFiles: Attachment[] = []
-
-    const currentAttachments = useChatAttachments.getState().getAttachments(
-      attachmentsKey
-    )
-
-    const existingImageHashes = new Set<string>()
-    const existingImageNames = new Set<string>()
-    for (const a of currentAttachments) {
-      if (a.type !== 'image') continue
-      if (a.contentHash) {
-        existingImageHashes.add(a.contentHash)
-      } else if (a.base64) {
-        existingImageHashes.add(await hashBase64(a.base64))
-      } else {
-        existingImageNames.add(a.name)
+      // Compute content hashes for deduplication (allows different images with same filename)
+      for (const att of preparedFiles) {
+        if (att.base64) {
+          att.contentHash = await hashBase64(att.base64)
+        }
       }
-    }
 
-    const seenHashesInBatch = new Set<string>()
-    for (const att of preparedFiles) {
-      const hash = att.contentHash
-      const isDuplicateByContent =
-        hash &&
-        (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
-      const isDuplicateByName =
-        existingImageNames.has(att.name)
-      if (isDuplicateByContent || isDuplicateByName) {
-        duplicates.push(att.name)
-        continue
+      const duplicates: string[] = []
+      const newFiles: Attachment[] = []
+
+      const currentAttachments = useChatAttachments
+        .getState()
+        .getAttachments(attachmentsKey)
+
+      const existingImageHashes = new Set<string>()
+      const existingImageNames = new Set<string>()
+      for (const a of currentAttachments) {
+        if (a.type !== 'image') continue
+        if (a.contentHash) {
+          existingImageHashes.add(a.contentHash)
+        } else if (a.base64) {
+          existingImageHashes.add(await hashBase64(a.base64))
+        } else {
+          existingImageNames.add(a.name)
+        }
       }
-      if (hash) {
-        seenHashesInBatch.add(hash)
+
+      const seenHashesInBatch = new Set<string>()
+      for (const att of preparedFiles) {
+        const hash = att.contentHash
+        const isDuplicateByContent =
+          hash && (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
+        const isDuplicateByName = existingImageNames.has(att.name)
+        if (isDuplicateByContent || isDuplicateByName) {
+          duplicates.push(att.name)
+          continue
+        }
+        if (hash) {
+          seenHashesInBatch.add(hash)
+        }
+        newFiles.push(att)
       }
-      newFiles.push(att)
-    }
 
-    setAttachmentsForThread(attachmentsKey, (prev) =>
-      newFiles.length > 0 ? [...prev, ...newFiles] : prev
-    )
+      setAttachmentsForThread(attachmentsKey, (prev) =>
+        newFiles.length > 0 ? [...prev, ...newFiles] : prev
+      )
 
-    if (currentThreadId && newFiles.length > 0) {
-      const ingestTotal = newFiles.length
-      void (async () => {
-        setFileIngestProgress({ completed: 0, total: ingestTotal })
-        try {
-          for (let i = 0; i < newFiles.length; i++) {
-            const img = newFiles[i]
-            const matchImg = (a: Attachment) =>
-              a.type === 'image' &&
-              (img.contentHash
-                ? a.contentHash === img.contentHash
-                : a.name === img.name)
+      if (currentThreadId && newFiles.length > 0) {
+        const ingestTotal = newFiles.length
+        void (async () => {
+          setFileIngestProgress({ completed: 0, total: ingestTotal })
+          try {
+            for (let i = 0; i < newFiles.length; i++) {
+              const img = newFiles[i]
+              const matchImg = (a: Attachment) =>
+                a.type === 'image' &&
+                (img.contentHash
+                  ? a.contentHash === img.contentHash
+                  : a.name === img.name)
 
-            try {
-              setAttachmentsForThread(attachmentsKey, (prev) =>
-                prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
-              )
-
-              const result = await serviceHub
-                .uploads()
-                .ingestImage(currentThreadId, img)
-
-              if (result?.id) {
+              try {
                 setAttachmentsForThread(attachmentsKey, (prev) =>
                   prev.map((a) =>
-                    matchImg(a)
-                      ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: result.id,
-                        }
-                      : a
+                    matchImg(a) ? { ...a, processing: true } : a
                   )
                 )
-              } else {
-                throw new Error('No ID returned from image ingestion')
+
+                const result = await serviceHub
+                  .uploads()
+                  .ingestImage(currentThreadId, img)
+
+                if (result?.id) {
+                  setAttachmentsForThread(attachmentsKey, (prev) =>
+                    prev.map((a) =>
+                      matchImg(a)
+                        ? {
+                            ...a,
+                            processing: false,
+                            processed: true,
+                            id: result.id,
+                          }
+                        : a
+                    )
+                  )
+                } else {
+                  throw new Error('No ID returned from image ingestion')
+                }
+              } catch (error) {
+                console.error('Failed to ingest image:', error)
+                setAttachmentsForThread(attachmentsKey, (prev) =>
+                  prev.filter((a) => !matchImg(a))
+                )
+                toast.error(`Failed to ingest ${img.name}`, {
+                  description:
+                    error instanceof Error ? error.message : String(error),
+                })
+              } finally {
+                setFileIngestProgress({
+                  completed: i + 1,
+                  total: ingestTotal,
+                })
               }
-            } catch (error) {
-              console.error('Failed to ingest image:', error)
-              setAttachmentsForThread(attachmentsKey, (prev) =>
-                prev.filter((a) => !matchImg(a))
-              )
-              toast.error(`Failed to ingest ${img.name}`, {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            } finally {
-              setFileIngestProgress({
-                completed: i + 1,
-                total: ingestTotal,
-              })
             }
+          } finally {
+            setFileIngestProgress(null)
           }
-        } finally {
-          setFileIngestProgress(null)
-        }
-      })()
-    }
-
-    // Display validation errors
-    if (duplicates.length > 0) {
-      toast.warning('Some images already attached', {
-        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
-      })
-    }
-
-    const errors: string[] = []
-    if (oversizedFiles.length > 0) {
-      errors.push(
-        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
-      )
-    }
-
-    if (invalidTypeFiles.length > 0) {
-      errors.push(
-        `Invalid file type${invalidTypeFiles.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidTypeFiles.join(', ')}`
-      )
-    }
-
-    if (errors.length > 0) {
-      setMessage(errors.join(' | '))
-      // Reset file input to allow re-uploading
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
+        })()
       }
-    } else {
-      setMessage('')
-    }
-  }, [attachmentsKey, currentThreadId, setAttachmentsForThread, serviceHub, setFileIngestProgress])
+
+      // Display validation errors
+      if (duplicates.length > 0) {
+        toast.warning('Some images already attached', {
+          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+        })
+      }
+
+      const errors: string[] = []
+      if (oversizedFiles.length > 0) {
+        errors.push(
+          `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
+        )
+      }
+
+      if (invalidTypeFiles.length > 0) {
+        errors.push(
+          `Invalid file type${invalidTypeFiles.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidTypeFiles.join(', ')}`
+        )
+      }
+
+      if (errors.length > 0) {
+        setMessage(errors.join(' | '))
+        // Reset file input to allow re-uploading
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+      } else {
+        setMessage('')
+      }
+    },
+    [
+      attachmentsKey,
+      currentThreadId,
+      setAttachmentsForThread,
+      serviceHub,
+      setFileIngestProgress,
+    ]
+  )
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -1143,8 +1167,14 @@ const ChatInput = memo(function ChatInput({
       for (const file of Array.from(files)) {
         const lower = file.name.toLowerCase()
         const ext = lower.split('.').pop()
-        const isWav = file.type === 'audio/wav' || file.type === 'audio/x-wav' || ext === 'wav'
-        const isMp3 = file.type === 'audio/mpeg' || file.type === 'audio/mp3' || ext === 'mp3'
+        const isWav =
+          file.type === 'audio/wav' ||
+          file.type === 'audio/x-wav' ||
+          ext === 'wav'
+        const isMp3 =
+          file.type === 'audio/mpeg' ||
+          file.type === 'audio/mp3' ||
+          ext === 'mp3'
         if (!isWav && !isMp3) {
           invalid.push(file.name)
           continue
@@ -1162,7 +1192,8 @@ const ChatInput = memo(function ChatInput({
             if (typeof r === 'string') resolve(r)
             else reject(new Error('read failed'))
           }
-          reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+          reader.onerror = () =>
+            reject(reader.error ?? new Error('read failed'))
           reader.readAsDataURL(file)
         })
         const base64 = dataUrl.split(',')[1] ?? ''
@@ -1180,7 +1211,9 @@ const ChatInput = memo(function ChatInput({
         )
       }
 
-      const current = useChatAttachments.getState().getAttachments(attachmentsKey)
+      const current = useChatAttachments
+        .getState()
+        .getAttachments(attachmentsKey)
       const existingNames = new Set(
         current.filter((a) => a.type === 'audio').map((a) => a.name)
       )
@@ -1248,14 +1281,16 @@ const ChatInput = memo(function ChatInput({
               const response = await fetch(fileUrl)
               if (!response.ok) throw new Error(response.statusText)
               const blob = await response.blob()
-              const fileName = path.split(/[\\/]/).filter(Boolean).pop() || 'audio'
+              const fileName =
+                path.split(/[\\/]/).filter(Boolean).pop() || 'audio'
               const ext = fileName.toLowerCase().split('.').pop()
               const mimeType = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav'
               files.push(new File([blob], fileName, { type: mimeType }))
             } catch (error) {
               console.error('Failed to read audio file:', error)
               toast.error('Failed to read audio file', {
-                description: error instanceof Error ? error.message : String(error),
+                description:
+                  error instanceof Error ? error.message : String(error),
               })
             }
           }
@@ -1542,11 +1577,7 @@ const ChatInput = memo(function ChatInput({
   return (
     <div className="relative">
       <div className="relative">
-        <div
-          className={cn(
-            'relative overflow-hidden p-0.5 rounded-3xl'
-          )}
-        >
+        <div className={cn('relative overflow-hidden p-0.5 rounded-3xl')}>
           {isStreaming && (
             <div className="absolute inset-0">
               <MovingBorder rx="10%" ry="10%">
@@ -1579,10 +1610,23 @@ const ChatInput = memo(function ChatInput({
                     .map(({ att, idx }) => {
                       const isImage = att.type === 'image'
                       const isAudio = att.type === 'audio'
+                      const isBrowserSelection =
+                        att.type === 'browser-selection'
+                      const isTerminalOutput = att.type === 'terminal-output'
+                      const isRuntimeLog = att.type === 'runtime-log'
+                      const isProcessList = att.type === 'process-list'
+                      const isContextBrief = att.type === 'context-brief'
                       const ext = att.fileType || att.mimeType?.split('/')[1]
+                      const browserUrl = att.browserSelection?.url
+                      const terminalOutput = att.terminalOutput
+                      const runtimeLog = att.runtimeLog
+                      const processList = att.processList
+                      const contextBrief = att.contextBrief
                       const durLabel =
                         isAudio && typeof att.durationSec === 'number'
-                          ? `${Math.floor(att.durationSec / 60)}:${Math.floor(att.durationSec % 60)
+                          ? `${Math.floor(att.durationSec / 60)}:${Math.floor(
+                              att.durationSec % 60
+                            )
                               .toString()
                               .padStart(2, '0')}`
                           : undefined
@@ -1614,6 +1658,41 @@ const ChatInput = memo(function ChatInput({
                                       </span>
                                     )}
                                   </div>
+                                ) : isBrowserSelection ? (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconBrandChrome size={20} />
+                                    <span className="text-[10px] leading-none mt-0.5 opacity-70">
+                                      web
+                                    </span>
+                                  </div>
+                                ) : isTerminalOutput ? (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconTerminal2 size={20} />
+                                    <span className="text-[10px] leading-none mt-0.5 opacity-70">
+                                      tty
+                                    </span>
+                                  </div>
+                                ) : isRuntimeLog ? (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconFileText size={20} />
+                                    <span className="text-[10px] leading-none mt-0.5 opacity-70">
+                                      log
+                                    </span>
+                                  </div>
+                                ) : isProcessList ? (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconListDetails size={20} />
+                                    <span className="text-[10px] leading-none mt-0.5 opacity-70">
+                                      proc
+                                    </span>
+                                  </div>
+                                ) : isContextBrief ? (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconListDetails size={20} />
+                                    <span className="text-[10px] leading-none mt-0.5 opacity-70">
+                                      ctx
+                                    </span>
+                                  </div>
                                 ) : (
                                   <div className="flex flex-col items-center justify-center text-muted-foreground">
                                     <IconPaperclip size={18} />
@@ -1641,9 +1720,26 @@ const ChatInput = memo(function ChatInput({
                                       ? att.audioFormat
                                         ? `.${att.audioFormat}${durLabel ? ` · ${durLabel}` : ''}`
                                         : 'audio'
-                                      : ext
-                                        ? `.${ext}`
-                                        : 'document'}
+                                      : isBrowserSelection
+                                        ? browserUrl || 'browser context'
+                                        : isTerminalOutput
+                                          ? terminalOutput
+                                            ? `${terminalOutput.shell} · ${terminalOutput.captureMode}`
+                                            : 'terminal output'
+                                          : isRuntimeLog
+                                            ? runtimeLog?.sourceLabel ||
+                                              'runtime logs'
+                                            : isProcessList
+                                              ? processList
+                                                ? `${processList.sourceLabel} · ${processList.processes.length} process${processList.processes.length === 1 ? '' : 'es'}`
+                                                : 'process list'
+                                              : isContextBrief
+                                                ? contextBrief
+                                                  ? `${contextBrief.items.length} context item${contextBrief.items.length === 1 ? '' : 's'}`
+                                                  : 'context brief'
+                                          : ext
+                                            ? `.${ext}`
+                                            : 'document'}
                                   {att.size
                                     ? ` · ${formatBytes(att.size, {
                                         decimals: (_, unit) =>
@@ -1668,10 +1764,7 @@ const ChatInput = memo(function ChatInput({
                               className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
                               onClick={() => handleRemoveAttachment(idx)}
                             >
-                              <IconX
-                                className="text-neutral-200"
-                                size={14}
-                              />
+                              <IconX className="text-neutral-200" size={14} />
                             </div>
                           )}
                         </div>
@@ -1719,7 +1812,10 @@ const ChatInput = memo(function ChatInput({
                   e.preventDefault()
                   // Submit prompt when Enter is pressed without Shift and prompt is not empty.
                   // If streaming, handleSendMessage will queue the message automatically.
-                  if ((prompt.trim() || hasSendableMedia) && !ingestingAny) {
+                  if (
+                    (prompt.trim() || hasSendableMedia || hasSendableContext) &&
+                    !ingestingAny
+                  ) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -1728,8 +1824,7 @@ const ChatInput = memo(function ChatInput({
                 if (e.key === 'ArrowUp' && !isComposing) {
                   const textarea = e.currentTarget
                   const cursorAtStart =
-                    textarea.selectionStart === 0 &&
-                    textarea.selectionEnd === 0
+                    textarea.selectionStart === 0 && textarea.selectionEnd === 0
                   if (cursorAtStart || !prompt) {
                     e.preventDefault()
                     navigateHistory('up')
@@ -1771,18 +1866,23 @@ const ChatInput = memo(function ChatInput({
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
-                {/* Dropdown for attachments — hidden in agent mode */}
-                {!effectiveAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      className="rounded-full mr-2 mb-1"
+                    >
                       <PlusIcon size={18} className="text-muted-foreground" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    {hasMmproj && (
+                    {!effectiveAgentMode && hasMmproj && (
                       <DropdownMenuItem onClick={() => void openImagePicker()}>
-                        <IconPhoto size={18} className="text-muted-foreground" />
+                        <IconPhoto
+                          size={18}
+                          className="text-muted-foreground"
+                        />
                         <span>Add Images</span>
                         <input
                           type="file"
@@ -1793,9 +1893,12 @@ const ChatInput = memo(function ChatInput({
                         />
                       </DropdownMenuItem>
                     )}
-                    {audioSupported && (
+                    {!effectiveAgentMode && audioSupported && (
                       <DropdownMenuItem onClick={() => void openAudioPicker()}>
-                        <IconMusic size={18} className="text-muted-foreground" />
+                        <IconMusic
+                          size={18}
+                          className="text-muted-foreground"
+                        />
                         <span>Add Audio</span>
                         <input
                           type="file"
@@ -1807,31 +1910,33 @@ const ChatInput = memo(function ChatInput({
                         />
                       </DropdownMenuItem>
                     )}
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={!selectedModel?.capabilities?.includes('tools')}
-                    >
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-muted-foreground animate-spin"
-                        />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+                    {!effectiveAgentMode && (
+                      <DropdownMenuItem
+                        onClick={handleAttachDocsIngest}
+                        disabled={
+                          !selectedModel?.capabilities?.includes('tools')
+                        }
+                      >
+                        {ingestingDocs ? (
+                          <IconLoader2
+                            size={18}
+                            className="text-muted-foreground animate-spin"
+                          />
+                        ) : (
+                          <IconPaperclip
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <span>
+                          {ingestingDocs
+                            ? 'Indexing documents…'
+                            : 'Add documents or files'}
+                        </span>
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -1855,68 +1960,69 @@ const ChatInput = memo(function ChatInput({
                       : undefined
                   }
                 />
-                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        disabled={isJanBrowserMCPLoading}
-                        className={cn(janBrowserMCPActive && "text-primary")}
-                        onClick={
-                          isJanBrowserMCPLoading
-                            ? undefined
-                            : handleBrowseClick
-                        }
-                      >
-                        {isJanBrowserMCPLoading ? (
-                          <IconLoader2
-                            size={18}
-                            className="text-primary animate-spin"
-                          />
-                        ) : (
-                          <IconBrandChrome
-                            size={18}
-                            className={cn(
-                              'text-muted-foreground',
-                              janBrowserMCPActive && 'text-primary'
-                            )}
-                          />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {isJanBrowserMCPLoading
-                          ? 'Starting...'
-                          : janBrowserMCPActive
-                            ? 'Browse (Active)'
-                            : 'Browse'}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
+                {!effectiveAgentMode &&
+                  hasJanBrowserMCPConfig &&
+                  modelSupportsBrowser && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
                           variant="ghost"
                           size="icon-xs"
+                          disabled={isJanBrowserMCPLoading}
+                          className={cn(janBrowserMCPActive && 'text-primary')}
+                          onClick={
+                            isJanBrowserMCPLoading
+                              ? undefined
+                              : handleBrowseClick
+                          }
                         >
-                        <IconCodeCircle2
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('embeddings')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                          {isJanBrowserMCPLoading ? (
+                            <IconLoader2
+                              size={18}
+                              className="text-primary animate-spin"
+                            />
+                          ) : (
+                            <IconBrandChrome
+                              size={18}
+                              className={cn(
+                                'text-muted-foreground',
+                                janBrowserMCPActive && 'text-primary'
+                              )}
+                            />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {isJanBrowserMCPLoading
+                            ? 'Starting...'
+                            : janBrowserMCPActive
+                              ? 'Browse (Active)'
+                              : 'Browse'}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('embeddings') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconCodeCircle2
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('embeddings')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1933,12 +2039,13 @@ const ChatInput = memo(function ChatInput({
                     // Use default tools dropdown
                     <Tooltip
                       open={tooltipShown === 'tools'}
-                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
+                      onOpenChange={(newValue) =>
+                        newValue
+                          ? setTooltipShown('tools')
+                          : setTooltipShown(false)
+                      }
                     >
-                      <TooltipTrigger
-                        asChild
-                        disabled={dropdownToolsAvailable}
-                      >
+                      <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
                         <Button
                           variant="ghost"
                           size="icon-xs"
@@ -1960,14 +2067,12 @@ const ChatInput = memo(function ChatInput({
                               return (
                                 <div
                                   className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
                                   )}
                                 >
                                   <IconTool
                                     size={18}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                    )}
+                                    className={cn('text-muted-foreground')}
                                   />
                                 </div>
                               )
@@ -1986,12 +2091,16 @@ const ChatInput = memo(function ChatInput({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant={isAgentMode ? "default" : "ghost"}
+                        variant={isAgentMode ? 'default' : 'ghost'}
                         size="icon-xs"
-                        onClick={currentThreadId ? handleAgentToggle : undefined}
+                        onClick={
+                          currentThreadId ? handleAgentToggle : undefined
+                        }
                         className={cn(
-                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
-                          !currentThreadId && 'cursor-default pointer-events-none'
+                          isAgentMode &&
+                            'text-primary bg-primary/10 hover:bg-primary/10 items-center',
+                          !currentThreadId &&
+                            'cursor-default pointer-events-none'
                         )}
                       >
                         <BotIcon
@@ -2012,21 +2121,22 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <IconWorld
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Web Search</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('web_search') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconWorld
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Web Search</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
                 {!effectiveAgentMode &&
                   selectedProvider === 'llamacpp' &&
@@ -2042,14 +2152,13 @@ const ChatInput = memo(function ChatInput({
                         (m) => m.id === selectedModel.id
                       )
                       if (modelIndex === -1) return
-                      const existing =
-                        selectedModel.settings?.reasoning ?? {
-                          key: 'reasoning',
-                          title: 'Reasoning',
-                          description: '',
-                          controller_type: 'dropdown',
-                          controller_props: { value },
-                        }
+                      const existing = selectedModel.settings?.reasoning ?? {
+                        key: 'reasoning',
+                        title: 'Reasoning',
+                        description: '',
+                        controller_type: 'dropdown',
+                        controller_props: { value },
+                      }
                       const updatedModel = {
                         ...selectedModel,
                         settings: {
@@ -2111,7 +2220,9 @@ const ChatInput = memo(function ChatInput({
                           </TooltipContent>
                         </Tooltip>
                         <DropdownMenuContent align="start">
-                          <DropdownMenuItem onClick={() => setReasoning('auto')}>
+                          <DropdownMenuItem
+                            onClick={() => setReasoning('auto')}
+                          >
                             Auto
                             {reasoningValue === 'auto' && (
                               <span className="ml-auto text-xs text-muted-foreground">
@@ -2165,7 +2276,9 @@ const ChatInput = memo(function ChatInput({
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
                         if (!currentThreadId) return
-                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
+                        const queue = useMessageQueue
+                          .getState()
+                          .getQueue(currentThreadId)
                         if (queue.length > 0) {
                           useMessageQueue.getState().clearQueue(currentThreadId)
                         } else {
@@ -2177,14 +2290,23 @@ const ChatInput = memo(function ChatInput({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
+                    <p>
+                      {queueLength > 0
+                        ? `Clear ${queueLength} queued message(s)`
+                        : 'Stop generating'}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               ) : (
                 <Button
                   variant="default"
                   size="icon-sm"
-                  disabled={(!prompt.trim() && !hasSendableMedia) || ingestingAny}
+                  disabled={
+                    (!prompt.trim() &&
+                      !hasSendableMedia &&
+                      !hasSendableContext) ||
+                    ingestingAny
+                  }
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"

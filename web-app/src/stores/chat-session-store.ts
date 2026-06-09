@@ -203,6 +203,9 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     } catch (error) {
       console.error("Failed to stop chat session", error);
     }
+    existing.transport.shutdown?.().catch((error) => {
+      console.error("Failed to shut down chat transport", error);
+    });
 
     delete standaloneData[sessionId];
   },
@@ -227,6 +230,9 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       } catch (error) {
         console.error("Failed to stop chat session", error);
       }
+      session.transport.shutdown?.().catch((error) => {
+        console.error("Failed to shut down chat transport", error);
+      });
     });
 
     // Clear standalone data

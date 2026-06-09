@@ -10,7 +10,7 @@
         "minHeight": 740,
         "resizable": true,
         "fullscreen": false,
-        "zoomHotkeysEnabled": true,
+        "zoomHotkeysEnabled": false,
         "center": true,
         "hiddenTitle": true,
         "transparent": true,
@@ -30,7 +30,13 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-swift_Cmlx.bundle", "resources/bin/jan-cli"],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/LICENSE",
+      "resources/bin/mlx-server",
+      "resources/bin/mlx-swift_Cmlx.bundle",
+      "resources/bin/jan-cli"
+    ],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "macOS": {
       "entitlements": "./Entitlements.plist"

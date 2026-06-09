@@ -44,7 +44,7 @@ export abstract class OAIEngine extends AIEngine {
    */
   override onUnload(): void {}
 
-  inference(data: MessageRequest) {}
+  inference(_data: MessageRequest) {}
 
   /**
    * Stops the inference.

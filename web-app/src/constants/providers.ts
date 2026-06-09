@@ -125,13 +125,13 @@ export const predefinedProviders = [
     custom_header: [
       {
         header: 'anthropic-version',
-        value: '2023-06-01'
+        value: '2023-06-01',
       },
       {
         header: 'anthropic-dangerous-direct-browser-access',
-        value: 'true'
-      }
-    ]
+        value: 'true',
+      },
+    ],
   },
   {
     active: true,
@@ -268,7 +268,8 @@ export const predefinedProviders = [
     active: true,
     api_key: '',
     base_url: 'https://api.minimax.io/v1',
-    explore_models_url: 'https://platform.minimax.io/docs/api-reference/text-openai-api',
+    explore_models_url:
+      'https://platform.minimax.io/docs/api-reference/text-openai-api',
     provider: 'minimax',
     settings: [
       {
@@ -290,7 +291,8 @@ export const predefinedProviders = [
         id: 'MiniMax-M2.7',
         name: 'MiniMax-M2.7',
         version: '1.0',
-        description: 'Latest flagship model with enhanced reasoning and coding.',
+        description:
+          'Latest flagship model with enhanced reasoning and coding.',
         capabilities: ['completion', 'tools'],
       },
       {
@@ -304,14 +306,16 @@ export const predefinedProviders = [
         id: 'MiniMax-M2.5',
         name: 'MiniMax-M2.5',
         version: '1.0',
-        description: 'Peak Performance. Ultimate Value. Master the Complex. 204K context window.',
+        description:
+          'Peak Performance. Ultimate Value. Master the Complex. 204K context window.',
         capabilities: ['completion', 'tools'],
       },
       {
         id: 'MiniMax-M2.5-highspeed',
         name: 'MiniMax-M2.5-highspeed',
         version: '1.0',
-        description: 'Same performance, faster and more agile. 204K context window.',
+        description:
+          'Same performance, faster and more agile. 204K context window.',
         capabilities: ['completion', 'tools'],
       },
     ],
@@ -366,6 +370,72 @@ export const predefinedProviders = [
     ],
   },
   {
+    active: false,
+    api_key: 'jan',
+    base_url: 'http://127.0.0.1:8000/v1',
+    provider: 'vllm',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Local vLLM servers usually accept any placeholder key. Use `jan` unless your server requires something else.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'jan',
+          value: 'jan',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'OpenAI-compatible endpoint served by vLLM. Default is `http://127.0.0.1:8000/v1`.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://127.0.0.1:8000/v1',
+          value: 'http://127.0.0.1:8000/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: false,
+    api_key: 'jan',
+    base_url: 'http://127.0.0.1:11434/v1',
+    provider: 'ollama',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Local Ollama usually accepts any placeholder key. Use `jan` unless your server requires something else.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'jan',
+          value: 'jan',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'OpenAI-compatible endpoint served by Ollama. Default is `http://127.0.0.1:11434/v1`.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://127.0.0.1:11434/v1',
+          value: 'http://127.0.0.1:11434/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
     active: true,
     api_key: '',
     base_url: 'https://integrate.api.nvidia.com/v1',
@@ -376,7 +446,7 @@ export const predefinedProviders = [
         key: 'api-key',
         title: 'API Key',
         description:
-          "The NVIDIA NIM API uses API keys for authentication. Visit [NVIDIA NGC API Keys](https://org.ngc.nvidia.com/setup/api-keys) to create an API key for your requests.",
+          'The NVIDIA NIM API uses API keys for authentication. Visit [NVIDIA NGC API Keys](https://org.ngc.nvidia.com/setup/api-keys) to create an API key for your requests.',
         controller_type: 'input',
         controller_props: {
           placeholder: 'Insert API Key',
@@ -387,5 +457,95 @@ export const predefinedProviders = [
       },
     ],
     models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.openai.com/v1',
+    explore_models_url: 'https://github.com/openai/codex',
+    provider: 'codex',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'API key for the provider Codex should call. This is written to the app-managed Codex environment, not to your global Codex config.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Provider endpoint Codex should use. OpenAI-compatible providers should use a `/v1` endpoint.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.openai.com/v1',
+          value: 'https://api.openai.com/v1',
+        },
+      },
+      {
+        key: 'codex-provider',
+        title: 'Codex Provider',
+        description:
+          'Codex model provider id to write into the isolated Codex config.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'openai',
+          value: 'openai',
+        },
+      },
+      {
+        key: 'codex-binary-path',
+        title: 'Codex Binary',
+        description:
+          'Path to a Codex binary with `app-server` support. Leave as the desktop app binary on macOS unless you install a newer CLI.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: IS_MACOS
+            ? '/Applications/Codex.app/Contents/Resources/codex'
+            : 'codex',
+          value: IS_MACOS
+            ? '/Applications/Codex.app/Contents/Resources/codex'
+            : 'codex',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'gpt-5.1-codex-max',
+        name: 'GPT-5.1 Codex Max',
+        version: '1.0',
+        description: 'Codex agent model through app-server.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gpt-5.1',
+        name: 'GPT-5.1',
+        version: '1.0',
+        description: 'General model through Codex app-server.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gpt-oss:20b',
+        name: 'gpt-oss:20b',
+        version: '1.0',
+        description: 'Open-source local model id for Codex OSS providers.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'Jan-v1-4B-Q4_K_M',
+        name: 'Jan v1 4B (local)',
+        version: '1.0',
+        description:
+          'Local Jan model via llama.cpp. Point Base URL at your running Jan router `/v1` endpoint and set Codex Provider to `llamacpp`.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
 ]

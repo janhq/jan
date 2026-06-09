@@ -9,6 +9,7 @@ import {
   IconChevronRight,
   IconCommand,
   IconFeather,
+  IconFlask,
   IconPalette,
   IconPlus,
   IconTopologyStar3,
@@ -176,7 +177,11 @@ const SettingsMenu = () => {
       route: route.settings.interface,
       icon: IconPalette,
     },
-    { title: 'common:assistants', route: route.settings.assistant, icon: IconFeather },
+    {
+      title: 'common:assistants',
+      route: route.settings.assistant,
+      icon: IconFeather,
+    },
     {
       title: 'common:attachments',
       route: route.settings.attachments,
@@ -209,6 +214,11 @@ const SettingsMenu = () => {
 
   const integrationSettings = [
     {
+      title: 'Studio',
+      route: route.settings.studio,
+      icon: IconFlask,
+    },
+    {
       title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
       icon: IconTopologyStar3,
@@ -217,7 +227,12 @@ const SettingsMenu = () => {
       title: 'common:claude_code',
       route: route.settings.claude_code,
       icon: ({ size, className }: { size?: number; className?: string }) => (
-        <img src="/images/code-claude.svg" width={size} height={size} className={cn(className, 'dark:invert opacity-60')} />
+        <img
+          src="/images/code-claude.svg"
+          width={size}
+          height={size}
+          className={cn(className, 'dark:invert opacity-60')}
+        />
       ),
     },
   ]
@@ -234,7 +249,10 @@ const SettingsMenu = () => {
                 className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
               >
                 <div className="flex items-center gap-2">
-                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
+                  <menu.icon
+                    size={18}
+                    className="shrink-0 text-muted-foreground"
+                  />
                   <span>{t(menu.title)}</span>
                 </div>
               </Link>
@@ -256,7 +274,10 @@ const SettingsMenu = () => {
                   to={menu.route}
                   className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
-                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
+                  <menu.icon
+                    size={18}
+                    className="shrink-0 text-muted-foreground"
+                  />
                   <span>{t(menu.title)}</span>
                 </Link>
               ))}

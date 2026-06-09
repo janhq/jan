@@ -38,6 +38,11 @@ import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
 import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
+import {
+  isCodexAppServerProvider,
+  sendCodexAppServerChatMessage,
+  shutdownCodexAppServerChatSession,
+} from '@/lib/codex-app-server'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -562,6 +567,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.lastUserMessage = message
   }
 
+  async shutdown(): Promise<void> {
+    if (this.threadId) {
+      await shutdownCodexAppServerChatSession(this.threadId)
+    }
+  }
+
   updateSystemMessage(systemMessage: string | undefined) {
     this.systemMessage = systemMessage
   }
@@ -839,6 +850,21 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
+    const codexSelectedModel = useModelProvider.getState().selectedModel
+    if (isCodexAppServerProvider(providerId)) {
+      if (!modelId || !provider || !codexSelectedModel) {
+        throw new Error('Codex app-server provider requires a selected model.')
+      }
+      this.lastUserMessage = extractLatestUserText(options.messages)
+      return sendCodexAppServerChatMessage({
+        threadId,
+        messageId: options.messageId,
+        messages: options.messages,
+        provider,
+        model: codexSelectedModel,
+        abortSignal: options.abortSignal,
+      })
+    }
     if (!this.serviceHub || !modelId || !provider) {
       throw new Error('ServiceHub not initialized or model/provider missing.')
     }

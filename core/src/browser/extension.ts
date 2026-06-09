@@ -167,7 +167,7 @@ export abstract class BaseExtension implements ExtensionType {
     return (value as T) ?? defaultValue
   }
 
-  onSettingUpdate<T>(key: string, value: T) {
+  onSettingUpdate<T>(_key: string, _value: T) {
     return
   }
 

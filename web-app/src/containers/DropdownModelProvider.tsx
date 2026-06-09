@@ -25,7 +25,11 @@ import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -417,7 +421,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         searchableModel.model.id
       )
 
-
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {
         serviceHub
@@ -465,35 +468,34 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   const provider = getProviderByName(selectedProvider)
 
-
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverTrigger asChild>
-          <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
-            <button
-              type="button"
-              className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 min-w-0"
-            >
-              {provider && (
-                <div className="shrink-0">
-                  <ProvidersAvatar provider={provider} />
-                </div>
-              )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      'text-foreground truncate leading-normal',
-                      !selectedModel?.id && 'text-muted-foreground'
-                    )}
-                  >
-                    {displayModel}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{displayModel}</TooltipContent>
-              </Tooltip>
-              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-            </button>
+      <PopoverTrigger asChild>
+        <div className="border relative z-20 flex max-w-[22rem] items-center gap-1.5 rounded-full px-4 py-1.5">
+          <button
+            type="button"
+            className="font-medium cursor-pointer flex min-w-0 items-center gap-1.5 relative z-20"
+          >
+            {provider && (
+              <div className="shrink-0">
+                <ProvidersAvatar provider={provider} />
+              </div>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'text-foreground truncate leading-normal',
+                    !selectedModel?.id && 'text-muted-foreground'
+                  )}
+                >
+                  {displayModel}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{displayModel}</TooltipContent>
+            </Tooltip>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          </button>
           {currentModel?.settings &&
             provider &&
             provider.provider === 'llamacpp' && (
@@ -511,7 +513,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             className="ml-0.5 shrink-0"
           />
         </div>
-        </PopoverTrigger>
+      </PopoverTrigger>
 
       <PopoverContent
         className={cn(

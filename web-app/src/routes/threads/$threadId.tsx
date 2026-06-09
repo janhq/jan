@@ -59,6 +59,7 @@ import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import { WorkspacePanelsLayout } from '@/containers/ModelToolsPanel'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -429,8 +430,7 @@ function ThreadDetail() {
                 return `${role}: ${text}`
               })
               .filter(Boolean)
-              .join('\n\n') ||
-            useThreads.getState().threads[threadId]?.title
+              .join('\n\n') || useThreads.getState().threads[threadId]?.title
           if (inputText) {
             const provider = useModelProvider.getState().selectedProvider
             const modelId = useModelProvider.getState().selectedModel?.id
@@ -688,7 +688,15 @@ function ThreadDetail() {
       // Combine image attachments with document attachments from the store
       const combinedAttachments = [
         ...(imageAttachments || []),
-        ...allAttachments.filter((a) => a.type === 'document'),
+        ...allAttachments.filter(
+          (a) =>
+            a.type === 'document' ||
+            a.type === 'browser-selection' ||
+            a.type === 'terminal-output' ||
+            a.type === 'runtime-log' ||
+            a.type === 'process-list' ||
+            a.type === 'context-brief'
+        ),
       ]
 
       const messageId = generateId()
@@ -696,10 +704,7 @@ function ThreadDetail() {
         (a) => a.type === 'document' && !a.processed
       )
       const hasEmbeddingDocuments = combinedAttachments.some(
-        (a) =>
-          a.type === 'document' &&
-          !a.processed &&
-          a.parseMode !== 'inline'
+        (a) => a.type === 'document' && !a.processed && a.parseMode !== 'inline'
       )
 
       // When there are unprocessed documents (e.g. first-message flow),
@@ -712,8 +717,7 @@ function ThreadDetail() {
           combinedAttachments,
           messageId
         )
-        const previewUI =
-          convertThreadMessagesToUIMessages([previewMessage])
+        const previewUI = convertThreadMessagesToUIMessages([previewMessage])
         setChatMessages((prev) => [...prev, ...previewUI])
       }
 
@@ -756,9 +760,7 @@ function ThreadDetail() {
           console.error('Failed to process attachments:', error)
           // Remove the preview message on failure
           if (hasDocuments) {
-            setChatMessages((prev) =>
-              prev.filter((m) => m.id !== messageId)
-            )
+            setChatMessages((prev) => prev.filter((m) => m.id !== messageId))
           }
           return
         } finally {
@@ -917,63 +919,74 @@ function ThreadDetail() {
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
-  const handleRegenerate = useCallback((messageId?: string) => {
-    const hadBannerError =
-      useAppState.getState().oomError != null ||
-      useAppState.getState().backendError != null ||
-      contextLimitError != null
-    if (useAppState.getState().oomError) {
-      useAppState.getState().setOomError(undefined)
-    }
-    if (useAppState.getState().backendError) {
-      useAppState.getState().setBackendError(undefined)
-    }
-    if (contextLimitError) setContextLimitError(null)
-    if (hadBannerError) stripBannerMetadata()
-    // Cancel any in-flight title summarization before regenerating
-    titleAbortRef.current?.abort()
-    titleAbortRef.current = null
+  const handleRegenerate = useCallback(
+    (messageId?: string) => {
+      const hadBannerError =
+        useAppState.getState().oomError != null ||
+        useAppState.getState().backendError != null ||
+        contextLimitError != null
+      if (useAppState.getState().oomError) {
+        useAppState.getState().setOomError(undefined)
+      }
+      if (useAppState.getState().backendError) {
+        useAppState.getState().setBackendError(undefined)
+      }
+      if (contextLimitError) setContextLimitError(null)
+      if (hadBannerError) stripBannerMetadata()
+      // Cancel any in-flight title summarization before regenerating
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
 
-    const currentLocalMessages = useMessages.getState().getMessages(threadId)
+      const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
-    // If regenerating from a specific message, delete all messages after it
-    if (messageId) {
-      // Find the message in the current chat messages
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
+      // If regenerating from a specific message, delete all messages after it
+      if (messageId) {
+        // Find the message in the current chat messages
+        const messageIndex = currentLocalMessages.findIndex(
+          (m) => m.id === messageId
+        )
 
-      if (messageIndex !== -1) {
-        const selectedMessage = currentLocalMessages[messageIndex]
+        if (messageIndex !== -1) {
+          const selectedMessage = currentLocalMessages[messageIndex]
 
-        // If it's an assistant message, find the closest preceding user message
-        let deleteFromIndex = messageIndex
-        if (selectedMessage.role === 'assistant') {
-          // Look backwards to find the closest user message
-          for (let i = messageIndex - 1; i >= 0; i--) {
-            if (currentLocalMessages[i].role === 'user') {
-              deleteFromIndex = i
-              break
+          // If it's an assistant message, find the closest preceding user message
+          let deleteFromIndex = messageIndex
+          if (selectedMessage.role === 'assistant') {
+            // Look backwards to find the closest user message
+            for (let i = messageIndex - 1; i >= 0; i--) {
+              if (currentLocalMessages[i].role === 'user') {
+                deleteFromIndex = i
+                break
+              }
             }
           }
-        }
 
-        // Get all messages after the delete point
-        const messagesToDelete = currentLocalMessages.slice(deleteFromIndex + 1)
+          // Get all messages after the delete point
+          const messagesToDelete = currentLocalMessages.slice(
+            deleteFromIndex + 1
+          )
 
-        // Delete from backend storage
-        if (messagesToDelete.length > 0) {
-          messagesToDelete.forEach((msg) => {
-            deleteMessage(threadId, msg.id)
-          })
+          // Delete from backend storage
+          if (messagesToDelete.length > 0) {
+            messagesToDelete.forEach((msg) => {
+              deleteMessage(threadId, msg.id)
+            })
+          }
         }
       }
-    }
 
-    // Call the AI SDK regenerate function - it will handle truncating the UI messages
-    // and generating a new response from the selected message
-    regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate, stripBannerMetadata, contextLimitError])
+      // Call the AI SDK regenerate function - it will handle truncating the UI messages
+      // and generating a new response from the selected message
+      regenerate(messageId ? { messageId } : undefined)
+    },
+    [
+      threadId,
+      deleteMessage,
+      regenerate,
+      stripBannerMetadata,
+      contextLimitError,
+    ]
+  )
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
@@ -1249,9 +1262,10 @@ function ThreadDetail() {
       return
     }
     useMessageErrors.getState().setError(targetId, errMessage)
-    const tm = useMessages.getState().getMessages(threadId).find(
-      (m) => m.id === targetId
-    )
+    const tm = useMessages
+      .getState()
+      .getMessages(threadId)
+      .find((m) => m.id === targetId)
     if (tm) {
       const existingError = (tm.metadata as Record<string, unknown> | undefined)
         ?.error
@@ -1294,30 +1308,69 @@ function ThreadDetail() {
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
+  const panelScope = useMemo(() => {
+    const project = thread?.metadata?.project
+    if (project?.id) {
+      return {
+        id: project.id,
+        type: 'project' as const,
+        label: project.name ?? 'Project',
+        threadId,
+      }
+    }
 
+    return {
+      id: 'vanilla-chat',
+      type: 'workspace' as const,
+      label: 'Vanilla chat',
+      threadId,
+    }
+  }, [thread?.metadata?.project, threadId])
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
-        </div>
-      </HeaderPage>
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
-        {/* Messages Area */}
-        <div className="flex-1 relative">
-          <Conversation className="absolute inset-0 text-start">
-            <ConversationContent
-              className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
-            >
-              {chatMessages.map((message, index) => {
-                const isLastMessage = index === chatMessages.length - 1
-                const isFirstMessage = index === 0
-                return (
+    <WorkspacePanelsLayout scope={panelScope}>
+      <div className="flex h-full min-h-0 flex-col">
+        <HeaderPage>
+          <div className="flex w-full items-center justify-between pr-2">
+            <div className="min-w-0 max-w-[22rem]">
+              <DropdownModelProvider model={threadModel} />
+            </div>
+          </div>
+        </HeaderPage>
+        <div className="flex min-h-0 flex-1 flex-col h-full overflow-hidden">
+          {/* Messages Area */}
+          <div className="flex-1 relative">
+            <Conversation className="absolute inset-0 text-start">
+              <ConversationContent
+                className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
+              >
+                {chatMessages.map((message, index) => {
+                  const isLastMessage = index === chatMessages.length - 1
+                  const isFirstMessage = index === 0
+                  return (
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      isFirstMessage={isFirstMessage}
+                      isLastMessage={isLastMessage}
+                      status={status}
+                      reasoningContainerRef={reasoningContainerRef}
+                      isReasoningAtBottom={isReasoningAtBottom}
+                      onReasoningScroll={handleReasoningScroll}
+                      onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                      onRegenerate={handleRegenerate}
+                      onEdit={handleEditMessage}
+                      onDelete={handleDeleteMessage}
+                      isAnimating={!pendingContinueMessage}
+                      hideActions={!!pendingContinueMessage}
+                    />
+                  )
+                })}
+                {pendingContinueMessage && status === 'submitted' && (
                   <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={isFirstMessage}
-                    isLastMessage={isLastMessage}
+                    key={`continue-placeholder-${pendingContinueMessage.id}`}
+                    message={pendingContinueMessage}
+                    isFirstMessage={false}
+                    isLastMessage={true}
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
                     isReasoningAtBottom={isReasoningAtBottom}
@@ -1326,135 +1379,121 @@ function ThreadDetail() {
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
-                    isAnimating={!pendingContinueMessage}
-                    hideActions={!!pendingContinueMessage}
+                    hideActions
+                    isAnimating={false}
                   />
-                )
-              })}
-              {pendingContinueMessage && status === 'submitted' && (
-                <MessageItem
-                  key={`continue-placeholder-${pendingContinueMessage.id}`}
-                  message={pendingContinueMessage}
-                  isFirstMessage={false}
-                  isLastMessage={true}
-                  status={status}
-                  reasoningContainerRef={reasoningContainerRef}
-                  isReasoningAtBottom={isReasoningAtBottom}
-                  onReasoningScroll={handleReasoningScroll}
-                  onReasoningScrollToBottom={forceScrollReasoningToBottom}
-                  onRegenerate={handleRegenerate}
-                  onEdit={handleEditMessage}
-                  onDelete={handleDeleteMessage}
-                  hideActions
-                  isAnimating={false}
-                />
-              )}
-              {processingEmbeddings && (
-                <div className="flex flex-row items-center gap-2">
-                  <Shimmer duration={1}>Processing embeddings...</Shimmer>
-                </div>
-              )}
-              {!oomError &&
-                !backendError &&
-                !contextLimitError &&
-                status === CHAT_STATUS.SUBMITTED && (
-                <div className="flex flex-row items-center gap-2">
-                  {pendingContinueMessage && (
-                    <Shimmer duration={1}>Growing the Mind...</Shimmer>
-                  )}
-                  {!pendingContinueMessage && !lastIsAssistant && (
-                    <PromptProgress />
-                  )}
-                </div>
-              )}
-              {(contextLimitError || oomError || backendError) && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                  <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive mb-1">
-                        {oomError
-                          ? 'llama.cpp ran out of memory'
-                          : backendError
-                            ? 'GGML backend encountered an error'
-                            : 'Model ran out of context size'}
-                      </p>
-                      <div className="table table-fixed w-full">
-                        <span
-                          className={
-                            (oomError || backendError
-                              ? 'text-xs font-mono'
-                              : 'text-sm') +
-                            ' text-muted-foreground table-cell align-middle'
-                          }
-                          style={{ wordWrap: 'break-word' }}
-                        >
-                          {oomError ?? backendError ?? contextLimitError?.message}
-                        </span>
-                      </div>
-                      {oomError && (
-                        <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
-                          <li>Reduce context size (ctx-size)</li>
-                          <li>Disable MTP (Multi-Token Prediction)</li>
-                          <li>Lower n-gpu-layers or switch to a CPU backend</li>
-                          <li>Use a smaller / more quantized model</li>
-                        </ul>
+                )}
+                {processingEmbeddings && (
+                  <div className="flex flex-row items-center gap-2">
+                    <Shimmer duration={1}>Processing embeddings...</Shimmer>
+                  </div>
+                )}
+                {!oomError &&
+                  !backendError &&
+                  !contextLimitError &&
+                  status === CHAT_STATUS.SUBMITTED && (
+                    <div className="flex flex-row items-center gap-2">
+                      {pendingContinueMessage && (
+                        <Shimmer duration={1}>Growing the Mind...</Shimmer>
                       )}
-                      {((error ?? contextLimitError)?.message
-                        ?.toLowerCase()
-                        .includes('context') &&
-                        ((error ?? contextLimitError)?.message
-                          ?.toLowerCase()
-                          .includes('size') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('length') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('limit'))) ||
-                      (error ?? contextLimitError)?.message ===
-                        OUT_OF_CONTEXT_SIZE ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={handleContextSizeIncrease}
-                        >
-                          <IconAlertCircle className="size-4 mr-2" />
-                          Increase Context Size
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={() => handleRegenerate()}
-                        >
-                          <IconRefresh className="size-4 mr-2" />
-                          {oomError || backendError ? 'Reload' : 'Regenerate'}
-                        </Button>
+                      {!pendingContinueMessage && !lastIsAssistant && (
+                        <PromptProgress />
                       )}
                     </div>
+                  )}
+                {(contextLimitError || oomError || backendError) && (
+                  <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                    <div className="flex items-start gap-3">
+                      <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-destructive mb-1">
+                          {oomError
+                            ? 'llama.cpp ran out of memory'
+                            : backendError
+                              ? 'GGML backend encountered an error'
+                              : 'Model ran out of context size'}
+                        </p>
+                        <div className="table table-fixed w-full">
+                          <span
+                            className={
+                              (oomError || backendError
+                                ? 'text-xs font-mono'
+                                : 'text-sm') +
+                              ' text-muted-foreground table-cell align-middle'
+                            }
+                            style={{ wordWrap: 'break-word' }}
+                          >
+                            {oomError ??
+                              backendError ??
+                              contextLimitError?.message}
+                          </span>
+                        </div>
+                        {oomError && (
+                          <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+                            <li>Reduce context size (ctx-size)</li>
+                            <li>Disable MTP (Multi-Token Prediction)</li>
+                            <li>
+                              Lower n-gpu-layers or switch to a CPU backend
+                            </li>
+                            <li>Use a smaller / more quantized model</li>
+                          </ul>
+                        )}
+                        {((error ?? contextLimitError)?.message
+                          ?.toLowerCase()
+                          .includes('context') &&
+                          ((error ?? contextLimitError)?.message
+                            ?.toLowerCase()
+                            .includes('size') ||
+                            (error ?? contextLimitError)?.message
+                              ?.toLowerCase()
+                              .includes('length') ||
+                            (error ?? contextLimitError)?.message
+                              ?.toLowerCase()
+                              .includes('limit'))) ||
+                        (error ?? contextLimitError)?.message ===
+                          OUT_OF_CONTEXT_SIZE ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={handleContextSizeIncrease}
+                          >
+                            <IconAlertCircle className="size-4 mr-2" />
+                            Increase Context Size
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={() => handleRegenerate()}
+                          >
+                            <IconRefresh className="size-4 mr-2" />
+                            {oomError || backendError ? 'Reload' : 'Regenerate'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </ConversationContent>
-            <ConversationScrollButton />
-          </Conversation>
-        </div>
+                )}
+              </ConversationContent>
+              <ConversationScrollButton />
+            </Conversation>
+          </div>
 
-        {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
-          <ChatInput
-            model={threadModel}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            chatStatus={
-              oomError || backendError || contextLimitError ? 'ready' : status
-            }
-          />
+          {/* Chat Input - Fixed at bottom */}
+          <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+            <ChatInput
+              model={threadModel}
+              onSubmit={handleSubmit}
+              onStop={stop}
+              chatStatus={
+                oomError || backendError || contextLimitError ? 'ready' : status
+              }
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </WorkspacePanelsLayout>
   )
 }

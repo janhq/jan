@@ -1,5 +1,3 @@
-import { SystemInformation } from '../types'
-
 /**
  * Gets Jan's data folder path.
  *

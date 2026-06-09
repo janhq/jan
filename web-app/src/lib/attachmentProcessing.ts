@@ -172,6 +172,53 @@ export const processAttachmentsForSend = async (
     })
   }
 
+  const browserSelections = attachments.filter(
+    (a) => a.type === 'browser-selection'
+  )
+  for (const browserSelection of browserSelections) {
+    processedAttachments.push({
+      ...browserSelection,
+      processed: true,
+      processing: false,
+    })
+  }
+
+  const terminalOutputs = attachments.filter((a) => a.type === 'terminal-output')
+  for (const terminalOutput of terminalOutputs) {
+    processedAttachments.push({
+      ...terminalOutput,
+      processed: true,
+      processing: false,
+    })
+  }
+
+  const runtimeLogs = attachments.filter((a) => a.type === 'runtime-log')
+  for (const runtimeLog of runtimeLogs) {
+    processedAttachments.push({
+      ...runtimeLog,
+      processed: true,
+      processing: false,
+    })
+  }
+
+  const processLists = attachments.filter((a) => a.type === 'process-list')
+  for (const processList of processLists) {
+    processedAttachments.push({
+      ...processList,
+      processed: true,
+      processing: false,
+    })
+  }
+
+  const contextBriefs = attachments.filter((a) => a.type === 'context-brief')
+  for (const contextBrief of contextBriefs) {
+    processedAttachments.push({
+      ...contextBrief,
+      processed: true,
+      processing: false,
+    })
+  }
+
   const documents = attachments.filter((a) => a.type === 'document')
   for (const doc of documents) {
     try {

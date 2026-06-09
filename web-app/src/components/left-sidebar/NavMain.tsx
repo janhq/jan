@@ -1,4 +1,4 @@
-import { LucideIcon } from 'lucide-react'
+import { type LucideIcon } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -29,10 +29,7 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import { BlocksIcon, type BlocksIconHandle } from '../animated-icon/blocks'
-import {
-  BotIcon,
-  type BotIconHandle,
-} from '@/components/animated-icon/bot'
+import { BotIcon, type BotIconHandle } from '@/components/animated-icon/bot'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -80,7 +77,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_CHAT].key}</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.NEW_CHAT].key}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -93,7 +92,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_AGENT_CHAT].key}</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.NEW_AGENT_CHAT].key}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -106,7 +107,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_PROJECT].key}</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.NEW_PROJECT].key}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -119,7 +122,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.SEARCH].key} </Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.SEARCH].key}{' '}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -201,12 +206,14 @@ export function NavMain() {
     <>
       <SidebarMenu>
         {navMainItems.map((item) => {
+          const label = item.title.includes(':') ? t(item.title) : item.title
+
           if (item.animatedIcon) {
             return (
               <NavMainItemWithAnimatedIcon
                 key={item.title}
                 item={item}
-                label={t(item.title)}
+                label={label}
               />
             )
           }
@@ -222,13 +229,13 @@ export function NavMain() {
                 {item.url ? (
                   <Link to={item.url}>
                     {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    <span>{label}</span>
                     {item.shortcut}
                   </Link>
                 ) : (
                   <>
                     {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    <span>{label}</span>
                     {item.shortcut}
                   </>
                 )}

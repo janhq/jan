@@ -64,14 +64,16 @@ const mockServiceHub = {
     callToolWithCancellation: vi.fn().mockReturnValue({
       promise: Promise.resolve({ error: '', content: [] }),
       cancel: vi.fn().mockResolvedValue(undefined),
-      token: 'test-token'
+      token: 'test-token',
     }),
     cancelToolCall: vi.fn().mockResolvedValue(undefined),
     activateMCPServer: vi.fn().mockResolvedValue(undefined),
     deactivateMCPServer: vi.fn().mockResolvedValue(undefined),
   }),
   threads: () => ({
-    createThread: vi.fn().mockResolvedValue({ id: 'test-thread', messages: [] }),
+    createThread: vi
+      .fn()
+      .mockResolvedValue({ id: 'test-thread', messages: [] }),
     deleteThread: vi.fn().mockResolvedValue(undefined),
     updateThread: vi.fn().mockResolvedValue(undefined),
     getThreads: vi.fn().mockResolvedValue([]),
@@ -85,6 +87,20 @@ const mockServiceHub = {
     updateProvider: vi.fn().mockResolvedValue(undefined),
     getProvider: vi.fn().mockResolvedValue(null),
     fetchModelsFromProvider: vi.fn().mockResolvedValue([]),
+    fetch: vi.fn().mockReturnValue(fetch),
+  }),
+  studio: () => ({
+    probeBinaryOnPath: vi.fn().mockResolvedValue({ found: false }),
+    probeOpenaiEndpoint: vi.fn().mockResolvedValue({ reachable: false }),
+    listRuntimeProcesses: vi.fn().mockResolvedValue([]),
+    spawnRuntime: vi.fn().mockResolvedValue({
+      runtimeId: 'vllm',
+      pid: 1,
+      baseUrl: 'http://127.0.0.1:8000/v1',
+      logPath: '/tmp/vllm.log',
+    }),
+    stopRuntime: vi.fn().mockResolvedValue(undefined),
+    readRuntimeLogs: vi.fn().mockResolvedValue(''),
   }),
   models: () => ({
     getModels: vi.fn().mockResolvedValue([]),
@@ -131,7 +147,8 @@ const mockServiceHub = {
     stopCore: vi.fn().mockResolvedValue(undefined),
     getCoreStatus: vi.fn().mockResolvedValue('stopped'),
   }),
-  deeplink: () => ({ // cspell: disable-line
+  deeplink: () => ({
+    // cspell: disable-line
     register: vi.fn().mockResolvedValue(undefined),
     handle: vi.fn().mockResolvedValue(undefined),
     getCurrent: vi.fn().mockResolvedValue(null),
@@ -150,7 +167,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 // Mock window.matchMedia for useMediaQuery tests
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation(query => ({
+  value: vi.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
     onchange: null,
@@ -168,7 +185,7 @@ Object.defineProperty(window, 'matchMedia', {
     getJanDataFolderPath: vi.fn().mockResolvedValue('/mock/jan/data'),
     openFileExplorer: vi.fn().mockResolvedValue(undefined),
     joinPath: vi.fn((...paths: string[]) => paths.join('/')),
-  }
+  },
 }
 
 // Mock globalThis.fs for @janhq/core fs functions // cspell: disable-line
@@ -181,7 +198,6 @@ Object.defineProperty(window, 'matchMedia', {
   unlink: vi.fn().mockResolvedValue(undefined),
   rmdir: vi.fn().mockResolvedValue(undefined),
 }
-
 
 // runs a cleanup after each test case (e.g. clearing jsdom)
 afterEach(() => {
