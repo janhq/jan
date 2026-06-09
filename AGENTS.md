@@ -309,6 +309,258 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-09 — Default the macOS local llama.cpp engine to `llamacpp-upstream` so the Recommended Gemma 4 vision model loads out of the box (ATO-116)
+- **Context:** On macOS the default local engine was the **TurboQuant fork**
+  (`llamacpp`), not vanilla upstream. The Hub "Recommended" model
+  `unsloth/gemma-4-12b-it-IQ4_XS` (vision, ships an `mmproj.gguf`) downloaded
+  into and started on TurboQuant, which can't parse Gemma 4's unified
+  multimodal projector `gemma4uv` (the fork carries only `gemma4v`/`gemma4a`;
+  upstream `b9562` has the full set). The load crashed entirely and the UI
+  showed only `[object Object]` ([ATO-116](https://linear.app/atomicchat/issue/ATO-116);
+  the `[object Object]` rendering is its own ticket, [ATO-117](https://linear.app/atomicchat/issue/ATO-117)).
+  Switching the model's engine to `llamacpp-upstream` made it load fine. So
+  **out of the box on macOS the Recommended model crashed with an opaque
+  error.** Confirmed root cause in code (branch `main`): `LOCAL_LLAMACPP_PROVIDER`
+  resolved to `llamacpp` on macOS (`web-app/src/lib/utils.ts`), `pullModel()`
+  routes downloads through it, and `getModelToStart.ts` tried `llamacpp` first.
+- **Decision (per the ticket's accepted resolution):** Make the **default**
+  local engine `llamacpp-upstream` on macOS too; keep TurboQuant available as
+  an explicit manual choice (do **not** remove it, do **not** migrate existing
+  models). Three edits:
+  1. [`web-app/src/lib/utils.ts`](web-app/src/lib/utils.ts): `LOCAL_LLAMACPP_PROVIDER`
+     and its mirror `LOCAL_LLAMACPP_EXTENSION_NAME` are now unconditionally
+     `'llamacpp-upstream'` / `'@janhq/llamacpp-upstream-extension'` (previously
+     `IS_WINDOWS || IS_LINUX ? upstream : turboquant`). Both flip together so
+     downloads, model start, onboarding (`SetupBackendStep`), the backend
+     updater, and the hardware probe all resolve the **same** engine — leaving
+     the provider on upstream while the extension stayed on turboquant would
+     make onboarding fetch the turboquant backend under an upstream-routed
+     model.
+  2. [`web-app/src/utils/getModelToStart.ts`](web-app/src/utils/getModelToStart.ts):
+     start order `['llamacpp-upstream', 'llamacpp', 'mlx']` (upstream first).
+  3. The session's earlier text-only fallback in the TurboQuant pair (ADR
+     below) stays as **complementary defense-in-depth** for users whose models
+     already live under `engine: llamacpp`.
+- **Consequences:**
+  - Fresh macOS installs download + start the Recommended Gemma 4 vision model
+    on upstream, which supports `gemma4uv`/`gemma4ua`, so **vision works out of
+    the box** (the text-only fallback degrades; this flip keeps vision).
+  - **Backwards-compatible, by the ticket's explicit constraints.** Only the
+    default for fresh downloads / empty state changes. Existing models stay in
+    `data/llamacpp/models/` with `engine: llamacpp` and keep running on
+    TurboQuant; a user's explicitly-selected `selectedProvider` (zustand-persist)
+    is preserved. **No** forced `engine` migration and **no** macOS runtime
+    alias — the `llamacpp → llamacpp-upstream` alias + v13 purge in
+    `useModelProvider.ts` remain `IS_WINDOWS`-gated, so macOS threads /
+    `lastUsedModel` bound to `llamacpp` are untouched (copying the Windows
+    approach would hang them).
+  - TurboQuant remains a first-class manual provider on macOS (turbo3 KV-cache
+    memory savings); `getProviderTitle('llamacpp')` still renders "Atomic
+    Llama.cpp Turboquant" on macOS.
+  - **Rejected alternatives** (per ticket): TurboQuant-default + auto-fallback
+    to upstream on load failure (leaves first run failing); route vision→upstream
+    / text→TurboQuant (needs projector-type detection, fragile on new archs);
+    forced model migration (risks hanging others' threads, removes user choice).
+  - Scope: web-app only; no Rust, IPC, on-disk layout, or settings-schema
+    change. `IS_WINDOWS`/`IS_LINUX` are still used elsewhere in `utils.ts`
+    (`getProviderTitle`), so no dead globals. Lint-clean; the
+    `models.windowsProviderRouting` suite (4 tests) passes; no test asserted
+    the old macOS default.
+  - **`[object Object]` (ATO-117) not fixed here** — that's the generic
+    load-error rendering in `llamacpp-extension`; this ADR just stops the
+    Recommended model from reaching the crash path on a fresh install.
+- **Owner:** team.
+- **Links:** [ATO-116](https://linear.app/atomicchat/issue/ATO-116),
+  [ATO-117](https://linear.app/atomicchat/issue/ATO-117), the same-day ADR
+  *Text-only fallback in the TurboQuant `llamacpp` provider …* (below), the
+  2026-05-22 ADR *Windows ships only `llamacpp-upstream`*, the 2026-05-19 ADR
+  *Ship upstream `ggml-org/llama.cpp` as a second macOS provider*, files:
+  [`web-app/src/lib/utils.ts`](web-app/src/lib/utils.ts)
+  (`LOCAL_LLAMACPP_PROVIDER`, `LOCAL_LLAMACPP_EXTENSION_NAME`),
+  [`web-app/src/utils/getModelToStart.ts`](web-app/src/utils/getModelToStart.ts).
+
+### 2026-06-09 — Text-only fallback in the TurboQuant `llamacpp` provider on unsupported multimodal projector (Gemma 4 12B unified `gemma4uv`/`gemma4ua`)
+- **Context:** Loading `unsloth/gemma-4-12b-it-IQ4_XS` on the TurboQuant
+  macOS provider (`tauri-plugin-llamacpp` + `extensions/llamacpp-extension`,
+  bundled binary `turboquant-macos-arm64-0a635dc`) crashed the whole
+  `llama-server` during clip warmup:
+  `clip_init: ... unknown projector type: gemma4uv` →
+  `mtmd_init_from_file: error: Failed to load CLIP model ...` →
+  `main: exiting due to model loading error`. The **text model loaded fine**
+  (arch `gemma4` accepted, 48 layers on GPU, TurboQuant `turbo3` KV up, EOG
+  `<turn|>`=106 recognised); only the multimodal projector failed. Root
+  cause: the mmproj for Gemma 4's **unified** ("any-to-any") 12B declares the
+  projector type `gemma4uv` (unified vision; its audio sibling is `gemma4ua`).
+  Verified against sources: upstream `ggml-org/llama.cpp` master enumerates
+  **four** Gemma 4 projector types (`gemma4v`, `gemma4a`, `gemma4uv`,
+  `gemma4ua`), but **every branch of our fork
+  `AtomicBot-ai/atomic-llama-cpp-turboquant`** (`feature/turboquant-kv-cache`,
+  `feature/gemma-mtp`, …) carries only the non-unified pair `gemma4v` /
+  `gemma4a`. So the fork is behind upstream on the *unified* projectors that
+  the 12B uses. Compounding it, the TurboQuant extension/plugin pair lacked
+  the text-only fallback we already gave the `llamacpp-upstream` pair in the
+  2026-06-04 ADR (issue #44) — so instead of degrading gracefully it
+  hard-failed with an opaque `[object Object]` in the UI.
+- **Decision:** Port the **same text-only fallback** to the TurboQuant pair
+  (path A of the user's choice; the full projector port — path B — is
+  deferred). Two mirrored edits:
+  1. **Rust** ([`tauri-plugin-llamacpp/src/error.rs::from_stderr`](src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs)):
+     classify stderr containing `unknown projector type` (lowercased) as
+     `ErrorCode::MultimodalProjectorLoadFailed` (the variant already existed)
+     with the same actionable message as the upstream plugin, placed after
+     the OOM and arch-not-supported checks so those still win.
+  2. **TS** ([`extensions/llamacpp-extension/src/index.ts::performLoad`](extensions/llamacpp-extension/src/index.ts)):
+     when `loadLlamaModel` rejects with `code ===
+     'MULTIMODAL_PROJECTOR_LOAD_FAILED'` **and** an `mmprojPath` was set, retry
+     the load **once** with `mmprojPath = undefined` (text-only), caching the
+     session and ctx size as on the happy path; any other error (or a retry
+     that also fails) propagates unchanged. New module const
+     `ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED`.
+- **Consequences:**
+  - Gemma 4 12B (and any model whose mmproj uses a projector the TurboQuant
+    fork can't build) now **loads and chats text-only** on macOS instead of
+    failing the whole load. Vision/audio is silently dropped for that model
+    on that backend until the fork ships the unified projectors.
+  - **Deliberately no toast.** Unlike the upstream pair, this fallback does
+    **not** emit `local_backend://multimodal_disabled_fallback` — that
+    web-app listener was removed earlier this session, so emitting would be
+    dead code. The fallback is logged (`logger.warn`) and otherwise silent.
+  - **Lossy by design / not the full fix.** This is path A (unblock text).
+    Returning vision/audio for unified Gemma 4 on TurboQuant requires path B:
+    porting `gemma4uv` / `gemma4ua` (clip-impl.h enums+names, clip.cpp graph
+    builders, mtmd.cpp preprocessors) from `ggml-org/llama.cpp` into the fork
+    and rebuilding the sidecar — tracked as a separate follow-up.
+  - Single-shot retry, gated on the specific error code + present mmproj, so
+    non-multimodal loads and other failure modes are unaffected. No new
+    settings, IPC, deps, or on-disk layout. `cargo check -p
+    tauri-plugin-llamacpp` passes (pre-existing warnings only); both edited
+    files are lint-clean.
+- **Owner:** team.
+- **Links:** §4.2 *LLM backend*, the 2026-06-04 ADR *Recover from unsupported
+  multimodal projector (`gemma4a`) … text-only fallback* (issue #44, upstream
+  pair), [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)
+  (`tools/mtmd/clip-impl.h`, four `gemma4*` projector types),
+  [AtomicBot-ai/atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)
+  (carries only `gemma4v` / `gemma4a`), files:
+  [`src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs`](src-tauri/plugins/tauri-plugin-llamacpp/src/error.rs)
+  (`from_stderr`),
+  [`extensions/llamacpp-extension/src/index.ts`](extensions/llamacpp-extension/src/index.ts)
+  (`performLoad`, `ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED`).
+
+### 2026-06-09 — Add a cross-platform "Launch at startup" toggle via `tauri-plugin-autostart` (ATO-96)
+- **Context:** A Discord user (Andrej) asked whether Atomic Chat can be
+  configured to run at system startup; no such option existed. Investigation
+  confirmed there was **no** autostart mechanism anywhere — no
+  `tauri-plugin-autostart` in [`src-tauri/Cargo.toml`](src-tauri/Cargo.toml),
+  no plugin registration in [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs), no
+  UI control (the only `*Startup*` symbol in the codebase is the unrelated
+  `preloadModelOnStartup`). Requirement: a cross-platform (macOS / Windows /
+  Linux) toggle in Settings → General.
+- **Decision:** Use the official `tauri-plugin-autostart` v2 (under the hood
+  the `auto-launch` crate: macOS Login Items / LaunchAgent, Windows
+  `HKCU\…\Run` registry key, Linux `~/.config/autostart/*.desktop`). MVP only —
+  exactly the ticket's scope.
+  1. **Rust** ([`Cargo.toml`](src-tauri/Cargo.toml),
+     [`lib.rs`](src-tauri/src/lib.rs)): `tauri-plugin-autostart = "2.5.1"` added
+     to the **desktop-only** target block
+     (`cfg(not(any(target_os = "android", target_os = "ios")))`, beside
+     `tauri-plugin-single-instance` / `tauri-plugin-updater`) so it is never
+     compiled on mobile. Registered inside the existing `#[cfg(desktop)]` block
+     **after** `single_instance` (the plugin requires single-instance first),
+     with `MacosLauncher::LaunchAgent` (avoids the Apple Events prompt) and
+     `None` launch args.
+  2. **Capabilities:** `"autostart:default"` (covers
+     `allow-enable` / `allow-disable` / `allow-is-enabled`) added to
+     [`capabilities/default.json`](src-tauri/capabilities/default.json) and
+     [`capabilities/desktop.json`](src-tauri/capabilities/desktop.json).
+  3. **TS** ([`web-app/package.json`](web-app/package.json)):
+     `@tauri-apps/plugin-autostart@2.5.1`.
+  4. **UI** ([`general.tsx`](web-app/src/routes/settings/general.tsx)): a
+     `CardItem` + `Switch` in the General card, gated behind `IS_TAURI`. The
+     **OS is the source of truth** — state comes from a direct `isEnabled()`
+     query on mount; the toggle calls `enable()` / `disable()` then re-reads
+     `isEnabled()`. No localStorage/zustand mirror (avoids drift if the user
+     removes the autostart entry externally). On error a toast
+     (`settings:general.launchAtStartupError`) is shown and the switch is
+     reconciled to the real OS state.
+  5. **i18n:** `launchAtStartup` / `launchAtStartupDesc` /
+     `launchAtStartupError` in
+     [`en/settings.json`](web-app/src/locales/en/settings.json) and
+     [`ru/settings.json`](web-app/src/locales/ru/settings.json); other locales
+     fall back to EN.
+- **Consequences:** Default is **OFF** — the plugin creates no autostart entry
+  unless the user flips the toggle; there is no auto-`enable()` on first launch.
+  Desktop-only (gated by both the Cargo target and `IS_TAURI`); mobile is
+  unaffected. **Out of scope (not built):** hidden/tray start on autostart
+  (would need an `--autostart` launch arg + hidden-window logic) and any
+  localStorage mirroring. **Cross-platform caveat to confirm at smoke-test:** on
+  Linux AppImage, `auto-launch` relies on the `APPIMAGE` env var to write the
+  correct exec path into the `.desktop` file — verify the generated
+  `~/.config/autostart/Atomic Chat.desktop` points at the AppImage, not an
+  extracted temp path.
+- **Owner:** team.
+- **Links:** [ATO-96](https://linear.app/atomicchat/issue/ATO-96), §5 *Build &
+  dev workflow*, files:
+  [`src-tauri/Cargo.toml`](src-tauri/Cargo.toml),
+  [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs),
+  [`src-tauri/capabilities/default.json`](src-tauri/capabilities/default.json),
+  [`src-tauri/capabilities/desktop.json`](src-tauri/capabilities/desktop.json),
+  [`web-app/package.json`](web-app/package.json),
+  [`web-app/src/routes/settings/general.tsx`](web-app/src/routes/settings/general.tsx),
+  [`web-app/src/locales/en/settings.json`](web-app/src/locales/en/settings.json),
+  [`web-app/src/locales/ru/settings.json`](web-app/src/locales/ru/settings.json).
+
+### 2026-06-09 — Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)
+- **Context:** LAN users cannot reach the local API server (`:1337`) from
+  another machine — they get `403 Invalid host header` even with `host=0.0.0.0`
+  and Trusted Hosts filled in. Recurring (Discord; upstream
+  [janhq/jan#7345](https://github.com/janhq/jan/issues/7345), maintainer's
+  official answer is `*`). The check `is_valid_host`
+  ([`src-tauri/utils/src/http.rs:19`](src-tauri/utils/src/http.rs)) is
+  **correct** — a security feature inherited verbatim from Jan — but the UX
+  misleads users into two systematic mistakes: (1) entering the **client**
+  (source) IP, when the `Host` header carries the **destination** (server)
+  address, so there is nothing to match; (2) entering wildcard patterns
+  (`10.*.*.*`), which are compared as literal strings — only the literal `*`
+  short-circuits to allow-all. The 403 body was the opaque string
+  `"Invalid host header"` (main branch, `proxy.rs:1740`) /`"Host not allowed"`
+  (CORS-preflight branch, `proxy.rs:1611`); both are read by the **external
+  LAN client** (curl / third-party app), not our own UI.
+- **Decision:** Ship the low-risk core only (ticket's items 1+2); **do not**
+  touch the security-validation logic. The stretch CIDR/`*`-wildcard support
+  in `is_valid_host` (ticket item 3) was deliberately deferred.
+  1. **Actionable error (`proxy.rs`).** Both rejection branches now return a
+     host-naming hint: `Host '<host>' is not in Trusted Hosts. Add this
+     server's address (e.g. its LAN IP or hostname) in Settings → Local API
+     Server → Trusted Hosts, or use '*' to allow all.` (interpolating
+     `host_header` / `host` respectively). No status-code or routing change.
+  2. **Field copy (EN only).** `trustedHostsDesc`
+     (`web-app/src/locales/en/settings.json`) rewritten to state it is the
+     **server's** own address (LAN IP / hostname, with inline example
+     `192.168.1.100, my-host`), **not** the connecting client's, that `*`
+     allows all, and that wildcard/CIDR patterns are unsupported. The
+     placeholder `enterTrustedHosts`
+     (`web-app/src/locales/en/common.json`, sole consumer
+     `TrustedHostsInput.tsx`) now reads `This server's address, e.g.
+     192.168.1.100, my-host (or * for all)`. Other locales fall back to EN.
+- **Consequences:** The 403 now tells the LAN debugger exactly what to do; the
+  Settings field stops inviting the client-IP mistake. No behaviour change to
+  who is actually allowed — `is_valid_host` is byte-for-byte unchanged, so the
+  inherited security posture is preserved. `cargo check -p Atomic-Chat` passes
+  (0 errors; pre-existing unrelated `dead_code` warnings only); the two EN JSON
+  scrolls lint clean. **Not done (deferred):** CIDR / `10.*.*.*` matching in
+  `is_valid_host`, unit tests for that function (still uncovered), and any
+  non-EN locale copy.
+- **Owner:** team.
+- **Links:** [ATO-118](https://linear.app/atomicchat/issue/ATO-118),
+  [janhq/jan#7345](https://github.com/janhq/jan/issues/7345), §5 *Local API*,
+  files: [`src-tauri/src/core/server/proxy.rs`](src-tauri/src/core/server/proxy.rs)
+  (host-rejection branches),
+  [`web-app/src/locales/en/settings.json`](web-app/src/locales/en/settings.json)
+  (`trustedHostsDesc`),
+  [`web-app/src/locales/en/common.json`](web-app/src/locales/en/common.json)
+  (`enterTrustedHosts`).
+
 ### 2026-06-08 — Hide base (non-`-it`) Gemma 4 MLX models from Hub + recommend the `-it` variants (ATO-88 head 1, fourth follow-up)
 - **Context:** After the `<|turn>` template + `<turn|>` stop fix (ADR below),
   `mlx-community/gemma-4-12B-4bit` *still* produced garbage on the sidecar

@@ -36,6 +36,7 @@
     "foundation-models:default",
     "updater:default",
     "updater:allow-check",
+    "autostart:default",
     {
       "identifier": "http:default",
       "allow": [

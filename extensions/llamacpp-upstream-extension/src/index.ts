@@ -142,6 +142,62 @@ const logger = {
 }
 
 /**
+ * Coerce an unknown model-load error into a human-readable string.
+ *
+ * The Rust plugin rejects `load_llama_model` with a structured
+ * `{ code, message, details }` object (see `LlamacppError`), which is NOT an
+ * `Error` instance. Naive string coercion (`String(err)` / `` `${err}` ``)
+ * therefore yields `"[object Object]"` (see ATO-117). Prefer `message`, append
+ * the concrete llama.cpp stderr reason from `details` when present (e.g.
+ * `load_hparams: unknown projector type: ...`), then fall back to
+ * `JSON.stringify` and finally `String`. Never returns `"[object Object]"`.
+ */
+function formatLoadError(err: unknown): string {
+  if (err instanceof Error) return err.message || String(err)
+  if (err && typeof err === 'object') {
+    const e = err as { code?: unknown; message?: unknown; details?: unknown }
+    const parts: string[] = []
+    if (typeof e.message === 'string' && e.message.trim())
+      parts.push(e.message.trim())
+    if (typeof e.details === 'string' && e.details.trim())
+      parts.push(e.details.trim())
+    if (parts.length > 0) {
+      const code =
+        typeof e.code === 'string' && e.code ? ` [${e.code}]` : ''
+      return `${parts.join('\n')}${code}`
+    }
+    try {
+      const json = JSON.stringify(err)
+      if (json && json !== '{}' && json !== 'null') return json
+    } catch {
+      /* fall through to String() */
+    }
+  }
+  return String(err)
+}
+
+/**
+ * Wrap an unknown model-load error into a real `Error` carrying a readable
+ * `.message`, while preserving the original `code` / `details` as own
+ * properties so downstream consumers (e.g. the unsupported-projector retry and
+ * OOM detection) can still introspect them. If it is already an `Error`, it is
+ * returned unchanged.
+ */
+function toLoadError(err: unknown): Error {
+  if (err instanceof Error) return err
+  const wrapped = new Error(formatLoadError(err)) as Error & {
+    code?: string
+    details?: string
+  }
+  if (err && typeof err === 'object') {
+    const e = err as { code?: unknown; details?: unknown }
+    if (typeof e.code === 'string') wrapped.code = e.code
+    if (typeof e.details === 'string') wrapped.details = e.details
+  }
+  return wrapped
+}
+
+/**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
@@ -3272,14 +3328,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
           return sInfo
         } catch (retryError) {
           logger.error(
-            'Text-only retry after unsupported projector also failed:\n',
-            retryError
+            'Text-only retry after unsupported projector also failed:\n' +
+              formatLoadError(retryError)
           )
-          throw retryError
+          throw toLoadError(retryError)
         }
       }
-      logger.error('Error in load command:\n', error)
-      throw error
+      logger.error('Error in load command:\n' + formatLoadError(error))
+      throw toLoadError(error)
     }
   }
 

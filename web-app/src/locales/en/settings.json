@@ -207,7 +207,7 @@
     "apiKey": "API Key",
     "apiKeyDesc": "Authenticate requests with an API key.",
     "trustedHosts": "Trusted Hosts",
-    "trustedHostsDesc": "Hosts allowed to access the server, separated by commas.",
+    "trustedHostsDesc": "Addresses this server can be reached at (its own LAN IP or hostname, e.g. 192.168.1.100, my-host) — not the address of the client connecting to it. Separate multiple entries with commas. Use * to allow all hosts. Wildcard and CIDR patterns (e.g. 10.*.*.*, 192.168.0.0/16) are not supported.",
     "advancedSettings": "Advanced Settings",
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Allow cross-origin requests to the API server.",
@@ -283,7 +283,10 @@
     "atomicBotCliTitle": "Atomic Bot CLI",
     "atomicBotCliInstalled": "Installed at {{path}} — run atomic-chat-cli from your terminal to serve models.",
     "atomicBotCliNotInstalled": "Run atomic-chat-cli from your terminal to serve models without opening the app.",
-    "atomicBotCliInstalledToast": "Atomic Bot CLI installed at {{path}}"
+    "atomicBotCliInstalledToast": "Atomic Bot CLI installed at {{path}}",
+    "launchAtStartup": "Launch at startup",
+    "launchAtStartupDesc": "Automatically start Atomic Chat when you log in to your computer.",
+    "launchAtStartupError": "Failed to update the launch at startup setting."
   },
   "extensions": {
     "title": "Extensions"

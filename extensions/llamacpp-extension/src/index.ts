@@ -76,6 +76,13 @@ import {
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
+/// Error code (SCREAMING_SNAKE_CASE) surfaced by the Rust plugin's
+/// `LlamacppError` when an mmproj declares a projector type the bundled
+/// (TurboQuant) llama.cpp/libmtmd build cannot parse (e.g. the Gemma 4
+/// unified `gemma4uv` / `gemma4ua` projectors, present upstream but not yet
+/// in our fork). On this error we retry the load text-only (without --mmproj).
+const ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED = 'MULTIMODAL_PROJECTOR_LOAD_FAILED'
+
 /// Payload emitted by the Rust proxy when it detects a context-limit error
 /// that we (the TS side) should recover from by reloading the backend with
 /// a larger ctx window.
@@ -119,6 +126,62 @@ const logger = {
     console.error(...args)
     error(args.map((arg) => ` ${arg}`).join(` `))
   },
+}
+
+/**
+ * Coerce an unknown model-load error into a human-readable string.
+ *
+ * The Rust plugin rejects `load_llama_model` with a structured
+ * `{ code, message, details }` object (see `LlamacppError`), which is NOT an
+ * `Error` instance. Naive string coercion (`String(err)` / `` `${err}` ``)
+ * therefore yields `"[object Object]"` (see ATO-117). Prefer `message`, append
+ * the concrete llama.cpp stderr reason from `details` when present (e.g.
+ * `load_hparams: unknown projector type: ...`), then fall back to
+ * `JSON.stringify` and finally `String`. Never returns `"[object Object]"`.
+ */
+function formatLoadError(err: unknown): string {
+  if (err instanceof Error) return err.message || String(err)
+  if (err && typeof err === 'object') {
+    const e = err as { code?: unknown; message?: unknown; details?: unknown }
+    const parts: string[] = []
+    if (typeof e.message === 'string' && e.message.trim())
+      parts.push(e.message.trim())
+    if (typeof e.details === 'string' && e.details.trim())
+      parts.push(e.details.trim())
+    if (parts.length > 0) {
+      const code =
+        typeof e.code === 'string' && e.code ? ` [${e.code}]` : ''
+      return `${parts.join('\n')}${code}`
+    }
+    try {
+      const json = JSON.stringify(err)
+      if (json && json !== '{}' && json !== 'null') return json
+    } catch {
+      /* fall through to String() */
+    }
+  }
+  return String(err)
+}
+
+/**
+ * Wrap an unknown model-load error into a real `Error` carrying a readable
+ * `.message`, while preserving the original `code` / `details` as own
+ * properties so downstream consumers (e.g. the unsupported-projector retry and
+ * OOM detection) can still introspect them. If it is already an `Error`, it is
+ * returned unchanged.
+ */
+function toLoadError(err: unknown): Error {
+  if (err instanceof Error) return err
+  const wrapped = new Error(formatLoadError(err)) as Error & {
+    code?: string
+    details?: string
+  }
+  if (err && typeof err === 'object') {
+    const e = err as { code?: unknown; details?: unknown }
+    if (typeof e.code === 'string') wrapped.code = e.code
+    if (typeof e.details === 'string') wrapped.details = e.details
+  }
+  return wrapped
 }
 
 /**
@@ -2447,8 +2510,44 @@ export default class llamacpp_extension extends AIEngine {
       }
       return sInfo
     } catch (error) {
-      logger.error('Error in load command:\n', error)
-      throw error
+      // If the model crashed because its multimodal projector isn't supported
+      // by the current backend (e.g. the Gemma 4 unified `gemma4uv` / `gemma4ua`
+      // projectors, which the TurboQuant fork doesn't yet carry — it only has
+      // `gemma4v` / `gemma4a`), retry once text-only by dropping --mmproj. This
+      // keeps the model usable as a text LLM instead of failing the whole load
+      // with an opaque error. Mirrors the llamacpp-upstream fallback (issue #44).
+      const code = (error as { code?: string } | undefined)?.code
+      if (mmprojPath && code === ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED) {
+        logger.warn(
+          `Model "${modelId}" has an unsupported multimodal projector for backend "${backend}". Retrying text-only (without --mmproj).`
+        )
+        try {
+          const sInfo = await loadLlamaModel(
+            backendPath,
+            modelId,
+            modelPath,
+            port,
+            cfg,
+            envs,
+            undefined, // text-only: drop the unsupported mmproj
+            isEmbedding,
+            Number(this.timeout)
+          )
+          this.sessionCache.set(modelId, sInfo)
+          if (typeof cfg.ctx_size === 'number') {
+            this.modelCtxSize.set(modelId, cfg.ctx_size)
+          }
+          return sInfo
+        } catch (retryError) {
+          logger.error(
+            'Text-only retry after unsupported projector also failed:\n' +
+              formatLoadError(retryError)
+          )
+          throw toLoadError(retryError)
+        }
+      }
+      logger.error('Error in load command:\n' + formatLoadError(error))
+      throw toLoadError(error)
     }
   }
 

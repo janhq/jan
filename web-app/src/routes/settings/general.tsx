@@ -1,5 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
+import {
+  enable as enableAutostart,
+  disable as disableAutostart,
+  isEnabled as isAutostartEnabled,
+} from '@tauri-apps/plugin-autostart'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
@@ -97,6 +102,7 @@ function General() {
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [cliPath, setCliPath] = useState<string | null>(null)
   const [isCliLoading, setIsCliLoading] = useState(false)
+  const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -118,6 +124,31 @@ function General() {
       })
       .catch(() => setCliInstalled(false))
   }, [])
+
+  useEffect(() => {
+    if (!IS_TAURI) return
+    isAutostartEnabled()
+      .then(setAutostartEnabled)
+      .catch(() => setAutostartEnabled(false))
+  }, [])
+
+  const handleToggleAutostart = useCallback(
+    async (next: boolean) => {
+      try {
+        if (next) {
+          await enableAutostart()
+        } else {
+          await disableAutostart()
+        }
+        setAutostartEnabled(await isAutostartEnabled())
+      } catch (error) {
+        console.error('Failed to toggle launch at startup:', error)
+        toast.error(t('settings:general.launchAtStartupError'))
+        setAutostartEnabled(await isAutostartEnabled().catch(() => !next))
+      }
+    },
+    [t]
+  )
 
   const handleInstallCli = async () => {
     setIsCliLoading(true)
@@ -306,6 +337,19 @@ function General() {
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
               />
+              {IS_TAURI && (
+                <CardItem
+                  title={t('settings:general.launchAtStartup')}
+                  description={t('settings:general.launchAtStartupDesc')}
+                  actions={
+                    <Switch
+                      checked={autostartEnabled ?? false}
+                      disabled={autostartEnabled === null}
+                      onCheckedChange={handleToggleAutostart}
+                    />
+                  }
+                />
+              )}
             </Card>
 
             <Card title="Contact Us">

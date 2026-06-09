@@ -138,7 +138,7 @@
   "pickColorAppAccent": "Pick Color App Accent",
   "pickColorAppDestructive": "Pick Color App Destructive",
   "apiKeyRequired": "API Key is required",
-  "enterTrustedHosts": "Enter trusted hosts",
+  "enterTrustedHosts": "This server's address, e.g. 192.168.1.100, my-host (or * for all)",
   "placeholder": {
     "chatInput": "Ask me anything..."
   },

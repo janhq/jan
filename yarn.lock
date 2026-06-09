@@ -2812,6 +2812,7 @@ __metadata:
     "@tanstack/react-virtual": "npm:3.13.12"
     "@tanstack/router-plugin": "npm:1.121.34"
     "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-autostart": "npm:^2.5.1"
     "@tauri-apps/plugin-deep-link": "npm:2.4.3"
     "@tauri-apps/plugin-http": "npm:2.5.0"
     "@tauri-apps/plugin-notification": "npm:^2"
@@ -6330,6 +6331,15 @@ __metadata:
   bin:
     tauri: tauri.js
   checksum: 10c0/cba247813599180ddf7346870bf5f1d8cee11dc0136a84afe689347b0a81547c261a8957ae86eb6af1c4908f3575e8fe6f022c824dad818171e53af4053fabf4
+  languageName: node
+  linkType: hard
+
+"@tauri-apps/plugin-autostart@npm:^2.5.1":
+  version: 2.5.1
+  resolution: "@tauri-apps/plugin-autostart@npm:2.5.1"
+  dependencies:
+    "@tauri-apps/api": "npm:^2.8.0"
+  checksum: 10c0/b66fe2b87fd77e4b2c73b04fb93b34ba1fea32cadf74c01da6df037a508ca8c03aba9bcf9ef13e949effc219b26936d0596717f0d031ee552d60c069406026dd
   languageName: node
   linkType: hard
 

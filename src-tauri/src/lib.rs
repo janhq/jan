@@ -34,6 +34,13 @@ pub fn run() {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
         }));
+        // Launch-at-startup (ATO-96). Registered after single-instance, as the
+        // autostart plugin requires. LaunchAgent mode on macOS avoids an
+        // Apple Events prompt. No launch args: hidden/tray start is out of scope.
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
     }
 
     let mut app_builder = builder

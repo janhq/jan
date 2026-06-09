@@ -115,34 +115,39 @@ export function getProviderLogo(provider: string) {
 }
 
 /**
- * The local llama.cpp provider id for THIS platform.
+ * The DEFAULT local llama.cpp provider id for THIS platform.
  *   - Windows: ships only the upstream provider — see ADR 2026-05-22
  *     "Windows ships only `llamacpp-upstream`".
  *   - Linux: ships only the upstream provider — see ADR 2026-05-28
  *     "Linux ships only `llamacpp-upstream` (AppImage, upstream
  *     `ggml-org/llama.cpp`)".
- *   - macOS: keeps the turboquant fork provider id `llamacpp` as default.
- *     macOS additionally exposes `llamacpp-upstream` as a parallel
- *     provider per the 2026-05-19 dual-provider ADR.
+ *   - macOS: the default is now `llamacpp-upstream` too — see ADR
+ *     2026-06-09 (ATO-116). The vanilla upstream backend understands the
+ *     full Gemma 4 projector set (`gemma4uv`/`gemma4ua`), so the bundled
+ *     "Recommended" Gemma 4 vision model loads out of the box. The
+ *     turboquant fork (`llamacpp`) is NOT removed on macOS — it stays a
+ *     parallel provider the user can select manually for its turbo3
+ *     KV-cache memory savings (2026-05-19 dual-provider ADR).
+ *
+ * This only governs the default for fresh downloads / empty state. Users
+ * with `llamacpp` (turboquant) explicitly selected keep it (zustand-persist),
+ * and existing models on disk under `<data>/llamacpp/models/` are untouched.
  *
  * Use this whenever the UI needs to address "the local llama.cpp engine
  * that runs models" without forking call sites per OS.
  */
-export const LOCAL_LLAMACPP_PROVIDER = IS_WINDOWS || IS_LINUX
-  ? 'llamacpp-upstream'
-  : 'llamacpp'
+export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
 
 /**
- * Extension name (`@janhq/...`) that drives the active llama.cpp
- * provider on THIS platform. Mirrors `LOCAL_LLAMACPP_PROVIDER` — when
- * the extension manager is queried directly, Windows and Linux must
- * look up the upstream extension because the turboquant one is
- * excluded from both builds (see `build:extensions:win32` /
- * `build:extensions:linux` in the root `package.json`).
+ * Extension name (`@janhq/...`) that drives the DEFAULT llama.cpp provider
+ * on THIS platform. Mirrors `LOCAL_LLAMACPP_PROVIDER` — the extension
+ * manager resolves the upstream extension on every platform (Windows /
+ * Linux exclude the turboquant extension from the build entirely; macOS
+ * ships both but defaults to upstream per ADR 2026-06-09 / ATO-116). The
+ * turboquant `@janhq/llamacpp-extension` remains registered on macOS and is
+ * reached when the user selects the turboquant provider explicitly.
  */
-export const LOCAL_LLAMACPP_EXTENSION_NAME = IS_WINDOWS || IS_LINUX
-  ? '@janhq/llamacpp-upstream-extension'
-  : '@janhq/llamacpp-extension'
+export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {

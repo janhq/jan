@@ -1608,7 +1608,11 @@ async fn inner_proxy_request<R: Runtime>(
             log::warn!("CORS preflight: Host '{host}' not trusted for path '{request_path}'");
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
-                .body(Body::from("Host not allowed"))
+                .body(Body::from(format!(
+                    "Host '{host}' is not in Trusted Hosts. Add this server's address (e.g. \
+                     its LAN IP or hostname) in Settings \u{2192} Local API Server \u{2192} \
+                     Trusted Hosts, or use '*' to allow all."
+                )))
                 .unwrap());
         }
 
@@ -1737,7 +1741,11 @@ async fn inner_proxy_request<R: Runtime>(
                     &config.trusted_hosts,
                 );
                 return Ok(error_response
-                    .body(Body::from("Invalid host header"))
+                    .body(Body::from(format!(
+                        "Host '{host_header}' is not in Trusted Hosts. Add this server's \
+                         address (e.g. its LAN IP or hostname) in Settings \u{2192} Local API \
+                         Server \u{2192} Trusted Hosts, or use '*' to allow all."
+                    )))
                     .unwrap());
             }
         } else {
