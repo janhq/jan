@@ -233,6 +233,9 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          # ATO-113: source-map generation + @sentry/vite-plugin push peak heap
+          # past Node's ~2GB default, so raise it for the web build too.
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           yarn build:web
           yarn build:icon
@@ -597,6 +600,8 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          # ATO-113: source-map build needs more heap than Node's ~2GB default.
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           yarn build:web
           yarn build:icon
@@ -902,6 +907,8 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          # ATO-113: source-map build needs more heap than Node's ~2GB default.
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           yarn build:web
           yarn build:icon

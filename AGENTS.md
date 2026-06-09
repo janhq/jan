@@ -392,7 +392,12 @@ Append-only. Newest at top. Each entry follows this shape:
      git-SHA release, then deletes maps from `dist` — never shipped). Rust
      `[profile.release]` now `debug = 1` + `split-debuginfo = "packed"` so a
      separate dSYM/dwp/pdb exists for `sentry-cli debug-files upload` while the
-     shipped binary stays `strip = "symbols"`.
+     shipped binary stays `strip = "symbols"`. **CI heap (amendment
+     2026-06-09):** emitting source maps for the ~12.9k-module bundle pushes the
+     `yarn build:web` step past Node's ~2 GB default and it OOM'd
+     (`Reached heap limit`); the three `Build web app` steps in
+     [`release.yml`](.github/workflows/release.yml) now set
+     `NODE_OPTIONS=--max-old-space-size=8192`.
 - **Consequences:**
   - 100% capture when consented, total silence when not — no re-init on toggle.
     Zero-PII by construction on both runtimes (single scrubber doctrine, tags
