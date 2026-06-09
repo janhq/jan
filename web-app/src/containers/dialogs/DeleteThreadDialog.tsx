@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 import { route } from '@/constants/routes'
 
 interface DeleteThreadDialogProps {
-  thread: Thread
+  thread: { id: string; title?: string | null }
   onDelete: (threadId: string) => void
   onDropdownClose?: () => void
   variant?: 'default' | 'project'

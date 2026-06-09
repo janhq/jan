@@ -1,4 +1,4 @@
-import { LucideIcon } from 'lucide-react'
+import { GitPullRequest, type LucideIcon } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -9,7 +9,7 @@ import {
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
 import React, { useRef } from 'react'
 import {
@@ -29,10 +29,7 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import { BlocksIcon, type BlocksIconHandle } from '../animated-icon/blocks'
-import {
-  BotIcon,
-  type BotIconHandle,
-} from '@/components/animated-icon/bot'
+import { BotIcon, type BotIconHandle } from '@/components/animated-icon/bot'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -72,6 +69,11 @@ const getNavMainItems = (
   onJanClaw: () => void
 ): NavMainItem[] => [
   {
+    title: 'common:review',
+    url: route.review,
+    icon: GitPullRequest,
+  },
+  {
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
     onClick: onNewChat,
@@ -80,7 +82,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_CHAT].key}</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.NEW_CHAT].key}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -93,7 +97,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_AGENT_CHAT].key}</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.NEW_AGENT_CHAT].key}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -106,7 +112,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_PROJECT].key}</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.NEW_PROJECT].key}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -119,7 +127,9 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.SEARCH].key} </Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.SEARCH].key}{' '}
+        </Kbd>
       </KbdGroup>
     ),
   },
@@ -171,7 +181,8 @@ function NavMainItemWithAnimatedIcon({
 export function NavMain() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { addFolder } = useThreadManagement()
+  const location = useLocation()
+  const { addFolderFromPath } = useThreadManagement()
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
@@ -187,9 +198,17 @@ export function NavMain() {
       navigate({ to: route.home })
     }
   ).filter((item) => item.title !== 'common:newAgentChat')
+    .map((item) =>
+      item.url === route.review
+        ? { ...item, isActive: location.pathname === route.review }
+        : item
+    )
 
-  const handleCreateProject = async (name: string, assistantId?: string) => {
-    const newProject = await addFolder(name, assistantId)
+  const handleCreateProject = async (
+    directoryPath: string,
+    assistantId?: string
+  ) => {
+    const newProject = await addFolderFromPath(directoryPath, assistantId)
     setProjectDialogOpen(false)
     navigate({
       to: '/project/$projectId',
@@ -201,12 +220,14 @@ export function NavMain() {
     <>
       <SidebarMenu>
         {navMainItems.map((item) => {
+          const label = item.title.includes(':') ? t(item.title) : item.title
+
           if (item.animatedIcon) {
             return (
               <NavMainItemWithAnimatedIcon
                 key={item.title}
                 item={item}
-                label={t(item.title)}
+                label={label}
               />
             )
           }
@@ -222,13 +243,13 @@ export function NavMain() {
                 {item.url ? (
                   <Link to={item.url}>
                     {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    <span>{label}</span>
                     {item.shortcut}
                   </Link>
                 ) : (
                   <>
                     {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    <span>{label}</span>
                     {item.shortcut}
                   </>
                 )}

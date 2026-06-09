@@ -1,4 +1,12 @@
-import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import {
+  Archive,
+  Folder,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useIsThreadActive } from '@/hooks/useAppState'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -49,6 +57,7 @@ const ThreadItem = memo(
     const { t } = useTranslation()
     const [renameOpen, setRenameOpen] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+    const [archiveOpen, setArchiveOpen] = useState(false)
 
     const serviceHub = useServiceHub()
     const getMessages = useMessages((state) => state.getMessages)
@@ -258,6 +267,19 @@ const ThreadItem = memo(
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <SidebarMenuAction
+          showOnHover
+          className={cn(
+            "hover:bg-sidebar-foreground/8",
+            currentProjectId ? "mt-4 right-8" : "right-8"
+          )}
+          onClick={() => {
+            setArchiveOpen(true)
+          }}
+        >
+          <Archive />
+          <span className="sr-only">{t('common:archiveChats')}</span>
+        </SidebarMenuAction>
 
         <RenameThreadDialog
           thread={thread}
@@ -273,6 +295,14 @@ const ThreadItem = memo(
           onDelete={deleteThread}
           open={deleteConfirmOpen}
           onOpenChange={setDeleteConfirmOpen}
+          withoutTrigger
+        />
+
+        <DeleteThreadDialog
+          thread={thread}
+          onDelete={deleteThread}
+          open={archiveOpen}
+          onOpenChange={setArchiveOpen}
           withoutTrigger
         />
       </SidebarMenuItem>

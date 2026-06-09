@@ -7,10 +7,11 @@ import { useTools } from '@/hooks/useTools'
 import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
-import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 import { predefinedProviders } from '@/constants/providers'
-import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { providerHasConfiguredRemoteAuth } from '@/lib/provider-api-keys'
+import { WorkspacePanelsLayout } from '@/containers/ModelToolsPanel'
+import { Button } from '@/components/ui/button'
 
 type ThreadModel = {
   id: string
@@ -22,7 +23,7 @@ type SearchParams = {
 }
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -43,9 +44,7 @@ function Index() {
   const { setCurrentThreadId } = useThreads()
   useTools()
 
-  // Conditional to check if there are any valid providers
-  // required min 1 api_key or 1 model in llama.cpp or jan provider
-  // Custom providers (not in predefinedProviders) don't require api_key but need models
+  // Non-blocking model setup check so the app can boot without downloads.
   const hasValidProviders = providers.some((provider) => {
     const isPredefinedProvider = predefinedProviders.some(
       (p) => p.provider === provider.provider
@@ -58,7 +57,7 @@ function Index() {
 
     // Predefined providers need either API key or models (for llamacpp/jan)
     return (
-      providerHasRemoteApiKeys(provider) ||
+      providerHasConfiguredRemoteAuth(provider) ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
     )
@@ -68,45 +67,62 @@ function Index() {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
 
-  if (!hasValidProviders) {
-    return <SetupScreen />
-  }
-
   return (
-    <div className="flex h-full flex-col justify-center">
-      <HeaderPage>
-        <div className="flex items-center gap-2 w-full">
-          <DropdownModelProvider model={threadModel} />
-        </div>
-      </HeaderPage>
-      <div
-        className={cn(
-          'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
-        )}
-      >
-        <div
-          className={cn(
-            'mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20',
-          )}
-        >
-          <div className={cn('text-center mb-4')}>
-            <h1
-              className={cn(
-                'text-2xl mt-2 font-studio font-medium',
+    <WorkspacePanelsLayout
+      scope={{
+        id: 'home',
+        type: 'workspace',
+        label: 'Home',
+        sessionId: 'home',
+      }}
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <HeaderPage />
+        <div className="flex min-h-0 flex-1">
+          <div
+            className={cn(
+              'min-w-0 flex-1 overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
+            )}
+          >
+            <div className={cn('mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
+              <div className={cn('text-center mb-4')}>
+                <h1 className={cn('text-2xl mt-2 font-studio font-medium')}>
+                  {t('chat:description')}
+                </h1>
+              </div>
+              {!hasValidProviders && (
+                <div className="mb-4 rounded-md border border-dashed border-foreground/15 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    No model provider is set up yet.
+                  </p>
+                  <p>
+                    Add OpenAI, Jan, Ollama, vLLM, Grok, or another provider
+                    from Model Providers to start chatting with your local or
+                    remote model.
+                  </p>
+                  <Button
+                    asChild
+                    variant="secondary"
+                    size="sm"
+                    className="mt-2"
+                  >
+                    <Link to={route.settings.model_providers}>
+                      Open Model Providers
+                    </Link>
+                  </Button>
+                </div>
               )}
-            >
-              {t('chat:description')}
-            </h1>
-          </div>
-          <div className="flex-1 shrink-0">
-            <ChatInput
-              showSpeedToken={false}
-              model={threadModel}
-              initialMessage={true}
-            />
+              <div className="flex-1 shrink-0">
+                <ChatInput
+                  showSpeedToken={false}
+                  model={threadModel}
+                  initialMessage={true}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </WorkspacePanelsLayout>
   )
 }

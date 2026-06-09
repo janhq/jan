@@ -101,5 +101,27 @@
     "oneKeyHint": "Optional fallback keys are configured in Advanced.",
     "addKey": "Add key",
     "removeKey": "Remove key"
+  },
+  "xaiOAuth": {
+    "title": "SuperGrok sign-in",
+    "description": "Sign in with your X / SuperGrok subscription instead of an API key. Jan stores OAuth tokens locally and refreshes them automatically.",
+    "manualCallbackHint": "Jan cannot listen on 127.0.0.1:56121 in this build, so xAI will show an authorization code instead of redirecting back automatically.",
+    "pasteCodeHelp": "After you approve access in the browser, copy the authorization code from the xAI page (or the full callback URL) and paste it here. Do not refresh Jan before submitting.",
+    "authCodePlaceholder": "Paste authorization code or callback URL",
+    "signIn": "Sign in with SuperGrok",
+    "signingIn": "Waiting for browser sign-in…",
+    "deviceSignIn": "Sign in with device code",
+    "deviceCode": "Enter code {{code}} on the xAI authorization page.",
+    "connected": "Signed in with SuperGrok",
+    "expiresAt": "Access token refreshes before {{date}}",
+    "signOut": "Sign out",
+    "signedOut": "Signed out of SuperGrok",
+    "success": "SuperGrok sign-in successful",
+    "failed": "SuperGrok sign-in failed",
+    "cancel": "Cancel sign-in",
+    "desktopOnly": "SuperGrok OAuth is available in the Jan desktop app.",
+    "manualCallback": "Paste callback URL manually",
+    "callbackPlaceholder": "http://127.0.0.1:56121/callback?code=…&state=…",
+    "completeCallback": "Complete sign-in"
   }
 }

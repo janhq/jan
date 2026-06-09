@@ -1,14 +1,13 @@
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback } from 'react'
 import {
   IconAdjustmentsHorizontal,
   IconCircles,
-  IconChevronDown,
-  IconChevronRight,
   IconCommand,
   IconFeather,
+  IconFlask,
   IconPalette,
   IconPlus,
   IconTopologyStar3,
@@ -34,7 +33,6 @@ import { Button } from '@/components/ui/button'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
-  const [expandedProviders, setExpandedProviders] = useState(true)
 
   const matches = useMatches()
   const navigate = useNavigate()
@@ -99,12 +97,6 @@ const SettingsMenu = () => {
     (p) => !isLocalProvider(p.provider)
   )
 
-  const hiddenProviders = providers.filter((provider) => {
-    if (provider.active) return false
-    if (!IS_MACOS && provider.provider === 'mlx') return false
-    return true
-  })
-
   const renderActiveProvider = (provider: ProviderObject) => {
     const isRouteActive = matches.some(
       (match) =>
@@ -140,20 +132,6 @@ const SettingsMenu = () => {
     )
   }
 
-  // Check if current route has a providerName parameter and expand providers submenu
-  useEffect(() => {
-    const hasProviderName = matches.some(
-      (match) =>
-        match.routeId === '/settings/providers/$providerName' &&
-        'providerName' in match.params
-    )
-    const isProvidersRoute = matches.some(
-      (match) => match.routeId === '/settings/providers/'
-    )
-    if (hasProviderName || isProvidersRoute) {
-      setExpandedProviders(true)
-    }
-  }, [matches])
 
   // Check if we're in the setup remote provider step
   const stepSetupRemoteProvider = matches.some(
@@ -176,7 +154,11 @@ const SettingsMenu = () => {
       route: route.settings.interface,
       icon: IconPalette,
     },
-    { title: 'common:assistants', route: route.settings.assistant, icon: IconFeather },
+    {
+      title: 'common:assistants',
+      route: route.settings.assistant,
+      icon: IconFeather,
+    },
     {
       title: 'common:attachments',
       route: route.settings.attachments,
@@ -209,6 +191,11 @@ const SettingsMenu = () => {
 
   const integrationSettings = [
     {
+      title: 'Studio',
+      route: route.settings.studio,
+      icon: IconFlask,
+    },
+    {
       title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
       icon: IconTopologyStar3,
@@ -217,7 +204,12 @@ const SettingsMenu = () => {
       title: 'common:claude_code',
       route: route.settings.claude_code,
       icon: ({ size, className }: { size?: number; className?: string }) => (
-        <img src="/images/code-claude.svg" width={size} height={size} className={cn(className, 'dark:invert opacity-60')} />
+        <img
+          src="/images/code-claude.svg"
+          width={size}
+          height={size}
+          className={cn(className, 'dark:invert opacity-60')}
+        />
       ),
     },
   ]
@@ -234,7 +226,10 @@ const SettingsMenu = () => {
                 className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
               >
                 <div className="flex items-center gap-2">
-                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
+                  <menu.icon
+                    size={18}
+                    className="shrink-0 text-muted-foreground"
+                  />
                   <span>{t(menu.title)}</span>
                 </div>
               </Link>
@@ -256,7 +251,10 @@ const SettingsMenu = () => {
                   to={menu.route}
                   className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
-                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
+                  <menu.icon
+                    size={18}
+                    className="shrink-0 text-muted-foreground"
+                  />
                   <span>{t(menu.title)}</span>
                 </Link>
               ))}
@@ -299,55 +297,6 @@ const SettingsMenu = () => {
                 </>
               )}
 
-              {hiddenProviders.length > 0 && (
-                <>
-                  <button
-                    className="flex items-center justify-between px-2 py-1 w-full rounded-sm text-muted-foreground hover:bg-secondary/60"
-                    onClick={() => setExpandedProviders(!expandedProviders)}
-                  >
-                    <span className="text-sm">
-                      {t('common:hiddenProviders', {
-                        count: hiddenProviders.length,
-                      })}
-                    </span>
-                    {expandedProviders ? (
-                      <IconChevronDown size={14} />
-                    ) : (
-                      <IconChevronRight size={14} />
-                    )}
-                  </button>
-                  {expandedProviders &&
-                    hiddenProviders.map((provider) => {
-                      const isRouteActive = matches.some(
-                        (match) =>
-                          match.routeId ===
-                            '/settings/providers/$providerName' &&
-                          'providerName' in match.params &&
-                          match.params.providerName === provider.provider
-                      )
-                      return (
-                        <div
-                          key={provider.provider}
-                          className={cn(
-                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
-                            isRouteActive && 'bg-secondary'
-                          )}
-                          onClick={() =>
-                            navigate({
-                              to: route.settings.providers,
-                              params: { providerName: provider.provider },
-                            })
-                          }
-                        >
-                          <ProvidersAvatar provider={provider} />
-                          <div className="truncate flex-1">
-                            <span>{getProviderTitle(provider.provider)}</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                </>
-              )}
             </div>
             <div className="m-3" />
           </div>

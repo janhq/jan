@@ -1,4 +1,5 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
@@ -18,6 +19,7 @@ import { PromptJanModel } from '@/containers/PromptJanModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
+import RuntimePermissionDialog from '@/containers/dialogs/RuntimePermissionDialog'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
@@ -31,6 +33,9 @@ import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import LlamacppBusyOnExitDialog from '@/containers/dialogs/LlamacppBusyOnExitDialog'
 import LlamacppOomListener from '@/containers/dialogs/LlamacppOomListener'
 import MissingDependenciesDialog from '@/containers/dialogs/MissingDependenciesDialog'
+import { cn } from '@/lib/utils'
+import { isPlatformTauri } from '@/lib/platform/utils'
+import type { MouseEvent } from 'react'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -47,6 +52,13 @@ const AppLayout = () => {
     setLeftPanelWidth,
   } = useLeftPanel()
 
+  const handleWindowDrag = async (event: MouseEvent<HTMLDivElement>) => {
+    if (!isPlatformTauri() || IS_LINUX || event.button !== 0) return
+
+    event.preventDefault()
+    await getCurrentWebviewWindow().startDragging()
+  }
+
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">
       <SidebarProvider
@@ -57,21 +69,26 @@ const AppLayout = () => {
       >
         <AnalyticProvider />
         <KeyboardShortcutsProvider />
-        {/* Fake absolute panel top to enable window drag */}
+        {/* Tauri drag strip lives below titlebar controls. */}
         {IS_WINDOWS && <WindowControls />}
-        {IS_TAURI && !IS_LINUX && (
-          <div
-            className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing"
-            title="Drag window"
-            aria-label="Window drag area"
-            data-tauri-drag-region
-          />
-        )}
+        <div
+          className={cn(
+            'fixed top-0 z-[var(--app-layer-titlebar-drag)] h-[var(--app-titlebar-height)] w-full',
+            isPlatformTauri() && !IS_LINUX
+              ? 'cursor-grab active:cursor-grabbing'
+              : 'pointer-events-none'
+          )}
+          data-window-drag-region="true"
+          title={isPlatformTauri() && !IS_LINUX ? 'Drag window' : undefined}
+          aria-label={isPlatformTauri() && !IS_LINUX ? 'Window drag area' : undefined}
+          onMouseDown={handleWindowDrag}
+          data-tauri-drag-region={isPlatformTauri() && !IS_LINUX ? true : undefined}
+        />
         <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />
         <SidebarInset>
-          <div className="bg-neutral-50 dark:bg-background size-full">
+          <div className="bg-neutral-50 dark:bg-background size-full h-svh max-h-svh overflow-hidden">
             <Outlet />
           </div>
         </SidebarInset>
@@ -126,6 +143,7 @@ function RootLayout() {
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />
+          <RuntimePermissionDialog />
           <AttachmentIngestionDialog />
           <ErrorDialog />
           <LlamacppBusyOnExitDialog />

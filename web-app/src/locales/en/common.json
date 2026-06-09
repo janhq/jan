@@ -25,6 +25,7 @@
   "keyboardShortcuts": "Shortcuts",
   "newChat": "New Chat",
   "newAgentChat": "New Agent Chat",
+  "review": "Review",
   "chats": "Chats",
   "favorites": "Favorites",
   "recents": "Recents",
@@ -302,6 +303,15 @@
     "createNewProject": "Create New Project",
     "editProject": "Edit Project",
     "deleteProject": "Delete Project",
+    "removeProject": "Remove",
+    "pinProject": "Pin project",
+    "unpinProject": "Unpin project",
+    "revealInFinder": "Reveal in Finder",
+    "createPermanentWorktree": "Create permanent worktree",
+    "createPermanentWorktreeUnavailable": "Create permanent worktree is not available yet.",
+    "archiveChats": "Archive chats",
+    "noProjectDirectorySet": "No directory is set for this project.",
+    "revealInFinderError": "Unable to reveal project folder.",
     "projectName": "Project Name",
     "enterProjectName": "Enter project name...",
     "noProjectsAvailable": "No projects available",
@@ -360,7 +370,11 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "archiveChatsDialog": {
+      "title": "Archive Conversations",
+      "description": "Archive {{count}} conversations in \"{{projectName}}\"."
+    }
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",

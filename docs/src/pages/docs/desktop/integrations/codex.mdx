@@ -1,0 +1,53 @@
+---
+title: Codex
+description: Use Jan as a local backend for the Codex CLI
+keywords: [Jan, Codex, CLI, local AI, coding agent]
+---
+
+# Codex
+
+Use OpenAI Codex through Jan's local server for coding tasks and autonomous workflows, while keeping model inference on your machine.
+
+## Install Codex CLI
+
+```bash
+npm install -g @openai/codex
+```
+
+## Run Codex with Jan
+
+From your terminal, start a local Jan model and launch Codex in one command:
+
+```bash
+jan launch codex --model janhq/Jan-code-4b-gguf
+```
+
+`jan launch codex` automatically wires:
+
+- `CODEX_HOME=./.jan/codex-home`
+- `OPENAI_BASE_URL=http://127.0.0.1:<port>/v1`
+- `OPENAI_API_KEY` (the CLI key you pass)
+- `OPENAI_MODEL` (the selected local Jan model)
+
+## Direct Codex wiring
+
+If you prefer to start Codex manually, set these environment variables first:
+
+```bash
+export CODEX_HOME=./.jan/codex-home
+export OPENAI_BASE_URL=http://127.0.0.1:6767/v1
+export OPENAI_API_KEY=jan
+export OPENAI_MODEL=janhq/Jan-code-4b-gguf
+```
+
+Then run:
+
+```bash
+codex
+```
+
+If you haven't installed the binary, this also works via npm without a global install:
+
+```bash
+npx @openai/codex
+```

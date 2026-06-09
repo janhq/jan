@@ -275,4 +275,64 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     // Custom Model 1 is also in the dropdown
     expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(1)
   })
+
+  it('should filter models in dropdown selector based on active status', () => {
+    // Mock providers with a remote provider (openai) having different active settings
+    const testProviders: any[] = [
+      {
+        provider: 'openai',
+        active: true,
+        api_key: 'sk-test',
+        models: [
+          {
+            id: 'gpt-4-active',
+            name: 'GPT 4 Active',
+            displayName: 'GPT 4 Active',
+            capabilities: ['completion'],
+            active: true,
+          },
+          {
+            id: 'gpt-4-inactive',
+            name: 'GPT 4 Inactive',
+            displayName: 'GPT 4 Inactive',
+            capabilities: ['completion'],
+            active: false,
+          },
+          {
+            id: 'gpt-4-default-off',
+            name: 'GPT 4 Default Off',
+            displayName: 'GPT 4 Default Off',
+            capabilities: ['completion'],
+            // active is undefined -> remote predefined models default to off
+          },
+        ],
+        settings: [],
+      },
+    ]
+
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: testProviders,
+      selectedProvider: 'openai',
+      selectedModel: testProviders[0].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        testProviders.find((p: any) => p.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn((id: string) =>
+        testProviders[0].models.find((m: any) => m.id === id)
+      ),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    render(<DropdownModelProvider />)
+
+    // The active model should be visible
+    expect(screen.getAllByText('GPT 4 Active')).toHaveLength(2)
+
+    // The inactive model should not be in the document
+    expect(screen.queryByText('GPT 4 Inactive')).not.toBeInTheDocument()
+
+    // The default off remote model should not be in the document
+    expect(screen.queryByText('GPT 4 Default Off')).not.toBeInTheDocument()
+  })
 })

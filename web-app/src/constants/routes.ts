@@ -1,11 +1,13 @@
 export const route = {
   // home as new chat or thread
   home: '/',
+  review: '/review',
   appLogs: '/logs',
   project: '/project',
   projectDetail: '/project/$projectId',
   settings: {
     index: '/settings',
+    studio: '/settings/studio',
     model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',

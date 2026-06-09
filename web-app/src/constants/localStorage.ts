@@ -30,6 +30,14 @@ export const localStorageKey = {
   latestJanModel: 'latest-jan-model',
   defaultEmbeddingModel: 'default-embedding-model',
   pausedDownloads: 'paused-downloads',
+  chatSidePanel: 'chat-side-panel',
+  workspacePanel: 'workspace-panel',
+  workspaceDirectories: 'workspace-directories',
+  chatWorkspaceContext: 'chat-workspace-context',
+  chatSessionState: 'chat-session-state',
+  runtimePermissions: 'runtime-permissions',
+  codexProviderProfiles: 'codex-provider-profiles',
+  terminalRuntime: 'terminal-runtime',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

@@ -23,7 +23,7 @@
     "test:ui": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest --ui",
     "test:coverage": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --coverage",
     "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
-    "dev:web": "yarn workspace @janhq/web-app dev",
+    "dev:web": "node ./scripts/dev-web.mjs",
     "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
     "dev:ios": "yarn copy:assets:mobile && RUSTC_WRAPPER= cross-env IS_IOS=true yarn tauri ios dev --features mobile",
     "dev:android": "yarn copy:assets:mobile && cross-env IS_ANDROID=true yarn tauri android dev --features mobile",

@@ -80,38 +80,44 @@ const h = vi.hoisted(() => {
     })),
     updateProvider: vi.fn(),
   }
-  const useModelProviderMock: any = (selector: any) => selector(modelProviderState)
+  const useModelProviderMock: any = (selector: any) =>
+    selector(modelProviderState)
   useModelProviderMock.getState = () => modelProviderState
 
   const chatSessionsState: any = {
     sessions: {},
     getSessionData: vi.fn(() => ({ tools: [] })),
   }
-  const useChatSessionsMock: any = (selector: any) => selector(chatSessionsState)
+  const useChatSessionsMock: any = (selector: any) =>
+    selector(chatSessionsState)
   useChatSessionsMock.getState = () => chatSessionsState
 
   const attachmentsState: any = {
     getAttachments: vi.fn(() => []),
     clearAttachments: vi.fn(),
   }
-  const useChatAttachmentsMock: any = (selector: any) => selector(attachmentsState)
+  const useChatAttachmentsMock: any = (selector: any) =>
+    selector(attachmentsState)
   useChatAttachmentsMock.getState = () => attachmentsState
 
   const useAttachmentsState: any = { enabled: true, parseMode: 'auto' }
-  const useAttachmentsMock: any = (selector: any) => selector(useAttachmentsState)
+  const useAttachmentsMock: any = (selector: any) =>
+    selector(useAttachmentsState)
   useAttachmentsMock.getState = () => useAttachmentsState
 
   const toolAvailableState: any = {
     getDisabledToolsForThread: vi.fn(() => []),
   }
-  const useToolAvailableMock: any = (selector: any) => selector(toolAvailableState)
+  const useToolAvailableMock: any = (selector: any) =>
+    selector(toolAvailableState)
   useToolAvailableMock.getState = () => toolAvailableState
 
   const toolApprovalState: any = {
     showApprovalModal: vi.fn().mockResolvedValue(true),
     approveToolForThread: vi.fn(),
   }
-  const useToolApprovalMock: any = (selector: any) => selector(toolApprovalState)
+  const useToolApprovalMock: any = (selector: any) =>
+    selector(toolApprovalState)
   useToolApprovalMock.getState = () => toolApprovalState
 
   const agentModeState: any = { agentThreads: {} }
@@ -164,13 +170,18 @@ const h = vi.hoisted(() => {
 // -----------------------------------------------------------------------------
 
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
+  createFileRoute: () => (config: any) => ({
+    ...config,
+    id: '/threads/$threadId',
+  }),
   useParams: () => ({ threadId: 'thread-1' }),
   useSearch: () => ({ threadModel: undefined }),
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: any) => <div data-testid="header-page">{children}</div>,
+  default: ({ children }: any) => (
+    <div data-testid="header-page">{children}</div>
+  ),
 }))
 
 vi.mock('@/containers/DropdownModelProvider', () => ({
@@ -245,6 +256,13 @@ vi.mock('@/components/ui/button', () => ({
 vi.mock('@tabler/icons-react', () => ({
   IconAlertCircle: () => <span />,
   IconRefresh: () => <span />,
+  IconLayoutSidebar: () => <span />,
+}))
+
+vi.mock('@/containers/ModelToolsPanel', () => ({
+  WorkspacePanelsLayout: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="workspace-panels">{children}</div>
+  ),
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -275,11 +293,19 @@ vi.mock('@/lib/messages', () => ({
   extractContentPartsFromUIMessage: (msg: any) =>
     msg.parts
       .filter((p: any) => p.type === 'text')
-      .map((p: any) => ({ type: 'text', text: { value: p.text, annotations: [] } })),
+      .map((p: any) => ({
+        type: 'text',
+        text: { value: p.text, annotations: [] },
+      })),
 }))
 
 vi.mock('@/lib/completion', () => ({
-  newUserThreadContent: (threadId: string, text: string, _a: any, id: string) => ({
+  newUserThreadContent: (
+    threadId: string,
+    text: string,
+    _a: any,
+    id: string
+  ) => ({
     id,
     thread_id: threadId,
     role: 'user',
@@ -291,7 +317,10 @@ vi.mock('@/lib/completion', () => ({
 vi.mock('@/lib/attachmentProcessing', () => ({
   processAttachmentsForSend: vi
     .fn()
-    .mockResolvedValue({ processedAttachments: [], hasEmbeddedDocuments: false }),
+    .mockResolvedValue({
+      processedAttachments: [],
+      hasEmbeddedDocuments: false,
+    }),
 }))
 
 vi.mock('@/lib/thread-title-summarizer', () => ({
@@ -330,17 +359,29 @@ vi.mock('@/hooks/useThreads', () => ({ useThreads: h.useThreadsMock }))
 vi.mock('@/hooks/useMessages', () => ({ useMessages: h.useMessagesMock }))
 vi.mock('@/hooks/useTools', () => ({ useTools: vi.fn() }))
 vi.mock('@/hooks/useAppState', () => ({ useAppState: h.useAppStateMock }))
-vi.mock('@/hooks/useModelProvider', () => ({ useModelProvider: h.useModelProviderMock }))
-vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: h.useChatSessionsMock }))
+vi.mock('@/hooks/useModelProvider', () => ({
+  useModelProvider: h.useModelProviderMock,
+}))
+vi.mock('@/stores/chat-session-store', () => ({
+  useChatSessions: h.useChatSessionsMock,
+}))
 vi.mock('@/hooks/useChatAttachments', () => ({
   useChatAttachments: h.useChatAttachmentsMock,
   NEW_THREAD_ATTACHMENT_KEY: '__new-thread__',
 }))
-vi.mock('@/hooks/useAttachments', () => ({ useAttachments: h.useAttachmentsMock }))
-vi.mock('@/hooks/useToolAvailable', () => ({ useToolAvailable: h.useToolAvailableMock }))
-vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
+vi.mock('@/hooks/useAttachments', () => ({
+  useAttachments: h.useAttachmentsMock,
+}))
+vi.mock('@/hooks/useToolAvailable', () => ({
+  useToolAvailable: h.useToolAvailableMock,
+}))
+vi.mock('@/hooks/useToolApproval', () => ({
+  useToolApproval: h.useToolApprovalMock,
+}))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: h.useAgentModeMock }))
-vi.mock('@/stores/message-queue-store', () => ({ useMessageQueue: h.useMessageQueueMock }))
+vi.mock('@/stores/message-queue-store', () => ({
+  useMessageQueue: h.useMessageQueueMock,
+}))
 
 vi.mock('@/hooks/useAutoScroll', () => ({
   useAutoScroll: () => ({
@@ -440,7 +481,9 @@ describe('ThreadDetail route', () => {
     const { unmount } = renderComponent()
     expect(h.threadsState.setCurrentThreadId).toHaveBeenCalledWith('thread-1')
     unmount()
-    expect(h.threadsState.setCurrentThreadId).toHaveBeenLastCalledWith(undefined)
+    expect(h.threadsState.setCurrentThreadId).toHaveBeenLastCalledWith(
+      undefined
+    )
   })
 
   it('renders messages passed through useChat', () => {

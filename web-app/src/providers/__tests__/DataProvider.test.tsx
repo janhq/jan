@@ -21,8 +21,8 @@ const h = vi.hoisted(() => {
     navigate: vi.fn(),
     invoke: vi.fn().mockResolvedValue(undefined),
     isDev: vi.fn().mockReturnValue(false),
-    providerHasRemoteApiKeys: vi.fn().mockReturnValue(true),
-    providerRemoteApiKeyChain: vi.fn().mockReturnValue(['key-1']),
+    providerHasRemoteAuth: vi.fn().mockResolvedValue(true),
+    providerRemoteAuthKeyChain: vi.fn().mockResolvedValue(['key-1']),
     eventsOn: vi.fn(),
     localApi: {
       enableOnStartup: false,
@@ -89,8 +89,8 @@ vi.mock('@/lib/utils', () => ({
 }))
 
 vi.mock('@/lib/provider-api-keys', () => ({
-  providerHasRemoteApiKeys: (p: unknown) => h.providerHasRemoteApiKeys(p),
-  providerRemoteApiKeyChain: (p: unknown) => h.providerRemoteApiKeyChain(p),
+  providerHasRemoteAuth: (p: unknown) => h.providerHasRemoteAuth(p),
+  providerRemoteAuthKeyChain: (p: unknown) => h.providerRemoteAuthKeyChain(p),
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -178,8 +178,8 @@ describe('DataProvider', () => {
     resetHubState()
     h.providers = []
     h.isDev.mockReturnValue(false)
-    h.providerHasRemoteApiKeys.mockReturnValue(true)
-    h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
+    h.providerHasRemoteAuth.mockResolvedValue(true)
+    h.providerRemoteAuthKeyChain.mockResolvedValue(['key-1'])
     h.invoke.mockResolvedValue(undefined)
     h.localApi.enableOnStartup = false
     h.localApi.defaultModelLocalApiServer = null
@@ -305,13 +305,13 @@ describe('DataProvider', () => {
   })
 
   it('skips registration when provider has no API key chain', async () => {
-    h.providerRemoteApiKeyChain.mockReturnValue([])
+    h.providerRemoteAuthKeyChain.mockResolvedValue([])
     h.providers = [
       { provider: 'openai', active: true, models: [], custom_header: [] },
     ]
     render(<DataProvider />)
     await waitFor(() => {
-      expect(h.providerRemoteApiKeyChain).toHaveBeenCalled()
+      expect(h.providerRemoteAuthKeyChain).toHaveBeenCalled()
     })
     const regCalls = h.invoke.mock.calls.filter((c) => c[0] === 'register_provider_config')
     expect(regCalls.length).toBe(0)

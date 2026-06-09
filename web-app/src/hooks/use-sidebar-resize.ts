@@ -19,6 +19,12 @@ export interface UseSidebarResizeProps {
 	onResize: (width: string) => void;
 
 	/**
+	 * Called once on mouseup after a drag with the final width.
+	 * Use for persisting to storage; onResize alone can stay in-memory during drag.
+	 */
+	onResizeEnd?: (width: string) => void;
+
+	/**
 	 * Callback to toggle panel visibility
 	 */
 	onToggle?: () => void;
@@ -127,6 +133,7 @@ export function useSidebarResize({
 	direction = "right",
 	currentWidth,
 	onResize,
+	onResizeEnd,
 	onToggle,
 	isCollapsed = false,
 	minResizeWidth = "14rem",
@@ -158,6 +165,7 @@ export function useSidebarResize({
 	const dragDistanceFromToggle = React.useRef(0);
 	const dragOffset = React.useRef(0);
 	const railRect = React.useRef<DOMRect | null>(null);
+	const lastFormattedWidth = React.useRef<string | null>(null);
 
 	// Refs for auto-collapse threshold
 	const autoCollapseThresholdPx = React.useRef(0);
@@ -253,6 +261,7 @@ export function useSidebarResize({
 			toggleCooldown.current = false;
 			lastToggleTime.current = 0;
 			dragDistanceFromToggle.current = 0;
+			lastFormattedWidth.current = null;
 
 			// Reset drag offset
 			dragOffset.current = 0;
@@ -385,8 +394,8 @@ export function useSidebarResize({
 							unit === "rem" ? clampedWidth / 16 : clampedWidth,
 							unit,
 						);
+						lastFormattedWidth.current = formattedWidth;
 						onResize(formattedWidth);
-						persistWidth(formattedWidth);
 
 						lastTogglePoint.current = e.clientX;
 						lastToggleWidth.current = clampedWidth;
@@ -420,8 +429,8 @@ export function useSidebarResize({
 
 				// Format and update width
 				const formattedWidth = formatWidth(newWidth, unit);
+				lastFormattedWidth.current = formattedWidth;
 				onResize(formattedWidth);
-				persistWidth(formattedWidth);
 
 				// Update last width
 				lastWidth.current = clampedWidthPx;
@@ -434,6 +443,11 @@ export function useSidebarResize({
 			// Handle click (not drag) behavior
 			if (!isDragging.current && onToggle && enableToggle) {
 				onToggle();
+			}
+
+			if (isDragging.current && lastFormattedWidth.current) {
+				onResizeEnd?.(lastFormattedWidth.current);
+				persistWidth(lastFormattedWidth.current);
 			}
 
 			// Reset all state
@@ -449,6 +463,7 @@ export function useSidebarResize({
 			dragDistanceFromToggle.current = 0;
 			dragOffset.current = 0;
 			railRect.current = null;
+			lastFormattedWidth.current = null;
 			setIsDraggingRail(false);
 		};
 
@@ -461,6 +476,7 @@ export function useSidebarResize({
 		};
 	}, [
 		onResize,
+		onResizeEnd,
 		onToggle,
 		isCollapsed,
 		currentWidth,

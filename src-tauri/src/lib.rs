@@ -1,6 +1,5 @@
 pub mod core;
 
-
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -58,12 +57,49 @@ macro_rules! invoke_commands_with_extras {
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
+        core::system::commands::write_codex_provider_profile_artifacts,
+        core::system::commands::list_running_processes,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
         core::system::commands::check_jan_cli_installed,
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
+        // Studio runtime commands
+        core::studio::commands::probe_binary_on_path,
+        core::studio::commands::probe_openai_endpoint,
+        core::studio::commands::list_studio_runtime_processes,
+        core::studio::commands::spawn_studio_runtime,
+        core::studio::commands::stop_studio_runtime,
+        core::studio::commands::read_studio_runtime_logs,
+        core::studio::commands::write_codex_app_server_config,
+        core::studio::commands::start_codex_app_server,
+        core::studio::commands::write_codex_app_server_stdin,
+        core::studio::commands::stop_codex_app_server,
+        core::studio::commands::list_codex_app_server_processes,
+        core::studio::commands::run_codex_cli_subcommand,
+        // xAI OAuth commands
+        core::xai_oauth::commands::xai_oauth_status,
+        core::xai_oauth::commands::xai_oauth_start_login,
+        core::xai_oauth::commands::xai_oauth_cancel_login,
+        core::xai_oauth::commands::xai_oauth_complete_callback,
+        core::xai_oauth::commands::xai_oauth_get_access_token,
+        core::xai_oauth::commands::xai_oauth_logout,
+        core::xai_oauth::commands::xai_oauth_start_device_login,
+        core::xai_oauth::commands::xai_oauth_poll_device_login,
+        // Git review commands
+        core::git_review::commands::git_review_status,
+        core::git_review::commands::git_review_diff,
+        core::git_review::commands::git_worktree_add,
+        core::git_review::commands::git_workspace_targets,
+        core::git_review::commands::git_checkout_branch,
+        // Terminal commands
+        core::terminal::commands::start_terminal_session,
+        core::terminal::commands::write_terminal_stdin,
+        core::terminal::commands::resize_terminal_session,
+        core::terminal::commands::stop_terminal_session,
+        core::terminal::commands::list_terminal_sessions,
+        core::terminal::commands::read_terminal_scrollback,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -202,7 +238,10 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
 )]
 pub fn run() {
     let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
+    // Single-instance only in release builds. Dev `cargo run` shares the same
+    // bundle id as the installed Jan.app and would otherwise exit immediately
+    // when another copy is already open.
+    #[cfg(all(desktop, not(debug_assertions)))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
@@ -251,6 +290,7 @@ pub fn run() {
     ]);
 
     let app = app_builder
+        .manage(core::xai_oauth::commands::XaiOAuthState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
@@ -448,7 +488,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     log::info!("App cleanup completed");
                 });

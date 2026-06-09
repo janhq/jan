@@ -56,8 +56,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --animate-hue-rotate: hue-rotate 4s infinite;
-  --font-studio: "StudioFeixenSans";
-  --font-sans: "Inter", sans-serif;
+  --font-studio: 'StudioFeixenSans';
+  --font-sans: 'Inter', sans-serif;
 
   /* Font scale based on --font-size-base */
   --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */
@@ -73,10 +73,25 @@
   --text-7xl: calc(var(--font-size-base) * 4.5); /* ~72px */
   --text-8xl: calc(var(--font-size-base) * 6); /* ~96px */
   --text-9xl: calc(var(--font-size-base) * 8); /* ~128px */
-
 }
 
 :root {
+  --font-size-base: 16px;
+  --app-titlebar-height: 3.75rem;
+  --app-titlebar-macos-controls-width: 5.5rem;
+  --app-titlebar-gap: 1rem;
+  --app-titlebar-control-left: calc(
+    var(--app-titlebar-macos-controls-width) + var(--app-titlebar-gap)
+  );
+  --app-titlebar-control-width: 4.75rem;
+  --app-titlebar-content-start: calc(
+    var(--app-titlebar-control-left) + var(--app-titlebar-control-width) +
+      var(--app-titlebar-gap)
+  );
+  --app-layer-titlebar-drag: 20;
+  --app-layer-sidebar: 50;
+  --app-layer-left-titlebar-controls: 60;
+  --app-layer-workspace-titlebar-controls: 80;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -101,7 +116,7 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #194D24;
+  --sidebar: #194d24;
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -135,7 +150,7 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #194D24;
+  --sidebar: #194d24;
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -166,8 +181,8 @@
   }
 
   /* WebKit number input spin buttons */
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
     -webkit-appearance: none;
     appearance: none;
     background: var(--foreground);
@@ -175,8 +190,8 @@
     cursor: pointer;
   }
 
-  input[type="number"]::-webkit-inner-spin-button:hover,
-  input[type="number"]::-webkit-outer-spin-button:hover {
+  input[type='number']::-webkit-inner-spin-button:hover,
+  input[type='number']::-webkit-outer-spin-button:hover {
     opacity: 0.8;
   }
 
@@ -232,7 +247,6 @@
   .dark * {
     scrollbar-color: oklch(0.985 0 0 / 20%) transparent;
   }
-
 }
 
 @layer base {
@@ -243,7 +257,13 @@
     @apply bg-background text-foreground;
   }
 
-  [data-streamdown="code-block-header"] {
+  [data-streamdown='code-block-header'] {
     padding: 6px 16px !important;
+  }
+
+  .xterm,
+  .xterm .xterm-viewport,
+  .xterm .xterm-screen {
+    background-color: transparent !important;
   }
 }

@@ -52,13 +52,20 @@ import { OUT_OF_CONTEXT_SIZE, isContextOverflowMessage } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import { WorkspacePanelsLayout } from '@/containers/ModelToolsPanel'
+
+import {
+  isCodexAppServerProvider,
+  steerCodexSubThreadEvents,
+} from '@/lib/codex-app-server'
+import { CodexActivityPart } from '@/components/ai-elements/codex-activity'
+import { toast } from 'sonner'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -429,8 +436,7 @@ function ThreadDetail() {
                 return `${role}: ${text}`
               })
               .filter(Boolean)
-              .join('\n\n') ||
-            useThreads.getState().threads[threadId]?.title
+              .join('\n\n') || useThreads.getState().threads[threadId]?.title
           if (inputText) {
             const provider = useModelProvider.getState().selectedProvider
             const modelId = useModelProvider.getState().selectedModel?.id
@@ -688,7 +694,15 @@ function ThreadDetail() {
       // Combine image attachments with document attachments from the store
       const combinedAttachments = [
         ...(imageAttachments || []),
-        ...allAttachments.filter((a) => a.type === 'document'),
+        ...allAttachments.filter(
+          (a) =>
+            a.type === 'document' ||
+            a.type === 'browser-selection' ||
+            a.type === 'terminal-output' ||
+            a.type === 'runtime-log' ||
+            a.type === 'process-list' ||
+            a.type === 'context-brief'
+        ),
       ]
 
       const messageId = generateId()
@@ -696,10 +710,7 @@ function ThreadDetail() {
         (a) => a.type === 'document' && !a.processed
       )
       const hasEmbeddingDocuments = combinedAttachments.some(
-        (a) =>
-          a.type === 'document' &&
-          !a.processed &&
-          a.parseMode !== 'inline'
+        (a) => a.type === 'document' && !a.processed && a.parseMode !== 'inline'
       )
 
       // When there are unprocessed documents (e.g. first-message flow),
@@ -712,8 +723,7 @@ function ThreadDetail() {
           combinedAttachments,
           messageId
         )
-        const previewUI =
-          convertThreadMessagesToUIMessages([previewMessage])
+        const previewUI = convertThreadMessagesToUIMessages([previewMessage])
         setChatMessages((prev) => [...prev, ...previewUI])
       }
 
@@ -756,9 +766,7 @@ function ThreadDetail() {
           console.error('Failed to process attachments:', error)
           // Remove the preview message on failure
           if (hasDocuments) {
-            setChatMessages((prev) =>
-              prev.filter((m) => m.id !== messageId)
-            )
+            setChatMessages((prev) => prev.filter((m) => m.id !== messageId))
           }
           return
         } finally {
@@ -917,63 +925,74 @@ function ThreadDetail() {
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
-  const handleRegenerate = useCallback((messageId?: string) => {
-    const hadBannerError =
-      useAppState.getState().oomError != null ||
-      useAppState.getState().backendError != null ||
-      contextLimitError != null
-    if (useAppState.getState().oomError) {
-      useAppState.getState().setOomError(undefined)
-    }
-    if (useAppState.getState().backendError) {
-      useAppState.getState().setBackendError(undefined)
-    }
-    if (contextLimitError) setContextLimitError(null)
-    if (hadBannerError) stripBannerMetadata()
-    // Cancel any in-flight title summarization before regenerating
-    titleAbortRef.current?.abort()
-    titleAbortRef.current = null
+  const handleRegenerate = useCallback(
+    (messageId?: string) => {
+      const hadBannerError =
+        useAppState.getState().oomError != null ||
+        useAppState.getState().backendError != null ||
+        contextLimitError != null
+      if (useAppState.getState().oomError) {
+        useAppState.getState().setOomError(undefined)
+      }
+      if (useAppState.getState().backendError) {
+        useAppState.getState().setBackendError(undefined)
+      }
+      if (contextLimitError) setContextLimitError(null)
+      if (hadBannerError) stripBannerMetadata()
+      // Cancel any in-flight title summarization before regenerating
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
 
-    const currentLocalMessages = useMessages.getState().getMessages(threadId)
+      const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
-    // If regenerating from a specific message, delete all messages after it
-    if (messageId) {
-      // Find the message in the current chat messages
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
+      // If regenerating from a specific message, delete all messages after it
+      if (messageId) {
+        // Find the message in the current chat messages
+        const messageIndex = currentLocalMessages.findIndex(
+          (m) => m.id === messageId
+        )
 
-      if (messageIndex !== -1) {
-        const selectedMessage = currentLocalMessages[messageIndex]
+        if (messageIndex !== -1) {
+          const selectedMessage = currentLocalMessages[messageIndex]
 
-        // If it's an assistant message, find the closest preceding user message
-        let deleteFromIndex = messageIndex
-        if (selectedMessage.role === 'assistant') {
-          // Look backwards to find the closest user message
-          for (let i = messageIndex - 1; i >= 0; i--) {
-            if (currentLocalMessages[i].role === 'user') {
-              deleteFromIndex = i
-              break
+          // If it's an assistant message, find the closest preceding user message
+          let deleteFromIndex = messageIndex
+          if (selectedMessage.role === 'assistant') {
+            // Look backwards to find the closest user message
+            for (let i = messageIndex - 1; i >= 0; i--) {
+              if (currentLocalMessages[i].role === 'user') {
+                deleteFromIndex = i
+                break
+              }
             }
           }
-        }
 
-        // Get all messages after the delete point
-        const messagesToDelete = currentLocalMessages.slice(deleteFromIndex + 1)
+          // Get all messages after the delete point
+          const messagesToDelete = currentLocalMessages.slice(
+            deleteFromIndex + 1
+          )
 
-        // Delete from backend storage
-        if (messagesToDelete.length > 0) {
-          messagesToDelete.forEach((msg) => {
-            deleteMessage(threadId, msg.id)
-          })
+          // Delete from backend storage
+          if (messagesToDelete.length > 0) {
+            messagesToDelete.forEach((msg) => {
+              deleteMessage(threadId, msg.id)
+            })
+          }
         }
       }
-    }
 
-    // Call the AI SDK regenerate function - it will handle truncating the UI messages
-    // and generating a new response from the selected message
-    regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate, stripBannerMetadata, contextLimitError])
+      // Call the AI SDK regenerate function - it will handle truncating the UI messages
+      // and generating a new response from the selected message
+      regenerate(messageId ? { messageId } : undefined)
+    },
+    [
+      threadId,
+      deleteMessage,
+      regenerate,
+      stripBannerMetadata,
+      contextLimitError,
+    ]
+  )
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
@@ -1249,9 +1268,10 @@ function ThreadDetail() {
       return
     }
     useMessageErrors.getState().setError(targetId, errMessage)
-    const tm = useMessages.getState().getMessages(threadId).find(
-      (m) => m.id === targetId
-    )
+    const tm = useMessages
+      .getState()
+      .getMessages(threadId)
+      .find((m) => m.id === targetId)
     if (tm) {
       const existingError = (tm.metadata as Record<string, unknown> | undefined)
         ?.error
@@ -1294,30 +1314,304 @@ function ThreadDetail() {
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
+  const panelScope = useMemo(() => {
+    const label = thread?.title ?? 'Chat'
+    return {
+      type: 'chat' as const,
+      id: threadId,
+      label,
+      sessionId: threadId,
+      threadId,
+    }
+  }, [thread?.title, threadId])
+  const selectedProviderForCodex = useModelProvider((s) => s.selectedProvider)
+  const isCodex = isCodexAppServerProvider(selectedProviderForCodex)
+
+  const [inspectSubThreadId, setInspectSubThreadId] = useState<string | null>(
+    null
+  )
+  const [liveSubagentEvents, setLiveSubagentEvents] = useState<
+    Record<string, unknown[]>
+  >({})
+  const [steeringSubThreadId, setSteeringSubThreadId] = useState<string | null>(
+    null
+  )
+
+  // Derive running/seen subagents from streamed codex events (threadIds different from primary)
+  const subagents = useMemo(() => {
+    type CodexEventPartData = { threadId?: string; type?: string }
+    const primaryThreadId = (() => {
+      for (const m of chatMessages) {
+        const meta = (m.metadata as any) || {}
+        if (meta.codex?.threadId) return meta.codex.threadId
+        for (const p of m.parts || []) {
+          const data = (p as { data?: CodexEventPartData }).data
+          if (p.type === 'data-codex-event' && data?.threadId) {
+            // first seen is likely primary
+            return data.threadId
+          }
+        }
+      }
+      return null
+    })()
+
+    const subs = new Map<
+      string,
+      {
+        threadId: string
+        status: string
+        lastActivity: string
+        eventCount: number
+      }
+    >()
+
+    for (const m of chatMessages) {
+      for (const p of m.parts || []) {
+        if (p.type !== 'data-codex-event') continue
+        const data = (p as { data?: CodexEventPartData }).data || {}
+        const tid = data.threadId
+        if (!tid || tid === primaryThreadId) continue
+
+        if (!subs.has(tid)) {
+          subs.set(tid, {
+            threadId: tid,
+            status: 'running',
+            lastActivity: data.type || 'activity',
+            eventCount: 0,
+          })
+        }
+        const entry = subs.get(tid)!
+        entry.eventCount += 1
+        entry.lastActivity = data.type || entry.lastActivity
+        if (data.type === 'turn_completed' || data.type === 'item_completed') {
+          entry.status = 'completed'
+        } else if (
+          data.type &&
+          !['item_completed', 'turn_completed'].includes(data.type)
+        ) {
+          entry.status = 'running'
+        }
+      }
+    }
+    return Array.from(subs.values()).sort((a, b) =>
+      a.threadId.localeCompare(b.threadId)
+    )
+  }, [chatMessages])
+
+  const subagentEvents = useMemo(() => {
+    if (!inspectSubThreadId) return []
+    const events: Array<{ messageId: string; partIndex: number; data: unknown }> =
+      []
+    for (const message of chatMessages) {
+      message.parts?.forEach((part, partIndex) => {
+        if (part.type !== 'data-codex-event') return
+        const data = (part as { data?: { threadId?: string } }).data
+        if (data?.threadId === inspectSubThreadId) {
+          events.push({ messageId: message.id, partIndex, data })
+        }
+      })
+    }
+    const live = liveSubagentEvents[inspectSubThreadId] ?? []
+    for (let i = 0; i < live.length; i++) {
+      events.push({
+        messageId: `live-steer-${inspectSubThreadId}`,
+        partIndex: i,
+        data: live[i],
+      })
+    }
+    return events
+  }, [chatMessages, inspectSubThreadId, liveSubagentEvents])
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
-        </div>
-      </HeaderPage>
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
-        {/* Messages Area */}
-        <div className="flex-1 relative">
-          <Conversation className="absolute inset-0 text-start">
-            <ConversationContent
-              className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
-            >
-              {chatMessages.map((message, index) => {
-                const isLastMessage = index === chatMessages.length - 1
-                const isFirstMessage = index === 0
-                return (
+    <WorkspacePanelsLayout scope={panelScope}>
+      <div className="flex h-full min-h-0 flex-col">
+        <HeaderPage />
+        <div className="flex min-h-0 flex-1 flex-col h-full overflow-hidden">
+          {/* Messages Area */}
+          <div className="flex-1 relative">
+            <Conversation className="absolute inset-0 text-start">
+              <ConversationContent
+                className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
+              >
+                {/* Subagent visibility and inspector for Codex engine.
+                   - Live tabs/list of running subagents (from Codex events with their own threadIds).
+                   - Click tab to open/inspect exactly what that subagent is doing (its plans, commands+outputs, file changes, etc.).
+                   - Steering form: send follow-up instructions directly to a chosen subagent (turn/steer on its threadId).
+                   - Like the Codex TUI /agent switcher + direct interaction with children.
+                */}
+                {isCodex && subagents.length > 0 && (
+                  <div className="mb-3 p-2 border rounded-md bg-muted/10 text-sm">
+                    <div className="font-medium mb-1 flex items-center gap-2">
+                      Subagents ({subagents.length})
+                      <span className="text-xs text-muted-foreground">
+                        (Codex engine — tabs to inspect/steer)
+                      </span>
+                    </div>
+
+                    {/* Tab bar for subagents */}
+                    <div className="flex flex-wrap gap-1 mb-2 border-b pb-1">
+                      {subagents.map((sa) => (
+                        <button
+                          key={sa.threadId}
+                          onClick={() => setInspectSubThreadId(sa.threadId)}
+                          className={cn(
+                            'text-xs px-3 py-1 rounded-t border-b-2 hover:bg-accent transition-colors',
+                            inspectSubThreadId === sa.threadId
+                              ? 'bg-background border-primary font-medium'
+                              : 'border-transparent hover:border-muted-foreground',
+                            sa.status === 'completed'
+                              ? 'text-green-600'
+                              : 'text-blue-600'
+                          )}
+                          title={`Inspect & steer subagent thread ${sa.threadId}`}
+                        >
+                          {sa.threadId.slice(0, 6)}… {sa.status} (
+                          {sa.eventCount})
+                        </button>
+                      ))}
+                      {inspectSubThreadId && (
+                        <button
+                          onClick={() => setInspectSubThreadId(null)}
+                          className="text-xs px-2 py-1 rounded border ml-auto"
+                        >
+                          Close
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Selected subagent inspector + steer */}
+                    {inspectSubThreadId && (
+                      <div className="mt-2 p-2 border-t text-xs bg-background rounded">
+                        <div className="font-medium mb-2 flex items-center justify-between">
+                          <span>Subagent {inspectSubThreadId}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            Live Codex activity
+                          </span>
+                        </div>
+
+                        {/* Steering — talk directly to this opened subagent */}
+                        <form
+                          className="mb-3 flex gap-2"
+                          onSubmit={async (e) => {
+                            e.preventDefault()
+                            const form = e.currentTarget as HTMLFormElement
+                            const input = form.elements.namedItem(
+                              'steerText'
+                            ) as HTMLInputElement
+                            const text = input.value.trim()
+                            if (!text) return
+                            setSteeringSubThreadId(inspectSubThreadId)
+                            try {
+                              for await (const event of steerCodexSubThreadEvents(
+                                threadId,
+                                inspectSubThreadId,
+                                text
+                              )) {
+                                setLiveSubagentEvents((prev) => ({
+                                  ...prev,
+                                  [inspectSubThreadId]: [
+                                    ...(prev[inspectSubThreadId] ?? []),
+                                    event,
+                                  ],
+                                }))
+                              }
+                              input.value = ''
+                              toast.success(
+                                `Steered subagent ${inspectSubThreadId.slice(0, 8)}…`
+                              )
+                            } catch (err) {
+                              const message =
+                                err instanceof Error
+                                  ? err.message
+                                  : 'Steer subagent failed'
+                              toast.error(message)
+                            } finally {
+                              setSteeringSubThreadId(null)
+                            }
+                          }}
+                        >
+                          <input
+                            name="steerText"
+                            className="flex-1 text-xs border rounded px-2 py-1 bg-transparent"
+                            placeholder="Follow-up for this subagent (e.g. 'also check for race conditions')..."
+                          />
+                          <button
+                            type="submit"
+                            className="text-xs px-3 py-1 border rounded hover:bg-accent disabled:opacity-50"
+                            disabled={steeringSubThreadId === inspectSubThreadId}
+                          >
+                            {steeringSubThreadId === inspectSubThreadId
+                              ? 'Steering…'
+                              : 'Steer'}
+                          </button>
+                        </form>
+
+                        {/* Live + historical activity for this subagent (all streamed events) */}
+                        {subagentEvents.length === 0 ? (
+                          <div className="text-muted-foreground italic">
+                            No activity yet for this subagent…
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {subagentEvents.map((event, i) => {
+                              const parentMessage =
+                                chatMessages.find(
+                                  (m) => m.id === event.messageId
+                                ) ?? chatMessages[chatMessages.length - 1]
+                              return (
+                                <CodexActivityPart
+                                  key={`${event.messageId}-${event.partIndex}-${i}`}
+                                  part={{
+                                    type: 'data-codex-event',
+                                    data: event.data,
+                                  }}
+                                  partIndex={event.partIndex}
+                                  message={parentMessage as any}
+                                />
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!inspectSubThreadId && (
+                      <div className="text-[10px] text-muted-foreground">
+                        Select a tab to open that subagent and see/steer its
+                        work.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {chatMessages.map((message, index) => {
+                  const isLastMessage = index === chatMessages.length - 1
+                  const isFirstMessage = index === 0
+                  return (
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      isFirstMessage={isFirstMessage}
+                      isLastMessage={isLastMessage}
+                      status={status}
+                      reasoningContainerRef={reasoningContainerRef}
+                      isReasoningAtBottom={isReasoningAtBottom}
+                      onReasoningScroll={handleReasoningScroll}
+                      onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                      onRegenerate={handleRegenerate}
+                      onEdit={handleEditMessage}
+                      onDelete={handleDeleteMessage}
+                      isAnimating={!pendingContinueMessage}
+                      hideActions={!!pendingContinueMessage}
+                    />
+                  )
+                })}
+                {pendingContinueMessage && status === 'submitted' && (
                   <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={isFirstMessage}
-                    isLastMessage={isLastMessage}
+                    key={`continue-placeholder-${pendingContinueMessage.id}`}
+                    message={pendingContinueMessage}
+                    isFirstMessage={false}
+                    isLastMessage={true}
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
                     isReasoningAtBottom={isReasoningAtBottom}
@@ -1326,135 +1620,121 @@ function ThreadDetail() {
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
-                    isAnimating={!pendingContinueMessage}
-                    hideActions={!!pendingContinueMessage}
+                    hideActions
+                    isAnimating={false}
                   />
-                )
-              })}
-              {pendingContinueMessage && status === 'submitted' && (
-                <MessageItem
-                  key={`continue-placeholder-${pendingContinueMessage.id}`}
-                  message={pendingContinueMessage}
-                  isFirstMessage={false}
-                  isLastMessage={true}
-                  status={status}
-                  reasoningContainerRef={reasoningContainerRef}
-                  isReasoningAtBottom={isReasoningAtBottom}
-                  onReasoningScroll={handleReasoningScroll}
-                  onReasoningScrollToBottom={forceScrollReasoningToBottom}
-                  onRegenerate={handleRegenerate}
-                  onEdit={handleEditMessage}
-                  onDelete={handleDeleteMessage}
-                  hideActions
-                  isAnimating={false}
-                />
-              )}
-              {processingEmbeddings && (
-                <div className="flex flex-row items-center gap-2">
-                  <Shimmer duration={1}>Processing embeddings...</Shimmer>
-                </div>
-              )}
-              {!oomError &&
-                !backendError &&
-                !contextLimitError &&
-                status === CHAT_STATUS.SUBMITTED && (
-                <div className="flex flex-row items-center gap-2">
-                  {pendingContinueMessage && (
-                    <Shimmer duration={1}>Growing the Mind...</Shimmer>
-                  )}
-                  {!pendingContinueMessage && !lastIsAssistant && (
-                    <PromptProgress />
-                  )}
-                </div>
-              )}
-              {(contextLimitError || oomError || backendError) && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                  <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive mb-1">
-                        {oomError
-                          ? 'llama.cpp ran out of memory'
-                          : backendError
-                            ? 'GGML backend encountered an error'
-                            : 'Model ran out of context size'}
-                      </p>
-                      <div className="table table-fixed w-full">
-                        <span
-                          className={
-                            (oomError || backendError
-                              ? 'text-xs font-mono'
-                              : 'text-sm') +
-                            ' text-muted-foreground table-cell align-middle'
-                          }
-                          style={{ wordWrap: 'break-word' }}
-                        >
-                          {oomError ?? backendError ?? contextLimitError?.message}
-                        </span>
-                      </div>
-                      {oomError && (
-                        <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
-                          <li>Reduce context size (ctx-size)</li>
-                          <li>Disable MTP (Multi-Token Prediction)</li>
-                          <li>Lower n-gpu-layers or switch to a CPU backend</li>
-                          <li>Use a smaller / more quantized model</li>
-                        </ul>
+                )}
+                {processingEmbeddings && (
+                  <div className="flex flex-row items-center gap-2">
+                    <Shimmer duration={1}>Processing embeddings...</Shimmer>
+                  </div>
+                )}
+                {!oomError &&
+                  !backendError &&
+                  !contextLimitError &&
+                  status === CHAT_STATUS.SUBMITTED && (
+                    <div className="flex flex-row items-center gap-2">
+                      {pendingContinueMessage && (
+                        <Shimmer duration={1}>Growing the Mind...</Shimmer>
                       )}
-                      {((error ?? contextLimitError)?.message
-                        ?.toLowerCase()
-                        .includes('context') &&
-                        ((error ?? contextLimitError)?.message
-                          ?.toLowerCase()
-                          .includes('size') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('length') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('limit'))) ||
-                      (error ?? contextLimitError)?.message ===
-                        OUT_OF_CONTEXT_SIZE ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={handleContextSizeIncrease}
-                        >
-                          <IconAlertCircle className="size-4 mr-2" />
-                          Increase Context Size
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={() => handleRegenerate()}
-                        >
-                          <IconRefresh className="size-4 mr-2" />
-                          {oomError || backendError ? 'Reload' : 'Regenerate'}
-                        </Button>
+                      {!pendingContinueMessage && !lastIsAssistant && (
+                        <PromptProgress />
                       )}
                     </div>
+                  )}
+                {(contextLimitError || oomError || backendError) && (
+                  <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
+                    <div className="flex items-start gap-3">
+                      <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-destructive mb-1">
+                          {oomError
+                            ? 'llama.cpp ran out of memory'
+                            : backendError
+                              ? 'GGML backend encountered an error'
+                              : 'Model ran out of context size'}
+                        </p>
+                        <div className="table table-fixed w-full">
+                          <span
+                            className={
+                              (oomError || backendError
+                                ? 'text-xs font-mono'
+                                : 'text-sm') +
+                              ' text-muted-foreground table-cell align-middle'
+                            }
+                            style={{ wordWrap: 'break-word' }}
+                          >
+                            {oomError ??
+                              backendError ??
+                              contextLimitError?.message}
+                          </span>
+                        </div>
+                        {oomError && (
+                          <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+                            <li>Reduce context size (ctx-size)</li>
+                            <li>Disable MTP (Multi-Token Prediction)</li>
+                            <li>
+                              Lower n-gpu-layers or switch to a CPU backend
+                            </li>
+                            <li>Use a smaller / more quantized model</li>
+                          </ul>
+                        )}
+                        {((error ?? contextLimitError)?.message
+                          ?.toLowerCase()
+                          .includes('context') &&
+                          ((error ?? contextLimitError)?.message
+                            ?.toLowerCase()
+                            .includes('size') ||
+                            (error ?? contextLimitError)?.message
+                              ?.toLowerCase()
+                              .includes('length') ||
+                            (error ?? contextLimitError)?.message
+                              ?.toLowerCase()
+                              .includes('limit'))) ||
+                        (error ?? contextLimitError)?.message ===
+                          OUT_OF_CONTEXT_SIZE ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={handleContextSizeIncrease}
+                          >
+                            <IconAlertCircle className="size-4 mr-2" />
+                            Increase Context Size
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={() => handleRegenerate()}
+                          >
+                            <IconRefresh className="size-4 mr-2" />
+                            {oomError || backendError ? 'Reload' : 'Regenerate'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </ConversationContent>
-            <ConversationScrollButton />
-          </Conversation>
-        </div>
+                )}
+              </ConversationContent>
+              <ConversationScrollButton />
+            </Conversation>
+          </div>
 
-        {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
-          <ChatInput
-            model={threadModel}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            chatStatus={
-              oomError || backendError || contextLimitError ? 'ready' : status
-            }
-          />
+          {/* Chat Input - Fixed at bottom */}
+          <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+            <ChatInput
+              model={threadModel}
+              onSubmit={handleSubmit}
+              onStop={stop}
+              chatStatus={
+                oomError || backendError || contextLimitError ? 'ready' : status
+              }
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </WorkspacePanelsLayout>
   )
 }

@@ -1,0 +1,42 @@
+[[permission]]
+identifier = "allow-xai-oauth-status"
+description = "Enables checking SuperGrok OAuth connection status."
+commands.allow = ["xai_oauth_status"]
+
+[[permission]]
+identifier = "allow-xai-oauth-login"
+description = "Enables starting and completing SuperGrok OAuth browser login."
+commands.allow = [
+  "xai_oauth_start_login",
+  "xai_oauth_cancel_login",
+  "xai_oauth_complete_callback",
+]
+
+[[permission]]
+identifier = "allow-xai-oauth-token"
+description = "Enables reading and refreshing SuperGrok OAuth access tokens."
+commands.allow = ["xai_oauth_get_access_token"]
+
+[[permission]]
+identifier = "allow-xai-oauth-logout"
+description = "Enables signing out of SuperGrok OAuth."
+commands.allow = ["xai_oauth_logout"]
+
+[[permission]]
+identifier = "allow-xai-oauth-device"
+description = "Enables SuperGrok OAuth device-code login."
+commands.allow = [
+  "xai_oauth_start_device_login",
+  "xai_oauth_poll_device_login",
+]
+
+[[set]]
+identifier = "xai-oauth-default"
+description = "SuperGrok OAuth permissions for the xAI provider."
+permissions = [
+  "allow-xai-oauth-status",
+  "allow-xai-oauth-login",
+  "allow-xai-oauth-token",
+  "allow-xai-oauth-logout",
+  "allow-xai-oauth-device",
+]

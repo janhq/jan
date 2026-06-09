@@ -8,6 +8,8 @@ export interface ThreadFolder {
   name: string
   updated_at: number
   assistantId?: string
+  /** Canonical on-device folder for this project; name is derived from this path. */
+  directoryPath?: string
 }
 
 export interface ProjectsService {
@@ -22,9 +24,28 @@ export interface ProjectsService {
   addProject(name: string, assistantId?: string): Promise<ThreadFolder>
 
   /**
+   * Create or reuse a project from an on-device folder path.
+   * Project name is derived from the folder basename.
+   */
+  addProjectFromDirectory(
+    directoryPath: string,
+    assistantId?: string
+  ): Promise<ThreadFolder>
+
+  findProjectByDirectoryPath(
+    directoryPath: string
+  ): Promise<ThreadFolder | undefined>
+
+  /**
    * Update a project/folder
    */
   updateProject(id: string, name: string, assistantId?: string): Promise<void>
+
+  updateProjectDirectory(
+    id: string,
+    directoryPath: string,
+    assistantId?: string
+  ): Promise<void>
 
   /**
    * Delete a project/folder

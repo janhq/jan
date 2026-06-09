@@ -37,7 +37,7 @@ pre-wired:
    writes a provider entry to `~/.openclaw/openclaw.json` instead).
 3. The agent runs in your terminal, sending its requests to your local model.
 
-The agent itself (Claude Code, OpenClaw) is a **separate tool you install yourself** — Jan only
+The agent itself (Claude Code, Codex, OpenClaw) is a **separate tool you install yourself** — Jan only
 supplies the model backend and the wiring.
 
 ## Launch an Agent
@@ -45,6 +45,7 @@ supplies the model backend and the wiring.
 ```bash
 jan launch claude                                       # pick a model, then run Claude Code against it
 jan launch claude --model janhq/Jan-code-4b-gguf        # use a specific model with Claude Code
+jan launch codex --model janhq/Jan-code-4b-gguf         # wire Codex CLI to a local model
 jan launch openclaw --model janhq/Jan-code-4b-gguf      # wire OpenClaw to a local model
 ```
 
@@ -52,7 +53,8 @@ Run `jan launch` with no agent to pick one interactively. See the [Jan CLI](/doc
 documentation for full options (port, context size, GPU layers, and more).
 
 <Callout type="warning">
-Install the agent CLI first. For example, install [Claude Code](https://docs.claude.com/en/docs/claude-code)
-or OpenClaw per their own instructions — `jan launch` runs them, but doesn't install them. (If
-OpenClaw isn't installed, Jan falls back to running it via `npx`.)
+Install the agent CLI first. For example, install [Claude Code](https://docs.claude.com/en/docs/claude-code),
+[Codex](https://github.com/openai/codex) (`npm install -g @openai/codex`),
+or OpenClaw per their own instructions. `jan launch` runs them, but doesn't install them.
+If Codex/OpenClaw aren't installed locally, Jan falls back to `npx @openai/codex` / `npx openclaw`.
 </Callout>

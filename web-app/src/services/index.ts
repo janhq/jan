@@ -5,7 +5,11 @@
  * then provides synchronous access to service instances throughout the app.
  */
 
-import { isPlatformTauri, isPlatformIOS, isPlatformAndroid } from '@/lib/platform/utils'
+import {
+  isPlatformTauri,
+  isPlatformIOS,
+  isPlatformAndroid,
+} from '@/lib/platform/utils'
 
 // Import default services
 import { DefaultThemeService } from './theme/default'
@@ -31,6 +35,8 @@ import { DefaultRAGService } from './rag/default'
 import type { RAGService } from './rag/types'
 import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
+import { DefaultStudioService } from './studio/default'
+import type { StudioService } from './studio/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -76,6 +82,7 @@ export interface ServiceHub {
   projects(): ProjectsService
   rag(): RAGService
   uploads(): UploadsService
+  studio(): StudioService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -100,6 +107,7 @@ class PlatformServiceHub implements ServiceHub {
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
+  private studioService: StudioService = new DefaultStudioService()
   private initialized = false
 
   /**
@@ -110,9 +118,13 @@ class PlatformServiceHub implements ServiceHub {
 
     console.log(
       'Initializing service hub for platform:',
-      isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid() ? 'Tauri' :
-      isPlatformIOS() ? 'iOS' :
-      isPlatformAndroid() ? 'Android' : 'Web'
+      isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid()
+        ? 'Tauri'
+        : isPlatformIOS()
+          ? 'iOS'
+          : isPlatformAndroid()
+            ? 'Android'
+            : 'Web'
     )
 
     try {
@@ -322,6 +334,11 @@ class PlatformServiceHub implements ServiceHub {
   uploads(): UploadsService {
     this.ensureInitialized()
     return this.uploadsService
+  }
+
+  studio(): StudioService {
+    this.ensureInitialized()
+    return this.studioService
   }
 }
 

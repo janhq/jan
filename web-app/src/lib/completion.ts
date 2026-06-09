@@ -7,7 +7,14 @@ import {
 } from '@janhq/core'
 import { ulid } from 'ulidx'
 import { Attachment } from '@/types/attachment'
-import { injectFilesIntoPrompt } from './fileMetadata'
+import {
+  injectBrowserContextIntoPrompt,
+  injectContextBriefIntoPrompt,
+  injectFilesIntoPrompt,
+  injectProcessListContextIntoPrompt,
+  injectRuntimeLogContextIntoPrompt,
+  injectTerminalContextIntoPrompt,
+} from './fileMetadata'
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -23,10 +30,19 @@ export const newUserThreadContent = (
   attachments?: Attachment[],
   id?: string
 ): ThreadMessage => {
-  // Separate images, audio, and documents
+  // Separate images, audio, documents, and browser selections
   const images = attachments?.filter((a) => a.type === 'image') || []
   const audios = attachments?.filter((a) => a.type === 'audio') || []
   const documents = attachments?.filter((a) => a.type === 'document') || []
+  const browserSelections =
+    attachments?.filter((a) => a.type === 'browser-selection') || []
+  const terminalOutputs =
+    attachments?.filter((a) => a.type === 'terminal-output') || []
+  const runtimeLogs = attachments?.filter((a) => a.type === 'runtime-log') || []
+  const processLists =
+    attachments?.filter((a) => a.type === 'process-list') || []
+  const contextBriefs =
+    attachments?.filter((a) => a.type === 'context-brief') || []
 
   const inlineDocuments = documents.filter(
     (doc) => doc.injectionMode === 'inline' && doc.inlineContent
@@ -43,8 +59,56 @@ export const newUserThreadContent = (
       injectionMode: doc.injectionMode,
     }))
 
+  const browserContext = browserSelections.flatMap((attachment) =>
+    attachment.browserSelection ? [attachment.browserSelection] : []
+  )
+  const terminalContext = terminalOutputs.flatMap((attachment) =>
+    attachment.terminalOutput ? [attachment.terminalOutput] : []
+  )
+  const runtimeLogContext = runtimeLogs.flatMap((attachment) =>
+    attachment.runtimeLog ? [attachment.runtimeLog] : []
+  )
+  const processListContext = processLists.flatMap((attachment) =>
+    attachment.processList ? [attachment.processList] : []
+  )
+  const contextBriefContext = contextBriefs.flatMap((attachment) =>
+    attachment.contextBrief ? [attachment.contextBrief] : []
+  )
+
+  const textWithBrowserContext =
+    browserContext.length > 0
+      ? injectBrowserContextIntoPrompt(content, browserContext)
+      : content
+  const textWithTerminalContext =
+    terminalContext.length > 0
+      ? injectTerminalContextIntoPrompt(textWithBrowserContext, terminalContext)
+      : textWithBrowserContext
+  const textWithRuntimeLogContext =
+    runtimeLogContext.length > 0
+      ? injectRuntimeLogContextIntoPrompt(
+          textWithTerminalContext,
+          runtimeLogContext
+        )
+      : textWithTerminalContext
+  const textWithProcessListContext =
+    processListContext.length > 0
+      ? injectProcessListContextIntoPrompt(
+          textWithRuntimeLogContext,
+          processListContext
+        )
+      : textWithRuntimeLogContext
+  const textWithContextBrief =
+    contextBriefContext.length > 0
+      ? injectContextBriefIntoPrompt(
+          textWithProcessListContext,
+          contextBriefContext
+        )
+      : textWithProcessListContext
+
   const textWithFiles =
-    docMetadata.length > 0 ? injectFilesIntoPrompt(content, docMetadata) : content
+    docMetadata.length > 0
+      ? injectFilesIntoPrompt(textWithContextBrief, docMetadata)
+      : textWithContextBrief
 
   const contentParts = [
     {

@@ -61,14 +61,24 @@ vi.mock('@/lib/models', () => ({
   getModelCapabilities: vi.fn().mockReturnValue([]),
 }))
 
+const { providerRemoteApiKeyChainMock } = vi.hoisted(() => ({
+  providerRemoteApiKeyChainMock: vi.fn().mockReturnValue([]),
+}))
+
 vi.mock('@/lib/provider-api-keys', () => ({
-  providerRemoteApiKeyChain: vi.fn().mockReturnValue([]),
+  providerRemoteApiKeyChain: providerRemoteApiKeyChainMock,
+  providerRemoteAuthKeyChain: vi.fn().mockImplementation(async (provider: unknown) =>
+    providerRemoteApiKeyChainMock(provider)
+  ),
 }))
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { EngineManager } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
-import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import {
+  providerRemoteApiKeyChain,
+  providerRemoteAuthKeyChain,
+} from '@/lib/provider-api-keys'
 import { TauriProvidersService } from '../tauri'
 
 describe('TauriProvidersService', () => {

@@ -102,4 +102,30 @@ describe('DefaultProjectsService', () => {
     const svc = new DefaultProjectsService()
     expect(await svc.getProjects()).toEqual([])
   })
+
+  it('addProjectFromDirectory derives name from folder basename', async () => {
+    const svc = new DefaultProjectsService()
+    const p = await svc.addProjectFromDirectory('/Users/dev/jan/')
+    expect(p.name).toBe('jan')
+    expect(p.directoryPath).toBe('/Users/dev/jan')
+  })
+
+  it('addProjectFromDirectory reuses an existing folder project', async () => {
+    const svc = new DefaultProjectsService()
+    const first = await svc.addProjectFromDirectory('/Users/dev/jan')
+    const second = await svc.addProjectFromDirectory('/Users/dev/jan/')
+    expect(second.id).toBe(first.id)
+    expect(await svc.getProjects()).toHaveLength(1)
+  })
+
+  it('updateProjectDirectory updates name and path together', async () => {
+    seedStorage([
+      { id: 'x', name: 'old', updated_at: 1, directoryPath: '/old/path' },
+    ])
+    const svc = new DefaultProjectsService()
+    await svc.updateProjectDirectory('x', '/new/project-dir')
+    const projects = await svc.getProjects()
+    expect(projects[0].directoryPath).toBe('/new/project-dir')
+    expect(projects[0].name).toBe('project-dir')
+  })
 })

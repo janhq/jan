@@ -3,12 +3,27 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import type { ThreadFolder } from '@/services/projects/types'
 import { useEffect } from 'react'
+import {
+  getProjectDisplayName,
+  normalizeProjectPath,
+  projectScope,
+} from '@/lib/project-folders'
+import { useWorkspaceDirectories } from '@/stores/workspace-directory-store'
 
 type ThreadManagementState = {
   folders: ThreadFolder[]
   setFolders: (folders: ThreadFolder[]) => void
   addFolder: (name: string, assistantId?: string) => Promise<ThreadFolder>
+  addFolderFromPath: (
+    directoryPath: string,
+    assistantId?: string
+  ) => Promise<ThreadFolder>
   updateFolder: (id: string, name: string, assistantId?: string) => Promise<void>
+  updateFolderFromPath: (
+    id: string,
+    directoryPath: string,
+    assistantId?: string
+  ) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
   deleteFolderWithThreads: (id: string) => Promise<void>
   getFolderById: (id: string) => ThreadFolder | undefined
@@ -30,11 +45,54 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
     return newFolder
   },
 
+  addFolderFromPath: async (directoryPath, assistantId) => {
+    const normalized = normalizeProjectPath(directoryPath)
+    const projectsService = getServiceHub().projects()
+    const newFolder = await projectsService.addProjectFromDirectory(
+      normalized,
+      assistantId
+    )
+    const updatedProjects = await projectsService.getProjects()
+    set({ folders: updatedProjects })
+    useWorkspaceDirectories.getState().setDirectory(
+      {
+        ...projectScope(newFolder),
+        label: getProjectDisplayName(
+          newFolder,
+          useWorkspaceDirectories.getState().directories
+        ),
+      },
+      normalized
+    )
+    return newFolder
+  },
+
   updateFolder: async (id, name, assistantId) => {
     const projectsService = getServiceHub().projects()
     await projectsService.updateProject(id, name, assistantId)
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })
+  },
+
+  updateFolderFromPath: async (id, directoryPath, assistantId) => {
+    const normalized = normalizeProjectPath(directoryPath)
+    const projectsService = getServiceHub().projects()
+    await projectsService.updateProjectDirectory(id, normalized, assistantId)
+    const updatedProjects = await projectsService.getProjects()
+    set({ folders: updatedProjects })
+    const folder = updatedProjects.find((project) => project.id === id)
+    if (folder) {
+      useWorkspaceDirectories.getState().setDirectory(
+        {
+          ...projectScope(folder),
+          label: getProjectDisplayName(
+            folder,
+            useWorkspaceDirectories.getState().directories
+          ),
+        },
+        normalized
+      )
+    }
   },
 
   deleteFolder: async (id) => {

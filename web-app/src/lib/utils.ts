@@ -34,12 +34,20 @@ export function basenameNoExt(filePath: string): string {
 export function disableIndentedCodeBlockPlugin() {
   return (tree: Node, file: VFile) => {
     visit(tree, 'code', (node: Code, index, parent: Parent | undefined) => {
-      // Convert indented code blocks (nodes without lang / meta property, 
+      // Convert indented code blocks (nodes without lang / meta property,
       // and are not surrounded by backticks) to plain text
       // Check if the parent exists so we can replace the node safely
-      if (node.lang === null && node.meta === null && parent && typeof index === 'number') {
+      if (
+        node.lang === null &&
+        node.meta === null &&
+        parent &&
+        typeof index === 'number'
+      ) {
         const nodePosition: Position | undefined = node.position
-        if (nodePosition !== undefined && file.value.at(nodePosition.start.offset!) !== '`') {
+        if (
+          nodePosition !== undefined &&
+          file.value.at(nodePosition.start.offset!) !== '`'
+        ) {
           const textNode: Text = {
             type: 'text',
             value: node.value,
@@ -123,6 +131,10 @@ export const getProviderTitle = (provider: string) => {
       return 'MiniMax'
     case 'nvidia':
       return 'NVIDIA NIM'
+    case 'vllm':
+      return 'vLLM'
+    case 'ollama':
+      return 'Ollama'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
@@ -238,7 +250,7 @@ export function formatBytes(
   const rawDecimals =
     typeof options?.decimals === 'function'
       ? options.decimals(scaledValue, unit)
-      : options?.decimals ?? 1
+      : (options?.decimals ?? 1)
   const decimals = Math.min(20, Math.max(0, Math.trunc(rawDecimals)))
   const formattedValue = scaledValue.toFixed(decimals)
 

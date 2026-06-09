@@ -18,6 +18,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
+import { CodexActivityPart } from '@/components/ai-elements/codex-activity'
 import { CopyButton } from './CopyButton'
 import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -529,6 +530,16 @@ export const MessageItem = memo(
               break
             case CONTENT_TYPE.FILE:
               elements.push(renderFilePart(part as any, i))
+              break
+            case 'data-codex-event':
+              elements.push(
+                <CodexActivityPart
+                  key={`${message.id}-${i}`}
+                  part={part as any}
+                  partIndex={i}
+                  message={message}
+                />
+              )
               break
             default:
               break

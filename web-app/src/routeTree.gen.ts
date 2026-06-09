@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
+import { Route as ReviewRouteImport } from './routes/review'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
+import { Route as SettingsStudioRouteImport } from './routes/settings/studio'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-servers'
@@ -37,6 +39,11 @@ const SystemMonitorRoute = SystemMonitorRouteImport.update({
   path: '/system-monitor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReviewRoute = ReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
@@ -55,6 +62,11 @@ const HubIndexRoute = HubIndexRouteImport.update({
 const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
   id: '/threads/$threadId',
   path: '/threads/$threadId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsStudioRoute = SettingsStudioRouteImport.update({
+  id: '/settings/studio',
+  path: '/settings/studio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
@@ -147,6 +159,7 @@ const SettingsProvidersProviderNameRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/review': typeof ReviewRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -163,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/studio': typeof SettingsStudioRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -171,6 +185,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/review': typeof ReviewRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -187,6 +202,7 @@ export interface FileRoutesByTo {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/studio': typeof SettingsStudioRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -196,6 +212,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/review': typeof ReviewRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -212,6 +229,7 @@ export interface FileRoutesById {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/studio': typeof SettingsStudioRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -222,6 +240,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logs'
+    | '/review'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -238,6 +257,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/studio'
     | '/threads/$threadId'
     | '/hub/'
     | '/settings/providers/$providerName'
@@ -246,6 +266,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/logs'
+    | '/review'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -262,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/studio'
     | '/threads/$threadId'
     | '/hub'
     | '/settings/providers/$providerName'
@@ -270,6 +292,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/logs'
+    | '/review'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -286,6 +309,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
+    | '/settings/studio'
     | '/threads/$threadId'
     | '/hub/'
     | '/settings/providers/$providerName'
@@ -295,6 +319,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogsRoute: typeof LogsRoute
+  ReviewRoute: typeof ReviewRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
@@ -311,6 +336,7 @@ export interface RootRouteChildren {
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsStudioRoute: typeof SettingsStudioRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
@@ -324,6 +350,13 @@ declare module '@tanstack/react-router' {
       path: '/system-monitor'
       fullPath: '/system-monitor'
       preLoaderRoute: typeof SystemMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review': {
+      id: '/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -352,6 +385,13 @@ declare module '@tanstack/react-router' {
       path: '/threads/$threadId'
       fullPath: '/threads/$threadId'
       preLoaderRoute: typeof ThreadsThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/studio': {
+      id: '/settings/studio'
+      path: '/settings/studio'
+      fullPath: '/settings/studio'
+      preLoaderRoute: typeof SettingsStudioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/shortcuts': {
@@ -479,6 +519,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogsRoute: LogsRoute,
+  ReviewRoute: ReviewRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
@@ -495,6 +536,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsStudioRoute: SettingsStudioRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,

@@ -15,7 +15,10 @@ import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
 import { invoke } from '@tauri-apps/api/core'
-import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import {
+  providerHasRemoteAuth,
+  providerRemoteAuthKeyChain,
+} from '@/lib/provider-api-keys'
 
 type ProviderCustomHeader = {
   header: string
@@ -35,7 +38,7 @@ async function registerRemoteProvider(provider: ModelProvider) {
   // Skip llamacpp - those are local models
   if (provider.provider === 'llamacpp') return
 
-  const chain = providerRemoteApiKeyChain(provider)
+  const chain = await providerRemoteAuthKeyChain(provider)
   if (chain.length === 0) {
     console.log(`Provider ${provider.provider} has no API key, skipping registration`)
     return
@@ -65,20 +68,20 @@ async function registerRemoteProvider(provider: ModelProvider) {
 let registeredProviderNames = new Set<string>()
 
 // Effect to sync remote providers when providers change
-const syncRemoteProviders = () => {
+const syncRemoteProviders = async () => {
   const providers = useModelProvider.getState().providers
   const currentActive = new Set<string>()
 
-  providers.forEach((provider) => {
+  for (const provider of providers) {
     if (
       provider.active &&
       provider.provider !== 'llamacpp' &&
-      providerHasRemoteApiKeys(provider)
+      (await providerHasRemoteAuth(provider))
     ) {
-      registerRemoteProvider(provider)
+      await registerRemoteProvider(provider)
       currentActive.add(provider.provider)
     }
-  })
+  }
 
   // Unregister providers that were previously registered but are now inactive/removed
   for (const name of registeredProviderNames) {
@@ -125,12 +128,14 @@ export function DataProvider() {
     serviceHub.providers().getProviders().then((providers) => {
       setProviders(providers)
       // Register active remote providers with the backend
-      providers.forEach((provider) => {
-        if (provider.active) {
-          registerRemoteProvider(provider)
-          registeredProviderNames.add(provider.provider)
-        }
-      })
+      void Promise.all(
+        providers.map(async (provider) => {
+          if (provider.active && provider.provider !== 'llamacpp') {
+            await registerRemoteProvider(provider)
+            registeredProviderNames.add(provider.provider)
+          }
+        })
+      )
     })
     serviceHub
       .mcp()
@@ -185,7 +190,7 @@ export function DataProvider() {
   // Sync remote providers with backend when providers change
   const providers = useModelProvider((s) => s.providers)
   useEffect(() => {
-    syncRemoteProviders()
+    void syncRemoteProviders()
   }, [providers])
 
   // Check for app updates - initial check and periodic interval
