@@ -4,6 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as XTerm } from '@xterm/xterm'
 import {
+  ArrowRight,
   ChevronRight,
   ClipboardCheck,
   Copy,
@@ -12,7 +13,6 @@ import {
   FolderOpen,
   Globe,
   Loader2,
-  MoreHorizontal,
   Paperclip,
   PanelBottom,
   RefreshCw,
@@ -22,7 +22,8 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import type { CSSProperties, ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import '@xterm/xterm/css/xterm.css'
@@ -46,7 +47,10 @@ import {
   type ChatSidePanelSection,
   type ChatSidePanelSectionItem,
 } from '@/constants/chat-side-panel'
+import { useEmbeddedBrowser } from '@/hooks/useEmbeddedBrowser'
 import { useSidebarResize } from '@/hooks/use-sidebar-resize'
+import { normalizeBrowserAddress } from '@/lib/browser-address'
+import { isPlatformTauri } from '@/lib/platform/utils'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -681,8 +685,10 @@ function PlaceholderSection({
   )
 }
 
-function BrowserSection() {
-  const [url, setUrl] = useState('https://')
+function BrowserSection({ isActive = true }: { isActive?: boolean }) {
+  const [addressInput, setAddressInput] = useState('')
+  const [activeUrl, setActiveUrl] = useState<string | null>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const requestRuntimePermission = useRuntimePermission(
     (state) => state.requestPermission
@@ -696,15 +702,16 @@ function BrowserSection() {
     (state) => state.setAttachments
   )
   const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
-  const normalizedUrl = url.trim()
-  const hasNavigableUrl = normalizedUrl.length > 'https://'.length
+  const useNativePreview = isPlatformTauri()
+
+  useEmbeddedBrowser(previewRef, activeUrl, isActive && useNativePreview)
 
   useEffect(() => {
     registerTarget({
       id: BROWSER_PANEL_TARGET_ID,
       label: 'Workspace browser',
       backend: 'in-app-preview',
-      url: hasNavigableUrl ? normalizedUrl : '',
+      url: activeUrl ?? '',
       updatedAt: Date.now(),
       capabilities: {
         canNavigate: true,
@@ -713,14 +720,25 @@ function BrowserSection() {
         canAct: false,
       },
     })
-  }, [hasNavigableUrl, normalizedUrl, registerTarget])
+  }, [activeUrl, registerTarget])
 
   useEffect(() => {
     updateTarget(BROWSER_PANEL_TARGET_ID, {
-      url: hasNavigableUrl ? normalizedUrl : '',
-      title: hasNavigableUrl ? normalizedUrl : undefined,
+      url: activeUrl ?? '',
+      title: activeUrl ?? undefined,
     })
-  }, [hasNavigableUrl, normalizedUrl, updateTarget])
+  }, [activeUrl, updateTarget])
+
+  const navigateToAddress = useCallback(() => {
+    const normalized = normalizeBrowserAddress(addressInput)
+    if (!normalized) {
+      setActiveUrl(null)
+      return
+    }
+
+    setActiveUrl(normalized)
+    setAddressInput(normalized)
+  }, [addressInput])
 
   const attachCurrentPage = async () => {
     if (!target?.url) return
@@ -760,11 +778,26 @@ function BrowserSection() {
       <div className="flex items-center gap-2">
         <Globe className="size-4 shrink-0 text-muted-foreground" />
         <Input
-          value={url}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="Enter URL"
+          value={addressInput}
+          onChange={(event) => setAddressInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              navigateToAddress()
+            }
+          }}
+          placeholder="Search or enter URL"
           className="h-8 text-sm"
         />
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label="Go"
+          title="Go"
+          onClick={navigateToAddress}
+        >
+          <ArrowRight className="size-4" />
+        </Button>
         <Button
           variant="outline"
           size="icon-sm"
@@ -776,20 +809,27 @@ function BrowserSection() {
           <Paperclip className="size-4" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/60 bg-card">
-        {url.length > 'https://'.length ? (
-          <iframe
-            title="Browser view"
-            src={url}
-            className="h-full min-h-[320px] w-full bg-background"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
+      <div
+        ref={previewRef}
+        className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/60 bg-card"
+      >
+        {activeUrl ? (
+          useNativePreview ? (
+            <div className="h-full min-h-[320px] w-full bg-background" />
+          ) : (
+            <iframe
+              title="Browser view"
+              src={activeUrl}
+              className="h-full min-h-[320px] w-full bg-background"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+            />
+          )
         ) : (
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 px-6 text-center">
             <Globe className="size-8 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              Enter a URL above or enable Jan Browser MCP from chat to browse
-              with your signed-in sessions.
+              Search the web or enter a URL, then press Enter. Enable Jan
+              Browser MCP from chat to browse with your signed-in sessions.
             </p>
           </div>
         )}
@@ -808,7 +848,9 @@ function ContextPickerSection({
   const requestRuntimePermission = useRuntimePermission(
     (state) => state.requestPermission
   )
-  const rememberedPermissions = useRuntimePermission((state) => state.remembered)
+  const rememberedPermissions = useRuntimePermission(
+    (state) => state.remembered
+  )
   const permissionAudit = useRuntimePermission((state) => state.audit)
   const clearRememberedPermissions = useRuntimePermission(
     (state) => state.clearRemembered
@@ -849,7 +891,11 @@ function ContextPickerSection({
   const getContextAttachmentLabel = (attachment: Attachment) => {
     if (attachment.type === 'document') return attachment.name
     if (attachment.type === 'browser-selection') {
-      return attachment.browserSelection?.title || attachment.browserSelection?.url || attachment.name
+      return (
+        attachment.browserSelection?.title ||
+        attachment.browserSelection?.url ||
+        attachment.name
+      )
     }
     if (attachment.type === 'terminal-output') {
       return attachment.terminalOutput
@@ -1352,11 +1398,7 @@ function ContextPickerSection({
       }),
     ])
     toast.success('Running process snapshot attached')
-  }, [
-    attachmentsKey,
-    requestRuntimePermission,
-    setAttachmentsForThread,
-  ])
+  }, [attachmentsKey, requestRuntimePermission, setAttachmentsForThread])
 
   const contextCounts = {
     files: attachments.filter((attachment) => attachment.type === 'document')
@@ -1372,8 +1414,9 @@ function ContextPickerSection({
     processes: attachments.filter(
       (attachment) => attachment.type === 'process-list'
     ).length,
-    briefs: attachments.filter((attachment) => attachment.type === 'context-brief')
-      .length,
+    briefs: attachments.filter(
+      (attachment) => attachment.type === 'context-brief'
+    ).length,
   }
   const rememberedPermissionKeys = Object.keys(rememberedPermissions)
 
@@ -1571,7 +1614,7 @@ function ContextPickerSection({
           title="Terminal"
           description={
             activeSession
-              ? sessionNames[activeSession.sessionId] ?? activeSession.shell
+              ? (sessionNames[activeSession.sessionId] ?? activeSession.shell)
               : 'Start or select a terminal session first.'
           }
           actionLabel={activeSession ? 'Attach scrollback' : 'Open terminal'}
@@ -1671,9 +1714,7 @@ function ModelSettingsSection({
   const activeProfileId = useCodexProviderProfiles(
     (state) => state.activeProfileId
   )
-  const upsertProfile = useCodexProviderProfiles(
-    (state) => state.upsertProfile
-  )
+  const upsertProfile = useCodexProviderProfiles((state) => state.upsertProfile)
   const removeProfile = useCodexProviderProfiles((state) => state.removeProfile)
   const setActiveProfile = useCodexProviderProfiles(
     (state) => state.setActiveProfile
@@ -1801,9 +1842,10 @@ function ModelSettingsSection({
       actionLabel: 'probe provider endpoint',
       category: 'app',
       resourceLabel: baseUrl,
-      risk: baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')
-        ? 'low'
-        : 'medium',
+      risk:
+        baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')
+          ? 'low'
+          : 'medium',
       details: {
         baseUrl,
         path: '/models',
@@ -2268,10 +2310,12 @@ function PanelTabContent({
   type,
   scope,
   onOpenSection,
+  panelActive = true,
 }: {
   type: ChatSidePanelSection
   scope: ModelToolsPanelScope
   onOpenSection: (section: ChatSidePanelSection) => void
+  panelActive?: boolean
 }) {
   const settings = useStudioSettings((state) => state.sampler)
   const setSettings = useStudioSettings((state) => state.setSampler)
@@ -2296,7 +2340,7 @@ function PanelTabContent({
   }
 
   if (type === 'browser') {
-    return <BrowserSection />
+    return <BrowserSection isActive={panelActive} />
   }
 
   if (type === 'terminal') {
@@ -2429,20 +2473,46 @@ export function WorkspacePanelsLayout({
   )
 }
 
+function WorkspaceTitlebarLayer({
+  children,
+  className,
+  style,
+  hidden,
+}: {
+  children: ReactNode
+  className?: string
+  style?: CSSProperties
+  hidden?: boolean
+}) {
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      className={cn(
+        'pointer-events-auto z-[var(--app-layer-workspace-titlebar-controls)]',
+        className,
+        hidden && 'pointer-events-none opacity-0'
+      )}
+      style={style}
+      aria-hidden={hidden}
+    >
+      {children}
+    </div>,
+    document.body
+  )
+}
+
 function WorkspacePanelTitlebarControls() {
   const open = useChatSidePanel((state) => state.open)
 
   return (
-    <div
-      className={cn(
-        'fixed right-2 top-0 z-[var(--app-layer-workspace-titlebar-controls)] flex h-[var(--app-titlebar-height)] items-center gap-1 transition-opacity duration-150',
-        open && 'pointer-events-none opacity-0'
-      )}
-      aria-hidden={open}
+    <WorkspaceTitlebarLayer
+      hidden={open}
+      className="fixed right-2 top-0 flex h-[var(--app-titlebar-height)] items-center gap-1 transition-opacity duration-150"
     >
       <BottomPanelToggle />
       <ModelToolsToggle />
-    </div>
+    </WorkspaceTitlebarLayer>
   )
 }
 
@@ -2529,40 +2599,58 @@ export function ModelToolsPanel({
       />
 
       <div className="flex h-full min-h-0 min-w-0 flex-col" style={{ width }}>
-        <div className="relative z-[var(--app-layer-workspace-titlebar-controls)] flex items-center gap-1 border-b border-border/60 bg-background px-2 py-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide">
-            {selectorSections.map((section) => {
-              const Icon = section.icon
-              const active = section.id === activeSection
+        {open ? (
+          <WorkspaceTitlebarLayer
+            className="fixed top-0 right-0 flex items-center gap-1 border-b border-border/60 bg-background px-2 py-1.5"
+            style={{ width }}
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide">
+              {selectorSections.map((section) => {
+                const Icon = section.icon
+                const active = section.id === activeSection
 
-              return (
-                <Button
-                  key={section.id}
-                  variant="ghost"
-                  size="icon-xs"
-                  className={cn(
-                    'shrink-0 rounded-md border border-transparent',
-                    active
-                      ? 'border-border/80 bg-foreground/10 text-foreground'
-                      : 'text-muted-foreground hover:bg-foreground/5'
-                  )}
-                  aria-label={`Open ${section.label}`}
-                  aria-pressed={active}
-                  title={section.label}
-                  onClick={() => setActiveSection(section.id)}
-                >
-                  <Icon
+                return (
+                  <Button
+                    key={section.id}
+                    variant="ghost"
+                    size="icon-xs"
                     className={cn(
-                      'size-3.5',
-                      active ? 'text-foreground' : 'text-muted-foreground'
+                      'shrink-0 rounded-md border border-transparent',
+                      active
+                        ? 'border-border/80 bg-foreground/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-foreground/5'
                     )}
-                  />
-                </Button>
-              )
-            })}
+                    aria-label={`Open ${section.label}`}
+                    aria-pressed={active}
+                    title={section.label}
+                    onClick={() => setActiveSection(section.id)}
+                  >
+                    <Icon
+                      className={cn(
+                        'size-3.5',
+                        active ? 'text-foreground' : 'text-muted-foreground'
+                      )}
+                    />
+                  </Button>
+                )
+              })}
+            </div>
+            <BottomPanelToggle />
+            <ModelToolsToggle />
+          </WorkspaceTitlebarLayer>
+        ) : null}
+        <div
+          className={cn(
+            'shrink-0 border-b border-border/60 bg-background px-2 py-1.5',
+            open ? 'invisible' : 'hidden'
+          )}
+          aria-hidden
+        >
+          <div className="flex items-center gap-1">
+            <div className="min-h-7 min-w-0 flex-1" />
+            <div className="size-8 shrink-0" />
+            <div className="size-8 shrink-0" />
           </div>
-          <BottomPanelToggle />
-          <ModelToolsToggle />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-5 pt-3">
@@ -2570,6 +2658,7 @@ export function ModelToolsPanel({
             type={activeSection}
             scope={scope}
             onOpenSection={setActiveSection}
+            panelActive={open && activeSection === 'browser'}
           />
         </div>
       </div>
@@ -2620,7 +2709,7 @@ function BottomWorkspacePanel() {
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-3">
           {activeSection === 'browser' ? (
-            <BrowserSection />
+            <BrowserSection isActive={open && activeSection === 'browser'} />
           ) : (
             <TerminalSection />
           )}
@@ -2668,6 +2757,7 @@ function TerminalSection() {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
   const scrollbackLoadRef = useRef(0)
+  const ensureSessionRef = useRef(false)
   const [starting, setStarting] = useState(false)
   const requestRuntimePermission = useRuntimePermission(
     (state) => state.requestPermission
@@ -2734,15 +2824,12 @@ function TerminalSection() {
 
     setStarting(true)
     try {
-      const info = await invoke<TerminalSessionInfo>(
-        'start_terminal_session',
-        {
-          request: {
-            cols: terminalRef.current?.cols,
-            rows: terminalRef.current?.rows,
-          },
-        }
-      )
+      const info = await invoke<TerminalSessionInfo>('start_terminal_session', {
+        request: {
+          cols: terminalRef.current?.cols,
+          rows: terminalRef.current?.rows,
+        },
+      })
       upsertSession(info)
       setActiveSession(info.sessionId)
       terminalRef.current?.write('\x1b[2J\x1b[3J\x1b[H')
@@ -2756,39 +2843,67 @@ function TerminalSection() {
     }
   }, [requestRuntimePermission, setActiveSession, starting, upsertSession])
 
-  const stopSession = useCallback(async () => {
-    if (!activeSessionId || !IS_TAURI) return
-
-    const allowed = await requestRuntimePermission({
-      actionId: 'terminal.stop',
-      actionLabel: 'stop terminal session',
-      category: 'shell',
-      resourceLabel:
-        sessionNames[activeSessionId] ??
-        activeSession?.shell ??
-        activeSessionId.slice(0, 8),
-      risk: 'medium',
-      details: {
-        sessionId: activeSessionId,
-        shell: activeSession?.shell,
-        status: activeSession?.status,
-      },
-    })
-    if (!allowed) return
+  const ensureTerminalSession = useCallback(async () => {
+    if (!IS_TAURI || ensureSessionRef.current || starting) return
+    ensureSessionRef.current = true
 
     try {
-      await invoke('stop_terminal_session', { sessionId: activeSessionId })
+      const nextSessions = await invoke<TerminalSessionInfo[]>(
+        'list_terminal_sessions'
+      )
+      hydrateSessions(nextSessions)
+
+      const runningSession = [...nextSessions]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .find((session) => session.status === 'running')
+
+      if (runningSession) {
+        setActiveSession(runningSession.sessionId)
+        return
+      }
+
+      await startSession()
     } catch (error) {
+      ensureSessionRef.current = false
       terminalRef.current?.writeln(
-        `\r\n\x1b[31mFailed to stop terminal: ${String(error)}\x1b[0m`
+        `\r\n\x1b[31mFailed to connect terminal: ${String(error)}\x1b[0m`
       )
     }
-  }, [
-    activeSession,
-    activeSessionId,
-    requestRuntimePermission,
-    sessionNames,
-  ])
+  }, [hydrateSessions, setActiveSession, startSession, starting])
+
+  const stopSession = useCallback(
+    async (sessionId?: string) => {
+      const targetSessionId = sessionId ?? activeSessionId
+      if (!targetSessionId || !IS_TAURI) return
+
+      const targetSession = sessions[targetSessionId]
+      const allowed = await requestRuntimePermission({
+        actionId: 'terminal.stop',
+        actionLabel: 'stop terminal session',
+        category: 'shell',
+        resourceLabel:
+          sessionNames[targetSessionId] ??
+          targetSession?.shell ??
+          targetSessionId.slice(0, 8),
+        risk: 'medium',
+        details: {
+          sessionId: targetSessionId,
+          shell: targetSession?.shell,
+          status: targetSession?.status,
+        },
+      })
+      if (!allowed) return
+
+      try {
+        await invoke('stop_terminal_session', { sessionId: targetSessionId })
+      } catch (error) {
+        terminalRef.current?.writeln(
+          `\r\n\x1b[31mFailed to stop terminal: ${String(error)}\x1b[0m`
+        )
+      }
+    },
+    [activeSessionId, requestRuntimePermission, sessionNames, sessions]
+  )
 
   const attachTerminalOutput = useCallback(async () => {
     const terminal = terminalRef.current
@@ -2926,16 +3041,10 @@ function TerminalSection() {
   }, [activeSession, renameSession, sessionNames])
 
   useEffect(() => {
-    if (!IS_TAURI) return
-
-    void invoke<TerminalSessionInfo[]>('list_terminal_sessions')
-      .then((nextSessions) => {
-        hydrateSessions(nextSessions)
-      })
-      .catch((error) => {
-        console.warn('Failed to list terminal sessions:', error)
-      })
-  }, [hydrateSessions])
+    return () => {
+      ensureSessionRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     const terminal = new XTerm({
@@ -2961,9 +3070,8 @@ function TerminalSection() {
     if (containerRef.current) {
       terminal.open(containerRef.current)
       fitAndResize()
-      terminal.writeln(
-        '\x1b[2mTerminal ready. Start or select a session to attach a PTY.\x1b[0m'
-      )
+      terminal.writeln('\x1b[2mConnecting terminal session...\x1b[0m')
+      void ensureTerminalSession()
     }
 
     const disposable = terminal.onData((data) => {
@@ -2981,7 +3089,7 @@ function TerminalSection() {
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [fitAndResize])
+  }, [ensureTerminalSession, fitAndResize])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -2992,9 +3100,7 @@ function TerminalSection() {
     terminal.write('\x1b[2J\x1b[3J\x1b[H')
 
     if (!activeSessionId) {
-      terminal.writeln(
-        '\x1b[2mNo terminal session selected. Start a new session to attach a PTY.\x1b[0m'
-      )
+      terminal.writeln('\x1b[2mStarting terminal session...\x1b[0m')
       return
     }
     if (!IS_TAURI) return
@@ -3086,73 +3192,80 @@ function TerminalSection() {
     )
   }
 
+  const getSessionTabLabel = (session: TerminalSessionInfo) => {
+    const customName = sessionNames[session.sessionId]?.trim()
+    if (customName) return customName
+    const shellName = session.shell.split('/').filter(Boolean).pop()
+    return shellName ?? session.shell
+  }
+
   return (
-    <div className="flex h-full min-h-[180px] flex-col overflow-hidden rounded-md border border-border/60 bg-[#0b0f14]">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-white/10 px-2">
-        <div className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300">
-          {activeSession
-            ? `${sessionNames[activeSession.sessionId] ?? activeSession.shell}${activeSession.status === 'running' ? '' : ' · exited'}`
-            : 'No terminal session'}
-        </div>
-        {sessionList.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="secondary" size="xs">
-                Sessions
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-72 min-w-64">
-              {sessionList.map((session) => (
-                <DropdownMenuItem
-                  key={session.sessionId}
-                  onClick={() => setActiveSession(session.sessionId)}
+    <div className="flex h-full min-h-[180px] flex-col overflow-hidden bg-[#0b0f14]">
+      <div className="flex h-7 shrink-0 items-center overflow-x-auto bg-[#0b0f14] px-2 scrollbar-hide">
+        {sessionList.map((session) => {
+          const active = session.sessionId === activeSessionId
+          const label = getSessionTabLabel(session)
+
+          return (
+            <button
+              key={session.sessionId}
+              type="button"
+              onClick={() => setActiveSession(session.sessionId)}
+              className={cn(
+                'group shrink-0 bg-[#0b0f14] px-2 py-1 font-mono text-xs transition-colors',
+                active
+                  ? 'text-slate-300'
+                  : 'text-slate-500 hover:text-slate-400',
+                session.status !== 'running' && 'opacity-60'
+              )}
+              aria-current={active ? 'true' : undefined}
+              title={session.status !== 'running' ? `${label} (exited)` : label}
+            >
+              <span>{label}</span>
+              {session.status === 'running' ? (
+                <span
+                  role="presentation"
+                  className="ml-1 hidden text-slate-500 group-hover:inline hover:text-slate-300"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void stopSession(session.sessionId)
+                  }}
                 >
-                  <Terminal className="size-4" />
-                  <div className="min-w-0">
-                    <div className="truncate font-mono text-xs">
-                      {sessionNames[session.sessionId] ?? session.shell}
-                    </div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {session.status}
-                      {session.cwd ? ` · ${session.cwd}` : ''}
-                    </div>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        <Button
-          variant="secondary"
-          size="xs"
-          disabled={!activeSession}
-          title={
-            activeSession
-              ? 'Attach selected output, or latest scrollback if nothing is selected'
-              : 'Start a terminal session first'
-          }
-          onClick={() => void attachTerminalOutput()}
+                  ×
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          disabled={starting}
+          onClick={() => void startSession()}
+          className="shrink-0 bg-[#0b0f14] px-2 py-1 font-mono text-xs text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-50"
+          aria-label="New terminal session"
+          title="New shell"
         >
-          <Paperclip className="size-3.5" />
-          Attach
-        </Button>
+          {starting ? '…' : '+'}
+        </button>
+        <div className="flex-1" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon-xs" title="Terminal actions">
-              <MoreHorizontal className="size-3.5" />
-            </Button>
+            <button
+              type="button"
+              className="shrink-0 bg-[#0b0f14] px-1 py-1 font-mono text-xs text-slate-600 transition-colors hover:text-slate-400"
+              aria-label="Terminal actions"
+              title="Terminal actions"
+            >
+              ···
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-56">
-            <DropdownMenuItem onClick={() => void startSession()}>
-              <Terminal className="size-4" />
-              <span>New shell</span>
-            </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!activeSession}
               onClick={() => void attachTerminalOutput()}
             >
               <Paperclip className="size-4" />
-              <span>Attach selection/scrollback</span>
+              <span>Attach selection/scrollback to chat</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!activeSession}
@@ -3193,22 +3306,8 @@ function TerminalSection() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {activeSession?.status === 'running' ? (
-          <Button variant="secondary" size="xs" onClick={stopSession}>
-            Stop
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            size="xs"
-            disabled={starting}
-            onClick={() => void startSession()}
-          >
-            {starting ? 'Starting' : activeSession ? 'New' : 'Start'}
-          </Button>
-        )}
       </div>
-      <div className="min-h-0 flex-1 p-2">
+      <div className="min-h-0 flex-1 px-2 pb-2">
         <div ref={containerRef} className="h-full min-h-0 w-full" />
       </div>
     </div>
