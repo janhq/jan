@@ -3,8 +3,6 @@ import {
   Folder,
   Globe,
   MessageCirclePlus,
-  Paperclip,
-  SlidersHorizontal,
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
@@ -15,7 +13,6 @@ export type ChatSidePanelSection =
   | 'side-chat'
   | 'review'
   | 'terminal'
-  | 'model'
   | 'browser'
 
 export type ChatSidePanelSectionItem = {
@@ -27,18 +24,14 @@ export type ChatSidePanelSectionItem = {
 
 export const CHAT_SIDE_PANEL_SECTIONS: ChatSidePanelSectionItem[] = [
   { id: 'files', label: 'Files', shortcut: '⌘P', icon: Folder },
-  { id: 'context', label: 'Context', icon: Paperclip },
   { id: 'side-chat', label: 'Side chat', icon: MessageCirclePlus },
   { id: 'review', label: 'Review', shortcut: '^⇧G', icon: ClipboardCheck },
   { id: 'terminal', label: 'Terminal', shortcut: '^`', icon: Terminal },
-  { id: 'model', label: 'Model tools', icon: SlidersHorizontal },
   { id: 'browser', label: 'Browser', icon: Globe },
 ]
 
 export const CHAT_SIDE_PANEL_DROPDOWN_SECTIONS: ChatSidePanelSectionItem[] =
-  CHAT_SIDE_PANEL_SECTIONS.filter((section) =>
-    !['files', 'model'].includes(section.id)
-  )
+  CHAT_SIDE_PANEL_SECTIONS.filter((section) => section.id !== 'files')
 
 export const CHAT_SIDE_PANEL_DEFAULT_WIDTH = '20rem'
 export const CHAT_SIDE_PANEL_MIN_WIDTH = '16rem'

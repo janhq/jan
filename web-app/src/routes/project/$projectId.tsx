@@ -19,7 +19,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import ProjectFiles from '@/containers/ProjectFiles'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { WorkspacePanelsLayout } from '@/containers/ModelToolsPanel'
 import {
   DropdownMenu,
@@ -33,6 +32,9 @@ import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 import { DeleteAllThreadsInProjectDialog } from '@/containers/dialogs/DeleteAllThreadsInProjectDialog'
 import { SidebarMenu } from '@/components/ui/sidebar'
+import { useWorkspaceDirectories } from '@/stores/workspace-directory-store'
+import { getProjectDisplayName } from '@/lib/project-folders'
+import { projectComposeContextId } from '@/constants/chat'
 
 export const Route = createFileRoute('/project/$projectId')({
   component: ProjectPageContent,
@@ -41,12 +43,13 @@ export const Route = createFileRoute('/project/$projectId')({
 function ProjectPageContent() {
   const { t, i18n } = useTranslation()
   const { projectId } = useParams({ from: '/project/$projectId' })
-  const { getFolderById, updateFolder } = useThreadManagement()
+  const { getFolderById, updateFolderFromPath } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const deleteAllThreadsByProject = useThreads(
     (state) => state.deleteAllThreadsByProject
   )
   const { assistants } = useAssistant()
+  const directories = useWorkspaceDirectories((state) => state.directories)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -68,9 +71,12 @@ function ProjectPageContent() {
       .sort((a, b) => (b.updated || 0) - (a.updated || 0))
   }, [threads, projectId])
 
-  const handleSaveEdit = async (name: string, assistantId?: string) => {
+  const handleSaveEdit = async (
+    directoryPath: string,
+    assistantId?: string
+  ) => {
     if (project) {
-      await updateFolder(project.id, name, assistantId)
+      await updateFolderFromPath(project.id, directoryPath, assistantId)
       setEditDialogOpen(false)
     }
   }
@@ -78,6 +84,10 @@ function ProjectPageContent() {
   const handleDeleteAllThreads = () => {
     deleteAllThreadsByProject(projectId)
   }
+
+  const projectDisplayName = project
+    ? getProjectDisplayName(project, directories)
+    : ''
 
   if (!project) {
     return (
@@ -99,23 +109,18 @@ function ProjectPageContent() {
       scope={{
         id: project.id,
         type: 'project',
-        label: project.name,
+        label: projectDisplayName,
+        sessionId: projectComposeContextId(project.id),
       }}
     >
       <div className="flex h-full min-h-0 flex-col">
-        <HeaderPage>
-          <div className="flex items-center justify-between w-full">
-            <div className="min-w-0 max-w-[22rem]">
-              <DropdownModelProvider />
-            </div>
-          </div>
-        </HeaderPage>
+        <HeaderPage />
 
         <div className="min-h-0 relative flex-1 flex flex-col px-4 md:px-8 py-4 overflow-y-auto">
           <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
             {/* Project Name with Dropdown */}
             <div className="flex items-center justify-between gap-2 mb-4">
-              <h1 className="text-2xl font-semibold">{project.name}</h1>
+              <h1 className="text-2xl font-semibold">{projectDisplayName}</h1>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon-xs">
@@ -168,7 +173,7 @@ function ProjectPageContent() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" align="start">
                       <DeleteAllThreadsInProjectDialog
-                        projectName={project.name}
+                        projectName={projectDisplayName}
                         threadCount={projectThreads.length}
                         onDeleteAll={handleDeleteAllThreads}
                         onDropdownClose={() => setDropdownOpen(false)}
@@ -191,12 +196,12 @@ function ProjectPageContent() {
                 <MessageCircle className="size-8 text-muted-foreground/50 mb-3" />
                 <h3 className="text-base font-medium text-foreground mb-1">
                   {t('projects.noConversationsIn', {
-                    projectName: project.name,
+                    projectName: projectDisplayName,
                   })}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {t('projects.startNewConversation', {
-                    projectName: project.name,
+                    projectName: projectDisplayName,
                   })}
                 </p>
               </div>
@@ -257,7 +262,7 @@ function ProjectPageContent() {
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
           projectId={project.id}
-          projectName={project.name}
+          projectName={projectDisplayName}
         />
       </div>
     </WorkspacePanelsLayout>

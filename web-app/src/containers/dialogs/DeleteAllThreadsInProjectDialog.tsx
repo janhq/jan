@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -14,12 +14,18 @@ import { Button } from '@/components/ui/button'
 import { IconTrash } from '@tabler/icons-react'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
+import type { KeyboardEvent } from "react"
 
 interface DeleteAllThreadsInProjectDialogProps {
   projectName: string
   threadCount: number
   onDeleteAll: () => void
   onDropdownClose?: () => void
+  menuItemLabel?: string
+  title?: string
+  description?: string
+  confirmLabel?: string
+  destructive?: boolean
 }
 
 export function DeleteAllThreadsInProjectDialog({
@@ -27,10 +33,25 @@ export function DeleteAllThreadsInProjectDialog({
   threadCount,
   onDeleteAll,
   onDropdownClose,
+  menuItemLabel,
+  title,
+  description,
+  confirmLabel,
+  destructive = true,
 }: DeleteAllThreadsInProjectDialogProps) {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
+  const menuLabel = menuItemLabel ?? t('common:deleteAll')
+  const dialogTitle =
+    title ?? t('common:dialogs.deleteAllThreadsInProject.title')
+  const dialogDescription =
+    description ??
+    t('common:dialogs.deleteAllThreadsInProject.description', {
+      projectName,
+      count: threadCount,
+    })
+  const confirmActionLabel = confirmLabel ?? t('common:deleteAll')
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
@@ -49,7 +70,7 @@ export function DeleteAllThreadsInProjectDialog({
     })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'Enter') {
       handleDeleteAll()
     }
@@ -58,9 +79,12 @@ export function DeleteAllThreadsInProjectDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <DropdownMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
+        <DropdownMenuItem
+          variant={destructive ? 'destructive' : 'default'}
+          onSelect={(e) => e.preventDefault()}
+        >
           <IconTrash size={16} />
-          <span>{t('common:deleteAll')}</span>
+          <span>{menuLabel}</span>
         </DropdownMenuItem>
       </DialogTrigger>
       <DialogContent
@@ -70,12 +94,8 @@ export function DeleteAllThreadsInProjectDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>
-            {t('common:dialogs.deleteAllThreadsInProject.title')}
-          </DialogTitle>
-          <DialogDescription>
-            {t('common:dialogs.deleteAllThreadsInProject.description', { projectName, count: threadCount })}
-          </DialogDescription>
+          <DialogTitle>{dialogTitle}</DialogTitle>
+          <DialogDescription>{dialogDescription}</DialogDescription>
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
               <Button variant="ghost" size="sm" className="w-full sm:w-auto">
@@ -84,14 +104,14 @@ export function DeleteAllThreadsInProjectDialog({
             </DialogClose>
             <Button
               ref={deleteButtonRef}
-              variant="destructive"
+              variant={destructive ? 'destructive' : 'default'}
               onClick={handleDeleteAll}
               onKeyDown={handleKeyDown}
               size="sm"
               className="w-full sm:w-auto"
-              aria-label={t('common:deleteAll')}
+              aria-label={confirmActionLabel}
             >
-              {t('common:deleteAll')}
+              {confirmActionLabel}
             </Button>
           </DialogFooter>
         </DialogHeader>

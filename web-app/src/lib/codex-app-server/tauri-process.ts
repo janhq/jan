@@ -1,11 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type {
-  CodexProcess,
-  CodexProcessExit,
-  Unsubscribe,
-} from './types'
+import type { CodexProcess, CodexProcessExit, Unsubscribe } from './types'
 import type { CodexProcessSpawner, CodexSpawnOptions } from './process-manager'
+import { useCodexAppServerRuntime } from '@/stores/codex-app-server-runtime-store'
 
 type TauriCodexLinePayload = {
   sessionId: string
@@ -26,6 +23,8 @@ type TauriCodexProcessInfo = {
 type TauriCodexProcessSpawnerOptions = {
   sessionIdFactory?: () => string
   configToml?: string
+  agentsMd?: string
+  customAgents?: any[]
 }
 
 export class TauriCodexProcess implements CodexProcess {
@@ -55,10 +54,17 @@ export class TauriCodexProcess implements CodexProcess {
     const process = new TauriCodexProcess(sessionId, 0, [])
     await process.attachListeners()
 
-    if (options.configToml && options.codexHome) {
+    if (
+      (options.configToml || options.agentsMd || options.customAgents) &&
+      options.codexHome
+    ) {
       await invoke('write_codex_app_server_config', {
         codexHome: options.codexHome,
-        configToml: options.configToml,
+        configToml: options.configToml ?? '',
+        agentsMd: options.agentsMd ?? null,
+        customAgents: options.customAgents
+          ? JSON.stringify(options.customAgents)
+          : null,
       })
     }
 
@@ -71,6 +77,11 @@ export class TauriCodexProcess implements CodexProcess {
     })
 
     process.processPid = info.pid
+    appendRuntimeLog(
+      sessionId,
+      'system',
+      `started pid=${info.pid} cwd=${options.cwd ?? ''}`
+    )
     return process
   }
 
@@ -106,6 +117,7 @@ export class TauriCodexProcess implements CodexProcess {
       'codex-app-server-stdout',
       (event) => {
         if (event.payload.sessionId !== this.sessionId) return
+        appendRuntimeLog(this.sessionId, 'stdout', event.payload.line)
         this.stdoutListeners.forEach((callback) => callback(event.payload.line))
       }
     )
@@ -113,6 +125,7 @@ export class TauriCodexProcess implements CodexProcess {
       'codex-app-server-stderr',
       (event) => {
         if (event.payload.sessionId !== this.sessionId) return
+        appendRuntimeLog(this.sessionId, 'stderr', event.payload.line)
         this.stderrListeners.forEach((callback) => callback(event.payload.line))
       }
     )
@@ -120,6 +133,11 @@ export class TauriCodexProcess implements CodexProcess {
       'codex-app-server-exit',
       (event) => {
         if (event.payload.sessionId !== this.sessionId) return
+        appendRuntimeLog(
+          this.sessionId,
+          'system',
+          `exited code=${event.payload.code ?? 'null'} signal=${event.payload.signal ?? 'null'}`
+        )
         this.exitListeners.forEach((callback) =>
           callback({
             code: event.payload.code ?? null,
@@ -142,6 +160,8 @@ export class TauriCodexProcessSpawner implements CodexProcessSpawner {
     return TauriCodexProcess.start(this.createSessionId(), command, args, {
       ...options,
       configToml: options.configToml ?? this.options.configToml,
+      agentsMd: options.agentsMd ?? this.options.agentsMd,
+      customAgents: options.customAgents ?? this.options.customAgents,
     })
   }
 
@@ -156,5 +176,20 @@ export class TauriCodexProcessSpawner implements CodexProcessSpawner {
 
 const compactEnv = (env: Record<string, string | undefined>) =>
   Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+    Object.entries(env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined
+    )
   )
+
+const appendRuntimeLog = (
+  sessionId: string,
+  stream: 'stdout' | 'stderr' | 'system',
+  line: string
+) => {
+  useCodexAppServerRuntime.getState().appendLog({
+    sessionId,
+    stream,
+    line,
+    timestamp: Date.now(),
+  })
+}

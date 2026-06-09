@@ -269,9 +269,9 @@ vi.mock('@/components/ui/input', () => ({
 }))
 
 vi.mock('@/components/ui/switch', () => ({
-  Switch: ({ checked, onCheckedChange }: any) => (
+  Switch: ({ checked, onCheckedChange, 'data-testid': testId }: any) => (
     <input
-      data-testid="provider-switch"
+      data-testid={testId || "provider-switch"}
       type="checkbox"
       checked={!!checked}
       onChange={(e) => onCheckedChange?.(e.target.checked)}
@@ -465,6 +465,24 @@ describe('ProviderDetail route', () => {
       expect(sw.checked).toBe(true)
       fireEvent.click(sw)
       expect(h.updateProvider).toHaveBeenCalledWith('openai', { active: false })
+    })
+  })
+
+  describe('Model visibility toggle', () => {
+    it('flipping the model switch calls updateProvider with active=true for remote model', () => {
+      renderComponent()
+      const switches = screen.getAllByTestId('model-switch') as HTMLInputElement[]
+      expect(switches.length).toBeGreaterThan(0)
+      expect(switches[0].checked).toBe(false) // remote model is default off
+      fireEvent.click(switches[0])
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'openai',
+        expect.objectContaining({
+          models: expect.arrayContaining([
+            expect.objectContaining({ id: 'gpt-4', active: true }),
+          ]),
+        })
+      )
     })
   })
 

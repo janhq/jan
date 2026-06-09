@@ -14,14 +14,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useAssistant } from '@/hooks/useAssistant'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { ChevronDown, Plus } from 'lucide-react'
+import { ChevronDown, FolderOpen, Plus } from 'lucide-react'
 import AddEditAssistant from './AddEditAssistant'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useRuntimePermission } from '@/stores/runtime-permission-store'
+import { useWorkspaceDirectories } from '@/stores/workspace-directory-store'
+import {
+  basenameFromPath,
+  findFolderByDirectoryPath,
+  getProjectDirectoryPath,
+  normalizeProjectPath,
+} from '@/lib/project-folders'
 
 interface AddProjectDialogProps {
   open: boolean
@@ -32,8 +40,9 @@ interface AddProjectDialogProps {
     name: string
     updated_at: number
     assistantId?: string
+    directoryPath?: string
   }
-  onSave: (name: string, assistantId?: string) => void
+  onSave: (directoryPath: string, assistantId?: string) => void
 }
 
 export default function AddProjectDialog({
@@ -44,8 +53,17 @@ export default function AddProjectDialog({
   onSave,
 }: AddProjectDialogProps) {
   const { t } = useTranslation()
-  const [name, setName] = useState(initialData?.name || '')
-  const [selectedAssistantId, setSelectedAssistantId] = useState<string | undefined>(initialData?.assistantId)
+  const serviceHub = useServiceHub()
+  const requestRuntimePermission = useRuntimePermission(
+    (state) => state.requestPermission
+  )
+  const directories = useWorkspaceDirectories((state) => state.directories)
+  const [directoryPath, setDirectoryPath] = useState(
+    initialData?.directoryPath || ''
+  )
+  const [selectedAssistantId, setSelectedAssistantId] = useState<
+    string | undefined
+  >(initialData?.assistantId)
   const { folders } = useThreadManagement()
   const { assistants, addAssistant } = useAssistant()
   const [addAssistantDialogOpen, setAddAssistantDialogOpen] = useState(false)
@@ -53,164 +71,217 @@ export default function AddProjectDialog({
   const selectedAssistant = assistants.find((a) => a.id === selectedAssistantId)
 
   useEffect(() => {
-    if (open) {
-      setName(initialData?.name || '')
-      setSelectedAssistantId(initialData?.assistantId)
-    }
-  }, [open, initialData])
+    if (!open) return
+    const existingPath =
+      initialData?.directoryPath ||
+      (initialData
+        ? getProjectDirectoryPath(initialData, directories)
+        : undefined) ||
+      ''
+    setDirectoryPath(existingPath)
+    setSelectedAssistantId(initialData?.assistantId)
+  }, [open, initialData, directories])
+
+  const chooseFolder = async () => {
+    const allowed = await requestRuntimePermission({
+      actionId: 'file.choose-project-dir',
+      actionLabel: 'choose project folder',
+      category: 'file',
+      resourceLabel: directoryPath || 'select folder',
+      risk: 'medium',
+    })
+    if (!allowed) return
+
+    const selection = await serviceHub.dialog().open({
+      directory: true,
+      defaultPath: directoryPath || undefined,
+    })
+    if (!selection || Array.isArray(selection)) return
+    setDirectoryPath(normalizeProjectPath(selection))
+  }
 
   const handleSave = () => {
-    if (!name.trim()) return
+    const normalized = normalizeProjectPath(directoryPath)
+    if (!normalized) return
 
-    const trimmedName = name.trim()
-
-    // Check for duplicate names (excluding current project when editing)
-    const isDuplicate = folders.some(
-      (folder) =>
-        folder.name.toLowerCase() === trimmedName.toLowerCase() &&
-        folder.id !== editingKey
-    )
-
-    if (isDuplicate) {
-      toast.warning(t('projects.addProjectDialog.alreadyExists', { projectName: trimmedName }))
+    const duplicate = findFolderByDirectoryPath(folders, directories, normalized)
+    if (duplicate && duplicate.id !== editingKey) {
+      toast.warning(
+        `A project already exists for ${basenameFromPath(normalized)}`
+      )
       return
     }
 
-    onSave(trimmedName, selectedAssistantId)
+    onSave(normalized, selectedAssistantId)
 
-    // Show success message
     if (editingKey) {
-      toast.success(t('projects.addProjectDialog.updateSuccess', { projectName: trimmedName }))
+      toast.success(
+        t('projects.addProjectDialog.updateSuccess', {
+          projectName: basenameFromPath(normalized),
+        })
+      )
     } else {
-      toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
+      toast.success(
+        t('projects.addProjectDialog.createSuccess', {
+          projectName: basenameFromPath(normalized),
+        })
+      )
     }
-    setName('')
+    setDirectoryPath('')
     setSelectedAssistantId(undefined)
   }
 
   const handleCancel = () => {
     onOpenChange(false)
-    setName('')
+    setDirectoryPath('')
     setSelectedAssistantId(undefined)
   }
 
-  // Check if the button should be disabled
+  const initialPath =
+    initialData?.directoryPath ||
+    (initialData ? getProjectDirectoryPath(initialData, directories) : '') ||
+    ''
   const hasChanged = editingKey
-    ? name.trim() !== initialData?.name || selectedAssistantId !== initialData?.assistantId
+    ? normalizeProjectPath(directoryPath) !== normalizeProjectPath(initialPath) ||
+      selectedAssistantId !== initialData?.assistantId
     : true
-  const isButtonDisabled = !name.trim() || (editingKey && !hasChanged)
+  const isButtonDisabled =
+    !normalizeProjectPath(directoryPath) || (Boolean(editingKey) && !hasChanged)
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {editingKey ? t('projects.addProjectDialog.editTitle') : t('projects.addProjectDialog.createTitle')}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('projects.addProjectDialog.namePlaceholder')}
-              className="mt-1"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isButtonDisabled) {
-                  handleSave()
-                }
-              }}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">
-              {t('projects.addProjectDialog.assistant')}
-            </label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingKey
+                ? t('projects.addProjectDialog.editTitle')
+                : t('projects.addProjectDialog.createTitle')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Project folder</label>
+              <div className="flex items-center gap-2">
                 <Button
+                  type="button"
                   variant="outline"
-                  className="w-full justify-between rounded-md"
+                  className="flex-1 justify-start gap-2"
+                  onClick={() => void chooseFolder()}
                 >
-                  {selectedAssistant ? (
-                    <div className="flex items-center gap-2">
-                      {selectedAssistant.avatar && (
-                        <AvatarEmoji
-                          avatar={selectedAssistant.avatar}
-                          imageClassName="w-4 h-4 object-contain"
-                          textClassName="text-sm"
-                        />
-                      )}
-                      <span>{selectedAssistant.name}</span>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {t('projects.addProjectDialog.selectAssistant')}
-                    </span>
-                  )}
-                  <ChevronDown className="size-4 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
-                <DropdownMenuItem
-                  onSelect={() => setSelectedAssistantId(undefined)}
-                >
-                  <span className="text-muted-foreground">
-                    {t('projects.addProjectDialog.noAssistant')}
+                  <FolderOpen className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-left">
+                    {directoryPath
+                      ? basenameFromPath(directoryPath)
+                      : 'Choose a folder on this device'}
                   </span>
-                </DropdownMenuItem>
-                {assistants.map((assistant) => (
+                </Button>
+              </div>
+              {directoryPath ? (
+                <p
+                  className="truncate text-xs text-muted-foreground"
+                  title={directoryPath}
+                >
+                  {directoryPath}
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                {t('projects.addProjectDialog.assistant')}
+              </label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between rounded-md"
+                  >
+                    {selectedAssistant ? (
+                      <div className="flex items-center gap-2">
+                        {selectedAssistant.avatar && (
+                          <AvatarEmoji
+                            avatar={selectedAssistant.avatar}
+                            imageClassName="w-4 h-4 object-contain"
+                            textClassName="text-sm"
+                          />
+                        )}
+                        <span>{selectedAssistant.name}</span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {t('projects.addProjectDialog.selectAssistant')}
+                      </span>
+                    )}
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-(--radix-dropdown-menu-trigger-width)"
+                >
                   <DropdownMenuItem
-                    key={assistant.id}
-                    onSelect={() => setSelectedAssistantId(assistant.id)}
+                    onSelect={() => setSelectedAssistantId(undefined)}
+                  >
+                    <span className="text-muted-foreground">
+                      {t('projects.addProjectDialog.noAssistant')}
+                    </span>
+                  </DropdownMenuItem>
+                  {assistants.map((assistant) => (
+                    <DropdownMenuItem
+                      key={assistant.id}
+                      onSelect={() => setSelectedAssistantId(assistant.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {assistant.avatar && (
+                          <AvatarEmoji
+                            avatar={assistant.avatar}
+                            imageClassName="w-4 h-4 object-contain"
+                            textClassName="text-sm"
+                          />
+                        )}
+                        <span>{assistant.name}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => setAddAssistantDialogOpen(true)}
                   >
                     <div className="flex items-center gap-2">
-                      {assistant.avatar && (
-                        <AvatarEmoji
-                          avatar={assistant.avatar}
-                          imageClassName="w-4 h-4 object-contain"
-                          textClassName="text-sm"
-                        />
-                      )}
-                      <span>{assistant.name}</span>
+                      <Plus className="size-4" />
+                      <span>{t('projects.addProjectDialog.addAssistant')}</span>
                     </div>
                   </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => setAddAssistantDialogOpen(true)}
-                >
-                  <div className="flex items-center gap-2">
-                    <Plus className="size-4" />
-                    <span>{t('projects.addProjectDialog.addAssistant')}</span>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-        </div>
-        <DialogFooter>
-          <Button size="sm" variant="ghost" onClick={handleCancel}>
-            {t('cancel')}
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={Boolean(isButtonDisabled)}>
-            {editingKey ? t('projects.addProjectDialog.updateButton') : t('projects.addProjectDialog.createButton')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button size="sm" variant="ghost" onClick={handleCancel}>
+              {t('cancel')}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={Boolean(isButtonDisabled)}
+            >
+              {editingKey
+                ? t('projects.addProjectDialog.updateButton')
+                : t('projects.addProjectDialog.createButton')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-    <AddEditAssistant
-      open={addAssistantDialogOpen}
-      onOpenChange={setAddAssistantDialogOpen}
-      editingKey={null}
-      onSave={(assistant) => {
-        addAssistant(assistant)
-        setSelectedAssistantId(assistant.id)
-      }}
-    />
-  </>
+      <AddEditAssistant
+        open={addAssistantDialogOpen}
+        onOpenChange={setAddAssistantDialogOpen}
+        editingKey={null}
+        onSave={(assistant) => {
+          addAssistant(assistant)
+          setSelectedAssistantId(assistant.id)
+        }}
+      />
+    </>
   )
 }

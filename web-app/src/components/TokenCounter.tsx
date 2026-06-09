@@ -1,11 +1,20 @@
-import { useMemo, useEffect, useState, useRef, memo } from 'react'
+import {
+  useMemo,
+  useEffect,
+  useState,
+  useRef,
+  memo,
+  type ReactNode,
+} from 'react'
 import { cn } from '@/lib/utils'
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { useTokensCount } from '@/hooks/useTokensCount'
 import { ThreadMessage } from '@janhq/core'
 import {
@@ -26,10 +35,13 @@ interface TokenCounterProps {
   className?: string
   compact?: boolean
   additionalTokens?: number
+  modelSwitcher?: ReactNode
+  reasoningSwitcher?: ReactNode
 }
 
 const WARN_PCT = 85
 const OVER_PCT = 100
+const COMPACT_MODEL_MAX_CHARS = 14
 
 const formatNumber = (num: number) => {
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
@@ -39,10 +51,18 @@ const formatNumber = (num: number) => {
 
 const formatExact = (num: number) => num.toLocaleString()
 
+function truncateLabel(label: string, maxChars: number) {
+  if (label.length <= maxChars) return label
+  return `${label.slice(0, maxChars - 1)}…`
+}
+
 export const TokenCounter = memo(function TokenCounter({
   messages = [],
   className,
+  compact = false,
   additionalTokens = 0,
+  modelSwitcher,
+  reasoningSwitcher,
 }: TokenCounterProps) {
   const { calculateTokens, ...tokenData } = useTokensCount(messages)
 
@@ -96,10 +116,6 @@ export const TokenCounter = memo(function TokenCounter({
     return 'ok'
   }, [pct])
 
-  // n_ctx from /props is required for a meaningful denominator. Without it,
-  // hide entirely rather than render a misleading 0%/0 indicator.
-  if (!tokenData.maxTokens) return null
-
   const textCls =
     tier === 'over'
       ? 'text-destructive'
@@ -120,9 +136,15 @@ export const TokenCounter = memo(function TokenCounter({
         : 'bg-primary'
 
   const { inputTokens, outputTokens, modelProps, modelDisplayName } = tokenData
-  const remaining = Math.max(0, tokenData.maxTokens - totalTokens)
+  const compactModelLabel = modelDisplayName
+    ? truncateLabel(modelDisplayName, COMPACT_MODEL_MAX_CHARS)
+    : undefined
+  const remaining = tokenData.maxTokens
+    ? Math.max(0, tokenData.maxTokens - totalTokens)
+    : 0
   const showFittedBadge =
     tokenData.fitEnabled &&
+    typeof tokenData.maxTokens === 'number' &&
     typeof tokenData.configuredCtxLen === 'number' &&
     tokenData.configuredCtxLen !== tokenData.maxTokens
   const hasModalities =
@@ -135,61 +157,93 @@ export const TokenCounter = memo(function TokenCounter({
 
   return (
     <TooltipProvider delayDuration={isUpdating ? 1200 : 400}>
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Popover>
+        <PopoverTrigger asChild>
           <div
-            className={cn('relative cursor-pointer', className)}
+            className={cn('relative cursor-pointer min-w-0', className)}
             onClick={handleCalculateTokens}
           >
-            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-background border border-border">
-              <span
-                className={cn(
-                  'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
-                  textCls,
-                  isAnimating && 'scale-110'
-                )}
-              >
-                {pct?.toFixed(1) ?? '0.0'}%
-              </span>
-              <div className="relative size-4 shrink-0">
-                <svg
-                  className="size-4 transform -rotate-90"
-                  viewBox="0 0 16 16"
+            <div
+              className={cn(
+                'flex min-w-0 items-center rounded-md bg-background border border-border shadow-sm transition-colors hover:bg-secondary/40',
+                compact ? 'max-w-[8.5rem] gap-1 px-1.5 py-0.5' : 'gap-2 px-2 py-1'
+              )}
+            >
+              {compact && compactModelLabel && (
+                <span
+                  className="min-w-0 max-w-[4.5rem] truncate text-xs font-medium text-foreground"
+                  title={modelDisplayName}
                 >
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    fill="none"
-                    className="text-muted-foreground/40"
-                  />
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    fill="none"
-                    strokeDasharray={`${2 * Math.PI * 6}`}
-                    strokeDashoffset={`${2 * Math.PI * 6 * (1 - Math.min(pct ?? 0, 100) / 100)}`}
+                  {compactModelLabel}
+                </span>
+              )}
+              {tokenData.maxTokens ? (
+                <>
+                  <span
                     className={cn(
-                      'transition-all duration-500 ease-out',
-                      ringCls
+                      'shrink-0 text-xs font-medium tabular-nums transition-all duration-500 ease-out',
+                      textCls,
+                      isAnimating && 'scale-110'
                     )}
-                    style={{ transformOrigin: 'center' }}
-                  />
-                </svg>
-              </div>
+                  >
+                    {compact
+                      ? `${pct?.toFixed(0) ?? '0'}%`
+                      : `${pct?.toFixed(1) ?? '0.0'}%`}
+                  </span>
+                  <div
+                    className={cn(
+                      'relative shrink-0',
+                      compact ? 'size-3.5' : 'size-4'
+                    )}
+                  >
+                    <svg
+                      className={cn(
+                        'transform -rotate-90',
+                        compact ? 'size-3.5' : 'size-4'
+                      )}
+                      viewBox="0 0 16 16"
+                    >
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        fill="none"
+                        className="text-muted-foreground/40"
+                      />
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        fill="none"
+                        strokeDasharray={`${2 * Math.PI * 6}`}
+                        strokeDashoffset={`${2 * Math.PI * 6 * (1 - Math.min(pct ?? 0, 100) / 100)}`}
+                        className={cn(
+                          'transition-all duration-500 ease-out',
+                          ringCls
+                        )}
+                        style={{ transformOrigin: 'center' }}
+                      />
+                    </svg>
+                  </div>
+                </>
+              ) : (
+                !compact && (
+                  <span className="text-xs font-medium text-muted-foreground">
+                    —
+                  </span>
+                )
+              )}
             </div>
           </div>
-        </TooltipTrigger>
-        <TooltipContent
+        </PopoverTrigger>
+        <PopoverContent
           side="bottom"
           align="center"
           sideOffset={6}
-          showArrow={false}
           className="min-w-72 max-w-80 bg-background border p-0 overflow-hidden"
         >
           {/* Header */}
@@ -213,35 +267,60 @@ export const TokenCounter = memo(function TokenCounter({
             )}
           </div>
 
+          {modelSwitcher && (
+            <div className="px-3 py-2 border-b border-border">
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                Model
+              </div>
+              {modelSwitcher}
+            </div>
+          )}
+
+          {reasoningSwitcher && (
+            <div className="px-3 py-2 border-b border-border">
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                Reasoning
+              </div>
+              {reasoningSwitcher}
+            </div>
+          )}
+
           {/* Progress block */}
-          <div className="px-3 py-2.5">
-            <div className="flex items-baseline justify-between mb-1.5">
-              <span
-                className={cn(
-                  'text-xl font-semibold tabular-nums leading-none',
-                  textCls
-                )}
-              >
-                {pct?.toFixed(1) ?? '0.0'}%
-              </span>
-              <span className="text-xs text-muted-foreground tabular-nums font-mono">
-                {formatNumber(totalTokens)} /{' '}
-                {formatNumber(tokenData.maxTokens)}
-              </span>
+          {tokenData.maxTokens ? (
+            <div className="px-3 py-2.5">
+              <div className="flex items-baseline justify-between mb-1.5">
+                <span
+                  className={cn(
+                    'text-xl font-semibold tabular-nums leading-none',
+                    textCls
+                  )}
+                >
+                  {pct?.toFixed(1) ?? '0.0'}%
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums font-mono">
+                  {formatNumber(totalTokens)} /{' '}
+                  {formatNumber(tokenData.maxTokens)}
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all duration-500 ease-out',
+                    barCls
+                  )}
+                  style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className={cn(
-                  'h-full rounded-full transition-all duration-500 ease-out',
-                  barCls
-                )}
-                style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
-              />
+          ) : (
+            <div className="px-3 py-2.5 text-xs text-muted-foreground">
+              Context usage appears after the model reports a context window.
             </div>
-          </div>
+          )}
 
           {/* Token breakdown */}
-          <div className="px-3 py-2 border-t border-border space-y-1.5">
+          {tokenData.maxTokens && (
+            <div className="px-3 py-2 border-t border-border space-y-1.5">
             {typeof inputTokens === 'number' && inputTokens > 0 && (
               <Row
                 icon={<IconArrowUp className="size-3.5" />}
@@ -267,7 +346,8 @@ export const TokenCounter = memo(function TokenCounter({
               label="Remaining"
               value={formatExact(remaining)}
             />
-          </div>
+            </div>
+          )}
 
           {/* Footer: fit + slots + modalities */}
           {showFooter && (
@@ -278,7 +358,7 @@ export const TokenCounter = memo(function TokenCounter({
                   title={`Configured ctx_len: ${formatExact(tokenData.configuredCtxLen!)}`}
                 >
                   <IconAdjustmentsAlt className="size-3" />
-                  Fitted to {formatNumber(tokenData.maxTokens)}
+                  Fitted to {formatNumber(tokenData.maxTokens ?? 0)}
                 </span>
               )}
               {modelProps?.totalSlots !== undefined &&
@@ -308,8 +388,8 @@ export const TokenCounter = memo(function TokenCounter({
               )}
             </div>
           )}
-        </TooltipContent>
-      </Tooltip>
+        </PopoverContent>
+      </Popover>
     </TooltipProvider>
   )
 })

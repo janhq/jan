@@ -14,6 +14,8 @@
     "shell:allow-spawn",
     "shell:allow-open",
     "core:app:allow-set-app-theme",
+    "core:app:default",
+    "jan-default",
     "core:window:allow-set-focus",
     "os:default",
     "opener:default",

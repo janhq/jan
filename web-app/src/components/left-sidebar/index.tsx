@@ -10,11 +10,12 @@ import {
   SidebarHeader,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+import { isPlatformTauri, isPlatformMacOS } from '@/lib/platform/utils'
 
 export function LeftSidebar() {
   return (
     <div className="relative z-[var(--app-layer-sidebar)] h-svh">
-      <div className="fixed left-[var(--app-titlebar-control-left)] top-0 z-[var(--app-layer-left-titlebar-controls)] flex h-[var(--app-titlebar-height)] items-center gap-1">
+      <div className="fixed left-(--app-titlebar-control-left) top-0 z-[var(--app-layer-left-titlebar-controls)] flex h-[var(--app-titlebar-height)] items-center gap-1">
         <DownloadManagement />
         <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8!" />
       </div>
@@ -23,7 +24,7 @@ export function LeftSidebar() {
           <div
             className={cn(
               'flex min-h-8 items-center w-full justify-end',
-              IS_MACOS && 'pl-16'
+              isPlatformTauri() && isPlatformMacOS() && 'pl-16'
             )}
           >
             <div />

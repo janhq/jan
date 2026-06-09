@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    io::ErrorKind,
+    path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, OnceLock},
 };
@@ -70,8 +71,7 @@ struct ManagedCodexAppServer {
     shutdown: mpsc::UnboundedSender<()>,
 }
 
-static CODEX_APP_SERVERS: OnceLock<Mutex<HashMap<String, ManagedCodexAppServer>>> =
-    OnceLock::new();
+static CODEX_APP_SERVERS: OnceLock<Mutex<HashMap<String, ManagedCodexAppServer>>> = OnceLock::new();
 
 fn codex_app_servers() -> &'static Mutex<HashMap<String, ManagedCodexAppServer>> {
     CODEX_APP_SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -198,6 +198,57 @@ fn probe_binary_sync(binary: &str) -> BinaryProbeResult {
         found: false,
         path: None,
     }
+}
+
+fn is_codex_binary_command(command: &str) -> bool {
+    let trimmed = command.trim().to_ascii_lowercase();
+    let file_name = Path::new(&trimmed)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let file_name = file_name.rsplit('\\').next().unwrap_or(file_name);
+    file_name == "codex"
+        || file_name == "codex.exe"
+        || trimmed.ends_with("/codex.app/contents/resources/codex")
+        || trimmed.ends_with("\\codex.app\\contents\\resources\\codex")
+}
+
+fn should_fallback_to_npx(command: &str, start_error: &std::io::Error, has_npx: bool) -> bool {
+    is_codex_binary_command(command) && matches!(start_error.kind(), ErrorKind::NotFound) && has_npx
+}
+
+fn app_server_help_output_supports_stdio(stdout: &[u8], stderr: &[u8]) -> bool {
+    let output = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(stdout).to_ascii_lowercase(),
+        String::from_utf8_lossy(stderr).to_ascii_lowercase()
+    );
+    output.contains("app-server") && output.contains("--stdio")
+}
+
+fn codex_binary_supports_app_server(command: &str) -> bool {
+    if !is_codex_binary_command(command) {
+        return true;
+    }
+
+    let Ok(output) = std::process::Command::new(command)
+        .arg("app-server")
+        .arg("--help")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+    else {
+        return true;
+    };
+
+    app_server_help_output_supports_stdio(&output.stdout, &output.stderr)
+}
+
+fn requests_app_server_stdio(args: &[String]) -> bool {
+    args.first()
+        .map(|arg| arg == "app-server")
+        .unwrap_or(false)
+        && args.iter().any(|arg| arg == "--stdio")
 }
 
 fn process_is_alive(pid: u32) -> bool {
@@ -336,13 +387,13 @@ pub async fn probe_openai_endpoint(
     let api_key = api_key.filter(|k| !k.trim().is_empty());
 
     tokio::task::spawn_blocking(move || probe_openai_endpoint_sync(&base_url, api_key))
-    .await
-    .unwrap_or(EndpointProbeResult {
-        reachable: false,
-        status_code: None,
-        model_count: None,
-        error: Some("Probe task failed".to_string()),
-    })
+        .await
+        .unwrap_or(EndpointProbeResult {
+            reachable: false,
+            status_code: None,
+            model_count: None,
+            error: Some("Probe task failed".to_string()),
+        })
 }
 
 #[tauri::command]
@@ -372,8 +423,7 @@ pub async fn spawn_studio_runtime<R: Runtime>(
     };
 
     let normalized_base_url = normalize_base_url(&base_url);
-    let endpoint_probe =
-        probe_openai_endpoint_sync(&normalized_base_url, Some("jan".to_string()));
+    let endpoint_probe = probe_openai_endpoint_sync(&normalized_base_url, Some("jan".to_string()));
     if endpoint_probe.reachable {
         let logs_dir = studio_logs_dir(&app);
         fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
@@ -426,7 +476,9 @@ pub async fn spawn_studio_runtime<R: Runtime>(
     };
 
     command
-        .stdout(Stdio::from(log_file.try_clone().map_err(|e| e.to_string())?))
+        .stdout(Stdio::from(
+            log_file.try_clone().map_err(|e| e.to_string())?,
+        ))
         .stderr(Stdio::from(log_file))
         .stdin(Stdio::null());
 
@@ -489,7 +541,11 @@ pub async fn stop_studio_runtime<R: Runtime>(
 ) -> Result<(), String> {
     let runtime_id = runtime_id.trim().to_lowercase();
     let mut store = read_store(&app);
-    let Some(index) = store.processes.iter().position(|p| p.runtime_id == runtime_id) else {
+    let Some(index) = store
+        .processes
+        .iter()
+        .position(|p| p.runtime_id == runtime_id)
+    else {
         return Ok(());
     };
 
@@ -534,14 +590,64 @@ pub async fn read_studio_runtime_logs<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn write_codex_app_server_config(
+pub async fn write_codex_app_server_config<R: Runtime>(
+    app: AppHandle<R>,
     codex_home: String,
     config_toml: String,
+    agents_md: Option<String>,
+    custom_agents: Option<String>,
 ) -> Result<String, String> {
-    let codex_home = PathBuf::from(codex_home);
-    fs::create_dir_all(&codex_home).map_err(|e| e.to_string())?;
-    let config_path = codex_home.join("config.toml");
+    let path = PathBuf::from(&codex_home);
+    let codex_home_path = if path.is_absolute() {
+        path
+    } else {
+        get_jan_data_folder_path(app).join(path)
+    };
+    fs::create_dir_all(&codex_home_path).map_err(|e| e.to_string())?;
+    let config_path = codex_home_path.join("config.toml");
     fs::write(&config_path, config_toml).map_err(|e| e.to_string())?;
+
+    if let Some(content) = agents_md {
+        if !content.trim().is_empty() {
+            let agents_path = codex_home_path.join("AGENTS.md");
+            fs::write(&agents_path, content).map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Write custom sub-agents as TOML files for Codex engine (loaded from agents/ dir)
+    if let Some(agents_json) = custom_agents {
+        if !agents_json.trim().is_empty() {
+            let agents_dir = codex_home_path.join("agents");
+            fs::create_dir_all(&agents_dir).map_err(|e| e.to_string())?;
+            if let Ok(agents) = serde_json::from_str::<Vec<serde_json::Value>>(&agents_json) {
+                for agent in agents {
+                    let name = agent.get("name").and_then(|v| v.as_str()).unwrap_or("custom-agent");
+                    let desc = agent.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                    let instructions = agent.get("developer_instructions").and_then(|v| v.as_str()).unwrap_or("");
+                    let model = agent.get("model").and_then(|v| v.as_str());
+                    let sandbox = agent.get("sandbox_mode").and_then(|v| v.as_str());
+
+                    let mut toml = format!(
+                        "name = {}\ndescription = {}\ndeveloper_instructions = \"\"\"\n{}\n\"\"\"\n",
+                        serde_json::to_string(name).unwrap_or_default(),
+                        serde_json::to_string(desc).unwrap_or_default(),
+                        instructions
+                    );
+                    if let Some(m) = model {
+                        toml.push_str(&format!("model = {}\n", serde_json::to_string(m).unwrap_or_default()));
+                    }
+                    if let Some(s) = sandbox {
+                        toml.push_str(&format!("sandbox_mode = {}\n", serde_json::to_string(s).unwrap_or_default()));
+                    }
+                    // sanitize filename
+                    let safe_name: String = name.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
+                    let agent_path = agents_dir.join(format!("{}.toml", if safe_name.is_empty() { "custom".to_string() } else { safe_name }));
+                    let _ = fs::write(&agent_path, toml);
+                }
+            }
+        }
+    }
+
     Ok(config_path.to_string_lossy().into_owned())
 }
 
@@ -552,7 +658,7 @@ pub async fn start_codex_app_server<R: Runtime>(
     command: String,
     args: Vec<String>,
     cwd: String,
-    env: HashMap<String, String>,
+    mut env: HashMap<String, String>,
 ) -> Result<CodexAppServerProcess, String> {
     let session_id = session_id.trim().to_string();
     if session_id.is_empty() {
@@ -563,34 +669,101 @@ pub async fn start_codex_app_server<R: Runtime>(
         let _ = existing.shutdown.send(());
     }
 
-    let mut cmd = tokio::process::Command::new(command.trim());
-    cmd.args(args)
-        .current_dir(cwd.trim())
-        .envs(env)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(unix)]
-    {
-        unsafe {
-            cmd.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
+    if let Some(codex_home) = env.get_mut("CODEX_HOME") {
+        let path = PathBuf::from(&codex_home);
+        if !path.is_absolute() {
+            let abs_path = get_jan_data_folder_path(app.clone()).join(path);
+            *codex_home = abs_path.to_string_lossy().into_owned();
         }
     }
 
-    #[cfg(windows)]
+    let original_args = args;
+    let mut command = command.trim().to_string();
+    let mut command_args = original_args.clone();
+    let use_codex_fallback = is_codex_binary_command(&command);
+    let requested_app_server_stdio = requests_app_server_stdio(&command_args);
+    let npx_probe = probe_binary_sync("npx");
+
+    if use_codex_fallback
+        && requested_app_server_stdio
+        && !codex_binary_supports_app_server(&command)
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        cmd.creation_flags(0x08000000 | CREATE_NEW_PROCESS_GROUP);
+        if !npx_probe.found {
+            return Err(
+                "Configured codex binary does not support `app-server --stdio`, and `npx` is not available for @openai/codex fallback."
+                    .to_string(),
+            );
+        }
+
+        log::warn!(
+            "Configured codex binary does not support `app-server --stdio`; trying `npx @openai/codex` fallback."
+        );
+        command = "npx".to_string();
+        command_args = std::iter::once("-y".to_string())
+            .chain(std::iter::once("@openai/codex".to_string()))
+            .chain(original_args.clone().into_iter())
+            .collect();
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start codex app-server: {e}"))?;
+    let build_cmd = |cmd_name: &str, args: &[String], env: &HashMap<String, String>| {
+        let mut cmd = tokio::process::Command::new(cmd_name);
+        cmd.args(args)
+            .current_dir(cwd.trim())
+            .envs(env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(unix)]
+        {
+            unsafe {
+                cmd.pre_exec(|| {
+                    libc::setsid();
+                    Ok(())
+                });
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+            cmd.creation_flags(0x08000000 | CREATE_NEW_PROCESS_GROUP);
+        }
+
+        cmd
+    };
+
+    let mut child = match build_cmd(&command, &command_args, &env).spawn() {
+        Ok(child) => child,
+        Err(start_error) => {
+            let should_try_npx = use_codex_fallback
+                && command != "npx"
+                && should_fallback_to_npx(&command, &start_error, npx_probe.found);
+
+            if !should_try_npx {
+                return Err(format!("Failed to start codex app-server: {start_error}"));
+            }
+
+            log::warn!(
+                "Failed to spawn '{command}' ({start_error}); trying `npx @openai/codex` fallback."
+            );
+            command = "npx".to_string();
+            command_args = std::iter::once("-y".to_string())
+                .chain(std::iter::once("@openai/codex".to_string()))
+                .chain(original_args.into_iter())
+                .collect();
+
+            build_cmd(&command, &command_args, &env)
+                .spawn()
+                .map_err(|fallback_error| {
+                    format!(
+                        "Failed to start codex app-server with '{command}': {fallback_error}; \
+                        fallback `npx @openai/codex` with original args also failed: {start_error}"
+                    )
+                })?
+        }
+    };
     let pid = child
         .id()
         .ok_or_else(|| "Codex app-server started without a process id".to_string())?;
@@ -679,10 +852,7 @@ pub async fn start_codex_app_server<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn write_codex_app_server_stdin(
-    session_id: String,
-    line: String,
-) -> Result<(), String> {
+pub async fn write_codex_app_server_stdin(session_id: String, line: String) -> Result<(), String> {
     let stdin = {
         let registry = codex_app_servers().lock().await;
         registry
@@ -757,4 +927,168 @@ fn spawn_codex_line_reader<R, S>(
             }
         }
     });
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexCliRunResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
+}
+
+/// Run a Codex CLI subcommand (doctor, exec, resume, etc.) with optional CODEX_HOME and cwd.
+/// Used by Jan Studio for diagnostics and non-interactive Codex CLI bridging.
+#[tauri::command]
+pub async fn run_codex_cli_subcommand<R: Runtime>(
+    app: AppHandle<R>,
+    command: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+    codex_home: Option<String>,
+    extra_env: Option<HashMap<String, String>>,
+) -> Result<CodexCliRunResult, String> {
+    let mut cmd_name = command.trim().to_string();
+    if cmd_name.is_empty() {
+        return Err("Codex binary path is required".to_string());
+    }
+
+    let mut env = extra_env.unwrap_or_default();
+    if let Some(home) = codex_home {
+        let path = PathBuf::from(&home);
+        let resolved = if path.is_absolute() {
+            path
+        } else {
+            get_jan_data_folder_path(app).join(path)
+        };
+        env.insert(
+            "CODEX_HOME".to_string(),
+            resolved.to_string_lossy().into_owned(),
+        );
+    }
+
+    let work_dir = cwd.unwrap_or_else(|| ".".to_string());
+    let use_codex_fallback = is_codex_binary_command(&cmd_name);
+    let mut cmd_args = args;
+    let npx_probe = probe_binary_sync("npx");
+
+    if use_codex_fallback && !codex_binary_supports_subcommand(&cmd_name, &cmd_args) && npx_probe.found
+    {
+        log::warn!(
+            "Configured codex binary may not support subcommand {:?}; trying `npx @openai/codex` fallback.",
+            cmd_args.first()
+        );
+        cmd_name = "npx".to_string();
+        cmd_args = std::iter::once("-y".to_string())
+            .chain(std::iter::once("@openai/codex".to_string()))
+            .chain(cmd_args.into_iter())
+            .collect();
+    }
+
+    let output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&cmd_name)
+            .args(&cmd_args)
+            .current_dir(work_dir.trim())
+            .envs(&env)
+            .output()
+    })
+    .await
+    .map_err(|err| format!("Failed to spawn codex CLI: {err}"))?
+    .map_err(|err| format!("Failed to run codex CLI: {err}"))?;
+
+    Ok(CodexCliRunResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        exit_code: output.status.code(),
+    })
+}
+
+fn codex_binary_supports_subcommand(command: &str, args: &[String]) -> bool {
+    if !is_codex_binary_command(command) {
+        return true;
+    }
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("");
+    if sub.is_empty() || sub == "app-server" || sub == "proto" {
+        return true;
+    }
+    let output = std::process::Command::new(command)
+        .arg(sub)
+        .arg("--help")
+        .output();
+    match output {
+        Ok(result) => result.status.success() || !result.stdout.is_empty() || !result.stderr.is_empty(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        app_server_help_output_supports_stdio, is_codex_binary_command,
+        requests_app_server_stdio, should_fallback_to_npx,
+    };
+
+    use std::io::{self, ErrorKind};
+
+    #[test]
+    fn detects_codex_binary_commands() {
+        assert!(is_codex_binary_command("codex"));
+        assert!(is_codex_binary_command("/usr/local/bin/codex"));
+        assert!(is_codex_binary_command(
+            "C:\\Program Files\\Codex\\codex.exe"
+        ));
+        assert!(is_codex_binary_command(
+            "/Applications/Codex.app/Contents/Resources/codex"
+        ));
+        assert!(is_codex_binary_command(
+            "/Users/test/Applications/Codex.app/Contents/Resources/codex"
+        ));
+        assert!(!is_codex_binary_command("npx"));
+        assert!(!is_codex_binary_command("/usr/local/bin/codex-server"));
+    }
+
+    #[test]
+    fn codex_npx_fallback_conditions() {
+        let not_found = io::Error::new(ErrorKind::NotFound, "not found");
+        let permission_denied = io::Error::new(ErrorKind::PermissionDenied, "permission denied");
+
+        assert!(should_fallback_to_npx("codex", &not_found, true));
+        assert!(!should_fallback_to_npx("npx", &not_found, true));
+        assert!(!should_fallback_to_npx(
+            "/usr/local/bin/codex",
+            &permission_denied,
+            true
+        ));
+        assert!(!should_fallback_to_npx(
+            "/usr/local/bin/codex",
+            &not_found,
+            false
+        ));
+    }
+
+    #[test]
+    fn detects_app_server_stdio_support_from_help_output() {
+        assert!(app_server_help_output_supports_stdio(
+            b"Usage: codex app-server --stdio\n",
+            b""
+        ));
+        assert!(!app_server_help_output_supports_stdio(
+            b"Usage: codex [OPTIONS] [PROMPT]\nCommands:\n  proto\n",
+            b""
+        ));
+        assert!(!app_server_help_output_supports_stdio(
+            b"",
+            b"error: unexpected argument '--stdio' found"
+        ));
+    }
+
+    #[test]
+    fn detects_only_explicit_app_server_stdio_launches() {
+        assert!(requests_app_server_stdio(&[
+            "app-server".to_string(),
+            "--stdio".to_string()
+        ]));
+        assert!(!requests_app_server_stdio(&["proto".to_string()]));
+        assert!(!requests_app_server_stdio(&["app-server".to_string()]));
+    }
 }

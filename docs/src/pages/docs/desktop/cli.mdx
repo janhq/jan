@@ -9,6 +9,7 @@ keywords:
     terminal,
     serve models,
     AI agents,
+    Codex,
     Claude Code,
     llama.cpp,
     MLX,
@@ -24,6 +25,9 @@ Available since **Jan 0.7.8** (March 2026).
 </Callout>
 
 The `jan` CLI lets you serve local AI models and launch autonomous agents from your terminal — no cloud account, no usage fees, full privacy.
+
+If `codex` or `openclaw` are not installed locally, Jan falls back to
+`npx @openai/codex` / `npx openclaw` automatically when `npx` is available.
 
 ```
        ██╗ █████╗ ███╗  ██╗
@@ -58,6 +62,7 @@ Options:
 Examples:
   jan launch claude                                      # pick a model, then run Claude Code against it
   jan launch claude --model janhq/Jan-code-4b-gguf       # use a specific model
+  jan launch codex --model janhq/Jan-code-4b-gguf         # wire Codex CLI to a local model
   jan serve janhq/Jan-code-4b-gguf                       # expose a model at localhost:6767/v1
   jan serve janhq/Jan-code-4b-gguf --fit                 # auto-fit context to available VRAM
   jan serve janhq/Jan-code-4b-gguf --detach              # run in the background
@@ -84,7 +89,7 @@ Getting started takes a single command:
 jan launch
 ```
 
-Jan will ask you to pick an agent (Claude Code or OpenClaw), then automatically download and set up Jan's foundation model and wire it to the agent for you. No config files, no API keys, no cloud — your agent runs entirely on your own hardware.
+Jan will ask you to pick an agent (Claude Code, Codex, or OpenClaw), then automatically download and set up Jan's foundation model and wire it to the agent for you. No config files, no API keys, no cloud — your agent runs entirely on your own hardware.
 
 ---
 
@@ -161,10 +166,10 @@ jan launch [PROGRAM] [OPTIONS]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `PROGRAM` | Agent to launch: `claude`, `openclaw` (omit to pick interactively) | — |
+| `PROGRAM` | Agent to launch: `claude`, `codex`, `openclaw` (omit to pick interactively) | — |
 | `--model` | Model ID to load (omit to pick interactively) | — |
 | `--port` | Port for the model server | `6767` |
-| `--api-key` | API key (exported as `OPENAI_API_KEY` and `ANTHROPIC_AUTH_TOKEN`) | `jan` |
+| `--api-key` | API key (`OPENAI_API_KEY`; plus `ANTHROPIC_AUTH_TOKEN` for Claude) | `jan` |
 | `-v, --verbose` | Print full server logs | — |
 
 <Callout type="info">
@@ -180,6 +185,7 @@ $ jan launch
 
 Choose an agent to launch:
 > Claude Code  — Anthropic's AI coding agent
+  Codex        — OpenAI's autonomous AI coding agent
   OpenClaw     — Open-source autonomous AI agent
 ```
 
@@ -188,6 +194,7 @@ Choose an agent to launch:
 ```bash
 jan launch claude                                    # pick a model, then run Claude Code
 jan launch claude --model qwen3.5-35b-a3b           # use a specific model with Claude Code
+jan launch codex --model qwen3.5-35b-a3b            # wire Codex CLI to a local model
 jan launch openclaw --model qwen3.5-35b-a3b         # wire OpenClaw to a local model
 ```
 

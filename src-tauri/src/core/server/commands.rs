@@ -3,10 +3,9 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::state::LlamacppState;
 
-use crate::core::server::proxy;
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::server::proxy;
 use crate::core::state::AppState;
-
 
 #[derive(serde::Deserialize)]
 pub struct StartServerConfig {
@@ -46,9 +45,7 @@ pub async fn start_server<R: Runtime>(
     };
     #[cfg(not(target_os = "macos"))]
     let mlx_sessions: Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<i32, crate::core::server::MlxBackendSession>,
-        >,
+        tokio::sync::Mutex<std::collections::HashMap<i32, crate::core::server::MlxBackendSession>>,
     > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     let actual_port = proxy::start_server(
@@ -64,7 +61,9 @@ pub async fn start_server<R: Runtime>(
         state.provider_configs.clone(),
         state.mcp_servers.clone(),
         state.mcp_settings.clone(),
-        get_jan_data_folder_path(app_handle.clone()).to_string_lossy().into_owned(),
+        get_jan_data_folder_path(app_handle.clone())
+            .to_string_lossy()
+            .into_owned(),
         enable_server_tool_execution.unwrap_or(false),
     )
     .await

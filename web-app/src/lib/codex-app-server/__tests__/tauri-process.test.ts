@@ -8,18 +8,20 @@ const listeners = vi.hoisted(
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(async (event: string, callback: (event: { payload: unknown }) => void) => {
-    const callbacks = listeners.get(event) ?? []
-    callbacks.push(callback)
-    listeners.set(event, callbacks)
-    return () => {
-      const current = listeners.get(event) ?? []
-      listeners.set(
-        event,
-        current.filter((item) => item !== callback)
-      )
+  listen: vi.fn(
+    async (event: string, callback: (event: { payload: unknown }) => void) => {
+      const callbacks = listeners.get(event) ?? []
+      callbacks.push(callback)
+      listeners.set(event, callbacks)
+      return () => {
+        const current = listeners.get(event) ?? []
+        listeners.set(
+          event,
+          current.filter((item) => item !== callback)
+        )
+      }
     }
-  }),
+  ),
 }))
 
 const emitTauriEvent = (event: string, payload: unknown) => {
@@ -59,6 +61,8 @@ describe('TauriCodexProcessSpawner', () => {
     expect(invoke).toHaveBeenNthCalledWith(1, 'write_codex_app_server_config', {
       codexHome: '/repo/.jan/codex-home',
       configToml: 'model = "gpt-test"',
+      agentsMd: null,
+      customAgents: null,
     })
     expect(invoke).toHaveBeenNthCalledWith(2, 'start_codex_app_server', {
       sessionId: 'codex-session-1',

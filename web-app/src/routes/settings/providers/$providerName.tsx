@@ -28,6 +28,11 @@ import { Button } from '@/components/ui/button'
 import { SecretInput } from '@/components/ui/secret-input'
 import { Switch } from '@/components/ui/switch'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
   IconCircleCheck,
   IconCircle,
   IconFolderPlus,
@@ -62,6 +67,8 @@ import {
   type ManagedProviderId,
 } from '@/constants/managedProviders'
 import { ManagedProviderPanel } from '@/containers/ManagedProviderPanel'
+import { XaiOAuthPanel } from '@/containers/XaiOAuthPanel'
+import { getXaiOAuthAccessToken } from '@/lib/xai-oauth'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -92,6 +99,7 @@ function ProviderDetail() {
   const [keyCheckResults, setKeyCheckResults] = useState<
     { index: number; masked: string; status: string; detail: string }[]
   >([])
+  const [xaiOAuthConnected, setXaiOAuthConnected] = useState(false)
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
@@ -273,19 +281,29 @@ function ProviderDetail() {
     JSON.stringify(provider?.api_key_fallbacks ?? []),
   ])
 
+  useEffect(() => {
+    if (provider?.provider !== 'xai') {
+      setXaiOAuthConnected(false)
+      return
+    }
+    void getXaiOAuthAccessToken().then((token) => {
+      setXaiOAuthConnected(Boolean(token))
+    })
+  }, [provider?.provider, providerName])
+
   const autoCatalogAttempted = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!provider) return
     if (!supportsRemoteCatalog(provider.provider)) return
     if (provider.models.length > 0) return
-    if (!providerHasRemoteApiKeys(provider)) return
+    if (!providerHasRemoteApiKeys(provider) && !xaiOAuthConnected) return
     if (autoCatalogAttempted.current.has(provider.provider)) return
     autoCatalogAttempted.current.add(provider.provider)
     handleRefreshModels()
     // handleRefreshModels closes over the latest provider; only watch the
     // signals that decide whether auto-fetch should fire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider?.provider, provider?.api_key, provider?.models.length])
+  }, [provider?.provider, provider?.api_key, provider?.models.length, xaiOAuthConnected])
 
   const commitApiKeysDraft = useCallback(() => {
     if (!provider) return
@@ -413,7 +431,17 @@ function ProviderDetail() {
       return
     }
 
-    const keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+    let keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+    if (
+      provider.provider === 'xai' &&
+      keyDraftLines.filter((l) => l.length > 0).length === 0 &&
+      xaiOAuthConnected
+    ) {
+      const oauthToken = await getXaiOAuthAccessToken()
+      if (oauthToken) {
+        keyDraftLines = [oauthToken]
+      }
+    }
     const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
     if (nonEmptyKeyCount === 0) {
       toast.error(t('providers:models'), {
@@ -480,7 +508,15 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+  }, [
+    apiKeysDraft,
+    maskApiKey,
+    provider?.base_url,
+    provider?.provider,
+    serviceHub,
+    t,
+    xaiOAuthConnected,
+  ])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
@@ -511,7 +547,7 @@ function ProviderDetail() {
     if (
       !provider ||
       !provider.base_url ||
-      !providerHasRemoteApiKeys(provider)
+      (!providerHasRemoteApiKeys(provider) && !xaiOAuthConnected)
     ) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
@@ -1028,6 +1064,12 @@ function ProviderDetail() {
                 </Card>
               )}
 
+              {provider?.provider === 'xai' && (
+                <Card>
+                  <XaiOAuthPanel onAuthChange={setXaiOAuthConnected} />
+                </Card>
+              )}
+
               {provider &&
                 provider.provider !== 'llamacpp' &&
                 provider.provider !== 'mlx' && (
@@ -1322,6 +1364,42 @@ function ProviderDetail() {
                             }
                             actions={
                               <div className="flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="flex items-center px-1.5">
+                                      <Switch
+                                        data-testid="model-switch"
+                                        checked={model.active !== undefined ? model.active : (provider?.provider === 'llamacpp' || provider?.provider === 'mlx')}
+                                        onCheckedChange={(checked) => {
+                                          if (provider) {
+                                            const updatedModels = provider.models.map((m) => {
+                                              if (m.id === model.id) {
+                                                return {
+                                                  ...m,
+                                                  active: checked,
+                                                }
+                                              }
+                                              return m
+                                            })
+                                            updateProvider(providerName, {
+                                              ...provider,
+                                              models: updatedModels,
+                                            })
+                                          }
+                                        }}
+                                      />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {model.active !== undefined
+                                      ? model.active
+                                        ? 'Visible in selector'
+                                        : 'Hidden from selector'
+                                      : (provider?.provider === 'llamacpp' || provider?.provider === 'mlx')
+                                        ? 'Visible in selector'
+                                        : 'Hidden from selector'}
+                                  </TooltipContent>
+                                </Tooltip>
                                 <DialogEditModel
                                   provider={provider}
                                   modelId={model.id}

@@ -29,7 +29,7 @@ const createTabId = () =>
   `panel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const createDefaultTabs = () => {
-  const tab: ChatSidePanelTab = { id: createTabId(), type: 'model' }
+  const tab: ChatSidePanelTab = { id: createTabId(), type: 'files' }
   return { tabs: [tab], activeTabId: tab.id }
 }
 
@@ -108,6 +108,12 @@ export const useChatSidePanel = create<ChatSidePanelState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return
+
+        state.tabs = state.tabs.map((tab) =>
+          (tab.type as string) === 'model' || (tab.type as string) === 'context'
+            ? { ...tab, type: 'files' }
+            : tab
+        )
 
         if (state.tabs.length === 0) {
           const defaults = createDefaultTabs()

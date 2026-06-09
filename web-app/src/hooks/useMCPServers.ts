@@ -16,6 +16,14 @@ export type MCPServerConfig = {
   capabilities?: string[]
   // Short description of what the server provides, used by the intent classifier
   description?: string
+  // Codex-specific advanced MCP server config (projected into [mcp_servers.<name>] when using Codex engine)
+  enabledTools?: string[]
+  disabledTools?: string[]
+  defaultToolsApprovalMode?: 'auto' | 'prompt' | 'approve'
+  required?: boolean
+  cwd?: string
+  // For advanced env_vars with sources, can store as object for now
+  envVars?: Array<string | { name: string; source?: 'local' | 'remote' }>
 }
 
 // Define the structure of all MCP servers
@@ -157,20 +165,25 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
     }),
   syncServers: async () => {
     const { mcpServers, settings } = get()
-    await getServiceHub().mcp().updateMCPConfig(
-      JSON.stringify({
-        mcpServers,
-        mcpSettings: settings,
-      })
-    )
+    await getServiceHub()
+      .mcp()
+      .updateMCPConfig(
+        JSON.stringify({
+          mcpServers,
+          mcpSettings: settings,
+        })
+      )
   },
   syncServersAndRestart: async () => {
     const { mcpServers, settings } = get()
-    await getServiceHub().mcp().updateMCPConfig(
-      JSON.stringify({
-        mcpServers,
-        mcpSettings: settings,
-      })
-    ).then(() => getServiceHub().mcp().restartMCPServers())
+    await getServiceHub()
+      .mcp()
+      .updateMCPConfig(
+        JSON.stringify({
+          mcpServers,
+          mcpSettings: settings,
+        })
+      )
+      .then(() => getServiceHub().mcp().restartMCPServers())
   },
 }))

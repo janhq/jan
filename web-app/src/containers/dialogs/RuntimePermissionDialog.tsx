@@ -26,6 +26,19 @@ export default function RuntimePermissionDialog() {
   if (!pending) return null
 
   const risk = pending.risk ?? 'medium'
+  const codexThreadId =
+    typeof pending.details?.codexThreadId === 'string'
+      ? pending.details.codexThreadId
+      : undefined
+  const janThreadId =
+    typeof pending.details?.janThreadId === 'string'
+      ? pending.details.janThreadId
+      : typeof pending.details?.threadId === 'string'
+        ? pending.details.threadId
+        : undefined
+  const isSubagentApproval =
+    pending.details?.source === 'subagent' ||
+    (codexThreadId && janThreadId && codexThreadId !== janThreadId)
 
   return (
     <Dialog
@@ -70,6 +83,11 @@ export default function RuntimePermissionDialog() {
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <span>Category: {pending.category}</span>
             <span>Risk: {risk}</span>
+            {isSubagentApproval && codexThreadId ? (
+              <span className="text-blue-600 dark:text-blue-400">
+                Subagent thread: {codexThreadId.slice(0, 12)}…
+              </span>
+            ) : null}
           </div>
           {pending.details && Object.keys(pending.details).length > 0 && (
             <pre className="mt-3 max-h-44 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-2 font-mono text-[11px] text-foreground">

@@ -163,6 +163,47 @@ describe('useSidebarResize', () => {
     expect(setIsDraggingRail).toHaveBeenCalledWith(true)
   })
 
+  it('should call onResizeEnd and persist cookie only on mouseup after drag', () => {
+    const onResize = vi.fn()
+    const onResizeEnd = vi.fn()
+    const cookieSetter = vi.spyOn(document, 'cookie', 'set')
+
+    const { result } = renderHook(() =>
+      useSidebarResize({
+        ...defaultProps,
+        onResize,
+        onResizeEnd,
+        direction: 'right',
+        widthCookieName: 'test-panel:width',
+      })
+    )
+
+    act(() => {
+      result.current.handleMouseDown({
+        clientX: 256,
+        preventDefault: vi.fn(),
+      } as any)
+    })
+
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 300 }))
+    })
+
+    expect(onResize).toHaveBeenCalled()
+    expect(onResizeEnd).not.toHaveBeenCalled()
+    expect(cookieSetter).not.toHaveBeenCalled()
+
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mouseup', { clientX: 300 }))
+    })
+
+    expect(onResizeEnd).toHaveBeenCalledTimes(1)
+    expect(onResizeEnd).toHaveBeenCalledWith(onResize.mock.calls.at(-1)?.[0])
+    expect(cookieSetter).toHaveBeenCalled()
+
+    cookieSetter.mockRestore()
+  })
+
   it('should reset isDraggingRail on mouseup', () => {
     const setIsDraggingRail = vi.fn()
     const { result } = renderHook(() =>

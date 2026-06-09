@@ -1,6 +1,5 @@
 pub mod core;
 
-
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -78,6 +77,22 @@ macro_rules! invoke_commands_with_extras {
         core::studio::commands::write_codex_app_server_stdin,
         core::studio::commands::stop_codex_app_server,
         core::studio::commands::list_codex_app_server_processes,
+        core::studio::commands::run_codex_cli_subcommand,
+        // xAI OAuth commands
+        core::xai_oauth::commands::xai_oauth_status,
+        core::xai_oauth::commands::xai_oauth_start_login,
+        core::xai_oauth::commands::xai_oauth_cancel_login,
+        core::xai_oauth::commands::xai_oauth_complete_callback,
+        core::xai_oauth::commands::xai_oauth_get_access_token,
+        core::xai_oauth::commands::xai_oauth_logout,
+        core::xai_oauth::commands::xai_oauth_start_device_login,
+        core::xai_oauth::commands::xai_oauth_poll_device_login,
+        // Git review commands
+        core::git_review::commands::git_review_status,
+        core::git_review::commands::git_review_diff,
+        core::git_review::commands::git_worktree_add,
+        core::git_review::commands::git_workspace_targets,
+        core::git_review::commands::git_checkout_branch,
         // Terminal commands
         core::terminal::commands::start_terminal_session,
         core::terminal::commands::write_terminal_stdin,
@@ -275,6 +290,7 @@ pub fn run() {
     ]);
 
     let app = app_builder
+        .manage(core::xai_oauth::commands::XaiOAuthState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
@@ -472,7 +488,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     log::info!("App cleanup completed");
                 });

@@ -11,7 +11,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
-import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { providerRemoteAuthKeyChain } from '@/lib/provider-api-keys'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -135,7 +135,7 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
 
     try {
-      const keyChain = providerRemoteApiKeyChain(provider)
+      const keyChain = await providerRemoteAuthKeyChain(provider)
       const keyAttempts: (string | undefined)[] =
         keyChain.length > 0 ? keyChain : [undefined]
 

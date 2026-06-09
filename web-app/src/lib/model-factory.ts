@@ -57,6 +57,7 @@ import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
+import { getXaiOAuthAccessToken } from '@/lib/xai-oauth'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
@@ -702,7 +703,7 @@ export class ModelFactory {
         return this.createMistralModel(modelId, provider, parameters)
 
       case 'xai':
-        return this.createXaiModel(modelId, provider, parameters)
+        return await this.createXaiModel(modelId, provider, parameters)
 
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
@@ -999,11 +1000,11 @@ export class ModelFactory {
   /**
    * Create an XAI (Grok) model using the official AI SDK
    */
-  private static createXaiModel(
+  private static async createXaiModel(
     modelId: string,
     provider: ProviderObject,
     parameters: Record<string, unknown> = {}
-  ): LanguageModel {
+  ): Promise<LanguageModel> {
     const headers: Record<string, string> = {}
 
     // Add custom headers if specified
@@ -1013,9 +1014,11 @@ export class ModelFactory {
       })
     }
 
+    const oauthToken = await getXaiOAuthAccessToken()
     const keyChain = providerRemoteApiKeyChain(provider)
+    const primaryKey = oauthToken ?? keyChain[0] ?? provider.api_key ?? ''
     const fetchImpl =
-      keyChain.length > 1
+      !oauthToken && keyChain.length > 1
         ? createApiKeyRotatingFetch(
             getRuntimeFetch(),
             keyChain,
@@ -1025,7 +1028,7 @@ export class ModelFactory {
         : createCustomFetch(getRuntimeFetch(), parameters)
 
     const xai = createXai({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      apiKey: primaryKey,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,

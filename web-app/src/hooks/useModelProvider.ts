@@ -10,6 +10,7 @@ import {
   parseApiKeyFallbacks,
   serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
+import { isDefaultReasoningSetting } from '@/lib/model-reasoning'
 
 const API_KEY_FALLBACKS_MIGRATION_FLAG = 'api_key_fallbacks_migrated_to_settings'
 
@@ -159,6 +160,7 @@ export const useModelProvider = create<ModelProviderState>()(
                 capabilities:
                   mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
                 displayName: existingModel?.displayName || model.displayName,
+                active: existingModel?.active !== undefined ? existingModel.active : model.active,
                 ...(userConfiguredCapabilities
                   ? { _userConfiguredCapabilities: true as const }
                   : {}),
@@ -819,9 +821,56 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 17 && state?.providers) {
+          // Per-model reasoning is available for all chat models, not just
+          // llamacpp. Seed defaults for any model missing the setting.
+          state.providers.forEach((provider) => {
+            provider.models?.forEach((model) => {
+              if (model.embedding) return
+              if (!model.settings) model.settings = {}
+              if (!model.settings.reasoning) {
+                model.settings.reasoning = {
+                  ...modelSettings.reasoning,
+                  controller_props: {
+                    ...modelSettings.reasoning.controller_props,
+                  },
+                }
+              }
+            })
+          })
+        }
+
+        if (version <= 18 && state?.providers) {
+          // Keep default reasoning only on local llamacpp models. Remote model
+          // cards should expose their own dropdown options when configured.
+          state.providers.forEach((provider) => {
+            provider.models?.forEach((model) => {
+              if (model.embedding) return
+
+              if (provider.provider === 'llamacpp') {
+                if (!model.settings) model.settings = {}
+                if (!model.settings.reasoning) {
+                  model.settings.reasoning = {
+                    ...modelSettings.reasoning,
+                    controller_props: {
+                      ...modelSettings.reasoning.controller_props,
+                    },
+                  }
+                }
+                return
+              }
+
+              const reasoning = model.settings?.reasoning
+              if (reasoning && isDefaultReasoningSetting(reasoning)) {
+                delete model.settings!.reasoning
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 17,
+      version: 19,
     }
   )
 )

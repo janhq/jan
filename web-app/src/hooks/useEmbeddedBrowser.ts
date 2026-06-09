@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { rafThrottle } from '@/lib/throttle'
 
 const WEBVIEW_LABEL = 'workspace-browser-panel'
 
@@ -31,9 +32,14 @@ export function useEmbeddedBrowser(
     const webview = webviewRef.current
     if (!container || !webview) return
 
-    const bounds = getContainerBounds(container)
-    await webview.setPosition(new LogicalPosition(bounds.x, bounds.y))
-    await webview.setSize(new LogicalSize(bounds.width, bounds.height))
+    try {
+      const bounds = getContainerBounds(container)
+      console.log('[EmbeddedBrowser] Syncing bounds:', bounds)
+      await webview.setPosition(new LogicalPosition(bounds.x, bounds.y))
+      await webview.setSize(new LogicalSize(bounds.width, bounds.height))
+    } catch (err) {
+      console.error('[EmbeddedBrowser] Failed to sync bounds:', err)
+    }
   }, [containerRef])
 
   const teardownWebview = useCallback(async () => {
@@ -43,10 +49,11 @@ export function useEmbeddedBrowser(
     if (!webview) return
 
     try {
+      console.log('[EmbeddedBrowser] Tearing down webview')
       await webview.hide()
       await webview.close()
-    } catch {
-      // Non-fatal when the panel unmounts during app shutdown.
+    } catch (err) {
+      console.warn('[EmbeddedBrowser] Non-fatal teardown error:', err)
     }
   }, [])
 
@@ -65,48 +72,69 @@ export function useEmbeddedBrowser(
       if (!container || cancelled) return
 
       if (webviewRef.current && mountedUrlRef.current === activeUrl) {
-        await webviewRef.current.show()
-        await syncBounds()
+        try {
+          console.log('[EmbeddedBrowser] Re-showing existing webview')
+          await webviewRef.current.show()
+          await syncBounds()
+        } catch (err) {
+          console.error('[EmbeddedBrowser] Failed to show existing webview:', err)
+        }
         return
       }
 
       await teardownWebview()
       if (cancelled) return
 
-      const bounds = getContainerBounds(container)
-      const parentWindow = getCurrentWebviewWindow()
-      const webview = new Webview(parentWindow, WEBVIEW_LABEL, {
-        url: activeUrl,
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-        focus: false,
-        zoomHotkeysEnabled: false,
-      })
+      try {
+        const bounds = getContainerBounds(container)
+        const parentWindow = getCurrentWebviewWindow()
+        console.log('[EmbeddedBrowser] Creating new webview with URL:', activeUrl, 'bounds:', bounds)
+        const webview = new Webview(parentWindow, WEBVIEW_LABEL, {
+          url: activeUrl,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          focus: false,
+          zoomHotkeysEnabled: false,
+        })
 
-      await new Promise<void>((resolve) => {
-        let settled = false
-        const settle = () => {
-          if (settled) return
-          settled = true
-          resolve()
+        await new Promise<void>((resolve) => {
+          let settled = false
+          const settle = () => {
+            if (settled) return
+            settled = true
+            resolve()
+          }
+
+          void webview.once('tauri://created', () => {
+            console.log('[EmbeddedBrowser] Webview tauri://created event received')
+            settle()
+          })
+          void webview.once('tauri://error', (err) => {
+            console.error('[EmbeddedBrowser] Webview tauri://error event received:', err)
+            settle()
+          })
+          window.setTimeout(() => {
+            console.warn('[EmbeddedBrowser] Webview initialization timed out after 1.5s')
+            settle()
+          }, 1500)
+        })
+
+        if (cancelled) {
+          console.log('[EmbeddedBrowser] Creation cancelled, closing webview')
+          await webview.close()
+          return
         }
 
-        void webview.once('tauri://created', settle)
-        void webview.once('tauri://error', settle)
-        window.setTimeout(settle, 1500)
-      })
-
-      if (cancelled) {
-        await webview.close()
-        return
+        webviewRef.current = webview
+        mountedUrlRef.current = activeUrl
+        await webview.show()
+        await syncBounds()
+        console.log('[EmbeddedBrowser] Webview successfully shown and synced')
+      } catch (err) {
+        console.error('[EmbeddedBrowser] Critical error creating or showing webview:', err)
       }
-
-      webviewRef.current = webview
-      mountedUrlRef.current = activeUrl
-      await webview.show()
-      await syncBounds()
     }
 
     void mountWebview()
@@ -123,19 +151,19 @@ export function useEmbeddedBrowser(
     const container = containerRef.current
     if (!container) return
 
-    const handleLayoutChange = () => {
+    const scheduleBoundsSync = rafThrottle(() => {
       void syncBounds()
-    }
+    })
 
-    const resizeObserver = new ResizeObserver(handleLayoutChange)
+    const resizeObserver = new ResizeObserver(scheduleBoundsSync)
     resizeObserver.observe(container)
-    window.addEventListener('resize', handleLayoutChange)
-    window.addEventListener('scroll', handleLayoutChange, true)
+    window.addEventListener('resize', scheduleBoundsSync)
+    window.addEventListener('scroll', scheduleBoundsSync, true)
 
     return () => {
       resizeObserver.disconnect()
-      window.removeEventListener('resize', handleLayoutChange)
-      window.removeEventListener('scroll', handleLayoutChange, true)
+      window.removeEventListener('resize', scheduleBoundsSync)
+      window.removeEventListener('scroll', scheduleBoundsSync, true)
     }
   }, [activeUrl, containerRef, isActive, syncBounds])
 

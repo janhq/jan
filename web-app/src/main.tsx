@@ -9,12 +9,13 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import './index.css'
 import './i18n'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 // Tauri injects a zoom polyfill when zoomHotkeysEnabled is true; trackpad pinch
 // arrives as ctrl+wheel and scales the whole webview. Reset on startup for anyone
 // who already zoomed, and keep pinch disabled via tauri.*.conf.json.
 const resetWebviewZoom = () => {
-  if (!IS_TAURI) return
+  if (!isPlatformTauri()) return
 
   void getCurrentWebview()
     .setZoom(1)
@@ -26,7 +27,7 @@ const resetWebviewZoom = () => {
 // Prevent accidental Ctrl/⌘+wheel zoom events in the Tauri webview (often from
 // tiny pinch gestures on trackpads).
 const preventTauriPinchZoom = () => {
-  if (!IS_TAURI) return
+  if (!isPlatformTauri()) return
 
   const handleWheelZoom = (event: WheelEvent) => {
     if (event.ctrlKey || event.metaKey) {

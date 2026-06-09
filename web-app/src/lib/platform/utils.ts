@@ -30,6 +30,13 @@ export const isPlatformTauri = (): boolean => {
   return true
 }
 
+export const isPlatformMacOS = (): boolean => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false
+  }
+  return navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
+}
+
 export const isPlatformIOS = (): boolean => {
   return IS_IOS
 }

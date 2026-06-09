@@ -91,7 +91,7 @@
   --app-layer-titlebar-drag: 20;
   --app-layer-sidebar: 50;
   --app-layer-left-titlebar-controls: 60;
-  --app-layer-workspace-titlebar-controls: 70;
+  --app-layer-workspace-titlebar-controls: 80;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -259,5 +259,11 @@
 
   [data-streamdown='code-block-header'] {
     padding: 6px 16px !important;
+  }
+
+  .xterm,
+  .xterm .xterm-viewport,
+  .xterm .xterm-screen {
+    background-color: transparent !important;
   }
 }

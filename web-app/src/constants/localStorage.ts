@@ -33,6 +33,8 @@ export const localStorageKey = {
   chatSidePanel: 'chat-side-panel',
   workspacePanel: 'workspace-panel',
   workspaceDirectories: 'workspace-directories',
+  chatWorkspaceContext: 'chat-workspace-context',
+  chatSessionState: 'chat-session-state',
   runtimePermissions: 'runtime-permissions',
   codexProviderProfiles: 'codex-provider-profiles',
   terminalRuntime: 'terminal-runtime',

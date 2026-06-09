@@ -95,7 +95,7 @@ export type TerminalOutputAttachment = {
 }
 
 export type RuntimeLogAttachment = {
-  source: 'app' | 'studio-runtime'
+  source: 'app' | 'studio-runtime' | 'codex-app-server'
   sourceLabel: string
   runtimeId?: string
   logPath?: string

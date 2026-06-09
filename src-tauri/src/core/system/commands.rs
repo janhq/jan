@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
@@ -931,16 +931,15 @@ fn jan_cli_install_dir() -> Result<PathBuf, String> {
             return Ok(usr_local_bin);
         }
     }
-    let home =
-        std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
+    let home = std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
     Ok(PathBuf::from(home).join(".local").join("bin"))
 }
 
 /// Return the directory containing the bundled CLI binary on Windows.
 #[cfg(windows)]
 fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
-    let local_app_data = std::env::var("LOCALAPPDATA")
-        .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
     Ok(PathBuf::from(local_app_data)
         .join("Programs")
         .join("Jan")
@@ -993,7 +992,10 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
         })
         .collect();
 
-    if parts.iter().any(|p| p.eq_ignore_ascii_case(&install_dir_str)) {
+    if parts
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case(&install_dir_str))
+    {
         return Ok(());
     }
 

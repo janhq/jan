@@ -1,6 +1,4 @@
-use portable_pty::{
-    native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize,
-};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -323,7 +321,10 @@ pub fn list_terminal_sessions() -> Result<Vec<TerminalSessionInfo>, String> {
     let registry = terminal_sessions()
         .lock()
         .map_err(|_| "Terminal registry lock poisoned".to_string())?;
-    Ok(registry.values().map(|session| session.info.clone()).collect())
+    Ok(registry
+        .values()
+        .map(|session| session.info.clone())
+        .collect())
 }
 
 #[tauri::command]

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
+import { Route as ReviewRouteImport } from './routes/review'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
@@ -36,6 +37,11 @@ import { Route as SettingsProvidersProviderNameRouteImport } from './routes/sett
 const SystemMonitorRoute = SystemMonitorRouteImport.update({
   id: '/system-monitor',
   path: '/system-monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewRoute = ReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -153,6 +159,7 @@ const SettingsProvidersProviderNameRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/review': typeof ReviewRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/review': typeof ReviewRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -204,6 +212,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/review': typeof ReviewRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -231,6 +240,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logs'
+    | '/review'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -256,6 +266,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/logs'
+    | '/review'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -281,6 +292,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/logs'
+    | '/review'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -307,6 +319,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogsRoute: typeof LogsRoute
+  ReviewRoute: typeof ReviewRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       path: '/system-monitor'
       fullPath: '/system-monitor'
       preLoaderRoute: typeof SystemMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review': {
+      id: '/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -499,6 +519,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogsRoute: LogsRoute,
+  ReviewRoute: ReviewRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,

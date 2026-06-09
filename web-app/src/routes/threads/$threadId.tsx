@@ -52,7 +52,6 @@ import { OUT_OF_CONTEXT_SIZE, isContextOverflowMessage } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
@@ -60,6 +59,13 @@ import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import { WorkspacePanelsLayout } from '@/containers/ModelToolsPanel'
+
+import {
+  isCodexAppServerProvider,
+  steerCodexSubThreadEvents,
+} from '@/lib/codex-app-server'
+import { CodexActivityPart } from '@/components/ai-elements/codex-activity'
+import { toast } from 'sonner'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -1309,33 +1315,117 @@ function ThreadDetail() {
     [searchThreadModel, thread]
   )
   const panelScope = useMemo(() => {
-    const project = thread?.metadata?.project
-    if (project?.id) {
-      return {
-        id: project.id,
-        type: 'project' as const,
-        label: project.name ?? 'Project',
-        threadId,
-      }
-    }
-
+    const label = thread?.title ?? 'Chat'
     return {
-      id: 'vanilla-chat',
-      type: 'workspace' as const,
-      label: 'Vanilla chat',
+      type: 'chat' as const,
+      id: threadId,
+      label,
+      sessionId: threadId,
       threadId,
     }
-  }, [thread?.metadata?.project, threadId])
+  }, [thread?.title, threadId])
+  const selectedProviderForCodex = useModelProvider((s) => s.selectedProvider)
+  const isCodex = isCodexAppServerProvider(selectedProviderForCodex)
+
+  const [inspectSubThreadId, setInspectSubThreadId] = useState<string | null>(
+    null
+  )
+  const [liveSubagentEvents, setLiveSubagentEvents] = useState<
+    Record<string, unknown[]>
+  >({})
+  const [steeringSubThreadId, setSteeringSubThreadId] = useState<string | null>(
+    null
+  )
+
+  // Derive running/seen subagents from streamed codex events (threadIds different from primary)
+  const subagents = useMemo(() => {
+    type CodexEventPartData = { threadId?: string; type?: string }
+    const primaryThreadId = (() => {
+      for (const m of chatMessages) {
+        const meta = (m.metadata as any) || {}
+        if (meta.codex?.threadId) return meta.codex.threadId
+        for (const p of m.parts || []) {
+          const data = (p as { data?: CodexEventPartData }).data
+          if (p.type === 'data-codex-event' && data?.threadId) {
+            // first seen is likely primary
+            return data.threadId
+          }
+        }
+      }
+      return null
+    })()
+
+    const subs = new Map<
+      string,
+      {
+        threadId: string
+        status: string
+        lastActivity: string
+        eventCount: number
+      }
+    >()
+
+    for (const m of chatMessages) {
+      for (const p of m.parts || []) {
+        if (p.type !== 'data-codex-event') continue
+        const data = (p as { data?: CodexEventPartData }).data || {}
+        const tid = data.threadId
+        if (!tid || tid === primaryThreadId) continue
+
+        if (!subs.has(tid)) {
+          subs.set(tid, {
+            threadId: tid,
+            status: 'running',
+            lastActivity: data.type || 'activity',
+            eventCount: 0,
+          })
+        }
+        const entry = subs.get(tid)!
+        entry.eventCount += 1
+        entry.lastActivity = data.type || entry.lastActivity
+        if (data.type === 'turn_completed' || data.type === 'item_completed') {
+          entry.status = 'completed'
+        } else if (
+          data.type &&
+          !['item_completed', 'turn_completed'].includes(data.type)
+        ) {
+          entry.status = 'running'
+        }
+      }
+    }
+    return Array.from(subs.values()).sort((a, b) =>
+      a.threadId.localeCompare(b.threadId)
+    )
+  }, [chatMessages])
+
+  const subagentEvents = useMemo(() => {
+    if (!inspectSubThreadId) return []
+    const events: Array<{ messageId: string; partIndex: number; data: unknown }> =
+      []
+    for (const message of chatMessages) {
+      message.parts?.forEach((part, partIndex) => {
+        if (part.type !== 'data-codex-event') return
+        const data = (part as { data?: { threadId?: string } }).data
+        if (data?.threadId === inspectSubThreadId) {
+          events.push({ messageId: message.id, partIndex, data })
+        }
+      })
+    }
+    const live = liveSubagentEvents[inspectSubThreadId] ?? []
+    for (let i = 0; i < live.length; i++) {
+      events.push({
+        messageId: `live-steer-${inspectSubThreadId}`,
+        partIndex: i,
+        data: live[i],
+      })
+    }
+    return events
+  }, [chatMessages, inspectSubThreadId, liveSubagentEvents])
+
   return (
     <WorkspacePanelsLayout scope={panelScope}>
       <div className="flex h-full min-h-0 flex-col">
-        <HeaderPage>
-          <div className="flex w-full items-center justify-between pr-2">
-            <div className="min-w-0 max-w-[22rem]">
-              <DropdownModelProvider model={threadModel} />
-            </div>
-          </div>
-        </HeaderPage>
+        <HeaderPage />
         <div className="flex min-h-0 flex-1 flex-col h-full overflow-hidden">
           {/* Messages Area */}
           <div className="flex-1 relative">
@@ -1343,6 +1433,157 @@ function ThreadDetail() {
               <ConversationContent
                 className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
               >
+                {/* Subagent visibility and inspector for Codex engine.
+                   - Live tabs/list of running subagents (from Codex events with their own threadIds).
+                   - Click tab to open/inspect exactly what that subagent is doing (its plans, commands+outputs, file changes, etc.).
+                   - Steering form: send follow-up instructions directly to a chosen subagent (turn/steer on its threadId).
+                   - Like the Codex TUI /agent switcher + direct interaction with children.
+                */}
+                {isCodex && subagents.length > 0 && (
+                  <div className="mb-3 p-2 border rounded-md bg-muted/10 text-sm">
+                    <div className="font-medium mb-1 flex items-center gap-2">
+                      Subagents ({subagents.length})
+                      <span className="text-xs text-muted-foreground">
+                        (Codex engine — tabs to inspect/steer)
+                      </span>
+                    </div>
+
+                    {/* Tab bar for subagents */}
+                    <div className="flex flex-wrap gap-1 mb-2 border-b pb-1">
+                      {subagents.map((sa) => (
+                        <button
+                          key={sa.threadId}
+                          onClick={() => setInspectSubThreadId(sa.threadId)}
+                          className={cn(
+                            'text-xs px-3 py-1 rounded-t border-b-2 hover:bg-accent transition-colors',
+                            inspectSubThreadId === sa.threadId
+                              ? 'bg-background border-primary font-medium'
+                              : 'border-transparent hover:border-muted-foreground',
+                            sa.status === 'completed'
+                              ? 'text-green-600'
+                              : 'text-blue-600'
+                          )}
+                          title={`Inspect & steer subagent thread ${sa.threadId}`}
+                        >
+                          {sa.threadId.slice(0, 6)}… {sa.status} (
+                          {sa.eventCount})
+                        </button>
+                      ))}
+                      {inspectSubThreadId && (
+                        <button
+                          onClick={() => setInspectSubThreadId(null)}
+                          className="text-xs px-2 py-1 rounded border ml-auto"
+                        >
+                          Close
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Selected subagent inspector + steer */}
+                    {inspectSubThreadId && (
+                      <div className="mt-2 p-2 border-t text-xs bg-background rounded">
+                        <div className="font-medium mb-2 flex items-center justify-between">
+                          <span>Subagent {inspectSubThreadId}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            Live Codex activity
+                          </span>
+                        </div>
+
+                        {/* Steering — talk directly to this opened subagent */}
+                        <form
+                          className="mb-3 flex gap-2"
+                          onSubmit={async (e) => {
+                            e.preventDefault()
+                            const form = e.currentTarget as HTMLFormElement
+                            const input = form.elements.namedItem(
+                              'steerText'
+                            ) as HTMLInputElement
+                            const text = input.value.trim()
+                            if (!text) return
+                            setSteeringSubThreadId(inspectSubThreadId)
+                            try {
+                              for await (const event of steerCodexSubThreadEvents(
+                                threadId,
+                                inspectSubThreadId,
+                                text
+                              )) {
+                                setLiveSubagentEvents((prev) => ({
+                                  ...prev,
+                                  [inspectSubThreadId]: [
+                                    ...(prev[inspectSubThreadId] ?? []),
+                                    event,
+                                  ],
+                                }))
+                              }
+                              input.value = ''
+                              toast.success(
+                                `Steered subagent ${inspectSubThreadId.slice(0, 8)}…`
+                              )
+                            } catch (err) {
+                              const message =
+                                err instanceof Error
+                                  ? err.message
+                                  : 'Steer subagent failed'
+                              toast.error(message)
+                            } finally {
+                              setSteeringSubThreadId(null)
+                            }
+                          }}
+                        >
+                          <input
+                            name="steerText"
+                            className="flex-1 text-xs border rounded px-2 py-1 bg-transparent"
+                            placeholder="Follow-up for this subagent (e.g. 'also check for race conditions')..."
+                          />
+                          <button
+                            type="submit"
+                            className="text-xs px-3 py-1 border rounded hover:bg-accent disabled:opacity-50"
+                            disabled={steeringSubThreadId === inspectSubThreadId}
+                          >
+                            {steeringSubThreadId === inspectSubThreadId
+                              ? 'Steering…'
+                              : 'Steer'}
+                          </button>
+                        </form>
+
+                        {/* Live + historical activity for this subagent (all streamed events) */}
+                        {subagentEvents.length === 0 ? (
+                          <div className="text-muted-foreground italic">
+                            No activity yet for this subagent…
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {subagentEvents.map((event, i) => {
+                              const parentMessage =
+                                chatMessages.find(
+                                  (m) => m.id === event.messageId
+                                ) ?? chatMessages[chatMessages.length - 1]
+                              return (
+                                <CodexActivityPart
+                                  key={`${event.messageId}-${event.partIndex}-${i}`}
+                                  part={{
+                                    type: 'data-codex-event',
+                                    data: event.data,
+                                  }}
+                                  partIndex={event.partIndex}
+                                  message={parentMessage as any}
+                                />
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!inspectSubThreadId && (
+                      <div className="text-[10px] text-muted-foreground">
+                        Select a tab to open that subagent and see/steer its
+                        work.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {chatMessages.map((message, index) => {
                   const isLastMessage = index === chatMessages.length - 1
                   const isFirstMessage = index === 0

@@ -1,4 +1,4 @@
-import { type LucideIcon } from 'lucide-react'
+import { GitPullRequest, type LucideIcon } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -9,7 +9,7 @@ import {
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
 import React, { useRef } from 'react'
 import {
@@ -68,6 +68,11 @@ const getNavMainItems = (
   onNewChat: () => void,
   onJanClaw: () => void
 ): NavMainItem[] => [
+  {
+    title: 'common:review',
+    url: route.review,
+    icon: GitPullRequest,
+  },
   {
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
@@ -176,7 +181,8 @@ function NavMainItemWithAnimatedIcon({
 export function NavMain() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { addFolder } = useThreadManagement()
+  const location = useLocation()
+  const { addFolderFromPath } = useThreadManagement()
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
@@ -192,9 +198,17 @@ export function NavMain() {
       navigate({ to: route.home })
     }
   ).filter((item) => item.title !== 'common:newAgentChat')
+    .map((item) =>
+      item.url === route.review
+        ? { ...item, isActive: location.pathname === route.review }
+        : item
+    )
 
-  const handleCreateProject = async (name: string, assistantId?: string) => {
-    const newProject = await addFolder(name, assistantId)
+  const handleCreateProject = async (
+    directoryPath: string,
+    assistantId?: string
+  ) => {
+    const newProject = await addFolderFromPath(directoryPath, assistantId)
     setProjectDialogOpen(false)
     navigate({
       to: '/project/$projectId',

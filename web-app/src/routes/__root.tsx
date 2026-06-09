@@ -34,6 +34,7 @@ import LlamacppBusyOnExitDialog from '@/containers/dialogs/LlamacppBusyOnExitDia
 import LlamacppOomListener from '@/containers/dialogs/LlamacppOomListener'
 import MissingDependenciesDialog from '@/containers/dialogs/MissingDependenciesDialog'
 import { cn } from '@/lib/utils'
+import { isPlatformTauri } from '@/lib/platform/utils'
 import type { MouseEvent } from 'react'
 
 export const Route = createRootRoute({
@@ -52,7 +53,7 @@ const AppLayout = () => {
   } = useLeftPanel()
 
   const handleWindowDrag = async (event: MouseEvent<HTMLDivElement>) => {
-    if (!IS_TAURI || IS_LINUX || event.button !== 0) return
+    if (!isPlatformTauri() || IS_LINUX || event.button !== 0) return
 
     event.preventDefault()
     await getCurrentWebviewWindow().startDragging()
@@ -73,21 +74,21 @@ const AppLayout = () => {
         <div
           className={cn(
             'fixed top-0 z-[var(--app-layer-titlebar-drag)] h-[var(--app-titlebar-height)] w-full',
-            IS_TAURI && !IS_LINUX
+            isPlatformTauri() && !IS_LINUX
               ? 'cursor-grab active:cursor-grabbing'
               : 'pointer-events-none'
           )}
           data-window-drag-region="true"
-          title={IS_TAURI && !IS_LINUX ? 'Drag window' : undefined}
-          aria-label={IS_TAURI && !IS_LINUX ? 'Window drag area' : undefined}
+          title={isPlatformTauri() && !IS_LINUX ? 'Drag window' : undefined}
+          aria-label={isPlatformTauri() && !IS_LINUX ? 'Window drag area' : undefined}
           onMouseDown={handleWindowDrag}
-          data-tauri-drag-region={IS_TAURI && !IS_LINUX ? true : undefined}
+          data-tauri-drag-region={isPlatformTauri() && !IS_LINUX ? true : undefined}
         />
         <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />
         <SidebarInset>
-          <div className="bg-neutral-50 dark:bg-background size-full">
+          <div className="bg-neutral-50 dark:bg-background size-full h-svh max-h-svh overflow-hidden">
             <Outlet />
           </div>
         </SidebarInset>

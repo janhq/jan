@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // --- Module mocks (must be declared before component import) ---------------
@@ -31,11 +31,84 @@ vi.mock('@/hooks/useThreads', () => ({
   useThreads: (selector: any) =>
     selector({
       currentThreadId: 'thread-1',
+      threads: {},
       getCurrentThread: getCurrentThreadMock,
       updateCurrentThreadAssistant: updateCurrentThreadAssistantMock,
       updateCurrentThreadModel: updateCurrentThreadModelMock,
       createThread: createThreadMock,
+      updateThread: vi.fn(),
     }),
+}))
+
+vi.mock('@/hooks/useThreadManagement', () => ({
+  useThreadManagement: () => ({
+    folders: [],
+    getFolderById: vi.fn(),
+  }),
+}))
+
+vi.mock('@/stores/chat-workspace-context-store', () => ({
+  useChatWorkspaceContext: Object.assign(
+    (selector: any) =>
+      selector({
+        getContext: () => ({ workMode: 'local' as const }),
+        setWorkMode: vi.fn(),
+        setSelectedBranch: vi.fn(),
+        setSelectedWorktreePath: vi.fn(),
+        setDraftProject: vi.fn(),
+        transferContext: vi.fn(),
+      }),
+    {
+      getState: () => ({
+        getContext: () => ({ workMode: 'local' as const }),
+        transferContext: vi.fn(),
+      }),
+    }
+  ),
+}))
+
+vi.mock('@/stores/chat-session-state-store', () => ({
+  useChatSessionState: Object.assign(
+    (selector: any) =>
+      selector({
+        getSession: () => ({}),
+        patchSession: vi.fn(),
+        transferSession: vi.fn(),
+      }),
+    {
+      getState: () => ({
+        getSession: () => ({}),
+        patchSession: vi.fn(),
+        transferSession: vi.fn(),
+      }),
+    }
+  ),
+}))
+
+vi.mock('@/hooks/useChatSessionScope', () => ({
+  sessionWorkspaceScope: (sessionId: string, label: string) => ({
+    type: sessionId === 'home' ? 'workspace' : 'chat',
+    id: sessionId,
+    label,
+  }),
+}))
+
+vi.mock('@/stores/workspace-directory-store', () => ({
+  useWorkspaceDirectories: Object.assign(
+    (selector: any) =>
+      selector({
+        getDirectory: () => undefined,
+        setDirectory: vi.fn(),
+      }),
+    {
+      getState: () => ({
+        getDirectory: () => undefined,
+        setDirectory: vi.fn(),
+      }),
+    }
+  ),
+  getWorkspaceDirectoryKey: (scope: { type: string; id: string }) =>
+    `${scope.type}:${scope.id}`,
 }))
 
 let appStateOverrides: any = {}
@@ -67,12 +140,13 @@ let selectedModelOverride: any = {
   capabilities: ['tools'],
   provider: 'llamacpp',
 }
+let selectedProviderOverride = 'llamacpp'
 const getProviderByNameMock = vi.fn()
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
     selector({
       selectedModel: selectedModelOverride,
-      selectedProvider: { provider: 'llamacpp' },
+      selectedProvider: selectedProviderOverride,
       providers: [],
       selectModelProvider: vi.fn(),
       updateProvider: vi.fn(),
@@ -241,6 +315,12 @@ vi.mock('@/containers/MovingBorder', () => ({
 vi.mock('@/components/TokenCounter', () => ({
   TokenCounter: () => <div data-testid="stub-token-counter" />,
 }))
+vi.mock('@/containers/ChatModelSelector', () => ({
+  ChatModelSelector: () => <div data-testid="stub-model-switcher" />,
+}))
+vi.mock('@/containers/ModelReasoningDropdown', () => ({
+  ModelReasoningDropdown: () => <div data-testid="stub-reasoning-dropdown" />,
+}))
 vi.mock('@/components/AssistantsMenu', () => ({
   AssistantsMenu: () => <div data-testid="stub-assistants-menu" />,
 }))
@@ -260,6 +340,7 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
+    DropdownMenuSeparator: Pass,
   }
 })
 vi.mock('@/components/ui/tooltip', () => {
@@ -291,6 +372,7 @@ const resetAll = () => {
     capabilities: ['tools'],
     provider: 'llamacpp',
   }
+  selectedProviderOverride = 'llamacpp'
   setPromptMock.mockClear()
   addToHistoryMock.mockClear()
   navigateHistoryMock.mockClear()
@@ -516,5 +598,25 @@ describe('ChatInput', () => {
     // dismiss icon (svg) sits alongside
     const svg = container.querySelector('.text-destructive svg')
     expect(svg).toBeTruthy()
+  })
+
+  it('always shows the model switcher in the chat bar', () => {
+    renderInput()
+    expect(screen.getByTestId('stub-model-switcher')).toBeInTheDocument()
+  })
+
+  it('uses the same model selector for local and remote providers', () => {
+    renderInput()
+    expect(screen.getByTestId('stub-model-switcher')).toBeInTheDocument()
+
+    cleanup()
+    selectedProviderOverride = 'xai'
+    selectedModelOverride = {
+      id: 'grok-3',
+      capabilities: ['tools'],
+      provider: 'xai',
+    }
+    renderInput()
+    expect(screen.getByTestId('stub-model-switcher')).toBeInTheDocument()
   })
 })

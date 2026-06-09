@@ -17,6 +17,7 @@
     "shell:allow-spawn",
     "shell:allow-open",
     "core:app:allow-set-app-theme",
+    "core:app:default",
     "core:window:allow-set-focus",
     "os:default",
     "opener:default",
@@ -26,6 +27,8 @@
     "core:webview:allow-webview-close",
     "core:webview:allow-webview-hide",
     "core:webview:allow-webview-show",
+    "core:webview:allow-set-webview-position",
+    "core:webview:allow-set-webview-size",
     "opener:allow-open-url",
     "store:default",
     "vector-db:default",
@@ -33,6 +36,8 @@
     "llamacpp:default",
     "deep-link:default",
     "hardware:default",
+    "jan-default",
+    "xai-oauth-default",
     {
       "identifier": "http:default",
       "allow": [

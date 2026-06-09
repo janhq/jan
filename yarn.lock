@@ -2806,6 +2806,7 @@ __metadata:
     "@eslint/js": "npm:8.57.0"
     "@janhq/core": "workspace:*"
     "@janhq/interfaces": "npm:0.0.2"
+    "@monaco-editor/react": "npm:^4.7.0"
     "@radix-ui/react-accordion": "npm:1.2.11"
     "@radix-ui/react-avatar": "npm:1.1.10"
     "@radix-ui/react-collapsible": "npm:^1.1.12"
@@ -2884,6 +2885,7 @@ __metadata:
     lodash.debounce: "npm:4.0.8"
     lucide-react: "npm:^0.563.0"
     matter-js: "npm:^0.20.0"
+    monaco-editor: "npm:^0.55.1"
     motion: "npm:^12.35.0"
     next-themes: "npm:0.4.6"
     posthog-js: "npm:1.255.1"
@@ -3032,6 +3034,28 @@ __metadata:
   dependencies:
     langium: "npm:^4.0.0"
   checksum: 10c0/e311a0981d31984614eee25101c695e950cb1197befc51296d8735390433de59dc6e4a48c3cce1e23a1279b6baf60f9f724d529b741c0c86cdcb09afe3e5e046
+  languageName: node
+  linkType: hard
+
+"@monaco-editor/loader@npm:^1.5.0":
+  version: 1.7.0
+  resolution: "@monaco-editor/loader@npm:1.7.0"
+  dependencies:
+    state-local: "npm:^1.0.6"
+  checksum: 10c0/1fd3579cb09b669493cf553dfc0723a93483140a44353ce9a739827edfa7b2c6541b254024d15c48176ece749ef666b6d16cce6cf0e4396c7fa1c5a48012d08a
+  languageName: node
+  linkType: hard
+
+"@monaco-editor/react@npm:^4.7.0":
+  version: 4.7.0
+  resolution: "@monaco-editor/react@npm:4.7.0"
+  dependencies:
+    "@monaco-editor/loader": "npm:^1.5.0"
+  peerDependencies:
+    monaco-editor: ">= 0.25.0 < 1"
+    react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 10c0/a4e91c6eda1a71f5fd23871bd801de435490ccbc43934d23cba65cefe2be7e9d02c9a57c4ef80fc9fe99e4d4deea51e5db19cb4e0ecf3f51818dda0eb9cdbf12
   languageName: node
   linkType: hard
 
@@ -9987,6 +10011,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"dompurify@npm:3.2.7":
+  version: 3.2.7
+  resolution: "dompurify@npm:3.2.7"
+  dependencies:
+    "@types/trusted-types": "npm:^2.0.7"
+  dependenciesMeta:
+    "@types/trusted-types":
+      optional: true
+  checksum: 10c0/d41bb31a72f1acdf9b84c56723c549924b05d92a39a15bd8c40bec9007ff80d5fccf844bc53ee12af5b69044f9a7ce24a1e71c267a4f49cf38711379ed8c1363
+  languageName: node
+  linkType: hard
+
 "dompurify@npm:^3.2.5":
   version: 3.3.1
   resolution: "dompurify@npm:3.3.1"
@@ -13999,6 +14035,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"marked@npm:14.0.0":
+  version: 14.0.0
+  resolution: "marked@npm:14.0.0"
+  bin:
+    marked: bin/marked.js
+  checksum: 10c0/57a47cb110f7b1a10f398b0a7236f9183aad2dcd5345ee73f2732b6387e585d04cef472bc655d2f84c542296be9728e179aebe3ed7f2f8666b8a0a9dae592876
+  languageName: node
+  linkType: hard
+
 "marked@npm:^16.2.1":
   version: 16.4.2
   resolution: "marked@npm:16.4.2"
@@ -15073,6 +15118,16 @@ __metadata:
     pkg-types: "npm:^1.3.1"
     ufo: "npm:^1.6.1"
   checksum: 10c0/f174b844ae066c71e9b128046677868e2e28694f0bbeeffbe760b2a9d8ff24de0748d0fde6fabe706700c1d2e11d3c0d7a53071b5ea99671592fac03364604ab
+  languageName: node
+  linkType: hard
+
+"monaco-editor@npm:^0.55.1":
+  version: 0.55.1
+  resolution: "monaco-editor@npm:0.55.1"
+  dependencies:
+    dompurify: "npm:3.2.7"
+    marked: "npm:14.0.0"
+  checksum: 10c0/c1a0cf887657b42c8996518bc5ee96bbd39c977f862d2a2b2018427c45f14b0dd25d1452278202056f6b1ead97981282ccacd7d7ad918d8f0ef084159f974a25
   languageName: node
   linkType: hard
 
@@ -18469,6 +18524,13 @@ __metadata:
   version: 0.0.2
   resolution: "stackback@npm:0.0.2"
   checksum: 10c0/89a1416668f950236dd5ac9f9a6b2588e1b9b62b1b6ad8dff1bfc5d1a15dbf0aafc9b52d2226d00c28dffff212da464eaeebfc6b7578b9d180cef3e3782c5983
+  languageName: node
+  linkType: hard
+
+"state-local@npm:^1.0.6":
+  version: 1.0.7
+  resolution: "state-local@npm:1.0.7"
+  checksum: 10c0/8dc7daeac71844452fafb514a6d6b6f40d7e2b33df398309ea1c7b3948d6110c57f112b7196500a10c54fdde40291488c52c875575670fb5c819602deca48bd9
   languageName: node
   linkType: hard
 

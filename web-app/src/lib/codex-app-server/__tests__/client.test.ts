@@ -14,6 +14,7 @@ class ScriptedCodexProcess implements CodexProcess {
     method: string
     params?: unknown
   }> = []
+  turnNotifications: Array<{ method: string; params?: unknown }> = []
 
   private stdoutListeners = new Set<(line: string) => void>()
   private stderrListeners = new Set<(line: string) => void>()
@@ -94,6 +95,28 @@ class ScriptedCodexProcess implements CodexProcess {
       this.emit({ method: 'thread/started', params: { thread: this.thread(threadId) } })
     }
 
+    if (message.method === 'turn/steer') {
+      const threadId = isRecord(message.params)
+        ? String(message.params.threadId)
+        : 'codex-sub-1'
+      const turn = this.turn('steer-turn-1', 'running')
+      this.emit({ id: message.id, result: { turn } })
+      this.emit({ method: 'turn/started', params: { threadId, turn } })
+      this.emit({
+        method: 'item/agentMessage/delta',
+        params: {
+          threadId,
+          turnId: 'steer-turn-1',
+          itemId: 'assistant-steer',
+          delta: 'steered response',
+        },
+      })
+      this.emit({
+        method: 'turn/completed',
+        params: { threadId, turn: this.turn('steer-turn-1', 'completed') },
+      })
+    }
+
     if (message.method === 'turn/start') {
       const turn = this.turn('turn-1', 'running')
       this.emit({ id: message.id, result: { turn } })
@@ -103,6 +126,7 @@ class ScriptedCodexProcess implements CodexProcess {
       })
       this.emit({ method: 'turn/started', params: { threadId: 'codex-thread-1', turn } })
       this.turnServerRequests.forEach((request) => this.emit(request))
+      this.turnNotifications.forEach((notification) => this.emit(notification))
       this.emit({
         method: 'item/started',
         params: {
@@ -494,6 +518,222 @@ describe('CodexAppServerSession', () => {
       ])
     )
   })
+
+  it('maps indexed reasoning notifications and server request lifecycle events', async () => {
+    const process = new ScriptedCodexProcess()
+    process.turnServerRequests = [
+      {
+        id: 'request-1',
+        method: 'item/permissions/requestApproval',
+        params: { permissions: { filesystem: 'read' } },
+      },
+    ]
+    process.turnNotifications = [
+      {
+        method: 'item/reasoning/summaryPartAdded',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'reasoning-1',
+          summaryIndex: 0,
+        },
+      },
+      {
+        method: 'item/reasoning/summaryTextDelta',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'reasoning-1',
+          summaryIndex: 0,
+          delta: 'summary',
+        },
+      },
+      {
+        method: 'item/reasoning/textDelta',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'reasoning-1',
+          contentIndex: 1,
+          delta: 'details',
+        },
+      },
+      {
+        method: 'serverRequest/resolved',
+        params: {
+          requestId: 'request-1',
+          threadId: 'codex-thread-1',
+          params: { granted: true },
+        },
+      },
+    ]
+
+    const spawner: CodexProcessSpawner = {
+      spawn() {
+        return process
+      },
+    }
+    const session = new CodexAppServerSession({
+      spawner,
+      options: {
+        cwd: '/repo',
+        model: 'gpt-test',
+        modelProvider: 'openai',
+        approvalPolicy: 'never',
+      },
+    })
+
+    const events = await collectEvents(
+      session.sendMessage({
+        appThreadId: 'jan-thread-1',
+        text: 'run the tests',
+      })
+    )
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'reasoning_part_added',
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'reasoning-1',
+          summaryIndex: 0,
+        },
+        {
+          type: 'reasoning_delta',
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'reasoning-1',
+          summaryIndex: 0,
+          delta: 'summary',
+        },
+        {
+          type: 'reasoning_delta',
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'reasoning-1',
+          contentIndex: 1,
+          delta: 'details',
+        },
+        {
+          type: 'server_request_resolved',
+          requestId: 'request-1',
+          threadId: 'codex-thread-1',
+          params: expect.objectContaining({ params: { granted: true } }),
+        },
+        {
+          type: 'server_request',
+          request: expect.objectContaining({
+            id: 'request-1',
+            method: 'item/permissions/requestApproval',
+          }),
+        },
+      ])
+    )
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'approval_request',
+          request: expect.objectContaining({ method: 'item/permissions/requestApproval' }),
+        }),
+      ])
+    )
+  })
+
+  it('maps standalone command exec output deltas to process output events', async () => {
+    const process = new ScriptedCodexProcess()
+    process.turnNotifications = [
+      {
+        method: 'command/exec/outputDelta',
+        params: {
+          processId: 'cmd-standalone-1',
+          stream: 'stdout',
+          deltaBase64: Buffer.from('hello\n').toString('base64'),
+          capReached: false,
+        },
+      },
+    ]
+    const spawner: CodexProcessSpawner = {
+      spawn() {
+        return process
+      },
+    }
+    const session = new CodexAppServerSession({
+      spawner,
+      options: {
+        cwd: '/repo',
+        model: 'gpt-test',
+        modelProvider: 'openai',
+        approvalPolicy: 'never',
+      },
+    })
+
+    const events = await collectEvents(
+      session.sendMessage({
+        appThreadId: 'jan-thread-1',
+        text: 'run command',
+      })
+    )
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'process_output_delta',
+          processHandle: 'cmd-standalone-1',
+          stream: 'stdout',
+          deltaBase64: Buffer.from('hello\n').toString('base64'),
+          capReached: false,
+        },
+      ])
+    )
+  })
+
+  it('streams steer notifications until the target sub-thread turn completes', async () => {
+    const process = new ScriptedCodexProcess()
+    const spawner: CodexProcessSpawner = {
+      spawn() {
+        return process
+      },
+    }
+    const session = new CodexAppServerSession({
+      spawner,
+      options: {
+        cwd: '/repo',
+        model: 'gpt-test',
+        modelProvider: 'openai',
+        approvalPolicy: 'never',
+      },
+    })
+
+    const events = await collectEvents(
+      session.steerThreadWithEvents('codex-sub-9', 'focus on tests')
+    )
+
+    expect(process.writes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: 'turn/steer',
+          params: expect.objectContaining({
+            threadId: 'codex-sub-9',
+            input: [{ type: 'text', text: 'focus on tests', text_elements: [] }],
+          }),
+        }),
+      ])
+    )
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'assistant_delta',
+          threadId: 'codex-sub-9',
+          delta: 'steered response',
+        }),
+        expect.objectContaining({
+          type: 'turn_completed',
+          threadId: 'codex-sub-9',
+        }),
+      ])
+    )
+  })
 })
 
 function nextWithTimeout(iterator: AsyncGenerator<unknown>, timeoutMs = 100) {
@@ -516,3 +756,97 @@ async function collectEvents(iterator: AsyncGenerator<unknown>) {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
+
+describe('Codex app-server notification parity events', () => {
+  it('maps plan, diff, model, moderation, and auto-approval notifications into typed events', async () => {
+    const process = new ScriptedCodexProcess()
+    process.turnNotifications = [
+      {
+        method: 'turn/diff/updated',
+        params: { threadId: 'codex-thread-1', turnId: 'turn-1', diff: { files: [] } },
+      },
+      {
+        method: 'turn/plan/updated',
+        params: { threadId: 'codex-thread-1', turnId: 'turn-1', plan: [{ step: 'inspect' }] },
+      },
+      {
+        method: 'model/rerouted',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          fromModel: 'gpt-5-mini',
+          toModel: 'gpt-5',
+          reason: 'capacity',
+        },
+      },
+      {
+        method: 'model/verification',
+        params: { threadId: 'codex-thread-1', turnId: 'turn-1', status: 'verified' },
+      },
+      {
+        method: 'turn/moderationMetadata',
+        params: {
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          metadata: { flagged: false },
+        },
+      },
+      {
+        method: 'item/autoApprovalReview/completed',
+        params: { threadId: 'codex-thread-1', turnId: 'turn-1', itemId: 'command-1' },
+      },
+    ]
+    const spawner: CodexProcessSpawner = {
+      spawn(command, args, options) {
+        process.spawnArgs = [command, ...args]
+        process.spawnEnv = options.env
+        process.spawnCwd = options.cwd
+        return process
+      },
+    }
+    const session = new CodexAppServerSession({
+      spawner,
+      options: {
+        codexBinaryPath: '/Applications/Codex.app/Contents/Resources/codex',
+        codexHome: '/repo/.jan/codex-home',
+        cwd: '/repo',
+        model: 'gpt-test',
+        modelProvider: 'openai',
+        approvalPolicy: 'never',
+      },
+    })
+
+    await session.initialize()
+
+    const events: unknown[] = []
+    for await (const event of session.sendMessage({
+      appThreadId: 'jan-thread-1',
+      text: 'exercise parity events',
+    })) {
+      events.push(event)
+    }
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'turn_diff_updated', threadId: 'codex-thread-1', turnId: 'turn-1' }),
+        expect.objectContaining({ type: 'turn_plan_updated', threadId: 'codex-thread-1', turnId: 'turn-1' }),
+        expect.objectContaining({
+          type: 'model_rerouted',
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          fromModel: 'gpt-5-mini',
+          toModel: 'gpt-5',
+        }),
+        expect.objectContaining({ type: 'model_verification', threadId: 'codex-thread-1', status: 'verified' }),
+        expect.objectContaining({ type: 'turn_moderation_metadata', threadId: 'codex-thread-1', turnId: 'turn-1' }),
+        expect.objectContaining({
+          type: 'auto_approval_review_event',
+          method: 'item/autoApprovalReview/completed',
+          threadId: 'codex-thread-1',
+          turnId: 'turn-1',
+          itemId: 'command-1',
+        }),
+      ])
+    )
+  })
+})

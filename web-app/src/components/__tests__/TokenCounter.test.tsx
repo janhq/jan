@@ -167,4 +167,17 @@ describe('TokenCounter', () => {
     const wrapper = container.querySelector('.custom-class')
     expect(wrapper).toBeTruthy()
   })
+
+  it('truncates compact model label and shows percentage only', () => {
+    mockTokens({
+      tokenCount: 250,
+      maxTokens: 1000,
+      modelDisplayName: 'very-long-model-name-that-should-truncate',
+    })
+    const { container } = render(<TokenCounter compact />)
+    const label = container.querySelector('[title="very-long-model-name-that-should-truncate"]')
+    expect(label?.textContent).toBe('very-long-mod…')
+    expect(container.textContent).toContain('25%')
+    expect(container.textContent).not.toContain('Context')
+  })
 })

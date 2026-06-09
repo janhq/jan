@@ -21,11 +21,7 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { invoke } from '@tauri-apps/api/core'
 import { ExtensionManager } from '@/lib/extension'
-import {
-  ExtensionTypeEnum,
-  VectorDBExtension,
-  type MCPTool,
-} from '@janhq/core'
+import { ExtensionTypeEnum, VectorDBExtension, type MCPTool } from '@janhq/core'
 import {
   trimMessages,
   compactMessages,
@@ -36,8 +32,15 @@ import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
-import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
+import {
+  isPredefinedRemoteProvider,
+  getProviderApiType,
+} from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
+import {
+  getModelReasoningValue,
+  toLlamacppReasoningMode,
+} from '@/lib/model-reasoning'
 import {
   isCodexAppServerProvider,
   sendCodexAppServerChatMessage,
@@ -83,8 +86,18 @@ const SCHEMA_PRIMITIVE_TYPES = new Set([
   'object',
 ])
 
-const SCHEMA_NODE_MAP_KEYS = new Set(['properties', 'patternProperties', 'definitions', '$defs'])
-const SCHEMA_NODE_LIST_KEYS = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
+const SCHEMA_NODE_MAP_KEYS = new Set([
+  'properties',
+  'patternProperties',
+  'definitions',
+  '$defs',
+])
+const SCHEMA_NODE_LIST_KEYS = new Set([
+  'anyOf',
+  'oneOf',
+  'allOf',
+  'prefixItems',
+])
 
 // Per-model sidebar keys whose values should be forwarded into each chat-
 // completion request body as defaults. In router mode these can't be CLI args
@@ -147,36 +160,42 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
   }
 
   const normalized = Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, childValue]) => {
-      // Schema-node containers: their direct children are sub-schemas, so a
-      // bare-string primitive type name should expand to `{ type: <name> }`.
-      if (
-        SCHEMA_NODE_MAP_KEYS.has(key) &&
-        childValue &&
-        typeof childValue === 'object' &&
-        !Array.isArray(childValue)
-      ) {
-        return [
-          key,
-          Object.fromEntries(
-            Object.entries(childValue as Record<string, unknown>).map(
-              ([propKey, propVal]) => [propKey, coerceSchemaNode(propVal)]
-            )
-          ),
-        ]
+    Object.entries(value as Record<string, unknown>).map(
+      ([key, childValue]) => {
+        // Schema-node containers: their direct children are sub-schemas, so a
+        // bare-string primitive type name should expand to `{ type: <name> }`.
+        if (
+          SCHEMA_NODE_MAP_KEYS.has(key) &&
+          childValue &&
+          typeof childValue === 'object' &&
+          !Array.isArray(childValue)
+        ) {
+          return [
+            key,
+            Object.fromEntries(
+              Object.entries(childValue as Record<string, unknown>).map(
+                ([propKey, propVal]) => [propKey, coerceSchemaNode(propVal)]
+              )
+            ),
+          ]
+        }
+        if (SCHEMA_NODE_LIST_KEYS.has(key) && Array.isArray(childValue)) {
+          return [key, childValue.map(coerceSchemaNode)]
+        }
+        if (key === 'items') {
+          if (Array.isArray(childValue))
+            return [key, childValue.map(coerceSchemaNode)]
+          return [key, coerceSchemaNode(childValue)]
+        }
+        return [key, normalizeToolInputSchemaValue(childValue)]
       }
-      if (SCHEMA_NODE_LIST_KEYS.has(key) && Array.isArray(childValue)) {
-        return [key, childValue.map(coerceSchemaNode)]
-      }
-      if (key === 'items') {
-        if (Array.isArray(childValue)) return [key, childValue.map(coerceSchemaNode)]
-        return [key, coerceSchemaNode(childValue)]
-      }
-      return [key, normalizeToolInputSchemaValue(childValue)]
-    })
+    )
   )
 
-  const hasDescription = Object.prototype.hasOwnProperty.call(normalized, 'description')
+  const hasDescription = Object.prototype.hasOwnProperty.call(
+    normalized,
+    'description'
+  )
   const hasType = Object.prototype.hasOwnProperty.call(normalized, 'type')
   const hasNestedSchemaKeywords =
     Object.prototype.hasOwnProperty.call(normalized, 'properties') ||
@@ -186,7 +205,10 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
     Object.prototype.hasOwnProperty.call(normalized, 'allOf') ||
     Object.prototype.hasOwnProperty.call(normalized, '$ref')
 
-  if (normalized.type === 'object' && !Object.prototype.hasOwnProperty.call(normalized, 'properties')) {
+  if (
+    normalized.type === 'object' &&
+    !Object.prototype.hasOwnProperty.call(normalized, 'properties')
+  ) {
     normalized.properties = {}
   }
 
@@ -328,7 +350,8 @@ export function extractContextInfoFromError(
     if (!inner || typeof inner !== 'object') return null
     const nPromptTokens = (inner as Record<string, unknown>).n_prompt_tokens
     const nCtx = (inner as Record<string, unknown>).n_ctx
-    if (typeof nPromptTokens !== 'number' || typeof nCtx !== 'number') return null
+    if (typeof nPromptTokens !== 'number' || typeof nCtx !== 'number')
+      return null
     return { nPromptTokens, nCtx }
   } catch {
     return null
@@ -345,7 +368,8 @@ export function unwrapRetryError(error: unknown): unknown {
 }
 
 const RETRY_PREFIX_RE = /^Failed after \d+ attempts\. Last error: /
-const RETRY_NONRETRYABLE_RE = /^Failed after \d+ attempts with non-retryable error: '(.+)'$/s
+const RETRY_NONRETRYABLE_RE =
+  /^Failed after \d+ attempts with non-retryable error: '(.+)'$/s
 
 export function stripRetryErrorWrapper(message: string): string {
   if (typeof message !== 'string') return message
@@ -494,7 +518,10 @@ function extractLatestUserText(messages: UIMessage[]): string {
     const parts = Array.isArray(m.parts) ? m.parts : []
     const chunks: string[] = []
     for (const p of parts) {
-      if (p.type === 'text' && typeof (p as { text?: string }).text === 'string') {
+      if (
+        p.type === 'text' &&
+        typeof (p as { text?: string }).text === 'string'
+      ) {
         const t = (p as { text: string }).text.trim()
         if (t) chunks.push(t)
       }
@@ -525,10 +552,17 @@ function prependTextDeltaToUIStream(
           return
         }
         controller.enqueue(value)
-        if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+        if (
+          !prefixEmitted &&
+          (value as { type: string }).type === 'text-start'
+        ) {
           prefixEmitted = true
           const id = (value as { type: 'text-start'; id: string }).id
-          controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+          controller.enqueue({
+            type: 'text-delta',
+            id,
+            delta: prefixText,
+          } as UIMessageChunk)
         }
       } catch (error) {
         controller.error(error)
@@ -645,7 +679,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     const selectedModel = useModelProvider.getState().selectedModel
-    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
     if (modelSupportsTools) {
@@ -663,7 +698,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ExtensionTypeEnum.VectorDB
             )
             if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+              const projectFiles =
+                await ext.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -693,7 +729,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 toolsRecord[tool.name] = {
                   description: tool.description,
                   inputSchema: jsonSchema(
-                    normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+                    normalizeToolInputSchema(
+                      tool.inputSchema as Record<string, unknown>
+                    )
                   ),
                 } as Tool
               }
@@ -721,7 +759,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             mcpSettings.useLightweightRouterModel &&
             mcpSettings.routerModelProvider.trim() &&
             mcpSettings.routerModelId.trim()
-              ? (await this.resolveRouterModel(mcpSettings)) ?? this.model
+              ? ((await this.resolveRouterModel(mcpSettings)) ?? this.model)
               : this.model
           mcpTools = await mcpOrchestrator.getRelevantTools(
             this.lastUserMessage,
@@ -756,7 +794,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             toolsRecord[tool.name] = {
               description: tool.description,
               inputSchema: jsonSchema(
-                normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+                normalizeToolInputSchema(
+                  tool.inputSchema as Record<string, unknown>
+                )
               ),
             } as Tool
           })
@@ -852,6 +892,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const provider = useModelProvider.getState().getProviderByName(providerId)
     const codexSelectedModel = useModelProvider.getState().selectedModel
     if (isCodexAppServerProvider(providerId)) {
+      // Codex path: Jan is disconnected from the core agent/tool loop.
+      // We delegate entirely to the Codex app-server (the "engine").
+      // - Codex handles planning, reasoning, tool selection + execution (via its own MCP clients from config),
+      //   shell, file patches, subagents, etc.
+      // - Jan provides: MCP server *definitions* (projected into Codex config.toml), workspace/cwd,
+      //   provider profiles (model + base_url for Codex to use), approval UI (runtime permissions),
+      //   and rendering of rich Codex events (deltas, plans, command output, patches).
+      // See codex-app-server/ and the "disconnect" changes around item/tool/call proxy.
       if (!modelId || !provider || !codexSelectedModel) {
         throw new Error('Codex app-server provider requires a selected model.')
       }
@@ -881,11 +929,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       const selectedModel = useModelProvider.getState().selectedModel
       const reasoningParams = buildLlamacppReasoningParams(
         effectiveProviderName,
-        selectedModel?.settings?.reasoning?.controller_props?.value as
-          | 'auto'
-          | 'on'
-          | 'off'
-          | undefined
+        toLlamacppReasoningMode(getModelReasoningValue(selectedModel))
       )
 
       if (providerId === 'llamacpp') {
@@ -1006,7 +1050,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         : undefined
 
     const maxOutputTokens: number | undefined = (() => {
-      const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
+      const raw =
+        inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
       if (raw === undefined || raw === null) return undefined
       const n = typeof raw === 'number' ? raw : Number(raw)
       return isNaN(n) ? undefined : n
@@ -1014,7 +1059,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const maxContextTokens = (() => {
       const raw = inferenceParams.max_context_tokens
-      return typeof raw === 'number' ? raw : (Number(raw) || 0)
+      return typeof raw === 'number' ? raw : Number(raw) || 0
     })()
     const autoCompact =
       inferenceParams.auto_compact === true ||
@@ -1044,7 +1089,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         if (compactResult.trimmedCount > 0) {
           console.debug(
             `[context-manager] Compacted ${compactResult.trimmedCount} messages` +
-              (compactResult.compactedSummary ? ' with summary' : ' (trim fallback)')
+              (compactResult.compactedSummary
+                ? ' with summary'
+                : ' (trim fallback)')
           )
         }
       } else {
@@ -1082,12 +1129,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const continueContent = this.continueFromContent
     this.continueFromContent = null
     const modelMessages = continueContent
-      ? [...baseMessages, { role: 'assistant' as const, content: continueContent }]
+      ? [
+          ...baseMessages,
+          { role: 'assistant' as const, content: continueContent },
+        ]
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
-    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
     let streamStartTime: number | undefined
@@ -1179,13 +1230,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           useAppState.getState().setCurrentStreamThreadId(undefined)
         }
         const unwrapped = unwrapRetryError(error)
-        const rawMessage = unwrapped == null
-          ? 'Unknown error'
-          : typeof unwrapped === 'string'
-            ? unwrapped
-            : unwrapped instanceof Error
-              ? unwrapped.message
-              : JSON.stringify(unwrapped)
+        const rawMessage =
+          unwrapped == null
+            ? 'Unknown error'
+            : typeof unwrapped === 'string'
+              ? unwrapped
+              : unwrapped instanceof Error
+                ? unwrapped.message
+                : JSON.stringify(unwrapped)
         const baseMessage = stripRetryErrorWrapper(rawMessage)
 
         const contextInfo = extractContextInfoFromError(unwrapped)
@@ -1242,7 +1294,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   // the outgoing wire, which llama-server's chat-completions endpoint accepts.
   encodeAudioAttachments(messages: UIMessage[]): UIMessage[] {
     return messages.map((message) => {
-      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
+      if (message.role !== 'user' || !Array.isArray(message.parts))
+        return message
       let touched = false
       const nextParts = message.parts.map((part) => {
         if (
@@ -1254,7 +1307,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           const parsed = parseAudioDataUrl((part as { url: string }).url)
           if (!parsed) return part
           touched = true
-          return { type: 'text' as const, text: encodeAudioSentinel(parsed.format, parsed.data) }
+          return {
+            type: 'text' as const,
+            text: encodeAudioSentinel(parsed.format, parsed.data),
+          }
         }
         return part
       })
@@ -1275,12 +1331,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * (UI still relies on the inline block for display); this only affects what
    * is sent to the model.
    */
-  extractFileMetadataForSystem(
+  extractFileMetadataForSystem(messages: UIMessage[]): {
     messages: UIMessage[]
-  ): { messages: UIMessage[]; files: FileMetadata[] } {
+    files: FileMetadata[]
+  } {
     const byId = new Map<string, FileMetadata>()
     const next = messages.map((message) => {
-      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
+      if (message.role !== 'user' || !Array.isArray(message.parts))
+        return message
       let touched = false
       const parts = message.parts.map((part) => {
         if (
@@ -1316,7 +1374,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       const parts = [`file_id: ${f.id}`, `name: ${f.name}`]
       if (f.type) parts.push(`type: ${f.type}`)
       if (typeof f.size === 'number') parts.push(`size: ${f.size}`)
-      if (typeof f.chunkCount === 'number') parts.push(`chunks: ${f.chunkCount}`)
+      if (typeof f.chunkCount === 'number')
+        parts.push(`chunks: ${f.chunkCount}`)
       if (f.injectionMode) parts.push(`mode: ${f.injectionMode}`)
       return `- ${parts.join(', ')}`
     })

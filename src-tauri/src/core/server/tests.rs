@@ -351,9 +351,15 @@ mod server_tests {
 
         proxy::normalize_openai_tool_parameters_schema(&mut schema);
 
-        assert_eq!(schema["properties"]["payload"]["properties"]["title"]["type"], json!("string"));
+        assert_eq!(
+            schema["properties"]["payload"]["properties"]["title"]["type"],
+            json!("string")
+        );
         assert_eq!(schema["properties"]["filters"]["properties"], json!({}));
-        assert_eq!(schema["properties"]["items"]["items"]["properties"], json!({}));
+        assert_eq!(
+            schema["properties"]["items"]["items"]["properties"],
+            json!({})
+        );
     }
 
     #[test]
@@ -498,7 +504,10 @@ mod server_tests {
 
         assert_eq!(schema["properties"]["count"]["type"], json!("integer"));
         assert_eq!(schema["properties"]["title"]["type"], json!("string"));
-        assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
+        assert_eq!(
+            schema["properties"]["metadata"]["description"],
+            json!("Optional metadata")
+        );
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
     }
 
@@ -575,12 +584,22 @@ mod server_tests {
     #[test]
     fn http_status_indicates_api_key_retry_matrix() {
         use hyper::StatusCode;
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::UNAUTHORIZED));
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::FORBIDDEN));
-        assert!(proxy::http_status_indicates_api_key_retry(StatusCode::TOO_MANY_REQUESTS));
+        assert!(proxy::http_status_indicates_api_key_retry(
+            StatusCode::UNAUTHORIZED
+        ));
+        assert!(proxy::http_status_indicates_api_key_retry(
+            StatusCode::FORBIDDEN
+        ));
+        assert!(proxy::http_status_indicates_api_key_retry(
+            StatusCode::TOO_MANY_REQUESTS
+        ));
         assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::OK));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::BAD_REQUEST));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(!proxy::http_status_indicates_api_key_retry(
+            StatusCode::BAD_REQUEST
+        ));
+        assert!(!proxy::http_status_indicates_api_key_retry(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
     }
 
     #[test]
@@ -620,7 +639,10 @@ mod server_tests {
             {"type": "text", "text": "second"},
             {"type": "image", "source": {}}
         ]);
-        assert_eq!(proxy::extract_tool_result_content(Some(&v)), "first\nsecond");
+        assert_eq!(
+            proxy::extract_tool_result_content(Some(&v)),
+            "first\nsecond"
+        );
     }
 
     #[test]
@@ -649,7 +671,10 @@ mod server_tests {
         proxy::convert_media_block(&block, &mut parts);
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0]["type"], "image_url");
-        assert_eq!(parts[0]["image_url"]["url"], "data:image/png;base64,BASE64DATA");
+        assert_eq!(
+            parts[0]["image_url"]["url"],
+            "data:image/png;base64,BASE64DATA"
+        );
     }
 
     #[test]
@@ -1045,12 +1070,8 @@ mod server_tests {
     fn add_cors_headers_with_empty_origin_omits_origin() {
         let trusted = vec![vec!["localhost".to_string()]];
         let builder = hyper::Response::builder();
-        let builder = proxy::add_cors_headers_with_host_and_origin(
-            builder,
-            "localhost",
-            "",
-            &trusted,
-        );
+        let builder =
+            proxy::add_cors_headers_with_host_and_origin(builder, "localhost", "", &trusted);
         let resp = builder.body(hyper::Body::empty()).unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));

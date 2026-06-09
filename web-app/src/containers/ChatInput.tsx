@@ -20,7 +20,6 @@ import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
   IconMusic,
-  IconBrain,
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -48,17 +47,29 @@ import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import {
+  HOME_COMPOSE_CONTEXT_ID,
   TEMPORARY_CHAT_ID,
   TEMPORARY_CHAT_QUERY_ID,
   SESSION_STORAGE_KEY,
   SESSION_STORAGE_PREFIX,
+  projectComposeContextId,
 } from '@/constants/chat'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { useChatWorkspaceContext } from '@/stores/chat-workspace-context-store'
+import {
+  useWorkspaceDirectories,
+  type WorkspaceDirectoryScope,
+} from '@/stores/workspace-directory-store'
+import { getProjectDisplayName } from '@/lib/project-folders'
+import { sessionWorkspaceScope } from '@/hooks/useChatSessionScope'
+import { useChatSessionState } from '@/stores/chat-session-state-store'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
+import { ChatModelSelector } from '@/containers/ChatModelSelector'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -87,6 +98,15 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { ChatWorkspaceBar } from '@/containers/ChatWorkspaceBar'
+import { ChatSlashCommandMenu } from '@/containers/ChatSlashCommandMenu'
+import type { ChatSlashCommand } from '@/constants/chat-commands'
+import {
+  executeChatSlashCommand,
+  filterSlashCommands,
+  getSlashCommandContext,
+} from '@/lib/chat-slash-commands'
+import { isCodexAppServerProvider } from '@/lib/codex-app-server'
 
 type ChatInputProps = {
   className?: string
@@ -104,6 +124,7 @@ type ChatInputProps = {
 
 const ChatInput = memo(function ChatInput({
   className,
+  model,
   initialMessage,
   projectId,
   onSubmit,
@@ -113,6 +134,8 @@ const ChatInput = memo(function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+  const [cursorPosition, setCursorPosition] = useState(0)
+  const [slashHighlightIndex, setSlashHighlightIndex] = useState(0)
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const tools = useAppState((state) => state.tools)
@@ -138,6 +161,10 @@ const ChatInput = memo(function ChatInput({
   const createThread = useThreads((state) => state.createThread)
   const { loading, currentAssistant, setCurrentAssistant, assistants } =
     useAssistant()
+  const { getFolderById } = useThreadManagement()
+  const workspaceDirectories = useWorkspaceDirectories(
+    (state) => state.directories
+  )
 
   // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
@@ -165,10 +192,6 @@ const ChatInput = memo(function ChatInput({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const selectModelProvider = useModelProvider(
-    (state) => state.selectModelProvider
-  )
-  const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipShown, setTooltipShown] = useState<
@@ -236,8 +259,6 @@ const ChatInput = memo(function ChatInput({
   const transferAttachments = useChatAttachments(
     (state) => state.transferAttachments
   )
-  const getProviderByName = useModelProvider((state) => state.getProviderByName)
-
   const ingestingDocs = attachments.some(
     (a) => a.type === 'document' && a.processing
   )
@@ -413,11 +434,17 @@ const ChatInput = memo(function ChatInput({
           | undefined
         let projectAssistantId: string | undefined
 
-        if (projectId) {
+        const resolvedProjectId =
+          projectId ??
+          useChatWorkspaceContext.getState().getContext(HOME_COMPOSE_CONTEXT_ID)
+            .draftProjectId ??
+          undefined
+
+        if (resolvedProjectId) {
           try {
             const project = await serviceHub
               .projects()
-              .getProjectById(projectId)
+              .getProjectById(resolvedProjectId)
             if (project) {
               projectMetadata = {
                 id: project.id,
@@ -448,6 +475,32 @@ const ChatInput = memo(function ChatInput({
           assistant,
           projectMetadata
         )
+
+        const composeContextId = projectId
+          ? projectComposeContextId(projectId)
+          : HOME_COMPOSE_CONTEXT_ID
+        useChatWorkspaceContext
+          .getState()
+          .transferContext(composeContextId, newThread.id)
+        useChatSessionState
+          .getState()
+          .transferSession(composeContextId, newThread.id)
+
+        const composeScope = sessionWorkspaceScope(
+          composeContextId,
+          projectMetadata?.name ?? (prompt || 'Chat')
+        )
+        const composeDirectory = useWorkspaceDirectories
+          .getState()
+          .getDirectory(composeScope)
+        if (composeDirectory) {
+          useWorkspaceDirectories
+            .getState()
+            .setDirectory(
+              sessionWorkspaceScope(newThread.id, prompt || 'Chat'),
+              composeDirectory
+            )
+        }
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
@@ -1574,10 +1627,136 @@ const ChatInput = memo(function ChatInput({
 
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
 
+  const syncCursorPosition = useCallback(() => {
+    const element = textareaRef.current
+    if (!element) return
+    setCursorPosition(element.selectionStart ?? prompt.length)
+  }, [prompt.length])
+
+  const codexCommandsEnabled = isCodexAppServerProvider(selectedProvider)
+  const hasChatThread = Boolean(
+    currentThreadId && currentThreadId !== TEMPORARY_CHAT_ID
+  )
+
+  const slashContext = useMemo(
+    () => getSlashCommandContext(prompt, cursorPosition),
+    [prompt, cursorPosition]
+  )
+
+  const filteredSlashCommands = useMemo(
+    () =>
+      slashContext
+        ? filterSlashCommands({
+            query: slashContext.query,
+            codexEnabled: codexCommandsEnabled,
+            hasThread: hasChatThread,
+            isStreaming,
+          })
+        : [],
+    [slashContext, codexCommandsEnabled, hasChatThread, isStreaming]
+  )
+
+  const slashMenuOpen = Boolean(
+    slashContext && filteredSlashCommands.length > 0
+  )
+
+  useEffect(() => {
+    setSlashHighlightIndex(0)
+  }, [slashContext?.query, slashMenuOpen])
+
+  const handleSlashCommandSelect = useCallback(
+    async (command: ChatSlashCommand) => {
+      if (command.id === 'clear') {
+        setPrompt('')
+        return
+      }
+
+      if (command.id === 'help') {
+        setPrompt('/')
+        setCursorPosition(1)
+        requestAnimationFrame(() => textareaRef.current?.focus())
+        return
+      }
+
+      setPrompt('')
+      try {
+        await executeChatSlashCommand(command.id, {
+          threadId: currentThreadId,
+          isStreaming,
+          onStop,
+        })
+        toast.success(`Ran /${command.name}`)
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : `Failed to run /${command.name}`
+        )
+      }
+    },
+    [currentThreadId, isStreaming, onStop, setPrompt]
+  )
+
+  const workspaceBarContextId = useMemo(() => {
+    if (currentThreadId && currentThreadId !== TEMPORARY_CHAT_ID) {
+      return currentThreadId
+    }
+    if (initialMessage) {
+      return projectId
+        ? projectComposeContextId(projectId)
+        : HOME_COMPOSE_CONTEXT_ID
+    }
+    return null
+  }, [currentThreadId, initialMessage, projectId])
+
+  const workspaceBarScope = useMemo((): WorkspaceDirectoryScope | null => {
+    if (!workspaceBarContextId) return null
+    if (currentThreadId && currentThread) {
+      return sessionWorkspaceScope(
+        workspaceBarContextId,
+        currentThread.title ?? 'Chat'
+      )
+    }
+    if (projectId) {
+      const project = getFolderById(projectId)
+      return sessionWorkspaceScope(
+        workspaceBarContextId,
+        project ? getProjectDisplayName(project, workspaceDirectories) : 'Project'
+      )
+    }
+    return sessionWorkspaceScope(workspaceBarContextId, 'Home')
+  }, [
+    workspaceBarContextId,
+    currentThreadId,
+    currentThread,
+    projectId,
+    getFolderById,
+    workspaceDirectories,
+  ])
+
+  const workspaceBarFixedProject = useMemo(() => {
+    if (!projectId || currentThreadId) return undefined
+    const project = getFolderById(projectId)
+    if (!project) return undefined
+    return {
+      id: project.id,
+      name: getProjectDisplayName(project, workspaceDirectories),
+    }
+  }, [projectId, currentThreadId, getFolderById, workspaceDirectories])
+
+  const showWorkspaceBar = Boolean(
+    workspaceBarContextId && workspaceBarScope
+  )
+
   return (
     <div className="relative">
       <div className="relative">
-        <div className={cn('relative overflow-hidden p-0.5 rounded-3xl')}>
+        <div
+          className={cn(
+            'relative overflow-hidden p-0.5',
+            showWorkspaceBar ? 'rounded-t-3xl rounded-b-none' : 'rounded-3xl'
+          )}
+        >
           {isStreaming && (
             <div className="absolute inset-0">
               <MovingBorder rx="10%" ry="10%">
@@ -1592,7 +1771,8 @@ const ChatInput = memo(function ChatInput({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+              'relative z-20 px-0 pb-10 border border-input bg-white dark:bg-input/30',
+              showWorkspaceBar ? 'rounded-t-3xl rounded-b-none' : 'rounded-3xl',
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
@@ -1790,70 +1970,132 @@ const ChatInput = memo(function ChatInput({
                 ))}
               </div>
             )}
-            <TextareaAutosize
-              dir="auto"
-              ref={textareaRef}
-              minRows={2}
-              rows={1}
-              maxRows={10}
-              value={prompt}
-              data-testid={'chat-input'}
-              onChange={(e) => {
-                setPrompt(e.target.value)
-                // Count the number of newlines to estimate rows
-                const newRows = (e.target.value.match(/\n/g) || []).length + 1
-                setRows(Math.min(newRows, maxRows))
-              }}
-              onKeyDown={(e) => {
-                // e.keyCode 229 is for IME input with Safari
-                const isComposing =
-                  e.nativeEvent.isComposing || e.keyCode === 229
-                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
-                  e.preventDefault()
-                  // Submit prompt when Enter is pressed without Shift and prompt is not empty.
-                  // If streaming, handleSendMessage will queue the message automatically.
-                  if (
-                    (prompt.trim() || hasSendableMedia || hasSendableContext) &&
-                    !ingestingAny
-                  ) {
-                    handleSendMessage(prompt)
+            <div className="relative px-4">
+              {slashMenuOpen ? (
+                <ChatSlashCommandMenu
+                  commands={filteredSlashCommands}
+                  highlightedIndex={slashHighlightIndex}
+                  onHighlight={setSlashHighlightIndex}
+                  onSelect={(command) => {
+                    void handleSlashCommandSelect(command)
+                  }}
+                />
+              ) : null}
+              <TextareaAutosize
+                dir="auto"
+                ref={textareaRef}
+                minRows={2}
+                rows={1}
+                maxRows={10}
+                value={prompt}
+                data-testid={'chat-input'}
+                onChange={(e) => {
+                  setPrompt(e.target.value)
+                  setCursorPosition(
+                    e.target.selectionStart ?? e.target.value.length
+                  )
+                  const newRows = (e.target.value.match(/\n/g) || []).length + 1
+                  setRows(Math.min(newRows, maxRows))
+                }}
+                onSelect={syncCursorPosition}
+                onKeyUp={syncCursorPosition}
+                onClick={syncCursorPosition}
+                onKeyDown={(e) => {
+                  const isComposing =
+                    e.nativeEvent.isComposing || e.keyCode === 229
+
+                  if (slashMenuOpen && !isComposing) {
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setSlashHighlightIndex((index) =>
+                        index <= 0
+                          ? filteredSlashCommands.length - 1
+                          : index - 1
+                      )
+                      return
+                    }
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      setSlashHighlightIndex((index) =>
+                        index >= filteredSlashCommands.length - 1 ? 0 : index + 1
+                      )
+                      return
+                    }
+                    if (e.key === 'Tab') {
+                      e.preventDefault()
+                      const command =
+                        filteredSlashCommands[slashHighlightIndex]
+                      if (command) void handleSlashCommandSelect(command)
+                      return
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      if (slashContext) {
+                        setPrompt(
+                          prompt.slice(0, slashContext.start) +
+                            prompt.slice(slashContext.end)
+                        )
+                        setCursorPosition(slashContext.start)
+                      }
+                      return
+                    }
                   }
-                  // When Shift+Enter is pressed, a new line is added (default behavior)
-                }
-                // Navigate prompt history with Up/Down arrow keys
-                if (e.key === 'ArrowUp' && !isComposing) {
-                  const textarea = e.currentTarget
-                  const cursorAtStart =
-                    textarea.selectionStart === 0 && textarea.selectionEnd === 0
-                  if (cursorAtStart || !prompt) {
+
+                  if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                    if (slashMenuOpen) {
+                      e.preventDefault()
+                      const command =
+                        filteredSlashCommands[slashHighlightIndex]
+                      if (command) void handleSlashCommandSelect(command)
+                      return
+                    }
+
                     e.preventDefault()
-                    navigateHistory('up')
+                    if (
+                      (prompt.trim() ||
+                        hasSendableMedia ||
+                        hasSendableContext) &&
+                      !ingestingAny
+                    ) {
+                      handleSendMessage(prompt)
+                    }
                   }
-                }
-                if (e.key === 'ArrowDown' && !isComposing) {
-                  const textarea = e.currentTarget
-                  const cursorAtEnd =
-                    textarea.selectionStart === prompt.length &&
-                    textarea.selectionEnd === prompt.length
-                  if (cursorAtEnd) {
-                    e.preventDefault()
-                    navigateHistory('down')
+
+                  if (e.key === 'ArrowUp' && !isComposing && !slashMenuOpen) {
+                    const textarea = e.currentTarget
+                    const cursorAtStart =
+                      textarea.selectionStart === 0 &&
+                      textarea.selectionEnd === 0
+                    if (cursorAtStart || !prompt) {
+                      e.preventDefault()
+                      navigateHistory('up')
+                    }
                   }
-                }
-              }}
-              onPaste={handlePaste}
-              placeholder={t('common:placeholder.chatInput')}
-              autoFocus
-              spellCheck={spellCheckChatInput}
-              data-gramm={spellCheckChatInput}
-              data-gramm_editor={spellCheckChatInput}
-              data-gramm_grammarly={spellCheckChatInput}
-              className={cn(
-                'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
-                rows < maxRows && 'scrollbar-hide',
-                className
-              )}
-            />
+                  if (e.key === 'ArrowDown' && !isComposing && !slashMenuOpen) {
+                    const textarea = e.currentTarget
+                    const cursorAtEnd =
+                      textarea.selectionStart === prompt.length &&
+                      textarea.selectionEnd === prompt.length
+                    if (cursorAtEnd) {
+                      e.preventDefault()
+                      navigateHistory('down')
+                    }
+                  }
+                }}
+                onPaste={handlePaste}
+                placeholder={t('common:placeholder.chatInput')}
+                autoFocus
+                spellCheck={spellCheckChatInput}
+                data-gramm={spellCheckChatInput}
+                data-gramm_editor={spellCheckChatInput}
+                data-gramm_grammarly={spellCheckChatInput}
+                className={cn(
+                  'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0',
+                  rows < maxRows && 'scrollbar-hide',
+                  className
+                )}
+              />
+            </div>
           </div>
         </div>
 
@@ -2138,134 +2380,16 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   )}
 
-                {!effectiveAgentMode &&
-                  selectedProvider === 'llamacpp' &&
-                  (() => {
-                    const reasoningValue =
-                      (selectedModel?.settings?.reasoning?.controller_props
-                        ?.value as 'auto' | 'on' | 'off' | undefined) ?? 'auto'
-                    const setReasoning = (value: 'auto' | 'on' | 'off') => {
-                      if (!selectedProvider || !selectedModel) return
-                      const providerObj = getProviderByName(selectedProvider)
-                      if (!providerObj) return
-                      const modelIndex = providerObj.models.findIndex(
-                        (m) => m.id === selectedModel.id
-                      )
-                      if (modelIndex === -1) return
-                      const existing = selectedModel.settings?.reasoning ?? {
-                        key: 'reasoning',
-                        title: 'Reasoning',
-                        description: '',
-                        controller_type: 'dropdown',
-                        controller_props: { value },
-                      }
-                      const updatedModel = {
-                        ...selectedModel,
-                        settings: {
-                          ...selectedModel.settings,
-                          reasoning: {
-                            ...existing,
-                            controller_props: {
-                              ...(existing.controller_props ?? {}),
-                              value,
-                            },
-                          },
-                        },
-                      } as Model
-                      const updatedModels = [...providerObj.models]
-                      updatedModels[modelIndex] = updatedModel
-                      updateProvider(selectedProvider, {
-                        models: updatedModels,
-                      })
-                      // selectedModel is a snapshot, not a live derivation —
-                      // re-select to refresh it so the dropdown UI and the
-                      // chat transport both observe the new value.
-                      selectModelProvider(selectedProvider, selectedModel.id)
-                    }
-                    const label =
-                      reasoningValue === 'on'
-                        ? 'On'
-                        : reasoningValue === 'off'
-                          ? 'Off'
-                          : 'Auto'
-                    const tooltipText =
-                      reasoningValue === 'on'
-                        ? 'Reasoning forced on for every request.'
-                        : reasoningValue === 'off'
-                          ? 'Reasoning disabled for every request.'
-                          : "Reasoning auto-detected from the model's chat template."
-                    return (
-                      <DropdownMenu>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label={`Reasoning: ${label}`}
-                              >
-                                <IconBrain
-                                  size={18}
-                                  className={cn(
-                                    'text-muted-foreground',
-                                    reasoningValue === 'on' && 'text-primary',
-                                    reasoningValue === 'off' && 'opacity-50'
-                                  )}
-                                />
-                              </Button>
-                            </DropdownMenuTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{tooltipText}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuItem
-                            onClick={() => setReasoning('auto')}
-                          >
-                            Auto
-                            {reasoningValue === 'auto' && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                ✓
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setReasoning('on')}>
-                            On
-                            {reasoningValue === 'on' && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                ✓
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setReasoning('off')}>
-                            Off
-                            {reasoningValue === 'off' && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                ✓
-                              </span>
-                            )}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )
-                  })()}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {selectedProvider === 'llamacpp' &&
-                tokenCounterCompact &&
-                !effectiveAgentMode &&
-                !initialMessage &&
-                (threadMessages?.length > 0 || prompt.trim().length > 0) && (
-                  <div className="flex-1 flex justify-center">
-                    <TokenCounter
-                      messages={threadMessages || []}
-                      compact={true}
-                    />
-                  </div>
-                )}
+              <div className="flex min-w-0 items-center gap-1.5">
+                <ChatModelSelector
+                  model={model}
+                  useLastUsedModel={initialMessage}
+                />
+              </div>
 
               {isStreaming ? (
                 <Tooltip>
@@ -2318,6 +2442,19 @@ const ChatInput = memo(function ChatInput({
           </div>
         </div>
       </div>
+
+      {showWorkspaceBar && workspaceBarContextId && workspaceBarScope ? (
+        <ChatWorkspaceBar
+          contextId={workspaceBarContextId}
+          workspaceScope={workspaceBarScope}
+          threadId={
+            currentThreadId && currentThreadId !== TEMPORARY_CHAT_ID
+              ? currentThreadId
+              : undefined
+          }
+          fixedProject={workspaceBarFixedProject}
+        />
+      ) : null}
 
       {message && (
         <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">

@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { route } from '@/constants/routes'
 import { predefinedProviders } from '@/constants/providers'
-import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { providerHasConfiguredRemoteAuth } from '@/lib/provider-api-keys'
 import { WorkspacePanelsLayout } from '@/containers/ModelToolsPanel'
 import { Button } from '@/components/ui/button'
 
@@ -23,7 +23,6 @@ type SearchParams = {
 }
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute(route.home as any)({
@@ -58,7 +57,7 @@ function Index() {
 
     // Predefined providers need either API key or models (for llamacpp/jan)
     return (
-      providerHasRemoteApiKeys(provider) ||
+      providerHasConfiguredRemoteAuth(provider) ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
     )
@@ -70,16 +69,15 @@ function Index() {
 
   return (
     <WorkspacePanelsLayout
-      scope={{ id: 'home', type: 'workspace', label: 'Home' }}
+      scope={{
+        id: 'home',
+        type: 'workspace',
+        label: 'Home',
+        sessionId: 'home',
+      }}
     >
       <div className="flex h-full min-h-0 flex-col">
-        <HeaderPage>
-          <div className="flex w-full items-center pr-3">
-            <div className="min-w-0 max-w-[22rem]">
-              <DropdownModelProvider model={threadModel} />
-            </div>
-          </div>
-        </HeaderPage>
+        <HeaderPage />
         <div className="flex min-h-0 flex-1">
           <div
             className={cn(

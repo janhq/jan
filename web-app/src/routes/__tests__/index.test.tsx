@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
   search: { threadModel: undefined as any },
   setCurrentThreadId: vi.fn(),
   useTools: vi.fn(),
-  providerHasRemoteApiKeys: vi.fn(() => false),
+  providerHasConfiguredRemoteAuth: vi.fn(() => false),
   predefinedProviders: [
     { provider: 'openai' },
     { provider: 'llamacpp' },
@@ -72,7 +72,7 @@ vi.mock('@/lib/utils', () => ({
 }))
 
 vi.mock('@/lib/provider-api-keys', () => ({
-  providerHasRemoteApiKeys: (p: any) => h.providerHasRemoteApiKeys(p),
+  providerHasConfiguredRemoteAuth: (p: any) => h.providerHasConfiguredRemoteAuth(p),
 }))
 
 vi.mock('@/constants/providers', () => ({
@@ -100,7 +100,7 @@ describe('Index route', () => {
     vi.clearAllMocks()
     h.providers = []
     h.search = { threadModel: undefined }
-    h.providerHasRemoteApiKeys.mockReturnValue(false)
+    h.providerHasConfiguredRemoteAuth.mockReturnValue(false)
   })
 
   it('validateSearch returns threadModel from search params', () => {
@@ -125,7 +125,7 @@ describe('Index route', () => {
 
   it('renders chat UI when predefined provider has no api key and no models', () => {
     h.providers = [{ provider: 'openai', models: [] }]
-    h.providerHasRemoteApiKeys.mockReturnValue(false)
+    h.providerHasConfiguredRemoteAuth.mockReturnValue(false)
     renderComponent()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(
@@ -135,7 +135,7 @@ describe('Index route', () => {
 
   it('renders chat UI when predefined provider has api key', () => {
     h.providers = [{ provider: 'openai', models: [] }]
-    h.providerHasRemoteApiKeys.mockReturnValue(true)
+    h.providerHasConfiguredRemoteAuth.mockReturnValue(true)
     renderComponent()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
@@ -145,7 +145,7 @@ describe('Index route', () => {
 
   it('renders chat UI when llamacpp provider has models', () => {
     h.providers = [{ provider: 'llamacpp', models: [{ id: 'x' }] }]
-    h.providerHasRemoteApiKeys.mockReturnValue(false)
+    h.providerHasConfiguredRemoteAuth.mockReturnValue(false)
     renderComponent()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
   })
@@ -173,7 +173,7 @@ describe('Index route', () => {
 
   it('passes threadModel from search into DropdownModelProvider and ChatInput', () => {
     h.providers = [{ provider: 'openai', models: [] }]
-    h.providerHasRemoteApiKeys.mockReturnValue(true)
+    h.providerHasConfiguredRemoteAuth.mockReturnValue(true)
     h.search = { threadModel: { id: 'gpt-x', provider: 'openai' } }
     renderComponent()
     expect(screen.getByTestId('dropdown')).toHaveTextContent('gpt-x')
@@ -186,7 +186,7 @@ describe('Index route', () => {
 
   it('calls setCurrentThreadId(undefined) and useTools on mount', () => {
     h.providers = [{ provider: 'openai', models: [] }]
-    h.providerHasRemoteApiKeys.mockReturnValue(true)
+    h.providerHasConfiguredRemoteAuth.mockReturnValue(true)
     renderComponent()
     expect(h.setCurrentThreadId).toHaveBeenCalledWith(undefined)
     expect(h.useTools).toHaveBeenCalled()

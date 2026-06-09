@@ -504,7 +504,7 @@ export const predefinedProviders = [
         key: 'codex-binary-path',
         title: 'Codex Binary',
         description:
-          'Path to a Codex binary with `app-server` support. Leave as the desktop app binary on macOS unless you install a newer CLI.',
+          'Path to a Codex binary with `app-server` support. Leave as the desktop app binary on macOS unless you install a newer CLI. If unavailable, Jan will fall back to `npx @openai/codex app-server --stdio` when possible.',
         controller_type: 'input',
         controller_props: {
           placeholder: IS_MACOS
@@ -513,6 +513,17 @@ export const predefinedProviders = [
           value: IS_MACOS
             ? '/Applications/Codex.app/Contents/Resources/codex'
             : 'codex',
+        },
+      },
+      {
+        key: 'codex-transport',
+        title: 'Codex Transport',
+        description:
+          '`app-server` uses the Codex app-server JSON-RPC protocol. Use `proto` only for Codex CLI builds that expose `codex proto` but not `app-server --stdio`.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'app-server',
+          value: 'app-server',
         },
       },
     ],

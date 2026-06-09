@@ -74,13 +74,19 @@ mod tests {
             union.insert(*entry);
         }
         let listed: HashSet<&str> = JAN_DATA_SUBDIRS.iter().copied().collect();
-        assert_eq!(union, listed, "JAN_DATA_SUBDIRS must equal union of categories");
+        assert_eq!(
+            union, listed,
+            "JAN_DATA_SUBDIRS must equal union of categories"
+        );
     }
 
     #[test]
     fn jan_data_files_is_union_of_all_file_categories() {
         let mut union: HashSet<&str> = HashSet::new();
-        for entry in JAN_DATA_FILES_CONFIGS.iter().chain(JAN_DATA_FILES_SETTINGS.iter()) {
+        for entry in JAN_DATA_FILES_CONFIGS
+            .iter()
+            .chain(JAN_DATA_FILES_SETTINGS.iter())
+        {
             union.insert(*entry);
         }
         let listed: HashSet<&str> = JAN_DATA_FILES.iter().copied().collect();

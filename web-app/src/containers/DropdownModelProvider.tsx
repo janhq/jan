@@ -21,10 +21,19 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
-import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { providerHasConfiguredRemoteAuth } from '@/lib/provider-api-keys'
+import {
+  getXaiOAuthStatus,
+  onXaiOAuthLoginComplete,
+} from '@/lib/xai-oauth'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
+import { ModelReasoningDropdown } from '@/containers/ModelReasoningDropdown'
+import {
+  getModelReasoningSetting,
+  modelSupportsReasoningControl,
+} from '@/lib/model-reasoning'
 import {
   Tooltip,
   TooltipContent,
@@ -34,6 +43,12 @@ import {
 type DropdownModelProviderProps = {
   model?: ThreadModel
   useLastUsedModel?: boolean
+  compact?: boolean
+  popupSide?: 'top' | 'right' | 'bottom' | 'left'
+  popupAlign?: 'start' | 'center' | 'end'
+  showSettings?: boolean
+  showSupportStatus?: boolean
+  showReasoning?: boolean
 }
 
 interface SearchableModel {
@@ -59,6 +74,12 @@ const setLastUsedModel = (provider: string, model: string) => {
 const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
   useLastUsedModel = false,
+  compact = false,
+  popupSide = 'bottom',
+  popupAlign = 'start',
+  showSettings = true,
+  showSupportStatus = true,
+  showReasoning = false,
 }: DropdownModelProviderProps) {
   const {
     providers,
@@ -80,6 +101,22 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [remoteAuthRevision, setRemoteAuthRevision] = useState(0)
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void getXaiOAuthStatus().then(() => {
+      setRemoteAuthRevision((n) => n + 1)
+    })
+    void onXaiOAuthLoginComplete(() => {
+      setRemoteAuthRevision((n) => n + 1)
+    }).then((fn) => {
+      unlisten = fn
+    })
+    return () => {
+      unlisten?.()
+    }
+  }, [])
 
   // Helper function to check if a model exists in providers
   const checkModelExists = useCallback(
@@ -272,6 +309,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         // Skip embedding models - they can't be used for chat
         if (modelItem.embedding) return
 
+        // Skip disabled/inactive models (default to active for local providers, inactive for remote)
+        const isModelActive = modelItem.active !== undefined
+          ? modelItem.active
+          : (provider.provider === 'llamacpp' || provider.provider === 'mlx')
+        if (!isModelActive) return
+
         // Skip models that require API key but don't have one (except llamacpp)
         // For custom providers, allow if they have at least one model loaded
         const isPredefined = predefinedProviders.some((e) =>
@@ -280,7 +323,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         if (
           provider &&
           provider.provider !== 'llamacpp' &&
-          !providerHasRemoteApiKeys(provider) &&
+          !providerHasConfiguredRemoteAuth(provider) &&
           (isPredefined || provider.models.length === 0)
         )
           return
@@ -303,7 +346,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     })
 
     return items
-  }, [providers])
+  }, [providers, remoteAuthRevision])
 
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
@@ -364,10 +407,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             e.provider.includes(b.provider)
           )
           const aHasApiKeyOrCustomModel =
-            providerHasRemoteApiKeys(a) ||
+            providerHasConfiguredRemoteAuth(a) ||
             (!aIsPredefined && a.models.length > 0)
           const bHasApiKeyOrCustomModel =
-            providerHasRemoteApiKeys(b) ||
+            providerHasConfiguredRemoteAuth(b) ||
             (!bIsPredefined && b.models.length > 0)
           // Providers with API keys or custom with models filled second
           if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1
@@ -471,10 +514,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <div className="border relative z-20 flex max-w-[22rem] items-center gap-1.5 rounded-full px-4 py-1.5">
+        <div
+          className={cn(
+            'border relative z-20 flex items-center gap-1.5',
+            compact
+              ? 'max-w-full rounded-md bg-secondary/40 px-2.5 py-1.5 shadow-sm'
+              : 'max-w-[22rem] rounded-full px-4 py-1.5'
+          )}
+        >
           <button
             type="button"
             className="font-medium cursor-pointer flex min-w-0 items-center gap-1.5 relative z-20"
+            aria-label="Select model"
           >
             {provider && (
               <div className="shrink-0">
@@ -486,6 +537,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 <span
                   className={cn(
                     'text-foreground truncate leading-normal',
+                    compact ? 'text-xs' : 'text-base',
                     !selectedModel?.id && 'text-muted-foreground'
                   )}
                 >
@@ -494,11 +546,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               </TooltipTrigger>
               <TooltipContent>{displayModel}</TooltipContent>
             </Tooltip>
-            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+            <ChevronsUpDown
+              className={cn(
+                'shrink-0 text-muted-foreground',
+                compact ? 'size-3.5' : 'size-4'
+              )}
+            />
           </button>
           {currentModel?.settings &&
             provider &&
-            provider.provider === 'llamacpp' && (
+            provider.provider === 'llamacpp' &&
+            showSettings && (
               <div onClick={(e) => e.stopPropagation()}>
                 <ModelSetting
                   model={currentModel as Model}
@@ -506,12 +564,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 />
               </div>
             )}
-          <ModelSupportStatus
-            modelId={selectedModel?.id}
-            provider={selectedProvider}
-            contextSize={getContextSize()}
-            className="ml-0.5 shrink-0"
-          />
+          {showSupportStatus && (
+            <ModelSupportStatus
+              modelId={selectedModel?.id}
+              provider={selectedProvider}
+              contextSize={getContextSize()}
+              className="ml-0.5 shrink-0"
+            />
+          )}
         </div>
       </PopoverTrigger>
 
@@ -521,10 +581,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           'w-auto min-w-70 max-w-[90vw] p-0 backdrop-blur-2xl bg-background/95 border',
           searchValue.length === 0 && 'h-80'
         )}
-        align="start"
+        align={popupAlign}
         // sideOffset={16}
         // alignOffset={-10}
-        side="bottom"
+        side={popupSide}
         avoidCollisions={searchValue.length === 0 ? true : false}
       >
         <div className="flex flex-col size-full">
@@ -607,6 +667,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               <div className="shrink-0 -mr-1.5">
                                 <Capabilities capabilities={capabilities} />
                               </div>
+                            )}
+                            {showReasoning && (
+                              <ModelReasoningDropdown
+                                model={searchableModel.model}
+                                providerName={searchableModel.provider.provider}
+                                variant="row"
+                              />
                             )}
                           </div>
                         </div>
@@ -703,6 +770,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                     <Capabilities capabilities={capabilities} />
                                   </div>
                                 )}
+                                {showReasoning && (
+                                  <ModelReasoningDropdown
+                                    model={searchableModel.model}
+                                    providerName={
+                                      searchableModel.provider.provider
+                                    }
+                                    variant="row"
+                                  />
+                                )}
                               </div>
                             </div>
                           )
@@ -714,6 +790,28 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               </div>
             )}
           </div>
+
+          {showReasoning &&
+            selectedModel?.id &&
+            selectedProvider &&
+            modelSupportsReasoningControl(selectedModel) && (
+            <div className="border-t px-3 py-2.5">
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                {getModelReasoningSetting(selectedModel)?.title ??
+                  t('common:reasoning')}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm text-foreground">
+                  {getModelDisplayName(selectedModel)}
+                </span>
+                <ModelReasoningDropdown
+                  model={selectedModel}
+                  providerName={selectedProvider}
+                  variant="panel"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>

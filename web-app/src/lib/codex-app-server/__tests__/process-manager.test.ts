@@ -58,6 +58,58 @@ class InitOnlyProcess implements CodexProcess {
 }
 
 describe('CodexAppServerProcessManager', () => {
+  it('passes agentsMd and customAgents to the process spawner', async () => {
+    const spawnedOptions: unknown[] = []
+    const process = new InitOnlyProcess('success')
+    const spawner: CodexProcessSpawner = {
+      spawn(_command, _args, options) {
+        spawnedOptions.push(options)
+        return process
+      },
+    }
+    const manager = new CodexAppServerProcessManager(spawner, {
+      cwd: '/repo',
+      model: 'gpt-test',
+      modelProvider: 'openai',
+      agentsMd: '# AGENTS\nBe careful.',
+      customAgents: [
+        {
+          name: 'helper',
+          description: 'Helper agent',
+          developer_instructions: 'Assist.',
+        },
+      ],
+      configToml: 'model = "gpt-test"',
+      codexHome: '/tmp/codex-home',
+    })
+
+    await manager.initialize()
+
+    expect(spawnedOptions[0]).toEqual(
+      expect.objectContaining({
+        agentsMd: '# AGENTS\nBe careful.',
+        customAgents: [
+          expect.objectContaining({ name: 'helper' }),
+        ],
+        configToml: 'model = "gpt-test"',
+        codexHome: '/tmp/codex-home',
+      })
+    )
+
+    const initializeRequest = (process.writes as Array<{ method?: string; params?: { capabilities?: Record<string, boolean> } }>).find(
+      (write) => write.method === 'initialize'
+    )
+    expect(initializeRequest?.params?.capabilities).toEqual(
+      expect.objectContaining({
+        hostApprovals: true,
+        hostMcpCuration: true,
+        hostGitReviewPanel: true,
+        hostWorkspaceManagement: true,
+        hostSubagentInspector: true,
+      })
+    )
+  })
+
   it('cleans up a failed initialization and allows a later initialize retry', async () => {
     const failedProcess = new InitOnlyProcess('fail')
     const successfulProcess = new InitOnlyProcess('success')

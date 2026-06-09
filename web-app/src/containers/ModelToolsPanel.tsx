@@ -3,6 +3,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as XTerm } from '@xterm/xterm'
+import { useTheme } from '@/hooks/useTheme'
+import Editor from '@monaco-editor/react'
 import {
   ArrowRight,
   ChevronRight,
@@ -13,15 +15,25 @@ import {
   FolderOpen,
   Globe,
   Loader2,
+  MessageCirclePlus,
+  MoreHorizontal,
   Paperclip,
   PanelBottom,
   RefreshCw,
-  RefreshCcw,
   Terminal,
   Trash2,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -31,34 +43,34 @@ import '@xterm/xterm/css/xterm.css'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Slider } from '@/components/ui/slider'
-import { Switch } from '@/components/ui/switch'
+
 import {
   CHAT_SIDE_PANEL_MAX_WIDTH,
   CHAT_SIDE_PANEL_MIN_WIDTH,
   CHAT_SIDE_PANEL_DROPDOWN_SECTIONS,
   getChatSidePanelSection,
-  type ChatSidePanelSection,
   type ChatSidePanelSectionItem,
 } from '@/constants/chat-side-panel'
 import { useEmbeddedBrowser } from '@/hooks/useEmbeddedBrowser'
 import { useSidebarResize } from '@/hooks/use-sidebar-resize'
 import { normalizeBrowserAddress } from '@/lib/browser-address'
-import { isPlatformTauri } from '@/lib/platform/utils'
+import { isPlatformTauri, isPlatformMacOS } from '@/lib/platform/utils'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
 } from '@/hooks/useChatAttachments'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useThreadManagement } from '@/hooks/useThreadManagement'
+
 import { useThreads } from '@/hooks/useThreads'
 import { mergeButtonRefs } from '@/lib/merge-button-refs'
+import { rafThrottle, throttle } from '@/lib/throttle'
 import { cn } from '@/lib/utils'
 import {
   createBrowserSelectionAttachment,
@@ -74,16 +86,60 @@ import {
   useTerminalRuntime,
   type TerminalSessionInfo,
 } from '@/stores/terminal-runtime-store'
-import { useChatSidePanel } from '@/stores/chat-side-panel-store'
+import { useCodexAppServerRuntime } from '@/stores/codex-app-server-runtime-store'
+import { ChatSessionContext } from '@/hooks/useChatSessionScope'
 import {
-  useStudioSettings,
-  type StudioSamplerSettings,
-} from '@/stores/studio-settings-store'
-import { useCodexProviderProfiles } from '@/stores/codex-provider-profile-store'
+  useChatSessionUi,
+  useChatSessionUiActions,
+  useChatSessionUiSelector,
+  resolveOpenTabs,
+} from '@/hooks/useChatSessionUi'
 import {
-  useWorkspacePanel,
-  type WorkspaceBottomPanelSection,
-} from '@/stores/workspace-panel-store'
+  isCodexAppServerProvider,
+  listCodexSkills,
+  listCodexPlugins,
+  listCodexHooks,
+  listInstalledCodexPlugins,
+  setCodexSkillExtraRoots,
+  startCodexReview,
+  listCodexMcpServerStatus,
+  startCodexMcpOauthLogin,
+  readCodexAccount,
+  startCodexAccountLogin,
+  cancelCodexAccountLogin,
+  logoutCodexAccount,
+  readCodexAccountRateLimits,
+  readCodexAccountUsage,
+  sendCodexAddCreditsNudgeEmail,
+  enableCodexRemoteControl,
+  disableCodexRemoteControl,
+  readCodexRemoteControlStatus,
+  startCodexRemoteControlPairing,
+  readCodexRemoteControlPairingStatus,
+  listCodexThreads,
+  listLoadedCodexThreads,
+  readCodexThread,
+  listCodexThreadTurns,
+  forkCodexThread,
+  archiveCodexThread,
+  unarchiveCodexThread,
+  setCodexThreadName,
+  setCodexThreadGoal,
+  getCodexThreadGoal,
+  clearCodexThreadGoal,
+  setCodexThreadMemoryMode,
+  listCodexPermissionProfiles,
+  listCodexCollaborationModes,
+  callCodexAppServer,
+  runCodexDoctor,
+  runCodexExec,
+  runCodexResume,
+  runCodexCliSubcommand,
+  getCodexAppServerRuntimeLogs,
+} from '@/lib/codex-app-server'
+import { useModelProvider } from '@/hooks/useModelProvider'
+
+import { useChatSessionId } from '@/hooks/useChatSessionScope'
 import {
   useWorkspaceDirectories,
   type WorkspaceDirectoryScope,
@@ -96,38 +152,247 @@ const ANSI_ESCAPE_PATTERN = new RegExp(
   'g'
 )
 
-function SamplerSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string
-  value: number
-  min: number
-  max: number
-  step: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="text-foreground">{label}</span>
-        <span className="font-mono text-xs text-muted-foreground">{value}</span>
-      </div>
-      <Slider
-        min={min}
-        max={max}
-        step={step}
-        value={[value]}
-        onValueChange={([next]) => {
-          if (next !== undefined) onChange(Number(next.toFixed(3)))
-        }}
-      />
-    </div>
-  )
+function encodeUtf8Base64(value: string) {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte)
+  })
+  return btoa(binary)
+}
+
+function decodeUtf8Base64(value: string) {
+  try {
+    const binary = atob(value)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return ''
+  }
+}
+
+function collectCodexThreadIds(value: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (typeof item === 'string') {
+      ids.add(item)
+      return
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      if (typeof record.id === 'string') ids.add(record.id)
+      if (typeof record.threadId === 'string') ids.add(record.threadId)
+      if (Array.isArray(record.data)) visit(record.data)
+      if (Array.isArray(record.threads)) visit(record.threads)
+      if (Array.isArray(record.threadIds)) visit(record.threadIds)
+      if (Array.isArray(record.items)) visit(record.items)
+    }
+  }
+  visit(value)
+  return [...ids]
+}
+
+function collectCodexTurnIds(value: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (typeof item === 'string') {
+      ids.add(item)
+      return
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      if (typeof record.turnId === 'string') ids.add(record.turnId)
+      if (typeof record.id === 'string') {
+        const type = typeof record.type === 'string' ? record.type : ''
+        const status = typeof record.status === 'string' ? record.status : ''
+        if (type.includes('turn') || status || Array.isArray(record.items)) {
+          ids.add(record.id)
+        }
+      }
+      for (const key of ['data', 'items', 'turns']) {
+        if (Array.isArray(record[key])) visit(record[key])
+      }
+    }
+  }
+  visit(value)
+  return [...ids]
+}
+
+function collectCodexItemIds(value: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (typeof item === 'string') {
+      ids.add(item)
+      return
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      if (typeof record.itemId === 'string') ids.add(record.itemId)
+      if (typeof record.id === 'string') {
+        const type = typeof record.type === 'string' ? record.type : ''
+        if (
+          type ||
+          'command' in record ||
+          'status' in record ||
+          'content' in record
+        ) {
+          ids.add(record.id)
+        }
+      }
+      for (const key of ['data', 'items']) {
+        if (Array.isArray(record[key])) visit(record[key])
+      }
+    }
+  }
+  visit(value)
+  return [...ids]
+}
+
+function collectCodexProcessHandles(value: unknown): string[] {
+  const handles = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (typeof item === 'string') {
+      if (/^(proc|process|cmd|command)[-_:/]/i.test(item)) handles.add(item)
+      return
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      for (const key of [
+        'handle',
+        'processHandle',
+        'processId',
+        'terminalId',
+      ]) {
+        if (typeof record[key] === 'string') handles.add(record[key])
+      }
+      for (const key of ['data', 'items', 'lastAction', 'processes', 'result']) {
+        if (record[key]) visit(record[key])
+      }
+    }
+  }
+  visit(value)
+  return [...handles]
+}
+
+function collectCodexMcpServerNames(value: unknown): string[] {
+  const names = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      for (const key of ['name', 'server', 'serverName']) {
+        if (typeof record[key] === 'string') names.add(record[key])
+      }
+      for (const key of ['data', 'servers', 'items', 'mcpServers']) {
+        if (Array.isArray(record[key])) visit(record[key])
+      }
+      for (const [key, nested] of Object.entries(record)) {
+        if (
+          nested &&
+          typeof nested === 'object' &&
+          !Array.isArray(nested) &&
+          ['status', 'state', 'tools', 'resources'].some((field) => field in nested)
+        ) {
+          names.add(key)
+        }
+      }
+    }
+  }
+  visit(value)
+  return [...names]
+}
+
+function collectCodexPluginIds(value: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (typeof item === 'string') {
+      ids.add(item)
+      return
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      for (const key of ['id', 'name', 'plugin', 'pluginId']) {
+        if (typeof record[key] === 'string') ids.add(record[key])
+      }
+      for (const key of [
+        'all',
+        'available',
+        'data',
+        'installed',
+        'items',
+        'pluginList',
+        'plugins',
+      ]) {
+        if (Array.isArray(record[key])) visit(record[key])
+      }
+    }
+  }
+  visit(value)
+  return [...ids]
+}
+
+function collectCodexSkillIds(value: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (item: unknown) => {
+    if (!item) return
+    if (typeof item === 'string') {
+      ids.add(item)
+      return
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit)
+      return
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      for (const key of ['id', 'name', 'skill', 'skillId']) {
+        if (typeof record[key] === 'string') ids.add(record[key])
+      }
+      for (const key of [
+        'available',
+        'data',
+        'enabled',
+        'items',
+        'skills',
+      ]) {
+        if (Array.isArray(record[key])) visit(record[key])
+      }
+    }
+  }
+  visit(value)
+  return [...ids]
 }
 
 type DirectoryTreeEntry = {
@@ -138,6 +403,7 @@ type DirectoryTreeEntry = {
 }
 
 type ModelToolsPanelScope = WorkspaceDirectoryScope & {
+  sessionId: string
   threadId?: string
 }
 
@@ -145,6 +411,7 @@ const DEFAULT_PANEL_SCOPE: ModelToolsPanelScope = {
   id: 'default',
   type: 'workspace',
   label: 'Workspace',
+  sessionId: 'default',
 }
 
 const BROWSER_PANEL_TARGET_ID = 'workspace-browser-panel'
@@ -202,17 +469,20 @@ async function readDirectoryEntries(
     })
 }
 
-function DirectoryTreeNode({
+const DirectoryTreeNode = memo(function DirectoryTreeNode({
   entry,
   depth = 0,
+  onFileClick,
 }: {
   entry: DirectoryTreeEntry
   depth?: number
+  onFileClick?: (path: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [children, setChildren] = useState<DirectoryTreeEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const serviceHub = useServiceHub()
 
   const loadChildren = useCallback(async () => {
     if (!entry.isDirectory || children) return
@@ -229,26 +499,53 @@ function DirectoryTreeNode({
     }
   }, [children, entry.isDirectory, entry.path])
 
-  const toggleExpanded = async () => {
-    if (!entry.isDirectory) return
-    const nextExpanded = !expanded
-    setExpanded(nextExpanded)
-    if (nextExpanded) await loadChildren()
+  const handleItemClick = async () => {
+    if (entry.isDirectory) {
+      const nextExpanded = !expanded
+      setExpanded(nextExpanded)
+      if (nextExpanded) await loadChildren()
+    } else {
+      if (onFileClick) {
+        onFileClick(entry.path)
+      } else {
+        try {
+          if (isPlatformTauri()) {
+            const { openUrl } = await import('@tauri-apps/plugin-opener')
+            const url = entry.path.startsWith('file://') ? entry.path : `file://${entry.path}`
+            await openUrl(url)
+          } else {
+            toast.info('File opening is available in the desktop app.')
+          }
+        } catch (err) {
+          console.error('Failed to open file:', err)
+          toast.error('Failed to open file: ' + String(err))
+        }
+      }
+    }
+  }
+
+  const handleReveal = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await serviceHub.opener().revealItemInDir(entry.path)
+    } catch (err) {
+      toast.error('Failed to reveal file: ' + String(err))
+    }
   }
 
   const Icon = entry.isDirectory ? (expanded ? FolderOpen : Folder) : File
 
   return (
-    <div>
+    <div className="group relative">
       <button
         type="button"
         className={cn(
-          'flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-xs',
+          'flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-xs pr-8',
           'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
         )}
         style={{ paddingLeft: `${depth * 0.75 + 0.375}rem` }}
         title={entry.path}
-        onClick={toggleExpanded}
+        onClick={handleItemClick}
       >
         {entry.isDirectory ? (
           <ChevronRight
@@ -263,6 +560,18 @@ function DirectoryTreeNode({
         <Icon className="size-3.5 shrink-0" />
         <span className="truncate">{entry.name}</span>
       </button>
+
+      {!entry.isDirectory && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="absolute right-1 top-0.5 size-6 opacity-0 group-hover:opacity-100 transition-opacity rounded-md"
+          title="Reveal in Finder/Explorer"
+          onClick={handleReveal}
+        >
+          <FolderOpen className="size-3" />
+        </Button>
+      )}
 
       {expanded && (
         <div>
@@ -288,6 +597,7 @@ function DirectoryTreeNode({
                 key={child.path}
                 entry={child}
                 depth={depth + 1}
+                onFileClick={onFileClick}
               />
             ))
           ) : (
@@ -302,136 +612,73 @@ function DirectoryTreeNode({
       )}
     </div>
   )
+})
+
+function getLanguageFromFileName(fileName: string | null): string {
+  if (!fileName) return 'plaintext'
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'js':
+    case 'jsx':
+      return 'javascript'
+    case 'ts':
+    case 'tsx':
+      return 'typescript'
+    case 'json':
+      return 'json'
+    case 'html':
+      return 'html'
+    case 'css':
+      return 'css'
+    case 'md':
+      return 'markdown'
+    case 'py':
+      return 'python'
+    case 'go':
+      return 'go'
+    case 'rs':
+    case 'rust':
+      return 'rust'
+    case 'sh':
+    case 'bash':
+    case 'zsh':
+      return 'shell'
+    case 'yml':
+    case 'yaml':
+      return 'yaml'
+    case 'xml':
+      return 'xml'
+    case 'sql':
+      return 'sql'
+    default:
+      return 'plaintext'
+  }
 }
 
-function DirectoryScopeControls({
+const FilesSection = memo(function FilesSection({
   scope,
-  path,
-  displayPath = path,
-  onPickDirectory,
-  onClearDirectory,
-  onRefresh,
-  canPickDirectory = true,
 }: {
   scope: ModelToolsPanelScope
-  path?: string
-  displayPath?: string
-  onPickDirectory: () => void
-  onClearDirectory: () => void
-  onRefresh?: () => void
-  canPickDirectory?: boolean
 }) {
-  return (
-    <div className="space-y-3 rounded-lg border border-border/60 bg-card p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-medium text-foreground">
-            {scope.type === 'project'
-              ? 'Project directory'
-              : scope.type === 'chat'
-                ? 'Chat directory'
-                : 'Workspace directory'}
-          </h3>
-          <p className="truncate text-xs text-muted-foreground">
-            {scope.label}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {path && onRefresh && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="rounded-md"
-              aria-label="Refresh directory"
-              title="Refresh"
-              onClick={onRefresh}
-            >
-              <RefreshCcw className="size-3.5" />
-            </Button>
-          )}
-          {path && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="rounded-md"
-              aria-label="Clear directory"
-              title="Clear"
-              onClick={onClearDirectory}
-            >
-              <X className="size-3.5" />
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="xs"
-            className="rounded-md"
-            disabled={!canPickDirectory}
-            onClick={onPickDirectory}
-            title={canPickDirectory ? undefined : 'Desktop app only'}
-          >
-            <Folder className="size-3.5" />
-            {path ? 'Change' : 'Choose'}
-          </Button>
-        </div>
-      </div>
-      {displayPath && (
-        <div className="truncate rounded-md bg-foreground/5 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-          {displayPath}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FilesSection({ scope }: { scope: ModelToolsPanelScope }) {
-  const serviceHub = useServiceHub()
-  const requestRuntimePermission = useRuntimePermission(
-    (state) => state.requestPermission
-  )
   const path = useWorkspaceDirectories((state) => state.getDirectory(scope))
-  const canBrowseDirectories = IS_TAURI
+  const canBrowseDirectories = isPlatformTauri()
   const effectivePath =
     path ??
     (canBrowseDirectories && scope.type === 'workspace' ? './' : undefined)
-  const setDirectory = useWorkspaceDirectories((state) => state.setDirectory)
-  const clearDirectory = useWorkspaceDirectories(
-    (state) => state.clearDirectory
-  )
 
   const [entries, setEntries] = useState<DirectoryTreeEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const pickDirectory = useCallback(async () => {
-    if (!canBrowseDirectories) return
-    const allowed = await requestRuntimePermission({
-      actionId: 'file.choose-directory',
-      actionLabel: 'choose workspace directory',
-      category: 'file',
-      resourceLabel: scope.label,
-      risk: 'medium',
-      details: {
-        scope: scope.type,
-        currentPath: path,
-      },
-    })
-    if (!allowed) return
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
+  const [fileContent, setFileContent] = useState<string>('')
+  const [fileLoading, setFileLoading] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [previousWidth, setPreviousWidth] = useState<string | null>(null)
 
-    const selection = await serviceHub.dialog().open({
-      directory: true,
-      defaultPath: path,
-    })
-    if (!selection || Array.isArray(selection)) return
-    setDirectory(scope, selection)
-  }, [
-    canBrowseDirectories,
-    path,
-    requestRuntimePermission,
-    scope,
-    serviceHub,
-    setDirectory,
-  ])
+  const isDark = useTheme((state) => state.isDark)
+  const sidePanelWidth = useChatSessionUiSelector((session) => session.sidePanelWidth)
+  const { setSidePanelWidth } = useChatSessionUiActions()
 
   useEffect(() => {
     if (!effectivePath) {
@@ -463,19 +710,84 @@ function FilesSection({ scope }: { scope: ModelToolsPanelScope }) {
     return () => {
       cancelled = true
     }
-  }, [effectivePath, refreshKey])
+  }, [effectivePath])
 
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <DirectoryScopeControls
-        scope={scope}
-        path={path}
-        displayPath={effectivePath}
-        onPickDirectory={pickDirectory}
-        onClearDirectory={() => clearDirectory(scope)}
-        onRefresh={() => setRefreshKey((key) => key + 1)}
-        canPickDirectory={canBrowseDirectories}
-      />
+  // Restore panel width on unmount if we expanded it
+  useEffect(() => {
+    return () => {
+      if (previousWidth) {
+        setSidePanelWidth(previousWidth)
+      }
+    }
+  }, [previousWidth, setSidePanelWidth])
+
+  const handleFileClick = useCallback(async (filePath: string) => {
+    setSelectedFilePath(filePath)
+    setFileLoading(true)
+    setFileError(null)
+    setFileContent('')
+
+    // Save previous width if we haven't already saved it
+    if (!previousWidth && sidePanelWidth !== '48rem') {
+      setPreviousWidth(sidePanelWidth)
+    }
+    setSidePanelWidth('48rem')
+
+    try {
+      const { fs } = await import('@janhq/core')
+      const content = await fs.readFileSync(filePath, 'utf8')
+      setFileContent(content)
+    } catch (err) {
+      console.error('Failed to read file:', err)
+      setFileError('Could not load file content preview. You can open it in the system editor instead.')
+    } finally {
+      setFileLoading(false)
+    }
+  }, [previousWidth, sidePanelWidth, setSidePanelWidth])
+
+  const handleClosePreview = useCallback(() => {
+    setSelectedFilePath(null)
+    setFileContent('')
+    setFileError(null)
+    if (previousWidth) {
+      setSidePanelWidth(previousWidth)
+      setPreviousWidth(null)
+    } else {
+      setSidePanelWidth('20rem')
+    }
+  }, [previousWidth, setSidePanelWidth])
+
+  const handleOpenInSystemEditor = useCallback(async () => {
+    if (!selectedFilePath) return
+    try {
+      if (isPlatformTauri()) {
+        const { openUrl } = await import('@tauri-apps/plugin-opener')
+        const url = selectedFilePath.startsWith('file://') ? selectedFilePath : `file://${selectedFilePath}`
+        await openUrl(url)
+      } else {
+        toast.info('File opening is available in the desktop app.')
+      }
+    } catch (err) {
+      console.error('Failed to open file:', err)
+      toast.error('Failed to open file: ' + String(err))
+    }
+  }, [selectedFilePath])
+
+  const fileTreeColumn = (
+    <div className={cn("flex h-full min-h-0 flex-col gap-3", selectedFilePath ? "w-[240px] shrink-0" : "flex-1")}>
+      <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-[11px] text-muted-foreground flex justify-between items-center min-w-0">
+        <div className="truncate flex-1 min-w-0">
+          <span className="font-medium text-foreground">Files</span>
+          {' · '}
+          {effectivePath ? (
+            <span className="font-mono" title={effectivePath}>
+              {getFileName(effectivePath)}
+            </span>
+          ) : (
+            <span>None</span>
+          )}
+        </div>
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border/60 bg-card p-1">
         {!canBrowseDirectories ? (
@@ -483,14 +795,12 @@ function FilesSection({ scope }: { scope: ModelToolsPanelScope }) {
             File browsing is available in the desktop app.
           </div>
         ) : !effectivePath ? (
-          <button
-            type="button"
-            className="flex min-h-[220px] w-full flex-col items-center justify-center gap-2 rounded-md px-4 text-center text-sm text-muted-foreground hover:bg-foreground/5"
-            onClick={pickDirectory}
-          >
+          <div className="flex min-h-[220px] w-full flex-col items-center justify-center gap-2 rounded-md px-4 text-center text-sm text-muted-foreground">
             <Folder className="size-8 text-muted-foreground/50" />
-            <span>Choose a directory to browse files.</span>
-          </button>
+            <span>
+              Select a folder from the workspace bar below the chat input.
+            </span>
+          </div>
         ) : loading ? (
           <div className="flex min-h-[220px] items-center justify-center">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -499,7 +809,11 @@ function FilesSection({ scope }: { scope: ModelToolsPanelScope }) {
           <div className="p-3 text-sm text-destructive">{error}</div>
         ) : entries.length ? (
           entries.map((entry) => (
-            <DirectoryTreeNode key={entry.path} entry={entry} />
+            <DirectoryTreeNode
+              key={entry.path}
+              entry={entry}
+              onFileClick={handleFileClick}
+            />
           ))
         ) : (
           <div className="p-3 text-sm text-muted-foreground">
@@ -509,159 +823,106 @@ function FilesSection({ scope }: { scope: ModelToolsPanelScope }) {
       </div>
     </div>
   )
-}
-
-function ChatWorkspaceSection({ scope }: { scope: ModelToolsPanelScope }) {
-  const serviceHub = useServiceHub()
-  const requestRuntimePermission = useRuntimePermission(
-    (state) => state.requestPermission
-  )
-  const path = useWorkspaceDirectories((state) => state.getDirectory(scope))
-  const canBrowseDirectories = IS_TAURI
-  const effectivePath =
-    path ??
-    (canBrowseDirectories && scope.type === 'workspace' ? './' : undefined)
-  const setDirectory = useWorkspaceDirectories((state) => state.setDirectory)
-  const clearDirectory = useWorkspaceDirectories(
-    (state) => state.clearDirectory
-  )
-
-  const pickDirectory = useCallback(async () => {
-    if (!canBrowseDirectories) return
-    const allowed = await requestRuntimePermission({
-      actionId: 'file.choose-directory',
-      actionLabel: 'choose workspace directory',
-      category: 'file',
-      resourceLabel: scope.label,
-      risk: 'medium',
-      details: {
-        scope: scope.type,
-        currentPath: path,
-      },
-    })
-    if (!allowed) return
-
-    const selection = await serviceHub.dialog().open({
-      directory: true,
-      defaultPath: path,
-    })
-    if (!selection || Array.isArray(selection)) return
-    setDirectory(scope, selection)
-  }, [
-    canBrowseDirectories,
-    path,
-    requestRuntimePermission,
-    scope,
-    serviceHub,
-    setDirectory,
-  ])
 
   return (
-    <div className="space-y-3">
-      <DirectoryScopeControls
-        scope={scope}
-        path={path}
-        displayPath={effectivePath}
-        onPickDirectory={pickDirectory}
-        onClearDirectory={() => clearDirectory(scope)}
-        canPickDirectory={canBrowseDirectories}
-      />
-      <MoveChatToProjectSection scope={scope} />
+    <div className="flex h-full min-h-0 w-full gap-4 items-stretch">
+      {selectedFilePath && (
+        <>
+          <div className="flex-1 min-w-0 h-full flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 border border-border/60 bg-muted/20 px-3 py-1.5 rounded-lg text-xs shrink-0">
+              <span className="font-medium truncate text-foreground/80" title={selectedFilePath}>
+                {getFileName(selectedFilePath)}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="size-6 text-muted-foreground hover:text-foreground rounded-md"
+                  title="Open in system editor"
+                  onClick={handleOpenInSystemEditor}
+                >
+                  <FolderOpen className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="size-6 text-muted-foreground hover:text-foreground rounded-md"
+                  title="Close preview"
+                  onClick={handleClosePreview}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden rounded-lg border border-border/60 bg-card">
+              {fileLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : fileError ? (
+                <div className="flex h-full flex-col items-center justify-center p-6 text-center gap-3 text-sm">
+                  <span className="text-destructive text-xs">{fileError}</span>
+                  <Button variant="outline" size="sm" onClick={handleOpenInSystemEditor}>
+                    Open in System Editor
+                  </Button>
+                </div>
+              ) : (
+                <Editor
+                  height="100%"
+                  language={getLanguageFromFileName(selectedFilePath)}
+                  theme={isDark ? 'vs-dark' : 'light'}
+                  value={fileContent}
+                  loading={
+                    <div className="flex h-full items-center justify-center">
+                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                    </div>
+                  }
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    fontSize: 11,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    automaticLayout: true,
+                    domReadOnly: true,
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="w-[1px] bg-border/60 shrink-0 h-full self-stretch" />
+        </>
+      )}
+
+      {fileTreeColumn}
+    </div>
+  )
+})
+
+function ChatWorkspaceSection({ scope }: { scope: ModelToolsPanelScope }) {
+  const path = useWorkspaceDirectories((state) => state.getDirectory(scope))
+
+  return (
+    <div className="h-full min-h-0 overflow-y-auto pr-1 space-y-3">
       <section className="rounded-lg border border-border/60 bg-card p-4">
         <div className="flex items-center gap-2">
           <Folder className="size-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">
-            Directory scope
-          </h3>
+          <h3 className="text-sm font-medium text-foreground">Workspace</h3>
         </div>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Files uses this directory for the current{' '}
-          {scope.type === 'project'
-            ? 'project'
-            : scope.type === 'chat'
-              ? 'chat'
-              : 'workspace'}
-          .
+          Project, work location, and branch/worktree are configured in the
+          workspace bar attached below the chat input.
         </p>
+        {path ? (
+          <p className="mt-2 font-mono text-[11px] text-muted-foreground truncate">
+            {path}
+          </p>
+        ) : null}
       </section>
     </div>
-  )
-}
-
-function MoveChatToProjectSection({ scope }: { scope: ModelToolsPanelScope }) {
-  const threadId = scope.threadId
-  const { folders } = useThreadManagement()
-  const updateThread = useThreads((state) => state.updateThread)
-  const thread = useThreads((state) =>
-    threadId ? state.threads[threadId] : undefined
-  )
-
-  if (!threadId || !thread) return null
-
-  const currentProjectId = thread.metadata?.project?.id
-  const availableProjects = folders
-    .filter((folder) => folder.id !== currentProjectId)
-    .sort((a, b) => b.updated_at - a.updated_at)
-
-  const assignThreadToProject = (projectId: string) => {
-    const project = folders.find((folder) => folder.id === projectId)
-    if (!project) return
-
-    updateThread(threadId, {
-      metadata: {
-        ...thread.metadata,
-        project: {
-          id: project.id,
-          name: project.name,
-          updated_at: project.updated_at,
-        },
-      },
-    })
-
-    toast.success(`Thread moved to "${project.name}"`)
-  }
-
-  return (
-    <section className="rounded-lg border border-border/60 bg-card p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium text-foreground">Project</h3>
-          <p className="truncate text-xs text-muted-foreground">
-            {thread.metadata?.project?.name ?? 'Vanilla chat'}
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="xs"
-              className="shrink-0 rounded-md"
-              disabled={availableProjects.length === 0}
-            >
-              <Folder className="size-3.5" />
-              Move
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="max-h-60 min-w-44">
-            {availableProjects.length === 0 ? (
-              <DropdownMenuItem disabled>
-                No projects available
-              </DropdownMenuItem>
-            ) : (
-              availableProjects.map((project) => (
-                <DropdownMenuItem
-                  key={project.id}
-                  onClick={() => assignThreadToProject(project.id)}
-                >
-                  <Folder className="size-4" />
-                  <span className="truncate">{project.name}</span>
-                </DropdownMenuItem>
-              ))
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </section>
   )
 }
 
@@ -671,24 +932,3388 @@ function PlaceholderSection({
   section: ChatSidePanelSectionItem
 }) {
   return (
-    <section className="rounded-lg border border-border/60 bg-card p-4">
+    <section className="h-full min-h-0 overflow-y-auto rounded-lg border border-border/60 bg-card p-4">
       <div className="flex items-center gap-2">
         <section.icon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-medium text-foreground">{section.label}</h3>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        This panel slot is reserved for the local agent workspace. It can attach
-        repo files, run side conversations, surface review findings, or open a
-        runtime terminal without leaving chat.
+        This panel slot is reserved for the local agent workspace (Codex
+        engine). It can attach repo files, run side conversations, surface
+        review findings (via the dedicated git-diff Review tab -- always real
+        `git diff`, agent only provides analysis on top), or open a runtime
+        terminal without leaving chat.
       </p>
     </section>
   )
 }
 
+type GitReviewFile = {
+  path: string
+  status: string
+  additions: number
+  deletions: number
+}
+
+type GitReviewStatus = {
+  cwd: string
+  branch?: string
+  additions: number
+  deletions: number
+  files: GitReviewFile[]
+}
+
+function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
+  const serviceHub = useServiceHub()
+  // Use the provided scope (e.g. the current agent/chat workspace) for the git review in this panel slot.
+  // Falls back to the dedicated review workspace scope (same as the /review full page).
+  const reviewScope: WorkspaceDirectoryScope = {
+    id: 'review',
+    type: 'workspace',
+    label: 'Review',
+  }
+  const effectiveScope = scope ?? reviewScope
+  const workspacePath = useWorkspaceDirectories((state) =>
+    state.getDirectory(effectiveScope)
+  )
+  const setWorkspacePath = useWorkspaceDirectories(
+    (state) => state.setDirectory
+  )
+  const [status, setStatus] = useState<GitReviewStatus | null>(null)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [diff, setDiff] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [wrap, setWrap] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [hideWhitespace, setHideWhitespace] = useState(false)
+
+  // Live Codex app-server capabilities (skills/plugins/hooks) for the agent workspace.
+  // Only functional when the current chat uses a codex provider (session exists).
+  const [capLoading, setCapLoading] = useState(false)
+  const [skills, setSkills] = useState<any>(null)
+  const [plugins, setPlugins] = useState<any>(null)
+  const [hooks, setHooks] = useState<any>(null)
+  const [mcpStatus, setMcpStatus] = useState<any>(null)
+  const [accountInfo, setAccountInfo] = useState<any>(null)
+  const [accountRateLimits, setAccountRateLimits] = useState<any>(null)
+  const [accountUsage, setAccountUsage] = useState<any>(null)
+  const [accountLogin, setAccountLogin] = useState<any>(null)
+  const [accountLoginParamsJson, setAccountLoginParamsJson] = useState(
+    '{"type":"chatgptDeviceCode"}'
+  )
+  const [accountUsageParamsJson, setAccountUsageParamsJson] = useState('{}')
+  const [accountCreditsNudgeType, setAccountCreditsNudgeType] =
+    useState('credits')
+  const [remoteStatus, setRemoteStatus] = useState<any>(null)
+  const [remotePairing, setRemotePairing] = useState<any>(null)
+  const [remotePairingCode, setRemotePairingCode] = useState('')
+  const [remotePairingStartParamsJson, setRemotePairingStartParamsJson] =
+    useState('{}')
+  const [remoteClientId, setRemoteClientId] = useState('')
+  const [codexAdminSnapshot, setCodexAdminSnapshot] = useState<any>(null)
+  const [codexMarketplaceSnapshot, setCodexMarketplaceSnapshot] =
+    useState<any>(null)
+  const [codexRuntimeSnapshot, setCodexRuntimeSnapshot] = useState<any>(null)
+  const [codexMcpSnapshot, setCodexMcpSnapshot] = useState<any>(null)
+  const [codexModelSnapshot, setCodexModelSnapshot] = useState<any>(null)
+  const [codexRawRpcSnapshot, setCodexRawRpcSnapshot] = useState<any>(null)
+  const [codexRawRpcMethod, setCodexRawRpcMethod] = useState('')
+  const [codexRawRpcParams, setCodexRawRpcParams] = useState('{}')
+  const [codexCliSnapshot, setCodexCliSnapshot] = useState<any>(null)
+  const [codexCliExecPrompt, setCodexCliExecPrompt] = useState('')
+  const [codexCliResumePrompt, setCodexCliResumePrompt] = useState('')
+  const [codexCliRawArgs, setCodexCliRawArgs] = useState('["--version"]')
+  const [codexPluginId, setCodexPluginId] = useState('')
+  const [codexPluginSkillId, setCodexPluginSkillId] = useState('')
+  const [codexMarketplaceName, setCodexMarketplaceName] = useState('')
+  const [codexMarketplaceSource, setCodexMarketplaceSource] = useState('')
+  const [codexSkillConfigJson, setCodexSkillConfigJson] =
+    useState('{"enabled":true}')
+  const [codexConfigKeyPath, setCodexConfigKeyPath] = useState('model')
+  const [codexConfigValueJson, setCodexConfigValueJson] = useState('"gpt-5"')
+  const [codexConfigBatchJson, setCodexConfigBatchJson] =
+    useState('{"values":[]}')
+  const [codexWindowsSandboxJson, setCodexWindowsSandboxJson] = useState('{}')
+  const [codexExternalAgentImportJson, setCodexExternalAgentImportJson] =
+    useState('{"cwd":""}')
+  const [codexFeatureEnablementJson, setCodexFeatureEnablementJson] =
+    useState('{"remoteControl":true}')
+  const [codexEnvironmentId, setCodexEnvironmentId] = useState('')
+  const [codexEnvironmentExecUrl, setCodexEnvironmentExecUrl] = useState('')
+  const [codexUserInputRequestJson, setCodexUserInputRequestJson] = useState(
+    '{"prompt":"Codex app-server user input request from Jan UI"}'
+  )
+  const [codexAdvancedReviewJson, setCodexAdvancedReviewJson] = useState(
+    '{"type":"uncommittedChanges","delivery":"detached"}'
+  )
+  const [codexThreadMetadataJson, setCodexThreadMetadataJson] =
+    useState('{"source":"jan"}')
+  const [codexThreadSettingsJson, setCodexThreadSettingsJson] = useState(
+    '{"approvalPolicy":"on-request"}'
+  )
+  const [codexThreadGoalObjective, setCodexThreadGoalObjective] = useState('')
+  const [codexRollbackParamsJson, setCodexRollbackParamsJson] = useState(
+    '{"turnId":"","itemId":""}'
+  )
+  const [codexTurnItemsParamsJson, setCodexTurnItemsParamsJson] =
+    useState('{"limit":50}')
+  const [codexInjectItemsJson, setCodexInjectItemsJson] = useState('[]')
+  const [codexRealtimeText, setCodexRealtimeText] = useState('')
+  const [codexRealtimeAudioBase64, setCodexRealtimeAudioBase64] = useState('')
+  const [codexMcpServerName, setCodexMcpServerName] = useState('')
+  const [codexMcpResourceUri, setCodexMcpResourceUri] = useState('')
+  const [codexMcpToolName, setCodexMcpToolName] = useState('')
+  const [codexMcpToolArguments, setCodexMcpToolArguments] = useState('{}')
+  const [codexRuntimePath, setCodexRuntimePath] = useState('')
+  const [codexRuntimeCopyDestination, setCodexRuntimeCopyDestination] =
+    useState('')
+  const [codexRuntimeWatchId, setCodexRuntimeWatchId] = useState('')
+  const [codexRuntimeSpawnCommand, setCodexRuntimeSpawnCommand] =
+    useState('["pwd"]')
+  const [codexRuntimeFileText, setCodexRuntimeFileText] = useState('')
+  const [codexCommandExecParams, setCodexCommandExecParams] = useState(
+    '{"command":["pwd"],"cwd":""}'
+  )
+  const [codexRuntimeStdin, setCodexRuntimeStdin] = useState('')
+  const [codexRuntimePtySize, setCodexRuntimePtySize] = useState(
+    '{"rows":24,"cols":80}'
+  )
+  const [codexProcessHandle, setCodexProcessHandle] = useState('')
+  const [codexThreadId, setCodexThreadId] = useState('')
+  const [codexLoadedThreads, setCodexLoadedThreads] = useState<any>(null)
+  const [codexStoredThreads, setCodexStoredThreads] = useState<any>(null)
+  const [codexThreadSnapshot, setCodexThreadSnapshot] = useState<any>(null)
+  const [codexThreadTurns, setCodexThreadTurns] = useState<any>(null)
+  const [codexThreadTurnItems, setCodexThreadTurnItems] = useState<any>(null)
+  const [codexThreadGoal, setCodexThreadGoalState] = useState<any>(null)
+  const [capError, setCapError] = useState<string | null>(null)
+  const [reviewStarting, setReviewStarting] = useState(false)
+  const [accountBusy, setAccountBusy] = useState(false)
+  const [remoteBusy, setRemoteBusy] = useState(false)
+  const [adminBusy, setAdminBusy] = useState(false)
+  const [marketplaceBusy, setMarketplaceBusy] = useState(false)
+  const [runtimeBusy, setRuntimeBusy] = useState(false)
+  const [mcpBusy, setMcpBusy] = useState(false)
+  const [modelAdminBusy, setModelAdminBusy] = useState(false)
+  const [rawRpcBusy, setRawRpcBusy] = useState(false)
+  const [cliBusy, setCliBusy] = useState(false)
+  const [threadBusy, setThreadBusy] = useState(false)
+  const codexRuntimeLogs = useCodexAppServerRuntime((s) => s.logs)
+  const clearCodexRuntimeLogs = useCodexAppServerRuntime((s) => s.clearLogs)
+
+  const cwd = workspacePath || '.'
+
+  const selectedFile = useMemo(
+    () => status?.files.find((file) => file.path === selectedPath),
+    [selectedPath, status?.files]
+  )
+  const account = accountInfo?.account
+  const accountType = account?.type ?? accountInfo?.authMode ?? 'none'
+  const accountEmail = account?.email
+  const accountPlan = account?.planType ?? accountInfo?.planType
+  const accountRequiresAuth = accountInfo?.requiresOpenaiAuth
+  const targetCodexThreadId = codexThreadId.trim()
+  const selectableCodexThreadIds = useMemo(
+    () =>
+      [
+        ...collectCodexThreadIds(codexLoadedThreads),
+        ...collectCodexThreadIds(codexStoredThreads),
+      ].filter((id, index, values) => values.indexOf(id) === index),
+    [codexLoadedThreads, codexStoredThreads]
+  )
+  const selectableCodexTurnIds = useMemo(
+    () =>
+      [
+        ...collectCodexTurnIds(codexThreadSnapshot),
+        ...collectCodexTurnIds(codexThreadTurns),
+        ...collectCodexTurnIds(codexThreadTurnItems),
+      ].filter((id, index, values) => values.indexOf(id) === index),
+    [codexThreadSnapshot, codexThreadTurnItems, codexThreadTurns]
+  )
+  const selectableCodexItemIds = useMemo(
+    () =>
+      [
+        ...collectCodexItemIds(codexThreadSnapshot),
+        ...collectCodexItemIds(codexThreadTurns),
+        ...collectCodexItemIds(codexThreadTurnItems),
+      ].filter((id, index, values) => values.indexOf(id) === index),
+    [codexThreadSnapshot, codexThreadTurnItems, codexThreadTurns]
+  )
+  const selectableCodexProcessHandles = useMemo(
+    () =>
+      [
+        ...collectCodexProcessHandles(codexRuntimeSnapshot),
+        ...collectCodexProcessHandles(codexThreadSnapshot),
+        ...collectCodexProcessHandles(codexThreadTurns),
+        ...collectCodexProcessHandles(codexThreadTurnItems),
+      ].filter((id, index, values) => values.indexOf(id) === index),
+    [
+      codexRuntimeSnapshot,
+      codexThreadSnapshot,
+      codexThreadTurnItems,
+      codexThreadTurns,
+    ]
+  )
+  const selectableCodexMcpServerNames = useMemo(
+    () => collectCodexMcpServerNames(mcpStatus),
+    [mcpStatus]
+  )
+  const selectableCodexPluginIds = useMemo(
+    () => collectCodexPluginIds(codexMarketplaceSnapshot),
+    [codexMarketplaceSnapshot]
+  )
+  const selectableCodexSkillIds = useMemo(
+    () =>
+      [
+        ...collectCodexSkillIds(skills),
+        ...collectCodexSkillIds(codexMarketplaceSnapshot),
+      ].filter((id, index, values) => values.indexOf(id) === index),
+    [codexMarketplaceSnapshot, skills]
+  )
+
+  const loadStatus = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const nextStatus = await invoke<GitReviewStatus>('git_review_status', {
+        cwd,
+      })
+      setStatus(nextStatus)
+      setSelectedPath((previous) => {
+        if (
+          previous &&
+          nextStatus.files.some((file) => file.path === previous)
+        ) {
+          return previous
+        }
+        return nextStatus.files[0]?.path ?? null
+      })
+    } catch (err) {
+      setStatus(null)
+      setSelectedPath(null)
+      setDiff('')
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadStatus()
+    // eslint-disable-next-line react-hooks.exhaustive-deps
+  }, [cwd])
+
+  useEffect(() => {
+    if (!selectedPath) {
+      setDiff('')
+      return
+    }
+
+    void invoke<string>('git_review_diff', {
+      cwd,
+      path: selectedPath,
+    })
+      .then(setDiff)
+      .catch((err) => {
+        setDiff('')
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }, [cwd, selectedPath])
+
+  const chooseWorkspace = async () => {
+    const selection = await serviceHub.dialog().open({
+      directory: true,
+      multiple: false,
+    })
+    if (typeof selection === 'string' && selection.trim()) {
+      setWorkspacePath(effectiveScope, selection)
+    }
+  }
+
+  const statusLabelLocal = (status: string) => {
+    if (status.includes('?')) return 'Untracked'
+    if (status.includes('A')) return 'Added'
+    if (status.includes('D')) return 'Deleted'
+    if (status.includes('R')) return 'Renamed'
+    if (status.includes('M')) return 'Modified'
+    return status || 'Changed'
+  }
+
+  const copyGitApplyCommand = async () => {
+    const fileArg = selectedPath ? ` -- ${selectedPath}` : ''
+    await navigator.clipboard.writeText(
+      `git -C "${cwd}" diff HEAD${fileArg} | git apply`
+    )
+    // toast if available, but in panel keep simple
+  }
+
+  // Drive Codex app-server capability layer from the review/agent workspace panel.
+  // Uses the current Jan thread (if it has an active codex session) to call the
+  // bridged RPCs. This makes skills/plugins/hooks first-class inspectable/manageable
+  // from Jan's UI while Codex remains the engine.
+  const currentThreadIdForCaps = useThreads((s) => s.currentThreadId)
+  const selectedProvider = useModelProvider((s) => s.selectedProvider)
+  const isCodexForCaps = isCodexAppServerProvider(selectedProvider)
+
+  const refreshCodexCapabilities = async () => {
+    if (!currentThreadIdForCaps) {
+      setCapError('No active thread. Open a chat with a Codex provider profile to inspect runtime capabilities.')
+      return
+    }
+    if (!isCodexForCaps) {
+      setCapError('Current provider is not Codex app-server. Capabilities are available only for codex-backed chats.')
+      return
+    }
+    setCapLoading(true)
+    setCapError(null)
+    try {
+      const [s, p, h, ip, mcp] = await Promise.all([
+        listCodexSkills(currentThreadIdForCaps).catch((e) => ({ error: String(e) })),
+        listCodexPlugins(currentThreadIdForCaps).catch((e) => ({ error: String(e) })),
+        listCodexHooks(currentThreadIdForCaps).catch((e) => ({ error: String(e) })),
+        listInstalledCodexPlugins(currentThreadIdForCaps).catch((e) => ({ error: String(e) })),
+        listCodexMcpServerStatus(currentThreadIdForCaps).catch((e) => ({ error: String(e) })),
+      ])
+      setSkills(s)
+      setPlugins({ all: p, installed: ip })
+      setHooks(h)
+      setMcpStatus(mcp)
+    } catch (e) {
+      setCapError(String(e))
+    } finally {
+      setCapLoading(false)
+    }
+  }
+
+  const handleSetSkillExtraRoots = async () => {
+    if (!currentThreadIdForCaps) return
+    // Example: grant the workspace + one extra (user can extend in real usage)
+    const roots = [cwd, ...(workspacePath ? [workspacePath] : [])]
+    try {
+      await setCodexSkillExtraRoots(currentThreadIdForCaps, roots)
+      await refreshCodexCapabilities()
+    } catch (e) {
+      setCapError('set extra roots failed: ' + String(e))
+    }
+  }
+
+  const refreshCodexAccount = async (refreshToken = false) => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setAccountBusy(true)
+    setCapError(null)
+    try {
+      const [accountSnapshot, rateLimitSnapshot, usageSnapshot] =
+        await Promise.all([
+          readCodexAccount(currentThreadIdForCaps, refreshToken),
+          readCodexAccountRateLimits(currentThreadIdForCaps).catch((e) => ({
+            error: String(e),
+          })),
+          readCodexAccountUsage(currentThreadIdForCaps).catch((e) => ({
+            error: String(e),
+          })),
+        ])
+      setAccountInfo(accountSnapshot)
+      setAccountRateLimits(rateLimitSnapshot)
+      setAccountUsage(usageSnapshot)
+    } catch (e) {
+      setCapError('Account refresh failed: ' + String(e))
+    } finally {
+      setAccountBusy(false)
+    }
+  }
+
+  const startDeviceCodeLogin = async () => {
+    if (!currentThreadIdForCaps) return
+    setAccountBusy(true)
+    setCapError(null)
+    try {
+      const result = await startCodexAccountLogin(
+        currentThreadIdForCaps,
+        JSON.parse(accountLoginParamsJson || '{}')
+      )
+      setAccountLogin(result)
+      toast.success('Codex login started')
+    } catch (e) {
+      setCapError('Account login failed: ' + String(e))
+    } finally {
+      setAccountBusy(false)
+    }
+  }
+
+  const cancelDeviceCodeLogin = async () => {
+    const loginId = accountLogin?.loginId
+    if (!currentThreadIdForCaps || typeof loginId !== 'string') return
+    setAccountBusy(true)
+    setCapError(null)
+    try {
+      await cancelCodexAccountLogin(currentThreadIdForCaps, loginId)
+      setAccountLogin(null)
+      toast.success('Codex login cancelled')
+    } catch (e) {
+      setCapError('Cancel login failed: ' + String(e))
+    } finally {
+      setAccountBusy(false)
+    }
+  }
+
+  const logoutCodex = async () => {
+    if (!currentThreadIdForCaps) return
+    setAccountBusy(true)
+    setCapError(null)
+    try {
+      await logoutCodexAccount(currentThreadIdForCaps)
+      await refreshCodexAccount(false)
+      toast.success('Codex account signed out')
+    } catch (e) {
+      setCapError('Logout failed: ' + String(e))
+    } finally {
+      setAccountBusy(false)
+    }
+  }
+
+  const runRemoteControlAction = async (
+    action: () => Promise<unknown>,
+    success?: string
+  ) => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setRemoteBusy(true)
+    setCapError(null)
+    try {
+      const result = await action()
+      setRemoteStatus(result)
+      if (success) toast.success(success)
+    } catch (e) {
+      setCapError('Remote control failed: ' + String(e))
+    } finally {
+      setRemoteBusy(false)
+    }
+  }
+
+  const refreshRemoteControlStatus = async () => {
+    await runRemoteControlAction(
+      () => readCodexRemoteControlStatus(currentThreadIdForCaps!),
+      undefined
+    )
+  }
+
+  const startRemoteControlPairing = async () => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setRemoteBusy(true)
+    setCapError(null)
+    try {
+      const result = await startCodexRemoteControlPairing(
+        currentThreadIdForCaps,
+        JSON.parse(remotePairingStartParamsJson || '{}')
+      )
+      setRemotePairing(result)
+      const pairingCode =
+        typeof (result as any)?.pairingCode === 'string'
+          ? (result as any).pairingCode
+          : typeof (result as any)?.manualPairingCode === 'string'
+            ? (result as any).manualPairingCode
+            : ''
+      if (pairingCode) setRemotePairingCode(pairingCode)
+      toast.success('Remote control pairing started')
+    } catch (e) {
+      setCapError('Remote pairing failed: ' + String(e))
+    } finally {
+      setRemoteBusy(false)
+    }
+  }
+
+  const readRemoteControlPairing = async () => {
+    const pairingCode = remotePairingCode.trim()
+    if (!currentThreadIdForCaps || !pairingCode) return
+    setRemoteBusy(true)
+    setCapError(null)
+    try {
+      const result = await readCodexRemoteControlPairingStatus(
+        currentThreadIdForCaps,
+        { pairingCode, manualPairingCode: pairingCode }
+      )
+      setRemotePairing(result)
+    } catch (e) {
+      setCapError('Remote pairing status failed: ' + String(e))
+    } finally {
+      setRemoteBusy(false)
+    }
+  }
+
+  const refreshCodexAdminSnapshot = async () => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setAdminBusy(true)
+    setCapError(null)
+    try {
+      const [
+        config,
+        requirements,
+        permissionProfiles,
+        collaborationModes,
+        externalAgents,
+      ] = await Promise.all([
+        callCodexAppServer(currentThreadIdForCaps, 'config/read').catch((e) => ({
+          error: String(e),
+        })),
+        callCodexAppServer(
+          currentThreadIdForCaps,
+          'configRequirements/read'
+        ).catch((e) => ({ error: String(e) })),
+        listCodexPermissionProfiles(currentThreadIdForCaps, { cwd }).catch(
+          (e) => ({ error: String(e) })
+        ),
+        listCodexCollaborationModes(currentThreadIdForCaps).catch((e) => ({
+          error: String(e),
+        })),
+        callCodexAppServer(
+          currentThreadIdForCaps,
+          'externalAgentConfig/detect',
+          { cwd }
+        ).catch((e) => ({ error: String(e) })),
+      ])
+      setCodexAdminSnapshot({
+        config,
+        requirements,
+        permissionProfiles,
+        collaborationModes,
+        externalAgents,
+      })
+    } catch (e) {
+      setCapError('Config/admin refresh failed: ' + String(e))
+    } finally {
+      setAdminBusy(false)
+    }
+  }
+
+  const refreshCodexMarketplaceSnapshot = async () => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setMarketplaceBusy(true)
+    setCapError(null)
+    try {
+      const [pluginList, installedPlugins, skills, hooks, apps] =
+        await Promise.all([
+          callCodexAppServer(currentThreadIdForCaps, 'plugin/list', {
+            includeDisabled: true,
+          }).catch((e) => ({ error: String(e) })),
+          callCodexAppServer(currentThreadIdForCaps, 'plugin/installed', {
+            suggestions: [],
+          }).catch((e) => ({ error: String(e) })),
+          listCodexSkills(currentThreadIdForCaps).catch((e) => ({
+            error: String(e),
+          })),
+          listCodexHooks(currentThreadIdForCaps).catch((e) => ({
+            error: String(e),
+          })),
+          callCodexAppServer(currentThreadIdForCaps, 'app/list', {}).catch(
+            (e) => ({ error: String(e) })
+          ),
+        ])
+      setCodexMarketplaceSnapshot({
+        pluginList,
+        installedPlugins,
+        skills,
+        hooks,
+        apps,
+      })
+    } catch (e) {
+      setCapError('Plugin/marketplace refresh failed: ' + String(e))
+    } finally {
+      setMarketplaceBusy(false)
+    }
+  }
+
+  const runCodexMarketplaceAction = async (
+    method: string,
+    params: Record<string, unknown>,
+    success: string
+  ) => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setMarketplaceBusy(true)
+    setCapError(null)
+    try {
+      const result = await callCodexAppServer(
+        currentThreadIdForCaps,
+        method,
+        params
+      )
+      setCodexMarketplaceSnapshot((previous: any) => ({
+        ...(previous ?? {}),
+        lastAction: { method, params, result },
+      }))
+      toast.success(success)
+    } catch (e) {
+      setCapError(`${method} failed: ${String(e)}`)
+    } finally {
+      setMarketplaceBusy(false)
+    }
+  }
+
+  const runCodexRuntimeAction = async (
+    method: string,
+    params: Record<string, unknown>,
+    success?: string
+  ) => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return null
+    setRuntimeBusy(true)
+    setCapError(null)
+    try {
+      const result = await callCodexAppServer(
+        currentThreadIdForCaps,
+        method,
+        params
+      )
+      setCodexRuntimeSnapshot((previous: any) => ({
+        ...(previous ?? {}),
+        lastAction: { method, params, result },
+      }))
+      if (success) toast.success(success)
+      return result
+    } catch (e) {
+      setCapError(`${method} failed: ${String(e)}`)
+      return null
+    } finally {
+      setRuntimeBusy(false)
+    }
+  }
+
+  const readCodexRuntimeFile = async () => {
+    const path = codexRuntimePath.trim()
+    if (!path) return
+    const result = await runCodexRuntimeAction(
+      'fs/readFile',
+      { path },
+      'Codex file read'
+    )
+    const dataBase64 =
+      typeof (result as any)?.dataBase64 === 'string'
+        ? (result as any).dataBase64
+        : ''
+    if (dataBase64) setCodexRuntimeFileText(decodeUtf8Base64(dataBase64))
+  }
+
+  const writeCodexRuntimeFile = async () => {
+    const path = codexRuntimePath.trim()
+    if (!path) return
+    await runCodexRuntimeAction(
+      'fs/writeFile',
+      { path, dataBase64: encodeUtf8Base64(codexRuntimeFileText) },
+      'Codex file written'
+    )
+  }
+
+  const spawnCodexRuntimeProcess = async () => {
+    const command = codexRuntimeSpawnCommand.trim()
+    if (!command) return
+    let commandValue: unknown = command
+    try {
+      commandValue = JSON.parse(command)
+    } catch {}
+    const result = await runCodexRuntimeAction(
+      'process/spawn',
+      {
+        command: commandValue,
+        cwd,
+        pty: true,
+      },
+      'Codex process spawned'
+    )
+    const handle =
+      typeof (result as any)?.processHandle === 'string'
+        ? (result as any).processHandle
+        : typeof (result as any)?.handle === 'string'
+          ? (result as any).handle
+          : ''
+    if (handle) setCodexProcessHandle(handle)
+  }
+
+  const runCodexMcpAction = async (
+    method: string,
+    params: Record<string, unknown>,
+    success?: string
+  ) => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return null
+    setMcpBusy(true)
+    setCapError(null)
+    try {
+      const result = await callCodexAppServer(
+        currentThreadIdForCaps,
+        method,
+        params
+      )
+      setCodexMcpSnapshot((previous: any) => ({
+        ...(previous ?? {}),
+        lastAction: { method, params, result },
+      }))
+      if (success) toast.success(success)
+      return result
+    } catch (e) {
+      setCapError(`${method} failed: ${String(e)}`)
+      return null
+    } finally {
+      setMcpBusy(false)
+    }
+  }
+
+  const refreshCodexModelSnapshot = async () => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setModelAdminBusy(true)
+    setCapError(null)
+    try {
+      const [models, providerCapabilities, experimentalFeatures] =
+        await Promise.all([
+          callCodexAppServer(currentThreadIdForCaps, 'model/list', {
+            includeHidden: true,
+          }).catch((e) => ({ error: String(e) })),
+          callCodexAppServer(
+            currentThreadIdForCaps,
+            'modelProvider/capabilities/read',
+            {}
+          ).catch((e) => ({ error: String(e) })),
+          callCodexAppServer(
+            currentThreadIdForCaps,
+            'experimentalFeature/list',
+            {}
+          ).catch((e) => ({ error: String(e) })),
+        ])
+      setCodexModelSnapshot({
+        models,
+        providerCapabilities,
+        experimentalFeatures,
+      })
+    } catch (e) {
+      setCapError('Model/provider refresh failed: ' + String(e))
+    } finally {
+      setModelAdminBusy(false)
+    }
+  }
+
+  const runCodexModelAction = async (
+    method: string,
+    params: Record<string, unknown>,
+    success: string
+  ) => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setModelAdminBusy(true)
+    setCapError(null)
+    try {
+      const result = await callCodexAppServer(
+        currentThreadIdForCaps,
+        method,
+        params
+      )
+      setCodexModelSnapshot((previous: any) => ({
+        ...(previous ?? {}),
+        lastAction: { method, params, result },
+      }))
+      toast.success(success)
+    } catch (e) {
+      setCapError(`${method} failed: ${String(e)}`)
+    } finally {
+      setModelAdminBusy(false)
+    }
+  }
+
+  const runCodexRawRpc = async () => {
+    const method = codexRawRpcMethod.trim()
+    if (!currentThreadIdForCaps || !isCodexForCaps || !method) return
+    setRawRpcBusy(true)
+    setCapError(null)
+    try {
+      const params = JSON.parse(codexRawRpcParams || '{}')
+      const result = await callCodexAppServer(
+        currentThreadIdForCaps,
+        method,
+        params
+      )
+      setCodexRawRpcSnapshot({ method, params, result })
+      toast.success(`Codex RPC completed: ${method}`)
+    } catch (e) {
+      setCapError('Raw Codex RPC failed: ' + String(e))
+    } finally {
+      setRawRpcBusy(false)
+    }
+  }
+
+  const runCodexCliAction = async (
+    label: string,
+    action: () => Promise<unknown>
+  ) => {
+    setCliBusy(true)
+    setCapError(null)
+    try {
+      const result = await action()
+      setCodexCliSnapshot({ label, result })
+      toast.success(`Codex CLI completed: ${label}`)
+    } catch (e) {
+      setCapError(`Codex CLI ${label} failed: ${String(e)}`)
+    } finally {
+      setCliBusy(false)
+    }
+  }
+
+  const refreshCodexThreads = async () => {
+    if (!currentThreadIdForCaps || !isCodexForCaps) return
+    setThreadBusy(true)
+    setCapError(null)
+    try {
+      const [loaded, stored] = await Promise.all([
+        listLoadedCodexThreads(currentThreadIdForCaps),
+        listCodexThreads(currentThreadIdForCaps, {
+          limit: 20,
+          archived: false,
+        }),
+      ])
+      setCodexLoadedThreads(loaded)
+      setCodexStoredThreads(stored)
+
+      const loadedIds = Array.isArray((loaded as any)?.data)
+        ? (loaded as any).data
+        : Array.isArray((loaded as any)?.threadIds)
+          ? (loaded as any).threadIds
+          : []
+      const firstLoadedId = loadedIds.find(
+        (value: unknown) => typeof value === 'string'
+      )
+      if (!targetCodexThreadId && firstLoadedId) {
+        setCodexThreadId(firstLoadedId)
+      }
+    } catch (e) {
+      setCapError('Thread refresh failed: ' + String(e))
+    } finally {
+      setThreadBusy(false)
+    }
+  }
+
+  const withTargetCodexThread = async (
+    action: (threadId: string) => Promise<unknown>,
+    success: string
+  ) => {
+    if (!targetCodexThreadId) {
+      setCapError('Set a Codex thread id first.')
+      return
+    }
+    setThreadBusy(true)
+    setCapError(null)
+    try {
+      const result = await action(targetCodexThreadId)
+      setCodexThreadSnapshot(result)
+      toast.success(success)
+    } catch (e) {
+      setCapError(String(e))
+    } finally {
+      setThreadBusy(false)
+    }
+  }
+
+  const readTargetCodexThread = async () => {
+    await withTargetCodexThread(async (threadId) => {
+      const [thread, turns, goal] = await Promise.all([
+        readCodexThread(currentThreadIdForCaps!, threadId, {
+          includeTurns: true,
+        }),
+        listCodexThreadTurns(currentThreadIdForCaps!, threadId, {
+          limit: 20,
+        }).catch((e) => ({ error: String(e) })),
+        getCodexThreadGoal(currentThreadIdForCaps!, threadId).catch((e) => ({
+          error: String(e),
+        })),
+      ])
+      setCodexThreadTurns(turns)
+      setCodexThreadGoalState(goal)
+      return thread
+    }, 'Codex thread loaded')
+  }
+
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-card text-sm">
+      <div className="flex h-9 items-center gap-1 border-b px-2 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => void loadStatus()}
+          disabled={loading}
+          title="Refresh git review"
+        >
+          <RefreshCw className={cn(loading && 'animate-spin')} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={chooseWorkspace}
+          title="Choose workspace for review (git diff)"
+        >
+          <FolderOpen />
+        </Button>
+        <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground px-1">
+          {workspacePath || 'No workspace'} • Git diff based
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-xs" title="Review options">
+              <MoreHorizontal className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onSelect={() => void loadStatus()}>
+              <RefreshCw className="size-3.5" /> Refresh
+            </DropdownMenuItem>
+            <DropdownMenuCheckboxItem
+              checked={wrap}
+              onCheckedChange={(checked) => setWrap(!!checked)}
+            >
+              Word wrap
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={collapsed}
+              onCheckedChange={(checked) => setCollapsed(!!checked)}
+            >
+              Collapse diffs
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={hideWhitespace}
+              onCheckedChange={(checked) => setHideWhitespace(!!checked)}
+            >
+              Hide whitespace
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={copyGitApplyCommand}>
+              Copy git apply command
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="flex min-h-0 flex-1 border-t">
+        <aside className="w-48 shrink-0 flex flex-col border-r overflow-y-auto p-1 text-xs">
+          {error ? (
+            <div className="m-1 rounded border border-destructive/30 bg-destructive/5 p-2 text-destructive">
+              {error}
+            </div>
+          ) : status?.files.length ? (
+            status.files.map((file) => (
+              <button
+                key={file.path}
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent truncate',
+                  selectedPath === file.path && 'bg-accent'
+                )}
+                onClick={() => setSelectedPath(file.path)}
+              >
+                <span className="truncate flex-1">{file.path}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {statusLabelLocal(file.status)}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="m-2 text-muted-foreground text-center">
+              No git changes.
+            </div>
+          )}
+        </aside>
+
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <div className="h-8 flex items-center px-2 border-b text-[11px] text-muted-foreground shrink-0">
+            {selectedFile ? selectedFile.path : 'Select file'}
+            {selectedFile &&
+              ` +${selectedFile.additions} -${selectedFile.deletions}`}
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto bg-[#0a0a0a] text-[11px] font-mono p-2 whitespace-pre leading-tight">
+            {collapsed
+              ? 'Diff collapsed (panel)'
+              : diff
+                ? hideWhitespace
+                  ? diff.replace(/[ \t]+$/gm, '')
+                  : diff
+                : loading
+                  ? 'Loading git diff...'
+                  : 'No diff selected.'}
+          </div>
+        </div>
+      </div>
+
+      <div className="text-[10px] text-muted-foreground px-2 py-1 border-t shrink-0">
+        Based on `git diff HEAD` • Review panel for agent workspace
+      </div>
+
+      {/* Agent Analysis / Findings section: the agent (Codex) can surface additional review
+          findings/analysis on top of the real git diff. The diff content itself is NEVER
+          authored by the agent -- only the git backend provides the authoritative diff.
+          This fulfills "surface review findings" in the local agent workspace panel slot
+          while keeping the panel purely git-diff based. */}
+      <div className="p-2 border-t text-xs bg-muted/5">
+        <div className="font-medium mb-1 flex items-center justify-between gap-2">
+          <span>Codex Agent Review Analysis / Findings</span>
+          <div className="flex gap-1 shrink-0">
+            {isCodexForCaps && currentThreadIdForCaps ? (
+              <>
+                <button
+                  type="button"
+                  className="text-[10px] px-2 py-0.5 border rounded hover:bg-accent disabled:opacity-50"
+                  disabled={reviewStarting}
+                  onClick={async () => {
+                    if (!currentThreadIdForCaps) return
+                    setReviewStarting(true)
+                    try {
+                      await startCodexReview(currentThreadIdForCaps, {
+                        type: 'uncommittedChanges',
+                      })
+                      toast.success(
+                        'Codex review started (detached). Analysis surfaces in chat; diff stays in git panel.'
+                      )
+                    } catch (e) {
+                      toast.error(
+                        e instanceof Error ? e.message : 'Failed to start Codex review'
+                      )
+                    } finally {
+                      setReviewStarting(false)
+                    }
+                  }}
+                  title="Call review/start with detached delivery against uncommitted changes"
+                >
+                  {reviewStarting ? 'Starting…' : 'Start Codex review'}
+                </button>
+                <button
+                  type="button"
+                  className="text-[10px] px-2 py-0.5 border rounded hover:bg-accent disabled:opacity-50"
+                  disabled={reviewStarting}
+                onClick={async () => {
+                  if (!currentThreadIdForCaps) return
+                  setReviewStarting(true)
+                  try {
+                    await startCodexReview(
+                      currentThreadIdForCaps,
+                      JSON.parse(codexAdvancedReviewJson || '{}')
+                    )
+                    toast.success('Advanced Codex review started')
+                    } catch (e) {
+                      toast.error(
+                        e instanceof Error
+                          ? e.message
+                          : 'Failed to start advanced Codex review'
+                      )
+                    } finally {
+                      setReviewStarting(false)
+                    }
+                  }}
+                  title="Call review/start with custom JSON params"
+                >
+                  Advanced review
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="text-[10px] px-2 py-0.5 border rounded hover:bg-accent"
+              onClick={async () => {
+                const prompt = `Review the current workspace changes. Use your review/start capability with delivery=detached (or default detached) and target uncommittedChanges (or the appropriate base). Provide structured analysis, issues, risks, and suggestions ONLY — do not output or author the raw diff content itself (the host Review panel / git diff HEAD is the authoritative source). Reference specific files/paths from the real diff. Summarize for the Review tab.`
+                try {
+                  await navigator.clipboard.writeText(prompt)
+                  toast.success('Review prompt copied')
+                } catch {}
+              }}
+              title="Copy prompt to paste into Codex chat (drives review/start detached + analysis for this panel)"
+            >
+              Copy review prompt
+            </button>
+          </div>
+        </div>
+        <div className="text-muted-foreground text-[10px]">
+          Additional analysis or findings from the Codex engine (via
+          review/start with detached delivery + userFacingHint, reasoning, plan,
+          or direct chat instruction) can be surfaced here on top of the git
+          diff above. The base diff is always from real `git diff HEAD` (or
+          equivalent for the target via the Rust git_review_* commands). No
+          agent-generated diff content is used or "added to a spot".
+          The agent owns planning/tool use/subagents/patching/reasoning; Jan (this panel) owns the authoritative git view + approvals + workspace.
+        </div>
+        <div className="mt-1 text-[10px] text-muted-foreground">
+          Select the Review tab (or open /review) while a Codex provider profile is active for the workspace. Instruct the agent in chat or use the copied prompt above. Codex events (including from subagents) with threadId appear in main chat CodexActivity; analysis can be referenced or copied here. Review panel stays purely git for the diff.
+        </div>
+        <textarea
+          className="mt-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+          placeholder="review/start params JSON"
+          value={codexAdvancedReviewJson}
+          onChange={(event) => setCodexAdvancedReviewJson(event.target.value)}
+        />
+      </div>
+
+      {/* Codex app-server capability layer (skills / plugins / hooks / runtime management)
+          surfaced in the authoritative agent workspace review panel.
+          Git diff remains the only source of truth for changes; these are live
+          inspectable capabilities the Codex engine currently has for this workspace
+          (populated from the active codex session for the chat thread). */}
+      <div className="p-2 border-t text-xs bg-muted/5">
+        <div className="font-medium mb-1 flex items-center justify-between">
+          <span>Codex Agent Capabilities (Skills / Plugins / Hooks)</span>
+          <button
+            type="button"
+            className="text-[10px] px-2 py-0.5 border rounded hover:bg-accent disabled:opacity-50"
+            onClick={() => void refreshCodexCapabilities()}
+            disabled={capLoading || !currentThreadIdForCaps}
+          >
+            {capLoading ? 'Loading...' : 'Refresh from Codex session'}
+          </button>
+        </div>
+        <div className="text-[10px] text-muted-foreground mb-1">
+          Runtime view via app-server (listSkills, listPlugins, listHooks, setSkillExtraRoots, install/uninstall etc).
+          Static declaration happens via the Advanced config snippet in the active profile.
+          These extend what the agent can do without changing the git diff.
+        </div>
+        {capError && <div className="text-destructive text-[10px] mb-1">{capError}</div>}
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Threads</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || threadBusy}
+              onClick={() => void refreshCodexThreads()}
+            >
+              Refresh
+            </button>
+          </div>
+          <div className="mb-1 flex gap-1">
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="Codex thread id"
+              value={codexThreadId}
+              onChange={(event) => setCodexThreadId(event.target.value)}
+            />
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => void readTargetCodexThread()}
+            >
+              Read
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(async (threadId) => {
+                  const result = await callCodexAppServer(
+                    currentThreadIdForCaps!,
+                    'thread/turns/items/list',
+                    {
+                      threadId,
+                      ...JSON.parse(codexTurnItemsParamsJson || '{}'),
+                    }
+                  )
+                  setCodexThreadTurnItems(result)
+                  return result
+                }, 'Codex turn items loaded')
+              }
+            >
+              Read turn items
+            </button>
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-2">
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Thread metadata JSON"
+              value={codexThreadMetadataJson}
+              onChange={(event) =>
+                setCodexThreadMetadataJson(event.target.value)
+              }
+            />
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Thread settings JSON"
+              value={codexThreadSettingsJson}
+              onChange={(event) =>
+                setCodexThreadSettingsJson(event.target.value)
+              }
+            />
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Rollback params JSON"
+              value={codexRollbackParamsJson}
+              onChange={(event) =>
+                setCodexRollbackParamsJson(event.target.value)
+              }
+            />
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Turn items params JSON"
+              value={codexTurnItemsParamsJson}
+              onChange={(event) =>
+                setCodexTurnItemsParamsJson(event.target.value)
+              }
+            />
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Items JSON array to inject"
+              value={codexInjectItemsJson}
+              onChange={(event) => setCodexInjectItemsJson(event.target.value)}
+            />
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-3">
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Goal objective"
+              value={codexThreadGoalObjective}
+              onChange={(event) =>
+                setCodexThreadGoalObjective(event.target.value)
+              }
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Realtime text"
+              value={codexRealtimeText}
+              onChange={(event) => setCodexRealtimeText(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Realtime audio base64"
+              value={codexRealtimeAudioBase64}
+              onChange={(event) =>
+                setCodexRealtimeAudioBase64(event.target.value)
+              }
+            />
+          </div>
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    forkCodexThread(currentThreadIdForCaps!, threadId, {
+                      ephemeral: false,
+                    }),
+                  'Codex thread forked'
+                )
+              }
+            >
+              Fork
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) => archiveCodexThread(currentThreadIdForCaps!, threadId),
+                  'Codex thread archived'
+                )
+              }
+            >
+              Archive
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) => unarchiveCodexThread(currentThreadIdForCaps!, threadId),
+                  'Codex thread unarchived'
+                )
+              }
+            >
+              Unarchive
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/unsubscribe',
+                      { threadId }
+                    ),
+                  'Codex thread unsubscribed'
+                )
+              }
+            >
+              Unsubscribe
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                const name = window.prompt('Thread name:')
+                if (!name?.trim()) return
+                void withTargetCodexThread(
+                  (threadId) =>
+                    setCodexThreadName(currentThreadIdForCaps!, threadId, name.trim()),
+                  'Codex thread renamed'
+                )
+              }}
+            >
+              Name
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                try {
+                  void withTargetCodexThread(
+                    (threadId) =>
+                      callCodexAppServer(
+                        currentThreadIdForCaps!,
+                        'thread/metadata/update',
+                        {
+                          threadId,
+                          metadata: JSON.parse(
+                            codexThreadMetadataJson || '{}'
+                          ),
+                        }
+                      ),
+                    'Codex thread metadata updated'
+                  )
+                } catch (e) {
+                  setCapError('Thread metadata JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Metadata
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                try {
+                  void withTargetCodexThread(
+                    (threadId) =>
+                      callCodexAppServer(
+                        currentThreadIdForCaps!,
+                        'thread/settings/update',
+                        {
+                          threadId,
+                          settings: JSON.parse(
+                            codexThreadSettingsJson || '{}'
+                          ),
+                        }
+                      ),
+                    'Codex thread settings updated'
+                  )
+                } catch (e) {
+                  setCapError('Thread settings JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                const objective = codexThreadGoalObjective.trim()
+                if (!objective) return
+                void withTargetCodexThread(
+                  (threadId) =>
+                    setCodexThreadGoal(currentThreadIdForCaps!, threadId, {
+                      objective,
+                    }),
+                  'Codex goal set'
+                )
+              }}
+            >
+              Set goal
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) => getCodexThreadGoal(currentThreadIdForCaps!, threadId),
+                  'Codex goal loaded'
+                )
+              }
+            >
+              Get goal
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) => clearCodexThreadGoal(currentThreadIdForCaps!, threadId),
+                  'Codex goal cleared'
+                )
+              }
+            >
+              Clear goal
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    setCodexThreadMemoryMode(
+                      currentThreadIdForCaps!,
+                      threadId,
+                      'enabled'
+                    ),
+                  'Codex memory enabled'
+                )
+              }
+            >
+              Memory on
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    setCodexThreadMemoryMode(
+                      currentThreadIdForCaps!,
+                      threadId,
+                      'disabled'
+                    ),
+                  'Codex memory disabled'
+                )
+              }
+            >
+              Memory off
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  () => callCodexAppServer(currentThreadIdForCaps!, 'memory/reset'),
+                  'Codex memory reset'
+                )
+              }
+            >
+              Reset memory
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'turn/interrupt',
+                      { threadId }
+                    ),
+                  'Codex turn interrupt requested'
+                )
+              }
+            >
+              Interrupt
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/compact',
+                      { threadId }
+                    ),
+                  'Codex thread compact requested'
+                )
+              }
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/reload',
+                      { threadId }
+                    ),
+                  'Codex thread reload requested'
+                )
+              }
+            >
+              Reload
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                try {
+                  const params = JSON.parse(codexRollbackParamsJson || '{}')
+                  void withTargetCodexThread(
+                    (threadId) =>
+                      callCodexAppServer(
+                        currentThreadIdForCaps!,
+                        'thread/rollback',
+                        { threadId, ...params }
+                      ),
+                    'Codex rollback requested'
+                  )
+                } catch (e) {
+                  setCapError('Rollback params JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Rollback
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                try {
+                  const params = JSON.parse(codexAdvancedReviewJson || '{}')
+                  void withTargetCodexThread(
+                    (threadId) =>
+                      callCodexAppServer(
+                        currentThreadIdForCaps!,
+                        'review/start',
+                        { threadId, ...params }
+                      ),
+                    'Codex review requested'
+                  )
+                } catch (e) {
+                  setCapError('Review params JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Review
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                try {
+                  void withTargetCodexThread(
+                    (threadId) =>
+                      callCodexAppServer(
+                        currentThreadIdForCaps!,
+                        'thread/inject_items',
+                        {
+                          threadId,
+                          items: JSON.parse(codexInjectItemsJson || '[]'),
+                        }
+                      ),
+                    'Codex thread items injected'
+                  )
+                } catch (e) {
+                  setCapError('Injected items JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Inject items
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/backgroundTerminals/clean',
+                      { threadId }
+                    ),
+                  'Codex background terminals cleaned'
+                )
+              }
+            >
+              Clean terminals
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/realtime/start',
+                      { threadId }
+                    ),
+                  'Codex realtime started'
+                )
+              }
+            >
+              Realtime start
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                const text = codexRealtimeText
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/realtime/appendText',
+                      { threadId, text }
+                    ),
+                  'Codex realtime text appended'
+                )
+              }}
+            >
+              Realtime text
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() => {
+                const audioBase64 = codexRealtimeAudioBase64.trim()
+                if (!audioBase64) return
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/realtime/appendAudio',
+                      { threadId, audioBase64: audioBase64.trim() }
+                    ),
+                  'Codex realtime audio appended'
+                )
+              }}
+            >
+              Realtime audio
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!targetCodexThreadId || threadBusy}
+              onClick={() =>
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/realtime/stop',
+                      { threadId }
+                    ),
+                  'Codex realtime stopped'
+                )
+              }
+            >
+              Realtime stop
+            </button>
+          </div>
+          <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
+            <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words">
+              {codexLoadedThreads
+                ? JSON.stringify(codexLoadedThreads, null, 2)
+                : '— loaded threads'}
+            </pre>
+            <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words">
+              {codexStoredThreads
+                ? JSON.stringify(codexStoredThreads, null, 2)
+                : '— stored threads'}
+            </pre>
+          </div>
+          {selectableCodexThreadIds.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexThreadIds.map((threadId) => (
+                <button
+                  key={threadId}
+                  type="button"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    targetCodexThreadId === threadId && 'bg-accent'
+                  )}
+                  title={threadId}
+                  onClick={() => setCodexThreadId(threadId)}
+                >
+                  {threadId}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words">
+            {codexThreadSnapshot ||
+            codexThreadTurns ||
+            codexThreadTurnItems ||
+            codexThreadGoal
+              ? JSON.stringify(
+                  {
+                    thread: codexThreadSnapshot,
+                    turns: codexThreadTurns,
+                    turnItems: codexThreadTurnItems,
+                    goal: codexThreadGoal,
+                  },
+                  null,
+                  2
+                )
+              : '— selected thread'}
+          </pre>
+          {selectableCodexTurnIds.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexTurnIds.map((turnId) => (
+                <button
+                  key={turnId}
+                  type="button"
+                  className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent"
+                  title={turnId}
+                  onClick={() => {
+                    setCodexTurnItemsParamsJson((previous) => {
+                      try {
+                        return JSON.stringify(
+                          { ...JSON.parse(previous || '{}'), turnId },
+                          null,
+                          2
+                        )
+                      } catch {
+                        return JSON.stringify({ turnId }, null, 2)
+                      }
+                    })
+                    setCodexRollbackParamsJson((previous) => {
+                      try {
+                        return JSON.stringify(
+                          { ...JSON.parse(previous || '{}'), turnId },
+                          null,
+                          2
+                        )
+                      } catch {
+                        return JSON.stringify({ turnId }, null, 2)
+                      }
+                    })
+                  }}
+                >
+                  turn:{turnId}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {selectableCodexItemIds.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexItemIds.map((itemId) => (
+                <button
+                  key={itemId}
+                  type="button"
+                  className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent"
+                  title={itemId}
+                  onClick={() => {
+                    setCodexRollbackParamsJson((previous) => {
+                      try {
+                        return JSON.stringify(
+                          { ...JSON.parse(previous || '{}'), itemId },
+                          null,
+                          2
+                        )
+                      } catch {
+                        return JSON.stringify({ itemId }, null, 2)
+                      }
+                    })
+                  }}
+                >
+                  item:{itemId}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Account</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || accountBusy}
+                onClick={() => void refreshCodexAccount(true)}
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || accountBusy}
+                onClick={() => void startDeviceCodeLogin()}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || accountBusy || !accountLogin?.loginId}
+                onClick={() => void cancelDeviceCodeLogin()}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || accountBusy}
+                onClick={() => void logoutCodex()}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-2">
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Account login params JSON"
+              value={accountLoginParamsJson}
+              onChange={(event) =>
+                setAccountLoginParamsJson(event.target.value)
+              }
+            />
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Account usage params JSON"
+              value={accountUsageParamsJson}
+              onChange={(event) =>
+                setAccountUsageParamsJson(event.target.value)
+              }
+            />
+          </div>
+          <Input
+            className="mb-1 h-6 px-2 text-[10px]"
+            placeholder="Credits nudge type"
+            value={accountCreditsNudgeType}
+            onChange={(event) => setAccountCreditsNudgeType(event.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px]">
+            <span className="text-muted-foreground">Required</span>
+            <span>{String(accountRequiresAuth ?? 'unknown')}</span>
+            <span className="text-muted-foreground">Mode</span>
+            <span>{String(accountType)}</span>
+            <span className="text-muted-foreground">Email</span>
+            <span className="truncate">{accountEmail ?? '—'}</span>
+            <span className="text-muted-foreground">Plan</span>
+            <span>{accountPlan ?? '—'}</span>
+          </div>
+          {accountLogin?.verificationUrl || accountLogin?.userCode ? (
+            <div className="mt-1 rounded border border-border/60 p-1">
+              <div className="truncate" title={accountLogin.verificationUrl}>
+                {accountLogin.verificationUrl}
+              </div>
+              <div className="font-mono">{accountLogin.userCode ?? '—'}</div>
+            </div>
+          ) : null}
+          <div className="mt-1 flex gap-2">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || accountBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                setAccountBusy(true)
+                setCapError(null)
+                try {
+                  const [rateLimitSnapshot, usageSnapshot] =
+                    await Promise.all([
+                      readCodexAccountRateLimits(currentThreadIdForCaps).catch(
+                        (e) => ({ error: String(e) })
+                      ),
+                      readCodexAccountUsage(
+                        currentThreadIdForCaps,
+                        JSON.parse(accountUsageParamsJson || '{}')
+                      ).catch((e) => ({ error: String(e) })),
+                    ])
+                  setAccountRateLimits(rateLimitSnapshot)
+                  setAccountUsage(usageSnapshot)
+                } catch (e) {
+                  setCapError('Read limits/usage failed: ' + String(e))
+                } finally {
+                  setAccountBusy(false)
+                }
+              }}
+            >
+              Read limits/usage
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || accountBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                try {
+                  await sendCodexAddCreditsNudgeEmail(
+                    currentThreadIdForCaps,
+                    accountCreditsNudgeType.trim() as any
+                  )
+                  toast.success('Credits nudge sent')
+                } catch (e) {
+                  setCapError('Credits nudge failed: ' + String(e))
+                }
+              }}
+            >
+              Credits nudge
+            </button>
+          </div>
+          <pre className="mt-1 whitespace-pre-wrap break-words max-h-24 overflow-auto">
+            {accountRateLimits || accountUsage
+              ? JSON.stringify(
+                  { rateLimits: accountRateLimits, usage: accountUsage },
+                  null,
+                  2
+                )
+              : '— (refresh to load)'}
+          </pre>
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Remote Control</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || remoteBusy}
+                onClick={() => void refreshRemoteControlStatus()}
+              >
+                Status
+              </button>
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || remoteBusy}
+                onClick={() =>
+                  void runRemoteControlAction(
+                    () => enableCodexRemoteControl(currentThreadIdForCaps!),
+                    'Remote control enabled'
+                  )
+                }
+              >
+                Enable
+              </button>
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || remoteBusy}
+                onClick={() =>
+                  void runRemoteControlAction(
+                    () => disableCodexRemoteControl(currentThreadIdForCaps!),
+                    'Remote control disabled'
+                  )
+                }
+              >
+                Disable
+              </button>
+              <button
+                type="button"
+                className="text-[9px] underline disabled:opacity-50"
+                disabled={!currentThreadIdForCaps || remoteBusy}
+                onClick={() =>
+                  void runRemoteControlAction(
+                    () =>
+                      callCodexAppServer(
+                        currentThreadIdForCaps!,
+                        'remoteControl/client/list',
+                        {}
+                      ),
+                    'Remote clients loaded'
+                  )
+                }
+              >
+                Clients
+              </button>
+            </div>
+          </div>
+          <div className="mb-1 flex gap-1">
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="Pairing code"
+              value={remotePairingCode}
+              onChange={(event) => setRemotePairingCode(event.target.value)}
+            />
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="Client id"
+              value={remoteClientId}
+              onChange={(event) => setRemoteClientId(event.target.value)}
+            />
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="Pair params JSON"
+              value={remotePairingStartParamsJson}
+              onChange={(event) =>
+                setRemotePairingStartParamsJson(event.target.value)
+              }
+            />
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || remoteBusy}
+              onClick={() => void startRemoteControlPairing()}
+            >
+              Pair
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                remoteBusy ||
+                !remotePairingCode.trim()
+              }
+              onClick={() => void readRemoteControlPairing()}
+            >
+              Check
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps || remoteBusy || !remoteClientId.trim()
+              }
+              onClick={() => {
+                void runRemoteControlAction(
+                  () =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'remoteControl/client/revoke',
+                      { clientId: remoteClientId.trim() }
+                    ),
+                  'Remote client revoked'
+                )
+              }}
+            >
+              Revoke
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-24 overflow-auto">
+            {remoteStatus || remotePairing
+              ? JSON.stringify(
+                  { status: remoteStatus, pairing: remotePairing },
+                  null,
+                  2
+                )
+              : '— (status/pairing not loaded)'}
+          </pre>
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Config / Admin</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || adminBusy}
+              onClick={() => void refreshCodexAdminSnapshot()}
+            >
+              {adminBusy ? 'Loading' : 'Refresh'}
+            </button>
+          </div>
+          <div className="mb-1 text-[10px] text-muted-foreground">
+            Reads live app-server config, config requirements, permission
+            profiles, collaboration modes, and external-agent import candidates
+            for the current workspace.
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-2">
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Config key path, dot-separated"
+              value={codexConfigKeyPath}
+              onChange={(event) => setCodexConfigKeyPath(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Config value JSON"
+              value={codexConfigValueJson}
+              onChange={(event) => setCodexConfigValueJson(event.target.value)}
+            />
+          </div>
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="Config batch write JSON"
+            value={codexConfigBatchJson}
+            onChange={(event) => setCodexConfigBatchJson(event.target.value)}
+          />
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-2">
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="Windows sandbox setup params JSON"
+              value={codexWindowsSandboxJson}
+              onChange={(event) =>
+                setCodexWindowsSandboxJson(event.target.value)
+              }
+            />
+            <textarea
+              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+              placeholder="External agent import params JSON"
+              value={codexExternalAgentImportJson}
+              onChange={(event) =>
+                setCodexExternalAgentImportJson(event.target.value)
+              }
+            />
+          </div>
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || adminBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                const keyPath = codexConfigKeyPath.trim()
+                if (!keyPath) return
+                setAdminBusy(true)
+                setCapError(null)
+                try {
+                  await callCodexAppServer(
+                    currentThreadIdForCaps,
+                    'config/value/write',
+                    {
+                      keyPath: keyPath
+                        .split('.')
+                        .map((part) => part.trim())
+                        .filter(Boolean),
+                      value: JSON.parse(codexConfigValueJson || 'null'),
+                    }
+                  )
+                  await refreshCodexAdminSnapshot()
+                  toast.success('Codex config value written')
+                } catch (e) {
+                  setCapError('Config write failed: ' + String(e))
+                  setAdminBusy(false)
+                }
+              }}
+            >
+              Write config value
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || adminBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                setAdminBusy(true)
+                setCapError(null)
+                try {
+                  const params = JSON.parse(codexConfigBatchJson || '{}')
+                  const result = await callCodexAppServer(
+                    currentThreadIdForCaps,
+                    'config/batchWrite',
+                    params
+                  )
+                  setCodexAdminSnapshot((previous: any) => ({
+                    ...(previous ?? {}),
+                    batchWrite: result,
+                  }))
+                  await refreshCodexAdminSnapshot()
+                  toast.success('Codex config batch written')
+                } catch (e) {
+                  setCapError('Config batch write failed: ' + String(e))
+                } finally {
+                  setAdminBusy(false)
+                }
+              }}
+            >
+              Batch config
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || adminBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                setAdminBusy(true)
+                setCapError(null)
+                try {
+                  const result = await callCodexAppServer(
+                    currentThreadIdForCaps,
+                    'feedback/upload',
+                    { cwd }
+                  )
+                  setCodexAdminSnapshot((previous: any) => ({
+                    ...(previous ?? {}),
+                    feedbackUpload: result,
+                  }))
+                  toast.success('Codex feedback upload requested')
+                } catch (e) {
+                  setCapError('Feedback upload failed: ' + String(e))
+                } finally {
+                  setAdminBusy(false)
+                }
+              }}
+            >
+              Upload feedback
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || adminBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                setAdminBusy(true)
+                setCapError(null)
+                try {
+                  const result = await callCodexAppServer(
+                    currentThreadIdForCaps,
+                    'windowsSandbox/setupStart',
+                    JSON.parse(codexWindowsSandboxJson || '{}')
+                  )
+                  setCodexAdminSnapshot((previous: any) => ({
+                    ...(previous ?? {}),
+                    windowsSandboxSetup: result,
+                  }))
+                  toast.success('Codex Windows sandbox setup started')
+                } catch (e) {
+                  setCapError('Windows sandbox setup failed: ' + String(e))
+                } finally {
+                  setAdminBusy(false)
+                }
+              }}
+            >
+              Windows sandbox
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || adminBusy}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                setAdminBusy(true)
+                setCapError(null)
+                try {
+                  const parsedParams = JSON.parse(
+                    codexExternalAgentImportJson || '{}'
+                  )
+                  const result = await callCodexAppServer(
+                    currentThreadIdForCaps,
+                    'externalAgentConfig/import',
+                    {
+                      cwd,
+                      ...parsedParams,
+                    }
+                  )
+                  setCodexAdminSnapshot((previous: any) => ({
+                    ...(previous ?? {}),
+                    externalAgentImport: result,
+                  }))
+                  toast.success('External agent config imported into Codex')
+                } catch (e) {
+                  setCapError('External agent import failed: ' + String(e))
+                } finally {
+                  setAdminBusy(false)
+                }
+              }}
+            >
+              Import external agent
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-32 overflow-auto">
+            {codexAdminSnapshot
+              ? JSON.stringify(codexAdminSnapshot, null, 2)
+              : '— (refresh to load)'}
+          </pre>
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Models / Providers / Features</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || modelAdminBusy}
+              onClick={() => void refreshCodexModelSnapshot()}
+            >
+              {modelAdminBusy ? 'Loading' : 'Refresh'}
+            </button>
+          </div>
+          <div className="mb-1 text-[10px] text-muted-foreground">
+            Reads the running Codex app-server model catalog, provider
+            capabilities, and experimental feature state. Also exposes feature
+            enablement and environment registration.
+          </div>
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="Experimental feature enablement JSON"
+            value={codexFeatureEnablementJson}
+            onChange={(event) =>
+              setCodexFeatureEnablementJson(event.target.value)
+            }
+          />
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-2">
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Environment id"
+              value={codexEnvironmentId}
+              onChange={(event) => setCodexEnvironmentId(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Exec server URL"
+              value={codexEnvironmentExecUrl}
+              onChange={(event) =>
+                setCodexEnvironmentExecUrl(event.target.value)
+              }
+            />
+          </div>
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="User input request JSON"
+            value={codexUserInputRequestJson}
+            onChange={(event) =>
+              setCodexUserInputRequestJson(event.target.value)
+            }
+          />
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || modelAdminBusy}
+              onClick={() => {
+                try {
+                  void runCodexModelAction(
+                    'experimentalFeature/enablement/set',
+                    {
+                      features: JSON.parse(
+                        codexFeatureEnablementJson || '{}'
+                      ),
+                    },
+                    'Codex experimental features updated'
+                  )
+                } catch (e) {
+                  setCapError(
+                    'Experimental feature JSON parse failed: ' + String(e)
+                  )
+                }
+              }}
+            >
+              Set features
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                modelAdminBusy ||
+                !codexEnvironmentId.trim() ||
+                !codexEnvironmentExecUrl.trim()
+              }
+              onClick={() => {
+                void runCodexModelAction(
+                  'environment/add',
+                  {
+                    environmentId: codexEnvironmentId.trim(),
+                    execServerUrl: codexEnvironmentExecUrl.trim(),
+                  },
+                  'Codex environment added'
+                )
+              }}
+            >
+              Add environment
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || modelAdminBusy}
+              onClick={() => {
+                try {
+                  void runCodexModelAction(
+                    'tool/requestUserInput',
+                    JSON.parse(codexUserInputRequestJson || '{}'),
+                    'Codex user-input request sent'
+                  )
+                } catch (e) {
+                  setCapError(
+                    'User input request JSON parse failed: ' + String(e)
+                  )
+                }
+              }}
+            >
+              Request user input
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-32 overflow-auto">
+            {codexModelSnapshot
+              ? JSON.stringify(codexModelSnapshot, null, 2)
+              : '— (refresh to load)'}
+          </pre>
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Raw app-server RPC</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                rawRpcBusy ||
+                !codexRawRpcMethod.trim()
+              }
+              onClick={() => void runCodexRawRpc()}
+            >
+              {rawRpcBusy ? 'Calling' : 'Call'}
+            </button>
+          </div>
+          <div className="mb-1 text-[10px] text-muted-foreground">
+            Escape hatch for current or future Codex app-server methods that do
+            not yet have dedicated UI controls.
+          </div>
+          <Input
+            className="mb-1 h-6 px-2 text-[10px]"
+            placeholder="method, e.g. model/list"
+            value={codexRawRpcMethod}
+            onChange={(event) => setCodexRawRpcMethod(event.target.value)}
+          />
+          <textarea
+            className="mb-1 min-h-16 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="params JSON"
+            value={codexRawRpcParams}
+            onChange={(event) => setCodexRawRpcParams(event.target.value)}
+          />
+          <pre className="whitespace-pre-wrap break-words max-h-32 overflow-auto">
+            {codexRawRpcSnapshot
+              ? JSON.stringify(codexRawRpcSnapshot, null, 2)
+              : '— (raw RPC result)'}
+          </pre>
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Codex CLI</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={cliBusy}
+              onClick={() =>
+                void runCodexCliAction('doctor', () =>
+                  runCodexDoctor({ cwd })
+                )
+              }
+            >
+              Doctor
+            </button>
+          </div>
+          <div className="mb-1 text-[10px] text-muted-foreground">
+            Runs Codex CLI subcommands through the desktop bridge against the
+            active workspace. This complements app-server chat with CLI-native
+            diagnostics and non-interactive automation.
+          </div>
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="codex exec prompt"
+            value={codexCliExecPrompt}
+            onChange={(event) => setCodexCliExecPrompt(event.target.value)}
+          />
+          <Input
+            className="mb-1 h-6 px-2 text-[10px]"
+            placeholder="codex resume --last prompt (optional)"
+            value={codexCliResumePrompt}
+            onChange={(event) => setCodexCliResumePrompt(event.target.value)}
+          />
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="raw Codex CLI args JSON array"
+            value={codexCliRawArgs}
+            onChange={(event) => setCodexCliRawArgs(event.target.value)}
+          />
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={cliBusy || !codexCliExecPrompt.trim()}
+              onClick={() => {
+                void runCodexCliAction('exec', () =>
+                  runCodexExec({
+                    prompt: codexCliExecPrompt.trim(),
+                    cwd,
+                    sandbox: 'workspace-write',
+                  })
+                )
+              }}
+            >
+              Exec
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={cliBusy}
+              onClick={() => {
+                void runCodexCliAction('resume --last', () =>
+                  runCodexResume({
+                    last: true,
+                    prompt: codexCliResumePrompt.trim() || undefined,
+                    cwd,
+                  })
+                )
+              }}
+            >
+              Resume last
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={cliBusy}
+              onClick={() => {
+                try {
+                  const args = JSON.parse(codexCliRawArgs || '[]')
+                  if (!Array.isArray(args)) {
+                    setCapError('Codex CLI args must be a JSON array.')
+                    return
+                  }
+                  void runCodexCliAction('raw', () =>
+                    runCodexCliSubcommand({
+                      command: 'codex',
+                      args: args.map((arg) => String(arg)),
+                      cwd,
+                    })
+                  )
+                } catch (e) {
+                  setCapError('Codex CLI args JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Raw CLI
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-32 overflow-auto">
+            {codexCliSnapshot
+              ? JSON.stringify(codexCliSnapshot, null, 2)
+              : '— (CLI result)'}
+          </pre>
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Plugins / Marketplace / Skills</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || marketplaceBusy}
+              onClick={() => void refreshCodexMarketplaceSnapshot()}
+            >
+              {marketplaceBusy ? 'Loading' : 'Refresh'}
+            </button>
+          </div>
+          <div className="mb-1 text-[10px] text-muted-foreground">
+            Manages app-server plugin install state, plugin metadata,
+            marketplaces, app descriptors, and skill config without leaving the
+            Codex-backed workspace.
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-2">
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Plugin id/name"
+              value={codexPluginId}
+              onChange={(event) => setCodexPluginId(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Plugin skill id/name"
+              value={codexPluginSkillId}
+              onChange={(event) => setCodexPluginSkillId(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Marketplace name"
+              value={codexMarketplaceName}
+              onChange={(event) => setCodexMarketplaceName(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Marketplace source"
+              value={codexMarketplaceSource}
+              onChange={(event) => setCodexMarketplaceSource(event.target.value)}
+            />
+          </div>
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="Skill config JSON"
+            value={codexSkillConfigJson}
+            onChange={(event) => setCodexSkillConfigJson(event.target.value)}
+          />
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexPluginId.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'plugin/install',
+                  {
+                    plugin: codexPluginId.trim(),
+                    pluginId: codexPluginId.trim(),
+                  },
+                  'Codex plugin install requested'
+                )
+              }}
+            >
+              Install plugin
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexPluginId.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'plugin/uninstall',
+                  {
+                    plugin: codexPluginId.trim(),
+                    pluginId: codexPluginId.trim(),
+                  },
+                  'Codex plugin uninstall requested'
+                )
+              }}
+            >
+              Uninstall plugin
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexPluginId.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'plugin/read',
+                  {
+                    plugin: codexPluginId.trim(),
+                    pluginId: codexPluginId.trim(),
+                  },
+                  'Codex plugin metadata loaded'
+                )
+              }}
+            >
+              Read plugin
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexPluginId.trim() ||
+                !codexPluginSkillId.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'plugin/skill/read',
+                  {
+                    plugin: codexPluginId.trim(),
+                    pluginId: codexPluginId.trim(),
+                    skill: codexPluginSkillId.trim(),
+                    skillId: codexPluginSkillId.trim(),
+                  },
+                  'Codex plugin skill loaded'
+                )
+              }}
+            >
+              Read plugin skill
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexMarketplaceName.trim() ||
+                !codexMarketplaceSource.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'marketplace/add',
+                  {
+                    marketplaceName: codexMarketplaceName.trim(),
+                    source: codexMarketplaceSource.trim(),
+                  },
+                  'Codex marketplace added'
+                )
+              }}
+            >
+              Add marketplace
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexMarketplaceName.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'marketplace/remove',
+                  { marketplaceName: codexMarketplaceName.trim() },
+                  'Codex marketplace removed'
+                )
+              }}
+            >
+              Remove marketplace
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexMarketplaceName.trim()
+              }
+              onClick={() => {
+                void runCodexMarketplaceAction(
+                  'marketplace/upgrade',
+                  { marketplaceName: codexMarketplaceName.trim() },
+                  'Codex marketplace upgrade requested'
+                )
+              }}
+            >
+              Upgrade marketplace
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                marketplaceBusy ||
+                !codexPluginSkillId.trim()
+              }
+              onClick={() => {
+                try {
+                  void runCodexMarketplaceAction(
+                    'skills/config/write',
+                    {
+                      skill: codexPluginSkillId.trim(),
+                      skillId: codexPluginSkillId.trim(),
+                      config: JSON.parse(codexSkillConfigJson || '{}'),
+                    },
+                    'Codex skill config written'
+                  )
+                } catch (e) {
+                  setCapError('Skill config JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Write skill config
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-32 overflow-auto">
+            {codexMarketplaceSnapshot
+              ? JSON.stringify(codexMarketplaceSnapshot, null, 2)
+              : '— (refresh to load)'}
+          </pre>
+          {selectableCodexPluginIds.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexPluginIds.map((pluginId) => (
+                <button
+                  key={pluginId}
+                  type="button"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    codexPluginId.trim() === pluginId && 'bg-accent'
+                  )}
+                  title={pluginId}
+                  onClick={() => setCodexPluginId(pluginId)}
+                >
+                  {pluginId}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {selectableCodexSkillIds.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexSkillIds.map((skillId) => (
+                <button
+                  key={skillId}
+                  type="button"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    codexPluginSkillId.trim() === skillId && 'bg-accent'
+                  )}
+                  title={skillId}
+                  onClick={() => setCodexPluginSkillId(skillId)}
+                >
+                  skill:{skillId}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-1 flex items-center justify-between gap-2">
+            <span>Runtime FS / Process</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || runtimeBusy}
+              onClick={() =>
+                setCodexRuntimeSnapshot((previous: any) => ({
+                  ...(previous ?? {}),
+                  cwd,
+                }))
+              }
+            >
+              Set cwd
+            </button>
+          </div>
+          <div className="mb-1 text-[10px] text-muted-foreground">
+            Calls Codex app-server filesystem and process RPCs directly through
+            the active agent session. This is the Codex runtime view, separate
+            from Jan's local file browser.
+          </div>
+          <div className="mb-1 flex gap-1">
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="Path for fs/readFile, fs/writeFile, fs/readDirectory"
+              value={codexRuntimePath}
+              onChange={(event) => setCodexRuntimePath(event.target.value)}
+            />
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimePath.trim() || runtimeBusy}
+              onClick={() => void readCodexRuntimeFile()}
+            >
+              Read
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimePath.trim() || runtimeBusy}
+              onClick={() => void writeCodexRuntimeFile()}
+            >
+              Write
+            </button>
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-3">
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Copy destination path"
+              value={codexRuntimeCopyDestination}
+              onChange={(event) =>
+                setCodexRuntimeCopyDestination(event.target.value)
+              }
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Watch id"
+              value={codexRuntimeWatchId}
+              onChange={(event) => setCodexRuntimeWatchId(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder='Spawn command JSON or shell command'
+              value={codexRuntimeSpawnCommand}
+              onChange={(event) =>
+                setCodexRuntimeSpawnCommand(event.target.value)
+              }
+            />
+          </div>
+          <textarea
+            className="mb-1 min-h-16 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="File text for fs/writeFile, populated by fs/readFile"
+            value={codexRuntimeFileText}
+            onChange={(event) => setCodexRuntimeFileText(event.target.value)}
+          />
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="command/exec params JSON"
+            value={codexCommandExecParams}
+            onChange={(event) => setCodexCommandExecParams(event.target.value)}
+          />
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimePath.trim() || runtimeBusy}
+              onClick={() =>
+                void runCodexRuntimeAction(
+                  'fs/readDirectory',
+                  { path: codexRuntimePath.trim() },
+                  'Codex directory read'
+                )
+              }
+            >
+              Read directory
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimePath.trim() || runtimeBusy}
+              onClick={() =>
+                void runCodexRuntimeAction(
+                  'fs/getMetadata',
+                  { path: codexRuntimePath.trim() },
+                  'Codex metadata read'
+                )
+              }
+            >
+              Metadata
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimePath.trim() || runtimeBusy}
+              onClick={() =>
+                void runCodexRuntimeAction(
+                  'fs/createDirectory',
+                  { path: codexRuntimePath.trim(), recursive: true },
+                  'Codex directory created'
+                )
+              }
+            >
+              Mkdir
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimePath.trim() || runtimeBusy}
+              onClick={() => {
+                const confirmed = window.confirm(
+                  `Remove ${codexRuntimePath.trim()} through Codex app-server?`
+                )
+                if (!confirmed) return
+                void runCodexRuntimeAction(
+                  'fs/remove',
+                  {
+                    path: codexRuntimePath.trim(),
+                    recursive: true,
+                    force: true,
+                  },
+                  'Codex filesystem path removed'
+                )
+              }}
+            >
+              Remove
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !codexRuntimePath.trim() ||
+                !codexRuntimeCopyDestination.trim() ||
+                runtimeBusy
+              }
+              onClick={() => {
+                void runCodexRuntimeAction(
+                  'fs/copy',
+                  {
+                    sourcePath: codexRuntimePath.trim(),
+                    destinationPath: codexRuntimeCopyDestination.trim(),
+                  },
+                  'Codex filesystem path copied'
+                )
+              }}
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !codexRuntimePath.trim() ||
+                !codexRuntimeWatchId.trim() ||
+                runtimeBusy
+              }
+              onClick={() => {
+                void runCodexRuntimeAction(
+                  'fs/watch',
+                  {
+                    watchId: codexRuntimeWatchId.trim(),
+                    path: codexRuntimePath.trim(),
+                  },
+                  'Codex filesystem watch started'
+                )
+              }}
+            >
+              Watch
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexRuntimeWatchId.trim() || runtimeBusy}
+              onClick={() => {
+                void runCodexRuntimeAction(
+                  'fs/unwatch',
+                  { watchId: codexRuntimeWatchId.trim() },
+                  'Codex filesystem watch stopped'
+                )
+              }}
+            >
+              Unwatch
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={runtimeBusy}
+              onClick={() => void spawnCodexRuntimeProcess()}
+            >
+              Spawn process
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={runtimeBusy}
+              onClick={() => {
+                try {
+                  const params = JSON.parse(codexCommandExecParams || '{}')
+                  void runCodexRuntimeAction(
+                    'command/exec',
+                    {
+                      cwd,
+                      ...params,
+                    },
+                    'Codex command exec started'
+                  )
+                } catch (e) {
+                  setCapError('Command exec JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Command exec
+            </button>
+          </div>
+          <div className="mb-1 flex gap-1">
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="Process handle"
+              value={codexProcessHandle}
+              onChange={(event) => setCodexProcessHandle(event.target.value)}
+            />
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder="stdin"
+              value={codexRuntimeStdin}
+              onChange={(event) => setCodexRuntimeStdin(event.target.value)}
+            />
+            <Input
+              className="h-6 min-w-0 flex-1 px-2 text-[10px]"
+              placeholder='PTY size JSON'
+              value={codexRuntimePtySize}
+              onChange={(event) => setCodexRuntimePtySize(event.target.value)}
+            />
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexProcessHandle.trim() || runtimeBusy}
+              onClick={() => {
+                void runCodexRuntimeAction(
+                  'process/writeStdin',
+                  {
+                    processHandle: codexProcessHandle.trim(),
+                    deltaBase64: encodeUtf8Base64(codexRuntimeStdin),
+                  },
+                  'Codex stdin sent'
+                )
+              }}
+            >
+              Stdin
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexProcessHandle.trim() || runtimeBusy}
+              onClick={() => {
+                void runCodexRuntimeAction(
+                  'command/stdin',
+                  {
+                    processId: codexProcessHandle.trim(),
+                    deltaBase64: encodeUtf8Base64(codexRuntimeStdin),
+                  },
+                  'Codex command stdin sent'
+                )
+              }}
+            >
+              Cmd stdin
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexProcessHandle.trim() || runtimeBusy}
+              onClick={() => {
+                try {
+                  const size = JSON.parse(codexRuntimePtySize || '{}')
+                  void runCodexRuntimeAction(
+                    'process/resizePty',
+                    {
+                      processHandle: codexProcessHandle.trim(),
+                      size,
+                    },
+                    'Codex PTY resized'
+                  )
+                } catch (e) {
+                  setCapError('PTY size JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Resize
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexProcessHandle.trim() || runtimeBusy}
+              onClick={() => {
+                try {
+                  const size = JSON.parse(codexRuntimePtySize || '{}')
+                  void runCodexRuntimeAction(
+                    'command/resize',
+                    {
+                      processId: codexProcessHandle.trim(),
+                      size,
+                    },
+                    'Codex command PTY resized'
+                  )
+                } catch (e) {
+                  setCapError('Command PTY size JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Cmd resize
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexProcessHandle.trim() || runtimeBusy}
+              onClick={() =>
+                void runCodexRuntimeAction(
+                  'process/kill',
+                  { processHandle: codexProcessHandle.trim() },
+                  'Codex process killed'
+                )
+              }
+            >
+              Kill
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!codexProcessHandle.trim() || runtimeBusy}
+              onClick={() =>
+                void runCodexRuntimeAction(
+                  'command/terminate',
+                  { processId: codexProcessHandle.trim() },
+                  'Codex command terminated'
+                )
+              }
+            >
+              Cmd terminate
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-32 overflow-auto">
+            {codexRuntimeSnapshot
+              ? JSON.stringify(codexRuntimeSnapshot, null, 2)
+              : '— (runtime action results)'}
+          </pre>
+          {selectableCodexProcessHandles.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexProcessHandles.map((processHandle) => (
+                <button
+                  key={processHandle}
+                  type="button"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    codexProcessHandle.trim() === processHandle && 'bg-accent'
+                  )}
+                  title={processHandle}
+                  onClick={() => setCodexProcessHandle(processHandle)}
+                >
+                  proc:{processHandle}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="mb-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-0.5 flex items-center justify-between">
+            <span>MCP server status</span>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps}
+              onClick={async () => {
+                if (!currentThreadIdForCaps) return
+                const server = codexMcpServerName.trim()
+                if (!server) return
+                try {
+                  await startCodexMcpOauthLogin(currentThreadIdForCaps, server)
+                  toast.success(`MCP OAuth login started for ${server}`)
+                  await refreshCodexCapabilities()
+                } catch (e) {
+                  setCapError('MCP OAuth login failed: ' + String(e))
+                }
+              }}
+            >
+              MCP OAuth login
+            </button>
+          </div>
+          <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-3">
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="MCP server"
+              value={codexMcpServerName}
+              onChange={(event) => setCodexMcpServerName(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Resource URI"
+              value={codexMcpResourceUri}
+              onChange={(event) => setCodexMcpResourceUri(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Tool name"
+              value={codexMcpToolName}
+              onChange={(event) => setCodexMcpToolName(event.target.value)}
+            />
+          </div>
+          <textarea
+            className="mb-1 min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
+            placeholder="MCP tool arguments JSON"
+            value={codexMcpToolArguments}
+            onChange={(event) => setCodexMcpToolArguments(event.target.value)}
+          />
+          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-1">
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                mcpBusy ||
+                !codexMcpServerName.trim() ||
+                !codexMcpResourceUri.trim()
+              }
+              onClick={() => {
+                void runCodexMcpAction(
+                  'mcpServer/resource/read',
+                  {
+                    server: codexMcpServerName.trim(),
+                    uri: codexMcpResourceUri.trim(),
+                  },
+                  'Codex MCP resource read'
+                )
+              }}
+            >
+              Read resource
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={!currentThreadIdForCaps || mcpBusy}
+              onClick={() =>
+                void runCodexMcpAction(
+                  'config/mcpServer/reload',
+                  {},
+                  'Codex MCP config reloaded'
+                )
+              }
+            >
+              Reload config
+            </button>
+            <button
+              type="button"
+              className="text-[9px] underline disabled:opacity-50"
+              disabled={
+                !currentThreadIdForCaps ||
+                mcpBusy ||
+                !codexMcpServerName.trim() ||
+                !codexMcpToolName.trim()
+              }
+              onClick={() => {
+                try {
+                  void runCodexMcpAction(
+                    'mcpServer/tool/call',
+                    {
+                      server: codexMcpServerName.trim(),
+                      toolName: codexMcpToolName.trim(),
+                      arguments: JSON.parse(codexMcpToolArguments || '{}'),
+                    },
+                    'Codex MCP tool called'
+                  )
+                } catch (e) {
+                  setCapError('MCP tool arguments JSON parse failed: ' + String(e))
+                }
+              }}
+            >
+              Call tool
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-20 overflow-auto">{mcpStatus ? JSON.stringify(mcpStatus, null, 2) : '— (refresh to load)'}</pre>
+          {selectableCodexMcpServerNames.length ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {selectableCodexMcpServerNames.map((serverName) => (
+                <button
+                  key={serverName}
+                  type="button"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    codexMcpServerName.trim() === serverName && 'bg-accent'
+                  )}
+                  title={serverName}
+                  onClick={() => setCodexMcpServerName(serverName)}
+                >
+                  {serverName}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <pre className="mt-1 whitespace-pre-wrap break-words max-h-24 overflow-auto">
+            {codexMcpSnapshot
+              ? JSON.stringify(codexMcpSnapshot, null, 2)
+              : '— (MCP resource/tool results)'}
+          </pre>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[10px]">
+          <div className="border rounded p-1 bg-background/50">
+            <div className="font-mono mb-0.5">Skills</div>
+            <pre className="whitespace-pre-wrap break-words max-h-24 overflow-auto">{skills ? JSON.stringify(skills, null, 2) : '— (refresh to load)'}</pre>
+            <button type="button" className="mt-1 text-[9px] underline" onClick={() => void handleSetSkillExtraRoots()} disabled={!currentThreadIdForCaps}>Set extra roots for workspace</button>
+          </div>
+          <div className="border rounded p-1 bg-background/50">
+            <div className="font-mono mb-0.5">Plugins (all / installed)</div>
+            <pre className="whitespace-pre-wrap break-words max-h-24 overflow-auto">{plugins ? JSON.stringify(plugins, null, 2) : '— (refresh to load)'}</pre>
+          </div>
+          <div className="border rounded p-1 bg-background/50">
+            <div className="font-mono mb-0.5">Hooks</div>
+            <pre className="whitespace-pre-wrap break-words max-h-24 overflow-auto">{hooks ? JSON.stringify(hooks, null, 2) : '— (refresh to load)'}</pre>
+          </div>
+        </div>
+        <div className="mt-2 border rounded p-1 bg-background/50 text-[10px]">
+          <div className="font-mono mb-0.5 flex items-center justify-between">
+            <span>App-server runtime logs ({codexRuntimeLogs.length})</span>
+            <button
+              type="button"
+              className="text-[9px] underline"
+              onClick={() => clearCodexRuntimeLogs()}
+            >
+              Clear
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words max-h-28 overflow-auto font-mono">
+            {getCodexAppServerRuntimeLogs() || '— (logs appear when Codex app-server processes run)'}
+          </pre>
+        </div>
+        <div className="mt-1 text-[9px] text-muted-foreground">
+          Full layer also includes remoteControl/*, marketplace, config read/write, listCollaborationModes, codex doctor/exec (Studio), and git worktrees (Projects menu).
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function BrowserSection({ isActive = true }: { isActive?: boolean }) {
-  const [addressInput, setAddressInput] = useState('')
-  const [activeUrl, setActiveUrl] = useState<string | null>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const sessionUi = useChatSessionUi()
+  const sessionActions = useChatSessionUiActions()
+  const addressInput = sessionUi.browserAddressInput
+  const activeUrl = sessionUi.browserActiveUrl
+  const setAddressInput = sessionActions.setBrowserAddressInput
+  const setActiveUrl = sessionActions.setBrowserActiveUrl
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const requestRuntimePermission = useRuntimePermission(
     (state) => state.requestPermission
@@ -841,7 +4466,7 @@ function BrowserSection({ isActive = true }: { isActive?: boolean }) {
 function ContextPickerSection({
   onOpenSection,
 }: {
-  onOpenSection: (section: ChatSidePanelSection) => void
+  onOpenSection: (section: string) => void
 }) {
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const serviceHub = useServiceHub()
@@ -880,6 +4505,9 @@ function ContextPickerSection({
     state.activeSessionId ? state.sessions[state.activeSessionId] : undefined
   )
   const sessionNames = useTerminalRuntime((state) => state.sessionNames)
+  const codexAppServerLogCount = useCodexAppServerRuntime(
+    (state) => state.logs.length
+  )
 
   const normalizeContextContent = (content: string, maxChars = 12000) => {
     const trimmed = content.replace(ANSI_ESCAPE_PATTERN, '').trim()
@@ -1312,6 +4940,43 @@ function ContextPickerSection({
     setAttachmentsForThread,
   ])
 
+  const attachCodexAppServerLogs = useCallback(async () => {
+    const logText = useCodexAppServerRuntime.getState().getLogText()
+    if (!logText) {
+      toast.info('No Codex app-server logs to attach')
+      return
+    }
+
+    const allowed = await requestRuntimePermission({
+      actionId: 'logs.attach-codex-app-server',
+      actionLabel: 'attach Codex app-server logs to chat',
+      category: 'app',
+      resourceLabel: `${codexAppServerLogCount} app-server log line${codexAppServerLogCount === 1 ? '' : 's'}`,
+      risk: 'medium',
+      details: {
+        lines: codexAppServerLogCount,
+      },
+    })
+    if (!allowed) return
+
+    setAttachmentsForThread(attachmentsKey, (current) => [
+      ...current,
+      createRuntimeLogAttachment({
+        source: 'codex-app-server',
+        sourceLabel: 'Codex app-server',
+        runtimeId: 'codex-app-server',
+        capturedAt: Date.now(),
+        content: normalizeContextContent(logText, 16000),
+      }),
+    ])
+    toast.success('Codex app-server logs attached')
+  }, [
+    attachmentsKey,
+    codexAppServerLogCount,
+    requestRuntimePermission,
+    setAttachmentsForThread,
+  ])
+
   const attachRuntimeProcesses = useCallback(async () => {
     const studioProcesses = await serviceHub.studio().listRuntimeProcesses()
     const codexProcesses = await invoke<
@@ -1636,6 +5301,17 @@ function ContextPickerSection({
         />
         <ContextSourceCard
           icon={ClipboardCheck}
+          title="Codex app-server logs"
+          description={
+            codexAppServerLogCount > 0
+              ? `${codexAppServerLogCount} retained app-server log line${codexAppServerLogCount === 1 ? '' : 's'}`
+              : 'Run a Codex-backed chat first, then attach app-server logs.'
+          }
+          actionLabel="Attach Codex logs"
+          onAction={() => void attachCodexAppServerLogs()}
+        />
+        <ContextSourceCard
+          icon={ClipboardCheck}
           title="Running runtimes"
           description="Attach the managed runtime and Codex app-server process snapshot."
           actionLabel="Attach processes"
@@ -1699,627 +5375,23 @@ function ContextSourceCard({
   )
 }
 
-function ModelSettingsSection({
-  settings,
-  setSettings,
-}: {
-  settings: StudioSamplerSettings
-  setSettings: (settings: StudioSamplerSettings) => void
-}) {
-  const serviceHub = useServiceHub()
-  const requestRuntimePermission = useRuntimePermission(
-    (state) => state.requestPermission
-  )
-  const profiles = useCodexProviderProfiles((state) => state.profiles)
-  const activeProfileId = useCodexProviderProfiles(
-    (state) => state.activeProfileId
-  )
-  const upsertProfile = useCodexProviderProfiles((state) => state.upsertProfile)
-  const removeProfile = useCodexProviderProfiles((state) => state.removeProfile)
-  const setActiveProfile = useCodexProviderProfiles(
-    (state) => state.setActiveProfile
-  )
-  const profileList = Object.values(profiles).sort(
-    (a, b) => b.updatedAt - a.updatedAt
-  )
-  const activeProfile = activeProfileId ? profiles[activeProfileId] : undefined
-  const [profileName, setProfileName] = useState('Local OpenAI-compatible')
-  const [profileBaseUrl, setProfileBaseUrl] = useState(
-    'http://localhost:11434/v1'
-  )
-  const [profileModel, setProfileModel] = useState('')
-  const [profileApiKeyEnv, setProfileApiKeyEnv] = useState('OPENAI_API_KEY')
-  const [profileCodexHome, setProfileCodexHome] = useState(
-    '.codex/profiles/local'
-  )
-  const [editingProfileId, setEditingProfileId] = useState<string | undefined>(
-    undefined
-  )
-  const [profileProbe, setProfileProbe] = useState<{
-    loading: boolean
-    reachable?: boolean
-    statusCode?: number
-    modelCount?: number
-    error?: string
-  }>({ loading: false })
-  const [profileArtifactResult, setProfileArtifactResult] = useState<{
-    codexHome: string
-    manifestPath: string
-    envPath: string
-  } | null>(null)
-
-  const applyProfilePreset = (
-    preset: 'ollama' | 'llama-cpp' | 'openai-compatible'
-  ) => {
-    setEditingProfileId(undefined)
-    setProfileProbe({ loading: false })
-    setProfileArtifactResult(null)
-    if (preset === 'ollama') {
-      setProfileName('Ollama local')
-      setProfileBaseUrl('http://localhost:11434/v1')
-      setProfileModel('qwen3-coder')
-      setProfileApiKeyEnv('OLLAMA_API_KEY')
-      setProfileCodexHome('.codex/profiles/ollama')
-      return
-    }
-    if (preset === 'llama-cpp') {
-      setProfileName('llama.cpp local')
-      setProfileBaseUrl('http://localhost:8080/v1')
-      setProfileModel('local-model')
-      setProfileApiKeyEnv('LLAMA_CPP_API_KEY')
-      setProfileCodexHome('.codex/profiles/llama-cpp')
-      return
-    }
-    setProfileName('OpenAI-compatible')
-    setProfileBaseUrl('https://api.openai.com/v1')
-    setProfileModel('gpt-4.1')
-    setProfileApiKeyEnv('OPENAI_API_KEY')
-    setProfileCodexHome('.codex/profiles/openai-compatible')
-  }
-
-  const startNewProfile = () => {
-    setEditingProfileId(undefined)
-    setProfileProbe({ loading: false })
-    setProfileArtifactResult(null)
-    setProfileName('Local OpenAI-compatible')
-    setProfileBaseUrl('http://localhost:11434/v1')
-    setProfileModel('')
-    setProfileApiKeyEnv('OPENAI_API_KEY')
-    setProfileCodexHome('.codex/profiles/local')
-  }
-
-  const saveProfile = () => {
-    const trimmedName = profileName.trim()
-    const trimmedBaseUrl = profileBaseUrl.trim()
-    const trimmedModel = profileModel.trim()
-    const trimmedCodexHome = profileCodexHome.trim()
-    if (!trimmedName || !trimmedBaseUrl || !trimmedModel || !trimmedCodexHome) {
-      toast.info('Profile name, base URL, model, and CODEX_HOME are required')
-      return
-    }
-
-    const saved = upsertProfile({
-      id: editingProfileId,
-      name: trimmedName,
-      baseUrl: trimmedBaseUrl,
-      model: trimmedModel,
-      apiKeyEnv: profileApiKeyEnv.trim() || undefined,
-      codexHome: trimmedCodexHome,
-      providerType: trimmedBaseUrl.includes('11434')
-        ? 'ollama'
-        : trimmedBaseUrl.includes('localhost')
-          ? 'llama-cpp'
-          : 'openai-compatible',
-    })
-    setActiveProfile(saved.id)
-    setEditingProfileId(saved.id)
-    toast.success('Runtime profile saved')
-  }
-
-  const loadProfileIntoForm = (profileId: string) => {
-    const profile = profiles[profileId]
-    if (!profile) return
-    setProfileName(profile.name)
-    setProfileBaseUrl(profile.baseUrl)
-    setProfileModel(profile.model)
-    setProfileApiKeyEnv(profile.apiKeyEnv ?? '')
-    setProfileCodexHome(profile.codexHome)
-    setActiveProfile(profileId)
-    setEditingProfileId(profileId)
-    setProfileProbe({ loading: false })
-    setProfileArtifactResult(null)
-  }
-
-  const probeProfileEndpoint = async () => {
-    const baseUrl = profileBaseUrl.trim()
-    if (!baseUrl) {
-      toast.info('Base URL is required before probing')
-      return
-    }
-
-    const allowed = await requestRuntimePermission({
-      actionId: 'provider.probe-endpoint',
-      actionLabel: 'probe provider endpoint',
-      category: 'app',
-      resourceLabel: baseUrl,
-      risk:
-        baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')
-          ? 'low'
-          : 'medium',
-      details: {
-        baseUrl,
-        path: '/models',
-      },
-    })
-    if (!allowed) return
-
-    setProfileProbe({ loading: true })
-    try {
-      const result = await serviceHub.studio().probeOpenaiEndpoint(baseUrl)
-      setProfileProbe({
-        loading: false,
-        reachable: result.reachable,
-        statusCode: result.statusCode,
-        modelCount: result.modelCount,
-        error: result.error,
-      })
-      if (result.reachable) {
-        toast.success('Provider endpoint reachable')
-      } else {
-        toast.error('Provider endpoint not reachable', {
-          description: result.error,
-        })
-      }
-    } catch (error) {
-      setProfileProbe({
-        loading: false,
-        reachable: false,
-        error: error instanceof Error ? error.message : String(error),
-      })
-      toast.error('Provider probe failed', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  const chooseCodexHomeDirectory = async () => {
-    const allowed = await requestRuntimePermission({
-      actionId: 'file.choose-codex-home',
-      actionLabel: 'choose isolated CODEX_HOME directory',
-      category: 'file',
-      resourceLabel: profileCodexHome,
-      risk: 'medium',
-    })
-    if (!allowed) return
-
-    const selection = await serviceHub.dialog().open({
-      directory: true,
-      defaultPath: profileCodexHome,
-    })
-    if (!selection || Array.isArray(selection)) return
-    setProfileCodexHome(selection)
-    setProfileArtifactResult(null)
-  }
-
-  const writeProfileArtifacts = async () => {
-    if (!activeProfile) {
-      toast.info('Save or select a profile before writing artifacts')
-      return
-    }
-
-    const allowed = await requestRuntimePermission({
-      actionId: 'file.write-codex-provider-profile',
-      actionLabel: 'write isolated provider profile artifacts',
-      category: 'file',
-      resourceLabel: activeProfile.codexHome,
-      risk: 'medium',
-      details: {
-        codexHome: activeProfile.codexHome,
-        baseUrl: activeProfile.baseUrl,
-        model: activeProfile.model,
-      },
-    })
-    if (!allowed) return
-
-    const result = await invoke<{
-      codexHome: string
-      manifestPath: string
-      envPath: string
-    }>('write_codex_provider_profile_artifacts', {
-      request: {
-        name: activeProfile.name,
-        baseUrl: activeProfile.baseUrl,
-        model: activeProfile.model,
-        apiKeyEnv: activeProfile.apiKeyEnv,
-        codexHome: activeProfile.codexHome,
-        providerType: activeProfile.providerType,
-      },
-    })
-
-    setProfileArtifactResult(result)
-    toast.success('Provider profile artifacts written')
-  }
-
-  const profilePreview = activeProfile
-    ? {
-        env: {
-          CODEX_HOME: activeProfile.codexHome,
-          OPENAI_BASE_URL: activeProfile.baseUrl,
-          OPENAI_API_KEY: activeProfile.apiKeyEnv
-            ? `$${activeProfile.apiKeyEnv}`
-            : '<unset>',
-        },
-        profile: {
-          provider_type: activeProfile.providerType,
-          model: activeProfile.model,
-          base_url: activeProfile.baseUrl,
-        },
-      }
-    : null
-
-  const copyProfilePreview = async () => {
-    if (!profilePreview) return
-    await navigator.clipboard.writeText(JSON.stringify(profilePreview, null, 2))
-    toast.success('Runtime profile preview copied')
-  }
-
-  return (
-    <div className="space-y-5">
-      <section className="space-y-4 rounded-lg border border-border/60 bg-card p-4">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">
-            Runtime provider profiles
-          </h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            UI-side config for OpenAI-compatible local or remote providers.
-            These profiles are ready for Codex config generation without
-            touching the app-server bridge.
-          </p>
-        </div>
-
-        <div className="grid gap-3">
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="xs" onClick={startNewProfile}>
-              New
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => applyProfilePreset('ollama')}
-            >
-              Ollama
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => applyProfilePreset('llama-cpp')}
-            >
-              llama.cpp
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => applyProfilePreset('openai-compatible')}
-            >
-              OpenAI-compatible
-            </Button>
-          </div>
-
-          <label className="block space-y-1.5 text-xs">
-            <span className="text-muted-foreground">Profile name</span>
-            <Input
-              value={profileName}
-              onChange={(event) => setProfileName(event.target.value)}
-              placeholder="Local llama.cpp"
-            />
-          </label>
-          <label className="block space-y-1.5 text-xs">
-            <span className="text-muted-foreground">Base URL</span>
-            <Input
-              value={profileBaseUrl}
-              onChange={(event) => setProfileBaseUrl(event.target.value)}
-              placeholder="http://localhost:8080/v1"
-            />
-          </label>
-          <label className="block space-y-1.5 text-xs">
-            <span className="text-muted-foreground">Model</span>
-            <Input
-              value={profileModel}
-              onChange={(event) => setProfileModel(event.target.value)}
-              placeholder="qwen3-coder"
-            />
-          </label>
-          <label className="block space-y-1.5 text-xs">
-            <span className="text-muted-foreground">API key env</span>
-            <Input
-              value={profileApiKeyEnv}
-              onChange={(event) => setProfileApiKeyEnv(event.target.value)}
-              placeholder="OPENAI_API_KEY"
-            />
-          </label>
-          <label className="block space-y-1.5 text-xs">
-            <span className="text-muted-foreground">Isolated CODEX_HOME</span>
-            <div className="flex gap-2">
-              <Input
-                value={profileCodexHome}
-                onChange={(event) => setProfileCodexHome(event.target.value)}
-                placeholder=".codex/profiles/local"
-              />
-              <Button
-                variant="outline"
-                size="xs"
-                className="shrink-0"
-                onClick={() => void chooseCodexHomeDirectory()}
-              >
-                Choose
-              </Button>
-            </div>
-          </label>
-        </div>
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="xs" onClick={saveProfile}>
-              {editingProfileId ? 'Update profile' : 'Save profile'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="xs"
-              disabled={profileProbe.loading}
-              onClick={() => void probeProfileEndpoint()}
-            >
-              {profileProbe.loading ? 'Probing' : 'Probe'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="xs"
-              disabled={!activeProfile}
-              onClick={() => void writeProfileArtifacts()}
-            >
-              Write artifacts
-            </Button>
-          </div>
-          {activeProfile && (
-            <div className="truncate text-xs text-muted-foreground">
-              Active: {activeProfile.name}
-            </div>
-          )}
-        </div>
-
-        {(profileProbe.reachable !== undefined || profileProbe.error) && (
-          <div
-            className={cn(
-              'rounded-md border px-2 py-1.5 text-xs',
-              profileProbe.reachable
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                : 'border-destructive/30 bg-destructive/10 text-destructive'
-            )}
-          >
-            {profileProbe.reachable
-              ? `Reachable${profileProbe.statusCode ? ` · HTTP ${profileProbe.statusCode}` : ''}${typeof profileProbe.modelCount === 'number' ? ` · ${profileProbe.modelCount} model${profileProbe.modelCount === 1 ? '' : 's'}` : ''}`
-              : profileProbe.error || 'Endpoint not reachable'}
-          </div>
-        )}
-
-        {profileList.length > 0 && (
-          <div className="space-y-2">
-            {profileList.map((profile) => (
-              <div
-                key={profile.id}
-                className={cn(
-                  'flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs',
-                  profile.id === activeProfileId
-                    ? 'border-border bg-foreground/5'
-                    : 'border-border/60'
-                )}
-              >
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => loadProfileIntoForm(profile.id)}
-                >
-                  <div className="truncate font-medium text-foreground">
-                    {profile.name}
-                  </div>
-                  <div className="truncate text-muted-foreground">
-                    {profile.model} · {profile.baseUrl}
-                  </div>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  title="Remove profile"
-                  onClick={() => removeProfile(profile.id)}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {profilePreview && (
-          <div className="rounded-md border bg-foreground/5 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-xs font-medium text-foreground">
-                Launch/config preview
-              </div>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => void copyProfilePreview()}
-              >
-                Copy
-              </Button>
-            </div>
-            <pre className="overflow-x-auto text-[11px] text-muted-foreground">
-              {JSON.stringify(profilePreview, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {profileArtifactResult && (
-          <div className="rounded-md border bg-foreground/5 p-3">
-            <div className="mb-2 text-xs font-medium text-foreground">
-              Written artifacts
-            </div>
-            <div className="space-y-1 font-mono text-[11px] text-muted-foreground">
-              <div className="truncate" title={profileArtifactResult.codexHome}>
-                CODEX_HOME: {profileArtifactResult.codexHome}
-              </div>
-              <div
-                className="truncate"
-                title={profileArtifactResult.manifestPath}
-              >
-                manifest: {profileArtifactResult.manifestPath}
-              </div>
-              <div className="truncate" title={profileArtifactResult.envPath}>
-                env: {profileArtifactResult.envPath}
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-4 rounded-lg border border-border/60 bg-card p-4">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">Sampling</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Defaults for chat requests and local runtime playgrounds.
-          </p>
-        </div>
-        <SamplerSlider
-          label="Temperature"
-          value={settings.temperature}
-          min={0}
-          max={2}
-          step={0.05}
-          onChange={(temperature) => setSettings({ ...settings, temperature })}
-        />
-        <SamplerSlider
-          label="Top P"
-          value={settings.topP}
-          min={0}
-          max={1}
-          step={0.01}
-          onChange={(topP) => setSettings({ ...settings, topP })}
-        />
-        <SamplerSlider
-          label="Top K"
-          value={settings.topK}
-          min={0}
-          max={200}
-          step={1}
-          onChange={(topK) => setSettings({ ...settings, topK })}
-        />
-        <SamplerSlider
-          label="Repeat penalty"
-          value={settings.repeatPenalty}
-          min={1}
-          max={2}
-          step={0.01}
-          onChange={(repeatPenalty) =>
-            setSettings({ ...settings, repeatPenalty })
-          }
-        />
-      </section>
-
-      <section className="space-y-4 rounded-lg border border-border/60 bg-card p-4">
-        <h3 className="text-sm font-medium text-foreground">Generation</h3>
-        <label className="block space-y-2 text-sm">
-          <span className="text-foreground">Max output tokens</span>
-          <Input
-            type="number"
-            min={0}
-            step={1}
-            value={settings.maxTokens}
-            onChange={(event) =>
-              setSettings({
-                ...settings,
-                maxTokens: Number(event.target.value),
-              })
-            }
-          />
-        </label>
-        <label className="block space-y-2 text-sm">
-          <span className="text-foreground">Seed</span>
-          <Input
-            type="number"
-            step={1}
-            value={settings.seed}
-            onChange={(event) =>
-              setSettings({
-                ...settings,
-                seed: Number(event.target.value),
-              })
-            }
-          />
-        </label>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-sm text-foreground">Stream</div>
-            <div className="text-xs text-muted-foreground">
-              Show tokens as they arrive.
-            </div>
-          </div>
-          <Switch
-            checked={settings.stream}
-            onCheckedChange={(stream) => setSettings({ ...settings, stream })}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-sm text-foreground">JSON mode</div>
-            <div className="text-xs text-muted-foreground">
-              Prefer structured output.
-            </div>
-          </div>
-          <Switch
-            checked={settings.jsonMode}
-            onCheckedChange={(jsonMode) =>
-              setSettings({ ...settings, jsonMode })
-            }
-          />
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-border/60 bg-card p-4">
-        <h3 className="text-sm font-medium text-foreground">Request shape</h3>
-        <pre className="mt-3 overflow-x-auto rounded-md bg-foreground/5 p-3 text-xs text-muted-foreground">
-          {JSON.stringify(
-            {
-              temperature: settings.temperature,
-              top_p: settings.topP,
-              top_k: settings.topK,
-              repeat_penalty: settings.repeatPenalty,
-              max_tokens: settings.maxTokens,
-              seed: settings.seed,
-              stream: settings.stream,
-              response_format: settings.jsonMode ? 'json' : 'text',
-            },
-            null,
-            2
-          )}
-        </pre>
-      </section>
-    </div>
-  )
-}
-
-function PanelTabContent({
+const PanelTabContent = memo(function PanelTabContent({
   type,
   scope,
   onOpenSection,
   panelActive = true,
 }: {
-  type: ChatSidePanelSection
+  type: string
   scope: ModelToolsPanelScope
-  onOpenSection: (section: ChatSidePanelSection) => void
+  onOpenSection: (section: string) => void
   panelActive?: boolean
 }) {
-  const settings = useStudioSettings((state) => state.sampler)
-  const setSettings = useStudioSettings((state) => state.setSampler)
-  const section = getChatSidePanelSection(type)
+  if (type.startsWith('terminal:')) {
+    const sessionId = type.replace('terminal:', '')
+    return <TerminalSection key={type} sessionId={sessionId} />
+  }
+
+  const section = getChatSidePanelSection(type as any)
 
   if (type === 'files') {
     return <FilesSection scope={scope} />
@@ -2333,12 +5405,6 @@ function PanelTabContent({
     return <ContextPickerSection onOpenSection={onOpenSection} />
   }
 
-  if (type === 'model') {
-    return (
-      <ModelSettingsSection settings={settings} setSettings={setSettings} />
-    )
-  }
-
   if (type === 'browser') {
     return <BrowserSection isActive={panelActive} />
   }
@@ -2347,8 +5413,35 @@ function PanelTabContent({
     return <TerminalSection />
   }
 
+  if (type === 'review') {
+    return <ReviewSection scope={scope} />
+  }
+
   return <PlaceholderSection section={section} />
-}
+})
+
+const SidePanelTabBody = memo(function SidePanelTabBody({
+  scope,
+  activeSection,
+  open,
+  onOpenSection,
+}: {
+  scope: ModelToolsPanelScope
+  activeSection: string
+  open: boolean
+  onOpenSection: (section: string) => void
+}) {
+  return (
+    <div className="min-h-0 flex-1 flex flex-col px-3 pb-5 pt-3 overflow-hidden">
+      <PanelTabContent
+        type={activeSection}
+        scope={scope}
+        onOpenSection={onOpenSection}
+        panelActive={open && activeSection === 'browser'}
+      />
+    </div>
+  )
+})
 
 export function ChatSidePanelAddMenuItems({
   onSelect,
@@ -2359,7 +5452,7 @@ export function ChatSidePanelAddMenuItems({
   showSeparator?: boolean
   sectionItems?: ChatSidePanelSectionItem[]
 }) {
-  const openTab = useChatSidePanel((state) => state.openTab)
+  const { setSidePanelActiveSection } = useChatSessionUiActions()
 
   return (
     <>
@@ -2370,7 +5463,7 @@ export function ChatSidePanelAddMenuItems({
           <DropdownMenuItem
             key={section.id}
             onClick={() => {
-              openTab(section.id)
+              setSidePanelActiveSection(section.id)
               onSelect?.()
             }}
           >
@@ -2384,8 +5477,8 @@ export function ChatSidePanelAddMenuItems({
 }
 
 export function ModelToolsToggle() {
-  const open = useChatSidePanel((state) => state.open)
-  const toggleOpen = useChatSidePanel((state) => state.toggleOpen)
+  const open = useChatSessionUiSelector((session) => session.sidePanelOpen)
+  const { toggleSidePanelOpen } = useChatSessionUiActions()
 
   return (
     <Button
@@ -2394,7 +5487,7 @@ export function ModelToolsToggle() {
       className="rounded-full"
       aria-label={open ? 'Close side panel' : 'Open side panel'}
       title={open ? 'Close side panel' : 'Open side panel'}
-      onClick={toggleOpen}
+      onClick={toggleSidePanelOpen}
     >
       <IconLayoutSidebar className="size-4 scale-x-[-1] text-muted-foreground" />
     </Button>
@@ -2402,8 +5495,8 @@ export function ModelToolsToggle() {
 }
 
 function BottomPanelToggle() {
-  const open = useWorkspacePanel((state) => state.bottomOpen)
-  const toggleOpen = useWorkspacePanel((state) => state.toggleBottomPanel)
+  const open = useChatSessionUiSelector((session) => session.bottomPanelOpen)
+  const { toggleBottomPanelOpen } = useChatSessionUiActions()
 
   return (
     <Button
@@ -2413,7 +5506,7 @@ function BottomPanelToggle() {
       aria-label={open ? 'Close bottom panel' : 'Open bottom panel'}
       aria-pressed={open}
       title={open ? 'Close bottom panel' : 'Open bottom panel'}
-      onClick={toggleOpen}
+      onClick={toggleBottomPanelOpen}
     >
       <PanelBottom
         className={cn(
@@ -2431,13 +5524,22 @@ export function ModelToolsDock({
   scope?: ModelToolsPanelScope
 }) {
   return (
-    <>
+    <ChatSessionContext.Provider value={scope.sessionId}>
       <WorkspacePanelTitlebarControls />
       <ModelToolsPanel scope={scope} />
       <BottomWorkspacePanel />
-    </>
+    </ChatSessionContext.Provider>
   )
 }
+
+type SidePanelResizeContextValue = {
+  effectiveWidth: string
+  onResizeLive: (width: string) => void
+  onResizeEnd: (width: string) => void
+}
+
+const SidePanelResizeContext =
+  createContext<SidePanelResizeContextValue | null>(null)
 
 export function WorkspacePanelsLayout({
   children,
@@ -2448,28 +5550,83 @@ export function WorkspacePanelsLayout({
   scope?: ModelToolsPanelScope
   className?: string
 }) {
-  const sidePanelOpen = useChatSidePanel((state) => state.open)
-  const sidePanelWidth = useChatSidePanel((state) => state.width)
-  const bottomPanelOpen = useWorkspacePanel((state) => state.bottomOpen)
-  const bottomPanelHeight = useWorkspacePanel((state) => state.bottomHeight)
+  return (
+    <ChatSessionContext.Provider value={scope.sessionId}>
+      <WorkspacePanelsLayoutInner scope={scope} className={className}>
+        {children}
+      </WorkspacePanelsLayoutInner>
+    </ChatSessionContext.Provider>
+  )
+}
+
+function WorkspacePanelsLayoutInner({
+  children,
+  scope = DEFAULT_PANEL_SCOPE,
+  className,
+}: {
+  children: ReactNode
+  scope?: ModelToolsPanelScope
+  className?: string
+}) {
+  const sidePanelOpen = useChatSessionUiSelector((session) => session.sidePanelOpen)
+  const persistedSidePanelWidth = useChatSessionUiSelector(
+    (session) => session.sidePanelWidth
+  )
+  const { setSidePanelWidth } = useChatSessionUiActions()
+  const [dragSidePanelWidth, setDragSidePanelWidth] = useState<string | null>(
+    null
+  )
+  const sidePanelWidth = dragSidePanelWidth ?? persistedSidePanelWidth
+  const bottomPanelOpen = useChatSessionUiSelector(
+    (session) => session.bottomPanelOpen
+  )
+  const bottomPanelHeight = useChatSessionUiSelector(
+    (session) => session.bottomPanelHeight
+  )
+
+  const onResizeLive = useMemo(
+    () => rafThrottle((width: string) => setDragSidePanelWidth(width)),
+    []
+  )
+
+  const onResizeEnd = useCallback(
+    (width: string) => {
+      setSidePanelWidth(width)
+      setDragSidePanelWidth(null)
+    },
+    [setSidePanelWidth]
+  )
+
+  const sidePanelResize = useMemo<SidePanelResizeContextValue>(
+    () => ({
+      effectiveWidth: sidePanelWidth,
+      onResizeLive,
+      onResizeEnd,
+    }),
+    [sidePanelWidth, onResizeLive, onResizeEnd]
+  )
 
   return (
-    <div
-      className={cn(
-        'grid h-full min-h-0 min-w-0 overflow-hidden',
-        'transition-[grid-template-columns,grid-template-rows] duration-200 ease-out',
-        className
-      )}
-      style={{
-        gridTemplateColumns: `minmax(0, 1fr) ${sidePanelOpen ? sidePanelWidth : '0rem'}`,
-        gridTemplateRows: `minmax(0, 1fr) ${bottomPanelOpen ? bottomPanelHeight : '0rem'}`,
-      }}
-    >
-      <WorkspacePanelTitlebarControls />
-      <div className="min-h-0 min-w-0 overflow-hidden">{children}</div>
-      <ModelToolsPanel scope={scope} />
-      <BottomWorkspacePanel />
-    </div>
+    <SidePanelResizeContext.Provider value={sidePanelResize}>
+      <div
+        className={cn(
+          'grid h-full min-h-0 min-w-0 overflow-hidden',
+          'transition-[grid-template-columns,grid-template-rows] duration-200 ease-out',
+          className
+        )}
+        style={{
+          gridTemplateColumns: `minmax(0, 1fr) ${sidePanelOpen ? sidePanelWidth : '0rem'}`,
+          gridTemplateRows: `minmax(0, 1fr) ${bottomPanelOpen ? bottomPanelHeight : '0rem'}`,
+        }}
+      >
+        <WorkspacePanelTitlebarControls open={sidePanelOpen} />
+        <div className="col-start-1 row-start-1 min-h-0 min-w-0 overflow-hidden">
+          {children}
+        </div>
+        <ModelToolsPanel scope={scope} />
+        <BottomWorkspacePanel />
+      </div>
+    </SidePanelResizeContext.Provider>
   )
 }
 
@@ -2502,13 +5659,22 @@ function WorkspaceTitlebarLayer({
   )
 }
 
-function WorkspacePanelTitlebarControls() {
-  const open = useChatSidePanel((state) => state.open)
+function WorkspacePanelTitlebarControls({ open }: { open?: boolean }) {
+  const sidePanelOpen = useChatSessionUiSelector((session) => session.sidePanelOpen)
+  const isSidePanelOpen = open ?? sidePanelOpen
+
+  if (isSidePanelOpen) return null
+
+  const needsPadding = isPlatformTauri() && !isPlatformMacOS()
 
   return (
     <WorkspaceTitlebarLayer
-      hidden={open}
-      className="fixed right-2 top-0 flex h-[var(--app-titlebar-height)] items-center gap-1 transition-opacity duration-150"
+      className={cn(
+        'fixed top-0 flex h-[var(--app-titlebar-height)] items-center gap-1 transition-opacity duration-150',
+        needsPadding
+          ? 'right-[calc(var(--app-titlebar-control-width)+0.5rem)]'
+          : 'right-2'
+      )}
     >
       <BottomPanelToggle />
       <ModelToolsToggle />
@@ -2519,10 +5685,12 @@ function WorkspacePanelTitlebarControls() {
 function SidePanelResizeRail({
   width,
   onResize,
+  onResizeEnd,
   onToggle,
 }: {
   width: string
   onResize: (width: string) => void
+  onResizeEnd: (width: string) => void
   onToggle: () => void
 }) {
   const railRef = useRef<HTMLButtonElement>(null)
@@ -2530,6 +5698,7 @@ function SidePanelResizeRail({
     direction: 'left',
     currentWidth: width,
     onResize,
+    onResizeEnd,
     onToggle,
     isCollapsed: false,
     minResizeWidth: CHAT_SIDE_PANEL_MIN_WIDTH,
@@ -2564,152 +5733,321 @@ export function ModelToolsPanel({
 }: {
   scope?: ModelToolsPanelScope
 }) {
-  const open = useChatSidePanel((state) => state.open)
-  const width = useChatSidePanel((state) => state.width)
-  const setWidth = useChatSidePanel((state) => state.setWidth)
-  const setOpen = useChatSidePanel((state) => state.setOpen)
-  const [activeSection, setActiveSection] =
-    useState<ChatSidePanelSection>('files')
+  const sidePanelResize = useContext(SidePanelResizeContext)
+  const open = useChatSessionUiSelector((session) => session.sidePanelOpen)
+  const persistedWidth = useChatSessionUiSelector(
+    (session) => session.sidePanelWidth
+  )
+  const activeSection = useChatSessionUiSelector(
+    (session) => session.sidePanelActiveSection
+  )
+  const linkedSessionIds = useChatSessionUiSelector((session) => session.terminalLinkedSessionIds) ?? []
+  const rawOpenTabs = useChatSessionUiSelector((session) => session.sidePanelOpenTabs) ?? ['files', 'side-chat', 'review', 'terminal', 'browser']
+  
+  const openTabs = useMemo(() => {
+    return resolveOpenTabs(rawOpenTabs, linkedSessionIds)
+  }, [rawOpenTabs, linkedSessionIds])
 
-  const selectorSections = [
-    getChatSidePanelSection('files'),
-    getChatSidePanelSection('context'),
-    getChatSidePanelSection('side-chat'),
-    getChatSidePanelSection('review'),
-    getChatSidePanelSection('terminal'),
-    getChatSidePanelSection('browser'),
-  ]
+  const { setSidePanelWidth, setSidePanelOpen, setSidePanelActiveSection, closeSidePanelTab, openNewTerminal } =
+    useChatSessionUiActions()
+
+  const sessionNames = useTerminalRuntime((state) => state.sessionNames)
+  const sessions = useTerminalRuntime((state) => state.sessions)
+
+  const width = sidePanelResize?.effectiveWidth ?? persistedWidth
+  const onResizeLive =
+    sidePanelResize?.onResizeLive ??
+    ((nextWidth: string) => setSidePanelWidth(nextWidth))
+  const onResizeEnd =
+    sidePanelResize?.onResizeEnd ??
+    ((nextWidth: string) => setSidePanelWidth(nextWidth))
+
+  const getTabInfo = (tabId: string) => {
+    if (tabId.startsWith('terminal:')) {
+      const sid = tabId.replace('terminal:', '')
+      const session = sessions[sid]
+      const customName = sessionNames[sid]?.trim()
+      const shellName = session?.shell.split('/').filter(Boolean).pop()
+      const label = customName || `Terminal (${shellName ?? 'zsh'})`
+      return {
+        id: tabId,
+        label,
+        icon: Terminal,
+      }
+    } else {
+      const section = getChatSidePanelSection(tabId as any)
+      return {
+        id: tabId,
+        label: section.label,
+        icon: section.icon,
+      }
+    }
+  }
+
+  const selectorSections = openTabs.map(getTabInfo)
+  const remainingSections = [
+    { id: 'files', label: 'Files', icon: Folder },
+    { id: 'side-chat', label: 'Side chat', icon: MessageCirclePlus },
+    { id: 'review', label: 'Review', icon: ClipboardCheck },
+    { id: 'browser', label: 'Browser', icon: Globe },
+  ].filter((section) => !openTabs.includes(section.id))
 
   return (
     <aside
       className={cn(
-        'relative h-full max-h-full min-h-0 shrink-0 overflow-hidden border-border/60 bg-background',
+        'col-start-2 row-start-1 relative h-full max-h-full min-h-0 shrink-0 overflow-hidden border-border/60 bg-background',
         'transition-[opacity,transform,border-color] duration-200 ease-out',
         open
           ? 'translate-x-0 border-l opacity-100'
-          : 'pointer-events-none translate-x-3 border-l-0 opacity-0'
+          : 'pointer-events-none translate-x-full border-l-0 opacity-0'
       )}
       aria-hidden={!open}
       style={{ width }}
     >
       <SidePanelResizeRail
         width={width}
-        onResize={setWidth}
-        onToggle={() => setOpen(false)}
+        onResize={onResizeLive}
+        onResizeEnd={onResizeEnd}
+        onToggle={() => setSidePanelOpen(false)}
       />
 
-      <div className="flex h-full min-h-0 min-w-0 flex-col" style={{ width }}>
+      <div className="flex h-full min-h-0 min-w-0 w-full flex-col">
         {open ? (
           <WorkspaceTitlebarLayer
-            className="fixed top-0 right-0 flex items-center gap-1 border-b border-border/60 bg-background px-2 py-1.5"
+            className={cn(
+              'fixed top-0 right-0 flex h-[var(--app-titlebar-height)] items-end border-b border-border/60 bg-background px-2 pb-[1px]',
+              isPlatformTauri() && !isPlatformMacOS()
+                ? 'pr-[calc(var(--app-titlebar-control-width)+0.5rem)]'
+                : 'pr-2'
+            )}
             style={{ width }}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide">
+            <div className="flex h-10 min-w-0 flex-1 items-end gap-[2px] overflow-x-auto scrollbar-hide mr-2">
               {selectorSections.map((section) => {
                 const Icon = section.icon
                 const active = section.id === activeSection
 
                 return (
-                  <Button
+                  <div
                     key={section.id}
-                    variant="ghost"
-                    size="icon-xs"
+                    onClick={() => setSidePanelActiveSection(section.id as any)}
                     className={cn(
-                      'shrink-0 rounded-md border border-transparent',
+                      'flex h-9 items-center gap-1.5 px-3 rounded-t-md text-[11px] border border-border/40 transition-all cursor-pointer select-none -mb-[1px] shrink-0',
                       active
-                        ? 'border-border/80 bg-foreground/10 text-foreground'
-                        : 'text-muted-foreground hover:bg-foreground/5'
+                        ? 'bg-background border-b-transparent border-t-2 border-t-primary text-foreground font-semibold z-10'
+                        : 'bg-muted/10 border-transparent text-muted-foreground hover:bg-muted/20 hover:text-foreground'
                     )}
                     aria-label={`Open ${section.label}`}
                     aria-pressed={active}
                     title={section.label}
-                    onClick={() => setActiveSection(section.id)}
                   >
-                    <Icon
-                      className={cn(
-                        'size-3.5',
-                        active ? 'text-foreground' : 'text-muted-foreground'
-                      )}
-                    />
-                  </Button>
+                    <Icon className="size-3.5" />
+                    <span>{section.label}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        closeSidePanelTab(section.id)
+                      }}
+                      className="rounded-full p-0.5 hover:bg-foreground/10 text-muted-foreground hover:text-foreground transition-colors ml-1"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
                 )
               })}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="mb-1 size-7 shrink-0 rounded-md border border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                    title="Open new tab"
+                  >
+                    <span className="text-lg font-light leading-none">+</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  {remainingSections.map((section) => {
+                    const Icon = section.icon
+                    return (
+                      <DropdownMenuItem
+                        key={section.id}
+                        onSelect={() => setSidePanelActiveSection(section.id as any)}
+                      >
+                        <Icon className="mr-2 size-3.5" />
+                        <span>{section.label}</span>
+                      </DropdownMenuItem>
+                    )
+                  })}
+                  <DropdownMenuItem
+                    onSelect={() => void openNewTerminal('side')}
+                  >
+                    <Terminal className="mr-2 size-3.5" />
+                    <span>New Terminal</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <BottomPanelToggle />
-            <ModelToolsToggle />
+            <div className="flex h-10 items-center gap-1 shrink-0 pb-1">
+              <BottomPanelToggle />
+              <ModelToolsToggle />
+            </div>
           </WorkspaceTitlebarLayer>
         ) : null}
         <div
-          className={cn(
-            'shrink-0 border-b border-border/60 bg-background px-2 py-1.5',
-            open ? 'invisible' : 'hidden'
-          )}
+          className="shrink-0 border-b border-border/60 h-[var(--app-titlebar-height)]"
           aria-hidden
-        >
-          <div className="flex items-center gap-1">
-            <div className="min-h-7 min-w-0 flex-1" />
-            <div className="size-8 shrink-0" />
-            <div className="size-8 shrink-0" />
-          </div>
-        </div>
+        />
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-5 pt-3">
-          <PanelTabContent
-            type={activeSection}
-            scope={scope}
-            onOpenSection={setActiveSection}
-            panelActive={open && activeSection === 'browser'}
-          />
-        </div>
+        <SidePanelTabBody
+          scope={scope}
+          activeSection={activeSection}
+          open={open}
+          onOpenSection={setSidePanelActiveSection}
+        />
       </div>
     </aside>
   )
 }
 
 function BottomWorkspacePanel() {
-  const open = useWorkspacePanel((state) => state.bottomOpen)
-  const activeSection = useWorkspacePanel((state) => state.bottomSection)
-  const setSection = useWorkspacePanel((state) => state.setBottomSection)
-  const setOpen = useWorkspacePanel((state) => state.setBottomOpen)
+  const open = useChatSessionUiSelector((session) => session.bottomPanelOpen)
+  const activeSection = useChatSessionUiSelector(
+    (session) => session.bottomPanelActiveSection
+  )
+  const linkedSessionIds = useChatSessionUiSelector((session) => session.terminalLinkedSessionIds) ?? []
+  const rawOpenTabs = useChatSessionUiSelector((session) => session.bottomPanelOpenTabs) ?? ['terminal', 'browser']
+  
+  const openTabs = useMemo(() => {
+    return resolveOpenTabs(rawOpenTabs, linkedSessionIds)
+  }, [rawOpenTabs, linkedSessionIds])
+
+  const { setBottomPanelActiveSection, setBottomPanelOpen, closeBottomPanelTab, openNewTerminal } =
+    useChatSessionUiActions()
+
+  const sessionNames = useTerminalRuntime((state) => state.sessionNames)
+  const sessions = useTerminalRuntime((state) => state.sessions)
+
+  const getTabInfo = (tabId: string) => {
+    if (tabId.startsWith('terminal:')) {
+      const sid = tabId.replace('terminal:', '')
+      const session = sessions[sid]
+      const customName = sessionNames[sid]?.trim()
+      const shellName = session?.shell.split('/').filter(Boolean).pop()
+      const label = customName || `Terminal (${shellName ?? 'zsh'})`
+      return {
+        id: tabId,
+        label,
+        icon: Terminal,
+      }
+    } else {
+      const label = tabId === 'browser' ? 'Browser' : 'Terminal'
+      const Icon = tabId === 'browser' ? Globe : Terminal
+      return {
+        id: tabId,
+        label,
+        icon: Icon,
+      }
+    }
+  }
+
+  const selectorSections = openTabs.map(getTabInfo)
+  const showBrowserOption = !openTabs.includes('browser')
 
   return (
     <section
       aria-hidden={!open}
       className={cn(
-        'col-span-2 min-h-0 overflow-hidden border-t border-border/70 bg-background',
+        'col-start-1 row-start-2 col-span-2 min-h-0 overflow-hidden border-t border-border/70 bg-background',
         'transition-[opacity,transform,border-color] duration-200 ease-out',
         open
           ? 'translate-y-0 opacity-100'
-          : 'pointer-events-none translate-y-2 border-transparent opacity-0'
+          : 'pointer-events-none translate-y-full border-transparent opacity-0'
       )}
     >
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-          <BottomPanelTab
-            section="terminal"
-            activeSection={activeSection}
-            onSelect={setSection}
-          />
-          <BottomPanelTab
-            section="browser"
-            activeSection={activeSection}
-            onSelect={setSection}
-          />
-          <div className="flex-1" />
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="rounded-md"
-            aria-label="Dismiss bottom panel"
-            title="Close"
-            onClick={() => setOpen(false)}
-          >
-            <X className="size-3.5 text-muted-foreground" />
-          </Button>
+        <div className="flex h-10 shrink-0 items-end border-b border-border/60 px-2 bg-background">
+          <div className="flex items-end gap-[2px] h-full min-w-0 flex-1 overflow-x-auto scrollbar-hide">
+            {selectorSections.map((section) => {
+              const Icon = section.icon
+              const active = section.id === activeSection
+
+              return (
+                <div
+                  key={section.id}
+                  onClick={() => setBottomPanelActiveSection(section.id as any)}
+                  className={cn(
+                    'flex h-9 items-center gap-1.5 px-3 rounded-t-md text-[11px] border border-border/40 transition-all cursor-pointer select-none -mb-[1px] shrink-0',
+                    active
+                      ? 'bg-background border-b-transparent border-t-2 border-t-primary text-foreground font-semibold z-10'
+                      : 'bg-muted/10 border-transparent text-muted-foreground hover:bg-muted/20 hover:text-foreground'
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  <span>{section.label}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeBottomPanelTab(section.id)
+                    }}
+                    className="rounded-full p-0.5 hover:bg-foreground/10 text-muted-foreground hover:text-foreground transition-colors ml-1"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              )
+            })}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="mb-1 size-7 shrink-0 rounded-md border border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                  title="Open new tab"
+                >
+                  <span className="text-lg font-light leading-none">+</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                {showBrowserOption && (
+                  <DropdownMenuItem
+                    onSelect={() => setBottomPanelActiveSection('browser')}
+                  >
+                    <Globe className="mr-2 size-3.5" />
+                    <span>Browser</span>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onSelect={() => void openNewTerminal('bottom')}
+                >
+                  <Terminal className="mr-2 size-3.5" />
+                  <span>New Terminal</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="flex h-10 items-center shrink-0 pl-2 pb-1">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="rounded-md"
+              aria-label="Dismiss bottom panel"
+              title="Close"
+              onClick={() => setBottomPanelOpen(false)}
+            >
+              <X className="size-3.5 text-muted-foreground" />
+            </Button>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-3">
           {activeSection === 'browser' ? (
             <BrowserSection isActive={open && activeSection === 'browser'} />
+          ) : activeSection.startsWith('terminal:') ? (
+            <TerminalSection key={activeSection} sessionId={activeSection.replace('terminal:', '')} />
           ) : (
             <TerminalSection />
           )}
@@ -2719,39 +6057,7 @@ function BottomWorkspacePanel() {
   )
 }
 
-function BottomPanelTab({
-  section,
-  activeSection,
-  onSelect,
-}: {
-  section: WorkspaceBottomPanelSection
-  activeSection: WorkspaceBottomPanelSection
-  onSelect: (section: WorkspaceBottomPanelSection) => void
-}) {
-  const active = section === activeSection
-  const Icon = section === 'terminal' ? Terminal : Globe
-  const label = section === 'terminal' ? 'Terminal' : 'Browser'
-
-  return (
-    <Button
-      variant="ghost"
-      size="xs"
-      className={cn(
-        'h-7 rounded-md border border-transparent px-2',
-        active
-          ? 'border-border/80 bg-foreground/10 text-foreground'
-          : 'text-muted-foreground hover:bg-foreground/5'
-      )}
-      aria-pressed={active}
-      onClick={() => onSelect(section)}
-    >
-      <Icon className="size-3.5" />
-      <span>{label}</span>
-    </Button>
-  )
-}
-
-function TerminalSection() {
+function TerminalSection({ sessionId: propSessionId }: { sessionId?: string } = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -2759,6 +6065,11 @@ function TerminalSection() {
   const scrollbackLoadRef = useRef(0)
   const ensureSessionRef = useRef(false)
   const [starting, setStarting] = useState(false)
+  const isDark = useTheme((state) => state.isDark)
+  const chatSessionId = useChatSessionId()
+  const chatSessionUi = useChatSessionUi()
+  const { linkTerminalSession, setTerminalActiveSessionId, replaceTerminalSession } =
+    useChatSessionUiActions()
   const requestRuntimePermission = useRuntimePermission(
     (state) => state.requestPermission
   )
@@ -2769,22 +6080,36 @@ function TerminalSection() {
   const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const sessions = useTerminalRuntime((state) => state.sessions)
   const sessionNames = useTerminalRuntime((state) => state.sessionNames)
-  const activeSessionId = useTerminalRuntime((state) => state.activeSessionId)
+  const activeSessionId = propSessionId ?? useTerminalRuntime((state) => state.activeSessionId)
   const activeSession = useTerminalRuntime((state) =>
-    state.activeSessionId ? state.sessions[state.activeSessionId] : undefined
+    activeSessionId ? state.sessions[activeSessionId] : undefined
   )
   const hydrateSessions = useTerminalRuntime((state) => state.hydrateSessions)
   const upsertSession = useTerminalRuntime((state) => state.upsertSession)
   const setActiveSession = useTerminalRuntime((state) => state.setActiveSession)
   const renameSession = useTerminalRuntime((state) => state.renameSession)
   const markExited = useTerminalRuntime((state) => state.markExited)
-  const sessionList = Object.values(sessions).sort(
-    (a, b) => b.updatedAt - a.updatedAt
-  )
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId
   }, [activeSessionId])
+
+  useEffect(() => {
+    ensureSessionRef.current = false
+  }, [chatSessionId])
+
+  useEffect(() => {
+    const preferred = chatSessionUi.terminalActiveSessionId
+    if (!preferred || !sessions[preferred]) return
+    if (activeSessionId === preferred) return
+    setActiveSession(preferred)
+  }, [
+    chatSessionId,
+    chatSessionUi.terminalActiveSessionId,
+    sessions,
+    activeSessionId,
+    setActiveSession,
+  ])
 
   const fitAndResize = useCallback(() => {
     const terminal = terminalRef.current
@@ -2794,7 +6119,7 @@ function TerminalSection() {
 
     try {
       fitAddon.fit()
-      if (IS_TAURI && sessionId) {
+      if (isPlatformTauri() && sessionId) {
         void invoke('resize_terminal_session', {
           sessionId,
           cols: terminal.cols,
@@ -2807,7 +6132,7 @@ function TerminalSection() {
   }, [])
 
   const startSession = useCallback(async () => {
-    if (starting || !IS_TAURI) return
+    if (starting || !isPlatformTauri()) return
 
     const allowed = await requestRuntimePermission({
       actionId: 'terminal.start',
@@ -2832,6 +6157,7 @@ function TerminalSection() {
       })
       upsertSession(info)
       setActiveSession(info.sessionId)
+      linkTerminalSession(info.sessionId)
       terminalRef.current?.write('\x1b[2J\x1b[3J\x1b[H')
       terminalRef.current?.writeln(`\x1b[2mStarted ${info.shell}\x1b[0m`)
     } catch (error) {
@@ -2841,10 +6167,16 @@ function TerminalSection() {
     } finally {
       setStarting(false)
     }
-  }, [requestRuntimePermission, setActiveSession, starting, upsertSession])
+  }, [
+    linkTerminalSession,
+    requestRuntimePermission,
+    setActiveSession,
+    starting,
+    upsertSession,
+  ])
 
   const ensureTerminalSession = useCallback(async () => {
-    if (!IS_TAURI || ensureSessionRef.current || starting) return
+    if (!isPlatformTauri() || ensureSessionRef.current || starting) return
     ensureSessionRef.current = true
 
     try {
@@ -2853,12 +6185,46 @@ function TerminalSection() {
       )
       hydrateSessions(nextSessions)
 
-      const runningSession = [...nextSessions]
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .find((session) => session.status === 'running')
+      const runningSessionIds = new Set(nextSessions.map((s) => s.sessionId))
+      if (activeSessionId && !runningSessionIds.has(activeSessionId)) {
+        setStarting(true)
+        try {
+          const info = await invoke<TerminalSessionInfo>('start_terminal_session', {
+            request: {
+              cols: terminalRef.current?.cols || 80,
+              rows: terminalRef.current?.rows || 24,
+            },
+          })
+          upsertSession(info)
+          replaceTerminalSession(activeSessionId, info.sessionId)
+          terminalRef.current?.write('\x1b[2J\x1b[3J\x1b[H')
+          terminalRef.current?.writeln(`\x1b[2mStarted fresh shell ${info.shell}\x1b[0m`)
+        } catch (error) {
+          console.error('Failed to replace dead terminal session:', error)
+        } finally {
+          setStarting(false)
+        }
+        return
+      }
 
-      if (runningSession) {
-        setActiveSession(runningSession.sessionId)
+      const preferredId = chatSessionUi.terminalActiveSessionId
+      const preferred = preferredId
+        ? nextSessions.find((session) => session.sessionId === preferredId)
+        : undefined
+      if (preferred) {
+        setActiveSession(preferred.sessionId)
+        return
+      }
+
+      const linkedRunning = chatSessionUi.terminalLinkedSessionIds
+        .map((sessionId) =>
+          nextSessions.find((session) => session.sessionId === sessionId)
+        )
+        .find((session) => session?.status === 'running')
+
+      if (linkedRunning) {
+        setActiveSession(linkedRunning.sessionId)
+        setTerminalActiveSessionId(linkedRunning.sessionId)
         return
       }
 
@@ -2869,12 +6235,23 @@ function TerminalSection() {
         `\r\n\x1b[31mFailed to connect terminal: ${String(error)}\x1b[0m`
       )
     }
-  }, [hydrateSessions, setActiveSession, startSession, starting])
+  }, [
+    activeSessionId,
+    chatSessionUi.terminalActiveSessionId,
+    chatSessionUi.terminalLinkedSessionIds,
+    hydrateSessions,
+    replaceTerminalSession,
+    setActiveSession,
+    setTerminalActiveSessionId,
+    startSession,
+    starting,
+    upsertSession,
+  ])
 
   const stopSession = useCallback(
     async (sessionId?: string) => {
       const targetSessionId = sessionId ?? activeSessionId
-      if (!targetSessionId || !IS_TAURI) return
+      if (!targetSessionId || !isPlatformTauri()) return
 
       const targetSession = sessions[targetSessionId]
       const allowed = await requestRuntimePermission({
@@ -3047,6 +6424,27 @@ function TerminalSection() {
   }, [])
 
   useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+    terminal.options.theme = {
+      background: 'transparent',
+      foreground: isDark ? '#f8fafc' : '#0f172a',
+      cursor: isDark ? '#f8fafc' : '#0f172a',
+      selectionBackground: isDark
+        ? 'rgba(255, 255, 255, 0.15)'
+        : 'rgba(0, 0, 0, 0.15)',
+    }
+  }, [isDark])
+
+  const ensureTerminalSessionRef = useRef(ensureTerminalSession)
+  const fitAndResizeRef = useRef(fitAndResize)
+
+  useEffect(() => {
+    ensureTerminalSessionRef.current = ensureTerminalSession
+    fitAndResizeRef.current = fitAndResize
+  }, [ensureTerminalSession, fitAndResize])
+
+  useEffect(() => {
     const terminal = new XTerm({
       cursorBlink: true,
       convertEol: true,
@@ -3054,10 +6452,12 @@ function TerminalSection() {
         'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 12,
       theme: {
-        background: '#0b0f14',
-        foreground: '#d7dde8',
-        cursor: '#d7dde8',
-        selectionBackground: '#334155',
+        background: 'transparent',
+        foreground: isDark ? '#f8fafc' : '#0f172a',
+        cursor: isDark ? '#f8fafc' : '#0f172a',
+        selectionBackground: isDark
+          ? 'rgba(255, 255, 255, 0.15)'
+          : 'rgba(0, 0, 0, 0.15)',
       },
     })
     const fitAddon = new FitAddon()
@@ -3069,14 +6469,14 @@ function TerminalSection() {
 
     if (containerRef.current) {
       terminal.open(containerRef.current)
-      fitAndResize()
+      fitAndResizeRef.current()
       terminal.writeln('\x1b[2mConnecting terminal session...\x1b[0m')
-      void ensureTerminalSession()
+      void ensureTerminalSessionRef.current()
     }
 
     const disposable = terminal.onData((data) => {
       const sessionId = activeSessionIdRef.current
-      if (!IS_TAURI || !sessionId) return
+      if (!isPlatformTauri() || !sessionId) return
       void invoke('write_terminal_stdin', {
         sessionId,
         input: data,
@@ -3089,7 +6489,7 @@ function TerminalSection() {
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [ensureTerminalSession, fitAndResize])
+  }, [])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -3103,7 +6503,7 @@ function TerminalSection() {
       terminal.writeln('\x1b[2mStarting terminal session...\x1b[0m')
       return
     }
-    if (!IS_TAURI) return
+    if (!isPlatformTauri()) return
 
     void invoke<string>('read_terminal_scrollback', {
       sessionId: activeSessionId,
@@ -3126,45 +6526,47 @@ function TerminalSection() {
       })
   }, [activeSession, activeSessionId, fitAndResize])
 
+  const throttledFitAndResize = useMemo(
+    () => throttle(() => fitAndResize(), 100),
+    [fitAndResize]
+  )
+
   useEffect(() => {
-    const resizeObserver = new ResizeObserver(() => fitAndResize())
+    const resizeObserver = new ResizeObserver(() => throttledFitAndResize())
     if (containerRef.current) resizeObserver.observe(containerRef.current)
     return () => resizeObserver.disconnect()
-  }, [fitAndResize])
+  }, [throttledFitAndResize])
+
+  const markExitedRef = useRef(markExited)
+  useEffect(() => {
+    markExitedRef.current = markExited
+  }, [markExited])
 
   useEffect(() => {
-    if (!IS_TAURI) return
+    if (!isPlatformTauri()) return
 
-    let unlistenOutput: (() => void) | undefined
-    let unlistenExit: (() => void) | undefined
-    let unlistenError: (() => void) | undefined
-
-    void listen<{ sessionId: string; data: string }>(
+    const unlistenOutputPromise = listen<{ sessionId: string; data: string }>(
       'terminal-output',
       (event) => {
         if (event.payload.sessionId === activeSessionIdRef.current) {
           terminalRef.current?.write(event.payload.data)
         }
       }
-    ).then((unlisten) => {
-      unlistenOutput = unlisten
-    })
+    )
 
-    void listen<{ sessionId: string; exitCode?: number | null }>(
-      'terminal-exit',
-      (event) => {
-        markExited(event.payload.sessionId, event.payload.exitCode)
-        if (event.payload.sessionId === activeSessionIdRef.current) {
-          terminalRef.current?.writeln(
-            `\r\n\x1b[2mProcess exited${typeof event.payload.exitCode === 'number' ? ` (${event.payload.exitCode})` : ''}.\x1b[0m`
-          )
-        }
+    const unlistenExitPromise = listen<{
+      sessionId: string
+      exitCode?: number | null
+    }>('terminal-exit', (event) => {
+      markExitedRef.current(event.payload.sessionId, event.payload.exitCode)
+      if (event.payload.sessionId === activeSessionIdRef.current) {
+        terminalRef.current?.writeln(
+          `\r\n\x1b[2mProcess exited${typeof event.payload.exitCode === 'number' ? ` (${event.payload.exitCode})` : ''}.\x1b[0m`
+        )
       }
-    ).then((unlisten) => {
-      unlistenExit = unlisten
     })
 
-    void listen<{ sessionId: string; message: string }>(
+    const unlistenErrorPromise = listen<{ sessionId: string; message: string }>(
       'terminal-error',
       (event) => {
         if (event.payload.sessionId === activeSessionIdRef.current) {
@@ -3173,18 +6575,16 @@ function TerminalSection() {
           )
         }
       }
-    ).then((unlisten) => {
-      unlistenError = unlisten
-    })
+    )
 
     return () => {
-      unlistenOutput?.()
-      unlistenExit?.()
-      unlistenError?.()
+      void unlistenOutputPromise.then((unlisten) => unlisten())
+      void unlistenExitPromise.then((unlisten) => unlisten())
+      void unlistenErrorPromise.then((unlisten) => unlisten())
     }
-  }, [markExited])
+  }, [])
 
-  if (!IS_TAURI) {
+  if (!isPlatformTauri()) {
     return (
       <div className="flex h-full min-h-[180px] items-center justify-center rounded-md border border-border/60 bg-card px-4 text-center text-sm text-muted-foreground">
         Terminal sessions are available in the desktop app.
@@ -3192,67 +6592,17 @@ function TerminalSection() {
     )
   }
 
-  const getSessionTabLabel = (session: TerminalSessionInfo) => {
-    const customName = sessionNames[session.sessionId]?.trim()
-    if (customName) return customName
-    const shellName = session.shell.split('/').filter(Boolean).pop()
-    return shellName ?? session.shell
-  }
-
   return (
-    <div className="flex h-full min-h-[180px] flex-col overflow-hidden bg-[#0b0f14]">
-      <div className="flex h-7 shrink-0 items-center overflow-x-auto bg-[#0b0f14] px-2 scrollbar-hide">
-        {sessionList.map((session) => {
-          const active = session.sessionId === activeSessionId
-          const label = getSessionTabLabel(session)
-
-          return (
-            <button
-              key={session.sessionId}
-              type="button"
-              onClick={() => setActiveSession(session.sessionId)}
-              className={cn(
-                'group shrink-0 bg-[#0b0f14] px-2 py-1 font-mono text-xs transition-colors',
-                active
-                  ? 'text-slate-300'
-                  : 'text-slate-500 hover:text-slate-400',
-                session.status !== 'running' && 'opacity-60'
-              )}
-              aria-current={active ? 'true' : undefined}
-              title={session.status !== 'running' ? `${label} (exited)` : label}
-            >
-              <span>{label}</span>
-              {session.status === 'running' ? (
-                <span
-                  role="presentation"
-                  className="ml-1 hidden text-slate-500 group-hover:inline hover:text-slate-300"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void stopSession(session.sessionId)
-                  }}
-                >
-                  ×
-                </span>
-              ) : null}
-            </button>
-          )
-        })}
-        <button
-          type="button"
-          disabled={starting}
-          onClick={() => void startSession()}
-          className="shrink-0 bg-[#0b0f14] px-2 py-1 font-mono text-xs text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-50"
-          aria-label="New terminal session"
-          title="New shell"
-        >
-          {starting ? '…' : '+'}
-        </button>
-        <div className="flex-1" />
+    <div className="flex h-full min-h-[180px] flex-col overflow-hidden bg-background">
+      <div className="flex h-7 shrink-0 items-center justify-between bg-background px-2">
+        <div className="font-mono text-[11px] text-muted-foreground truncate select-all" title={activeSession?.cwd ?? activeSession?.shell}>
+          {activeSession ? (activeSession.cwd || activeSession.shell) : 'Connecting...'}
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="shrink-0 bg-[#0b0f14] px-1 py-1 font-mono text-xs text-slate-600 transition-colors hover:text-slate-400"
+              className="shrink-0 bg-transparent px-1 py-1 font-mono text-xs text-muted-foreground/80 transition-colors hover:text-foreground"
               aria-label="Terminal actions"
               title="Terminal actions"
             >

@@ -11,6 +11,8 @@ export type CodexSpawnOptions = {
   env: Record<string, string | undefined>
   codexHome?: string
   configToml?: string
+  agentsMd?: string
+  customAgents?: any[]
 }
 
 export interface CodexProcessSpawner {
@@ -57,6 +59,8 @@ export class CodexAppServerProcessManager {
         env: command.env,
         codexHome: command.codexHome,
         configToml: command.configToml,
+        agentsMd: command.agentsMd,
+        customAgents: this.options.customAgents,
       })
     )
       .then(async (process) => {
@@ -65,13 +69,22 @@ export class CodexAppServerProcessManager {
         this.client = client
 
         try {
-          const result = await client.request<CodexInitializeResult>('initialize', {
-            clientInfo: { name: 'jan', title: 'Jan', version: VERSION },
-            capabilities: {
-              experimentalApi: true,
-              requestAttestation: false,
-            },
-          })
+          const result = await client.request<CodexInitializeResult>(
+            'initialize',
+            {
+              clientInfo: { name: 'jan', title: 'Jan', version: VERSION },
+              capabilities: {
+                experimentalApi: true,
+                requestAttestation: true,
+                // Jan host surfaces we advertise to Codex app-server
+                hostApprovals: true,
+                hostMcpCuration: true,
+                hostGitReviewPanel: true,
+                hostWorkspaceManagement: true,
+                hostSubagentInspector: true,
+              },
+            }
+          )
           client.notify('initialized')
           this.currentGeneration += 1
           return result
