@@ -4,6 +4,13 @@
 fn main() {
     let _ = fix_path_env::fix();
 
+    // ATO-113: bring up Sentry as early as possible so the panic hook is armed
+    // before any work happens. The guard must live for the whole process (it
+    // flushes pending events on drop), so it is held until `main` returns.
+    // No-op when no DSN was baked in (e.g. local dev builds).
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let _sentry_guard = app_lib::core::telemetry::init();
+
     // Ensure localhost bypasses any configured HTTP/SOCKS proxy.
     // Without this, the Tauri HTTP plugin (reqwest) picks up the macOS
     // system proxy and routes local llama-server requests through it,

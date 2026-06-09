@@ -14,8 +14,10 @@ import {
   loadBackendFromProvider,
   mmprojProjectorType,
   oomSubtype,
+  quantFromModelId,
   sanitizeStderrTail,
 } from '@/lib/telemetry'
+import { captureHandledError } from '@/lib/sentry'
 
 type ModelSettingEntry = { controller_props?: { value?: unknown } }
 type LoadableModel = {
@@ -356,6 +358,28 @@ async function doSwitchToModel(params: {
         model: modelConfig,
         error,
       })
+    }
+    // ATO-113: explicit Sentry capture at the model-load choke point with the
+    // typed error_code + zero-PII tags (stderr tail is scrubbed by beforeSend).
+    {
+      const err = toErrorObject(error)
+      const haystack = err.details ?? err.message
+      const settings = modelConfig?.settings
+      captureHandledError(
+        error,
+        isOutOfMemoryError(err) ? 'fatal' : 'error',
+        {
+          feature: 'model_load',
+          error_code: err.code ?? 'unknown',
+          oom_subtype: oomSubtype(haystack),
+          backend: isLocal ? loadBackendFromProvider(providerName) : providerName,
+          model_id: modelId,
+          quant: quantFromModelId(modelId),
+          context_length:
+            settingNum(settings, 'ctx_len') ?? settingNum(settings, 'ctx_size'),
+        },
+        { stderr_tail: sanitizeStderrTail(haystack) }
+      )
     }
     reportModelLoadError(error)
     throw error

@@ -100,15 +100,18 @@ fn log_ttft_prefix_dump(json_body: &serde_json::Value) {
     if std::env::var("ATOMIC_TTFT_PREFIX_DUMP").ok().as_deref() != Some("1") {
         return;
     }
+    // Zero-PII (ATO-113): never log message/tool *text* (prompts are PII).
+    // Emit only sizes/counts so the diagnostic stays useful for prefix-cache
+    // debugging without leaking conversation content into app.log / Sentry.
     if let Some(messages) = json_body.get("messages") {
-        let snippet = serde_json::to_string(messages).unwrap_or_default();
-        let end = snippet.len().min(800);
-        log::info!("[ttft-prefix] messages snippet ({}B): {}", end, &snippet[..end]);
+        let bytes = serde_json::to_string(messages).map(|s| s.len()).unwrap_or(0);
+        let count = messages.as_array().map(|a| a.len()).unwrap_or(0);
+        log::info!("[ttft-prefix] messages: {count} item(s), {bytes}B");
     }
     if let Some(tools) = json_body.get("tools") {
-        let snippet = serde_json::to_string(tools).unwrap_or_default();
-        let end = snippet.len().min(400);
-        log::info!("[ttft-prefix] tools snippet ({}B): {}", end, &snippet[..end]);
+        let bytes = serde_json::to_string(tools).map(|s| s.len()).unwrap_or(0);
+        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+        log::info!("[ttft-prefix] tools: {count} item(s), {bytes}B");
     }
 }
 
@@ -2792,7 +2795,15 @@ async fn inner_proxy_request<R: Runtime>(
                     match transform_anthropic_to_openai(&json_body) {
                         Some(transformed) => Some((url, transformed)),
                         None => {
-                            log::error!("transform_anthropic_to_openai returned None for body: {json_body}");
+                            // Zero-PII (ATO-113): the request body carries the
+                            // prompt; log only its top-level shape, never content.
+                            let keys: Vec<&str> = json_body
+                                .as_object()
+                                .map(|o| o.keys().map(String::as_str).collect())
+                                .unwrap_or_default();
+                            log::error!(
+                                "transform_anthropic_to_openai returned None (body keys: {keys:?})"
+                            );
                             None
                         }
                     }

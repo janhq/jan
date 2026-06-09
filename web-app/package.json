@@ -40,6 +40,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@radix-ui/react-visually-hidden": "^1.2.4",
+    "@sentry/react": "^10.57.0",
     "@streamdown/cjk": "^1.0.1",
     "@streamdown/code": "^1.0.1",
     "@streamdown/math": "^1.0.1",
@@ -111,6 +112,7 @@
   },
   "devDependencies": {
     "@eslint/js": "8.57.0",
+    "@sentry/vite-plugin": "^5.3.0",
     "@tanstack/router-plugin": "1.121.34",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "6.8.0",

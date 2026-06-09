@@ -28,9 +28,11 @@ import {
   finalizeDownloadOnce,
   parseHttpStatus,
   quantFromModelId,
+  scrubPii,
   sizeBucket,
   takeDownloadDuration,
 } from '@/lib/telemetry'
+import { captureHandledError } from '@/lib/sentry'
 
 //* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
 const DOWNLOAD_PROGRESS_INDICATOR = 'bg-emerald-400/50 dark:bg-emerald-400/45'
@@ -240,6 +242,22 @@ export function DownloadManagement() {
         toast.dismiss('download-failed')
         return
       }
+
+      // ATO-113: report genuine download failures to Sentry with zero-PII tags
+      // (classification enums + http status only; the raw error string carries
+      // URLs/tokens and is scrubbed by beforeSend before leaving the device).
+      captureHandledError(
+        anyState?.error ? new Error(scrubPii(err)) : 'model_download failed',
+        'error',
+        {
+          feature: 'model_download',
+          failure_reason: classifyDownloadFailure(err),
+          http_status: parseHttpStatus(err),
+          download_kind: downloadKind(state.modelId, anyState?.downloadType),
+          model_id: state.modelId,
+          quant: quantFromModelId(state.modelId),
+        }
+      )
 
       if (err.includes('HTTP status 401')) {
         clearResumableDownload(state.modelId)

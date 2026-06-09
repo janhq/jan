@@ -9,6 +9,48 @@ import {
 } from '@/types/analytics'
 import type { ServiceHub } from '@/services'
 import { cpuAvxLevel, mapGpuVendor } from '@/lib/telemetry'
+import {
+  setSentryConsent,
+  setSentryTags,
+  setSentryUser,
+  setRustSentryContext,
+} from '@/lib/sentry'
+
+/** Zero-PII hardware/backend super-props promoted to Sentry tags. */
+const SENTRY_TAG_KEYS = [
+  'os',
+  'os_build',
+  'arch',
+  'cpu_avx',
+  'gpu_vendor',
+  'gpu_model',
+  'vram_mb',
+  'system_ram_mb',
+  'nvidia_driver_version',
+  'cuda_runtime_version',
+  'vulkan_version',
+  'active_backend',
+  'recommended_backend',
+  'installer_type',
+] as const
+
+function toSentryTags(
+  hwProps: Record<string, unknown>,
+  appVersion: string,
+  platform: string
+): Record<string, string> {
+  const tags: Record<string, string> = {
+    app_version: appVersion,
+    platform,
+  }
+  for (const key of SENTRY_TAG_KEYS) {
+    const value = hwProps[key]
+    if (value !== undefined && value !== null && value !== '') {
+      tags[key] = String(value)
+    }
+  }
+  return tags
+}
 
 /** Resolve a promise but reject after `ms` so a slow IPC never blocks startup. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -144,6 +186,13 @@ export function AnalyticProvider() {
   const { productAnalytic } = useAnalytic()
   const serviceHub = useServiceHub()
 
+  // ATO-113: keep both Sentry SDKs (frontend gate + Rust gate) in sync with the
+  // productAnalytic consent. Runs independently of PostHog config so consent is
+  // honoured even when PostHog keys are absent.
+  useEffect(() => {
+    setSentryConsent(productAnalytic)
+  }, [productAnalytic])
+
   useEffect(() => {
     if (!POSTHOG_KEY || !POSTHOG_HOST) {
       console.warn(
@@ -215,6 +264,14 @@ export function AnalyticProvider() {
           try {
             const hwProps = await collectHardwareSuperProps(serviceHub)
             if (Object.keys(hwProps).length > 0) posthog.register(hwProps)
+
+            // ATO-113: promote the same zero-PII hardware/backend context to
+            // Sentry (frontend tags + Rust scope) and set the anonymous device
+            // id as the Sentry user.
+            const sentryTags = toSentryTags(hwProps, VERSION, osPlatform)
+            setSentryTags(sentryTags)
+            setRustSentryContext(sentryTags)
+            setSentryUser(posthog.get_distinct_id())
           } catch (err) {
             console.warn('Failed to collect hardware super-properties:', err)
           }

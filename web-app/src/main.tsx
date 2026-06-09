@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
+import * as Sentry from '@sentry/react'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
@@ -9,6 +10,13 @@ import './index.css'
 import './i18n'
 import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
 import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
+import { initSentryFrontend } from './lib/sentry'
+import GlobalError from './containers/GlobalError'
+
+// ATO-113: arm Sentry before anything else so the React ErrorBoundary and the
+// global window.onerror / unhandledrejection handlers catch the earliest
+// errors. No-op when no DSN was baked in or outside Tauri.
+initSentryFrontend()
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
@@ -155,7 +163,11 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <StrictMode>
-      <RouterProvider router={router} />
+      <Sentry.ErrorBoundary
+        fallback={({ error }) => <GlobalError error={error} />}
+      >
+        <RouterProvider router={router} />
+      </Sentry.ErrorBoundary>
     </StrictMode>
   )
 }

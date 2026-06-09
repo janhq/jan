@@ -177,6 +177,9 @@ pub fn run() {
         core::artifact::clear_artifact_html,
         // Tray status (desktop only runtime behaviour; the symbol exists on mobile as a no-op)
         core::tray_status::update_tray_status,
+        // Telemetry (ATO-113): consent sync + zero-PII context tags for Sentry
+        core::telemetry::commands::set_telemetry_consent,
+        core::telemetry::commands::set_telemetry_context,
     ]);
 
     // Mobile: no updater commands
@@ -296,19 +299,33 @@ pub fn run() {
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(|app| {
-            app.handle().plugin(
-                tauri_plugin_log::Builder::default()
-                    .level(log::LevelFilter::Debug)
-                    .targets([
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                            path: get_jan_data_folder_path(app.handle().clone()).join("logs"),
-                            file_name: Some("app".to_string()),
-                        }),
-                    ])
-                    .build(),
-            )?;
+            let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
+            let log_builder = tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Debug)
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                        path: log_dir.clone(),
+                        file_name: Some("app".to_string()),
+                    }),
+                ]);
+
+            // ATO-113: on desktop, chain the plugin's logger through Sentry's
+            // SentryLogger so `log::error!` becomes a Sentry event (info/warn ->
+            // breadcrumbs) while stdout / webview / `app.log` still work. We use
+            // `split` (instead of `build`) so we, not the plugin, install the
+            // global logger. Mobile keeps the plain plugin logger (no Sentry).
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                let (plugin, max_level, logger) = log_builder.split(app.handle())?;
+                let _ = log::set_boxed_logger(crate::core::telemetry::wrap_logger(logger));
+                log::set_max_level(max_level);
+                app.handle().plugin(plugin)?;
+                crate::core::telemetry::set_log_path(log_dir.join("app.log"));
+            }
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            app.handle().plugin(log_builder.build())?;
 
             #[cfg(target_os = "windows")]
             {

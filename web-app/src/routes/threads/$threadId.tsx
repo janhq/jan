@@ -58,6 +58,7 @@ import {
   MODEL_ACCESS_DENIED_MESSAGE,
   isModelAccessError,
 } from '@/utils/error'
+import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -236,6 +237,14 @@ function ThreadDetail() {
             handleContextSizeIncreaseRef.current?.()
           } else {
             setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+            // ATO-113: surface context-overflow (auto-increase disabled) to
+            // Sentry as a warning with zero-PII numeric context.
+            captureHandledError(new Error(OUT_OF_CONTEXT_SIZE), 'warning', {
+              feature: 'context_overflow',
+              model_id: selectedModelState?.id,
+              context_length: ctxLen,
+              total_tokens: totalTokens,
+            })
           }
         }
         return

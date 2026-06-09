@@ -140,8 +140,17 @@ export function mmprojProjectorType(details?: string | null): string | null {
 }
 
 /**
- * Scrub the three PII classes the epic forbids: usernames in paths, credentials
- * in proxy URLs, and HF/API tokens. Path structure is otherwise preserved.
+ * Sensitive query-parameter names whose *values* must be redacted while the
+ * parameter name and the rest of the URL/path are preserved (ATO-113 rule 3).
+ */
+const SENSITIVE_QUERY_KEYS =
+  'token|key|api_key|apikey|auth|secret|password|access_token|refresh_token|sig|signature'
+
+/**
+ * Scrub the PII classes the epic forbids: usernames in paths, credentials in
+ * proxy URLs, HF/API tokens, Bearer tokens, and the values of sensitive
+ * query parameters. Path structure, folder names, and parameter names are
+ * otherwise preserved (needed for debugging).
  */
 export function scrubPii(text: string): string {
   return text
@@ -150,6 +159,10 @@ export function scrubPii(text: string): string {
     .replace(/:\/\/[^/@\s]+:[^/@\s]+@/g, '://<redacted>@')
     .replace(/\bhf_[A-Za-z0-9]+/g, '<redacted>')
     .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer <redacted>')
+    .replace(
+      new RegExp(`([?&](?:${SENSITIVE_QUERY_KEYS})=)[^&#\\s"']+`, 'gi'),
+      '$1<redacted>'
+    )
 }
 
 /** Last ~2KB of an error's details, PII-scrubbed, for `model_load.stderr_tail`. */

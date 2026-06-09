@@ -19,6 +19,9 @@ declare global {
   declare const VERSION: string
   declare const POSTHOG_KEY: string
   declare const POSTHOG_HOST: string
+  declare const SENTRY_DSN: string
+  declare const SENTRY_ENVIRONMENT: string
+  declare const SENTRY_RELEASE: string
   declare const MODEL_CATALOG_URL: string
   declare const AUTO_UPDATER_DISABLED: boolean
   declare const UPDATE_CHECK_INTERVAL_MS: number

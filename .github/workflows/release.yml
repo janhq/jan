@@ -224,6 +224,15 @@ jobs:
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: Sentry frontend DSN baked into the bundle; SENTRY_RELEASE =
+          # git SHA shared with the desktop project. The auth-token/org/project
+          # trio additionally arms the @sentry/vite-plugin source-map upload.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
         run: |
           yarn build:web
           yarn build:icon
@@ -250,6 +259,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
         run: |
           yarn copy:assets:tauri
 
@@ -263,6 +276,24 @@ jobs:
           yarn build:cli
           # Универсальная macOS-сборка + переименование VOLNAME с версией + ресигн/нотаризация DMG
           make build-mac
+
+      - name: Upload Rust debug files to Sentry (macOS)
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          # split-debuginfo=packed emits .dSYM bundles next to each per-arch
+          # binary; sentry-cli scans recursively and dedupes by debug-id.
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/aarch64-apple-darwin/release \
+            src-tauri/target/x86_64-apple-darwin/release
 
       - name: Collect artifact metadata
         id: metadata
@@ -559,6 +590,13 @@ jobs:
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: Sentry frontend DSN + source-map upload (see macOS job).
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
         run: |
           yarn build:web
           yarn build:icon
@@ -581,7 +619,28 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
         run: yarn tauri build
+
+      - name: Upload Rust debug files to Sentry (Windows)
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          # MSVC emits a .pdb next to the binary; debug=1 keeps it populated.
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/release
 
       # ── Post-build code signing with jsign (bypasses KSP issues) ──
       - name: Download jsign
@@ -836,6 +895,13 @@ jobs:
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: Sentry frontend DSN + source-map upload (see macOS job).
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
         run: |
           yarn build:web
           yarn build:icon
@@ -858,11 +924,33 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # ATO-113: bake the Rust desktop DSN (option_env!) + matching release.
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
           # NO_STRIP=1 keeps `linuxdeploy` from stripping symbols that
           # the bundled `bun` runtime needs; see the existing
           # `build:tauri:linux` script in package.json.
           NO_STRIP: "1"
         run: yarn build:tauri:linux
+
+      - name: Upload Rust debug files to Sentry (Linux)
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          # split-debuginfo=packed emits a .dwp; ELF binaries also carry a
+          # build-id sentry-cli matches on. Upload before the AppImage repack
+          # strips nothing extra (NO_STRIP=1), so symbols remain resolvable.
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/release
 
       - name: Recreate updater signature after AppImage repackage
         # `buildAppImage.sh` deletes the AppImage that `tauri build`

@@ -26,6 +26,7 @@ import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
 import { useEffect, useState } from 'react'
 import { localStorageKey } from '@/constants/localStorage'
 import GlobalError from '@/containers/GlobalError'
+import * as Sentry from '@sentry/react'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -34,7 +35,13 @@ import { WindowControls } from '@/components/WindowControls'
 
 export const Route = createRootRoute({
   component: RootLayout,
-  errorComponent: ({ error }) => <GlobalError error={error} />,
+  errorComponent: ({ error }) => {
+    // ATO-113: router-level errors also reach Sentry (the ErrorBoundary in
+    // main.tsx wraps RouterProvider, but TanStack renders this component
+    // itself, so capture explicitly here too).
+    Sentry.captureException(error)
+    return <GlobalError error={error} />
+  },
 })
 
 const SETUP_COMPLETED_EVENT = 'app:setup-completed'
