@@ -10,7 +10,7 @@ function buildSummarizePrompt(transcript: string): string {
     transcript.length > MAX_PROMPT_LENGTH
       ? transcript.slice(0, MAX_PROMPT_LENGTH) + '...'
       : transcript
-  return `Summarize the following conversation into a concise title of at most ${MAX_TITLE_WORDS} words. Capture the overall topic, not just the latest turn. Output the title only, no quotes, no explanation.\n\nConversation:\n${truncated}`
+  return `Summarize the following conversation into a concise title of at most ${MAX_TITLE_WORDS} words. Capture the overall topic, not just the latest turn. Start the title with a single emoji that best represents the conversation topic. Output the title only, no quotes, no explanation.\n\nConversation:\n${truncated}`
 }
 
 /**
@@ -41,8 +41,8 @@ export function cleanTitle(raw: string): string | null {
   // Remove surrounding quotes
   text = text.replace(/^["']+|["']+$/g, '').trim()
 
-  // Keep only letters, numbers, and spaces (unicode-aware)
-  text = text.replace(/[^\p{L}\p{N}\s]/gu, '').trim()
+  // Keep letters, numbers, spaces, and emojis (including emoji sequences/ZWJ)
+  text = text.replace(/[^\p{L}\p{N}\p{Extended_Pictographic}\uFE0F\u200D\s]/gu, '').trim()
 
   // Enforce word limit
   const words = text.split(/\s+/).slice(0, MAX_TITLE_WORDS)

@@ -74,6 +74,32 @@ describe('cleanTitle', () => {
     expect(cleanTitle('Version 2.0 Release')).toBe('Version 20 Release')
   })
 
+  it('preserves emoji-prefixed titles', () => {
+    expect(cleanTitle('🐍 Python List Sorting')).toBe('🐍 Python List Sorting')
+    expect(cleanTitle('🚀 Deployment Guide')).toBe('🚀 Deployment Guide')
+    expect(cleanTitle('💡 Machine Learning Basics')).toBe(
+      '💡 Machine Learning Basics'
+    )
+  })
+
+  it('preserves emojis within titles', () => {
+    expect(cleanTitle('Learn Rust 🦀 for beginners')).toBe(
+      'Learn Rust 🦀 for beginners'
+    )
+  })
+
+  it('preserves ZWJ emoji sequences', () => {
+    // 👨‍💻 is a ZWJ sequence (man + ZWJ + computer)
+    expect(cleanTitle('👨‍💻 Coding Session Recap')).toBe(
+      '👨‍💻 Coding Session Recap'
+    )
+  })
+
+  it('preserves standalone emoji as valid title', () => {
+    // 🎉 has length 2 (surrogate pair) so it passes the length >= 2 check
+    expect(cleanTitle('🎉')).toBe('🎉')
+  })
+
   it('returns null for empty or very short text', () => {
     expect(cleanTitle('')).toBeNull()
     expect(cleanTitle('   ')).toBeNull()

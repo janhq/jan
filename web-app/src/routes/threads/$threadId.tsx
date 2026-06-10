@@ -270,6 +270,13 @@ function ThreadDetail() {
           unknown
         >
 
+        // Capture which model produced this message so we can display it in the UI
+        const currentModelState = useModelProvider.getState()
+        if (!messageMetadata.modelId && currentModelState.selectedModel) {
+          messageMetadata.modelId = currentModelState.selectedModel.id
+          messageMetadata.modelProvider = currentModelState.selectedProvider
+        }
+
         const assistantMessage: ThreadMessage = {
           type: 'text',
           role: ChatCompletionRole.Assistant,

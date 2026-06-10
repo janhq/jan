@@ -2,7 +2,7 @@
 import { memo, useState, useCallback, useEffect } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
-import { cn } from '@/lib/utils'
+import { cn, getModelDisplayName, getProviderTitle, getProviderLogo } from '@/lib/utils'
 import { twMerge } from 'tailwind-merge'
 import {
   ChainOfThought,
@@ -87,9 +87,40 @@ export const MessageItem = memo(
     onDelete,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const selectedProvider = useModelProvider((state) => state.selectedProvider)
+    const providers = useModelProvider((state) => state.providers)
     const metadata = message.metadata as Record<string, unknown> | undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
+
+    // Derive model display name from per-message metadata
+    const messageModelId = metadata?.modelId as string | undefined
+    const messageModelProvider = metadata?.modelProvider as string | undefined
+
+    const modelDisplayName = useMemo(() => {
+      if (messageModelId) {
+        const provider = providers.find(
+          (p) => p.provider === messageModelProvider
+        )
+        const model = provider?.models.find((m) => m.id === messageModelId)
+        if (model) return getModelDisplayName(model)
+        return messageModelId
+      }
+      // Backwards compat: for the last message without metadata, use current selection
+      if (isLastMessage && selectedModel) {
+        return getModelDisplayName(selectedModel)
+      }
+      return null
+    }, [messageModelId, messageModelProvider, isLastMessage, selectedModel, providers])
+
+    // Provider for the logo/badge: per-message metadata, falling back to the
+    // current selection for the streaming last message before metadata persists.
+    const modelProviderForDisplay =
+      messageModelProvider ?? (isLastMessage ? selectedProvider : undefined)
+    const modelProviderLogo = modelProviderForDisplay
+      ? getProviderLogo(modelProviderForDisplay)
+      : undefined
+
     const [previewImage, setPreviewImage] = useState<{
       url: string
       filename?: string
@@ -548,6 +579,26 @@ export const MessageItem = memo(
           message.role === 'user' && !isFirstMessage && 'mt-8'
         )}
       >
+
+        {/* Model name label for assistant messages */}
+        {message.role === 'assistant' && modelDisplayName && (
+          <div className="flex items-center gap-1.5 mb-1.5 text-xs text-muted-foreground">
+            {modelProviderLogo ? (
+              <img
+                src={modelProviderLogo}
+                alt={`${getProviderTitle(modelProviderForDisplay!)} logo`}
+                className="size-4 object-contain rounded-sm"
+              />
+            ) : modelProviderForDisplay ? (
+              <div className="flex size-4 rounded-sm border items-center justify-center">
+                <span className="text-[9px] leading-0 capitalize">
+                  {getProviderTitle(modelProviderForDisplay).charAt(0)}
+                </span>
+              </div>
+            ) : null}
+            <span className="font-medium">{modelDisplayName}</span>
+          </div>
+        )}
 
         {/* Render message parts */}
         {renderedParts}

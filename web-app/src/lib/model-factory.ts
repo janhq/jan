@@ -331,6 +331,63 @@ function requestUrlOf(input: RequestInfo | URL): string {
 }
 
 /**
+ * TransformStream that filters SSE event blocks by type.
+ *
+ * Per the W3C SSE spec, blocks with a custom `event:` type that the client
+ * has no handler for should be silently ignored.  Some OpenAI-compatible
+ * servers emit non-standard event types (e.g. `event: hermes.tool.progress`,
+ * heartbeat events, metadata events) alongside the standard completion
+ * stream.  When the AI SDK's `EventSourceParserStream` passes these through,
+ * their `data:` payloads fail Zod schema validation because they lack a
+ * `choices[]` array, producing a fatal "Type validation failed" error.
+ *
+ * This filter drops SSE blocks whose `event:` field is neither empty nor
+ * "message" (the SSE default), so only standard completion chunks reach the
+ * AI SDK's parser.
+ */
+export function createSSEEventFilter(): TransformStream<Uint8Array, Uint8Array> {
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let remainder = ''
+
+  /**
+   * Returns `true` when the block carries a custom event type that should be
+   * silently skipped.  The check walks each line of the SSE block looking for
+   * the first `event:` field — if its value is non-empty and not "message",
+   * the block is non-standard.
+   */
+  const isCustomEventBlock = (block: string): boolean =>
+    block.split('\n').some((line) => {
+      if (!line.startsWith('event:')) return false
+      const eventType = line.slice(6).trim()
+      return eventType !== '' && eventType !== 'message'
+    })
+
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      remainder += decoder.decode(chunk, { stream: true })
+      // Normalize \r\n → \n so split works regardless of server line endings
+      remainder = remainder.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const blocks = remainder.split('\n\n')
+      // Last element may be an incomplete block — keep it for the next chunk
+      remainder = blocks.pop() ?? ''
+
+      for (const block of blocks) {
+        if (!block.trim()) continue
+        if (!isCustomEventBlock(block)) {
+          controller.enqueue(encoder.encode(block + '\n\n'))
+        }
+      }
+    },
+    flush(controller) {
+      if (remainder.trim() && !isCustomEventBlock(remainder)) {
+        controller.enqueue(encoder.encode(remainder))
+      }
+    },
+  })
+}
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
@@ -397,7 +454,22 @@ export function createCustomFetch(
       if (!friendly) throw err
       throw new Error(`${friendly} (${requestUrlOf(input)})`)
     }
-    if (res.ok) return res
+    if (res.ok) {
+      // Filter out custom SSE event types that would cause AI SDK validation
+      // errors.  Standard SSE behaviour is to skip unknown event types.
+      const contentType = res.headers.get('content-type') || ''
+      if (contentType.includes('text/event-stream') && res.body) {
+        return new Response(
+          res.body.pipeThrough(createSSEEventFilter()),
+          {
+            status: res.status,
+            statusText: res.statusText,
+            headers: res.headers,
+          }
+        )
+      }
+      return res
+    }
 
     const isLlamacpp500 = keepLlamacppOnly && res.status === 500
 
