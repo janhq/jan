@@ -9,7 +9,12 @@ Reads env vars:
     PREV_TAG         optional, resolved from git history if absent
     REPO             optional, e.g. "AtomicBot-ai/Atomic-Chat"
     GH_TOKEN         optional; enables GitHub API lookups for PR authors
-                     (used to build the Contributors section).
+                     (Contributors section) and for fetching recent published
+                     releases used as few-shot style exemplars.
+
+The generated notes are produced in the style of our most recent *published*
+releases (fetched via the GitHub API as few-shot examples) so the output
+matches what we actually ship; commit bodies are included for detail.
 
 Writes the produced markdown to stdout.
 Exit 0 on success; non-zero on any failure (caller treats as "skip enrichment").
@@ -31,36 +36,44 @@ logger = logging.getLogger("release-notes")
 
 
 SYSTEM_PROMPT = """You are a release notes editor for a desktop AI app (Atomic Chat).
-You receive a list of git commit subjects between two tags and produce
+You receive (1) optional REAL examples of our previously published release
+notes and (2) the git commits (subject + body) between two tags. Produce
 concise, polished, user-facing release notes for end users.
+
+STYLE — match our previous releases:
+- When REAL past-release examples are provided, MIRROR them: use the same
+  section headings (exact wording, emoji, and order), the same tone, and the
+  same level of detail. Do NOT invent new headings when examples are present.
+- When no examples are provided, fall back to these headings, in this order,
+  omitting any that are empty:
+    ## 🚀 New Features
+    ## 🔧 Improvements & Fixes
+    ## ⚠️ Breaking Changes
 
 OUTPUT RULES:
 - Output GitHub-flavored Markdown ONLY. No preamble, no closing remarks,
   no code fences around the whole output.
-- Use ONLY these section headings, in this order, omitting any that are empty:
-    ## 🚀 New Features
-    ## 🔧 Improvements
-    ## 🛠️ Fixes & Stability
-    ## ⚠️ Breaking Changes
-- Each item is a bullet starting with "- ".
-- Convert commit subjects into user-friendly language. Strip prefixes like
-  "feat:", "fix:", "refactor:", and scope tags like "(api)" unless they
-  aid clarity.
-- Group small UI/stability fixes into a single bullet, e.g.
+- Do NOT write a "## 🙏 Contributors" section — it is appended automatically.
+  Never invent or guess contributor names.
+- Each item is a bullet starting with "- ". Describe what the change means
+  for the user (benefit-oriented), using the commit body for detail — not the
+  raw commit subject.
+- Strip prefixes like "feat:", "fix:", "refactor:", and scope tags like
+  "(api)" unless they aid clarity.
+- Group small UI/stability fixes into a single bullet when appropriate, e.g.
   "10+ stability and UI fixes" (round the count down to the nearest 5 or 10).
 - Skip: merge commits, "release:" / version-bump commits, dependency bumps
-  from bots (dependabot/renovate), and pure CI/build/chore commits.
+  from bots (dependabot/renovate), and pure CI/build/chore/docs commits.
 - Mention major platforms or features by name when present
-  (Windows, macOS, MLX, DFlash, etc.).
+  (Windows, macOS, Linux, MLX, llama.cpp, DFlash, etc.).
 - Be concise — one short sentence per bullet, no marketing fluff.
 
-EXAMPLE OUTPUT:
+FALLBACK EXAMPLE (only when no real examples are provided):
 ## 🚀 New Features
 
 - Windows support — Atomic Chat is now available on Windows
-- DFlash for MLX models on Apple Silicon — up to 3–4× faster inference with lossless speculative decoding
 
-## 🛠️ Fixes & Stability
+## 🔧 Improvements & Fixes
 
 - 10+ stability and UI fixes
 """
@@ -85,9 +98,48 @@ def _resolve_prev_tag(curr_tag: str) -> str | None:
     return None
 
 
-def _collect_commits(prev_tag: str | None, curr_tag: str) -> str:
+# Record / unit separators used to parse `git log` into (subject, body) pairs.
+_REC_SEP = "\x1e"
+_UNIT_SEP = "\x1f"
+_COAUTHOR_RE = re.compile(r"(?im)^\s*co-authored-by:.*$")
+
+
+def _collect_commits(
+    prev_tag: str | None, curr_tag: str, max_body_chars: int = 1200
+) -> str:
+    """Return commits as "- <subject>" bullets with their (truncated) body.
+
+    The body gives the LLM enough substance to write benefit-oriented bullets
+    that match our previous, detail-rich releases — not just terse subjects.
+    `Co-authored-by:` trailers are stripped and each body is capped at
+    `max_body_chars` so a large range can't blow up the prompt budget.
+    """
     rng = f"{prev_tag}..{curr_tag}" if prev_tag else curr_tag
-    return _run(["git", "log", "--no-merges", "--pretty=format:- %s", rng])
+    raw = _run(
+        [
+            "git",
+            "log",
+            "--no-merges",
+            f"--pretty=format:{_REC_SEP}%s{_UNIT_SEP}%b",
+            rng,
+        ]
+    )
+    items: list[str] = []
+    for rec in raw.split(_REC_SEP):
+        rec = rec.strip("\n")
+        if not rec.strip():
+            continue
+        subject, _, body = rec.partition(_UNIT_SEP)
+        subject = subject.strip()
+        body = _COAUTHOR_RE.sub("", body).strip()
+        if max_body_chars and len(body) > max_body_chars:
+            body = body[:max_body_chars].rstrip() + "…"
+        if body:
+            indented = "\n".join("  " + ln for ln in body.splitlines())
+            items.append(f"- {subject}\n{indented}")
+        else:
+            items.append(f"- {subject}")
+    return "\n".join(items)
 
 
 _PR_NUMBER_RE = re.compile(r"\(#(\d+)\)")
@@ -208,6 +260,58 @@ def _render_contributors_section(logins: list[str]) -> str:
     )
 
 
+def _collect_style_examples(
+    repo: str,
+    token: str | None,
+    curr_tag: str,
+    limit: int = 3,
+) -> list[tuple[str, str]]:
+    """Return [(tag, body)] for the most recent *published* releases.
+
+    These real, hand-approved releases are fed to the LLM as few-shot style
+    exemplars so the generated notes match the structure/tone/headings we
+    actually ship. Drafts, prereleases, the current tag, and empty bodies are
+    skipped. Returns [] on any failure (caller degrades gracefully).
+    """
+    if not repo:
+        logger.warning("REPO not set — skipping style examples")
+        return []
+
+    payload = _gh_api(
+        f"https://api.github.com/repos/{repo}/releases?per_page=20", token
+    )
+    if not isinstance(payload, list):
+        return []
+
+    examples: list[tuple[str, str]] = []
+    for rel in payload:
+        if not isinstance(rel, dict):
+            continue
+        if rel.get("draft") or rel.get("prerelease"):
+            continue
+        tag = (rel.get("tag_name") or "").strip()
+        body = (rel.get("body") or "").strip()
+        if not body or tag == curr_tag:
+            continue
+        examples.append((tag, body))
+        if len(examples) >= limit:
+            break
+    return examples
+
+
+def _render_style_examples(examples: list[tuple[str, str]]) -> str:
+    if not examples:
+        return ""
+    blocks = [
+        f'<example release="{tag}">\n{body}\n</example>' for tag, body in examples
+    ]
+    return (
+        "Below are REAL examples of our previously published release notes. "
+        "Match their structure, section headings, tone, and level of detail "
+        "exactly:\n\n" + "\n\n".join(blocks)
+    )
+
+
 def _call_openai(api_key: str, base_url: str, model: str, user_content: str) -> str:
     payload = {
         "model": model,
@@ -244,6 +348,7 @@ def main() -> int:
     base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
     model = os.environ.get("OPENAI_MODEL", "gpt-5-mini").strip() or "gpt-5-mini"
     repo = os.environ.get("REPO", "").strip()
+    gh_token = os.environ.get("GH_TOKEN", "").strip() or None
 
     prev_tag = os.environ.get("PREV_TAG", "").strip() or _resolve_prev_tag(curr_tag)
     logger.info("Previous tag: %s", prev_tag or "(none — first release)")
@@ -259,15 +364,19 @@ def main() -> int:
         logger.error("No commits found in range")
         return 1
 
-    logger.info("Commits in range: %d line(s)", commits.count("\n") + 1)
+    style_examples = _collect_style_examples(repo, gh_token, curr_tag)
+    logger.info("Style exemplars from past releases: %d", len(style_examples))
+    style_examples_md = _render_style_examples(style_examples)
 
-    user_content = (
-        (f"Repository: {repo}\n" if repo else "")
-        + f"Previous tag: {prev_tag or '(none)'}\n"
-        + f"Current tag: {curr_tag}\n\n"
-        + "Commits (most recent first):\n"
-        + commits
-    )
+    user_parts: list[str] = []
+    if repo:
+        user_parts.append(f"Repository: {repo}")
+    user_parts.append(f"Previous tag: {prev_tag or '(none)'}")
+    user_parts.append(f"Current tag: {curr_tag}")
+    if style_examples_md:
+        user_parts.append("\n" + style_examples_md)
+    user_parts.append("\nCommits in this release (most recent first):\n" + commits)
+    user_content = "\n".join(user_parts)
 
     try:
         notes = _call_openai(api_key, base_url, model, user_content)
@@ -287,7 +396,6 @@ def main() -> int:
         logger.error("OpenAI returned empty content")
         return 1
 
-    gh_token = os.environ.get("GH_TOKEN", "").strip() or None
     contributors = _collect_contributors(repo, prev_tag, curr_tag, gh_token)
     if contributors:
         logger.info("Contributors resolved: %s", ", ".join(contributors))
