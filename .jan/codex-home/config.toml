@@ -1,0 +1,13 @@
+model = "grok-build-0.1"
+model_provider = "xai"
+
+[model_providers.xai]
+name = "xai"
+base_url = "https://api.x.ai/v1"
+env_key = "JAN_CODEX_PROVIDER_API_KEY"
+wire_api = "chat"
+
+
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
+tool_timeout_sec = 30
