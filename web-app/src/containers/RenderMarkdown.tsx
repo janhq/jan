@@ -15,6 +15,7 @@ import 'katex/dist/katex.min.css'
 import { MermaidError } from '@/components/MermaidError'
 import { CitationLink } from '@/components/CitationLink'
 import { MarkdownTable } from '@/components/MarkdownTable'
+import { CopyableInlineCode } from '@/components/CopyableInlineCode'
 
 interface MarkdownProps {
   content: string
@@ -24,6 +25,8 @@ interface MarkdownProps {
   isStreaming?: boolean
   messageId?: string
   isAnimating?: boolean
+  /** Make inline code click-to-copy (used for assistant chat messages). */
+  copyableInlineCode?: boolean
 }
 
 // Cache for normalized LaTeX content
@@ -94,6 +97,7 @@ function RenderMarkdownComponent({
   messageId,
   isAnimating,
   isStreaming,
+  copyableInlineCode,
 }: MarkdownProps) {
 
   // Memoize the normalized content to avoid reprocessing on every render
@@ -117,6 +121,46 @@ function RenderMarkdownComponent({
   }, [components])
 
   // Render the markdown content
+  const body = (
+    <Streamdown
+      mode={isStreaming ? 'streaming' : 'static'}
+      parseIncompleteMarkdown={isStreaming ?? false}
+      animate={isAnimating ?? true}
+      animationDuration={500}
+      linkSafety={{
+        enabled: false,
+      }}
+      className={cn(
+        'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+        className
+      )}
+      remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
+      rehypePlugins={[rehypeKatex, defaultRehypePlugins.harden]}
+      components={mergedComponents}
+      plugins={{
+        code: code,
+        mermaid: mermaid,
+        cjk: cjk,
+      }}
+      controls={{
+        mermaid: {
+          fullscreen: false,
+        },
+      }}
+      mermaid={
+        messageId
+          ? {
+              errorComponent: (props) => (
+                <MermaidError messageId={messageId} {...props} />
+              ),
+            }
+          : {}
+      }
+    >
+      {normalizedContent}
+    </Streamdown>
+  )
+
   return (
     <div
       dir="auto"
@@ -126,46 +170,11 @@ function RenderMarkdownComponent({
         className
       )}
     >
-      <Streamdown
-        mode={isStreaming ? 'streaming' : 'static'}
-        parseIncompleteMarkdown={isStreaming ?? false}
-        animate={isAnimating ?? true}
-        animationDuration={500}
-        linkSafety={{
-          enabled: false,
-        }}
-        className={cn(
-          'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
-          className
-        )}
-        remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
-        rehypePlugins={[
-          rehypeKatex,
-          defaultRehypePlugins.harden,
-        ]}
-        components={mergedComponents}
-        plugins={{
-          code: code,
-          mermaid: mermaid,
-          cjk: cjk,
-        }}
-        controls={{
-          mermaid: {
-            fullscreen: false,
-          },
-        }}
-        mermaid={
-          messageId
-            ? {
-                errorComponent: (props) => (
-                  <MermaidError messageId={messageId} {...props} />
-                ),
-              }
-            : {}
-        }
-      >
-        {normalizedContent}
-      </Streamdown>
+      {copyableInlineCode ? (
+        <CopyableInlineCode>{body}</CopyableInlineCode>
+      ) : (
+        body
+      )}
     </div>
   )
 }
