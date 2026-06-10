@@ -142,6 +142,46 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           </svg>
         </IconBox>
       )
+    case 'pi':
+      return (
+        <IconBox bg="#09090b">
+          <img
+            src="/images/integrations/pi.svg"
+            alt={agent.name}
+            className="size-full object-contain"
+          />
+        </IconBox>
+      )
+    case 'goose':
+      return (
+        <IconBox bg="#ffffff">
+          <img
+            src="/images/integrations/goose.svg"
+            alt={agent.name}
+            className="size-full object-contain"
+          />
+        </IconBox>
+      )
+    case 'openhands':
+      return (
+        <IconBox bg="#ffffff">
+          <img
+            src="/images/integrations/openhands.svg"
+            alt={agent.name}
+            className="size-full object-contain p-1"
+          />
+        </IconBox>
+      )
+    case 'kilo':
+      return (
+        <IconBox bg="#ffffff">
+          <img
+            src="/images/integrations/kilo.svg"
+            alt={agent.name}
+            className="size-full object-contain"
+          />
+        </IconBox>
+      )
     case 'openclaw':
       return (
         <IconBox bg="#ffffff">
@@ -401,6 +441,18 @@ function LaunchPage() {
             contextLength: 65536,
           })
           break
+        case 'pi':
+          await invoke('configure_pi', { apiUrl, model, apiKey: key })
+          break
+        case 'goose':
+          await invoke('configure_goose', { apiUrl, model, apiKey: key })
+          break
+        case 'openhands':
+          await invoke('configure_openhands', { apiUrl, model, apiKey: key })
+          break
+        case 'kilo':
+          await invoke('configure_kilo', { apiUrl, model, apiKey: key })
+          break
         case 'openclaw':
           await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
           break
@@ -457,8 +509,20 @@ function LaunchPage() {
           // helper (deterministic commands), not a chat. `openclaw chat` runs
           // the embedded local agent runtime, so the user lands straight in a
           // conversation with the configured model (no gateway needed).
-          const command =
-            agent.id === 'openclaw' ? 'openclaw chat' : agent.detectBin
+          // Goose's bare `goose` only prints help; `goose session` starts an
+          // interactive chat. OpenHands reads our env overrides only when
+          // launched with `--override-with-envs`. Everything else runs its
+          // bare detect binary.
+          let command: string
+          if (agent.id === 'openclaw') {
+            command = 'openclaw chat'
+          } else if (agent.id === 'goose') {
+            command = 'goose session'
+          } else if (agent.id === 'openhands') {
+            command = 'openhands --override-with-envs'
+          } else {
+            command = agent.detectBin
+          }
           await invoke('open_agent_terminal', { command })
         } catch (termErr) {
           const tmsg =
@@ -611,18 +675,6 @@ function LaunchPage() {
             <LocalApiServerPanel />
           </section>
 
-          <section className="flex flex-col gap-3">
-            <div>
-              <h1 className="font-studio text-lg font-medium text-foreground">
-                {t('launch:codingAgents')}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {t('launch:codingAgentsDesc')}
-              </p>
-            </div>
-            {coding.map(renderAgent)}
-          </section>
-
           {assistants.length > 0 && (
             <section className="flex flex-col gap-3">
               <div>
@@ -636,6 +688,18 @@ function LaunchPage() {
               {assistants.map(renderAgent)}
             </section>
           )}
+
+          <section className="flex flex-col gap-3">
+            <div>
+              <h1 className="font-studio text-lg font-medium text-foreground">
+                {t('launch:codingAgents')}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {t('launch:codingAgentsDesc')}
+              </p>
+            </div>
+            {coding.map(renderAgent)}
+          </section>
         </div>
       </div>
     </div>

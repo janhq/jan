@@ -1496,6 +1496,61 @@ fn agent_install_spec(
             let (p, a) = npm("openclaw");
             Ok((p, a, "npm", "https://docs.openclaw.ai"))
         }
+        "pi" => {
+            let (p, a) = npm("@earendil-works/pi-coding-agent");
+            Ok((p, a, "npm", "https://github.com/earendil-works/pi"))
+        }
+        "kilo" => {
+            let (p, a) = npm("@kilocode/cli");
+            Ok((p, a, "npm", "https://kilo.ai/docs"))
+        }
+        "openhands" => {
+            // The CLI ships in the `openhands` pip package (NOT `openhands-ai`,
+            // which is the SDK with no executable). `uv tool install` puts the
+            // `openhands` binary on PATH; `--python 3.12` pins a supported
+            // interpreter.
+            Ok((
+                "uv".to_string(),
+                vec![
+                    "tool".to_string(),
+                    "install".to_string(),
+                    "openhands".to_string(),
+                    "--python".to_string(),
+                    "3.12".to_string(),
+                ],
+                "uv",
+                "https://docs.openhands.dev/openhands/usage/cli/installation",
+            ))
+        }
+        "goose" => {
+            // Block ships Goose via an official shell / PowerShell bootstrap
+            // script (NOT npm). `CONFIGURE=false` skips the post-install
+            // interactive setup wizard — we write the agent's config ourselves
+            // via `configure_goose`, so the wizard is redundant and would hang
+            // reading from the console (/dev/tty on Unix) when spawned from the
+            // app. Both bootstrap scripts honor the `CONFIGURE` env var, so the
+            // Windows path seeds `$env:CONFIGURE='false'` before `iex`.
+            let (program, args): (String, Vec<String>) = if cfg!(windows) {
+                (
+                    "powershell".to_string(),
+                    vec![
+                        "-NoProfile".to_string(),
+                        "-Command".to_string(),
+                        "$env:CONFIGURE='false'; irm https://github.com/block/goose/releases/download/stable/download_cli.ps1 | iex".to_string(),
+                    ],
+                )
+            } else {
+                (
+                    "sh".to_string(),
+                    vec![
+                        "-c".to_string(),
+                        "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash".to_string(),
+                    ],
+                )
+            };
+            let prereq = if cfg!(windows) { "powershell" } else { "curl" };
+            Ok((program, args, prereq, "https://block.github.io/goose/"))
+        }
         "hermes" => {
             // `--skip-setup`/`-SkipSetup` skips the post-install interactive
             // setup wizard, and `--non-interactive`/`-NonInteractive` makes any
@@ -2151,10 +2206,29 @@ fn write_marked_env_to_shell(
         .collect();
 
     let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
+
+    // Block-based removal first: drop everything between (and including) the
+    // paired marker lines. This is what makes rerun idempotent even when the
+    // managed block contains env vars whose names do NOT share `export_prefix`
+    // (e.g. Goose writes `OPENAI_*` lines alongside `GOOSE_*`). A user's own
+    // unrelated exports outside the block are preserved untouched.
+    let mut in_block = false;
     let export_line = format!("export {}", export_prefix);
     let cleaned: Vec<&str> = existing_content
         .split('\n')
-        .filter(|line| !line.starts_with(marker) && !line.starts_with(export_line.as_str()))
+        .filter(|line| {
+            if line.starts_with(marker) {
+                // Toggle on the opening marker, off after the closing marker.
+                in_block = !in_block;
+                return false;
+            }
+            if in_block {
+                return false;
+            }
+            // Safety net for any stray, prefix-matching managed lines that
+            // leaked outside a block (e.g. from an older write format).
+            !line.starts_with(export_line.as_str())
+        })
         .collect();
 
     let new_block = format!("{}\n{}\n{}\n", marker, new_entries, marker);
@@ -2218,6 +2292,309 @@ pub fn configure_copilot(
         model,
         env_file_path
     );
+    Ok(())
+}
+
+/// Configure Pi by upserting the `atomic` provider in `~/.pi/agent/models.json`
+/// and pointing `~/.pi/agent/settings.json` at it (both strict JSON, all other
+/// providers / keys preserved). Pi speaks OpenAI Chat Completions, so `api_url`
+/// carries the `/v1` suffix.
+#[tauri::command]
+pub fn configure_pi(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".pi").join("agent");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.pi/agent: {}", e))?;
+
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    // --- models.json: upsert providers.atomic (preserve other providers) ---
+    let models_path = dir.join("models.json");
+    let mut models_root: serde_json::Value = if models_path.exists() {
+        let text = std::fs::read_to_string(&models_path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    models_path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let models_obj = models_root
+        .as_object_mut()
+        .ok_or_else(|| "models.json is not a JSON object".to_string())?;
+    let providers = models_obj
+        .entry("providers")
+        .or_insert_with(|| serde_json::json!({}));
+    if !providers.is_object() {
+        *providers = serde_json::json!({});
+    }
+    providers.as_object_mut().unwrap().insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "api": "openai-completions",
+            "apiKey": key_val,
+            "baseUrl": api_url,
+            "models": [ { "id": model } ],
+        }),
+    );
+
+    let pretty = serde_json::to_string_pretty(&models_root).map_err(|e| e.to_string())?;
+    std::fs::write(&models_path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", models_path.display(), e))?;
+
+    // --- settings.json: point defaultProvider/defaultModel at us (preserve keys) ---
+    let settings_path = dir.join("settings.json");
+    let mut settings_root: serde_json::Value = if settings_path.exists() {
+        let text = std::fs::read_to_string(&settings_path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    settings_path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let settings_obj = settings_root
+        .as_object_mut()
+        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
+    settings_obj.insert("defaultProvider".to_string(), serde_json::json!("atomic"));
+    settings_obj.insert("defaultModel".to_string(), serde_json::json!(model));
+
+    let pretty = serde_json::to_string_pretty(&settings_root).map_err(|e| e.to_string())?;
+    std::fs::write(&settings_path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", settings_path.display(), e))?;
+
+    log::info!("Pi configured: baseUrl={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure Goose via its BYOK environment variables. Goose has no provider
+/// config file we patch here — it reads `GOOSE_PROVIDER` / `GOOSE_MODEL` plus
+/// the OpenAI host vars from the environment — so we persist them to the user's
+/// shell rc (Windows: `setx`). Goose appends its own path, so `OPENAI_HOST` is
+/// the bare host:port (`endpointWithPrefix` is false) and `OPENAI_BASE_PATH`
+/// carries the chat-completions path.
+#[tauri::command]
+pub fn configure_goose(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(5);
+    env_vars.push(("GOOSE_PROVIDER".to_string(), "openai".to_string()));
+    env_vars.push(("GOOSE_MODEL".to_string(), model.clone()));
+    env_vars.push(("OPENAI_HOST".to_string(), api_url.clone()));
+    env_vars.push((
+        "OPENAI_BASE_PATH".to_string(),
+        "v1/chat/completions".to_string(),
+    ));
+    env_vars.push(("OPENAI_API_KEY".to_string(), key_val.to_string()));
+
+    const MARKER: &str = "# Atomic Chat - Goose Config";
+
+    if cfg!(target_os = "windows") {
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
+        log::info!(
+            "Goose configured (Windows env): host={}, model={}",
+            api_url,
+            model
+        );
+        return Ok(());
+    }
+
+    let home = agent_home_dir()?;
+    let is_macos = cfg!(target_os = "macos");
+    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
+    // `write_marked_env_to_shell` removes the entire region between the paired
+    // marker lines on rerun, so the managed `OPENAI_*` vars written inside the
+    // block (which do not share the `GOOSE_` prefix) are cleaned together with
+    // the `GOOSE_*` vars. A user's own unrelated `OPENAI_*` exports living
+    // outside the block are preserved. The `GOOSE_` prefix is kept as a safety
+    // net for any stray managed lines that leaked outside a block.
+    write_marked_env_to_shell(&env_file_path, MARKER, "GOOSE_", &env_vars)?;
+    log::info!(
+        "Goose configured: host={}, model={}, rc={}",
+        api_url,
+        model,
+        env_file_path
+    );
+    Ok(())
+}
+
+/// Configure OpenHands via its BYOK environment variables. The CLI reads env
+/// overrides only when launched with `--override-with-envs`, using `LLM_API_KEY`
+/// / `LLM_BASE_URL` / `LLM_MODEL`. We persist them to the user's shell rc
+/// (Windows: `setx`). The litellm `openai/` prefix on the model id is required
+/// for a custom OpenAI-compatible base_url; `LLM_BASE_URL` carries the `/v1`
+/// suffix (`endpointWithPrefix` is true).
+#[tauri::command]
+pub fn configure_openhands(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
+    env_vars.push(("LLM_MODEL".to_string(), format!("openai/{}", model)));
+    env_vars.push(("LLM_BASE_URL".to_string(), api_url.clone()));
+    env_vars.push(("LLM_API_KEY".to_string(), key_val.to_string()));
+
+    const MARKER: &str = "# Atomic Chat - OpenHands Config";
+
+    if cfg!(target_os = "windows") {
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
+        log::info!(
+            "OpenHands configured (Windows env): base_url={}, model={}",
+            api_url,
+            model
+        );
+        return Ok(());
+    }
+
+    let home = agent_home_dir()?;
+    let is_macos = cfg!(target_os = "macos");
+    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
+    write_marked_env_to_shell(&env_file_path, MARKER, "LLM_", &env_vars)?;
+    log::info!(
+        "OpenHands configured: base_url={}, model={}, rc={}",
+        api_url,
+        model,
+        env_file_path
+    );
+    Ok(())
+}
+
+/// Configure KiloCode by upserting the `atomic` provider in
+/// `~/.config/kilo/kilo.jsonc` and selecting our model (other providers
+/// preserved). The file is JSONC (comments / trailing commas), so we parse it
+/// with json5 — the same leniency KiloCode applies — and re-serialize as strict
+/// JSON on write. KiloCode speaks OpenAI Chat Completions, so `api_url` carries
+/// the `/v1` suffix.
+#[tauri::command]
+pub fn configure_kilo(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".config").join("kilo");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.config/kilo: {}", e))?;
+    let path = dir.join("kilo.jsonc");
+
+    // kilo.jsonc is JSON5 (comments, unquoted keys, trailing commas), so we must
+    // parse with the same leniency or we reject configs KiloCode happily accepts.
+    // json5 deserializes into the same serde_json::Value, and we always
+    // re-serialize as strict JSON on write (which drops any comments).
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            json5::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix the reported location and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "kilo.jsonc is not a JSON object".to_string())?;
+    obj.entry("$schema")
+        .or_insert_with(|| serde_json::json!("https://app.kilo.ai/config.json"));
+
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("atomic");
+
+    let provider = obj
+        .entry("provider")
+        .or_insert_with(|| serde_json::json!({}));
+    if !provider.is_object() {
+        *provider = serde_json::json!({});
+    }
+    let mut models = serde_json::Map::new();
+    models.insert(model.clone(), serde_json::json!({ "name": model }));
+    provider.as_object_mut().unwrap().insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "name": "Atomic Chat",
+            "npm": "@ai-sdk/openai-compatible",
+            "options": { "baseURL": api_url, "apiKey": key_val },
+            "models": serde_json::Value::Object(models),
+        }),
+    );
+
+    // Select Atomic as the active model so KiloCode opens on it without a manual
+    // pick. Format is `<providerId>/<modelId>`. Run is explicit "use this", so
+    // we overwrite any prior selection.
+    obj.insert(
+        "model".to_string(),
+        serde_json::json!(format!("atomic/{}", model)),
+    );
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("KiloCode configured: baseURL={}, model={}", api_url, model);
     Ok(())
 }
 

@@ -33,7 +33,7 @@
     "installSuccessDesc": "{{name}} was installed successfully.",
     "installFailed": "Failed to install {{name}}",
     "configured": "{{name}} configured",
-    "configuredDesc": "{{name}} now points at your local Atomic Chat server. Opening a terminal so you can start using it.",
+    "configuredDesc": "{{name}} now points at your local server — opening a terminal.",
     "configureFailed": "Failed to configure {{name}}",
     "terminalFailed": "Couldn't open a terminal for {{name}}"
   }

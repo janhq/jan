@@ -130,6 +130,10 @@ pub fn run() {
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
         core::system::commands::configure_droid,
+        core::system::commands::configure_pi,
+        core::system::commands::configure_goose,
+        core::system::commands::configure_openhands,
+        core::system::commands::configure_kilo,
         core::system::commands::open_agent_terminal,
         // Server commands
         core::server::commands::start_server,
@@ -236,6 +240,10 @@ pub fn run() {
         core::system::commands::configure_claude_code,
         core::system::commands::configure_copilot,
         core::system::commands::configure_droid,
+        core::system::commands::configure_pi,
+        core::system::commands::configure_goose,
+        core::system::commands::configure_openhands,
+        core::system::commands::configure_kilo,
         core::system::commands::open_agent_terminal,
         // Server commands
         core::server::commands::start_server,
