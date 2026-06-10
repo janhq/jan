@@ -295,7 +295,7 @@
     "parseModeAuto": "Automatisch",
     "parseModeInline": "Zu Chat hinzufügen",
     "parseModeEmbeddings": "In Chat einbetten",
-    "parseModePrompt": "Jedes mal nachfragen",
+    "parseModePrompt": "Jedes Mal nachfragen",
     "autoInlineThreshold": "Datei Token Schwellenwert",
     "autoInlineThresholdDesc": "Anteil des lokalen Model-Kontextes, welcher maximal für Dateien genutzt werden darf.",
     "limitsTitle": "Grenzen",

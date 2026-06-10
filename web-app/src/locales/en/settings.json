@@ -196,7 +196,7 @@
     "startupConfiguration": "Startup Configuration",
     "runOnStartup": "Auto start",
     "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
-    "configuration":  "Configuration",
+    "configuration": "Configuration",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",
     "serverHostDesc": "Network address for the server.",

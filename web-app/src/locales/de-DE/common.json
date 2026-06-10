@@ -48,7 +48,7 @@
   "search": "Suchen",
   "searchThreads": "Durchsuche Threads...",
   "toNavigate": "Zum Navigieren",
-  "toSelect": "Zum auswählen",
+  "toSelect": "Zum Auswählen",
   "toClose": "Zum Schließen",
   "clearRecent": "Leeren",
   "name": "Name",
@@ -435,7 +435,7 @@
     "addImages": "Bild hinzufügen",
     "addAudio": "Audio hinzufügen",
     "indexDocuments": "Dokumente indexen…",
-    "addDocumentsOrFiles": "Dokumente oder Datei hinzufügen"
+    "addDocumentsOrFiles": "Dokumente oder Dateien hinzufügen"
   },
   "contextWindow": {
     "prompt": "Eingabe",
