@@ -120,7 +120,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
         run: |
-          gh release edit "$TAG" --notes-file /tmp/release-notes.md
+          # The GitHub API occasionally returns a transient 401 for
+          # GITHUB_TOKEN requests, so retry a few times. Applying the polished
+          # notes is best-effort: the default GitHub-generated notes already
+          # exist, so a persistent failure is a warning, never a job failure
+          # (per this job's "on failure: warning only" contract).
+          for attempt in 1 2 3 4 5; do
+            if gh release edit "$TAG" --notes-file /tmp/release-notes.md; then
+              echo "Release notes applied (attempt ${attempt})."
+              exit 0
+            fi
+            echo "::warning::gh release edit failed (attempt ${attempt}); retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          echo "::warning::Could not update the release body after retries; keeping default GitHub-generated notes"
 
   # ──────────────────────────────────────────────────────────────
   # macOS  (universal binary — arm64 + x86_64)
@@ -420,10 +433,22 @@ jobs:
           SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
         run: |
           $headers = @{ "x-api-key" = $env:SM_API_KEY }
-          Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
-            -Headers $headers -OutFile "$env:TEMP\smtools.msi"
-          Start-Process msiexec.exe -ArgumentList "/i", "$env:TEMP\smtools.msi", "/quiet", "/norestart" -Wait
-          Remove-Item "$env:TEMP\smtools.msi"
+          $msi = "$env:TEMP\smtools.msi"
+          $maxAttempts = 5
+          for ($i = 1; $i -le $maxAttempts; $i++) {
+            try {
+              Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
+                -Headers $headers -OutFile $msi
+              if ((Get-Item $msi).Length -gt 0) { break }
+              throw "Downloaded file is empty"
+            } catch {
+              Write-Host "smtools download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
+              if ($i -eq $maxAttempts) { throw }
+              Start-Sleep -Seconds ($i * 10)
+            }
+          }
+          Start-Process msiexec.exe -ArgumentList "/i", $msi, "/quiet", "/norestart" -Wait
+          Remove-Item $msi
 
           $smctlDir = "C:\Program Files\DigiCert\DigiCert One Signing Manager Tools"
           echo "$smctlDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
@@ -651,8 +676,20 @@ jobs:
       - name: Download jsign
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar" `
-            -OutFile "$env:RUNNER_TEMP\jsign.jar"
+          $jsign = "$env:RUNNER_TEMP\jsign.jar"
+          $maxAttempts = 5
+          for ($i = 1; $i -le $maxAttempts; $i++) {
+            try {
+              Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar" `
+                -OutFile $jsign
+              if ((Get-Item $jsign).Length -gt 0) { break }
+              throw "Downloaded file is empty"
+            } catch {
+              Write-Host "jsign download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
+              if ($i -eq $maxAttempts) { throw }
+              Start-Sleep -Seconds ($i * 10)
+            }
+          }
 
       - name: Sign Windows binaries with DigiCert
         shell: pwsh
