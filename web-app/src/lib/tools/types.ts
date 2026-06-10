@@ -48,6 +48,13 @@ export type TraceBlock =
   | { kind: 'text'; key: string; text: string }
   | { kind: 'reasoning'; key: string; text: string }
   | {
+      kind: 'file'
+      key: string
+      url: string
+      mediaType: string
+      filename?: string
+    }
+  | {
       kind: 'tool'
       key: string
       toolName: string

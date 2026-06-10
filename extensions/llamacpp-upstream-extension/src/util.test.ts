@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getProxyConfig } from './util'
+import {
+  getProxyConfig,
+  isConcreteVersionBackend,
+  matchesMtpLoadFailure,
+} from './util'
 
 // Mock console.log and console.error to avoid noise in tests
 const mockConsole = {
@@ -522,5 +526,101 @@ describe('getProxyConfig', () => {
       verify_peer_ssl: true,
       verify_host_ssl: true,
     })
+  })
+})
+
+describe('isConcreteVersionBackend (ATO-124)', () => {
+  it('accepts a concrete <tag>/<backend>', () => {
+    expect(isConcreteVersionBackend('b9562/win-cpu-x64')).toBe(true)
+  })
+
+  it('rejects the unresolved latest/<backend> sentinel', () => {
+    expect(isConcreteVersionBackend('latest/win-cpu-x64')).toBe(false)
+  })
+
+  it('rejects an empty string', () => {
+    expect(isConcreteVersionBackend('')).toBe(false)
+  })
+
+  it('rejects undefined', () => {
+    expect(isConcreteVersionBackend(undefined)).toBe(false)
+  })
+
+  it('rejects null', () => {
+    expect(isConcreteVersionBackend(null)).toBe(false)
+  })
+
+  it("rejects the literal 'none'", () => {
+    expect(isConcreteVersionBackend('none')).toBe(false)
+  })
+
+  it('rejects a value with no slash', () => {
+    expect(isConcreteVersionBackend('b9562')).toBe(false)
+  })
+
+  it('rejects the literal "latest" (no slash)', () => {
+    expect(isConcreteVersionBackend('latest')).toBe(false)
+  })
+
+  it('strips a leading BOM before checking a concrete value', () => {
+    expect(isConcreteVersionBackend('\uFEFFb9562/win-cpu-x64')).toBe(true)
+  })
+
+  it('strips a BOM that precedes the latest sentinel and still rejects', () => {
+    expect(isConcreteVersionBackend('\uFEFFlatest/win-cpu-x64')).toBe(false)
+  })
+
+  it('trims surrounding whitespace around a concrete value', () => {
+    expect(isConcreteVersionBackend('  b9562/linux-cpu-x64  ')).toBe(true)
+  })
+
+  it('trims whitespace around the latest sentinel and still rejects', () => {
+    expect(isConcreteVersionBackend('  latest/linux-cpu-x64  ')).toBe(false)
+  })
+
+  it('rejects whitespace-only input', () => {
+    expect(isConcreteVersionBackend('   ')).toBe(false)
+  })
+})
+
+describe('matchesMtpLoadFailure (ATO-125)', () => {
+  it('matches "failed to create MTP context"', () => {
+    expect(matchesMtpLoadFailure('error: failed to create MTP context')).toBe(
+      true
+    )
+  })
+
+  it('matches "context type MTP requested"', () => {
+    expect(
+      matchesMtpLoadFailure('context type MTP requested but model ...')
+    ).toBe(true)
+  })
+
+  it("matches \"doesn't contain MTP layers\" (with apostrophe)", () => {
+    expect(
+      matchesMtpLoadFailure("model doesn't contain MTP layers")
+    ).toBe(true)
+  })
+
+  it('matches "doesnt contain MTP layers" (without apostrophe)', () => {
+    expect(matchesMtpLoadFailure('model doesnt contain MTP layers')).toBe(true)
+  })
+
+  it('matches case-insensitively', () => {
+    expect(matchesMtpLoadFailure('FAILED TO CREATE MTP CONTEXT')).toBe(true)
+  })
+
+  it('does not match an OOM error', () => {
+    expect(
+      matchesMtpLoadFailure('ggml_backend_cuda_buffer_type_alloc: out of memory')
+    ).toBe(false)
+  })
+
+  it('does not match an unrelated error', () => {
+    expect(matchesMtpLoadFailure('some unrelated failure')).toBe(false)
+  })
+
+  it('returns false for an empty string', () => {
+    expect(matchesMtpLoadFailure('')).toBe(false)
   })
 })

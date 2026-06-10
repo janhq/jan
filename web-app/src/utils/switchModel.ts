@@ -16,6 +16,7 @@ import {
   oomSubtype,
   quantFromModelId,
   sanitizeStderrTail,
+  shouldEmitModelLoadFailure,
 } from '@/lib/telemetry'
 import { captureHandledError } from '@/lib/sentry'
 
@@ -79,7 +80,12 @@ function emitModelLoad(
     if (status === 'failed') {
       const err = toErrorObject(args.error)
       const haystack = err.details ?? err.message
-      props.error_code = err.code ?? null
+      const errorCode = err.code ?? null
+      // ATO-133: a model stuck in a load crashloop emits the same failure over
+      // and over; drop duplicates within the throttle window so event-weighted
+      // metrics aren't dominated by a handful of stuck devices.
+      if (!shouldEmitModelLoadFailure(args.modelId, errorCode)) return
+      props.error_code = errorCode
       props.oom_subtype = oomSubtype(haystack)
       props.mmproj_projector_type = mmprojProjectorType(haystack)
       props.stderr_tail = sanitizeStderrTail(haystack)

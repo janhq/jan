@@ -422,7 +422,7 @@ function HubModelDetailContent() {
                           Size
                         </th>
                         <th></th>
-                        <th className="text-right py-3 px-2 text-sm font-medium">
+                        <th className="text-right py-3 px-2 text-sm font-medium w-[150px]">
                           Action
                         </th>
                       </tr>
@@ -511,7 +511,7 @@ function HubModelDetailContent() {
                                         value={downloadProgress * 100}
                                         className="w-12 border"
                                       />
-                                      <span className="text-xs text-muted-foreground text-right">
+                                      <span className="text-xs text-muted-foreground text-right tabular-nums inline-block min-w-[34px]">
                                         {Math.round(downloadProgress * 100)}%
                                       </span>
                                       <Button

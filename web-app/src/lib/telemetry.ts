@@ -256,3 +256,28 @@ export function finalizeDownloadOnce(id: string): boolean {
   if (finalizedDownloads.size > 500) finalizedDownloads.clear()
   return true
 }
+
+const modelLoadFailureThrottle = new Map<string, number>()
+const MODEL_LOAD_FAILURE_THROTTLE_MS = 5 * 60_000
+
+/**
+ * ATO-133: throttle repeated identical `model_load` failures. A device stuck in
+ * a load crashloop (model that keeps failing to load) otherwise emits thousands
+ * of identical events, skewing event-weighted metrics. Returns true if this
+ * (model, error_code) failure should be emitted, false if an identical one was
+ * already emitted within the throttle window. Successes are never throttled.
+ */
+export function shouldEmitModelLoadFailure(
+  modelId: string,
+  errorCode: string | null
+): boolean {
+  const key = `${modelId}::${errorCode ?? 'unknown'}`
+  const now = Date.now()
+  const last = modelLoadFailureThrottle.get(key)
+  if (last !== undefined && now - last < MODEL_LOAD_FAILURE_THROTTLE_MS) {
+    return false
+  }
+  modelLoadFailureThrottle.set(key, now)
+  if (modelLoadFailureThrottle.size > 500) modelLoadFailureThrottle.clear()
+  return true
+}

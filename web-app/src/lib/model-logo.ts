@@ -10,7 +10,14 @@ const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/qwen|qwq/i, '/svg/qwen-color.svg'],
   [/llama|meta-llama/i, '/svg/meta-color.svg'],
   [/mi[sx]tral|magistral|ministral|codestral|devstral/i, '/images/model-provider/mistral.svg'],
+  [/lfm/i, '/svg/liquid.svg'],
 ]
+
+// Single-color brand marks (drawn with `fill="currentColor"`). They must be
+// tinted with the current text color rather than rendered as a plain <img>,
+// otherwise a black-on-transparent mark vanishes on dark backgrounds. See
+// ModelLogo's CSS-mask render path.
+const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set(['/svg/liquid.svg'])
 
 export function modelFamilyLogoSrc(modelName?: string): string | null {
   if (!modelName) return null
@@ -18,4 +25,8 @@ export function modelFamilyLogoSrc(modelName?: string): string | null {
     if (pattern.test(modelName)) return src
   }
   return null
+}
+
+export function isMonochromeFamilyLogo(src: string): boolean {
+  return MONOCHROME_FAMILY_LOGOS.has(src)
 }

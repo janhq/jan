@@ -36,6 +36,10 @@ export const localStorageKey = {
   factoryResetPending: 'factory-reset-pending',
   lastSeenVersion: 'last-seen-version',
   threadNotifications: 'thread-notifications',
+  // Marks that we have seeded the default "Launch at startup" state once.
+  // Autostart defaults to ON for all users (new and existing); after this
+  // one-time seed, a user's manual choice in Settings is never overridden.
+  autostartSeeded: 'autostart-seeded',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

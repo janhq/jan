@@ -33,6 +33,25 @@ export function buildTraceBlocks(
       continue
     }
 
+    if (part.type === 'file') {
+      const filePart = part as {
+        type: 'file'
+        url?: string
+        mediaType?: string
+        filename?: string
+      }
+      if (filePart.url && filePart.mediaType?.startsWith('image/')) {
+        blocks.push({
+          kind: 'file',
+          key: `${message.id}-${i}`,
+          url: filePart.url,
+          mediaType: filePart.mediaType,
+          filename: filePart.filename,
+        })
+      }
+      continue
+    }
+
     if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
       const toolName = part.type.slice('tool-'.length)
       const state = 'state' in part ? part.state : 'output-available'

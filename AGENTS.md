@@ -352,7 +352,353 @@ Append-only. Newest at top. Each entry follows this shape:
   may drift.
 - **Owner:** team.
 - **Links:** branch `feat/launch-agents-pi-goose-openhands-kilo`.
+### 2026-06-10 — Add the LiquidAI (LFM) family logo to the Hub model-logo system + render monochrome brand marks via a theme-safe CSS mask (ATO-138)
+- **Context:** In Hub model search, LFM models (LiquidAI's *Liquid Foundation
+  Models*) showed letter placeholders instead of a brand icon — e.g.
+  `LFM2.5-8B-A1B-GGUF` by Unsloth → `U`, by LiquidAI → `L`,
+  `LFM2-24B-A2B-MLX-{4,5,6}bit` by Lmstudio-Community → `L`
+  ([ATO-138](https://linear.app/atomicchat/issue/ATO-138), v1.1.106). Root
+  cause: the family-logo registry in
+  [`web-app/src/lib/model-logo.ts`](web-app/src/lib/model-logo.ts) only
+  recognized deepseek / gemma / qwen / llama / mistral; LFM matched nothing, so
+  [`ModelLogo`](web-app/src/containers/ModelLogo.tsx) fell back to the first
+  letter of the author. The same-family models showed *different* letters
+  because the fallback keys on the quantizer (Unsloth / LiquidAI /
+  Lmstudio-Community), not the family. The system matches on the model **name
+  family** by design (so a community repack still shows the brand mark), exactly
+  per the issue's "show family logo, keep letter only as fallback".
+- **Decision:** Extend the existing local-asset family-logo mechanism (no remote
+  avatar fetch — that constraint is preserved). Two facets:
+  1. **Asset + rule.** Bundle the official LiquidAI brand mark (from
+     `@lobehub/icons`, the same set the other `*-color.svg` logos follow) at
+     [`web-app/public/svg/liquid.svg`](web-app/public/svg/liquid.svg) and add a
+     `/lfm/i → /svg/liquid.svg` rule to `FAMILY_LOGO_RULES`.
+  2. **Theme-safe monochrome render.** The Liquid mark is single-color
+     (`fill="currentColor"`, brand black); painted as a plain `<img>` it would
+     be near-invisible on the dark-theme tile (`dark:bg-input/30`). So
+     `model-logo.ts` now also exports `isMonochromeFamilyLogo(src)` (backed by a
+     `MONOCHROME_FAMILY_LOGOS` set), and `ModelLogo` renders such marks through a
+     CSS `mask-image` span tinted with `currentColor` (`text-foreground`) — so
+     they inherit a theme-aware color, mirroring the letter they replace. Colored
+     marks keep the existing `<img>` path (with its `onError` letter fallback).
+     `modelFamilyLogoSrc` keeps its `string | null` signature, so the other
+     consumer ([`SetupScreen.tsx`](web-app/src/containers/SetupScreen.tsx),
+     curated recs only — never LFM) is untouched.
+- **Consequences:** LFM models now show the LiquidAI mark regardless of who
+  quantized them; the letter remains the genuine fallback when no family logo
+  matches. Adding future monochrome brands is a two-line change (drop the SVG,
+  add it to the rules + the mono set); colored brands need only a rule. Scope:
+  web-app only (one new asset + two edited files); no Rust, IPC, schema, or
+  persistence change, and no remote fetch. Lint-clean on both edited files.
+- **Owner:** team.
+- **Links:** [ATO-138](https://linear.app/atomicchat/issue/ATO-138),
+  [@lobehub/icons](https://github.com/lobehub/lobe-icons) (Liquid mark source),
+  files: [`web-app/public/svg/liquid.svg`](web-app/public/svg/liquid.svg),
+  [`web-app/src/lib/model-logo.ts`](web-app/src/lib/model-logo.ts)
+  (`FAMILY_LOGO_RULES`, `isMonochromeFamilyLogo`),
+  [`web-app/src/containers/ModelLogo.tsx`](web-app/src/containers/ModelLogo.tsx)
+  (mono CSS-mask render path).
 
+### 2026-06-10 — Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)
+- **Context:** Epic [ATO-130](https://linear.app/atomicchat/issue/ATO-130)
+ reported three data-quality defects in the new PostHog telemetry (the
+ `model_load` / hardware super-prop / `api_server_request` work from the
+ 2026-06-09 ADRs *Extend the PostHog telemetry channel …* / ATO-108):
+ (1) [ATO-131](https://linear.app/atomicchat/issue/ATO-131) `model_load.status`
+ always `None` (19 788 events / 72 devices over 14d); (2)
+ [ATO-132](https://linear.app/atomicchat/issue/ATO-132) `api_server_request`
+ 404-noise not removed (~202k `not_found`) + new `error_kind`s nearly empty;
+ (3) [ATO-133](https://linear.app/atomicchat/issue/ATO-133) crashloop devices
+ spamming thousands of `model_load` events (top: 4504 / 3700 / 3458 / 1517 /
+ 1062). Investigation correlated the queries (run 2026-06-10) against the
+ release timeline: **the new telemetry first shipped in `v1.1.105`
+ (2026-06-09 ~17:52 MSK) and `v1.1.106` (18:27)** — i.e. < 1 day before the
+ 14-day-window queries, with rollout barely started (~87 / 2502 devices carry
+ `gpu_vendor`). Code audit at HEAD:
+ - **ATO-132 is already fixed in code.** [`proxy.rs`](src-tauri/src/core/server/proxy.rs)
+ sets `skip_emit = true` on the catch-all 404 (the `_ =>` arm) and on
+ `GET /v1/models` polling, and splits `upstream` into
+ `local_model_error` / `remote_provider_error` / `local_model_unreachable` /
+ `proxy_internal` / `server_bind_failed` via `upstream_error_kind` /
+ `unreachable_error_kind`. The 202k `not_found` + empty new kinds are the
+ **pre-`v1.1.105` population**; this self-resolves as `v1.1.106` rolls out. No
+ code change.
+ - **ATO-131 is not a code defect.** The sole emitter
+ ([`switchModel.ts::emitModelLoad`](web-app/src/utils/switchModel.ts), added
+ in `df7cc39d3`, in `v1.1.105`) sets `status: 'success' | 'failed'` in the
+ captured props; the PostHog `sanitize_properties` denylist in
+ [`AnalyticProvider.tsx`](web-app/src/providers/AnalyticProvider.tsx) does
+ **not** contain `status`; other props from the same `capture` call (model_id
+ etc.) arrive fine, ruling out an init/instance problem; and PostHog does not
+ reserve a top-level event property named `status`. No code defect was
+ identifiable from static analysis — fabricating a "fix" was rejected.
+ Recommended resolution is a filtered re-query (`app_version >= 1.1.105`,
+ tight window) to confirm whether it is a dirty-window artifact or a
+ PostHog-side ingestion/materialization quirk; renaming `status` →
+ `load_status` was rejected because it would break the existing dashboards
+ that GROUP BY `properties.status`.
+- **Decision:** Implement only the one defect that genuinely needs code —
+ ATO-133. Add a client-side throttle for **repeated identical `model_load`
+ failures**, following the existing dedup-helper pattern in
+ [`lib/telemetry.ts`](web-app/src/lib/telemetry.ts) (`finalizeDownloadOnce`,
+ the download-dedup trio): new `shouldEmitModelLoadFailure(modelId, errorCode)`
+ keyed on `${modelId}::${errorCode ?? 'unknown'}`, suppressing duplicates
+ within a 5-minute window (`MODEL_LOAD_FAILURE_THROTTLE_MS`, Map capped at 500
+ keys). `emitModelLoad` computes `error_code` up front and returns early when
+ the throttle says skip; **successes are never throttled** (they are not the
+ spam source and are individually valuable). This is the ticket's option (a)
+ ("don't send the same fail more than once per N minutes per device"); the
+ attempt-counter alternative was deliberately not taken (pure throttle is
+ minimal and the dashboards are already device-weighted, so losing per-burst
+ magnitude is acceptable).
+- **Consequences:**
+ - A device stuck in a load crashloop now emits at most one `model_load`
+ failure per (model, error_code) per 5 min instead of one per retry, so
+ event-weighted metrics stop being dominated by a handful of stuck machines.
+ The throttle is per-process in-memory (resets on app restart), which is fine
+ — it targets tight retry loops, not cross-session dedup.
+ - **Lossy by design:** exact retry counts within a window are not preserved
+ (accepted per ticket). The underlying *product* bug — why those machines
+ loop — is **not** addressed here (separate investigation noted on ATO-133).
+ - **ATO-131 / ATO-132 ship no code** from this session: ATO-132 awaits
+ rollout; ATO-131 awaits a filtered re-query to decide if any action is even
+ warranted. Scope: web-app only (two files), no Rust / IPC / schema / on-disk
+ change. Lint-clean on both edited files.
+- **Owner:** team.
+- **Links:** [ATO-130](https://linear.app/atomicchat/issue/ATO-130),
+ [ATO-131](https://linear.app/atomicchat/issue/ATO-131),
+ [ATO-132](https://linear.app/atomicchat/issue/ATO-132),
+ [ATO-133](https://linear.app/atomicchat/issue/ATO-133),
+ [ATO-112](https://linear.app/atomicchat/issue/ATO-112), the 2026-06-09 ADRs
+ *Extend the PostHog telemetry channel …* and *Add zero-PII Sentry …*, files:
+ [`web-app/src/lib/telemetry.ts`](web-app/src/lib/telemetry.ts)
+ (`shouldEmitModelLoadFailure`),
+ [`web-app/src/utils/switchModel.ts`](web-app/src/utils/switchModel.ts)
+ (`emitModelLoad`).
+
+### 2026-06-10 — Fix the two real model-load bugs under the Sentry retry-loop noise: resolve the `latest/<backend>` sentinel before load (ATO-124) + reactive MTP-disable fallback (ATO-125)
+- **Context:** First Sentry triage of `atomic-chat-desktop` ([ATO-123](https://linear.app/atomicchat/issue/ATO-123))
+ showed ~18k events in ~13h, ~90% a single backoff-less retry-loop, hiding two
+ real load bugs. **ATO-124 (Urgent):** `version_backend.includes('/')` was used
+ as the "backend resolved" predicate, but the sentinel `latest/<backend>` also
+ contains `/` and passed it, so the load path started on an unresolved sentinel
+ → `ensureBackendReady('latest')` → `downloadAndInstallBackend` throws on the
+ `version === 'latest'` guard (ATO-95) → web-app auto-restarts → tight loop
+ (Sentry `ATOMIC-CHAT-DESKTOP-1` win-cpu ~10.4k, `-5` linux-cpu ~6.5k; ~74% of
+ 90d events). **ATO-125 (Medium):** the else-branch that zeroed `mtp_draft_path`
+ left `cfg.mtp = true` for a model with no MTP layers/head (Gemma 4 E4B) →
+ `llama-server` aborts `context type MTP requested but model doesn't contain MTP
+ layers`.
+- **Decision:** Apply both fixes to the `llamacpp-upstream` extension (the
+ default/Windows+Linux provider). Crucially, **the ATO-125 preventive crash is
+ already fixed in the working tree** by the same-day ATO-122 load-time MTP
+ capability gate (`performLoad`, ~3268 — keeps `mtp` only for a Qwen built-in
+ MTP id or a resolved Gemma draft, else `cfg.mtp = false`), which is *stronger*
+ than ATO-125's optional preventive snippet (that snippet would wrongly disable
+ a Qwen built-in MTP model with no draft path). So ATO-125 here is implemented
+ only as the **reactive fallback** (variant A), as defense-in-depth, not a
+ duplicate preventive guard.
+ 1. Two pure helpers in
+ [`util.ts`](extensions/llamacpp-upstream-extension/src/util.ts):
+ `isConcreteVersionBackend(vb)` (BOM/whitespace-stripped; rejects empty /
+ `none` / no-slash / `latest/…` sentinel) and `matchesMtpLoadFailure(text)`
+ (matches the three MTP-rejection stderr phrasings, case-insensitive,
+ apostrophe-optional).
+ 2. **ATO-124** in [`index.ts`](extensions/llamacpp-upstream-extension/src/index.ts):
+ `configureBackends` (~737, apply bundled backend over a sentinel) and `load`
+ (~3075, wait for `configureBackends` when not yet concrete) now use
+ `isConcreteVersionBackend`; plus a defense-in-depth resolve at the top of
+ `performLoad` (before the `version_backend.split('/')`) that turns a leftover
+ `latest/<backend>` into a concrete `<tag>/<backend>` via
+ `resolveLatestBackendString` → `newestInstalledOfFamily`, **persisting** it to
+ `this.config` so subsequent loads short-circuit (and warns when both resolvers
+ return null — the accepted residual offline gap).
+ 3. **ATO-125** in `index.ts`: a one-shot retry inside `performLoad`'s `catch`
+ (after the mmproj text-only retry, before the final `logger.error`) — if
+ `cfg.mtp` and the error matches `matchesMtpLoadFailure`, retry once with
+ `cfg.mtp=false`/`mtp_draft_path=''`.
+- **Consequences:** The sentinel can no longer reach the download guard, killing
+ the dominant retry-loop at the source for every load entry point; MTP loads
+ degrade gracefully even if a future model slips past the ATO-122 gate. Scope:
+ web-app extension only (one Rust-free TS module + the extension entry); macOS
+ turboquant `llamacpp` and MLX unaffected. **Verified:** `ReadLints` clean on
+ all three files; `util.test.ts` 38/38 (21 new — 13 `isConcreteVersionBackend`
+ + 8 `matchesMtpLoadFailure`); rolldown build clean (`dist/index.js` 205 kB).
+ The 14 other failures in the extension suite are **pre-existing** — proven by a
+ stash-baseline run on HEAD showing the identical `index.test.ts`(9) /
+ `backend.test.ts`(4) / `autoIncreaseCtx.test.ts`(1) failures (env/network in
+ the sandbox), unchanged by this diff (66→87 passing = exactly +21). **Not
+ done:** ATO-126/127/128 (Sentry hygiene: backoff+dedup, noise downgrade,
+ `setUser`) are separate hygiene tickets; changes not committed/pushed (await
+ review).
+- **Owner:** team.
+- **Links:** [ATO-123](https://linear.app/atomicchat/issue/ATO-123),
+ [ATO-124](https://linear.app/atomicchat/issue/ATO-124),
+ [ATO-125](https://linear.app/atomicchat/issue/ATO-125),
+ [ATO-95](https://linear.app/atomicchat/issue/ATO-95), the 2026-06-10 ADR *Gate
+ the global `mtp` flag …* (ATO-122) and the 2026-06-05 ADRs *Resolve the
+ `latest/<backend>` sentinel …* / *Make the Windows release backend download
+ asset-aware …*, files:
+ [`util.ts`](extensions/llamacpp-upstream-extension/src/util.ts),
+ [`index.ts`](extensions/llamacpp-upstream-extension/src/index.ts),
+ [`util.test.ts`](extensions/llamacpp-upstream-extension/src/util.test.ts).
+
+### 2026-06-10 — Gate the global `mtp` flag on per-model capability at load time so non-MTP models can't be bricked by a stale toggle (ATO-122)
+- **Context:** The `llamacpp-upstream` **MTP (multi-token prediction)** toggle is
+ a **provider-global** setting (`mtp` in the extension's localStorage → loaded
+ into `this.config`), not bound to a model and never reset on model switch
+ (unlike MLX, which resets `mtp_enabled`/`dflash_enabled`/`eagle3_enabled` when
+ the active MLX model changes). So enabling MTP on a capable target (e.g. a
+ Qwen built-in-MTP GGUF) and then loading a model **without** MTP layers (e.g.
+ the **Recommended** `gemma-4-12b-it-IQ4_XS`) left `cfg.mtp === true`, and the
+ Rust arg builder [`add_mtp_args`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs)
+ gated **only** on `config.mtp` + build number — never on whether the GGUF is
+ MTP-capable. With an empty `mtp_draft_path` it emitted the Qwen-style
+ `--spec-type draft-mtp` (the model as its own draft context), and
+ `llama-server` (upstream `b9562`) aborted the whole load:
+ `context type MTP requested but model doesn't contain MTP layers` →
+ `failed to create MTP context` → exit. The user saw a generic
+ "Failed to load the model" and blamed themselves (Discord `ez5554`, Mac Studio
+ M4 Max, v1.1.104). Repro: enable MTP on Qwen → switch to Gemma-4-12B → Start →
+ crash. The same Gemma loads fine the moment MTP is toggled off. The crash is a
+ **first-run hazard** because Gemma-4-12B is Recommended.
+- **Decision:** Implement the ticket's **graceful-fallback** option (option 3 of
+ "any of"), at the lowest common load layer rather than only the UI toggle. A
+ new capability gate in
+ [`performLoad`](extensions/llamacpp-upstream-extension/src/index.ts) (right
+ after Gemma draft-head resolution, before building Rust args): when `cfg.mtp`
+ is on, keep it on **only** if the target genuinely supports MTP — either a
+ **Qwen-style built-in MTP** GGUF (`modelId.toLowerCase().includes('mtp')`,
+ mirroring the UI's own heuristic in
+ [`$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx))
+ **or** a **Gemma 4** target whose separate draft head resolved to a non-empty
+ `cfg.mtp_draft_path` above. Otherwise set `cfg.mtp = false` and `logger.warn`,
+ so the model loads cleanly without MTP. The gate sits in TS (not Rust) because
+ Rust cannot distinguish a Qwen built-in-MTP model from a plain GGUF — both
+ carry no draft path; only the extension knows the model id / Gemma registry.
+- **Consequences:**
+ - **The reported crash is gone for every load entry point** (chat model
+ switch, onboarding, API), not just the settings toggle. The Recommended
+ Gemma 4 model can no longer be bricked by a stale global MTP flag.
+ - **Emergent per-model behaviour without per-model state.** The provider
+ toggle stays in localStorage (still globally "on"); MTP now silently
+ *follows capability* — active for Qwen/Gemma MTP targets, dropped for
+ everything else, re-activating automatically when an MTP-capable model is
+ loaded again. This satisfies the spirit of option 1 (per-model) with a
+ one-block change and no schema/UI migration.
+ - **Deliberately did NOT** (a) move `mtp` into `model.yml` / `model.settings`
+ (larger UI + persistence change, unnecessary given the gate), or (b) add an
+ upstream model-change reset effect mirroring MLX (the load-time gate is
+ strictly more robust — it also covers loads triggered outside the settings
+ screen). The UI capability check in `handleToggleLlamacppMtp` (which only
+ runs when a model is already loaded) is left as-is; the gate backstops it.
+ - **Caveat:** the toggle UI can still read "on" while a non-MTP model is
+ loaded — accepted per the ticket (graceful fallback is an explicitly
+ acceptable resolution). Related to [ATO-121](https://linear.app/atomicchat/issue/ATO-121)
+ (surface a clear engine-incompatibility error), which is a separate ticket.
+ - Scope: one TS block in the upstream extension; no Rust, IPC, on-disk layout,
+ or settings-schema change. macOS turboquant `llamacpp` provider has no MTP
+ toggle and is unaffected; MLX is unaffected. Lint-clean on the edited file.
+- **Owner:** team.
+- **Links:** [ATO-122](https://linear.app/atomicchat/issue/ATO-122),
+ [ATO-121](https://linear.app/atomicchat/issue/ATO-121), §4.2 *LLM backend*,
+ the 2026-06-08 ADR *Add Gemma 4 MTP speculative decoding to `llamacpp-upstream`
+ via a separate draft head …*, files:
+ [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+ (`performLoad` MTP capability gate),
+ [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs)
+ (`add_mtp_args`),
+ [`web-app/src/routes/settings/providers/$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx)
+ (`handleToggleLlamacppMtp`).
+
+### 2026-06-10 — Render inline image (`file`) parts in the chat thread bubble (ATO-120)
+- **Context:** Attaching an image to a chat message (model
+ `gemma-4-12B-it-4bit`, a vision model; macOS) did **not** render the image in
+ the thread — neither in the user bubble nor in history — yet the model
+ received and correctly described it. So the image reached the backend; only
+ the **UI render path** was broken. Reproduced with both clipboard paste and
+ file upload ([ATO-120](https://linear.app/atomicchat/issue/ATO-120)). Root
+ cause: after the AI SDK / `UIMessage.parts` migration, images live as
+ `type: 'file'` parts (`mediaType` + data-URL `url`) and are forwarded to the
+ model via `convertToModelMessages`
+ ([`custom-chat-transport.ts`](web-app/src/lib/custom-chat-transport.ts)), but
+ the **display** path never handled them:
+ [`buildTraceBlocks`](web-app/src/lib/tools/message-trace-parts.ts) only
+ emitted `text` / `reasoning` / `tool-*` blocks and silently dropped `file`
+ parts, and [`MessageItem`](web-app/src/containers/MessageItem.tsx) only
+ rendered those block kinds (image URLs were extracted **only** to feed the
+ Edit dialog's thumbnails — proof the data was present). Net effect: text
+ bubble shown, image gone; an image-only message rendered as a blank row. The
+ `previewImage` full-screen overlay already existed in `MessageItem` but
+ `setPreviewImage` was never called (dead code).
+- **Decision:** Implement the missing render path (display-only; no change to
+ the model/persistence path, which already round-trips images correctly via
+ [`messages.ts`](web-app/src/lib/messages.ts) ↔ `ContentType.Image`). Three
+ edits:
+ 1. New `TraceBlock` variant `{ kind: 'file'; key; url; mediaType; filename? }`
+ in [`types.ts`](web-app/src/lib/tools/types.ts).
+ 2. `buildTraceBlocks` now emits a `file` block for any
+ `part.type === 'file'` whose `mediaType` starts with `image/` (preserving
+ part order; non-image files are still ignored).
+ 3. `MessageItem` gains `renderFileBlock` (an `<img>` thumbnail, capped
+ `max-h-80`, aligned right for user / left for assistant) wired into the
+ block switch, and clicking it now drives the **previously-dead**
+ `setPreviewImage` overlay for full-screen preview.
+- **Consequences:** Attached images render inline in the thread for both fresh
+ sends and reloaded history; image-only messages are no longer blank; the
+ full-screen image preview is now reachable. Display-only — no Rust, IPC,
+ schema, or persistence change; non-image attachments and the document-chip
+ (`[ATTACHED_FILES]`) path are untouched. Images render in natural part order
+ (text-then-image for user sends) rather than grouped inside the text bubble —
+ acceptable and minimal; grouping into a single bubble was deliberately not
+ done. Verified: `tsc -b` clean, `eslint` clean on the three touched files.
+ **Not done:** preserving images on message edit (`handleEditMessage` still
+ strips to text-only) and the orphan `ImageModal` component remain as-is.
+- **Owner:** team.
+- **Links:** [ATO-120](https://linear.app/atomicchat/issue/ATO-120), files:
+ [`web-app/src/lib/tools/types.ts`](web-app/src/lib/tools/types.ts),
+ [`web-app/src/lib/tools/message-trace-parts.ts`](web-app/src/lib/tools/message-trace-parts.ts),
+ [`web-app/src/containers/MessageItem.tsx`](web-app/src/containers/MessageItem.tsx).
+
+### 2026-06-10 — Default "Launch at startup" to ON for all users (new + existing), one-time seed, still user-disable-able
+- **Context:** The ATO-96 autostart feature shipped with the default **OFF**
+ (the plugin created no autostart entry unless the user flipped the
+ Settings → General toggle; there was deliberately no auto-`enable()` on first
+ launch). Product wants autostart **ON by default for everyone** — both fresh
+ installs and existing users on update — while preserving the ability to turn
+ it off in Settings.
+- **Decision:** Add a one-time **seed** at app startup. New localStorage key
+ `autostartSeeded` (`'autostart-seeded'`) in
+ [`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts).
+ A new `IS_TAURI`-gated effect in
+ [`web-app/src/providers/DataProvider.tsx`](web-app/src/providers/DataProvider.tsx)
+ (mounted at app root, runs once on startup) checks the seed flag; if unset it
+ calls `enable()` from `@tauri-apps/plugin-autostart` when autostart isn't
+ already on, then records the flag. The flag is set **only after** autostart is
+ confirmed on (already-enabled or successful `enable()`), so a transient
+ failure retries on the next launch, and — critically — once seeded a later
+ manual **disable** in Settings is never re-enabled. The existing
+ Settings → General toggle ([`general.tsx`](web-app/src/routes/settings/general.tsx))
+ still reads the OS as source of truth and is unchanged.
+- **Consequences:**
+ - Fresh installs and existing users (on the first launch after this ships)
+ get autostart turned ON automatically, exactly once. Users who then disable
+ it keep it disabled (seed flag already set). Users who had **manually**
+ enabled it before are unaffected (seed sees it already on, just records the
+ flag).
+ - **Reverses the ATO-96 "default OFF / no auto-enable on first launch"
+ decision.** Desktop-only (gated by `IS_TAURI`); mobile unaffected. No Rust,
+ capability, or schema change — purely a web-app startup seed reusing the
+ already-registered `tauri-plugin-autostart`. Lint-clean on both touched files.
+ - **Caveat:** the seed is keyed on localStorage, so a factory reset / cleared
+ localStorage re-seeds (re-enables) autostart once — acceptable given the new
+ default is ON anyway.
+- **Owner:** team.
+- **Links:** [ATO-96](https://linear.app/atomicchat/issue/ATO-96), the
+ 2026-06-09 ADR *Add a cross-platform "Launch at startup" toggle …*, files:
+ [`web-app/src/providers/DataProvider.tsx`](web-app/src/providers/DataProvider.tsx),
+ [`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts),
+ [`web-app/src/routes/settings/general.tsx`](web-app/src/routes/settings/general.tsx).
 ### 2026-06-09 — Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)
 - **Context:** The app had no crash/error telemetry — user-facing failures
   (model-load crashes incl. OOM, download failures, context overflow) surfaced

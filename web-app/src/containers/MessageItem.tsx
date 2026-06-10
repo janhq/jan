@@ -40,6 +40,7 @@ const CONTENT_TYPE = {
 type TextTraceBlock = Extract<TraceBlock, { kind: 'text' }>
 type ReasoningTraceBlock = Extract<TraceBlock, { kind: 'reasoning' }>
 type ToolTraceBlock = Extract<TraceBlock, { kind: 'tool' }>
+type FileTraceBlock = Extract<TraceBlock, { kind: 'file' }>
 
 export type MessageItemProps = {
   message: UIMessage
@@ -249,6 +250,32 @@ export const MessageItem = memo(
       )
     }
 
+    const renderFileBlock = (block: FileTraceBlock) => {
+      return (
+        <div
+          key={block.key}
+          className={cn(
+            'flex w-full mb-2',
+            message.role === 'user' ? 'justify-end' : 'justify-start'
+          )}
+        >
+          <button
+            type="button"
+            className="block overflow-hidden rounded-md border border-border max-w-[80%] cursor-pointer"
+            onClick={() =>
+              setPreviewImage({ url: block.url, filename: block.filename })
+            }
+          >
+            <img
+              src={block.url}
+              alt={block.filename || 'Attached image'}
+              className="max-h-80 w-auto object-contain"
+            />
+          </button>
+        </div>
+      )
+    }
+
     const renderToolBlock = (block: ToolTraceBlock) => {
       return (
         <Tool
@@ -275,6 +302,8 @@ export const MessageItem = memo(
               return renderTextBlock(block, index)
             case 'reasoning':
               return renderReasoningBlock(block, index)
+            case 'file':
+              return renderFileBlock(block)
             case 'tool':
               return renderToolBlock(block)
             default:

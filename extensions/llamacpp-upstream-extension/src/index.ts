@@ -46,6 +46,8 @@ import {
   getProxyConfig,
   buildEmbedBatches,
   mergeEmbedResponses,
+  isConcreteVersionBackend,
+  matchesMtpLoadFailure,
   type EmbedBatchResult,
 } from './util'
 import {
@@ -734,11 +736,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       if (bundledBackendString) {
         const vbAfterRecovery = this.config.version_backend || ''
-        if (
-          !vbAfterRecovery ||
-          vbAfterRecovery === 'none' ||
-          !vbAfterRecovery.includes('/')
-        ) {
+        // ATO-124: treat the unresolved `latest/<backend>` sentinel as
+        // "not yet a concrete backend" so the bundled backend is applied over
+        // it. The old `!includes('/')` check let the sentinel through, leaving
+        // an unresolved `latest/<backend>` pinned → tight retry-loop on load.
+        if (!isConcreteVersionBackend(vbAfterRecovery)) {
           this.config.version_backend = bundledBackendString
           logger.info(
             `Applied bundled backend immediately: ${bundledBackendString}`
@@ -3072,7 +3074,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
   ): Promise<SessionInfo> {
     if (this.configureBackendsPromise) {
       const vb = this.config.version_backend || ''
-      if (!vb || vb === 'none' || !vb.includes('/')) {
+      // ATO-124: the `latest/<backend>` sentinel is NOT a concrete backend —
+      // wait for configureBackends to resolve/replace it before loading,
+      // otherwise the load races ahead with an unresolved sentinel.
+      if (!isConcreteVersionBackend(vb)) {
         logger.info(
           `Waiting for backend configuration to complete before loading model "${modelId}"...`
         )
@@ -3168,6 +3173,31 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     const envs: Record<string, string> = {}
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
+
+    // ATO-124 (defense-in-depth): if the version_backend is still the
+    // unresolved `latest/<backend>` sentinel by the time we reach the actual
+    // load, resolve it to a concrete `<tag>/<backend>` here (release lookup,
+    // then newest-installed-of-family fallback) and persist it so subsequent
+    // loads short-circuit. Without this, the split below yields version
+    // `'latest'` and the backend path lookup 404s → retry-loop.
+    if (stripBom(cfg.version_backend || '').startsWith('latest/')) {
+      const sentinelBackend = stripBom(cfg.version_backend.split('/')[1] || '')
+      const resolved =
+        (await this.resolveLatestBackendString(sentinelBackend)) ||
+        (await this.newestInstalledOfFamily(sentinelBackend))
+      if (resolved) {
+        cfg.version_backend = resolved
+        this.config.version_backend = resolved
+        logger.info(
+          `[performLoad] Resolved latest sentinel for '${sentinelBackend}' to '${resolved}'`
+        )
+      } else {
+        logger.warn(
+          `[performLoad] Could not resolve latest sentinel for '${sentinelBackend}' (offline and no installed copy of the family).`
+        )
+      }
+    }
+
     const [version, backend] = cfg.version_backend.split('/')
 
     if (!version || !backend) {
@@ -3255,6 +3285,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
       cfg.mtp_draft_path = ''
     }
 
+    // MTP capability gate (ATO-122). `mtp` is a provider-global toggle, so it
+    // stays on when switching models and is not bound to a specific model.
+    // Passing it to a model that has no MTP layers makes llama-server abort the
+    // load ("context type MTP requested but model doesn't contain MTP layers").
+    // Only keep MTP enabled when the target actually supports it: a Qwen-style
+    // built-in MTP GGUF (its id carries "mtp", matching the UI's own heuristic)
+    // or a Gemma 4 target whose separate draft head was resolved above.
+    // Otherwise silently load without MTP (warn only) instead of crashing — this
+    // covers every load entry point, not just the settings toggle, so the
+    // Recommended Gemma 4 model can never be bricked by a stale global flag.
+    if (cfg.mtp) {
+      const isQwenBuiltinMtp = modelId.toLowerCase().includes('mtp')
+      const hasGemmaDraft = cfg.mtp_draft_path.length > 0
+      if (!isQwenBuiltinMtp && !hasGemmaDraft) {
+        logger.warn(
+          `MTP is enabled but model "${modelId}" has no MTP layers and no draft head; loading without MTP.`
+        )
+        cfg.mtp = false
+      }
+    }
+
     if (!this.modelMaxCtxTrain.has(modelId)) {
       const max = await this.resolveModelMaxCtxTrain(modelPath)
       if (typeof max === 'number') {
@@ -3334,6 +3385,45 @@ export default class llamacpp_upstream_extension extends AIEngine {
           throw toLoadError(retryError)
         }
       }
+
+      // ATO-125 (defense-in-depth): MTP is a provider-global toggle and the
+      // preventive capability gate above (ATO-122) already drops it for models
+      // with no MTP layers / draft head. This reactive fallback is a backstop:
+      // if a load still fails with an MTP-rejection from llama-server (no
+      // structured code → match stderr), retry once with MTP disabled instead
+      // of surfacing an opaque crash.
+      if (cfg.mtp && matchesMtpLoadFailure(formatLoadError(error))) {
+        logger.warn(
+          `Model "${modelId}" does not support MTP. Retrying with MTP disabled.`
+        )
+        cfg.mtp = false
+        cfg.mtp_draft_path = ''
+        try {
+          const sInfo = await loadLlamaModel(
+            backendPath,
+            modelId,
+            modelPath,
+            port,
+            cfg,
+            envs,
+            mmprojPath,
+            isEmbedding,
+            Number(this.timeout)
+          )
+          this.sessionCache.set(modelId, sInfo)
+          if (typeof cfg.ctx_size === 'number') {
+            this.modelCtxSize.set(modelId, cfg.ctx_size)
+          }
+          return sInfo
+        } catch (retryError) {
+          logger.error(
+            'Retry after unsupported MTP also failed:\n' +
+              formatLoadError(retryError)
+          )
+          throw toLoadError(retryError)
+        }
+      }
+
       logger.error('Error in load command:\n' + formatLoadError(error))
       throw toLoadError(error)
     }

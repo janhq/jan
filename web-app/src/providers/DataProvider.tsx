@@ -1,3 +1,7 @@
+import {
+  enable as enableAutostart,
+  isEnabled as isAutostartEnabled,
+} from '@tauri-apps/plugin-autostart'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { localStorageKey } from '@/constants/localStorage'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
@@ -98,6 +102,25 @@ export function DataProvider() {
         'Factory reset detected — localStorage force-cleared on startup (backend preserved)'
       )
     }
+  }, [])
+
+  // Default "Launch at startup" to ON for every user (new and existing). We
+  // seed the OS autostart entry exactly once and record it, so a later manual
+  // disable in Settings → General is never overridden. (Flips the ATO-96
+  // default from OFF to ON; users can still turn it off.)
+  useEffect(() => {
+    if (!IS_TAURI) return
+    if (localStorage.getItem(localStorageKey.autostartSeeded) === 'true') return
+    ;(async () => {
+      try {
+        if (!(await isAutostartEnabled())) {
+          await enableAutostart()
+        }
+        localStorage.setItem(localStorageKey.autostartSeeded, 'true')
+      } catch (error) {
+        console.error('Failed to seed launch-at-startup default:', error)
+      }
+    })()
   }, [])
 
   useEffect(() => {

@@ -18,6 +18,42 @@ export function basenameNoExt(filePath: string): string {
   return filePath;
 }
 
+/**
+ * True iff `vb` is a CONCRETE `<version>/<backend>` string. Excludes empty,
+ * `'none'`, no-slash, and the unresolved `latest/<backend>` sentinel. Strips
+ * BOM / surrounding whitespace before checking (ATO-124).
+ *
+ * The bug this guards against: `version_backend.includes('/')` was used as a
+ * proxy for "backend is resolved", but the sentinel `latest/<backend>` also
+ * contains a `/` and passed that check, so the load path started before the
+ * sentinel was resolved to a real release tag → `ensureBackendReady('latest')`
+ * → `downloadAndInstallBackend` throws on the `version === 'latest'` guard →
+ * web-app auto-restarts → tight retry-loop.
+ */
+export function isConcreteVersionBackend(
+  vb: string | undefined | null
+): boolean {
+  const v = (vb ?? '').replace(/\uFEFF/g, '').trim()
+  if (!v || v === 'none') return false
+  if (!v.includes('/')) return false
+  if (v.startsWith('latest/')) return false
+  return true
+}
+
+/**
+ * True iff the load-error text is an MTP-rejection (MTP requested on a model
+ * with no MTP layers / no draft head). llama.cpp surfaces no structured error
+ * code for this, so we match the stderr text (ATO-125).
+ */
+export function matchesMtpLoadFailure(text: string): boolean {
+  if (!text) return false
+  return (
+    /failed to create MTP context/i.test(text) ||
+    /context type MTP requested/i.test(text) ||
+    /doesn'?t contain MTP layers/i.test(text)
+  )
+}
+
 // Zustand proxy state structure
 interface ProxyState {
   proxyEnabled: boolean
