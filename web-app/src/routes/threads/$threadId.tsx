@@ -414,7 +414,8 @@ function ThreadDetail() {
           assistantCount === 1 ||
           (assistantCount > 0 &&
             assistantCount % TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES === 0)
-        if (isRefreshTick) {
+        const currentThread = useThreads.getState().threads[threadId]
+        if (isRefreshTick && !currentThread?.metadata?.titleSetManually) {
           const TITLE_TRANSCRIPT_MAX_TURNS = 8
           const recent = localMessages.slice(-TITLE_TRANSCRIPT_MAX_TURNS)
           const inputText =
