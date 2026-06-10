@@ -487,6 +487,7 @@ const ChatInput = memo(function ChatInput({
   }
   const handleSendMessageRef = useRef(handleSendMessage)
 
+  // Keep the once-registered OpenUI listener pointed at the latest send closure.
   useEffect(() => {
     handleSendMessageRef.current = handleSendMessage
   })
@@ -1958,9 +1959,10 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode &&
+                  selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
-                  (MCPToolComponent ? (
+                  MCPToolComponent && (
                     // Use custom MCP component
                     <McpExtensionToolLoader
                       tools={tools}
@@ -1971,57 +1973,69 @@ const ChatInput = memo(function ChatInput({
                       initialMessage={initialMessage}
                       MCPToolComponent={MCPToolComponent}
                     />
-                  ) : (
-                    // Use default tools dropdown
-                    <Tooltip
-                      open={tooltipShown === 'tools'}
-                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
+                  )}
+
+                <Tooltip
+                  open={tooltipShown === 'tools'}
+                  onOpenChange={(newValue) =>
+                    newValue
+                      ? setTooltipShown('tools')
+                      : setTooltipShown(false)
+                  }
+                >
+                  <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
+                    <Button
+                      variant={isOpenUIEnabled ? 'default' : 'ghost'}
+                      size="icon-xs"
+                      aria-label={t('tools')}
+                      onClick={(e) => {
+                        setDropdownToolsAvailable(false)
+                        e.stopPropagation()
+                      }}
+                      className={cn(
+                        isOpenUIEnabled &&
+                          'text-primary bg-primary/10 hover:bg-primary/10'
+                      )}
                     >
-                      <TooltipTrigger
-                        asChild
-                        disabled={dropdownToolsAvailable}
+                      <DropdownToolsAvailable
+                        initialMessage={initialMessage}
+                        openUIEnabled={isOpenUIEnabled}
+                        onOpenUIToggle={handleOpenUIToggle}
+                        showMCPTools={
+                          !effectiveAgentMode &&
+                          selectedModel?.capabilities?.includes('tools') &&
+                          hasActiveMCPServers &&
+                          !MCPToolComponent
+                        }
+                        onOpenChange={(isOpen) => {
+                          setDropdownToolsAvailable(isOpen)
+                          if (isOpen) {
+                            setTooltipShown(false)
+                          }
+                        }}
                       >
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={(e) => {
-                            setDropdownToolsAvailable(false)
-                            e.stopPropagation()
-                          }}
-                        >
-                          <DropdownToolsAvailable
-                            initialMessage={initialMessage}
-                            onOpenChange={(isOpen) => {
-                              setDropdownToolsAvailable(isOpen)
-                              if (isOpen) {
-                                setTooltipShown(false)
-                              }
-                            }}
+                        {() => (
+                          <div
+                            className={cn(
+                              'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
+                            )}
                           >
-                            {() => {
-                              return (
-                                <div
-                                  className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                                  )}
-                                >
-                                  <IconTool
-                                    size={18}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                    )}
-                                  />
-                                </div>
-                              )
-                            }}
-                          </DropdownToolsAvailable>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('tools')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
+                            <IconTool
+                              size={18}
+                              className={cn(
+                                'text-muted-foreground',
+                                isOpenUIEnabled && 'text-primary'
+                              )}
+                            />
+                          </div>
+                        )}
+                      </DropdownToolsAvailable>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('tools')}</p>
+                  </TooltipContent>
+                </Tooltip>
 
                 {/* Agent mode toggle hidden — kept as dead code for future use */}
                 {false && !projectId && isAgentMode && (
@@ -2053,30 +2067,6 @@ const ChatInput = memo(function ChatInput({
                     </TooltipContent>
                   </Tooltip>
                 )}
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={isOpenUIEnabled ? 'default' : 'ghost'}
-                      size="icon-xs"
-                      onClick={handleOpenUIToggle}
-                      aria-label={t('common:openui')}
-                      className={cn(
-                        isOpenUIEnabled &&
-                          'text-primary bg-primary/10 hover:bg-primary/10'
-                      )}
-                    >
-                      <img
-                        src="/images/openui.svg"
-                        alt=""
-                        className="size-[18px] dark:invert"
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('common:openui')}</p>
-                  </TooltipContent>
-                </Tooltip>
 
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>

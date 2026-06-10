@@ -21,6 +21,7 @@ type OpenUISettingsPersistedSlice = Pick<
   'enabledThreads' | 'componentLibrary'
 >
 
+// TODO: Reconcile persisted IDs when threads are deleted outside this store.
 const defaultOpenUISettings: OpenUISettingsPersistedSlice = {
   enabledThreads: {},
   componentLibrary: 'chat',

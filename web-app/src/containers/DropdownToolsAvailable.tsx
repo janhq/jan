@@ -1,4 +1,4 @@
-import { useEffect, useState, memo } from 'react'
+import { useEffect, useMemo, useState, memo } from 'react'
 
 import {
   DropDrawer,
@@ -27,16 +27,28 @@ interface DropdownToolsAvailableProps {
   children: (isOpen: boolean, toolsCount: number) => React.ReactNode
   initialMessage?: boolean
   onOpenChange?: (isOpen: boolean) => void
+  openUIEnabled: boolean
+  onOpenUIToggle: () => void
+  showMCPTools?: boolean
 }
 
 export default memo(function DropdownToolsAvailable({
   children,
   initialMessage = false,
   onOpenChange,
+  openUIEnabled,
+  onOpenUIToggle,
+  showMCPTools = true,
 }: DropdownToolsAvailableProps) {
   const allTools = useAppState((state) => state.tools)
   // Filter out Jan Browser MCP tools
-  const tools = allTools.filter((tool) => tool.server !== 'Jan Browser MCP')
+  const tools = useMemo(
+    () =>
+      showMCPTools
+        ? allTools.filter((tool) => tool.server !== 'Jan Browser MCP')
+        : [],
+    [allTools, showMCPTools]
+  )
   const [isOpen, setIsOpen] = useState(false)
   const { t } = useTranslation()
 
@@ -138,20 +150,6 @@ export default memo(function DropdownToolsAvailable({
   }
 
   const renderTrigger = () => children(isOpen, getEnabledToolsCount())
-
-  if (tools.length === 0) {
-    return (
-      <DropDrawer onOpenChange={handleOpenChange}>
-        <DropDrawerTrigger asChild>{renderTrigger()}</DropDrawerTrigger>
-        <DropDrawerContent align="start" className="max-w-64">
-          <DropDrawerItem disabled>
-            {t('common:noToolsAvailable')}
-          </DropDrawerItem>
-        </DropDrawerContent>
-      </DropDrawer>
-    )
-  }
-
   const toolsByServer = getToolsByServer()
 
   return (
@@ -164,9 +162,43 @@ export default memo(function DropdownToolsAvailable({
         onClick={(e) => e.stopPropagation()}
       >
         <DropDrawerLabel className="flex items-center gap-2 sticky -top-1 z-10 px-4 pl-2 py-1">
-          Available Tools
+          {t('common:tools')}
         </DropDrawerLabel>
         <DropDrawerSeparator />
+        <DropDrawerGroup>
+          <DropDrawerItem
+            className="py-2"
+            onSelect={(event) => {
+              event.preventDefault()
+              onOpenUIToggle()
+            }}
+            icon={
+              <Switch
+                aria-label={t('common:openui')}
+                checked={openUIEnabled}
+                onCheckedChange={onOpenUIToggle}
+                onClick={(event) => event.stopPropagation()}
+              />
+            }
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <img
+                src="/images/openui.svg"
+                alt=""
+                className="size-5 shrink-0 dark:invert"
+              />
+              <div className="min-w-0">
+                <span className="block text-sm font-medium">
+                  {t('common:openui')}
+                </span>
+                <p className="truncate text-xs text-muted-foreground">
+                  {t('settings:openui.description')}
+                </p>
+              </div>
+            </div>
+          </DropDrawerItem>
+        </DropDrawerGroup>
+        {tools.length > 0 && <DropDrawerSeparator />}
         <div className="max-h-64 overflow-y-auto">
           <DropDrawerGroup>
             {Object.entries(toolsByServer).map(([serverName, serverTools]) => (

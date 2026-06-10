@@ -45,6 +45,8 @@ If Jan cannot parse the response as OpenUI, it falls back to Markdown rendering.
 
 ## Safety
 
+Jan does not execute raw HTML from OpenUI Lang: the parser can only instantiate components registered in the selected library, and text is rendered as React content. The Standard library is supplied by the upstream `@openuidev/react-ui` package, so its component implementations remain part of Jan's dependency trust boundary. Treat model-generated UI as untrusted and review actions before interacting with it.
+
 OpenUI actions can send follow-up messages back into the active chat input. Model-generated `OpenUrl` actions are restricted to `https:` and `http:` URLs before Jan opens them in a new tab.
 
 ## Custom Libraries

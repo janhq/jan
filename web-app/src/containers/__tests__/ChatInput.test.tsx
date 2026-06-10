@@ -237,7 +237,18 @@ vi.mock('@/containers/QueuedMessageBubble', () => ({
 }))
 vi.mock('@/containers/DropdownToolsAvailable', () => ({
   __esModule: true,
-  default: () => <div data-testid="stub-tools" />,
+  default: ({ children, onOpenUIToggle }: any) => (
+    <div data-testid="stub-tools">
+      {children(false, 0)}
+      <span
+        role="menuitemcheckbox"
+        tabIndex={0}
+        aria-label="common:openui"
+        data-testid="openui-tools-menu-toggle"
+        onClick={onOpenUIToggle}
+      />
+    </div>
+  ),
 }))
 vi.mock('@/containers/AvatarEmoji', () => ({
   AvatarEmoji: () => <span data-testid="stub-avatar" />,
@@ -414,7 +425,7 @@ describe('ChatInput', () => {
   it('toggles OpenUI for the active thread', () => {
     renderInput()
 
-    fireEvent.click(screen.getByRole('button', { name: 'common:openui' }))
+    fireEvent.click(screen.getByTestId('openui-tools-menu-toggle'))
 
     expect(toggleOpenUIMock).toHaveBeenCalledWith('thread-1')
   })
