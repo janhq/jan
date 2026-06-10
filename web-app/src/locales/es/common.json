@@ -287,6 +287,7 @@
     "filesDescription": "Agrega PDFs, documentos u otros textos para usar como referencia en este proyecto.",
     "uploadingFiles": "Procesando archivos…",
     "processButton": "Añadir",
+    "archiveChats": "Archivar chats",
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
       "permanentDelete": "Esto eliminará permanentemente todos los hilos.",
@@ -332,7 +333,11 @@
     "update": "Actualizar",
     "searchProjects": "Buscar proyectos...",
     "noProjectsFound": "No se encontraron proyectos",
-    "tryDifferentSearch": "Prueba con un término de búsqueda diferente"
+    "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
+    "archiveChatsDialog": {
+      "title": "Archivar conversaciones",
+      "description": "Archivar {{count}} conversaciones en \"{{projectName}}\"."
+    }
   },
   "attachmentsIngestion": {
     "title": "Elige cómo procesar los adjuntos",

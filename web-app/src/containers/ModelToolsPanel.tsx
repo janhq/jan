@@ -1052,12 +1052,11 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
   const [codexThreadSettingsJson, setCodexThreadSettingsJson] = useState(
     '{"approvalPolicy":"on-request"}'
   )
+  const [codexThreadName, setCodexThreadNameInput] = useState('')
   const [codexThreadGoalObjective, setCodexThreadGoalObjective] = useState('')
-  const [codexRollbackParamsJson, setCodexRollbackParamsJson] = useState(
-    '{"turnId":"","itemId":""}'
-  )
-  const [codexTurnItemsParamsJson, setCodexTurnItemsParamsJson] =
-    useState('{"limit":50}')
+  const [codexTargetTurnId, setCodexTargetTurnId] = useState('')
+  const [codexTargetItemId, setCodexTargetItemId] = useState('')
+  const [codexTurnItemsLimit, setCodexTurnItemsLimit] = useState('50')
   const [codexInjectItemsJson, setCodexInjectItemsJson] = useState('[]')
   const [codexRealtimeText, setCodexRealtimeText] = useState('')
   const [codexRealtimeAudioBase64, setCodexRealtimeAudioBase64] = useState('')
@@ -2094,13 +2093,20 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
               disabled={!targetCodexThreadId || threadBusy}
               onClick={() =>
                 void withTargetCodexThread(async (threadId) => {
+                  const parsedLimit = Number.parseInt(codexTurnItemsLimit, 10)
+                  const params: Record<string, unknown> = {
+                    threadId,
+                  }
+                  if (codexTargetTurnId.trim()) {
+                    params.turnId = codexTargetTurnId.trim()
+                  }
+                  if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+                    params.limit = parsedLimit
+                  }
                   const result = await callCodexAppServer(
                     currentThreadIdForCaps!,
                     'thread/turns/items/list',
-                    {
-                      threadId,
-                      ...JSON.parse(codexTurnItemsParamsJson || '{}'),
-                    }
+                    params
                   )
                   setCodexThreadTurnItems(result)
                   return result
@@ -2129,22 +2135,6 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
             />
             <textarea
               className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
-              placeholder="Rollback params JSON"
-              value={codexRollbackParamsJson}
-              onChange={(event) =>
-                setCodexRollbackParamsJson(event.target.value)
-              }
-            />
-            <textarea
-              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
-              placeholder="Turn items params JSON"
-              value={codexTurnItemsParamsJson}
-              onChange={(event) =>
-                setCodexTurnItemsParamsJson(event.target.value)
-              }
-            />
-            <textarea
-              className="min-h-12 w-full resize-y rounded border bg-background px-2 py-1 font-mono text-[10px]"
               placeholder="Items JSON array to inject"
               value={codexInjectItemsJson}
               onChange={(event) => setCodexInjectItemsJson(event.target.value)}
@@ -2153,11 +2143,35 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
           <div className="mb-1 grid grid-cols-1 gap-1 md:grid-cols-3">
             <Input
               className="h-6 px-2 text-[10px]"
+              placeholder="Thread name"
+              value={codexThreadName}
+              onChange={(event) => setCodexThreadNameInput(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
               placeholder="Goal objective"
               value={codexThreadGoalObjective}
               onChange={(event) =>
                 setCodexThreadGoalObjective(event.target.value)
               }
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Turn id for items / rollback"
+              value={codexTargetTurnId}
+              onChange={(event) => setCodexTargetTurnId(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Item id for rollback"
+              value={codexTargetItemId}
+              onChange={(event) => setCodexTargetItemId(event.target.value)}
+            />
+            <Input
+              className="h-6 px-2 text-[10px]"
+              placeholder="Turn items limit"
+              value={codexTurnItemsLimit}
+              onChange={(event) => setCodexTurnItemsLimit(event.target.value)}
             />
             <Input
               className="h-6 px-2 text-[10px]"
@@ -2238,13 +2252,14 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
             <button
               type="button"
               className="text-[9px] underline disabled:opacity-50"
-              disabled={!targetCodexThreadId || threadBusy}
+              disabled={
+                !targetCodexThreadId || threadBusy || !codexThreadName.trim()
+              }
               onClick={() => {
-                const name = window.prompt('Thread name:')
-                if (!name?.trim()) return
+                const name = codexThreadName.trim()
                 void withTargetCodexThread(
                   (threadId) =>
-                    setCodexThreadName(currentThreadIdForCaps!, threadId, name.trim()),
+                    setCodexThreadName(currentThreadIdForCaps!, threadId, name),
                   'Codex thread renamed'
                 )
               }}
@@ -2457,20 +2472,22 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
               className="text-[9px] underline disabled:opacity-50"
               disabled={!targetCodexThreadId || threadBusy}
               onClick={() => {
-                try {
-                  const params = JSON.parse(codexRollbackParamsJson || '{}')
-                  void withTargetCodexThread(
-                    (threadId) =>
-                      callCodexAppServer(
-                        currentThreadIdForCaps!,
-                        'thread/rollback',
-                        { threadId, ...params }
-                      ),
-                    'Codex rollback requested'
-                  )
-                } catch (e) {
-                  setCapError('Rollback params JSON parse failed: ' + String(e))
+                const params: Record<string, unknown> = {}
+                if (codexTargetTurnId.trim()) {
+                  params.turnId = codexTargetTurnId.trim()
                 }
+                if (codexTargetItemId.trim()) {
+                  params.itemId = codexTargetItemId.trim()
+                }
+                void withTargetCodexThread(
+                  (threadId) =>
+                    callCodexAppServer(
+                      currentThreadIdForCaps!,
+                      'thread/rollback',
+                      { threadId, ...params }
+                    ),
+                  'Codex rollback requested'
+                )
               }}
             >
               Rollback
@@ -2670,31 +2687,13 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
                 <button
                   key={turnId}
                   type="button"
-                  className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    codexTargetTurnId.trim() === turnId && 'bg-accent'
+                  )}
                   title={turnId}
                   onClick={() => {
-                    setCodexTurnItemsParamsJson((previous) => {
-                      try {
-                        return JSON.stringify(
-                          { ...JSON.parse(previous || '{}'), turnId },
-                          null,
-                          2
-                        )
-                      } catch {
-                        return JSON.stringify({ turnId }, null, 2)
-                      }
-                    })
-                    setCodexRollbackParamsJson((previous) => {
-                      try {
-                        return JSON.stringify(
-                          { ...JSON.parse(previous || '{}'), turnId },
-                          null,
-                          2
-                        )
-                      } catch {
-                        return JSON.stringify({ turnId }, null, 2)
-                      }
-                    })
+                    setCodexTargetTurnId(turnId)
                   }}
                 >
                   turn:{turnId}
@@ -2708,20 +2707,13 @@ function ReviewSection({ scope }: { scope?: ModelToolsPanelScope } = {}) {
                 <button
                   key={itemId}
                   type="button"
-                  className="max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent"
+                  className={cn(
+                    'max-w-full truncate rounded border px-1.5 py-0.5 font-mono text-[9px] hover:bg-accent',
+                    codexTargetItemId.trim() === itemId && 'bg-accent'
+                  )}
                   title={itemId}
                   onClick={() => {
-                    setCodexRollbackParamsJson((previous) => {
-                      try {
-                        return JSON.stringify(
-                          { ...JSON.parse(previous || '{}'), itemId },
-                          null,
-                          2
-                        )
-                      } catch {
-                        return JSON.stringify({ itemId }, null, 2)
-                      }
-                    })
+                    setCodexTargetItemId(itemId)
                   }}
                 >
                   item:{itemId}

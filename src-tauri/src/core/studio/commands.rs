@@ -217,6 +217,28 @@ fn should_fallback_to_npx(command: &str, start_error: &std::io::Error, has_npx: 
     is_codex_binary_command(command) && matches!(start_error.kind(), ErrorKind::NotFound) && has_npx
 }
 
+fn macos_codex_app_binary_supporting_app_server(current_command: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let candidate = "/Applications/Codex.app/Contents/Resources/codex";
+        let current = Path::new(current_command);
+        let candidate_path = Path::new(candidate);
+        if current == candidate_path {
+            return None;
+        }
+        if candidate_path.is_file() && codex_binary_supports_app_server(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = current_command;
+    }
+
+    None
+}
+
 fn app_server_help_output_supports_stdio(stdout: &[u8], stderr: &[u8]) -> bool {
     let output = format!(
         "{}\n{}",
@@ -688,21 +710,29 @@ pub async fn start_codex_app_server<R: Runtime>(
         && requested_app_server_stdio
         && !codex_binary_supports_app_server(&command)
     {
-        if !npx_probe.found {
-            return Err(
-                "Configured codex binary does not support `app-server --stdio`, and `npx` is not available for @openai/codex fallback."
-                    .to_string(),
+        if let Some(app_binary) = macos_codex_app_binary_supporting_app_server(&command) {
+            log::warn!(
+                "Configured codex binary does not support `app-server --stdio`; trying Codex Desktop app binary."
             );
-        }
+            command = app_binary;
+            command_args = original_args.clone();
+        } else {
+            if !npx_probe.found {
+                return Err(
+                    "Configured codex binary does not support `app-server --stdio`, and neither the Codex Desktop app binary nor `npx` is available for fallback."
+                        .to_string(),
+                );
+            }
 
-        log::warn!(
-            "Configured codex binary does not support `app-server --stdio`; trying `npx @openai/codex` fallback."
-        );
-        command = "npx".to_string();
-        command_args = std::iter::once("-y".to_string())
-            .chain(std::iter::once("@openai/codex".to_string()))
-            .chain(original_args.clone().into_iter())
-            .collect();
+            log::warn!(
+                "Configured codex binary does not support `app-server --stdio`; trying `npx @openai/codex` fallback."
+            );
+            command = "npx".to_string();
+            command_args = std::iter::once("-y".to_string())
+                .chain(std::iter::once("@openai/codex".to_string()))
+                .chain(original_args.clone().into_iter())
+                .collect();
+        }
     }
 
     let build_cmd = |cmd_name: &str, args: &[String], env: &HashMap<String, String>| {
@@ -741,27 +771,41 @@ pub async fn start_codex_app_server<R: Runtime>(
                 && command != "npx"
                 && should_fallback_to_npx(&command, &start_error, npx_probe.found);
 
-            if !should_try_npx {
+            if let Some(app_binary) = macos_codex_app_binary_supporting_app_server(&command) {
+                log::warn!(
+                    "Failed to spawn '{command}' ({start_error}); trying Codex Desktop app binary."
+                );
+                command = app_binary;
+                command_args = original_args.clone();
+                build_cmd(&command, &command_args, &env).spawn().map_err(
+                    |fallback_error| {
+                        format!(
+                            "Failed to start codex app-server with Codex Desktop app binary: {fallback_error}; \
+                            original spawn failed: {start_error}"
+                        )
+                    },
+                )?
+            } else if !should_try_npx {
                 return Err(format!("Failed to start codex app-server: {start_error}"));
+            } else {
+                log::warn!(
+                    "Failed to spawn '{command}' ({start_error}); trying `npx @openai/codex` fallback."
+                );
+                command = "npx".to_string();
+                command_args = std::iter::once("-y".to_string())
+                    .chain(std::iter::once("@openai/codex".to_string()))
+                    .chain(original_args.into_iter())
+                    .collect();
+
+                build_cmd(&command, &command_args, &env)
+                    .spawn()
+                    .map_err(|fallback_error| {
+                        format!(
+                            "Failed to start codex app-server with '{command}': {fallback_error}; \
+                            fallback `npx @openai/codex` with original args also failed: {start_error}"
+                        )
+                    })?
             }
-
-            log::warn!(
-                "Failed to spawn '{command}' ({start_error}); trying `npx @openai/codex` fallback."
-            );
-            command = "npx".to_string();
-            command_args = std::iter::once("-y".to_string())
-                .chain(std::iter::once("@openai/codex".to_string()))
-                .chain(original_args.into_iter())
-                .collect();
-
-            build_cmd(&command, &command_args, &env)
-                .spawn()
-                .map_err(|fallback_error| {
-                    format!(
-                        "Failed to start codex app-server with '{command}': {fallback_error}; \
-                        fallback `npx @openai/codex` with original args also failed: {start_error}"
-                    )
-                })?
         }
     };
     let pid = child
