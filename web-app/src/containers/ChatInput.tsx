@@ -1983,55 +1983,46 @@ const ChatInput = memo(function ChatInput({
                       : setTooltipShown(false)
                   }
                 >
-                  <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
-                    <Button
-                      variant={isOpenUIEnabled ? 'default' : 'ghost'}
-                      size="icon-xs"
-                      aria-label={t('tools')}
-                      onClick={(e) => {
-                        setDropdownToolsAvailable(false)
-                        e.stopPropagation()
-                      }}
-                      className={cn(
-                        isOpenUIEnabled &&
-                          'text-primary bg-primary/10 hover:bg-primary/10'
-                      )}
-                    >
-                      <DropdownToolsAvailable
-                        initialMessage={initialMessage}
-                        openUIEnabled={isOpenUIEnabled}
-                        onOpenUIToggle={handleOpenUIToggle}
-                        showMCPTools={
-                          !effectiveAgentMode &&
-                          selectedModel?.capabilities?.includes('tools') &&
-                          hasActiveMCPServers &&
-                          !MCPToolComponent
-                        }
-                        onOpenChange={(isOpen) => {
-                          setDropdownToolsAvailable(isOpen)
-                          if (isOpen) {
-                            setTooltipShown(false)
-                          }
-                        }}
-                      >
-                        {() => (
-                          <div
+                  <DropdownToolsAvailable
+                    initialMessage={initialMessage}
+                    openUIEnabled={isOpenUIEnabled}
+                    onOpenUIToggle={handleOpenUIToggle}
+                    showMCPTools={
+                      !effectiveAgentMode &&
+                      selectedModel?.capabilities?.includes('tools') &&
+                      hasActiveMCPServers &&
+                      !MCPToolComponent
+                    }
+                    onOpenChange={(isOpen) => {
+                      setDropdownToolsAvailable(isOpen)
+                      if (isOpen) {
+                        setTooltipShown(false)
+                      }
+                    }}
+                  >
+                    {() => (
+                      <TooltipTrigger asChild disabled={dropdownToolsAvailable}>
+                        <Button
+                          variant={isOpenUIEnabled ? 'default' : 'ghost'}
+                          size="icon-xs"
+                          aria-label={t('tools')}
+                          onClick={(event) => event.stopPropagation()}
+                          className={cn(
+                            isOpenUIEnabled &&
+                              'text-primary bg-primary/10 hover:bg-primary/10'
+                          )}
+                        >
+                          <IconTool
+                            size={18}
                             className={cn(
-                              'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
+                              'text-muted-foreground',
+                              isOpenUIEnabled && 'text-primary'
                             )}
-                          >
-                            <IconTool
-                              size={18}
-                              className={cn(
-                                'text-muted-foreground',
-                                isOpenUIEnabled && 'text-primary'
-                              )}
-                            />
-                          </div>
-                        )}
-                      </DropdownToolsAvailable>
-                    </Button>
-                  </TooltipTrigger>
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                    )}
+                  </DropdownToolsAvailable>
                   <TooltipContent>
                     <p>{t('tools')}</p>
                   </TooltipContent>

@@ -262,7 +262,6 @@ export default memo(function DropdownToolsAvailable({
                               <Switch
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
-                                  console.log('checked', checked)
                                   handleToolToggle(tool.server, tool.name, checked)
                                 }}
                                 onClick={(e) => {

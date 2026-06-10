@@ -425,6 +425,7 @@ describe('ChatInput', () => {
   it('toggles OpenUI for the active thread', () => {
     renderInput()
 
+    expect(screen.getByRole('button', { name: 'tools' })).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('openui-tools-menu-toggle'))
 
     expect(toggleOpenUIMock).toHaveBeenCalledWith('thread-1')
