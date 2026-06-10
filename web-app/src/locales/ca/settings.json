@@ -322,7 +322,7 @@
   "openui": {
     "description": "Genera respostes interactives de l'assistent amb OpenUI Lang.",
     "enableTitle": "Activa la renderitzacio d'OpenUI",
-    "enableDescription": "Afegeix guiatge de prompt d'OpenUI a les sol.licituds de xat i renderitza les respostes OpenUI Lang com a UI interactiva. El mode Chat afegeix aproximadament 1.600 tokens de prompt per sol.licitud; el mode Standard n'afegeix aproximadament 5.000.",
+    "enableDescription": "Afegeix guiatge de prompt d'OpenUI a les sol.licituds de xat i renderitza les respostes OpenUI Lang com a UI interactiva. El mode Chat afegeix aproximadament 1.600 tokens de prompt per sol.licitud; el mode Standard n'afegeix aproximadament 5.000. Activa OpenUI per a cada xat des del menu Eines de l'entrada del xat.",
     "componentLibraryTitle": "Biblioteca de components",
     "componentLibraryDescription": "Chat utilitza un conjunt compacte de components natius de Jan. Standard carrega el paquet complet de components i fulls d'estil d'OpenUI.",
     "libraryChat": "Chat",

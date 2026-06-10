@@ -86,7 +86,6 @@
   "reasoning": "Raonament",
   "proactive": "Proactiu",
   "selectAModel": "Selecciona un model",
-  "noToolsAvailable": "No hi ha eines disponibles",
   "noModelsFoundFor": "No s’han trobat models per a \"{{searchValue}}\"",
   "failedToLoadModels": "No s’han pogut carregar els models",
   "noModels": "No s’han trobat models",

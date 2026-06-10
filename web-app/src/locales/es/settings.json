@@ -500,7 +500,7 @@
   "openui": {
     "description": "Genera respuestas interactivas del asistente con OpenUI Lang.",
     "enableTitle": "Activar renderizado de OpenUI",
-    "enableDescription": "Anade instrucciones de OpenUI a las solicitudes de chat y renderiza las respuestas de OpenUI Lang como una interfaz interactiva. El modo Chat anade aproximadamente 1.600 tokens de prompt por solicitud; el modo Standard anade aproximadamente 5.000.",
+    "enableDescription": "Anade instrucciones de OpenUI a las solicitudes de chat y renderiza las respuestas de OpenUI Lang como una interfaz interactiva. El modo Chat anade aproximadamente 1.600 tokens de prompt por solicitud; el modo Standard anade aproximadamente 5.000. Activa OpenUI por chat desde el menu Herramientas en la entrada del chat.",
     "componentLibraryTitle": "Biblioteca de componentes",
     "componentLibraryDescription": "Chat usa un conjunto compacto de componentes nativos de Jan. Standard carga el paquete completo de componentes y hojas de estilo de OpenUI.",
     "libraryChat": "Chat",

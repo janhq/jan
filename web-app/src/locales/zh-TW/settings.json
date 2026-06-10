@@ -282,7 +282,7 @@
   "openui": {
     "description": "使用 OpenUI Lang 產生互動式助理回覆。",
     "enableTitle": "啟用 OpenUI 渲染",
-    "enableDescription": "將 OpenUI 提示指引加入聊天請求，並把 OpenUI Lang 回覆渲染為互動式 UI。Chat 模式每次請求約增加 1,600 個提示詞 token；Standard 模式約增加 5,000 個。",
+    "enableDescription": "將 OpenUI 提示指引加入聊天請求，並把 OpenUI Lang 回覆渲染為互動式 UI。Chat 模式每次請求約增加 1,600 個提示詞 token；Standard 模式約增加 5,000 個。 在聊天輸入框的工具選單中為每個聊天開啟 OpenUI。",
     "componentLibraryTitle": "元件庫",
     "componentLibraryDescription": "Chat 使用精簡的 Jan 原生元件集。Standard 會載入完整的 OpenUI 元件與樣式表套件。",
     "libraryChat": "Chat",

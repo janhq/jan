@@ -282,7 +282,7 @@
   "openui": {
     "description": "Generuj interaktywne odpowiedzi asystenta z OpenUI Lang.",
     "enableTitle": "Wlacz renderowanie OpenUI",
-    "enableDescription": "Dodaje wskazowki promptu OpenUI do zadan czatu i renderuje odpowiedzi OpenUI Lang jako interaktywny UI. Tryb Chat dodaje okolo 1 600 tokenow promptu na zadanie; tryb Standard dodaje okolo 5 000.",
+    "enableDescription": "Dodaje wskazowki promptu OpenUI do zadan czatu i renderuje odpowiedzi OpenUI Lang jako interaktywny UI. Tryb Chat dodaje okolo 1 600 tokenow promptu na zadanie; tryb Standard dodaje okolo 5 000. Wlacz OpenUI dla danego czatu w menu Narzędzia w polu wpisywania wiadomosci.",
     "componentLibraryTitle": "Biblioteka komponentow",
     "componentLibraryDescription": "Chat uzywa kompaktowego zestawu komponentow natywnych dla Jan. Standard laduje pelny pakiet komponentow i arkuszy stylow OpenUI.",
     "libraryChat": "Chat",

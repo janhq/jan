@@ -91,7 +91,6 @@
   "webSearch": "Busca na Web",
   "reasoning": "Raciocínio",
   "selectAModel": "Selecione um modelo",
-  "noToolsAvailable": "Nenhuma ferramenta disponível",
   "noModelsFoundFor": "Nenhum modelo encontrado para \"{{searchValue}}\"",
   "failedToLoadModels": "Falha ao carregar modelos",
   "noModels": "Nenhum modelo encontrado",

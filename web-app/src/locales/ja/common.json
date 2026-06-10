@@ -92,7 +92,6 @@
   "webSearch": "ウェブ検索",
   "reasoning": "推論",
   "selectAModel": "モデルを選択",
-  "noToolsAvailable": "利用可能なツールはありません",
   "noModelsFoundFor": "\"{{searchValue}}\"に一致するモデルが見つかりません",
   "failedToLoadModels": "モデルの読み込みに失敗しました",
   "noModels": "モデルが見つかりません",

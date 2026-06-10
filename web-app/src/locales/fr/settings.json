@@ -320,7 +320,7 @@
   "openui": {
     "description": "Generez des reponses interactives de l'assistant avec OpenUI Lang.",
     "enableTitle": "Activer le rendu OpenUI",
-    "enableDescription": "Ajoute les consignes de prompt OpenUI aux requetes de chat et affiche les reponses OpenUI Lang sous forme d'interface interactive. Le mode Chat ajoute environ 1 600 tokens de prompt par requete ; le mode Standard en ajoute environ 5 000.",
+    "enableDescription": "Ajoute les consignes de prompt OpenUI aux requetes de chat et affiche les reponses OpenUI Lang sous forme d'interface interactive. Le mode Chat ajoute environ 1 600 tokens de prompt par requete ; le mode Standard en ajoute environ 5 000. Activez OpenUI pour chaque discussion depuis le menu Outils dans la zone de saisie du chat.",
     "componentLibraryTitle": "Bibliotheque de composants",
     "componentLibraryDescription": "Chat utilise un ensemble compact de composants natifs de Jan. Standard charge l'ensemble complet des composants et feuilles de style OpenUI.",
     "libraryChat": "Chat",

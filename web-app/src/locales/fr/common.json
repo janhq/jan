@@ -93,7 +93,6 @@
   "reasoning": "Raisonnement",
   "proactive": "Proactif",
   "selectAModel": "Sélectionnez un modèle",
-  "noToolsAvailable": "Aucun outil disponible",
   "noModelsFoundFor": "Aucun modèle trouvé pour \"{{searchValue}}\"",
   "failedToLoadModels": "Échec du chargement des modèles",
   "noModels": "Aucun modèle trouvé",

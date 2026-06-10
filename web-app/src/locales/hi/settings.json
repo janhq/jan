@@ -500,7 +500,7 @@
   "openui": {
     "description": "OpenUI Lang se interactive assistant responses banayein.",
     "enableTitle": "OpenUI rendering chalu karein",
-    "enableDescription": "Chat requests me OpenUI prompt guidance jodein aur OpenUI Lang responses ko interactive UI ke roop me render karein. Chat mode har request me lagbhag 1,600 prompt tokens jodta hai; Standard mode lagbhag 5,000 jodta hai.",
+    "enableDescription": "Chat requests me OpenUI prompt guidance jodein aur OpenUI Lang responses ko interactive UI ke roop me render karein. Chat mode har request me lagbhag 1,600 prompt tokens jodta hai; Standard mode lagbhag 5,000 jodta hai. Har chat ke liye OpenUI ko chat input ke उपकरण menu se chalu karein.",
     "componentLibraryTitle": "Component library",
     "componentLibraryDescription": "Chat ek compact Jan-native component set ka upyog karta hai. Standard poora OpenUI component aur stylesheet bundle load karta hai.",
     "libraryChat": "Chat",

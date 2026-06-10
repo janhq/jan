@@ -312,7 +312,7 @@
   "openui": {
     "description": "Generujte interaktivni odpovedi asistenta pomoci OpenUI Lang.",
     "enableTitle": "Zapnout vykreslovani OpenUI",
-    "enableDescription": "Prida pokyny OpenUI do pozadavku chatu a vykresli odpovedi OpenUI Lang jako interaktivni UI. Rezim Chat prida priblizne 1 600 tokenu promptu na pozadavek; rezim Standard prida priblizne 5 000.",
+    "enableDescription": "Prida pokyny OpenUI do pozadavku chatu a vykresli odpovedi OpenUI Lang jako interaktivni UI. Rezim Chat prida priblizne 1 600 tokenu promptu na pozadavek; rezim Standard prida priblizne 5 000. OpenUI zapnete pro kazdy chat v nabidce Nástroje v poli zadavani chatu.",
     "componentLibraryTitle": "Knihovna komponent",
     "componentLibraryDescription": "Chat pouziva kompaktn? sadu nativnich komponent Jan. Standard nacita uplny balik komponent a stylu OpenUI.",
     "libraryChat": "Chat",
