@@ -515,6 +515,156 @@ export function stripAssistantReasoningInBody(
   }
 }
 
+/**
+ * Heuristic: does this 403 body look like an xAI entitlement / quota refusal,
+ * as opposed to a bare auth/scope/request-shape failure?
+ * Mirrors Hermes' `_is_entitlement_failure` text matchers (see Hermes PR
+ * #26664 / issue #26847). Used to decide whether the API-key fallback is
+ * worth retrying with. A plain "Forbidden" is intentionally NOT enough: users
+ * on SuperGrok Heavy should not be told their tier is wrong unless xAI's body
+ * actually says quota/subscription/resource.
+ */
+export function isXaiEntitlementFailure(message: string): boolean {
+  if (typeof message !== 'string' || !message) return false
+  const m = message.toLowerCase()
+  return (
+    /active grok subscription/.test(m) ||
+    /grok subscription/.test(m) ||
+    /need a grok subscription/.test(m) ||
+    /run out of (available )?(credits|resources)/.test(m) ||
+    /out of available resources/.test(m) ||
+    (/(does not have|caller does not have) permission/.test(m) &&
+      /(grok|subscription|resource|quota|credit)/.test(m)) ||
+    /supergrok/.test(m)
+  )
+}
+
+function logXaiOAuthForbiddenDiagnostic(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  upstream: string,
+  entitlementLike: boolean
+): void {
+  let bodySummary: Record<string, unknown> | undefined
+  try {
+    const body = init?.body ? JSON.parse(init.body as string) : undefined
+    if (body && typeof body === 'object') {
+      const record = body as Record<string, unknown>
+      bodySummary = {
+        keys: Object.keys(record).sort(),
+        model: typeof record.model === 'string' ? record.model : undefined,
+        store: record.store,
+        hasPreviousResponseId: 'previous_response_id' in record,
+        inputItems: Array.isArray(record.input) ? record.input.length : undefined,
+        tools: Array.isArray(record.tools) ? record.tools.length : undefined,
+      }
+    }
+  } catch {
+    bodySummary = { parseError: true }
+  }
+
+  console.warn('[xai-oauth] /responses returned 403', {
+    url: requestUrlOf(input),
+    method: init?.method ?? 'POST',
+    upstream: upstream || '(empty)',
+    entitlementLike,
+    body: bodySummary,
+  })
+}
+
+/**
+ * Wraps `inner` to make AI-SDK `xai.responses()` requests compatible with
+ * xAI's OAuth (SuperGrok / X Premium+) `/v1/responses` surface.
+ *
+ *  1. Force `store: false` on POSTs to `/responses`. The AI SDK omits this
+ *     field; xAI defaults `store` to `true`, which can change the entitlement
+ *     and request contract. Hermes hard-codes the same invariant:
+ *     "Codex Responses contract requires 'store' to be false."
+ *  2. Strip `previous_response_id` if present — it requires `store: true`.
+ *  3. Surface a clear, actionable error instead of the cryptic
+ *     `AI_APICallError: Forbidden`. This wrapper deliberately does not fall
+ *     back to API keys: when the user signs in with SuperGrok, the runtime
+ *     path should stay SSO so auth bugs are visible and fixable.
+ */
+export function withXaiOAuthResponsesCompat(
+  inner: typeof globalThis.fetch
+): typeof globalThis.fetch {
+  const isResponsesPath = (input: RequestInfo | URL): boolean => {
+    const url = requestUrlOf(input)
+    try {
+      const u = new URL(url)
+      return u.pathname.endsWith('/responses')
+    } catch {
+      return /\/responses(\?|$)/.test(url)
+    }
+  }
+
+  const parseErrorBody = async (
+    res: Response
+  ): Promise<{
+    parsed: { error?: { message?: unknown } } | null
+    upstream: string
+  }> => {
+    let parsed: { error?: { message?: unknown } } | null = null
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('json')) {
+      try {
+        parsed = JSON.parse(await res.clone().text())
+      } catch {
+        parsed = null
+      }
+    }
+    const upstream =
+      typeof parsed?.error?.message === 'string'
+        ? (parsed.error.message as string)
+        : ''
+    return { parsed, upstream }
+  }
+
+  return async (input, init) => {
+    if (
+      (init?.method === 'POST' || !init?.method) &&
+      init?.body &&
+      isResponsesPath(input)
+    ) {
+      try {
+        const body = JSON.parse(init.body as string) as Record<string, unknown>
+        body.store = false
+        if ('previous_response_id' in body) delete body.previous_response_id
+        init = { ...init, body: JSON.stringify(body) }
+      } catch {
+        // non-JSON body; fall through
+      }
+    }
+
+    const res = await inner(input, init)
+    if (res.status !== 403 || !isResponsesPath(input)) return res
+
+    const { parsed, upstream } = await parseErrorBody(res)
+    const entitlementLike = isXaiEntitlementFailure(upstream)
+    logXaiOAuthForbiddenDiagnostic(
+      input,
+      init,
+      upstream,
+      entitlementLike
+    )
+
+    const explainer = entitlementLike
+      ? "xAI rejected your SuperGrok OAuth session for the Responses API (HTTP 403). The upstream response looks like a quota/subscription entitlement refusal. If you are on SuperGrok Heavy, check https://grok.com/?_s=usage and xAI support; otherwise xAI is not authorizing this SSO session for API use."
+      : "xAI rejected the OAuth Responses API request with HTTP 403, but the upstream response did not identify a quota/subscription issue. If you have SuperGrok Heavy, this likely means Jan is still sending something xAI rejects. Open the dev console and look for `[xai-oauth] /responses returned 403`; it logs the sanitized request shape (no token or prompt content) so we can fix the request path."
+    const message = upstream ? `${explainer} (upstream: ${upstream})` : explainer
+    const nextBody = JSON.stringify({
+      ...(parsed ?? {}),
+      error: { ...(parsed?.error ?? {}), message },
+    })
+    return new Response(nextBody, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+}
+
 /** Wraps `inner` to strip reasoning fields from assistant messages before send. */
 function withAssistantReasoningStripped(
   inner: typeof globalThis.fetch
@@ -574,6 +724,19 @@ export function decodeAudioSentinelsInBody(body: Record<string, unknown>): void 
 }
 
 type ApiKeyHeaderMode = 'authorization-bearer' | 'x-api-key'
+
+const XAI_SSO_RUNTIME_MODEL = 'grok-4.3'
+const STALE_XAI_SSO_MODEL_IDS = new Set(['grok-build-0.1'])
+
+function resolveXaiOAuthRuntimeModelId(modelId: string): string {
+  if (STALE_XAI_SSO_MODEL_IDS.has(modelId)) {
+    console.warn(
+      `[xai-oauth] remapping stale model '${modelId}' to '${XAI_SSO_RUNTIME_MODEL}'`
+    )
+    return XAI_SSO_RUNTIME_MODEL
+  }
+  return modelId
+}
 
 /** Retries with the next key when the upstream returns 401, 403, or 429. */
 function createApiKeyRotatingFetch(
@@ -998,7 +1161,16 @@ export class ModelFactory {
   }
 
   /**
-   * Create an XAI (Grok) model using the official AI SDK
+   * Create an XAI (Grok) model using the official AI SDK.
+   *
+   * For OAuth-backed (SuperGrok / X Premium+) sessions we route through the
+   * xAI Responses API (`/v1/responses`) to match Hermes' `codex_responses`
+   * transport — xAI's OAuth surface only authorizes that path for grok-cli
+   * scope. We also inject `store: false` because the AI SDK omits it and xAI
+   * defaults Responses requests to server-side storage. Hermes treats
+   * `store: false` as part of its Responses contract for this transport. See
+   * https://github.com/NousResearch/hermes-agent/blob/main/agent/codex_responses_adapter.py
+   * — `Codex Responses contract requires 'store' to be false`.
    */
   private static async createXaiModel(
     modelId: string,
@@ -1017,15 +1189,27 @@ export class ModelFactory {
     const oauthToken = await getXaiOAuthAccessToken()
     const keyChain = providerRemoteApiKeyChain(provider)
     const primaryKey = oauthToken ?? keyChain[0] ?? provider.api_key ?? ''
-    const fetchImpl =
-      !oauthToken && keyChain.length > 1
-        ? createApiKeyRotatingFetch(
-            getRuntimeFetch(),
-            keyChain,
-            parameters,
-            'authorization-bearer'
-          )
-        : createCustomFetch(getRuntimeFetch(), parameters)
+    let fetchImpl: typeof globalThis.fetch
+
+    if (oauthToken) {
+      // Keep the SSO runtime path isolated from the OpenAI-compatible
+      // parameter injector. `streamText` passes supported call settings
+      // (for example `maxTokens`) to the AI SDK, and the xAI Responses body
+      // must keep Responses field names (`max_output_tokens`, not `max_tokens`).
+      fetchImpl = withXaiOAuthResponsesCompat(
+        createCustomFetch(getRuntimeFetch(), {})
+      )
+    } else {
+      fetchImpl =
+        keyChain.length > 1
+          ? createApiKeyRotatingFetch(
+              getRuntimeFetch(),
+              keyChain,
+              parameters,
+              'authorization-bearer'
+            )
+          : createCustomFetch(getRuntimeFetch(), parameters)
+    }
 
     const xai = createXai({
       apiKey: primaryKey,
@@ -1034,7 +1218,9 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return xai(modelId)
+    return oauthToken
+      ? xai.responses(resolveXaiOAuthRuntimeModelId(modelId))
+      : xai(modelId)
   }
 
   // Native Google provider. Gemini 3 preview models require a

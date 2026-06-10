@@ -11,6 +11,9 @@
  *   CODEX_SMOKE_API_KEY=your-llamacpp-router-key
  *   CODEX_SMOKE_MODEL=Jan-v1-4B-Q4_K_M
  *   CODEX_SMOKE_PROVIDER=llamacpp
+ *
+ * Ollama example:
+ *   CODEX_SMOKE_BASE_URL=http://127.0.0.1:11434/v1 CODEX_SMOKE_API_KEY=jan CODEX_SMOKE_MODEL=mistral-small3.1:latest CODEX_SMOKE_PROVIDER=jan-ollama node scripts/codex-smoke-test.mjs
  */
 
 import { spawn } from 'node:child_process'
@@ -37,15 +40,16 @@ let providerPort
 if (useLocalProvider) {
   const baseUrl = process.env.CODEX_SMOKE_BASE_URL.replace(/\/$/, '')
   const provider = process.env.CODEX_SMOKE_PROVIDER ?? 'llamacpp'
+  const codexProvider = codexManagedProviderId(provider)
   const model = process.env.CODEX_SMOKE_MODEL ?? 'Jan-v1-4B-Q4_K_M'
   const apiKeyEnv = 'CODEX_SMOKE_API_KEY'
   writeFileSync(
     join(codexHome, 'config.toml'),
     [
       `model = ${JSON.stringify(model)}`,
-      `model_provider = ${JSON.stringify(provider)}`,
+      `model_provider = ${JSON.stringify(codexProvider)}`,
       '',
-      `[model_providers.${provider}]`,
+      `[model_providers.${codexProvider}]`,
       `name = ${JSON.stringify(provider)}`,
       `base_url = ${JSON.stringify(baseUrl)}`,
       `env_key = ${JSON.stringify(apiKeyEnv)}`,
@@ -62,21 +66,12 @@ if (useLocalProvider) {
     })
     req.on('end', () => {
       if (req.url?.includes('/responses')) {
-        res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(
-          JSON.stringify({
-            id: 'resp_smoke',
-            object: 'response',
-            status: 'completed',
-            output: [
-              {
-                type: 'message',
-                role: 'assistant',
-                content: [{ type: 'output_text', text: 'smoke-ok' }],
-              },
-            ],
-          })
-        )
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        mockResponseEvents('smoke-ok').forEach((event) => {
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        })
+        res.write('data: [DONE]\n\n')
+        res.end()
         return
       }
       res.writeHead(404, { 'content-type': 'application/json' })
@@ -106,7 +101,7 @@ const model = useLocalProvider
   ? (process.env.CODEX_SMOKE_MODEL ?? 'Jan-v1-4B-Q4_K_M')
   : 'mock-model'
 const modelProvider = useLocalProvider
-  ? (process.env.CODEX_SMOKE_PROVIDER ?? 'llamacpp')
+  ? codexManagedProviderId(process.env.CODEX_SMOKE_PROVIDER ?? 'llamacpp')
   : 'mock'
 
 const child = spawn(CODEX, ['app-server', '--stdio'], {
@@ -217,7 +212,7 @@ try {
 
   if (!completed) {
     process.exitCode = 1
-  } else if (useLocalProvider && !result.assistantText && result.fatalError) {
+  } else if (!result.assistantText || result.fatalError) {
     process.exitCode = 2
   }
 } catch (error) {
@@ -241,4 +236,95 @@ try {
   } catch {
     // Codex may leave temp plugin dirs behind on exit.
   }
+}
+
+function mockResponseEvents(text) {
+  return [
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_smoke',
+        object: 'response',
+        status: 'in_progress',
+        output: [],
+      },
+    },
+    {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: {
+        id: 'msg_smoke',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+      },
+    },
+    {
+      type: 'response.content_part.added',
+      item_id: 'msg_smoke',
+      output_index: 0,
+      content_index: 0,
+      part: { type: 'output_text', text: '' },
+    },
+    {
+      type: 'response.output_text.delta',
+      item_id: 'msg_smoke',
+      output_index: 0,
+      content_index: 0,
+      delta: text,
+    },
+    {
+      type: 'response.output_text.done',
+      item_id: 'msg_smoke',
+      output_index: 0,
+      content_index: 0,
+      text,
+    },
+    {
+      type: 'response.content_part.done',
+      item_id: 'msg_smoke',
+      output_index: 0,
+      content_index: 0,
+      part: { type: 'output_text', text },
+    },
+    {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        id: 'msg_smoke',
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text }],
+      },
+    },
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_smoke',
+        object: 'response',
+        status: 'completed',
+        output: [
+          {
+            id: 'msg_smoke',
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text }],
+          },
+        ],
+        usage: {
+          input_tokens: 1,
+          output_tokens: 2,
+          total_tokens: 3,
+        },
+      },
+    },
+  ]
+}
+
+function codexManagedProviderId(providerId) {
+  return new Set(['openai', 'openrouter', 'ollama', 'lmstudio']).has(providerId)
+    ? `jan-${providerId}`
+    : providerId
 }

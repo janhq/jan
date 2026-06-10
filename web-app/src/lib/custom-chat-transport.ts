@@ -1,7 +1,5 @@
 import { type UIMessage } from '@ai-sdk/react'
 import {
-  convertToModelMessages,
-  streamText,
   type ChatRequestOptions,
   type ChatTransport,
   type LanguageModel,
@@ -19,30 +17,13 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
-import { invoke } from '@tauri-apps/api/core'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension, type MCPTool } from '@janhq/core'
-import {
-  trimMessages,
-  compactMessages,
-  estimateTokens,
-  type ContextManagerConfig,
-} from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
 import {
-  isPredefinedRemoteProvider,
-  getProviderApiType,
-} from '@/lib/providerCaps'
-import { paramsSettings } from '@/lib/predefinedParams'
-import {
-  getModelReasoningValue,
-  toLlamacppReasoningMode,
-} from '@/lib/model-reasoning'
-import {
-  isCodexAppServerProvider,
   sendCodexAppServerChatMessage,
   shutdownCodexAppServerChatSession,
 } from '@/lib/codex-app-server'
@@ -98,42 +79,6 @@ const SCHEMA_NODE_LIST_KEYS = new Set([
   'allOf',
   'prefixItems',
 ])
-
-// Per-model sidebar keys whose values should be forwarded into each chat-
-// completion request body as defaults. In router mode these can't be CLI args
-// — the router is one process serving every model — so they have to ride
-// along on each call. Assistant `parameters` override these in the merge.
-const MODEL_SAMPLING_SETTING_KEYS = [
-  'temperature',
-  'top_k',
-  'top_p',
-  'min_p',
-  'repeat_last_n',
-  'repeat_penalty',
-  'presence_penalty',
-  'frequency_penalty',
-] as const
-
-function extractModelSamplingDefaults(
-  model: Model | null | undefined
-): Record<string, unknown> {
-  if (!model?.settings) return {}
-  const out: Record<string, unknown> = {}
-  for (const key of MODEL_SAMPLING_SETTING_KEYS) {
-    const raw = model.settings[key]?.controller_props?.value
-    if (raw === undefined || raw === null || raw === '') continue
-    // Sidebar inputs are string-typed even when controller_props.type is
-    // 'number'; coerce so the request body matches the OpenAI schema.
-    if (typeof raw === 'string') {
-      const n = Number(raw)
-      if (!Number.isFinite(n)) continue
-      out[key] = n
-    } else {
-      out[key] = raw
-    }
-  }
-  return out
-}
 
 /**
  * Coerce a schema-node slot into a valid sub-schema. Some tool generators
@@ -531,49 +476,6 @@ function extractLatestUserText(messages: UIMessage[]): string {
   return ''
 }
 
-/**
- * Wraps a UIMessageChunk stream so that when the first `text-start` chunk
- * arrives, a `text-delta` carrying `prefixText` is immediately injected into
- * the same text block. This makes the new message show the partial content
- * right away while continuation tokens stream in after it.
- */
-function prependTextDeltaToUIStream(
-  stream: ReadableStream<UIMessageChunk>,
-  prefixText: string
-): ReadableStream<UIMessageChunk> {
-  const reader = stream.getReader()
-  let prefixEmitted = false
-  return new ReadableStream<UIMessageChunk>({
-    async pull(controller) {
-      try {
-        const { done, value } = await reader.read()
-        if (done) {
-          controller.close()
-          return
-        }
-        controller.enqueue(value)
-        if (
-          !prefixEmitted &&
-          (value as { type: string }).type === 'text-start'
-        ) {
-          prefixEmitted = true
-          const id = (value as { type: 'text-start'; id: string }).id
-          controller.enqueue({
-            type: 'text-delta',
-            id,
-            delta: prefixText,
-          } as UIMessageChunk)
-        }
-      } catch (error) {
-        controller.error(error)
-      }
-    },
-    cancel() {
-      reader.cancel()
-    },
-  })
-}
-
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private routerModel: LanguageModel | null = null
@@ -883,397 +785,25 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = this.threadId ?? options.chatId
     useAppState.getState().setCurrentStreamThreadId(threadId)
-    // Capture the effective provider name early so the Anthropic serial
-    // tool-use repair later uses the same value that was used to create the
-    // model, even if the user switches provider mid-request.
-    const modelId = useModelProvider.getState().selectedModel?.id
     const providerId = useModelProvider.getState().selectedProvider
-    const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
-    const codexSelectedModel = useModelProvider.getState().selectedModel
-    if (isCodexAppServerProvider(providerId)) {
-      // Codex path: Jan is disconnected from the core agent/tool loop.
-      // We delegate entirely to the Codex app-server (the "engine").
-      // - Codex handles planning, reasoning, tool selection + execution (via its own MCP clients from config),
-      //   shell, file patches, subagents, etc.
-      // - Jan provides: MCP server *definitions* (projected into Codex config.toml), workspace/cwd,
-      //   provider profiles (model + base_url for Codex to use), approval UI (runtime permissions),
-      //   and rendering of rich Codex events (deltas, plans, command output, patches).
-      // See codex-app-server/ and the "disconnect" changes around item/tool/call proxy.
-      if (!modelId || !provider || !codexSelectedModel) {
-        throw new Error('Codex app-server provider requires a selected model.')
-      }
-      this.lastUserMessage = extractLatestUserText(options.messages)
-      return sendCodexAppServerChatMessage({
-        threadId,
-        messageId: options.messageId,
-        messages: options.messages,
-        provider,
-        model: codexSelectedModel,
-        abortSignal: options.abortSignal,
-      })
-    }
-    if (!this.serviceHub || !modelId || !provider) {
-      throw new Error('ServiceHub not initialized or model/provider missing.')
+    const selectedModel = useModelProvider.getState().selectedModel
+
+    // Single runtime path: every selected model/provider is executed by Codex.
+    // Jan only chooses the target provider/model and renders Codex events.
+    if (!providerId || !provider || !selectedModel) {
+      throw new Error('A selected model/provider is required to start Codex.')
     }
 
     this.lastUserMessage = extractLatestUserText(options.messages)
-
-    try {
-      const updatedProvider = useModelProvider
-        .getState()
-        .getProviderByName(providerId)
-
-      const inferenceParams = this.getActiveInferenceParams()
-
-      const selectedModel = useModelProvider.getState().selectedModel
-      const reasoningParams = buildLlamacppReasoningParams(
-        effectiveProviderName,
-        toLlamacppReasoningMode(getModelReasoningValue(selectedModel))
-      )
-
-      if (providerId === 'llamacpp') {
-        try {
-          const loaded = await invoke<string[]>(
-            'plugin:llamacpp|get_loaded_models'
-          )
-          if (!loaded.includes(modelId)) {
-            useAppState.getState().updateLoadingModel(true)
-            useAppState.getState().updateThreadLoadingModel(threadId, true)
-          }
-        } catch {
-          // Ignore probe failures; the router will still load on demand
-        }
-      }
-
-      // Per-model sidebar sampling defaults flow through as request-body
-      // overrides (router mode can't bake them into CLI args). Assistant
-      // params still win — they're the explicit per-conversation override.
-      const modelSamplingDefaults = extractModelSamplingDefaults(selectedModel)
-
-      // Create the model before refreshing tools so the MCP orchestrator can run
-      // structured LLM routing when many servers are connected.
-      const mergedParams: Record<string, unknown> = {
-        ...modelSamplingDefaults,
-        ...(inferenceParams ?? {}),
-        ...reasoningParams,
-      }
-      if (isPredefinedRemoteProvider(effectiveProviderName)) {
-        for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
-      }
-      this.model = await ModelFactory.createModel(
-        modelId,
-        updatedProvider ?? provider,
-        mergedParams
-      )
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-    } catch (error) {
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      console.error('Failed to create model:', error)
-      throw new Error(
-        `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-      )
-    }
-
-    await this.refreshTools(options.abortSignal)
-
-    // Fix for Anthropic serial tool-use (error 400): when an assistant message
-    // contains tool parts interleaved with text parts (serial tool calls),
-    // split it into separate messages so convertToModelMessages produces the
-    // tool_use / tool_result pairing that the Claude API requires.
-    // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
-    const effectiveApiType = getProviderApiType(provider)
-    let messagesToConvert = (() => {
-      if (effectiveApiType !== 'anthropic') {
-        return options.messages
-      }
-      return options.messages.flatMap((message) => {
-        if (message.role !== 'assistant') return [message]
-
-        const parts = Array.isArray(message.parts) ? message.parts : []
-        if (parts.length === 0) return [message]
-
-        const isToolPart = (p: (typeof parts)[number]) =>
-          p.type.startsWith('tool-')
-
-        const waves: (typeof parts)[] = []
-        let currentWave: typeof parts = []
-        let seenToolParts = false
-
-        for (const part of parts) {
-          if (isToolPart(part)) {
-            seenToolParts = true
-            currentWave.push(part)
-          } else if (!isToolPart(part) && seenToolParts) {
-            // Any non-tool part (text, reasoning, file, etc.) after tool parts
-            // marks the start of a new wave
-            waves.push(currentWave)
-            currentWave = [part]
-            seenToolParts = false
-          } else {
-            currentWave.push(part)
-          }
-        }
-        if (currentWave.length > 0) waves.push(currentWave)
-
-        // No serial tool calls detected — return original message unchanged
-        if (waves.length <= 1) return [message]
-
-        return waves.map((waveParts, i) => ({
-          ...message,
-          id: `${message.id}_w${i}`,
-          parts: waveParts,
-        }))
-      })
-    })()
-
-    const inferenceParams = this.getActiveInferenceParams()
-
-    const selectedModel = useModelProvider.getState().selectedModel
-
-    const { messages: strippedMessages, files: attachedFiles } =
-      this.extractFileMetadataForSystem(messagesToConvert)
-    messagesToConvert = strippedMessages
-    const filesAddendum = this.buildFilesSystemAddendum(attachedFiles)
-    const rawSystem = filesAddendum
-      ? this.systemMessage
-        ? `${this.systemMessage}\n\n${filesAddendum}`
-        : filesAddendum
-      : this.systemMessage
-    // Drop whitespace-only system prompts so we don't send a useless system
-    // turn that some chat templates still wrap into special tokens.
-    const effectiveSystem =
-      typeof rawSystem === 'string' && rawSystem.trim().length > 0
-        ? rawSystem
-        : undefined
-
-    const maxOutputTokens: number | undefined = (() => {
-      const raw =
-        inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
-      if (raw === undefined || raw === null) return undefined
-      const n = typeof raw === 'number' ? raw : Number(raw)
-      return isNaN(n) ? undefined : n
-    })()
-
-    const maxContextTokens = (() => {
-      const raw = inferenceParams.max_context_tokens
-      return typeof raw === 'number' ? raw : Number(raw) || 0
-    })()
-    const autoCompact =
-      inferenceParams.auto_compact === true ||
-      inferenceParams.auto_compact === 'true'
-
-    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
-    let effectiveMessages = messagesToConvert
-    if (maxContextTokens > 0) {
-      const contextConfig: ContextManagerConfig = {
-        maxContextTokens,
-        maxOutputTokens: maxOutputTokens ?? 2048,
-        autoCompact: !!autoCompact,
-      }
-
-      const systemPromptTokens = effectiveSystem
-        ? estimateTokens(effectiveSystem) + 4
-        : 0
-
-      if (autoCompact && this.model) {
-        const compactResult = await compactMessages(
-          messagesToConvert,
-          contextConfig,
-          this.model,
-          systemPromptTokens
-        )
-        effectiveMessages = compactResult.messages
-        if (compactResult.trimmedCount > 0) {
-          console.debug(
-            `[context-manager] Compacted ${compactResult.trimmedCount} messages` +
-              (compactResult.compactedSummary
-                ? ' with summary'
-                : ' (trim fallback)')
-          )
-        }
-      } else {
-        const trimResult = trimMessages(
-          messagesToConvert,
-          contextConfig,
-          systemPromptTokens
-        )
-        effectiveMessages = trimResult.messages
-        if (trimResult.trimmedCount > 0) {
-          console.debug(
-            `[context-manager] Trimmed ${trimResult.trimmedCount} oldest messages to fit context budget`
-          )
-        }
-      }
-    }
-
-    const modelSupportsVision =
-      selectedModel?.capabilities?.includes('vision') ?? false
-    const baseMessages = await convertToModelMessages(
-      coalesceMessagesForAlternation(
-        resolveOrphanToolCalls(
-          this.encodeAudioAttachments(
-            stripUnsupportedImageParts(
-              this.mapUserInlineAttachments(effectiveMessages),
-              modelSupportsVision
-            )
-          )
-        )
-      )
-    )
-
-    // If continuing a truncated response, append the partial assistant content as a
-    // prefill so the model resumes from where it left off rather than regenerating.
-    const continueContent = this.continueFromContent
-    this.continueFromContent = null
-    const modelMessages = continueContent
-      ? [
-          ...baseMessages,
-          { role: 'assistant' as const, content: continueContent },
-        ]
-      : baseMessages
-
-    // Include tools only if we have tools loaded AND model supports them
-    const hasTools = Object.keys(this.tools).length > 0
-    const modelSupportsTools =
-      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = hasTools && modelSupportsTools
-
-    let streamStartTime: number | undefined
-    useAppState.getState().updatePromptProgress(undefined)
-    useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-
-    const result = streamText({
-      model: this.model,
-      messages: modelMessages,
+    return sendCodexAppServerChatMessage({
+      threadId,
+      messageId: options.messageId,
+      messages: options.messages,
+      provider,
+      model: selectedModel,
       abortSignal: options.abortSignal,
-      tools: shouldEnableTools ? this.tools : undefined,
-      toolChoice: shouldEnableTools ? 'auto' : undefined,
-      system: effectiveSystem,
-      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
     })
-
-    let tokensPerSecond = 0
-    let promptPerSecond = 0
-
-    const uiStream = result.toUIMessageStream({
-      messageMetadata: ({ part }) => {
-        if (
-          !streamStartTime &&
-          (part.type === 'text-start' || part.type === 'reasoning-start')
-        ) {
-          streamStartTime = Date.now()
-        }
-
-        if (part.type === 'finish-step') {
-          tokensPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.tokensPerSecond as number) || 0
-          promptPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.promptPerSecond as number) || 0
-        }
-
-        // Add usage and token speed to metadata on finish
-        if (part.type === 'finish') {
-          const finishPart = part as {
-            type: 'finish'
-            totalUsage: LanguageModelUsage
-            finishReason: string
-          }
-          const usage = finishPart.totalUsage
-          const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
-          const durationSec = durationMs / 1000
-
-          // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens = usage?.outputTokens ?? 0
-          const inputTokens = usage?.inputTokens
-
-          // Use llama.cpp's tokens per second if available, otherwise calculate from duration
-          let tokenSpeed: number
-          if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed =
-              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
-          } else {
-            tokenSpeed = 0
-          }
-
-          return {
-            finishReason: finishPart.finishReason,
-            usage: {
-              inputTokens: inputTokens,
-              outputTokens: outputTokens,
-              totalTokens:
-                usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
-            },
-            tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 100) / 100,
-              promptSpeed: promptPerSecond
-                ? Math.round(promptPerSecond * 100) / 100
-                : undefined,
-              tokenCount: outputTokens,
-              durationMs,
-            },
-          }
-        }
-
-        return undefined
-      },
-      onError: (error) => {
-        useAppState.getState().updatePromptProgress(undefined)
-        useAppState.getState().updateLoadingModel(false)
-        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-        useAppState.getState().updateThreadLoadingModel(threadId, false)
-        if (useAppState.getState().currentStreamThreadId === threadId) {
-          useAppState.getState().setCurrentStreamThreadId(undefined)
-        }
-        const unwrapped = unwrapRetryError(error)
-        const rawMessage =
-          unwrapped == null
-            ? 'Unknown error'
-            : typeof unwrapped === 'string'
-              ? unwrapped
-              : unwrapped instanceof Error
-                ? unwrapped.message
-                : JSON.stringify(unwrapped)
-        const baseMessage = stripRetryErrorWrapper(rawMessage)
-
-        const contextInfo = extractContextInfoFromError(unwrapped)
-        if (contextInfo) {
-          return `${baseMessage}\n\n(Used ${contextInfo.nPromptTokens.toLocaleString()} of ${contextInfo.nCtx.toLocaleString()} context tokens.)`
-        }
-        return baseMessage
-      },
-      onFinish: ({ responseMessage }) => {
-        useAppState.getState().updatePromptProgress(undefined)
-        useAppState.getState().updateLoadingModel(false)
-        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-        useAppState.getState().updateThreadLoadingModel(threadId, false)
-        if (useAppState.getState().currentStreamThreadId === threadId) {
-          useAppState.getState().setCurrentStreamThreadId(undefined)
-        }
-        if (responseMessage) {
-          const metadata = responseMessage.metadata as
-            | Record<string, unknown>
-            | undefined
-          const usage = metadata?.usage as LanguageModelUsage | undefined
-          if (usage) {
-            this.onTokenUsage?.(usage, responseMessage.id)
-          }
-        }
-      },
-    })
-
-    // When continuing a truncated response, inject the partial content as the
-    // very first text-delta so the new message immediately shows it and the
-    // user sees a seamless continuation rather than an empty box.
-    const finalStream = continueContent
-      ? prependTextDeltaToUIStream(uiStream, continueContent)
-      : uiStream
-
-    return finalStream
   }
 
   async reconnectToStream(

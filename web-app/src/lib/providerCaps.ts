@@ -200,12 +200,10 @@ export function isPredefinedRemoteProvider(
  * Sources:
  * - OpenAI/Azure reasoning families (o1, o3, o4, gpt-5*) hard-reject
  *   temperature, top_p, frequency_penalty, presence_penalty.
- * - xAI grok-3-mini rejects temperature/top_p; grok-3 and grok-4 reject
- *   penalties.
+ * - xAI Grok models may reject frequency/presence penalties.
  */
 const REASONING_MODEL_RE = /^(o[1-9]|gpt-?[5-9])/i
-const GROK_NO_TEMP_RE = /^grok-3-mini/i
-const GROK_NO_PENALTY_RE = /^grok-[3-9]/i
+const GROK_NO_PENALTY_RE = /^grok-/i
 
 /**
  * Sampler keys some model families reject even when the provider's API
@@ -251,11 +249,6 @@ export function isModelLevelRejected(
     return false
   }
   if (providerId === 'xai') {
-    if (
-      GROK_NO_TEMP_RE.test(modelId) &&
-      (paramKey === 'temperature' || paramKey === 'top_p')
-    )
-      return true
     if (
       GROK_NO_PENALTY_RE.test(modelId) &&
       (paramKey === 'frequency_penalty' || paramKey === 'presence_penalty')

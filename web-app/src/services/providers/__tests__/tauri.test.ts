@@ -67,6 +67,12 @@ const { providerRemoteApiKeyChainMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/provider-api-keys', () => ({
   providerRemoteApiKeyChain: providerRemoteApiKeyChainMock,
+  providerRemoteAuthCredentials: vi.fn().mockImplementation(async (provider: unknown) =>
+    providerRemoteApiKeyChainMock(provider).map((key: string) => ({
+      key,
+      source: 'api-key',
+    }))
+  ),
   providerRemoteAuthKeyChain: vi.fn().mockImplementation(async (provider: unknown) =>
     providerRemoteApiKeyChainMock(provider)
   ),
@@ -77,6 +83,7 @@ import { EngineManager } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import {
   providerRemoteApiKeyChain,
+  providerRemoteAuthCredentials,
   providerRemoteAuthKeyChain,
 } from '@/lib/provider-api-keys'
 import { TauriProvidersService } from '../tauri'
@@ -359,6 +366,35 @@ describe('TauriProvidersService', () => {
             Authorization: 'Bearer sk-test',
           }),
         })
+      )
+    })
+
+    it('uses bearer-only auth for xAI OAuth tokens', async () => {
+      vi.mocked(providerRemoteAuthCredentials).mockResolvedValueOnce([
+        { key: 'oauth-token', source: 'xai-oauth' },
+      ])
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider({
+        ...baseProvider,
+        provider: 'xai',
+        base_url: 'https://api.x.ai/v1',
+      })
+
+      expect(fetchTauri).toHaveBeenCalledWith(
+        'https://api.x.ai/v1/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer oauth-token',
+          }),
+        })
+      )
+      expect(vi.mocked(fetchTauri).mock.calls[0]?.[1]?.headers).not.toHaveProperty(
+        'x-api-key'
       )
     })
 

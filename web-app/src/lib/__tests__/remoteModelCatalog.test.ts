@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  fetchModelsDevProviderModels,
   fetchTopRemoteModels,
   supportsRemoteCatalog,
 } from '../remoteModelCatalog'
@@ -45,6 +46,53 @@ describe('supportsRemoteCatalog', () => {
     expect(supportsRemoteCatalog('gemini')).toBe(true)
     expect(supportsRemoteCatalog('groq')).toBe(false)
     expect(supportsRemoteCatalog('mistral')).toBe(false)
+  })
+})
+
+describe('fetchModelsDevProviderModels', () => {
+  it('reads xAI text models from models.dev, pins grok-4.3, and skips image/video models', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        xai: {
+          models: {
+            'grok-imagine-image': {
+              modalities: { input: ['text'], output: ['image'] },
+            },
+            'grok-4.20-0309-reasoning': {
+              modalities: { input: ['text', 'image'], output: ['text'] },
+              tool_call: true,
+              release_date: '2026-03-09',
+            },
+            'grok-4.3': {
+              modalities: { input: ['text', 'image'], output: ['text'] },
+              tool_call: true,
+              release_date: '2026-05-06',
+            },
+            'grok-imagine-video': {
+              modalities: { input: ['text'], output: ['video'] },
+            },
+          },
+        },
+      })
+    )
+
+    const result = await fetchModelsDevProviderModels('xai', fetchImpl)
+
+    expect(fetchImpl).toHaveBeenCalledWith('https://models.dev/api.json', {
+      method: 'GET',
+    })
+    expect(result.map((model) => model.id)).toEqual([
+      'grok-4.3',
+      'grok-4.20-0309-reasoning',
+    ])
+    expect(result[0].capabilities).toEqual(['completion', 'tools', 'vision'])
+  })
+
+  it('returns an empty list when provider data is missing', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({}))
+    await expect(fetchModelsDevProviderModels('xai', fetchImpl)).resolves.toEqual(
+      []
+    )
   })
 })
 

@@ -17,6 +17,8 @@ type ProviderLike = {
 type FetchImpl = typeof fetch
 
 const TOP_N = 10
+const MODELS_DEV_URL = 'https://models.dev/api.json'
+const XAI_TOP_MODEL = 'grok-4.3'
 
 export function supportsRemoteCatalog(providerName: string): boolean {
   return (
@@ -24,6 +26,61 @@ export function supportsRemoteCatalog(providerName: string): boolean {
     providerName === 'anthropic' ||
     providerName === 'gemini'
   )
+}
+
+function inferModelsDevCapabilities(model: Record<string, unknown>): string[] | null {
+  const modalities = model.modalities as
+    | { input?: unknown; output?: unknown }
+    | undefined
+  const outputs = Array.isArray(modalities?.output) ? modalities.output : []
+  if (!outputs.includes('text')) return null
+
+  const inputs = Array.isArray(modalities?.input) ? modalities.input : []
+  return [
+    'completion',
+    model.tool_call === true ? 'tools' : undefined,
+    inputs.includes('image') ? 'vision' : undefined,
+  ].filter(Boolean) as string[]
+}
+
+function promoteXaiTopModel(models: RemoteCatalogModel[]): RemoteCatalogModel[] {
+  const top = models.find((model) => model.id === XAI_TOP_MODEL)
+  if (!top) return models
+  return [top, ...models.filter((model) => model.id !== XAI_TOP_MODEL)]
+}
+
+export async function fetchModelsDevProviderModels(
+  providerName: string,
+  fetchImpl: FetchImpl = fetch
+): Promise<RemoteCatalogModel[]> {
+  const response = await fetchImpl(MODELS_DEV_URL, { method: 'GET' })
+  if (!response.ok) {
+    throw new Error(`Failed to fetch models.dev catalog: ${response.status}`)
+  }
+
+  const body = (await response.json()) as Record<string, unknown>
+  const provider = body[providerName]
+  const models =
+    provider && typeof provider === 'object'
+      ? (provider as Record<string, unknown>).models
+      : undefined
+  if (!models || typeof models !== 'object' || Array.isArray(models)) return []
+
+  const parsed: RemoteCatalogModel[] = []
+  for (const [id, rawModel] of Object.entries(models)) {
+    if (!id || !rawModel || typeof rawModel !== 'object') continue
+    const model = rawModel as Record<string, unknown>
+    const capabilities = inferModelsDevCapabilities(model)
+    if (!capabilities) continue
+    parsed.push({
+      id,
+      capabilities,
+      createdMs: parseCreated(undefined, model.release_date ?? model.last_updated),
+    })
+  }
+
+  parsed.sort((a, b) => a.id.localeCompare(b.id))
+  return providerName === 'xai' ? promoteXaiTopModel(parsed) : parsed
 }
 
 function inferOpenAICapabilities(id: string): string[] | null {

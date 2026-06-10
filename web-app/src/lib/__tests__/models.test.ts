@@ -362,10 +362,10 @@ describe('getModelCapabilities', () => {
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
   })
 
-  it('handles model not in capability list', () => {
-    const capabilities = getModelCapabilities('xai', 'grok-2-vision-1212')
+  it('handles xAI models without hardcoded capability data', () => {
+    const capabilities = getModelCapabilities('xai', 'live-xai-model')
     expect(capabilities).toContain(ModelCapabilities.COMPLETION)
-    expect(capabilities).toContain(ModelCapabilities.VISION)
+    expect(capabilities).not.toContain(ModelCapabilities.VISION)
     expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
   })
 

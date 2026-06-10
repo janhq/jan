@@ -13,6 +13,22 @@ import {
 import { isDefaultReasoningSetting } from '@/lib/model-reasoning'
 
 const API_KEY_FALLBACKS_MIGRATION_FLAG = 'api_key_fallbacks_migrated_to_settings'
+const XAI_SSO_DEFAULT_MODEL: Model = {
+  id: 'grok-4.3',
+  model: 'grok-4.3',
+  name: 'grok-4.3',
+  capabilities: ['completion', 'tools', 'vision'],
+  version: '1.0',
+}
+const REMOVED_XAI_DEFAULT_MODELS = new Set([
+  'grok-build-0.1',
+  'grok-4-1-fast-reasoning',
+  'grok-4-fast-reasoning',
+  'grok-3',
+  'grok-3-mini',
+  'grok-2-vision-1212',
+  'grok-imagine-image',
+])
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -37,7 +53,7 @@ export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
-      selectedProvider: 'llamacpp',
+      selectedProvider: 'codex',
       selectedModel: null,
       deletedModels: [],
       getModelBy: (modelId: string) => {
@@ -868,9 +884,52 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 19 && state?.providers) {
+          // Remove stale xAI defaults that used to be bundled locally. xAI
+          // models should come from the live provider refresh instead, except
+          // for the one SSO fallback restored in v21 below.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'xai' || !provider.models) return
+            provider.models = provider.models.filter(
+              (model) =>
+                model.imported || !REMOVED_XAI_DEFAULT_MODELS.has(model.id)
+            )
+          })
+        }
+
+        if (version <= 21 && state?.providers) {
+          // Live xAI `/models` can reject OAuth tokens. Keep a single known
+          // SSO runtime model available so SuperGrok sign-in can still chat
+          // without depending on model discovery. Also purge stale Grok Build
+          // ids that may have been persisted while testing `/models` output;
+          // those are not the stable xAI Responses runtime model.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'xai') return
+            provider.models = provider.models ?? []
+            provider.models = provider.models.filter(
+              (model) => !REMOVED_XAI_DEFAULT_MODELS.has(model.id)
+            )
+            if (
+              !provider.models.some(
+                (model) => model.id === XAI_SSO_DEFAULT_MODEL.id
+              )
+            ) {
+              provider.models.unshift(XAI_SSO_DEFAULT_MODEL)
+            }
+          })
+
+          if (
+            state.selectedProvider === 'xai' &&
+            (!state.selectedModel ||
+              REMOVED_XAI_DEFAULT_MODELS.has(state.selectedModel.id))
+          ) {
+            state.selectedModel = XAI_SSO_DEFAULT_MODEL
+          }
+        }
+
         return state
       },
-      version: 19,
+      version: 22,
     }
   )
 )

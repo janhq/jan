@@ -61,6 +61,7 @@ import {
 import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
+  fetchModelsDevProviderModels,
 } from '@/lib/remoteModelCatalog'
 import {
   isManagedProvider,
@@ -108,6 +109,10 @@ function ProviderDetail() {
   const provider = getProviderByName(providerName)
   const isLlamacpp = provider?.provider === 'llamacpp'
   const isManaged = isManagedProvider(providerName)
+  const apiKeyFallbacksSignature = useMemo(
+    () => JSON.stringify(provider?.api_key_fallbacks ?? []),
+    [provider?.api_key_fallbacks]
+  )
   const isPredefinedProvider = useMemo(
     () => predefinedProviders.some((p) => p.provider === providerName),
     [providerName]
@@ -278,7 +283,7 @@ function ProviderDetail() {
   }, [
     providerName,
     provider?.api_key,
-    JSON.stringify(provider?.api_key_fallbacks ?? []),
+    apiKeyFallbacksSignature,
   ])
 
   useEffect(() => {
@@ -432,6 +437,7 @@ function ProviderDetail() {
     }
 
     let keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+    let testingXaiOAuthToken = false
     if (
       provider.provider === 'xai' &&
       keyDraftLines.filter((l) => l.length > 0).length === 0 &&
@@ -440,6 +446,7 @@ function ProviderDetail() {
       const oauthToken = await getXaiOAuthAccessToken()
       if (oauthToken) {
         keyDraftLines = [oauthToken]
+        testingXaiOAuthToken = true
       }
     }
     const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
@@ -466,8 +473,10 @@ function ProviderDetail() {
         if (!key) continue
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
-          'x-api-key': key,
           'Authorization': `Bearer ${key}`,
+        }
+        if (!testingXaiOAuthToken) {
+          headers['x-api-key'] = key
         }
         if (
           provider.base_url.includes('localhost:') ||
@@ -571,62 +580,59 @@ function ProviderDetail() {
           version: '1.0',
         }))
       } else {
-        const modelIds = await serviceHub
-          .providers()
-          .fetchModelsFromProvider(provider)
-        newModels = modelIds.map((id) => ({
-          id,
-          model: id,
-          name: id,
-          capabilities: ['completion'],
-          version: '1.0',
-        }))
+        try {
+          const modelIds = await serviceHub
+            .providers()
+            .fetchModelsFromProvider(provider)
+          newModels = modelIds.map((id) => ({
+            id,
+            model: id,
+            name: id,
+            capabilities: ['completion'],
+            version: '1.0',
+          }))
+        } catch (error) {
+          if (provider.provider !== 'xai') throw error
+          const catalog = await fetchModelsDevProviderModels(
+            provider.provider,
+            serviceHub.providers().fetch()
+          )
+          if (catalog.length === 0) throw error
+          newModels = catalog.map((m) => ({
+            id: m.id,
+            model: m.id,
+            name: m.id,
+            capabilities: m.capabilities,
+            version: '1.0',
+          }))
+        }
       }
 
-      if (supportsRemoteCatalog(provider.provider)) {
-        const importedModels = provider.models.filter((m) => m.imported)
-        const importedIds = new Set(importedModels.map((m) => m.id))
-        const fresh = newModels.filter((m) => !importedIds.has(m.id))
-        if (fresh.length === 0) {
-          toast.success(t('providers:models'), {
-            description: t('providers:noNewModels'),
-          })
-          return
-        }
-        const updatedModels = [...importedModels, ...fresh]
-        const keepIds = new Set(updatedModels.map((m) => m.id))
-        const removedIds = provider.models
-          .filter((m) => !m.imported && !keepIds.has(m.id))
-          .map((m) => m.id)
+      const importedModels = provider.models.filter((m) => m.imported)
+      const importedIds = new Set(importedModels.map((m) => m.id))
+      const refreshedModels = newModels.filter((m) => !importedIds.has(m.id))
+      const updatedModels = [...importedModels, ...refreshedModels]
+      const keepIds = new Set(updatedModels.map((m) => m.id))
+      const existingRemoteIds = new Set(
+        provider.models.filter((m) => !m.imported).map((m) => m.id)
+      )
+      const addedCount = refreshedModels.filter(
+        (model) => !existingRemoteIds.has(model.id)
+      ).length
+      const removedIds = provider.models
+        .filter((m) => !m.imported && !keepIds.has(m.id))
+        .map((m) => m.id)
+
+      if (addedCount > 0 || removedIds.length > 0) {
         addDeletedModels(removedIds)
         updateProvider(providerName, {
           ...provider,
           models: updatedModels,
         })
-        toast.success(t('providers:models'), {
-          description: t('providers:refreshModelsSuccess', {
-            count: fresh.length,
-            provider: provider.provider,
-          }),
-        })
-        return
-      }
-
-      const existingModelIds = provider.models.map((m) => m.id)
-      const modelsToAdd = newModels.filter(
-        (model) => !existingModelIds.includes(model.id)
-      )
-
-      if (modelsToAdd.length > 0) {
-        const updatedModels = [...provider.models, ...modelsToAdd]
-        updateProvider(providerName, {
-          ...provider,
-          models: updatedModels,
-        })
 
         toast.success(t('providers:models'), {
           description: t('providers:refreshModelsSuccess', {
-            count: modelsToAdd.length,
+            count: addedCount,
             provider: provider.provider,
           }),
         })

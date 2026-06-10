@@ -9,6 +9,8 @@ import { useCodexProviderProfiles } from '@/stores/codex-provider-profile-store'
 import { useCodexAppServerRuntime } from '@/stores/codex-app-server-runtime-store'
 import { useRuntimePermission } from '@/stores/runtime-permission-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { buildCodexConfigToml } from './config'
 import { buildCodexMcpServersConfig } from './mcp-config-bridge'
 import { CodexAppServerClient } from './api'
@@ -33,6 +35,7 @@ type CodexSessionEntry = {
 }
 
 const sessions = new Map<string, CodexSessionEntry>()
+const JAN_HOSTED_LOCAL_PROVIDERS = new Set(['llamacpp', 'mlx'])
 
 export const isCodexAppServerProvider = (providerId: string | undefined) =>
   providerId === CODEX_APP_SERVER_PROVIDER_ID
@@ -63,6 +66,8 @@ export async function sendCodexAppServerChatMessage({
       )
     }
   }
+
+  await ensureCodexTargetProviderReady(threadId, provider, model)
 
   const client = getOrCreateSession(threadId, provider, model)
   const events = bridgeCodexApprovalRequests(
@@ -123,6 +128,56 @@ export async function shutdownCodexAppServerChatSession(threadId: string) {
   if (!entry) return
   sessions.delete(threadId)
   await entry.client.shutdownCodex()
+}
+
+async function ensureCodexTargetProviderReady(
+  threadId: string,
+  provider: ModelProvider,
+  model: Model
+) {
+  if (!JAN_HOSTED_LOCAL_PROVIDERS.has(provider.provider)) return
+
+  const appState = useAppState.getState()
+  const serviceHub = getServiceHub()
+  const localApi = useLocalApiServer.getState()
+
+  appState.updateLoadingModel(true)
+  appState.updateThreadLoadingModel(threadId, true)
+  try {
+    await serviceHub.models().startModel(provider, model.id, true)
+
+    const isRunning = await serviceHub
+      .app()
+      .getServerStatus()
+      .catch(() => false)
+    if (!isRunning) {
+      appState.setServerStatus('pending')
+      const actualPort = await window.core?.api?.startServer({
+        host: localApi.serverHost,
+        port: localApi.serverPort,
+        prefix: localApi.apiPrefix,
+        apiKey: localApi.apiKey,
+        trustedHosts: localApi.trustedHosts,
+        isCorsEnabled: localApi.corsEnabled,
+        isVerboseEnabled: localApi.verboseLogs,
+        proxyTimeout: localApi.proxyTimeout,
+      })
+      if (actualPort && actualPort !== localApi.serverPort) {
+        localApi.setServerPort(actualPort)
+      }
+      appState.setServerStatus('running')
+    }
+  } catch (error) {
+    appState.setServerStatus('stopped')
+    throw new Error(
+      `Failed to prepare local provider for Codex: ${
+        error instanceof Error ? error.message : JSON.stringify(error)
+      }`
+    )
+  } finally {
+    appState.updateLoadingModel(false)
+    appState.updateThreadLoadingModel(threadId, false)
+  }
 }
 
 function requireCodexSession(janThreadId: string) {
@@ -416,7 +471,8 @@ function codexApprovalDetails(request: CodexWireServerRequest) {
       params,
       // Include threadId so UI can highlight if this approval is from a subagent/child
       threadId:
-        stringValue(params?.threadId) || stringValue((request as any).threadId),
+        stringValue(params?.threadId) ||
+        stringValue((request as { threadId?: unknown }).threadId),
     },
   }
 }
@@ -955,29 +1011,42 @@ export function buildCodexSessionOptions(
   provider: ModelProvider,
   model: Model
 ) {
+  const modelProviderState = useModelProvider.getState()
   const activeProfileId = useCodexProviderProfiles.getState().activeProfileId
   const activeProfile = activeProfileId
     ? useCodexProviderProfiles.getState().profiles[activeProfileId]
     : undefined
+  const codexSettingsProvider =
+    provider.provider === CODEX_APP_SERVER_PROVIDER_ID
+      ? provider
+      : modelProviderState.getProviderByName(CODEX_APP_SERVER_PROVIDER_ID) ??
+        provider
+  const usesCodexSettingsProvider =
+    provider.provider === CODEX_APP_SERVER_PROVIDER_ID
 
   const targetProvider = activeProfile
     ? mapProfileProviderType(activeProfile.providerType)
-    : settingValue(provider, 'codex-provider') || 'openai'
+    : usesCodexSettingsProvider
+      ? settingValue(provider, 'codex-provider') || 'openai'
+      : provider.provider
+  const codexConfigProvider = codexManagedProviderId(targetProvider)
 
   const baseUrl = activeProfile
     ? activeProfile.baseUrl
-    : settingValue(provider, 'base-url') ||
-      provider.base_url ||
-      defaultBaseUrlForProvider(targetProvider)
+    : usesCodexSettingsProvider
+      ? settingValue(provider, 'base-url') ||
+        provider.base_url ||
+        defaultBaseUrlForProvider(targetProvider)
+      : provider.base_url ||
+        settingValue(provider, 'base-url') ||
+        defaultBaseUrlForProvider(targetProvider)
 
   let apiKey = ''
   if (activeProfile) {
     const mappedProviderName = mapProfileProviderType(
       activeProfile.providerType
     )
-    const janProvider = useModelProvider
-      .getState()
-      .getProviderByName(mappedProviderName)
+    const janProvider = modelProviderState.getProviderByName(mappedProviderName)
     apiKey =
       janProvider?.api_key ||
       (janProvider ? settingValue(janProvider, 'api-key') : '')
@@ -986,9 +1055,11 @@ export function buildCodexSessionOptions(
   }
 
   const codexBinaryPath =
-    settingValue(provider, 'codex-binary-path') || defaultCodexBinaryPath()
+    settingValue(codexSettingsProvider, 'codex-binary-path') ||
+    defaultCodexBinaryPath()
   const transport = normalizeCodexTransport(
-    activeProfile?.transport || settingValue(provider, 'codex-transport')
+    activeProfile?.transport ||
+      settingValue(codexSettingsProvider, 'codex-transport')
   )
   const cwd = resolveCodexWorkspaceDir(threadId)
   const codexHome = activeProfile
@@ -1013,7 +1084,7 @@ export function buildCodexSessionOptions(
     transport,
     cwd,
     model: targetModel,
-    modelProvider: targetProvider,
+    modelProvider: codexConfigProvider,
     approvalPolicy,
     sandbox,
     agentsMd,
@@ -1025,14 +1096,14 @@ export function buildCodexSessionOptions(
     advancedConfigSnippet,
     configToml: buildCodexConfigToml({
       model: targetModel,
-      modelProvider: targetProvider,
+      modelProvider: codexConfigProvider,
       providers: [
         {
-          id: targetProvider,
+          id: codexConfigProvider,
           name: targetProvider,
           baseUrl,
           apiKeyEnvVar: envKey,
-          wireApi: 'responses',
+          wireApi: codexWireApiForProvider(targetProvider),
         },
       ],
       mcpServers,
@@ -1058,6 +1129,19 @@ function mapProfileProviderType(type: string): string {
   if (type === 'openai-compatible') return 'openai'
   if (type === 'llama-cpp') return 'llamacpp'
   return type
+}
+
+const CODEX_RESERVED_PROVIDER_IDS = new Set([
+  'openai',
+  'openrouter',
+  'ollama',
+  'lmstudio',
+])
+
+function codexManagedProviderId(providerId: string): string {
+  return CODEX_RESERVED_PROVIDER_IDS.has(providerId)
+    ? `jan-${providerId}`
+    : providerId
 }
 
 function normalizeCodexTransport(
@@ -1108,7 +1192,19 @@ function defaultBaseUrlForProvider(providerId: string) {
   if (providerId === 'openai') return 'https://api.openai.com/v1'
   if (providerId === 'openrouter') return 'https://openrouter.ai/api/v1'
   if (providerId === 'ollama') return 'http://127.0.0.1:11434/v1'
+  if (providerId === 'vllm') return 'http://127.0.0.1:8000/v1'
+  if (JAN_HOSTED_LOCAL_PROVIDERS.has(providerId)) {
+    const { serverHost, serverPort, apiPrefix } = useLocalApiServer.getState()
+    return `http://${serverHost}:${serverPort}${apiPrefix}`
+  }
   return 'https://api.openai.com/v1'
+}
+
+function codexWireApiForProvider(providerId: string): 'chat' | 'responses' {
+  if (providerId === 'openai' || providerId === 'openrouter') {
+    return 'responses'
+  }
+  return 'chat'
 }
 
 type CodexImageInput = {

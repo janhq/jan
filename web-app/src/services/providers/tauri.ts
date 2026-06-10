@@ -11,7 +11,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
-import { providerRemoteAuthKeyChain } from '@/lib/provider-api-keys'
+import { providerRemoteAuthCredentials } from '@/lib/provider-api-keys'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -135,15 +135,16 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
 
     try {
-      const keyChain = await providerRemoteAuthKeyChain(provider)
-      const keyAttempts: (string | undefined)[] =
-        keyChain.length > 0 ? keyChain : [undefined]
+      const credentials = await providerRemoteAuthCredentials(provider)
+      const keyAttempts =
+        credentials.length > 0 ? credentials : [{ key: undefined }]
 
       let lastStatus = 0
       let lastStatusText = ''
 
       for (let ki = 0; ki < keyAttempts.length; ki++) {
-        const key = keyAttempts[ki]
+        const credential = keyAttempts[ki]
+        const key = credential.key
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
         }
@@ -156,8 +157,10 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
 
         if (key) {
-          headers['x-api-key'] = key
           headers['Authorization'] = `Bearer ${key}`
+          if (credential.source !== 'xai-oauth') {
+            headers['x-api-key'] = key
+          }
         }
 
         if (provider.custom_header) {

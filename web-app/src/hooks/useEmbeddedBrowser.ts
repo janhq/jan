@@ -7,7 +7,8 @@ import type { RefObject } from 'react'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { rafThrottle } from '@/lib/throttle'
 
-const WEBVIEW_LABEL = 'workspace-browser-panel'
+const WEBVIEW_LABEL_PREFIX = 'workspace-browser-panel'
+let nextWebviewId = 0
 
 function getContainerBounds(container: HTMLElement) {
   const rect = container.getBoundingClientRect()
@@ -26,6 +27,14 @@ export function useEmbeddedBrowser(
 ) {
   const webviewRef = useRef<Webview | null>(null)
   const mountedUrlRef = useRef<string | null>(null)
+  const teardownPromiseRef = useRef<Promise<void> | null>(null)
+  const webviewLabelRef = useRef<string | null>(null)
+
+  if (webviewLabelRef.current === null) {
+    nextWebviewId += 1
+    webviewLabelRef.current = `${WEBVIEW_LABEL_PREFIX}-${nextWebviewId}`
+  }
+  const webviewLabel = webviewLabelRef.current
 
   const syncBounds = useCallback(async () => {
     const container = containerRef.current
@@ -43,17 +52,34 @@ export function useEmbeddedBrowser(
   }, [containerRef])
 
   const teardownWebview = useCallback(async () => {
+    const pendingTeardown = teardownPromiseRef.current
+    if (pendingTeardown) {
+      await pendingTeardown
+    }
+
     const webview = webviewRef.current
     webviewRef.current = null
     mountedUrlRef.current = null
     if (!webview) return
 
-    try {
+    const teardown = (async () => {
       console.log('[EmbeddedBrowser] Tearing down webview')
-      await webview.hide()
+      await webview.hide().catch((err) => {
+        console.warn('[EmbeddedBrowser] Non-fatal hide error:', err)
+      })
       await webview.close()
-    } catch (err) {
+    })().catch((err) => {
       console.warn('[EmbeddedBrowser] Non-fatal teardown error:', err)
+    })
+
+    teardownPromiseRef.current = teardown
+
+    try {
+      await teardown
+    } finally {
+      if (teardownPromiseRef.current === teardown) {
+        teardownPromiseRef.current = null
+      }
     }
   }, [])
 
@@ -89,7 +115,7 @@ export function useEmbeddedBrowser(
         const bounds = getContainerBounds(container)
         const parentWindow = getCurrentWebviewWindow()
         console.log('[EmbeddedBrowser] Creating new webview with URL:', activeUrl, 'bounds:', bounds)
-        const webview = new Webview(parentWindow, WEBVIEW_LABEL, {
+        const webview = new Webview(parentWindow, webviewLabel, {
           url: activeUrl,
           x: bounds.x,
           y: bounds.y,
@@ -98,6 +124,8 @@ export function useEmbeddedBrowser(
           focus: false,
           zoomHotkeysEnabled: false,
         })
+        webviewRef.current = webview
+        mountedUrlRef.current = activeUrl
 
         await new Promise<void>((resolve) => {
           let settled = false
@@ -121,14 +149,14 @@ export function useEmbeddedBrowser(
           }, 1500)
         })
 
-        if (cancelled) {
+        if (cancelled || webviewRef.current !== webview) {
           console.log('[EmbeddedBrowser] Creation cancelled, closing webview')
-          await webview.close()
+          await webview.close().catch((err) => {
+            console.warn('[EmbeddedBrowser] Non-fatal cancelled close error:', err)
+          })
           return
         }
 
-        webviewRef.current = webview
-        mountedUrlRef.current = activeUrl
         await webview.show()
         await syncBounds()
         console.log('[EmbeddedBrowser] Webview successfully shown and synced')
@@ -143,7 +171,7 @@ export function useEmbeddedBrowser(
       cancelled = true
       void teardownWebview()
     }
-  }, [activeUrl, containerRef, isActive, syncBounds, teardownWebview])
+  }, [activeUrl, containerRef, isActive, syncBounds, teardownWebview, webviewLabel])
 
   useEffect(() => {
     if (!isPlatformTauri() || !isActive || !activeUrl) return

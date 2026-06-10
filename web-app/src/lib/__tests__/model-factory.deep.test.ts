@@ -52,7 +52,9 @@ vi.mock('@ai-sdk/openai', () => ({
 vi.mock('@ai-sdk/xai', () => ({
   createXai: vi.fn((config: any) => {
     ;(globalThis as any).__capturedXaiCfg = config
-    return vi.fn(() => ({ type: 'xai' }))
+    const fn: any = vi.fn(() => ({ type: 'xai-chat' }))
+    fn.responses = vi.fn(() => ({ type: 'xai-responses' }))
+    return fn
   }),
 }))
 
@@ -87,9 +89,15 @@ vi.mock('@/lib/provider-api-keys', () => ({
   }),
 }))
 
+vi.mock('@/lib/xai-oauth', () => ({
+  getXaiOAuthAccessToken: vi.fn().mockResolvedValue(null),
+}))
+
 import { ModelFactory } from '../model-factory'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { createXai } from '@ai-sdk/xai'
+import { getXaiOAuthAccessToken } from '@/lib/xai-oauth'
 
 function getOpts(): any {
   return (globalThis as any).__capturedModelOpts
@@ -113,6 +121,7 @@ describe('model-factory deep coverage', () => {
     ;(globalThis as any).__capturedGoogleCfg = null
     ;(globalThis as any).__capturedOpenAICfg = null
     ;(globalThis as any).__capturedXaiCfg = null
+    vi.mocked(getXaiOAuthAccessToken).mockResolvedValue(null)
     mockStartModel.mockResolvedValue(undefined)
   })
 
@@ -254,6 +263,230 @@ describe('model-factory deep coverage', () => {
     it('xai passes custom headers', async () => {
       await ModelFactory.createModel('x', mkProvider('xai', { custom_header: [{ header: 'X-X', value: 'v' }] }), {})
       expect((globalThis as any).__capturedXaiCfg.headers).toEqual({ 'X-X': 'v' })
+    })
+
+    it('xai OAuth uses the Responses transport', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      const model = await ModelFactory.createModel(
+        'grok-4.3',
+        mkProvider('xai', {
+          api_key: '',
+          base_url: 'https://api.x.ai/v1',
+        }),
+        {}
+      )
+      const xaiClient = vi.mocked(createXai).mock.results.at(-1)?.value as {
+        responses: ReturnType<typeof vi.fn>
+      }
+
+      expect(model).toEqual({ type: 'xai-responses' })
+      expect((globalThis as any).__capturedXaiCfg.apiKey).toBe('oauth-token')
+      expect(xaiClient.responses).toHaveBeenCalledWith('grok-4.3')
+    })
+
+    it('xai OAuth remaps stale Grok Build model ids to the SSO runtime model', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      await ModelFactory.createModel(
+        'grok-build-0.1',
+        mkProvider('xai', {
+          api_key: '',
+          base_url: 'https://api.x.ai/v1',
+        }),
+        {}
+      )
+      const xaiClient = vi.mocked(createXai).mock.results.at(-1)?.value as {
+        responses: ReturnType<typeof vi.fn>
+      }
+
+      expect(xaiClient.responses).toHaveBeenCalledWith('grok-4.3')
+    })
+
+    it('xai OAuth fetch injects store:false on /responses POST', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      const downstream = vi.fn().mockResolvedValueOnce(
+        new Response('{}', { status: 200 })
+      )
+      const origFetch = globalThis.fetch
+      globalThis.fetch = downstream as typeof globalThis.fetch
+
+      try {
+        await ModelFactory.createModel(
+          'grok-4.3',
+          mkProvider('xai', { api_key: '', base_url: 'https://api.x.ai/v1' }),
+          {}
+        )
+
+        const wrappedFetch = (globalThis as any).__capturedXaiCfg
+          .fetch as typeof globalThis.fetch
+        await wrappedFetch('https://api.x.ai/v1/responses', {
+          method: 'POST',
+          body: JSON.stringify({
+            model: 'grok-4.3',
+            input: [],
+            previous_response_id: 'resp_abc',
+          }),
+        })
+
+        const downstreamBody = JSON.parse(
+          downstream.mock.calls.at(-1)?.[1]?.body as string
+        )
+        expect(downstreamBody.store).toBe(false)
+        expect(downstreamBody.previous_response_id).toBeUndefined()
+      } finally {
+        globalThis.fetch = origFetch
+      }
+    })
+
+    it('xai OAuth fetch leaves non-/responses POST bodies untouched', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      const downstream = vi.fn().mockResolvedValueOnce(
+        new Response('{}', { status: 200 })
+      )
+      const origFetch = globalThis.fetch
+      globalThis.fetch = downstream as typeof globalThis.fetch
+
+      try {
+        await ModelFactory.createModel(
+          'grok-4.3',
+          mkProvider('xai', { api_key: '', base_url: 'https://api.x.ai/v1' }),
+          {}
+        )
+
+        const wrappedFetch = (globalThis as any).__capturedXaiCfg
+          .fetch as typeof globalThis.fetch
+        await wrappedFetch('https://api.x.ai/v1/models', {
+          method: 'POST',
+          body: JSON.stringify({ foo: 'bar' }),
+        })
+
+        const downstreamBody = JSON.parse(
+          downstream.mock.calls.at(-1)?.[1]?.body as string
+        )
+        expect('store' in downstreamBody).toBe(false)
+        expect(downstreamBody.foo).toBe('bar')
+      } finally {
+        globalThis.fetch = origFetch
+      }
+    })
+
+    it('xai OAuth fetch treats a bare Forbidden as unknown request failure', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      const downstream = vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Forbidden' } }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      const origFetch = globalThis.fetch
+      globalThis.fetch = downstream as typeof globalThis.fetch
+
+      try {
+        await ModelFactory.createModel(
+          'grok-4.3',
+          mkProvider('xai', { api_key: '', base_url: 'https://api.x.ai/v1' }),
+          {}
+        )
+
+        const wrappedFetch = (globalThis as any).__capturedXaiCfg
+          .fetch as typeof globalThis.fetch
+        const res = await wrappedFetch('https://api.x.ai/v1/responses', {
+          method: 'POST',
+          body: JSON.stringify({ model: 'grok-4.3', input: [] }),
+        })
+        const body = await res.json()
+        expect(res.status).toBe(403)
+        expect(body.error.message).toMatch(/did not identify a quota\/subscription issue/i)
+        expect(body.error.message).toMatch(/still sending something xAI rejects/i)
+        expect(body.error.message).toMatch(/\[xai-oauth\]/)
+        expect(body.error.message).toMatch(/upstream: Forbidden/)
+      } finally {
+        globalThis.fetch = origFetch
+      }
+    })
+
+    it('xai OAuth does not fall back to API key on entitlement 403', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      const downstream = vi.fn().mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message:
+                'You have run out of available resources or do not have an active Grok subscription.',
+            },
+          }),
+          {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
+      )
+      const origFetch = globalThis.fetch
+      globalThis.fetch = downstream as typeof globalThis.fetch
+
+      try {
+        await ModelFactory.createModel(
+          'grok-4.3',
+          mkProvider('xai', {
+            api_key: 'xai-key-fallback',
+            base_url: 'https://api.x.ai/v1',
+          }),
+          {}
+        )
+
+        const wrappedFetch = (globalThis as any).__capturedXaiCfg
+          .fetch as typeof globalThis.fetch
+        const res = await wrappedFetch('https://api.x.ai/v1/responses', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer oauth-token' },
+          body: JSON.stringify({ model: 'grok-4.3', input: [] }),
+        })
+
+        const body = await res.json()
+        expect(res.status).toBe(403)
+        expect(downstream).toHaveBeenCalledTimes(1)
+        expect(body.error.message).toMatch(/quota\/subscription entitlement/i)
+      } finally {
+        globalThis.fetch = origFetch
+      }
+    })
+
+    it('xai OAuth never injects OpenAI-compatible params into /responses', async () => {
+      vi.mocked(getXaiOAuthAccessToken).mockResolvedValueOnce('oauth-token')
+      const downstream = vi.fn().mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      const origFetch = globalThis.fetch
+      globalThis.fetch = downstream as typeof globalThis.fetch
+
+      try {
+        await ModelFactory.createModel(
+          'grok-4.3',
+          mkProvider('xai', {
+            api_key: 'xai-key-fallback',
+            base_url: 'https://api.x.ai/v1',
+          }),
+          {
+            max_output_tokens: 1024,
+            temperature: 0.4,
+            top_k: 40,
+          }
+        )
+
+        const wrappedFetch = (globalThis as any).__capturedXaiCfg
+          .fetch as typeof globalThis.fetch
+        await wrappedFetch('https://api.x.ai/v1/responses', {
+          method: 'POST',
+          body: JSON.stringify({ model: 'grok-4.3', input: [] }),
+        })
+
+        const body = JSON.parse(downstream.mock.calls.at(-1)?.[1]?.body as string)
+        expect(body.store).toBe(false)
+        expect(body.max_tokens).toBeUndefined()
+        expect(body.max_output_tokens).toBeUndefined()
+        expect(body.temperature).toBeUndefined()
+        expect(body.top_k).toBeUndefined()
+        expect(downstream).toHaveBeenCalledTimes(1)
+      } finally {
+        globalThis.fetch = origFetch
+      }
     })
   })
 

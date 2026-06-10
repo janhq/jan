@@ -47,6 +47,25 @@ This tracker defines what must be true before this Jan workspace can reasonably 
 - MCP smoke test must confirm MCP status/OAuth/resource/tool paths either succeed or show actionable errors.
 - Account smoke test must confirm unauthenticated and authenticated states render correctly without breaking chat.
 
+## Validation evidence - 2026-06-09
+
+- Connector inventory confirmed the active flow: `CustomChatTransport` now routes every selected chat provider/model to `sendCodexAppServerChatMessage`; Codex sessions run through `TauriCodexProcessSpawner`, and Jan MCP settings are projected through `mcp-config-bridge`.
+- Found and fixed a product-level runtime bypass: fresh chats still defaulted through the normal `llamacpp` provider path, so the assistant could truthfully report that it had no Codex/code-execution tools. The model store now defaults to `codex`, and fresh agent chats prefer the first active Codex model before falling back to direct local providers.
+- Collapsed chat execution to one runtime path: normal providers such as `ollama`, `llamacpp`, `mlx`, `vllm`, and remote OpenAI-compatible providers are projected into Codex config as the target model provider instead of being executed directly through AI SDK `streamText`. Jan-hosted local engines are loaded through the existing model service and exposed through Jan's local OpenAI-compatible API before Codex starts the turn.
+- Focused Codex/app-server tests passed: 13 files / 112 tests covering JSON-RPC, process manager, client facade, Tauri process adapter, UI stream mapping, MCP config bridge, chat backend, proto adapter/session, live app-server, custom chat transport, and chat-session cleanup.
+- Single-path chat regressions passed: `DropdownModelProvider` now selects `codex` for new agent chats when available, `CustomChatTransport` routes both `codex` and normal providers into the Codex app-server backend, `buildCodexSessionOptions` projects direct providers into Codex config with managed reserved ids such as `jan-ollama`, and local Jan providers start the selected model plus local API server before Codex chat.
+- Local model connector tests passed: 5 files / 115 tests covering `ModelFactory`, `llamacpp`, `mlx`, OpenAI-compatible providers, reasoning params, and custom fetch behavior.
+- MCP validation passed: 3 files / 36 tests covering `[mcp_servers.*]` TOML projection, runtime MCP refresh config, API facade MCP methods, and intentional host-proxy rejection for Codex-owned `item/tool/call` execution.
+- Lint passed for connector files and the touched reasoning dropdown; IDE diagnostics reported no linter errors for the edited files.
+- Web build passed after dependency/native-resource setup.
+- Native Rust validation passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib` completed after materializing Bun/UV with `yarn download:bin` and `mlx-server` with `yarn build:mlx-server`. Remaining Rust output was warnings only.
+- Codex binary validation passed for `/Applications/Codex.app/Contents/Resources/codex app-server --help`; `doctor`, `exec`, and `resume` help surfaces are available.
+- Codex runtime smoke passed against a streaming mock Responses provider: app-server starts, emits `item/agentMessage/delta`, completes the turn with `smoke-ok`, and shuts down.
+- Local model smoke passed for Ollama: `http://127.0.0.1:11434/v1/models` lists local models, and Codex streams through the Ollama endpoint with `mistral-small3.1:latest` using a Jan-scoped provider id (`jan-ollama`) and returns `jan-local-ok`.
+- Fixed a validation tooling mismatch: `scripts/codex-smoke-test.mjs` now rewrites reserved Codex provider ids such as `ollama` to app-managed ids such as `jan-ollama`, matching `buildCodexSessionOptions`.
+- Fixed lint/build blockers found during validation: replaced loose `any` usage in Codex process types, made proto fallback unsupported-method stubs lint-clean, typed dynamic Codex event payload access, and normalized boolean reasoning values before using them as React keys.
+- Residual environment notes: vLLM at `http://127.0.0.1:8000/v1/models` is not currently available in OpenAI-compatible shape (`{"detail":"Not Found"}`); the installed Ollama model `qwen2.5-coder:1.5b-base` rejects Codex requests because it does not support tools; full interactive desktop UI smoke was not run in this terminal-only validation pass. The focused dropdown test emits existing React `act(...)` warnings from asynchronous status effects, but assertions pass and no unhandled errors remain after mocking the Tauri-only XAI OAuth listener.
+
 ## Completion rule
 
 Do not mark the goal complete until the implementation work above is either finished or intentionally de-scoped by the user, and every required validation item has current evidence.

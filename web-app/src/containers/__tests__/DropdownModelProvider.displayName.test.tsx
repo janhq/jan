@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { getModelDisplayName } from '@/lib/utils'
@@ -26,11 +26,25 @@ type Model = {
 type MockHookReturn = {
   providers: ModelProvider[]
   selectedProvider: string
-  selectedModel: Model
+  selectedModel: Model | null
   getProviderByName: (name: string) => ModelProvider | undefined
   selectModelProvider: () => void
   getModelBy: (id: string) => Model | undefined
   updateProvider: () => void
+}
+
+const localStorageStore = new Map<string, string>()
+const localStorageMock = {
+  getItem: vi.fn((key: string) => localStorageStore.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    localStorageStore.set(key, value)
+  }),
+  removeItem: vi.fn((key: string) => {
+    localStorageStore.delete(key)
+  }),
+  clear: vi.fn(() => {
+    localStorageStore.clear()
+  }),
 }
 
 // Mock the dependencies
@@ -67,6 +81,11 @@ vi.mock('@/hooks/useFavoriteModel', () => ({
   useFavoriteModel: vi.fn(() => ({
     favoriteModels: [],
   })),
+}))
+
+vi.mock('@/lib/xai-oauth', () => ({
+  getXaiOAuthStatus: vi.fn(() => Promise.resolve(null)),
+  onXaiOAuthLoginComplete: vi.fn(() => Promise.resolve(() => {})),
 }))
 
 vi.mock('@/lib/platform/const', () => ({
@@ -142,6 +161,8 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('localStorage', localStorageMock)
+    localStorageMock.clear()
 
     // Reset the mock for each test
     vi.mocked(useModelProvider).mockReturnValue({
@@ -274,6 +295,54 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.getAllByText('Short Name').length).toBeGreaterThanOrEqual(1)
     // Custom Model 1 is also in the dropdown
     expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('prefers Codex runtime for new agent chats even when last used model was direct local', async () => {
+    const selectModelProvider = vi.fn()
+    const providers: ModelProvider[] = [
+      {
+        provider: 'llamacpp',
+        active: true,
+        models: [{ id: 'local-a.gguf', capabilities: ['completion'] }],
+        settings: [],
+      },
+      {
+        provider: 'codex',
+        active: true,
+        models: [
+          { id: 'gpt-5.1-codex-max', capabilities: ['completion', 'tools'] },
+        ],
+        settings: [],
+      },
+    ]
+
+    localStorage.setItem(
+      'last-used-model',
+      JSON.stringify({ provider: 'llamacpp', model: 'local-a.gguf' })
+    )
+
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers,
+      selectedProvider: '',
+      selectedModel: null,
+      getProviderByName: vi.fn((name: string) =>
+        providers.find((p: ModelProvider) => p.provider === name)
+      ),
+      selectModelProvider,
+      getModelBy: vi.fn((id: string) =>
+        providers.flatMap((p) => p.models).find((m: Model) => m.id === id)
+      ),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    render(<DropdownModelProvider useLastUsedModel />)
+
+    await waitFor(() => {
+      expect(selectModelProvider).toHaveBeenCalledWith(
+        'codex',
+        'gpt-5.1-codex-max'
+      )
+    })
   })
 
   it('should filter models in dropdown selector based on active status', () => {

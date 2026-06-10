@@ -62,7 +62,6 @@ vi.mock('@/lib/mcp-router-model-filter', () => ({
 }))
 
 vi.mock('@/lib/codex-app-server', () => ({
-  isCodexAppServerProvider: (providerId: string) => providerId === 'codex',
   sendCodexAppServerChatMessage: mockCodex.sendCodexAppServerChatMessage,
   shutdownCodexAppServerChatSession: mockCodex.shutdownCodexAppServerChatSession,
 }))
@@ -143,6 +142,45 @@ describe('CustomChatTransport', () => {
           id: 'user-1',
           role: 'user',
           parts: [{ type: 'text', text: 'hello codex' }],
+        },
+      ],
+      abortSignal: undefined,
+      trigger: 'submit-message',
+      messageId: 'assistant-1',
+    } as any)
+
+    expect(result).toBe(stream)
+    expect(mockCodex.sendCodexAppServerChatMessage).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      messageId: 'assistant-1',
+      messages: expect.any(Array),
+      provider: mockState.provider,
+      model: mockState.selectedModel,
+      abortSignal: undefined,
+    })
+  })
+
+  it('routes normal provider requests through Codex app-server backend', async () => {
+    const stream = new ReadableStream()
+    mockState.selectedProvider = 'ollama'
+    mockState.selectedModel = { id: 'mistral-small3.1:latest' }
+    mockState.provider = {
+      active: true,
+      provider: 'ollama',
+      api_key: 'jan',
+      base_url: 'http://127.0.0.1:11434/v1',
+      settings: [],
+      models: [mockState.selectedModel],
+    }
+    mockCodex.sendCodexAppServerChatMessage.mockResolvedValue(stream)
+
+    const result = await transport.sendMessages({
+      chatId: 'thread-1',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          parts: [{ type: 'text', text: 'hello local model' }],
         },
       ],
       abortSignal: undefined,

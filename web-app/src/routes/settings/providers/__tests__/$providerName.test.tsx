@@ -139,6 +139,7 @@ const h = vi.hoisted(() => {
     modelProviderStore,
     updateProvider,
     setProviders,
+    addDeletedModels,
     getProviderByName,
     appState,
     useAppStateMock,
@@ -379,6 +380,7 @@ beforeEach(() => {
   ]
   h.providerMap.openai = h.openaiProvider
   h.providerMap.llamacpp = h.llamacppProvider
+  delete h.providerMap.xai
 
   // Reset services to default behavior
   h.providersSvc.getProviders = vi.fn().mockResolvedValue([])
@@ -639,7 +641,16 @@ describe('ProviderDetail route', () => {
     })
 
     it('refresh shows "no new models" toast when all models already exist', async () => {
-      h.providersSvc.fetchModelsFromProvider = vi.fn().mockResolvedValue(['gpt-4'])
+      h.providersSvc.fetch = vi.fn(() =>
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              data: [{ id: 'gpt-4', created: 1 }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      )
       renderComponent()
       const addModel = screen.getByTestId('add-model')
       const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
@@ -650,6 +661,99 @@ describe('ProviderDetail route', () => {
         expect(h.toastSuccess).toHaveBeenCalledWith(
           'providers:models',
           expect.objectContaining({ description: 'providers:noNewModels' })
+        )
+      })
+    })
+
+    it('refresh removes remote models that disappeared from the provider catalog', async () => {
+      h.openaiProvider.models = [
+        { id: 'gpt-4', model: 'gpt-4', name: 'gpt-4', capabilities: ['completion'], version: '1' },
+        { id: 'gpt-old', model: 'gpt-old', name: 'gpt-old', capabilities: ['completion'], version: '1' },
+      ]
+      const fetchImpl = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [{ id: 'gpt-4', created: 1 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      h.providersSvc.fetch = vi.fn(() => fetchImpl)
+
+      renderComponent()
+      const addModel = screen.getByTestId('add-model')
+      const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
+      await act(async () => {
+        fireEvent.click(refreshBtn)
+      })
+
+      await waitFor(() => {
+        expect(h.updateProvider).toHaveBeenCalledWith(
+          'openai',
+          expect.objectContaining({
+            models: [
+              expect.objectContaining({ id: 'gpt-4' }),
+            ],
+          })
+        )
+      })
+      expect(h.addDeletedModels).toHaveBeenCalledWith(['gpt-old'])
+    })
+
+    it('refresh loads xAI models from models.dev when live /models is forbidden', async () => {
+      h.params.providerName = 'xai'
+      h.providerMap.xai = {
+        provider: 'xai',
+        active: true,
+        api_key: 'xai-test',
+        base_url: 'https://api.x.ai/v1',
+        models: [],
+        settings: [],
+      }
+      h.providersSvc.fetchModelsFromProvider = vi
+        .fn()
+        .mockRejectedValue(new Error('Access forbidden'))
+      h.providersSvc.fetch = vi.fn(() =>
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              xai: {
+                models: {
+                  'grok-imagine-image': {
+                    modalities: { input: ['text'], output: ['image'] },
+                  },
+                  'grok-4.20-0309-reasoning': {
+                    modalities: { input: ['text', 'image'], output: ['text'] },
+                    tool_call: true,
+                  },
+                  'grok-4.3': {
+                    modalities: { input: ['text', 'image'], output: ['text'] },
+                    tool_call: true,
+                  },
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      )
+
+      renderComponent()
+      const addModel = screen.getByTestId('add-model')
+      const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
+      await act(async () => {
+        fireEvent.click(refreshBtn)
+      })
+
+      await waitFor(() => {
+        expect(h.updateProvider).toHaveBeenCalledWith(
+          'xai',
+          expect.objectContaining({
+            models: [
+              expect.objectContaining({ id: 'grok-4.3' }),
+              expect.objectContaining({ id: 'grok-4.20-0309-reasoning' }),
+            ],
+          })
         )
       })
     })

@@ -28,11 +28,15 @@ import {
 } from '@/lib/xai-oauth'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
-import { ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Plus } from 'lucide-react'
 import { ModelReasoningDropdown } from '@/containers/ModelReasoningDropdown'
 import {
+  applyModelReasoningUpdate,
+  getModelReasoningOptions,
   getModelReasoningSetting,
+  getModelReasoningValue,
   modelSupportsReasoningControl,
+  type ModelReasoningValue,
 } from '@/lib/model-reasoning'
 import {
   Tooltip,
@@ -59,6 +63,67 @@ interface SearchableModel {
   highlightedId?: string
 }
 
+const DEFAULT_CONTEXT_SIZE = 8192
+
+const toFiniteNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+const getModelContextValue = (
+  model?: Pick<Model, 'settings'> | null
+): number => {
+  return (
+    toFiniteNumber(model?.settings?.ctx_len?.controller_props?.value) ??
+    DEFAULT_CONTEXT_SIZE
+  )
+}
+
+const getModelContextMax = (
+  model?: Pick<Model, 'settings'> | null
+): number | undefined => {
+  return toFiniteNumber(model?.settings?.ctx_len?.controller_props?.max)
+}
+
+const getModelContextRecommended = (
+  model?: Pick<Model, 'settings'> | null
+): number | undefined => {
+  const props = model?.settings?.ctx_len?.controller_props
+  return (
+    toFiniteNumber(props?.recommended) ?? toFiniteNumber(props?.placeholder)
+  )
+}
+
+const formatContextSize = (value: number): string => {
+  if (value >= 1_000_000) {
+    const scaled = value / 1_000_000
+    return `${Number.isInteger(scaled) ? scaled : scaled.toFixed(1)}M`
+  }
+  if (value >= 1_000) {
+    return `${Math.round(value / 1_000)}K`
+  }
+  return value.toLocaleString()
+}
+
+const getContextOptions = (model?: Model): number[] => {
+  if (!model) return []
+
+  const current = getModelContextValue(model)
+  const recommended = getModelContextRecommended(model)
+  const max = getModelContextMax(model)
+  const options = [recommended ?? current, current]
+
+  if (max && max !== current) {
+    options.push(max)
+  }
+
+  return Array.from(new Set(options.filter((value) => value > 0)))
+}
+
 // Helper functions for localStorage
 const setLastUsedModel = (provider: string, model: string) => {
   try {
@@ -69,6 +134,16 @@ const setLastUsedModel = (provider: string, model: string) => {
   } catch (error) {
     console.debug('Failed to set last used model in localStorage:', error)
   }
+}
+
+const getFirstActiveModelForProvider = (
+  providers: ModelProvider[],
+  providerName: string
+) => {
+  const provider = providers.find(
+    (p) => p.provider === providerName && p.active && p.models.length > 0
+  )
+  return provider?.models[0]
 }
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
@@ -102,6 +177,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [remoteAuthRevision, setRemoteAuthRevision] = useState(0)
+  const [settingsModelValue, setSettingsModelValue] = useState<string | null>(null)
+  const useCursorStyleSelector = compact && showReasoning
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -205,9 +282,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           await checkAndUpdateModelVisionCapability(model.id as string)
         }
       } else if (useLastUsedModel) {
-        // Try to use last used model only when explicitly requested (for new chat)
+        // Fresh agent chats should enter the Codex runtime when it is available.
+        // Direct local/remote models remain selectable from the dropdown.
         const lastUsed = getLastUsedModel()
-        if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+        const codexModel = getFirstActiveModelForProvider(providers, 'codex')
+        if (
+          lastUsed?.provider === 'codex' &&
+          checkModelExists(lastUsed.provider, lastUsed.model)
+        ) {
+          selectModelProvider(lastUsed.provider, lastUsed.model)
+        } else if (codexModel) {
+          selectModelProvider('codex', codexModel.id)
+          setLastUsedModel('codex', codexModel.id)
+        } else if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
           selectModelProvider(lastUsed.provider, lastUsed.model)
           if (lastUsed.provider === 'llamacpp') {
             await serviceHub
@@ -222,11 +309,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           }
         } else {
           // Fallback: auto-select first llamacpp model if available
-          const llamacppProvider = providers.find(
-            (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+          const firstModel = getFirstActiveModelForProvider(
+            providers,
+            'llamacpp'
           )
-          if (llamacppProvider && llamacppProvider.models.length > 0) {
-            const firstModel = llamacppProvider.models[0]
+          if (firstModel) {
             selectModelProvider('llamacpp', firstModel.id)
             setLastUsedModel('llamacpp', firstModel.id)
           } else {
@@ -284,6 +371,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     setOpen(open)
     if (!open) {
       requestAnimationFrame(() => setSearchValue(''))
+      setSettingsModelValue(null)
     } else {
       // Focus search input when opening
       setTimeout(() => {
@@ -300,6 +388,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   // Create searchable items from all models
   const searchableItems = useMemo(() => {
+    // Recompute after remote auth callbacks refresh provider availability.
+    void remoteAuthRevision
+
     const items: SearchableModel[] = []
 
     providers.forEach((provider) => {
@@ -351,7 +442,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) =>
+      selector: (item: SearchableModel) =>
         `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
     })
   }, [searchableItems])
@@ -364,12 +455,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   }, [searchableItems, favoriteModels])
 
   // Filter models based on search value
-  const filteredItems = useMemo(() => {
+  const filteredItems = useMemo<SearchableModel[]>(() => {
     if (!searchValue) return searchableItems
 
-    return fzfInstance.find(searchValue.toLowerCase()).map((result) => {
+    return fzfInstance.find(searchValue.toLowerCase()).map((result: {
+      item: SearchableModel
+      positions: Iterable<number>
+    }) => {
       const item = result.item
-      const positions = Array.from(result.positions) || []
+      const positions = Array.from(result.positions)
       const highlightedId = highlightFzfMatch(
         item.model.id,
         positions,
@@ -382,6 +476,22 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       }
     })
   }, [searchableItems, searchValue, fzfInstance])
+
+  const selectedSearchableItem = useMemo(() => {
+    if (!selectedProvider || !selectedModel?.id) return undefined
+    return searchableItems.find(
+      (item) =>
+        item.provider.provider === selectedProvider &&
+        item.model.id === selectedModel.id
+    )
+  }, [searchableItems, selectedModel?.id, selectedProvider])
+
+  const settingsSearchableItem = useMemo(() => {
+    if (!settingsModelValue) return undefined
+    return searchableItems.find((item) => item.value === settingsModelValue)
+  }, [settingsModelValue, searchableItems])
+
+  const panelModelItem = settingsSearchableItem ?? selectedSearchableItem
 
   // Group filtered items by provider, excluding favorites when not searching
   const groupedItems = useMemo(() => {
@@ -442,11 +552,114 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     return groups
   }, [filteredItems, providers, searchValue, favoriteModels])
 
+  const updateModelSetting = useCallback(
+    (
+      providerName: string,
+      modelId: string,
+      key: string,
+      value: string | boolean | number
+    ) => {
+      const providerObj = getProviderByName(providerName)
+      if (!providerObj) return
+
+      const modelIndex = providerObj.models.findIndex((m) => m.id === modelId)
+      if (modelIndex === -1) return
+
+      const existingModel = providerObj.models[modelIndex]
+      const existingSetting = existingModel.settings?.[key]
+      const updatedModel = {
+        ...existingModel,
+        settings: {
+          ...existingModel.settings,
+          [key]: {
+            key,
+            title: key === 'ctx_len' ? 'Context Size' : key,
+            description: existingSetting?.description ?? '',
+            controller_type: existingSetting?.controller_type ?? 'input',
+            ...existingSetting,
+            controller_props: {
+              ...(existingSetting?.controller_props ?? {}),
+              ...(key === 'ctx_len' &&
+              existingSetting?.controller_props?.recommended === undefined
+                ? {
+                    recommended: String(
+                      getModelContextValue(existingModel)
+                    ),
+                  }
+                : {}),
+              value,
+            },
+          },
+        },
+      } as Model
+
+      const updatedModels = [...providerObj.models]
+      updatedModels[modelIndex] = updatedModel
+
+      updateProvider(providerName, { models: updatedModels })
+
+      if (providerName === 'llamacpp') {
+        serviceHub
+          .models()
+          .updateModelSettings(modelId, { [key]: value })
+          .catch((error) => {
+            console.error('Failed to persist model setting', error)
+          })
+      }
+    },
+    [getProviderByName, serviceHub, updateProvider]
+  )
+
+  const handleContextSelect = useCallback(
+    (searchableModel: SearchableModel, value: number) => {
+      updateModelSetting(
+        searchableModel.provider.provider,
+        searchableModel.model.id,
+        'ctx_len',
+        value
+      )
+    },
+    [updateModelSetting]
+  )
+
+  const handleReasoningSelect = useCallback(
+    (searchableModel: SearchableModel, value: ModelReasoningValue) => {
+      const updatedProvider = applyModelReasoningUpdate(
+        searchableModel.provider,
+        searchableModel.model.id,
+        value
+      )
+
+      if (!updatedProvider) return
+
+      updateProvider(searchableModel.provider.provider, {
+        models: updatedProvider.models,
+      })
+
+      if (
+        selectedProvider === searchableModel.provider.provider &&
+        selectedModel?.id === searchableModel.model.id
+      ) {
+        selectModelProvider(
+          searchableModel.provider.provider,
+          searchableModel.model.id
+        )
+      }
+    },
+    [
+      selectModelProvider,
+      selectedModel?.id,
+      selectedProvider,
+      updateProvider,
+    ]
+  )
+
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
       // Immediately update display to prevent double-click issues
       setDisplayModel(getModelDisplayName(searchableModel.model))
       setSearchValue('')
+      setSettingsModelValue(null)
       setOpen(false)
 
       selectModelProvider(
@@ -510,6 +723,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   if (!providers.length) return null
 
   const provider = getProviderByName(selectedProvider)
+  const panelContextOptions = getContextOptions(panelModelItem?.model)
+  const panelContextValue = panelModelItem
+    ? getModelContextValue(panelModelItem.model)
+    : undefined
+  const panelReasoningOptions = panelModelItem
+    ? getModelReasoningOptions(panelModelItem.model)
+    : []
+  const panelReasoningValue = panelModelItem
+    ? getModelReasoningValue(panelModelItem.model)
+    : undefined
+  const panelReasoningTitle =
+    (panelModelItem
+      ? getModelReasoningSetting(panelModelItem.model)?.title
+      : undefined) ?? t('common:reasoning')
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -577,25 +804,43 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
       <PopoverContent
         className={cn(
-          // Use auto width to fit long model names; keep a sensible minimum.
-          'w-auto min-w-70 max-w-[90vw] p-0 backdrop-blur-2xl bg-background/95 border',
-          searchValue.length === 0 && 'h-80'
+          'rounded-md border bg-popover p-0 text-popover-foreground shadow-md',
+          useCursorStyleSelector
+            ? 'w-80 max-w-[calc(100vw-2rem)] overflow-visible'
+            : 'w-auto min-w-70 max-w-[90vw]',
+          !useCursorStyleSelector && searchValue.length === 0 && 'h-80'
         )}
         align={popupAlign}
         // sideOffset={16}
         // alignOffset={-10}
         side={popupSide}
-        avoidCollisions={searchValue.length === 0 ? true : false}
+        avoidCollisions={useCursorStyleSelector || searchValue.length === 0}
       >
-        <div className="flex flex-col size-full">
-          {/* Search input */}
-          <div className="relative p-2 border-b">
+        <div
+          className={cn(
+            useCursorStyleSelector
+              ? 'relative flex flex-col overflow-visible'
+              : 'flex flex-col size-full'
+          )}
+        >
+          <div
+            className={cn(
+              useCursorStyleSelector
+                ? 'flex min-w-0 flex-1 flex-col'
+                : 'flex flex-col size-full'
+            )}
+          >
+            {/* Search input */}
+            <div className="relative p-2 border-b">
             <input
               ref={searchInputRef}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               placeholder={t('common:searchModels')}
-              className="text-sm font-normal outline-0"
+              className={cn(
+                'w-full bg-transparent text-sm font-normal outline-0',
+                useCursorStyleSelector && 'placeholder:text-muted-foreground'
+              )}
             />
             {searchValue.length > 0 && (
               <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
@@ -606,10 +851,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 />
               </div>
             )}
-          </div>
+            </div>
 
-          {/* Model list */}
-          <div className="max-h-80 overflow-y-auto">
+            {/* Model list */}
+            <div
+              className={cn(
+                'overflow-y-auto',
+                useCursorStyleSelector ? 'max-h-64 p-1' : 'max-h-80'
+              )}
+            >
             {Object.keys(groupedItems).length === 0 && searchValue ? (
               <div className="py-3 px-4 text-sm ">
                 {t('common:noModelsFoundFor', { searchValue })}
@@ -618,10 +868,23 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               <div className="py-1">
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
-                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                  <div
+                    className={cn(
+                      useCursorStyleSelector
+                        ? 'py-1'
+                        : 'bg-secondary/30 rounded-sm m-2 py-1'
+                    )}
+                  >
                     {/* Favorites header */}
                     <div className="flex items-center gap-1.5 px-2 py-1">
-                      <span className="text-sm font-medium text-muted-foreground">
+                      <span
+                        className={cn(
+                          'font-medium text-muted-foreground',
+                          useCursorStyleSelector
+                            ? 'text-[11px] uppercase'
+                            : 'text-sm'
+                        )}
+                      >
                         {t('common:favorites')}
                       </span>
                     </div>
@@ -639,11 +902,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           key={`fav-${searchableModel.value}`}
                           onClick={() => handleSelect(searchableModel)}
                           className={cn(
-                            'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                            'hover:bg-secondary/40',
-                            // Selected state needs stronger contrast than the surrounding secondary tint.
+                            'mx-1 mb-1 cursor-pointer flex items-center gap-2 transition-all duration-200',
+                            useCursorStyleSelector
+                              ? 'rounded-md px-2 py-1.5 hover:bg-secondary/60'
+                              : 'rounded-sm px-2 py-1.5 hover:bg-secondary/40',
                             isSelected &&
-                              'bg-primary/15 hover:bg-primary/15 ring-1 ring-primary/40'
+                              (useCursorStyleSelector
+                                ? 'bg-secondary/70 hover:bg-secondary/70'
+                                : 'bg-primary/15 hover:bg-primary/15 ring-1 ring-primary/40')
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -663,17 +929,38 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               </TooltipContent>
                             </Tooltip>
                             <div className="flex-1"></div>
-                            {capabilities.length > 0 && (
+                            {!useCursorStyleSelector &&
+                              capabilities.length > 0 && (
                               <div className="shrink-0 -mr-1.5">
                                 <Capabilities capabilities={capabilities} />
                               </div>
                             )}
-                            {showReasoning && (
+                            {showReasoning && !useCursorStyleSelector && (
                               <ModelReasoningDropdown
                                 model={searchableModel.model}
                                 providerName={searchableModel.provider.provider}
                                 variant="row"
                               />
+                            )}
+                            {useCursorStyleSelector && isSelected && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="rounded-sm px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                                  onClick={(event) => {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    setSettingsModelValue((value) =>
+                                      value === searchableModel.value
+                                        ? null
+                                        : searchableModel.value
+                                    )
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <Check className="size-4 shrink-0 text-foreground" />
+                              </>
                             )}
                           </div>
                         </div>
@@ -698,33 +985,50 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                   return (
                     <div
                       key={providerKey}
-                      className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
+                      className={cn(
+                        useCursorStyleSelector
+                          ? 'py-1'
+                          : 'bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1'
+                      )}
                     >
                       {/* Provider header */}
                       <div className="flex items-center justify-between px-2 py-1">
                         <div className="flex items-center gap-1.5">
-                          <ProvidersAvatar provider={providerInfo} />
-                          <span className="capitalize text-sm font-medium text-muted-foreground">
+                          {!useCursorStyleSelector && (
+                            <ProvidersAvatar provider={providerInfo} />
+                          )}
+                          <span
+                            className={cn(
+                              'capitalize font-medium text-muted-foreground',
+                              useCursorStyleSelector
+                                ? 'text-[11px] uppercase'
+                                : 'text-sm'
+                            )}
+                          >
                             {getProviderTitle(providerInfo.provider)}
                           </span>
                         </div>
 
-                        <div
-                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            navigate({
-                              to: route.settings.providers,
-                              params: { providerName: providerInfo.provider },
-                            })
-                            setOpen(false)
-                          }}
-                        >
-                          <IconSettings
-                            size={16}
-                            className="text-muted-foreground"
-                          />
-                        </div>
+                        {!useCursorStyleSelector && (
+                          <div
+                            className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigate({
+                                to: route.settings.providers,
+                                params: {
+                                  providerName: providerInfo.provider,
+                                },
+                              })
+                              setOpen(false)
+                            }}
+                          >
+                            <IconSettings
+                              size={16}
+                              className="text-muted-foreground"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       {/* Models for this provider */}
@@ -745,10 +1049,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               key={searchableModel.value}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
-                                'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                                'hover:bg-secondary/40',
+                                'mx-1 mb-1 cursor-pointer flex items-center gap-2 transition-all duration-200',
+                                useCursorStyleSelector
+                                  ? 'rounded-md px-2 py-1.5 hover:bg-secondary/60'
+                                  : 'rounded-sm px-2 py-1.5 hover:bg-secondary/40',
                                 isSelected &&
-                                  'bg-primary/15 hover:bg-primary/15 ring-1 ring-primary/40'
+                                  (useCursorStyleSelector
+                                    ? 'bg-secondary/70 hover:bg-secondary/70'
+                                    : 'bg-primary/15 hover:bg-primary/15 ring-1 ring-primary/40')
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -765,12 +1073,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                   </TooltipContent>
                                 </Tooltip>
                                 <div className="flex-1"></div>
-                                {capabilities.length > 0 && (
+                                {!useCursorStyleSelector &&
+                                  capabilities.length > 0 && (
                                   <div className="shrink-0 -mr-1.5">
                                     <Capabilities capabilities={capabilities} />
                                   </div>
                                 )}
-                                {showReasoning && (
+                                {showReasoning && !useCursorStyleSelector && (
                                   <ModelReasoningDropdown
                                     model={searchableModel.model}
                                     providerName={
@@ -778,6 +1087,26 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                     }
                                     variant="row"
                                   />
+                                )}
+                                {useCursorStyleSelector && isSelected && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="rounded-sm px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                                      onClick={(event) => {
+                                        event.preventDefault()
+                                        event.stopPropagation()
+                                        setSettingsModelValue((value) =>
+                                          value === searchableModel.value
+                                            ? null
+                                            : searchableModel.value
+                                        )
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <Check className="size-4 shrink-0 text-foreground" />
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -787,11 +1116,25 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                     </div>
                   )
                 })}
+                {useCursorStyleSelector && !searchValue && (
+                  <button
+                    type="button"
+                    className="mt-1 flex w-full items-center gap-2 border-t px-3 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => {
+                      navigate({ to: route.hub.index })
+                      setOpen(false)
+                    }}
+                  >
+                    <Plus className="size-4" />
+                    <span>Add Models</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {showReasoning &&
+          {!useCursorStyleSelector &&
+            showReasoning &&
             selectedModel?.id &&
             selectedProvider &&
             modelSupportsReasoningControl(selectedModel) && (
@@ -810,6 +1153,75 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                   variant="panel"
                 />
               </div>
+            </div>
+          )}
+          </div>
+
+          {useCursorStyleSelector && settingsModelValue && panelModelItem && (
+            <div className="absolute bottom-0 left-full z-50 ml-2 w-52 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                  <div className="border-b px-2 py-2">
+                    <div className="mb-1.5 text-xs font-semibold text-muted-foreground">
+                      Context
+                    </div>
+                    <div className="space-y-0.5">
+                      {panelContextOptions.map((contextValue) => {
+                        const isActive = panelContextValue === contextValue
+
+                        return (
+                          <button
+                            key={contextValue}
+                            type="button"
+                            className={cn(
+                              'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary/60',
+                              isActive && 'text-foreground'
+                            )}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleContextSelect(panelModelItem, contextValue)
+                            }}
+                          >
+                            <span>{formatContextSize(contextValue)}</span>
+                            {isActive && <Check className="size-4" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="border-b px-3 py-2.5">
+                    <div className="mb-1.5 text-xs font-semibold text-muted-foreground">
+                      {panelReasoningTitle}
+                    </div>
+                    {panelReasoningOptions.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {panelReasoningOptions.map((option) => {
+                          const isActive = panelReasoningValue === option.value
+
+                          return (
+                            <button
+                              key={String(option.value)}
+                              type="button"
+                              className={cn(
+                                'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary/60',
+                                isActive && 'text-foreground'
+                              )}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleReasoningSelect(panelModelItem, option.value)
+                              }}
+                            >
+                              <span>{option.label}</span>
+                              {isActive && <Check className="size-4" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        Not available
+                      </div>
+                    )}
+                  </div>
             </div>
           )}
         </div>

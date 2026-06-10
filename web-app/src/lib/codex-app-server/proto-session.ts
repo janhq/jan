@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { buildCodexSpawnCommand } from './config'
 import { CodexProtoEventMapper } from './proto-adapter'
 import type {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useServiceHub } from './useServiceHub'
+import { fetchModelsDevProviderModels } from '@/lib/remoteModelCatalog'
 
 type UseProviderModelsState = {
   models: string[]
@@ -64,6 +65,30 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
       })
     } catch (err) {
       if (currentRequestId !== requestIdRef.current) return
+      if (provider.provider === 'xai') {
+        try {
+          const catalog = await fetchModelsDevProviderModels(
+            provider.provider,
+            serviceHub.providers().fetch()
+          )
+          if (currentRequestId !== requestIdRef.current) return
+          if (catalog.length > 0) {
+            const sortedModels = catalog.map((model) => model.id)
+            setModels(sortedModels)
+            setError(null)
+            modelsCache.set(cacheKey, {
+              models: sortedModels,
+              timestamp: Date.now(),
+            })
+            return
+          }
+        } catch (catalogError) {
+          console.error(
+            `Error fetching models.dev catalog for ${provider.provider}:`,
+            catalogError
+          )
+        }
+      }
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch models'
       setError(errorMessage)
       console.error(`Error fetching models from ${provider.provider}:`, err)

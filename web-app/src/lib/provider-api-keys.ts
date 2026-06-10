@@ -55,17 +55,35 @@ export function providerHasConfiguredRemoteAuth(provider: {
   return false
 }
 
+export type RemoteAuthCredential = {
+  key: string
+  source: 'api-key' | 'xai-oauth'
+}
+
+export async function providerRemoteAuthCredentials(provider: {
+  provider?: string
+  api_key?: string
+  api_key_fallbacks?: string[]
+}): Promise<RemoteAuthCredential[]> {
+  if (provider.provider === 'xai') {
+    const { getXaiOAuthAccessToken } = await import('@/lib/xai-oauth')
+    const oauthToken = await getXaiOAuthAccessToken()
+    if (oauthToken) {
+      return [{ key: oauthToken, source: 'xai-oauth' }]
+    }
+  }
+  return providerRemoteApiKeyChain(provider).map((key) => ({
+    key,
+    source: 'api-key' as const,
+  }))
+}
+
 export async function providerRemoteAuthKeyChain(provider: {
   provider?: string
   api_key?: string
   api_key_fallbacks?: string[]
 }): Promise<string[]> {
-  if (provider.provider === 'xai') {
-    const { getXaiOAuthAccessToken } = await import('@/lib/xai-oauth')
-    const oauthToken = await getXaiOAuthAccessToken()
-    if (oauthToken) return [oauthToken]
-  }
-  return providerRemoteApiKeyChain(provider)
+  return (await providerRemoteAuthCredentials(provider)).map(({ key }) => key)
 }
 
 export async function providerHasRemoteAuth(provider: {

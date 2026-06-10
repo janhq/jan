@@ -91,12 +91,15 @@ export const providerModels = {
     supportsN: true,
   },
   xai: {
-    models: ['grok-4-1-fast-reasoning', 'grok-4-fast-reasoning', 'grok-3', 'grok-3-mini', 'grok-2-vision-1212', 'grok-imagine-image'],
+    // Keep one known-good SSO runtime model available even when xAI's
+    // `/models` endpoint rejects OAuth tokens. Live discovery can add more,
+    // but chat should not depend on `/models`.
+    models: ['grok-4.3'],
     supportsCompletion: true,
-    supportsStreaming: ['grok-4-1-fast-reasoning', 'grok-4-fast-reasoning', 'grok-3', 'grok-3-mini', 'grok-2-vision-1212'],
-    supportsJSON: ['grok-4-1-fast-reasoning', 'grok-4-fast-reasoning', 'grok-3', 'grok-3-mini'],
-    supportsImages: ['grok-2-vision-1212'],
-    supportsToolCalls: ['grok-4-1-fast-reasoning', 'grok-4-fast-reasoning', 'grok-3', 'grok-3-mini'],
+    supportsStreaming: ['grok-4.3'],
+    supportsJSON: [],
+    supportsImages: ['grok-4.3'],
+    supportsToolCalls: ['grok-4.3'],
     supportsN: true,
   },
   perplexity: {

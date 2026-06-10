@@ -12,7 +12,7 @@ export type CodexSpawnOptions = {
   codexHome?: string
   configToml?: string
   agentsMd?: string
-  customAgents?: any[]
+  customAgents?: unknown[]
 }
 
 export interface CodexProcessSpawner {

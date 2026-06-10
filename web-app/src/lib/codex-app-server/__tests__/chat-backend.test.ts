@@ -26,6 +26,7 @@ const mockAppState = vi.hoisted(() => ({
   updateThreadPromptProgress: vi.fn(),
   updateThreadLoadingModel: vi.fn(),
   setCurrentStreamThreadId: vi.fn(),
+  setServerStatus: vi.fn(),
 }))
 
 const mockSessionState = vi.hoisted(() => ({
@@ -110,6 +111,9 @@ const mockModelProviderState = vi.hoisted(() => ({
 
 const mockServiceHubState = vi.hoisted(() => ({
   mcpCallTool: vi.fn(),
+  startModel: vi.fn(),
+  getServerStatus: vi.fn(),
+  startServer: vi.fn(),
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
@@ -118,8 +122,30 @@ vi.mock('@/hooks/useModelProvider', () => ({
   },
 }))
 
+vi.mock('@/hooks/useLocalApiServer', () => ({
+  useLocalApiServer: {
+    getState: () => ({
+      serverHost: '127.0.0.1',
+      serverPort: 1337,
+      apiPrefix: '/v1',
+      apiKey: 'jan-local-api-key',
+      trustedHosts: ['localhost'],
+      corsEnabled: true,
+      verboseLogs: true,
+      proxyTimeout: 600,
+      setServerPort: vi.fn(),
+    }),
+  },
+}))
+
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
+    app: () => ({
+      getServerStatus: mockServiceHubState.getServerStatus,
+    }),
+    models: () => ({
+      startModel: mockServiceHubState.startModel,
+    }),
     mcp: () => ({
       callTool: mockServiceHubState.mcpCallTool,
     }),
@@ -278,6 +304,15 @@ describe('Codex chat backend approval bridge', () => {
     mockProfilesState.activeProfileId = null
     mockModelProviderState.providers = []
     mockServiceHubState.mcpCallTool.mockReset()
+    mockServiceHubState.startModel.mockReset()
+    mockServiceHubState.startModel.mockResolvedValue(undefined)
+    mockServiceHubState.getServerStatus.mockReset()
+    mockServiceHubState.getServerStatus.mockResolvedValue(true)
+    mockServiceHubState.startServer.mockReset()
+    mockServiceHubState.startServer.mockResolvedValue(1337)
+    ;(window as unknown as { core?: unknown }).core = {
+      api: { startServer: mockServiceHubState.startServer },
+    }
     mockServiceHubState.mcpCallTool.mockResolvedValue({
       error: '',
       content: [{ text: 'Tool result' }],
@@ -673,15 +708,16 @@ describe('Codex chat backend approval bridge', () => {
         codexHome: '/Users/conrad/project-one/.jan/codex-home',
         cwd: '/Users/conrad/project-one',
         model: 'gpt-oss:20b',
-        modelProvider: 'openrouter',
+        modelProvider: 'jan-openrouter',
         approvalPolicy: 'on-request',
         sandbox: 'workspace-write',
         env: { JAN_CODEX_PROVIDER_API_KEY: 'settings-key' },
       })
     )
     expect(options.configToml).toContain('model = "gpt-oss:20b"')
-    expect(options.configToml).toContain('model_provider = "openrouter"')
-    expect(options.configToml).toContain('[model_providers.openrouter]')
+    expect(options.configToml).toContain('model_provider = "jan-openrouter"')
+    expect(options.configToml).toContain('[model_providers.jan-openrouter]')
+    expect(options.configToml).not.toContain('[model_providers.openrouter]')
     expect(options.configToml).toContain(
       'base_url = "http://127.0.0.1:8000/v1"'
     )
@@ -692,6 +728,107 @@ describe('Codex chat backend approval bridge', () => {
     expect(mockWorkspaceState.calls).toEqual([
       { type: 'project', id: 'project-1', label: 'Project One' },
     ])
+  })
+
+  it('projects a directly selected Ollama provider into Codex config', () => {
+    const ollamaProvider: ModelProvider = {
+      active: true,
+      provider: 'ollama',
+      api_key: 'jan',
+      base_url: 'http://127.0.0.1:11434/v1',
+      settings: [],
+      models: [],
+    }
+    mockModelProviderState.providers = [
+      providerWithSettings({ codexBinaryPath: '/custom/codex' }),
+    ]
+
+    const options = buildCodexSessionOptions('thread-1', ollamaProvider, {
+      id: 'mistral-small3.1:latest',
+    })
+
+    expect(options).toEqual(
+      expect.objectContaining({
+        codexBinaryPath: '/custom/codex',
+        model: 'mistral-small3.1:latest',
+        modelProvider: 'jan-ollama',
+        env: { JAN_CODEX_PROVIDER_API_KEY: 'jan' },
+      })
+    )
+    expect(options.configToml).toContain(
+      'model = "mistral-small3.1:latest"'
+    )
+    expect(options.configToml).toContain('model_provider = "jan-ollama"')
+    expect(options.configToml).toContain('[model_providers.jan-ollama]')
+    expect(options.configToml).toContain('name = "ollama"')
+    expect(options.configToml).toContain(
+      'base_url = "http://127.0.0.1:11434/v1"'
+    )
+    expect(options.configToml).toContain('wire_api = "chat"')
+  })
+
+  it('uses the Jan local API server as the default llama.cpp Codex endpoint', () => {
+    const llamacppProvider: ModelProvider = {
+      active: true,
+      provider: 'llamacpp',
+      api_key: 'jan',
+      base_url: '',
+      settings: [],
+      models: [],
+    }
+
+    const options = buildCodexSessionOptions('thread-1', llamacppProvider, {
+      id: 'Jan-v1-4B-Q4_K_M',
+    })
+
+    expect(options).toEqual(
+      expect.objectContaining({
+        model: 'Jan-v1-4B-Q4_K_M',
+        modelProvider: 'llamacpp',
+      })
+    )
+    expect(options.configToml).toContain('[model_providers.llamacpp]')
+    expect(options.configToml).toContain(
+      'base_url = "http://127.0.0.1:1337/v1"'
+    )
+    expect(options.configToml).toContain('wire_api = "chat"')
+  })
+
+  it('starts Jan-hosted local models and the local API server before Codex chat', async () => {
+    mockServiceHubState.getServerStatus.mockResolvedValue(false)
+    const llamacppProvider: ModelProvider = {
+      active: true,
+      provider: 'llamacpp',
+      api_key: 'jan',
+      base_url: '',
+      settings: [],
+      models: [{ id: 'Jan-v1-4B-Q4_K_M' }],
+    }
+
+    const stream = await sendCodexAppServerChatMessage({
+      threadId: 'thread-1',
+      messages,
+      provider: llamacppProvider,
+      model: { id: 'Jan-v1-4B-Q4_K_M' },
+    })
+    await collect(stream)
+
+    expect(mockServiceHubState.startModel).toHaveBeenCalledWith(
+      llamacppProvider,
+      'Jan-v1-4B-Q4_K_M',
+      true
+    )
+    expect(mockServiceHubState.startServer).toHaveBeenCalledWith({
+      host: '127.0.0.1',
+      port: 1337,
+      prefix: '/v1',
+      apiKey: 'jan-local-api-key',
+      trustedHosts: ['localhost'],
+      isCorsEnabled: true,
+      isVerboseEnabled: true,
+      proxyTimeout: 600,
+    })
+    expect(mockSessionState.instances).toHaveLength(1)
   })
 
   it('uses chat-bound workspace directories and falls back to current directory', () => {
@@ -958,12 +1095,14 @@ describe('Codex chat backend approval bridge', () => {
         codexHome: '/Users/conrad/ollama-home',
         transport: 'proto',
         model: 'qwen3-coder',
-        modelProvider: 'ollama',
+        modelProvider: 'jan-ollama',
         env: { OLLAMA_API_KEY: 'ollama-test-key' },
       })
     )
     expect(options.configToml).toContain('model = "qwen3-coder"')
-    expect(options.configToml).toContain('model_provider = "ollama"')
+    expect(options.configToml).toContain('model_provider = "jan-ollama"')
+    expect(options.configToml).toContain('[model_providers.jan-ollama]')
+    expect(options.configToml).not.toContain('[model_providers.ollama]')
     expect(options.configToml).toContain(
       'base_url = "http://localhost:11434/v1"'
     )

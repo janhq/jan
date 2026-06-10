@@ -77,9 +77,9 @@
 
 :root {
   --font-size-base: 16px;
-  --app-titlebar-height: 3.75rem;
-  --app-titlebar-macos-controls-width: 5.5rem;
-  --app-titlebar-gap: 1rem;
+  --app-titlebar-height: 3rem;
+  --app-titlebar-macos-controls-width: 4.5rem;
+  --app-titlebar-gap: 0.5rem;
   --app-titlebar-control-left: calc(
     var(--app-titlebar-macos-controls-width) + var(--app-titlebar-gap)
   );
@@ -213,8 +213,8 @@
 
   /* Scrollbar styles */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {

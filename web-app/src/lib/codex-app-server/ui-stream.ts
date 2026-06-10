@@ -23,7 +23,7 @@ function decodeBase64Utf8(base64: string): string {
       bytes[i] = binaryString.charCodeAt(i)
     }
     return new TextDecoder().decode(bytes)
-  } catch (e) {
+  } catch {
     return ''
   }
 }
@@ -216,7 +216,8 @@ export function codexEventsToUIMessageStream(
                 type: 'warning',
                 threadId: value.threadId,
                 message: `Codex skills changed: ${formatCodexPayload(
-                  (value as any).skills ?? (value as any).changed
+                  codexEventField(value, 'skills') ??
+                    codexEventField(value, 'changed')
                 )}`,
                 event: value,
               },
@@ -231,7 +232,8 @@ export function codexEventsToUIMessageStream(
                 type: 'warning',
                 threadId: value.threadId,
                 message: `Codex plugins changed: ${formatCodexPayload(
-                  (value as any).plugins ?? (value as any).changed
+                  codexEventField(value, 'plugins') ??
+                    codexEventField(value, 'changed')
                 )}`,
                 event: value,
               },
@@ -246,7 +248,7 @@ export function codexEventsToUIMessageStream(
                 type: 'warning',
                 threadId: value.threadId,
                 message: `Codex hooks changed: ${formatCodexPayload(
-                  (value as any).hooks
+                  codexEventField(value, 'hooks')
                 )}`,
                 event: value,
               },
@@ -514,4 +516,8 @@ const applyMetadata = (
   if ('threadId' in event) metadata.codex.threadId = event.threadId
   if ('turnId' in event) metadata.codex.turnId = event.turnId
   if (event.type === 'turn_completed') metadata.codex.completed = true
+}
+
+function codexEventField(event: CodexAppServerEvent, key: string): unknown {
+  return (event as unknown as Record<string, unknown>)[key]
 }

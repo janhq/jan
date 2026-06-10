@@ -26,14 +26,17 @@ describe('useProviderModels', () => {
   const mockModels = ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo']
 
   let fetchModelsSpy: ReturnType<typeof vi.fn>
+  let fetchSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
     const hub = (useServiceHub as unknown as () => any)()
     const mockedFetch = vi.fn()
+    fetchSpy = vi.fn()
     vi.spyOn(hub, 'providers').mockReturnValue({
       fetchModelsFromProvider: mockedFetch,
+      fetch: () => fetchSpy,
     } as any)
     fetchModelsSpy = mockedFetch
   })
@@ -69,6 +72,48 @@ describe('useProviderModels', () => {
 
     expect(result.current.error).toBe(null)
     expect(fetchModelsSpy).toHaveBeenCalledWith(mockProvider)
+  })
+
+  it('should fall back to models.dev xAI text models when remote fetch fails', async () => {
+    fetchModelsSpy.mockRejectedValueOnce(new Error('403'))
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          xai: {
+            models: {
+              'grok-imagine-image': {
+                modalities: { input: ['text'], output: ['image'] },
+              },
+              'grok-4.20-0309-reasoning': {
+                modalities: { input: ['text', 'image'], output: ['text'] },
+                tool_call: true,
+              },
+              'grok-4.3': {
+                modalities: { input: ['text', 'image'], output: ['text'] },
+                tool_call: true,
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+
+    const { result } = renderHook(() =>
+      useProviderModels({
+        ...mockProvider,
+        provider: 'xai',
+        base_url: 'https://api.x.ai/v1',
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.models).toEqual([
+        'grok-4.3',
+        'grok-4.20-0309-reasoning',
+      ])
+    })
+    expect(result.current.error).toBe(null)
   })
 
   it('should clear models when switching to invalid provider', async () => {

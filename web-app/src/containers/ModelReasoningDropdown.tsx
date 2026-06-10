@@ -126,7 +126,7 @@ export const ModelReasoningDropdown = memo(function ModelReasoningDropdown({
       >
         {reasoningOptions.map((option) => (
           <DropdownMenuItem
-            key={option.value}
+            key={String(option.value)}
             className={cn(
               'cursor-pointer',
               reasoningValue === option.value && 'bg-secondary/60'

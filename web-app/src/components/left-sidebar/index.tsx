@@ -15,9 +15,9 @@ import { isPlatformTauri, isPlatformMacOS } from '@/lib/platform/utils'
 export function LeftSidebar() {
   return (
     <div className="relative z-[var(--app-layer-sidebar)] h-svh">
-      <div className="fixed left-(--app-titlebar-control-left) top-0 z-[var(--app-layer-left-titlebar-controls)] flex h-[var(--app-titlebar-height)] items-center gap-1">
-        <DownloadManagement />
+      <div className="fixed left-(--app-titlebar-control-left) top-0 z-[var(--app-layer-left-titlebar-controls)] flex h-[44px] items-center gap-1">
         <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8!" />
+        <DownloadManagement />
       </div>
       <Sidebar variant="sidebar" collapsible="offcanvas">
         <SidebarHeader className="flex px-1">

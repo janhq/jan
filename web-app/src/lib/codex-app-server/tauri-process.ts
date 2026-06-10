@@ -24,7 +24,7 @@ type TauriCodexProcessSpawnerOptions = {
   sessionIdFactory?: () => string
   configToml?: string
   agentsMd?: string
-  customAgents?: any[]
+  customAgents?: unknown[]
 }
 
 export class TauriCodexProcess implements CodexProcess {
