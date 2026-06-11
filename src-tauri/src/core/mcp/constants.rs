@@ -6,12 +6,12 @@ pub const DEFAULT_MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each ti
 
 pub const DEFAULT_MCP_CONFIG: &str = r#"{
   "mcpServers": {
-  "olostep": {
-         "command": "npx",
-         "args": ["-y", "olostep-mcp"],
-         "env": { "OLOSTEP_API_KEY": "YOUR_OLOSTEP_API_KEY_HERE" },
-         "active": false
-       },
+    "olostep": {
+      "command": "npx",
+      "args": ["-y", "olostep-mcp"],
+      "env": { "OLOSTEP_API_KEY": "YOUR_OLOSTEP_API_KEY_HERE" },
+      "active": false
+    },
     "Jan Browser MCP": {
       "command": "npx",
       "args": ["-y", "search-mcp-server@latest"],
