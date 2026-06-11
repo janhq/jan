@@ -7,5 +7,11 @@
   "outOfMemoryTitle": "Not enough memory to load the model",
   "outOfMemoryDescription": "The model requires more RAM or VRAM than is currently available. Try closing other applications, picking a smaller / more quantized model, or reducing the context size.",
   "modelLoadFailedTitle": "Failed to load the model",
-  "modelLoadFailedDescription": "The model could not be started. {{message}}"
+  "modelLoadFailedDescription": "The model could not be started. {{message}}",
+  "multimodalUnsupportedTitle": "Vision/audio not supported by this backend",
+  "multimodalUnsupportedDescription": "This model's multimodal projector isn't supported by the current backend. Try a different backend in Settings → Model Providers, or update the app.",
+  "archNotSupportedTitle": "Model not supported by this backend",
+  "archNotSupportedDescription": "This model's architecture isn't supported by the current backend yet. Try a different backend in Settings → Model Providers, or update the app.",
+  "modelFileMissingTitle": "Model file not found",
+  "modelFileMissingDescription": "The model file couldn't be found — it may have been moved or deleted. Try re-downloading the model."
 }

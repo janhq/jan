@@ -171,6 +171,18 @@ export function shouldAttemptAutoStart(
   return Date.now() - prev.ts >= AUTO_START_BACKOFF_MS
 }
 
+/**
+ * ATO-63: a failed load (e.g. MLX can't load `lfm2_moe`) raises a persistent
+ * `model-load-error` toast. If the user then successfully starts the same model
+ * through another backend (llama.cpp), the stale toast keeps hanging, making it
+ * look as if nothing loaded. Clear both the toast and the stored error on every
+ * successful load so the UI reflects reality.
+ */
+function clearModelLoadError() {
+  toast.dismiss('model-load-error')
+  useModelLoad.getState().setModelLoadError(undefined)
+}
+
 function syncModelSelection(providerName: string, modelId: string) {
   const serverState = useLocalApiServer.getState()
 
@@ -279,6 +291,8 @@ export async function switchToModel(params: {
     syncModelSelection(params.providerName, params.modelId)
     // WS2: the target is healthy — clear any prior auto-start failure record.
     clearAutoStartFailure(params.providerName, params.modelId)
+    // ATO-63: the model is up — drop any stale "Failed to load" toast.
+    clearModelLoadError()
     console.log(
       '[switchToModel] Target already active, skipping restart:',
       params.modelId,
@@ -408,6 +422,9 @@ async function doSwitchToModel(params: {
     // WS2: load succeeded — clear any prior auto-start failure record so the
     // model is eligible for automatic start again.
     clearAutoStartFailure(providerName, modelId)
+    // ATO-63: a previous backend may have raised a persistent "Failed to load"
+    // toast; this load succeeded, so dismiss it and clear the stored error.
+    clearModelLoadError()
 
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
@@ -522,6 +539,37 @@ function reportModelLoadError(rawError: unknown): void {
       id: 'model-load-error',
       description: t('model-errors:outOfMemoryDescription'),
       duration: Infinity,
+      closeButton: true,
+    })
+    return
+  }
+
+  // ATO-121: map well-classified engine errors to an actionable message + hint
+  // instead of the opaque generic "unexpected error". The codes come from the
+  // Rust plugins' `LlamacppError` (from_stderr / from_exit_status).
+  if (err.code === 'MULTIMODAL_PROJECTOR_LOAD_FAILED') {
+    toast.error(t('model-errors:multimodalUnsupportedTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:multimodalUnsupportedDescription'),
+      duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
+  if (err.code === 'MODEL_ARCH_NOT_SUPPORTED') {
+    toast.error(t('model-errors:archNotSupportedTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:archNotSupportedDescription'),
+      duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
+  if (err.code === 'MODEL_FILE_NOT_FOUND') {
+    toast.error(t('model-errors:modelFileMissingTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:modelFileMissingDescription'),
+      duration: 10000,
       closeButton: true,
     })
     return
