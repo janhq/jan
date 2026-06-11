@@ -393,8 +393,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    // Migration v1: upgrade f16 KV cache defaults to q8_0
-    await this.migrateKvCacheDefaults()
+    // KV cache types are user-selectable for the upstream provider via the
+    // `cache_type_k` / `cache_type_v` dropdowns and default to vanilla
+    // llama.cpp's native `f16`. We intentionally do NOT run the legacy
+    // f16->q8_0 (v1) or the f16-clearing (v4) migrations here: turbo* types
+    // are fork-only, the standard types are exposed directly in settings,
+    // and `args.rs` already skips `--cache-type-k/-v` when the value is `f16`.
 
     // NOTE: v2 turbo3 KV-cache migration is intentionally skipped for the
     // upstream provider — vanilla ggml-org/llama.cpp does not implement the
@@ -402,14 +406,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     // Migration v3: disable fit by default
     await this.migrateFitDefault()
-
-    // Migration v4: stop overriding KV cache types in the upstream
-    // provider. Earlier we forced `q8_0` to mirror the TurboQuant fork,
-    // but vanilla `llama-server` performs best with its own default
-    // (`f16`). We drop the obsolete `cache_type_k` / `cache_type_v`
-    // entries from the persisted settings list and clear the in-memory
-    // config so `args.rs` skips emitting `--cache-type-k/-v` entirely.
-    await this.clearLegacyKvCacheSettings()
 
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env

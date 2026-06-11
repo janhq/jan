@@ -8,6 +8,19 @@ export interface DownloadProgressProps {
   total: number
 }
 
+// ATO-154: parameters needed to resume a paused model download from the
+// global Download popover. The popover only knows the model id, not the HF
+// paths/token, so the download-start choke point (`pullModelWithMetadata`)
+// records them here. Only the resumable GGUF (`llamacpp`) path stores these;
+// MLX (`mlx-community/*`) and backend-binary downloads are pause/resume-gated
+// out and never populate this map.
+export interface DownloadResumeParams {
+  modelPath: string
+  mmprojPath?: string
+  hfToken?: string
+  skipVerification?: boolean
+}
+
 // Zustand store for thinking block state
 export type DownloadState = {
   downloads: { [id: string]: DownloadProgressProps }
@@ -23,6 +36,12 @@ export type DownloadState = {
   // fixes the root cause; this map keeps the UI honest for clients on
   // an older cached catalog.
   downloadOriginByModelId: { [modelId: string]: string }
+  // ATO-154: ids the user has paused (vs cancelled). A paused id keeps its
+  // `downloads[id]` entry so the popover row survives, and makes the
+  // stop/error listeners early-return instead of cleaning up.
+  pausedDownloads: Set<string>
+  // ATO-154: resume parameters keyed by model id (see DownloadResumeParams).
+  resumeParams: { [modelId: string]: DownloadResumeParams }
   removeDownload: (id: string) => void
   updateProgress: (
     id: string,
@@ -35,6 +54,10 @@ export type DownloadState = {
   removeLocalDownloadingModel: (modelId: string) => void
   markResumableDownload: (modelId: string) => void
   clearResumableDownload: (modelId: string) => void
+  markPausedDownload: (modelId: string) => void
+  clearPausedDownload: (modelId: string) => void
+  setResumeParams: (modelId: string, params: DownloadResumeParams) => void
+  clearResumeParams: (modelId: string) => void
   setDownloadOrigin: (modelId: string, modelName: string) => void
   clearDownloadOrigin: (modelId: string) => void
 }
@@ -46,6 +69,8 @@ export const useDownloadStore = create<DownloadState>((set) => ({
   downloads: {},
   localDownloadingModels: new Set(),
   resumableDownloads: new Set(),
+  pausedDownloads: new Set(),
+  resumeParams: {},
   downloadOriginByModelId: {},
   removeDownload: (id: string) =>
     set((state) => {
@@ -92,6 +117,36 @@ export const useDownloadStore = create<DownloadState>((set) => ({
       const newSet = new Set(state.resumableDownloads)
       newSet.delete(modelId)
       return { resumableDownloads: newSet }
+    }),
+
+  markPausedDownload: (modelId: string) =>
+    set((state) => ({
+      pausedDownloads: new Set(state.pausedDownloads).add(modelId),
+    })),
+
+  clearPausedDownload: (modelId: string) =>
+    set((state) => {
+      const newSet = new Set(state.pausedDownloads)
+      newSet.delete(modelId)
+      return { pausedDownloads: newSet }
+    }),
+
+  setResumeParams: (modelId: string, params: DownloadResumeParams) =>
+    set((state) => ({
+      resumeParams: {
+        ...state.resumeParams,
+        [modelId]: params,
+      },
+    })),
+
+  clearResumeParams: (modelId: string) =>
+    set((state) => {
+      if (!(modelId in state.resumeParams)) {
+        return state
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [modelId]: _, ...rest } = state.resumeParams
+      return { resumeParams: rest }
     }),
 
   setDownloadOrigin: (modelId: string, modelName: string) =>

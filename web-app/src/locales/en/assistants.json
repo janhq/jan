@@ -36,5 +36,13 @@
   "isDefault": "Default",
   "defaultAssistantSection": "Default Assistant",
   "defaultAssistantDesc": "Used when starting a new chat",
-  "allAssistants": "All Assistants"
+  "allAssistants": "All Assistants",
+  "none": "None",
+  "noAssistants": "No assistants available",
+  "samplingTrigger": "Sampling — {{name}}",
+  "paramCategory": {
+    "sampling": "Sampling",
+    "penalties": "Penalties",
+    "general": "General"
+  }
 }

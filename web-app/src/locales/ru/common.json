@@ -76,6 +76,8 @@
   "downloads": "Загрузки",
   "downloading": "Загрузка",
   "cancelDownload": "Отменить загрузку",
+  "pauseDownload": "Приостановить загрузку",
+  "resumeDownload": "Возобновить загрузку",
   "downloadCancelled": "Загрузка отменена",
   "downloadComplete": "Загрузка завершена",
   "thinking": "Размышление...",

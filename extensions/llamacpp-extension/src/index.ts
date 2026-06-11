@@ -2802,7 +2802,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     throw new Error(
-      `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
+      `Backend ${backendKey} is not installed and could not be downloaded. Switch this model to the "Llama.cpp" provider (Settings → Model Providers → Llama.cpp) and start it there, or check your internet connection and try reinstalling the app.`
     )
   }
 

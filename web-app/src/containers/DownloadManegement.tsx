@@ -8,7 +8,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
-import { IconX } from '@tabler/icons-react'
+import { IconX, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -86,6 +86,11 @@ export function DownloadManagement() {
     removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
+    pausedDownloads,
+    markPausedDownload,
+    clearPausedDownload,
+    resumeParams,
+    clearResumeParams,
     clearDownloadOrigin,
   } = useDownloadStore()
   const { updateState } = useAppUpdater()
@@ -218,6 +223,8 @@ export function DownloadManagement() {
   const onFileDownloadError = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
+      clearPausedDownload(state.modelId)
+      clearResumeParams(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
@@ -310,6 +317,8 @@ export function DownloadManagement() {
       removeLocalDownloadingModel,
       markResumableDownload,
       clearResumableDownload,
+      clearPausedDownload,
+      clearResumeParams,
       clearDownloadOrigin,
       t,
       navigate,
@@ -345,6 +354,8 @@ export function DownloadManagement() {
       })
 
       clearResumableDownload(event.modelId)
+      clearPausedDownload(event.modelId)
+      clearResumeParams(event.modelId)
       removeDownload(event.modelId)
       removeLocalDownloadingModel(event.modelId)
       clearDownloadOrigin(event.modelId)
@@ -361,6 +372,8 @@ export function DownloadManagement() {
       removeDownload,
       removeLocalDownloadingModel,
       clearResumableDownload,
+      clearPausedDownload,
+      clearResumeParams,
       clearDownloadOrigin,
       t,
     ]
@@ -369,11 +382,26 @@ export function DownloadManagement() {
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadStopped', state)
+
+      // ATO-154: a paused download stops the transfer but is not a terminal
+      // event. Keep the `downloads[modelId]` entry (so the popover row survives
+      // with its last progress + a Resume button) and skip the cancelled
+      // telemetry/toast/cleanup. The partial file is kept on disk by the Rust
+      // downloader, so resume continues from where it stopped. Read paused
+      // state from the store directly (not the closure) so the async stop
+      // event can't race a stale render of `pausedDownloads`.
+      if (useDownloadStore.getState().pausedDownloads.has(state.modelId)) {
+        markResumableDownload(state.modelId)
+        return
+      }
+
       captureDownloadTerminal('cancelled', state.modelId, {
         downloadType: (state as unknown as { downloadType?: string })
           ?.downloadType,
         totalBytes: state.size?.total,
       })
+      clearPausedDownload(state.modelId)
+      clearResumeParams(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
@@ -392,6 +420,8 @@ export function DownloadManagement() {
       removeDownload,
       removeLocalDownloadingModel,
       markResumableDownload,
+      clearPausedDownload,
+      clearResumeParams,
       clearDownloadOrigin,
       t,
     ]
@@ -412,6 +442,8 @@ export function DownloadManagement() {
 
       clearDownloadCancellationRequested(state.modelId)
       clearResumableDownload(state.modelId)
+      clearPausedDownload(state.modelId)
+      clearResumeParams(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
@@ -426,6 +458,8 @@ export function DownloadManagement() {
       removeDownload,
       removeLocalDownloadingModel,
       clearResumableDownload,
+      clearPausedDownload,
+      clearResumeParams,
       clearDownloadOrigin,
       t,
     ]
@@ -446,6 +480,8 @@ export function DownloadManagement() {
 
       clearDownloadCancellationRequested(state.modelId)
       clearResumableDownload(state.modelId)
+      clearPausedDownload(state.modelId)
+      clearResumeParams(state.modelId)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
@@ -463,6 +499,8 @@ export function DownloadManagement() {
       removeDownload,
       removeLocalDownloadingModel,
       clearResumableDownload,
+      clearPausedDownload,
+      clearResumeParams,
       clearDownloadOrigin,
       t,
     ]
@@ -527,6 +565,65 @@ export function DownloadManagement() {
     const gb = bytes / 1024 ** 3
     return ((gb * 100) / 100).toFixed(2)
   }
+
+  // ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
+  // Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
+  // which start with `mlx`) get cancel-only, matching Jan's gating.
+  const isPausableDownload = (id: string): boolean =>
+    !id.startsWith('llamacpp') && !id.startsWith('mlx')
+
+  const handlePauseDownload = useCallback(
+    (download: { id: string; name: string }) => {
+      markPausedDownload(download.id)
+      markResumableDownload(download.id)
+      if (download.id !== download.name) {
+        markPausedDownload(download.name)
+        markResumableDownload(download.name)
+      }
+      void serviceHub.models().abortDownload(download.name)
+    },
+    [markPausedDownload, markResumableDownload, serviceHub]
+  )
+
+  const handleResumeDownload = useCallback(
+    (download: { id: string; name: string }) => {
+      const params = resumeParams[download.id] ?? resumeParams[download.name]
+      if (!params) {
+        // No stored params (e.g. resumed after an app restart). Fall back to
+        // cancel-style cleanup so the row doesn't get stuck in a paused state.
+        clearPausedDownload(download.id)
+        toast.error(t('common:toast.downloadFailed.title'), {
+          description: t('common:toast.downloadFailed.description', {
+            item: download.name,
+          }),
+        })
+        return
+      }
+      clearPausedDownload(download.id)
+      if (download.id !== download.name) clearPausedDownload(download.name)
+      markResumableDownload(download.id)
+      void serviceHub
+        .models()
+        .pullModelWithMetadata(
+          download.id,
+          params.modelPath,
+          params.mmprojPath,
+          params.hfToken,
+          params.skipVerification ?? true,
+          true
+        )
+        .catch((error) => {
+          console.error('[DownloadManagement] resume failed:', error)
+        })
+    },
+    [
+      resumeParams,
+      clearPausedDownload,
+      markResumableDownload,
+      serviceHub,
+      t,
+    ]
+  )
 
   return (
     <>
@@ -610,15 +707,45 @@ export function DownloadManagement() {
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate">{download.name}</p>
                         <div className="shrink-0 flex items-center space-x-0.5">
+                          {isPausableDownload(download.id) &&
+                            (pausedDownloads.has(download.id) ? (
+                              <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                onClick={() => handleResumeDownload(download)}
+                              >
+                                <IconPlayerPlay
+                                  size={16}
+                                  className="text-muted-foreground cursor-pointer"
+                                  title={t('resumeDownload')}
+                                />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                onClick={() => handlePauseDownload(download)}
+                              >
+                                <IconPlayerPause
+                                  size={16}
+                                  className="text-muted-foreground cursor-pointer"
+                                  title={t('pauseDownload')}
+                                />
+                              </Button>
+                            ))}
                           <Button
                             variant="secondary"
                             size="icon-xs"
                             onClick={() => {
                               markDownloadCancellationRequested(download.name)
                               markResumableDownload(download.name)
+                              clearPausedDownload(download.name)
+                              clearResumeParams(download.name)
                               if (download.id !== download.name) {
                                 markDownloadCancellationRequested(download.id)
                                 markResumableDownload(download.id)
+                                clearPausedDownload(download.id)
+                                clearResumeParams(download.id)
                               }
                               if (
                                 download.id.startsWith('llamacpp') ||
@@ -641,7 +768,7 @@ export function DownloadManagement() {
                             <IconX
                               size={16}
                               className="text-muted-foreground cursor-pointer"
-                              title="Cancel download"
+                              title={t('cancelDownload')}
                             />
                           </Button>
                         </div>

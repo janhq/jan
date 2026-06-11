@@ -15,9 +15,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -29,7 +26,6 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorld,
-  IconUser,
 } from '@tabler/icons-react'
 import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -49,7 +45,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { SamplerPopover } from '@/containers/SamplerPopover'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -132,10 +128,6 @@ const ChatInput = memo(function ChatInput({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
-  const currentThread = useThreads((state) => state.getCurrentThread())
-  const updateCurrentThreadAssistant = useThreads(
-    (state) => state.updateCurrentThreadAssistant
-  )
   const updateCurrentThreadModel = useThreads(
     (state) => state.updateCurrentThreadModel
   )
@@ -2012,92 +2004,6 @@ const ChatInput = memo(function ChatInput({
                             : 'Add documents or files'}
                         </span>
                       </DropdownMenuItem>
-                      {/* Use Assistant - only show when no projectId */}
-                      {!projectId && (
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
-                            <IconUser
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                            <span>Use Assistant</span>
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                            <DropdownMenuItem
-                              className={
-                                !selectedAssistant &&
-                                !currentThread?.assistants?.length
-                                  ? 'bg-accent'
-                                  : ''
-                              }
-                              onClick={() => {
-                                setSelectedAssistant(undefined)
-                                if (currentThreadId) {
-                                  updateCurrentThreadAssistant(
-                                    undefined as unknown as Assistant
-                                  )
-                                }
-                              }}
-                            >
-                              <div className="flex items-center gap-2 w-full">
-                                <span className="text-muted-foreground">—</span>
-                                <span>None</span>
-                                {!selectedAssistant &&
-                                  !currentThread?.assistants?.length && (
-                                    <span className="ml-auto text-xs text-muted-foreground">
-                                      ✓
-                                    </span>
-                                  )}
-                              </div>
-                            </DropdownMenuItem>
-                            {assistants.length > 0 ? (
-                              assistants.map((assistant) => {
-                                const isSelected =
-                                  (initialMessage &&
-                                    selectedAssistant?.id === assistant.id) ||
-                                  (assistant &&
-                                    currentThread?.assistants?.some(
-                                      (a) => a.id === assistant.id
-                                    ))
-                                return (
-                                  <DropdownMenuItem
-                                    key={assistant.id}
-                                    className={isSelected ? 'bg-accent' : ''}
-                                    onClick={() => {
-                                      setSelectedAssistant(assistant)
-                                      if (currentThreadId) {
-                                        updateCurrentThreadAssistant(assistant)
-                                      }
-                                    }}
-                                  >
-                                    <div className="flex items-center gap-2 w-full">
-                                      <AvatarEmoji
-                                        avatar={assistant.avatar}
-                                        imageClassName="w-4 h-4 object-contain"
-                                        textClassName="text-sm"
-                                      />
-                                      <span>
-                                        {assistant.name || 'Unnamed Assistant'}
-                                      </span>
-                                      {isSelected && (
-                                        <span className="ml-auto text-xs text-muted-foreground">
-                                          ✓
-                                        </span>
-                                      )}
-                                    </div>
-                                  </DropdownMenuItem>
-                                )
-                              })
-                            ) : (
-                              <DropdownMenuItem disabled>
-                                <span className="text-muted-foreground">
-                                  No assistants available
-                                </span>
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -2232,6 +2138,14 @@ const ChatInput = memo(function ChatInput({
                   ))}
 
                 <ReasoningToggle />
+
+                {!effectiveAgentMode && !projectId && (
+                  <SamplerPopover
+                    selectedAssistant={selectedAssistant}
+                    onSelectAssistant={setSelectedAssistant}
+                    disabled={isStreaming}
+                  />
+                )}
 
                 {/* Agent mode toggle hidden — kept as dead code for future use */}
                 {false && !projectId && isAgentMode && (

@@ -24,6 +24,7 @@ import type {
   ModelValidationResult,
 } from './types'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import posthog from 'posthog-js'
 import {
   isHfUrl,
@@ -477,6 +478,17 @@ export class DefaultModelsService implements ModelsService {
       }
     }
 
+    // ATO-154: record resume parameters at the single GGUF download-start
+    // choke point so the global Download popover can resume a paused download
+    // (it only knows the model id, not these HF paths/token). MLX downloads go
+    // through `engine.import` directly and are pause/resume-gated out.
+    useDownloadStore.getState().setResumeParams(id, {
+      modelPath,
+      mmprojPath,
+      hfToken,
+      skipVerification,
+    })
+
     // ATO-109: model_download funnel entry. Terminal events are emitted from
     // DownloadManagement listeners; this records the start (+ duration anchor).
     try {
@@ -508,6 +520,14 @@ export class DefaultModelsService implements ModelsService {
         resume
       )
     } catch (error) {
+      // ATO-154: a paused download stops the underlying transfer (which rejects
+      // this promise with a cancellation error). Swallow it so the initiator's
+      // catch doesn't fire a spurious "download failed" toast or clean up the
+      // row — the download-stopped listener keeps the paused entry alive and
+      // the popover shows a Resume button instead.
+      if (useDownloadStore.getState().pausedDownloads.has(id)) {
+        return
+      }
       // Emit download error event so the UI can clean up the stale downloading state
       events.emit(DownloadEvent.onFileDownloadError, {
         modelId: id,

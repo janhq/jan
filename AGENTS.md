@@ -309,6 +309,231 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-11 — Surface a user-selectable K/V cache type dropdown on the upstream `llamacpp-upstream` provider (standard types only)
+- **Context:** The TurboQuant `llamacpp` provider exposes **KV Cache K/V Type**
+ dropdowns (`cache_type_k` / `cache_type_v`,
+ [`extensions/llamacpp-extension/settings.json`](extensions/llamacpp-extension/settings.json)
+ lines 251–290) defaulting to the fork-only `turbo3`, plus the standard
+ ggml-org types. The upstream `llamacpp-upstream` provider had **no** such UI:
+ the whole end-to-end plumbing already existed — guest-js
+ (`tauri-plugin-llamacpp-upstream/guest-js/types.ts` +
+ `normalizeLlamacppConfig`) carries `cache_type_k/v`, and the Rust arg builder
+ ([`args.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs)
+ ~514–532) already emits `--cache-type-k` (skipped when `f16`) and
+ `--cache-type-v` (skipped when `f16`/`f32` **or** when `flash_attn === "off"`),
+ with `sanitize_cache_type` falling non-turboquant builds back to `q8_0`. The
+ **extension** deliberately hid it: `clearLegacyKvCacheSettings()` (migration
+ v4, the 2026-06-04-era "vanilla `llama-server` performs best with its own
+ `f16` default" decision) pruned the two keys from the settings list and
+ cleared the in-memory config so `args.rs` skipped the flags entirely.
+- **Decision:** Re-surface the dropdowns on the upstream provider with **only
+ the K/V quant types vanilla ggml-org/llama.cpp supports** — no `turbo*`.
+ 1. **`settings.json`**
+ ([`extensions/llamacpp-upstream-extension/settings.json`](extensions/llamacpp-upstream-extension/settings.json)):
+ added `cache_type_k` + `cache_type_v` dropdowns after `mlock`, **default
+ `f16`** (llama.cpp's native default → `args.rs` emits nothing, preserving
+ prior behaviour for anyone who leaves it untouched), options =
+ `f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1` (the
+ `STANDARD_CACHE_TYPES` allowlist, **no `turbo3`**). `cache_type_v`'s
+ description notes quantized V requires Flash Attention enabled (Auto/On).
+ 2. **Migrations**
+ ([`index.ts`](extensions/llamacpp-upstream-extension/src/index.ts) `onLoad`):
+ **removed the `await this.clearLegacyKvCacheSettings()` call** (it would
+ strip the freshly-added entries for fresh installs and never re-add them)
+ **and the `await this.migrateKvCacheDefaults()` call** (it would flip the new
+ `f16` default to `q8_0` for fresh installs). Both methods are left defined
+ but uncalled — consistent with the already-dead `migrateKvCacheToTurbo3` —
+ so the existing isolated unit tests for `migrateKvCacheDefaults`
+ (`src/test/index.test.ts`) still pass unchanged. v3 (`migrateFitDefault`)
+ is untouched.
+- **Consequences:** Upstream users can now pick a quantized K/V cache type from
+ the provider settings to shrink the KV cache (e.g. `q8_0`/`q4_0`), with V
+ quantization gated behind Flash Attention exactly as `args.rs` enforces.
+ Default stays `f16` (no behavioural change unless the user opts in). **This
+ reverses the upstream-specific clause of the earlier "clear KV overrides →
+ native `f16`" migration** — the goal is the same native `f16` default, now via
+ an explicit, user-overridable dropdown rather than a hidden cleared setting.
+ Existing users who already ran v4 (`llamacpp_upstream_kv_cache_cleared_v1`
+ set) get the new dropdown automatically once `registerSettings` re-merges the
+ keys on the next load. **Scope:** extension only (1 settings file + 2 removed
+ call sites + comment) — **no Rust, IPC, guest-js, on-disk, or web-app TSX
+ change** (the generic `DynamicControllerSetting` renders the dropdown purely
+ from `settings.json`). **Verified:** `settings.json` parses, both entries
+ present with `f16` default + standard-only options; `ReadLints` clean on both
+ edited files; the `migrateKvCacheDefaults` method (and its tests) is
+ byte-unchanged. `tsc`/`rolldown`/`vitest` standalone runs in the sandbox
+ resolve to the root workspace config (pre-existing, unrelated `@janhq/web-app`
+ `interface.test.tsx` failures) and are not authoritative for these scoped
+ edits. **Caveat:** the extension must be rebuilt (`build:extensions`) so the
+ new `settings.json` is embedded into the compile-time `SETTINGS` constant.
+- **Owner:** team.
+- **Links:** §4.2 *LLM backend*, the 2026-06-04 ADR *Recover from unsupported
+ multimodal projector …* and the 2026-06-08 ADR *Add Gemma 4 MTP speculative
+ decoding to `llamacpp-upstream` …* (KV-quant + MTP warning), files:
+ [`extensions/llamacpp-upstream-extension/settings.json`](extensions/llamacpp-upstream-extension/settings.json),
+ [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+ (`onLoad` migration block),
+ [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs)
+ (`--cache-type-k/-v`, `sanitize_cache_type`).
+
+### 2026-06-11 — Add pause/resume for model downloads in the global Download popover (ATO-154)
+- **Context:** Community request (Discord, @m.iko) — parity with Jan.ai. The
+  global Download popover ([`DownloadManegement.tsx`](web-app/src/containers/DownloadManegement.tsx))
+  only offered **cancel (X)** per download; no pause/resume. The plumbing was
+  already half-present: the Rust downloader
+  ([`src-tauri/src/core/downloads/helpers.rs`](src-tauri/src/core/downloads/helpers.rs))
+  **keeps the partial file on cancel** (`keep_partial_on_cancel = true`) and
+  **resumes** from the `.tmp` + saved-`url` match (`_get_maybe_resume`, `resume`
+  flag); `download_files`/`cancel_download_task` and `pullModelWithMetadata(…,
+  resume)` already thread `resume`; and the store
+  ([`useDownloadStore`](web-app/src/hooks/useDownloadStore.ts)) had
+  `resumableDownloads` + `markResumableDownload`/`clearResumableDownload`. But
+  "resumable" was only used for retry/error toasts and Hub-card re-clicks — no
+  pause/resume control was surfaced in the popover, and the popover had no way
+  to resume because it only knows the model id, not the HF paths/token.
+- **Decision:** Ship Jan-parity pause/resume, **gated to resumable GGUF model
+  downloads only** (the team chose parity over extending it to backend
+  binaries). The gate is `!id.startsWith('llamacpp') && !id.startsWith('mlx')`,
+  identical to Jan — which conveniently also excludes **MLX model repos**
+  (`mlx-community/*` starts with `mlx`, and MLX downloads go through
+  `engine.import` directly, not `pullModelWithMetadata`) and **backend-binary
+  downloads** (`llamacpp*`). So pause/resume covers exactly the
+  `pullModelWithMetadata` (llama.cpp GGUF) path; MLX + binaries keep cancel-only.
+  1. **Store** ([`useDownloadStore.ts`](web-app/src/hooks/useDownloadStore.ts)):
+     new `pausedDownloads: Set<string>` (+ `markPausedDownload` /
+     `clearPausedDownload`) and `resumeParams: { [id]: DownloadResumeParams }`
+     (+ `setResumeParams` / `clearResumeParams`), where `DownloadResumeParams =
+     { modelPath, mmprojPath?, hfToken?, skipVerification? }`.
+  2. **Resume-param capture at the single GGUF choke point**
+     ([`services/models/default.ts :: pullModelWithMetadata`](web-app/src/services/models/default.ts)):
+     `setResumeParams(id, …)` right beside the existing `markDownloadStart`
+     telemetry anchor — so **every** initiator (Hub, onboarding, prompts,
+     claude-code) populates resume params without touching ~7 call sites.
+  3. **Swallow-on-paused** (same method): if
+     `useDownloadStore.getState().pausedDownloads.has(id)` in the catch, return
+     instead of emitting `onFileDownloadError` / rethrowing — so a paused
+     download (which rejects the in-flight import with a cancellation error)
+     does **not** trigger the initiator's "download failed" toast or row
+     cleanup. Read from `getState()` (not a React closure) to avoid racing the
+     async stop event.
+  4. **Popover** ([`DownloadManegement.tsx`](web-app/src/containers/DownloadManegement.tsx)):
+     per-row Pause (`IconPlayerPause`) / Resume (`IconPlayerPlay`) buttons shown
+     only when `isPausableDownload(id)`; `handlePauseDownload` =
+     `markPausedDownload` + `markResumableDownload` + `abortDownload`;
+     `handleResumeDownload` = read `resumeParams[id]`, `clearPausedDownload`,
+     `pullModelWithMetadata(…, resume=true)` (falls back to a cancel-style
+     cleanup + toast if params are missing, e.g. after an app restart).
+     `onFileDownloadStopped` early-returns (keeping the `downloads[id]` row +
+     last progress) when the store says paused; all true-terminal handlers
+     (success / verification-success / validation-failed / error) and the X
+     button now also `clearPausedDownload` + `clearResumeParams`.
+  5. **i18n:** `pauseDownload` / `resumeDownload` added to
+     [`en/common.json`](web-app/src/locales/en/common.json) +
+     [`ru/common.json`](web-app/src/locales/ru/common.json) (other locales fall
+     back to EN); the X title now uses the existing `cancelDownload` key.
+- **Consequences:** Resumable GGUF downloads can be paused and resumed from the
+  popover; the partial file on disk means resume continues from where it
+  stopped. MLX (`mlx-community/*`) and backend binaries stay cancel-only —
+  accepted per the chosen Jan parity. **Scope:** web-app only (store + service +
+  popover + 2 locales); no Rust, IPC, on-disk layout, or settings-schema change
+  — the Rust resume support already existed. **Caveat:** resume params are
+  in-memory (cleared on app restart / cleared localStorage); a paused download
+  resumed after a restart hits the missing-params fallback (cancel-style toast)
+  rather than continuing — acceptable, the partial file is still reusable via a
+  fresh Hub-card download (which already passes `resume`). **Verified:**
+  `tsc -b` clean; `eslint` clean on all three edited TS/TSX files;
+  `useDownloadStore.test.ts` 18/18. The `models.test.ts` failures are
+  **pre-existing** (`fetchHuggingFaceRepo` headers + `pullModel` resume arg;
+  `pullModelWithMetadata` is not referenced by that suite) and unrelated.
+- **Owner:** team.
+- **Links:** [ATO-154](https://linear.app/atomicchat/issue/ATO-154), files:
+  [`web-app/src/hooks/useDownloadStore.ts`](web-app/src/hooks/useDownloadStore.ts),
+  [`web-app/src/services/models/default.ts`](web-app/src/services/models/default.ts)
+  (`pullModelWithMetadata`),
+  [`web-app/src/containers/DownloadManegement.tsx`](web-app/src/containers/DownloadManegement.tsx),
+  [`web-app/src/locales/en/common.json`](web-app/src/locales/en/common.json),
+  [`web-app/src/locales/ru/common.json`](web-app/src/locales/ru/common.json),
+  Rust resume support in
+  [`src-tauri/src/core/downloads/helpers.rs`](src-tauri/src/core/downloads/helpers.rs).
+
+### 2026-06-11 — Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)
+- **Context:** Community request (Discord, @m.iko) for Jan.ai parity
+  ([ATO-155](https://linear.app/atomicchat/issue/ATO-155)). In Atomic the
+  surface was scattered: assistant selection was an inline **"Use Assistant"**
+  submenu in [`ChatInput.tsx`](web-app/src/containers/ChatInput.tsx); sampling
+  params had **no** dedicated UI (the gear-Sheet
+  [`ModelSetting.tsx`](web-app/src/containers/ModelSetting.tsx) edits backend
+  `model.settings` — `ctx_len`/`ngl`/… — not sampling); per-assistant params
+  were only a generic key/value list in
+  [`dialogs/AddEditAssistant.tsx`](web-app/src/containers/dialogs/AddEditAssistant.tsx).
+  Confirmed data flow: sampling params are read from
+  `useAssistant.getState().currentAssistant?.parameters` in
+  [`custom-chat-transport.ts`](web-app/src/lib/custom-chat-transport.ts) and, for
+  **local** backends, the whole `parameters` bag is injected verbatim into the
+  request body (`{ ...body, ...parameters }` in
+  [`model-factory.ts`](web-app/src/lib/model-factory.ts)); cloud providers strip
+  local-only keys. `currentAssistant` is synced from the thread's first
+  assistant on thread load ([`routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx)).
+- **Decision:** Build a single **`SamplerPopover`** trigger "Sampling —
+  {assistant}" in the chat-input toolbar, with the assistant switcher in its
+  header and sampling params in its body, writing into the assistant's
+  `parameters`. Per the issue's approved scope (full Jan parity + **replace** the
+  old submenu):
+  1. **Schema** — rewrote
+     [`web-app/src/lib/predefinedParams.ts`](web-app/src/lib/predefinedParams.ts):
+     `paramsSettings` gains `controllerType` / `category` / `min` / `max` /
+     `step` (backward-compatible — old consumers only read `key`/`value`/`title`);
+     added `min_p` + `repeat_penalty`; new `paramCategories`, `paramGroups`
+     (sampling / penalties / general), and `SAMPLING_PARAM_KEYS`. Keys map 1:1
+     onto the OpenAI-compatible body keys local backends accept (the body-inject
+     reality), so the popover is genuinely effective on llamacpp/llamacpp-upstream/mlx.
+  2. **UI** — new
+     [`ParametersSection.tsx`](web-app/src/containers/ParametersSection.tsx)
+     (slider + number input per numeric param, switch for `stream`, grouped by
+     category) and
+     [`SamplerPopover.tsx`](web-app/src/containers/SamplerPopover.tsx) (trigger,
+     header assistant dropdown, body = ParametersSection).
+  3. **Persistence sync** — the popover edits the **effective** assistant
+     (unsaved-chat `selectedAssistant` → thread-bound assistant → default →
+     first). On a param change it calls `updateAssistant` (persists globally +
+     keeps `currentAssistant` in sync so the transport picks it up immediately),
+     and **only** when the assistant is bound to the current thread also calls
+     `updateCurrentThreadAssistant` (avoids implicitly binding the default to a
+     thread); if it's the unsaved-chat selection it mirrors back via the
+     `onSelectAssistant` prop. Assistant switching reuses the old submenu logic.
+  4. **ChatInput** — removed the "Use Assistant" submenu block and its now-orphan
+     imports (`DropdownMenuSub*`, `IconUser`, `AvatarEmoji`) and store selectors
+     (`currentThread`, `updateCurrentThreadAssistant`); rendered `<SamplerPopover>`
+     in the toolbar next to `<ReasoningToggle />`, gated `!effectiveAgentMode &&
+     !projectId`.
+  5. **i18n** — `none` / `noAssistants` / `samplingTrigger` / `paramCategory.*`
+     in [`en/assistants.json`](web-app/src/locales/en/assistants.json) +
+     [`ru/assistants.json`](web-app/src/locales/ru/assistants.json); other locales
+     fall back to EN.
+- **Consequences:** Assistant choice + explicit sampling controls
+  (temperature / top_p / top_k / min_p / penalties / repeat_penalty / stream) now
+  live in one popover bound to the selected assistant; the old inline submenu is
+  gone. **Caveat (unchanged, pre-existing):** sampling params reach **local**
+  backends only — cloud providers still receive only the reasoning override (the
+  transport strips local-only keys), so editing e.g. temperature for an OpenAI
+  model is a no-op today; not addressed here. `max_output_tokens` /
+  `max_context_tokens` / `auto_compact` were **deliberately not** re-added to the
+  schema (they were trimmed from the Atomic `predefinedParams.ts` earlier and are
+  consumed by separate transport logic, not body-injected). Scope: web-app only
+  (1 rewritten lib + 2 new containers + ChatInput edit + 2 locale files); no Rust,
+  IPC, schema, or persistence-shape change. **Verified:** `eslint` 0 errors on all
+  four touched TS/TSX files (one pre-existing `exhaustive-deps` warning on the
+  unrelated `processImageFiles` untouched); `tsc -b` clean ("No errors found");
+  `ReadLints` clean.
+- **Owner:** team.
+- **Links:** [ATO-155](https://linear.app/atomicchat/issue/ATO-155), files:
+  [`web-app/src/lib/predefinedParams.ts`](web-app/src/lib/predefinedParams.ts),
+  [`web-app/src/containers/ParametersSection.tsx`](web-app/src/containers/ParametersSection.tsx),
+  [`web-app/src/containers/SamplerPopover.tsx`](web-app/src/containers/SamplerPopover.tsx),
+  [`web-app/src/containers/ChatInput.tsx`](web-app/src/containers/ChatInput.tsx),
+  [`web-app/src/locales/en/assistants.json`](web-app/src/locales/en/assistants.json),
+  [`web-app/src/locales/ru/assistants.json`](web-app/src/locales/ru/assistants.json).
+
 ### 2026-06-10 — Add Pi, Goose, OpenHands, and KiloCode as one-click Launch-page coding agents
 - **Context:** The Launch page lets users one-click install + configure external
   coding agents against the local OpenAI-compatible server (port 1337). Four
@@ -352,6 +577,7 @@ Append-only. Newest at top. Each entry follows this shape:
   may drift.
 - **Owner:** team.
 - **Links:** branch `feat/launch-agents-pi-goose-openhands-kilo`.
+
 ### 2026-06-10 — Add the LiquidAI (LFM) family logo to the Hub model-logo system + render monochrome brand marks via a theme-safe CSS mask (ATO-138)
 - **Context:** In Hub model search, LFM models (LiquidAI's *Liquid Foundation
   Models*) showed letter placeholders instead of a brand icon — e.g.
@@ -699,6 +925,7 @@ Append-only. Newest at top. Each entry follows this shape:
  [`web-app/src/providers/DataProvider.tsx`](web-app/src/providers/DataProvider.tsx),
  [`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts),
  [`web-app/src/routes/settings/general.tsx`](web-app/src/routes/settings/general.tsx).
+
 ### 2026-06-09 — Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)
 - **Context:** The app had no crash/error telemetry — user-facing failures
   (model-load crashes incl. OOM, download failures, context overflow) surfaced
@@ -1902,6 +2129,7 @@ Append-only. Newest at top. Each entry follows this shape:
 - **Consequences:** Recommendation/download flow now tracks whichever CUDA-13 minor ggml-org currently publishes without source edits for each minor bump; legacy `13.1`/`13.3` installs remain resolvable through existing migration/category logic.
 - **Owner:** team.
 - **Links:** [Issue #43](https://github.com/AtomicBot-ai/Atomic-Chat/issues/43), [ggml-org/llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases), files: `extensions/llamacpp-upstream-extension/src/backend.ts`, `extensions/llamacpp-upstream-extension/src/index.ts`, `src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs`.
+
 ### 2026-06-04 — Resolve the login-shell PATH for Launch-page agent detection/install (fix `command not found` in packaged macOS builds)
 - **Context:** A user on a packaged macOS build reported the Launch-page
   one-click flow failing: the bundled installers (and the auto-opened terminal)

@@ -255,7 +255,7 @@ export const MessageItem = memo(
         <div
           key={block.key}
           className={cn(
-            'flex w-full mb-2',
+            'flex w-full mt-2 mb-2',
             message.role === 'user' ? 'justify-end' : 'justify-start'
           )}
         >

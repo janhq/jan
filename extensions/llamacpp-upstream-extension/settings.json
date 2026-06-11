@@ -257,6 +257,46 @@
     }
   },
   {
+    "key": "cache_type_k",
+    "title": "KV Cache K Type",
+    "description": "KV cache data type for Keys (default: f16).",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "f16",
+      "options": [
+        { "value": "f32", "name": "f32" },
+        { "value": "f16", "name": "f16" },
+        { "value": "bf16", "name": "bf16" },
+        { "value": "q8_0", "name": "q8_0" },
+        { "value": "q4_0", "name": "q4_0" },
+        { "value": "q4_1", "name": "q4_1" },
+        { "value": "iq4_nl", "name": "iq4_nl" },
+        { "value": "q5_0", "name": "q5_0" },
+        { "value": "q5_1", "name": "q5_1" }
+      ]
+    }
+  },
+  {
+    "key": "cache_type_v",
+    "title": "KV Cache V Type",
+    "description": "KV cache data type for Values (default: f16). Quantized values require Flash Attention to be enabled (Auto or On).",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "f16",
+      "options": [
+        { "value": "f32", "name": "f32" },
+        { "value": "f16", "name": "f16" },
+        { "value": "bf16", "name": "bf16" },
+        { "value": "q8_0", "name": "q8_0" },
+        { "value": "q4_0", "name": "q4_0" },
+        { "value": "q4_1", "name": "q4_1" },
+        { "value": "iq4_nl", "name": "iq4_nl" },
+        { "value": "q5_0", "name": "q5_0" },
+        { "value": "q5_1", "name": "q5_1" }
+      ]
+    }
+  },
+  {
     "key": "defrag_thold",
     "title": "KV Cache Defragmentation Threshold",
     "description": "Threshold for KV cache defragmentation (< 0 to disable).",

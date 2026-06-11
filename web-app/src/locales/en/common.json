@@ -88,6 +88,8 @@
   "downloads": "Downloads",
   "downloading": "Downloading",
   "cancelDownload": "Cancel download",
+  "pauseDownload": "Pause download",
+  "resumeDownload": "Resume download",
   "downloadCancelled": "Download Cancelled",
   "downloadComplete": "Download Complete",
   "thinking": "Thinking...",
