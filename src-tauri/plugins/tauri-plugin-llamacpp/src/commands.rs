@@ -200,9 +200,13 @@ pub async fn load_llama_model_impl(
     if let Some(status) = child.try_wait()? {
         if !status.success() {
             let stderr_output = stderr_task.await.unwrap_or_default();
-            log::error!("llama.cpp failed early with code {:?}", status);
-            log::error!("{}", stderr_output);
-            return Err(LlamacppError::from_stderr(&stderr_output).into());
+            // WS1.1/WS3.2: warn! (not error!) so the SentryLogger bridge does not
+            // raise a duplicate crash event — the structured error returned below
+            // is reported once by the frontend model-load choke point — and
+            // classify native crash exit codes into an actionable error.
+            log::warn!("llama.cpp failed early with code {:?}", status);
+            log::warn!("{}", stderr_output);
+            return Err(LlamacppError::from_exit_status(&status, &stderr_output).into());
         }
     }
 
@@ -224,10 +228,15 @@ pub async fn load_llama_model_impl(
                 if let Some(status) = child.try_wait()? {
                     let stderr_output = stderr_task.await.unwrap_or_default();
                     if !status.success() {
-                        log::error!("llama.cpp exited with error code {:?}", status);
-                        return Err(LlamacppError::from_stderr(&stderr_output).into());
+                        // WS1.1: warn! (not error!) — the structured error returned
+                        // below is reported once by the frontend choke point, so an
+                        // error! here is a duplicate Sentry crash event.
+                        // WS3.2: classify native crash exit codes (access violation /
+                        // segfault) into an actionable, recoverable error.
+                        log::warn!("llama.cpp exited with error code {:?}", status);
+                        return Err(LlamacppError::from_exit_status(&status, &stderr_output).into());
                     } else {
-                        log::error!("llama.cpp exited successfully but without ready signal");
+                        log::warn!("llama.cpp exited successfully but without ready signal");
                         return Err(LlamacppError::from_stderr(&stderr_output).into());
                     }
                 }

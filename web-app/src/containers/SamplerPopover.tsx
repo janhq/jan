@@ -31,23 +31,17 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 
 interface SamplerPopoverProps {
-  /** Assistant selected for an unsaved (new) chat. */
-  selectedAssistant?: Assistant
-  /** Reflect a selection/edit back into the unsaved-chat local state. */
-  onSelectAssistant: (assistant: Assistant | undefined) => void
   disabled?: boolean
 }
 
-export function SamplerPopover({
-  selectedAssistant,
-  onSelectAssistant,
-  disabled,
-}: SamplerPopoverProps) {
+export function SamplerPopover({ disabled }: SamplerPopoverProps) {
   const { t } = useTranslation()
 
   const assistants = useAssistant((state) => state.assistants)
   const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
   const updateAssistant = useAssistant((state) => state.updateAssistant)
+  const selectedAssistant = useAssistant((state) => state.pendingAssistant)
+  const onSelectAssistant = useAssistant((state) => state.setPendingAssistant)
 
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const threads = useThreads((state) => state.threads)
@@ -69,7 +63,9 @@ export function SamplerPopover({
     )
   }, [selectedAssistant, threadAssistant, assistants, defaultAssistantId])
 
-  const activeAssistant = selectedAssistant ?? threadAssistant
+  // The switcher reflects whichever assistant is actually in effect (so a fresh
+  // chat highlights the default assistant instead of showing "none").
+  const activeAssistant = effectiveAssistant
 
   const handleParamChange = (key: string, value: number | boolean) => {
     if (!effectiveAssistant) return
@@ -136,12 +132,12 @@ export function SamplerPopover({
         sideOffset={8}
         avoidCollisions={false}
         collisionPadding={12}
-        className="w-72 max-h-(--radix-popover-content-available-height) overflow-y-auto"
+        className="w-64 max-h-[min(16rem,70vh)] overflow-y-auto bg-background/95 backdrop-blur-2xl p-3"
       >
-        <div className="space-y-3">
+        <div className="space-y-2">
           {/* Header: assistant switcher */}
-          <div className="space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <div className="space-y-1">
+            <div className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide">
               {t('assistants:title')}
             </div>
             <DropdownMenu>
@@ -149,7 +145,7 @@ export function SamplerPopover({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full justify-between gap-2"
+                  className="w-full justify-between gap-2 h-7 bg-secondary/30 border-secondary"
                 >
                   <span className="flex items-center gap-2 truncate">
                     {activeAssistant ? (

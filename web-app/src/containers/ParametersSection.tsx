@@ -56,14 +56,14 @@ export function ParametersSection({
   const visible = new Set(paramKeys)
 
   return (
-    <div className={cn('space-y-4', className)}>
+    <div className={cn('space-y-2.5', className)}>
       {paramCategories.map((category) => {
         const keys = paramGroups[category.id].filter((key) => visible.has(key))
         if (keys.length === 0) return null
 
         return (
-          <div key={category.id} className="space-y-2.5">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <div key={category.id} className="space-y-1.5">
+            <div className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide">
               {t(`assistants:paramCategory.${category.id}`)}
             </div>
 
@@ -79,7 +79,7 @@ export function ParametersSection({
                     className="flex items-center justify-between gap-4"
                   >
                     <span
-                      className="text-sm font-medium truncate"
+                      className="text-sm text-muted-foreground truncate"
                       title={setting.description}
                     >
                       {setting.title}
@@ -94,10 +94,10 @@ export function ParametersSection({
 
               const value = readNumber(parameters, setting)
               return (
-                <div key={key} className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-4">
+                <div key={key} className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
                     <span
-                      className="text-sm font-medium truncate"
+                      className="text-sm text-muted-foreground truncate"
                       title={setting.description}
                     >
                       {setting.title}
@@ -113,7 +113,7 @@ export function ParametersSection({
                         if (Number.isNaN(parsed)) return
                         onChange(key, clamp(parsed, setting.min, setting.max))
                       }}
-                      className="h-7 w-20 text-right"
+                      className="h-6 w-14 rounded-md border-0 bg-transparent px-1 text-right text-xs text-muted-foreground/80 tabular-nums shadow-none focus-visible:ring-0 dark:bg-transparent"
                     />
                   </div>
                   {setting.controllerType === 'slider' && (
@@ -123,6 +123,7 @@ export function ParametersSection({
                       max={setting.max ?? 1}
                       step={setting.step ?? 0.01}
                       onValueChange={(values) => onChange(key, values[0])}
+                      className="[&_[data-slot=slider-track]]:bg-muted [&_[data-slot=slider-range]]:bg-muted-foreground/40 [&_[data-slot=slider-thumb]]:border-muted-foreground/40 [&_[data-slot=slider-thumb]]:bg-muted-foreground"
                     />
                   )}
                 </div>

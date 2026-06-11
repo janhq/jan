@@ -11,11 +11,13 @@ import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import posthog from 'posthog-js'
 import {
+  isRecoverableModelLoadCode,
   loadBackendFromProvider,
   mmprojProjectorType,
   oomSubtype,
   quantFromModelId,
   sanitizeStderrTail,
+  shouldCaptureModelLoadSentry,
   shouldEmitModelLoadFailure,
 } from '@/lib/telemetry'
 import { captureHandledError } from '@/lib/sentry'
@@ -119,6 +121,55 @@ function setLastUsedModel(provider: string, model: string) {
 }
 
 let activeSwitchPromise: Promise<void> | null = null
+
+// WS2 (Sentry desktop top-10): the ChatInput auto-start effect re-fires whenever
+// `serverStatus` / `loadingModel` change, and a failed load flips both — so a
+// model that cannot load (e.g. its file was deleted) spins in a tight loop,
+// restarting on a fresh port every ~1s and flooding telemetry. We record the
+// last auto-start outcome per (provider, model): terminal failures (missing
+// model / binary) are never auto-retried, and any other failure is backed off.
+// Explicit user switches (dropdown / send) bypass this gate entirely.
+type AutoStartFailure = { ts: number; terminal: boolean }
+const autoStartFailures = new Map<string, AutoStartFailure>()
+const AUTO_START_BACKOFF_MS = 30_000
+const TERMINAL_LOAD_CODES = new Set(['MODEL_FILE_NOT_FOUND', 'BINARY_NOT_FOUND'])
+
+function autoStartKey(providerName: string, modelId: string): string {
+  return `${providerName}::${modelId}`
+}
+
+function clearAutoStartFailure(providerName: string, modelId: string): void {
+  autoStartFailures.delete(autoStartKey(providerName, modelId))
+}
+
+function recordAutoStartFailure(
+  providerName: string,
+  modelId: string,
+  errorCode: string | null
+): void {
+  autoStartFailures.set(autoStartKey(providerName, modelId), {
+    ts: Date.now(),
+    terminal: errorCode != null && TERMINAL_LOAD_CODES.has(errorCode),
+  })
+  if (autoStartFailures.size > 200) autoStartFailures.clear()
+}
+
+/**
+ * WS2: whether the automatic (effect-driven) start may attempt loading this
+ * model. Returns false when the previous auto-start failed terminally (missing
+ * model/binary — never auto-retried) or, for any other failure, while still
+ * within the backoff window. A successful load (or an explicit user switch that
+ * succeeds) clears the record. Explicit user-initiated switches do NOT call this.
+ */
+export function shouldAttemptAutoStart(
+  providerName: string,
+  modelId: string
+): boolean {
+  const prev = autoStartFailures.get(autoStartKey(providerName, modelId))
+  if (!prev) return true
+  if (prev.terminal) return false
+  return Date.now() - prev.ts >= AUTO_START_BACKOFF_MS
+}
 
 function syncModelSelection(providerName: string, modelId: string) {
   const serverState = useLocalApiServer.getState()
@@ -226,6 +277,8 @@ export async function switchToModel(params: {
     // does not wipe out the global active-model state.
     syncActiveModelsFromEngines(activeModels || [])
     syncModelSelection(params.providerName, params.modelId)
+    // WS2: the target is healthy — clear any prior auto-start failure record.
+    clearAutoStartFailure(params.providerName, params.modelId)
     console.log(
       '[switchToModel] Target already active, skipping restart:',
       params.modelId,
@@ -352,10 +405,19 @@ async function doSwitchToModel(params: {
     // 7. Synchronise the rest of global state (dropdown, thread, localStorage).
     syncModelSelection(providerName, modelId)
 
+    // WS2: load succeeded — clear any prior auto-start failure record so the
+    // model is eligible for automatic start again.
+    clearAutoStartFailure(providerName, modelId)
+
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
     console.error('[switchToModel] Failed to switch model:', error)
     useAppState.getState().setServerStatus('stopped')
+    // WS2: record the failure so the auto-start effect doesn't re-loop on it —
+    // terminal codes (missing model/binary) are never auto-retried; others back
+    // off. Explicit user switches bypass `shouldAttemptAutoStart`, so a manual
+    // retry is always possible.
+    recordAutoStartFailure(providerName, modelId, toErrorObject(error).code ?? null)
     if (isLocal) {
       emitModelLoad('failed', {
         modelId,
@@ -365,27 +427,39 @@ async function doSwitchToModel(params: {
         error,
       })
     }
-    // ATO-113: explicit Sentry capture at the model-load choke point with the
-    // typed error_code + zero-PII tags (stderr tail is scrubbed by beforeSend).
+    // ATO-113 / WS1.5: explicit Sentry capture at the model-load choke point with
+    // the typed error_code + zero-PII tags (stderr tail is scrubbed by beforeSend).
+    // Recoverable user/config conditions (missing file, unsupported projector) are
+    // NOT crashes and are skipped, and repeats are throttled (model+code, 5-min
+    // window) so a load crashloop cannot flood the crash channel.
     {
       const err = toErrorObject(error)
       const haystack = err.details ?? err.message
       const settings = modelConfig?.settings
-      captureHandledError(
-        error,
-        isOutOfMemoryError(err) ? 'fatal' : 'error',
-        {
-          feature: 'model_load',
-          error_code: err.code ?? 'unknown',
-          oom_subtype: oomSubtype(haystack),
-          backend: isLocal ? loadBackendFromProvider(providerName) : providerName,
-          model_id: modelId,
-          quant: quantFromModelId(modelId),
-          context_length:
-            settingNum(settings, 'ctx_len') ?? settingNum(settings, 'ctx_size'),
-        },
-        { stderr_tail: sanitizeStderrTail(haystack) }
-      )
+      const errorCode = err.code ?? null
+      if (
+        !isRecoverableModelLoadCode(errorCode) &&
+        shouldCaptureModelLoadSentry(modelId, errorCode)
+      ) {
+        captureHandledError(
+          error,
+          isOutOfMemoryError(err) ? 'fatal' : 'error',
+          {
+            feature: 'model_load',
+            error_code: err.code ?? 'unknown',
+            oom_subtype: oomSubtype(haystack),
+            backend: isLocal
+              ? loadBackendFromProvider(providerName)
+              : providerName,
+            model_id: modelId,
+            quant: quantFromModelId(modelId),
+            context_length:
+              settingNum(settings, 'ctx_len') ??
+              settingNum(settings, 'ctx_size'),
+          },
+          { stderr_tail: sanitizeStderrTail(haystack) }
+        )
+      }
     }
     reportModelLoadError(error)
     throw error

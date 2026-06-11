@@ -13,6 +13,7 @@ import { IconSettings, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { ModelSetting } from '@/containers/ModelSetting'
+import { SamplerPopover } from '@/containers/SamplerPopover'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
@@ -46,7 +47,14 @@ const setLastUsedModel = (provider: string, model: string) => {
   }
 }
 
-const DropdownModelProvider = memo(function DropdownModelProvider() {
+interface DropdownModelProviderProps {
+  /** Show the Sampling popover trigger inside the model bar (hidden for projects). */
+  showSampler?: boolean
+}
+
+const DropdownModelProvider = memo(function DropdownModelProvider({
+  showSampler = true,
+}: DropdownModelProviderProps) {
   const {
     providers,
     getProviderByName,
@@ -477,6 +485,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
             contextSize={getContextSize()}
             className="ml-0.5 shrink-0"
           />
+          {showSampler && (
+            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+              <SamplerPopover />
+            </div>
+          )}
         </div>
       </PopoverTrigger>
 

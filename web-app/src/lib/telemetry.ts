@@ -281,3 +281,45 @@ export function shouldEmitModelLoadFailure(
   if (modelLoadFailureThrottle.size > 500) modelLoadFailureThrottle.clear()
   return true
 }
+
+const modelLoadSentryThrottle = new Map<string, number>()
+
+/**
+ * WS1.5 (Sentry desktop top-10): throttle repeated model-load Sentry captures
+ * using the same (model, error_code) key and 5-min window as
+ * `shouldEmitModelLoadFailure`, but on an independent map so the PostHog and
+ * Sentry gates do not suppress each other. Returns true if this failure should
+ * be captured to Sentry, false if an identical one was captured within the
+ * window — so a load crashloop cannot flood the crash channel.
+ */
+export function shouldCaptureModelLoadSentry(
+  modelId: string,
+  errorCode: string | null
+): boolean {
+  const key = `${modelId}::${errorCode ?? 'unknown'}`
+  const now = Date.now()
+  const last = modelLoadSentryThrottle.get(key)
+  if (last !== undefined && now - last < MODEL_LOAD_FAILURE_THROTTLE_MS) {
+    return false
+  }
+  modelLoadSentryThrottle.set(key, now)
+  if (modelLoadSentryThrottle.size > 500) modelLoadSentryThrottle.clear()
+  return true
+}
+
+/**
+ * WS1.5: model-load error codes that represent recoverable / expected user or
+ * config conditions (missing file, unsupported multimodal projector) rather than
+ * a backend crash. These must NOT be sent to Sentry as crash events.
+ */
+const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
+  'MODEL_FILE_NOT_FOUND',
+  'BINARY_NOT_FOUND',
+  'MULTIMODAL_PROJECTOR_LOAD_FAILED',
+])
+
+export function isRecoverableModelLoadCode(
+  code: string | null | undefined
+): boolean {
+  return code != null && RECOVERABLE_MODEL_LOAD_CODES.has(code)
+}

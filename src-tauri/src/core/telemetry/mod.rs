@@ -10,9 +10,12 @@
 pub mod commands;
 pub mod scrub;
 
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use sentry::protocol::{Breadcrumb, Event, Value};
 use sentry::{ClientInitGuard, ClientOptions};
@@ -72,6 +75,12 @@ pub fn init() -> Option<ClientInitGuard> {
             if !consent_enabled() {
                 return None;
             }
+            // WS1.5 backstop: drop fingerprint-identical events that repeat within
+            // a short window so a runaway `error!` loop cannot flood Sentry even
+            // if a call site forgets to throttle.
+            if is_duplicate_event(&event) {
+                return None;
+            }
             Some(scrub_event(event))
         })),
         before_breadcrumb: Some(Arc::new(|crumb| {
@@ -92,6 +101,52 @@ pub fn init() -> Option<ClientInitGuard> {
 /// no-op forwarding).
 pub fn wrap_logger(dest: Box<dyn log::Log>) -> Box<dyn log::Log> {
     Box::new(sentry::integrations::log::SentryLogger::with_dest(dest))
+}
+
+/// WS1.5 backstop window: events whose fingerprint repeats within this span are
+/// suppressed. Kept short so genuinely recurring (but spaced-out) failures still
+/// surface, while a tight crash/`error!` loop is collapsed to one event.
+const EVENT_DEDUP_WINDOW: Duration = Duration::from_secs(60);
+
+static EVENT_DEDUP: OnceLock<Mutex<HashMap<u64, Instant>>> = OnceLock::new();
+
+/// Whether an event is fingerprint-identical to one already sent within
+/// [`EVENT_DEDUP_WINDOW`]. Fingerprint = message + logentry + first exception
+/// type/value + level. Fails open (never suppresses) on a poisoned lock.
+fn is_duplicate_event(event: &Event<'static>) -> bool {
+    let mut src = String::new();
+    if let Some(msg) = &event.message {
+        src.push_str(msg);
+    }
+    if let Some(logentry) = &event.logentry {
+        src.push_str(&logentry.message);
+    }
+    if let Some(exc) = event.exception.values.first() {
+        src.push_str(&exc.ty);
+        if let Some(value) = &exc.value {
+            src.push_str(value);
+        }
+    }
+    src.push_str(&format!("{:?}", event.level));
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    src.hash(&mut hasher);
+    let fingerprint = hasher.finish();
+
+    let map = EVENT_DEDUP.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = match map.lock() {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+    let now = Instant::now();
+    guard.retain(|_, last| now.duration_since(*last) < EVENT_DEDUP_WINDOW);
+    if let Some(last) = guard.get(&fingerprint) {
+        if now.duration_since(*last) < EVENT_DEDUP_WINDOW {
+            return true;
+        }
+    }
+    guard.insert(fingerprint, now);
+    false
 }
 
 /// Strip machine name + IP, scrub every free-text field, and attach a scrubbed

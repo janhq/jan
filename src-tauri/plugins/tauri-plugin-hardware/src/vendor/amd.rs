@@ -79,7 +79,11 @@ impl GpuInfo {
         use std::collections::HashMap;
 
         let memory_usage_map = windows_impl::get_gpu_usage().unwrap_or_else(|_| {
-            log::error!("Failed to get AMD GPU memory usage");
+            // WS1.3: debug! (not error!) — this usage probe runs every ~5s, so an
+            // error! here floods the SentryLogger bridge with low-actionability
+            // crash events. The caller already degrades gracefully via
+            // get_usage_unsupported().
+            log::debug!("Failed to get AMD GPU memory usage");
             HashMap::new()
         });
 

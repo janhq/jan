@@ -7,6 +7,13 @@ interface AssistantState {
   assistants: Assistant[]
   currentAssistant: Assistant | null
   defaultAssistantId: string
+  /**
+   * Assistant chosen for an unsaved (new) chat, shared across the chat input
+   * and the model-bar Sampling popover. Bound to the thread on creation, then
+   * reset to undefined. `undefined` means "fall back to default/thread".
+   */
+  pendingAssistant: Assistant | undefined
+  setPendingAssistant: (assistant: Assistant | undefined) => void
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
@@ -91,6 +98,8 @@ const getInitialAssistantState = () => {
 
 export const useAssistant = create<AssistantState>((set, get) => ({
   ...getInitialAssistantState(),
+  pendingAssistant: undefined,
+  setPendingAssistant: (assistant) => set({ pendingAssistant: assistant }),
   addAssistant: (assistant) => {
     set({ assistants: [...get().assistants, assistant] })
     getServiceHub()

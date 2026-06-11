@@ -95,6 +95,52 @@ impl LlamacppError {
             Some(stderr.into()),
         )
     }
+
+    /// Classify a non-success process exit. Native crashes (Windows access
+    /// violation `0xC0000005`, stack overflow / buffer overrun; Unix `SIGSEGV` /
+    /// `SIGABRT`) usually leave empty stderr, so `from_stderr` alone would only
+    /// yield the opaque generic process error. When stderr already pins a
+    /// specific cause (OOM, arch, projector) we keep it; otherwise, for a
+    /// recognised crash we surface an actionable hint.
+    pub fn from_exit_status(status: &std::process::ExitStatus, stderr: &str) -> Self {
+        let base = Self::from_stderr(stderr);
+        if !matches!(base.code, ErrorCode::LlamaCppProcessError) || !is_crash_exit(status) {
+            return base;
+        }
+        Self::new(
+            ErrorCode::LlamaCppProcessError,
+            "The model process crashed unexpectedly (access violation / segfault). \
+This usually means the model is incompatible with this backend, or its \
+speculative-decoding (MTP) configuration is unsupported here."
+                .into(),
+            Some(stderr.into()),
+        )
+    }
+}
+
+/// Whether a process exit status is a hard native crash (access violation /
+/// segmentation fault) rather than a normal non-zero exit, so it can be given
+/// an actionable message instead of an opaque "unexpected error".
+fn is_crash_exit(status: &std::process::ExitStatus) -> bool {
+    #[cfg(windows)]
+    {
+        matches!(status.code(), Some(code) if {
+            let c = code as u32;
+            // STATUS_ACCESS_VIOLATION / STATUS_STACK_OVERFLOW / STATUS_STACK_BUFFER_OVERRUN
+            c == 0xC000_0005 || c == 0xC000_00FD || c == 0xC000_0409
+        })
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        // SIGSEGV = 11, SIGABRT = 6
+        matches!(status.signal(), Some(11 | 6))
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = status;
+        false
+    }
 }
 
 // Error type for server commands

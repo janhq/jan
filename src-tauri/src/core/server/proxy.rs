@@ -3155,7 +3155,11 @@ async fn inner_proxy_request<R: Runtime>(
         Err(e) => {
             state.error_kind = Some(unreachable_error_kind(state.backend));
             let error_msg = format!("Proxy request to model failed: {e}");
-            log::error!("{error_msg}");
+            // WS1.4: warn! (not error!) — a refused/failed proxy connection is a
+            // downstream symptom of the model server not being up, not a root-cause
+            // crash, so it must not flood the SentryLogger bridge. The PostHog
+            // error_kind above still records it for analytics.
+            log::warn!("{error_msg}");
             let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,

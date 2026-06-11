@@ -48,7 +48,9 @@ pub fn validate_model_path(args: &mut Vec<String>) -> ServerResult<PathBuf> {
             "Invalid or inaccessible model path: {}",
             model_path_pb.display()
         );
-        log::error!("{}", &err_msg);
+        // WS1.2: warn! (not error!) — a missing/moved model file is a recoverable
+        // user condition, not a backend crash, so it must not become a Sentry event.
+        log::warn!("{}", &err_msg);
         return Err(LlamacppError::new(
             ErrorCode::ModelFileNotFound,
             "The specified model file does not exist or is not accessible.".into(),
@@ -60,8 +62,18 @@ pub fn validate_model_path(args: &mut Vec<String>) -> ServerResult<PathBuf> {
     // Update the path in args with appropriate format for the platform
     #[cfg(windows)]
     {
-        // use short path on Windows
-        if let Some(short) = get_short_path(&model_path_pb) {
+        // WS3.1: split/sharded GGUF files must NOT go through 8.3 short-path
+        // conversion — the `~N` mangling (e.g. `MODEL~1.GGU`) destroys the
+        // `-NNNNN-of-NNNNN` split index, and llama.cpp then rejects the load
+        // with "illegal split file idx". Keep the original long path for them.
+        let is_split = model_path_pb
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(is_split_gguf_name)
+            .unwrap_or(false);
+        if is_split {
+            args[model_path_index + 1] = model_path_pb.display().to_string();
+        } else if let Some(short) = get_short_path(&model_path_pb) {
             args[model_path_index + 1] = short;
         } else {
             args[model_path_index + 1] = model_path_pb.display().to_string();
@@ -96,7 +108,9 @@ pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathB
            "Invalid or inaccessible mmproj path: {}",
            mmproj_path_pb.display()
        );
-       log::error!("{}", &err_msg);
+       // WS1.2: warn! (not error!) — a missing/moved mmproj file is a recoverable
+       // user condition, not a backend crash, so it must not become a Sentry event.
+       log::warn!("{}", &err_msg);
        return Err(LlamacppError::new(
            ErrorCode::ModelFileNotFound,
            "The specified mmproj file does not exist or is not accessible.".into(),
@@ -122,10 +136,47 @@ pub fn validate_mmproj_path(args: &mut Vec<String>) -> ServerResult<Option<PathB
    Ok(Some(mmproj_path_pb))
 }
 
+/// Whether a file name follows llama.cpp's split/shard convention
+/// `*-NNNNN-of-NNNNN.gguf` (e.g. `model-00001-of-00003.gguf`). Used to skip
+/// Windows 8.3 short-path conversion for such files (see `validate_model_path`).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_split_gguf_name(file_name: &str) -> bool {
+    let lower = file_name.to_ascii_lowercase();
+    let stem = match lower.strip_suffix(".gguf") {
+        Some(s) => s,
+        None => return false,
+    };
+    // Canonical pattern tail is `-DDDDD-of-DDDDD` = 1 + 5 + 4 + 5 = 15 chars.
+    if stem.len() < 15 {
+        return false;
+    }
+    let tail = &stem[stem.len() - 15..];
+    let tb = tail.as_bytes();
+    tb[0] == b'-'
+        && tb[1..6].iter().all(u8::is_ascii_digit)
+        && &tail[6..10] == "-of-"
+        && tb[10..15].iter().all(u8::is_ascii_digit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_is_split_gguf_name() {
+        // Canonical split names (case-insensitive).
+        assert!(is_split_gguf_name("model-00001-of-00003.gguf"));
+        assert!(is_split_gguf_name("Qwen3-30B-Q4_K_M-00002-of-00010.gguf"));
+        assert!(is_split_gguf_name("MODEL-00001-OF-00002.GGUF"));
+        // Non-split / malformed names keep short-path conversion.
+        assert!(!is_split_gguf_name("model.gguf"));
+        assert!(!is_split_gguf_name("mmproj.gguf"));
+        assert!(!is_split_gguf_name("model-1-of-3.gguf")); // not 5-digit
+        assert!(!is_split_gguf_name("model-00001-of-00003.bin")); // wrong ext
+        assert!(!is_split_gguf_name("model-00001-of-00003")); // no ext
+        assert!(!is_split_gguf_name("model-0000a-of-00003.gguf")); // non-digit
+    }
 
     #[test]
     fn test_validate_binary_path_existing() {

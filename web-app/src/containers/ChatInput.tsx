@@ -45,7 +45,6 @@ import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
-import { SamplerPopover } from '@/containers/SamplerPopover'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -229,8 +228,15 @@ const ChatInput = memo(function ChatInput({
           return
         }
 
-        const { switchToModel } = await import('@/utils/switchModel')
+        const { switchToModel, shouldAttemptAutoStart } = await import(
+          '@/utils/switchModel'
+        )
         if (cancelled) return
+        // WS2: don't auto-retry a model that just failed terminally (missing
+        // file/binary) or is still within its backoff window — this is what
+        // turned a failed load into a tight restart loop. Explicit user
+        // switches (dropdown/send) don't go through this gate.
+        if (!shouldAttemptAutoStart(selectedProvider, selectedModel.id)) return
         await switchToModel({
           modelId: selectedModel.id,
           providerName: selectedProvider,
@@ -262,9 +268,10 @@ const ChatInput = memo(function ChatInput({
 
   const blockSendUntilModelReady = isLocalModelNotReady && !!onSubmit
 
-  const [selectedAssistant, setSelectedAssistant] = useState<
-    Assistant | undefined
-  >(() => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0])
+  const selectedAssistant = useAssistant((state) => state.pendingAssistant)
+  const setSelectedAssistant = useAssistant(
+    (state) => state.setPendingAssistant
+  )
 
   // No auto-selection: let the user explicitly pick an assistant
 
@@ -579,7 +586,9 @@ const ChatInput = memo(function ChatInput({
         // When no projectId, use the selected assistant from dropdown (if any)
         const assistant = projectAssistantId
           ? assistants.find((a) => a.id === projectAssistantId)
-          : selectedAssistant
+          : (selectedAssistant ??
+            assistants.find((a) => a.id === defaultAssistantId) ??
+            assistants[0])
 
         // #region agent log
         ttftPreBegin('before-createThread')
@@ -2138,14 +2147,6 @@ const ChatInput = memo(function ChatInput({
                   ))}
 
                 <ReasoningToggle />
-
-                {!effectiveAgentMode && !projectId && (
-                  <SamplerPopover
-                    selectedAssistant={selectedAssistant}
-                    onSelectAssistant={setSelectedAssistant}
-                    disabled={isStreaming}
-                  />
-                )}
 
                 {/* Agent mode toggle hidden — kept as dead code for future use */}
                 {false && !projectId && isAgentMode && (
