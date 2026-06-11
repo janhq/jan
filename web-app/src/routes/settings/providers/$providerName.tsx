@@ -77,6 +77,7 @@ function ProviderDetail() {
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [apiKeysDraft, setApiKeysDraft] = useState('')
+  const [baseUrlDraft, setBaseUrlDraft] = useState('')
   const [showAdvancedApiKeys, setShowAdvancedApiKeys] = useState(false)
   const [isTestingKeys, setIsTestingKeys] = useState(false)
   const [keyCheckResults, setKeyCheckResults] = useState<
@@ -266,6 +267,12 @@ function ProviderDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
 
+  useEffect(() => {
+    if (provider?.provider !== 'azure') return
+    setBaseUrlDraft(provider.base_url ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerName, provider?.base_url])
+
   const autoCatalogAttempted = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!provider) return
@@ -336,6 +343,13 @@ function ProviderDetail() {
       api_key_fallbacks: nextFallbacks,
     })
   }, [apiKeysDraft, provider, providerName, serviceHub, updateProvider])
+
+  const commitBaseUrlDraft = useCallback(() => {
+    if (!provider || provider.provider !== 'azure') return
+    const next = baseUrlDraft.trim()
+    if (next === (provider.base_url ?? '')) return
+    updateProvider(providerName, { ...provider, base_url: next })
+  }, [baseUrlDraft, provider, providerName, updateProvider])
 
   const rawApiKeyLines = apiKeysDraft.split(/\r?\n/)
   const primaryKeyDraft = (rawApiKeyLines[0] ?? '').trim()
@@ -990,6 +1004,27 @@ function ProviderDetail() {
                 provider.provider !== 'llamacpp' &&
                 provider.provider !== 'mlx' && (
                   <Card>
+                    {provider.provider === 'azure' && (
+                      <div className="space-y-2 mb-4">
+                        <div className="space-y-1">
+                          <h2 className="font-medium text-foreground text-base">
+                            {t('providers:baseUrl.title')}
+                          </h2>
+                          <p className="text-sm text-muted-foreground leading-normal">
+                            {t('providers:baseUrl.azureDescription')}
+                          </p>
+                        </div>
+                        <input
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          placeholder="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1"
+                          value={baseUrlDraft}
+                          onChange={(e) => setBaseUrlDraft(e.target.value)}
+                          onBlur={() => commitBaseUrlDraft()}
+                          spellCheck={false}
+                          autoComplete="off"
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <div className="space-y-1">
                         <h2 className="font-medium text-foreground text-base">

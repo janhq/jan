@@ -86,6 +86,10 @@
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
   "enterNameForProvider": "Enter name for provider",
+  "baseUrl": {
+    "title": "Base URL",
+    "azureDescription": "Your Azure OpenAI endpoint. Replace YOUR-RESOURCE-NAME with your Azure resource name."
+  },
   "apiKeys": {
     "title": "API keys",
     "description": "Enter your API key. You can add extra keys in Advanced, and Jan will try the next one automatically if a key fails.",
