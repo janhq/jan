@@ -9,7 +9,8 @@ const isCustomImageAvatar = (avatar: React.ReactNode): avatar is string => {
   return typeof avatar === 'string' && avatar.startsWith('/images/')
 }
 
-const isAtomicChatLogoPath = (src: string) => src.includes('atomic-chat-logo')
+const isAtomicChatLogoPath = (src: string) =>
+  src.includes('atomic-chat-logo') || src.includes('transparent-logo')
 
 /**
  * Component for rendering assistant avatars with consistent styling

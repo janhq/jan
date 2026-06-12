@@ -26,6 +26,7 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { ParametersSection } from '@/containers/ParametersSection'
 import { paramGroups } from '@/lib/predefinedParams'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useSamplingSettings } from '@/hooks/useSamplingSettings'
 import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
@@ -39,9 +40,11 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
 
   const assistants = useAssistant((state) => state.assistants)
   const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
-  const updateAssistant = useAssistant((state) => state.updateAssistant)
   const selectedAssistant = useAssistant((state) => state.pendingAssistant)
   const onSelectAssistant = useAssistant((state) => state.setPendingAssistant)
+
+  const samplingParams = useSamplingSettings((state) => state.params)
+  const setParam = useSamplingSettings((state) => state.setParam)
 
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const threads = useThreads((state) => state.threads)
@@ -52,8 +55,8 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
   const currentThread = currentThreadId ? threads[currentThreadId] : undefined
   const threadAssistant = currentThread?.assistants?.[0]
 
-  // The assistant whose `parameters` the popover reads and writes. Priority:
-  // explicit unsaved-chat selection → thread-bound assistant → default → first.
+  // The assistant shown/selected in the switcher (persona only — no sampling).
+  // Priority: explicit unsaved-chat selection -> thread-bound -> default -> first.
   const effectiveAssistant = useMemo<Assistant | undefined>(() => {
     return (
       selectedAssistant ??
@@ -63,30 +66,10 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
     )
   }, [selectedAssistant, threadAssistant, assistants, defaultAssistantId])
 
-  // The switcher reflects whichever assistant is actually in effect (so a fresh
-  // chat highlights the default assistant instead of showing "none").
   const activeAssistant = effectiveAssistant
 
-  const handleParamChange = (key: string, value: number | boolean) => {
-    if (!effectiveAssistant) return
-    const next: Assistant = {
-      ...effectiveAssistant,
-      parameters: {
-        ...effectiveAssistant.parameters,
-        [key]: value,
-      },
-    }
-
-    // Persist globally + keep `currentAssistant` (read by the transport) in sync.
-    updateAssistant(next)
-    // Sync the thread record only when this assistant is bound to the thread.
-    if (currentThreadId && threadAssistant?.id === next.id) {
-      updateCurrentThreadAssistant(next)
-    }
-    // Keep the unsaved-chat local state fresh.
-    if (selectedAssistant?.id === next.id) {
-      onSelectAssistant(next)
-    }
+  const handleSamplingChange = (key: string, value: number | boolean) => {
+    setParam(key, value)
   }
 
   const handleSelectAssistant = (assistant: Assistant | undefined) => {
@@ -96,10 +79,9 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
     }
   }
 
-  const triggerName = effectiveAssistant?.name ?? t('assistants:none')
-  const samplingLabel = t('assistants:samplingTrigger', { name: triggerName })
+  const samplingLabel = t('assistants:paramCategory.sampling')
 
-  // Surface only sampling + penalties in the popover (exclude the General group, e.g. Stream).
+  // Surface only sampling + penalties (exclude the General group, e.g. Stream).
   const popoverParamKeys = [...paramGroups.sampling, ...paramGroups.penalties]
 
   return (
@@ -135,7 +117,7 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
         className="w-64 max-h-[min(16rem,70vh)] overflow-y-auto bg-background/95 backdrop-blur-2xl p-3"
       >
         <div className="space-y-2">
-          {/* Header: assistant switcher */}
+          {/* Header: assistant switcher (persona only) */}
           <div className="space-y-1">
             <div className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide">
               {t('assistants:title')}
@@ -205,19 +187,13 @@ export function SamplerPopover({ disabled }: SamplerPopoverProps) {
             </DropdownMenu>
           </div>
 
-          {/* Body: sampling parameters */}
-          {effectiveAssistant ? (
-            <ParametersSection
-              parameters={effectiveAssistant.parameters ?? {}}
-              onChange={handleParamChange}
-              paramKeys={popoverParamKeys}
-              className={cn(disabled && 'pointer-events-none opacity-50')}
-            />
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {t('assistants:noAssistants')}
-            </p>
-          )}
+          {/* Body: global sampling parameters */}
+          <ParametersSection
+            parameters={samplingParams}
+            onChange={handleSamplingChange}
+            paramKeys={popoverParamKeys}
+            className={cn(disabled && 'pointer-events-none opacity-50')}
+          />
         </div>
       </PopoverContent>
     </Popover>

@@ -22,6 +22,20 @@ type ModelSettingProps = {
   model: Model
 }
 
+// Sampling parameters are edited globally in the Sampling popover; their
+// legacy load-time twins under `model.settings.*` are hidden from this gear
+// to avoid two competing sources of truth. Data on disk is preserved.
+const LEGACY_SAMPLING_KEYS = new Set<string>([
+  'temperature',
+  'top_p',
+  'top_k',
+  'min_p',
+  'repeat_penalty',
+  'repeat_last_n',
+  'presence_penalty',
+  'frequency_penalty',
+])
+
 export function ModelSetting({
   model,
   provider,
@@ -142,6 +156,11 @@ export function ModelSetting({
             return acc
           }, [])
           .filter(([key]) => {
+            // Sampling now lives solely in the global Sampling popover
+            // (model bar). Hide the legacy load-time sampling controls here
+            // so there is exactly one place to tune sampling. The persisted
+            // `model.settings.*` values are left untouched on disk.
+            if (LEGACY_SAMPLING_KEYS.has(key)) return false
             // MLX models only support context size setting
             if (provider.provider === 'mlx') {
               return key === 'ctx_len'

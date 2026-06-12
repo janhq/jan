@@ -309,6 +309,202 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-12 — Make sampling global (model-bar popover) + slim the assistant to persona-only (ATO-155 rework)
+- **Context:** Sampling parameters (`temperature`/`top_p`/`top_k`/`min_p`/
+ penalties + optional `max_output_tokens`) lived **per-assistant** in
+ `assistant.parameters` and were read by `custom-chat-transport`. The same
+ sampling knobs *also* had dead load-time twins under `model.settings.*`
+ (surfaced in the `ModelSetting` gear), so users saw two competing places to
+ set temperature and were confused about what an "assistant" even was. The
+ ATO-155 Sampling popover (model bar) had been wired to edit
+ `assistant.parameters`, which entangled persona and sampling.
+- **Decision:** Split the two concerns cleanly.
+ 1. **Global sampling store** (new
+ [`web-app/src/hooks/useSamplingSettings.ts`](web-app/src/hooks/useSamplingSettings.ts)):
+ Zustand + `persist` (new key `sampling-settings` in
+ [`localStorage.ts`](web-app/src/constants/localStorage.ts)), holding one
+ app-wide `params` bag. Seeded once from `defaultAssistant.parameters` so the
+ historical defaults (`temperature 0.7`, `top_k 20`, `top_p 0.8`,
+ `repeat_penalty 1.12`) survive the move; only keys actually present are sent,
+ so untouched params keep the backend default (no behavior change).
+ 2. **Transport reads the global store**
+ ([`custom-chat-transport.ts`](web-app/src/lib/custom-chat-transport.ts)):
+ `inferenceParams` and `maxOutputTokens` now come from
+ `useSamplingSettings.getState().getParams()` instead of
+ `currentAssistant.parameters`. `currentAssistant` remains the
+ system-prompt/identity source (instructions path untouched).
+ 3. **Popover** ([`SamplerPopover.tsx`](web-app/src/containers/SamplerPopover.tsx)):
+ Sampling section now reads/writes the global store; added a **Context**
+ section editing the current model's `ctx_len` (`model.settings.ctx_len`),
+ persisted via `updateProvider` and applied to a *running* model via a
+ debounced `stopModel`+`startModel` (mirrors `ModelSetting`'s restart). Takes
+ `model` + `provider` props from
+ [`DropdownModelProvider.tsx`](web-app/src/containers/DropdownModelProvider.tsx).
+ The assistant switcher stays (persona selection for a new chat) but no longer
+ carries sampling.
+ 4. **Assistant editor**
+ ([`AddEditAssistant.tsx`](web-app/src/containers/dialogs/AddEditAssistant.tsx)):
+ stripped the Settings header, predefined-param chips, and dynamic
+ key/type/value rows — only emoji/name/description/instructions remain. On
+ save, existing on-disk `parameters` are **preserved untouched** (vestigial,
+ default `{}` for new assistants) — migrations unaffected.
+ 5. **Gear de-dup** ([`ModelSetting.tsx`](web-app/src/containers/ModelSetting.tsx)):
+ a `LEGACY_SAMPLING_KEYS` block-list hides the load-time sampling twins
+ (`temperature`/`top_p`/`top_k`/`min_p`/`repeat_penalty`/`repeat_last_n`/
+ `presence_penalty`/`frequency_penalty`) from the gear UI. The gear stays the
+ editor for genuine load-time/engine settings (`ctx_len`, `ngl`,
+ `chat_template`, `batch_size`, `cpu_moe`, mmproj, …). Persisted
+ `model.settings.*` values are left on disk (only hidden).
+- **Consequences:** Exactly one place to tune sampling (the popover); the
+ assistant is now unambiguously persona-only. Context size is editable inline
+ and restarts a running model only on `ctx_len` change (sampling never
+ restarts — applied per-request). **Deliberately not done:** per-family
+ recommended sampling (ATO-99); deleting `assistant.parameters` or the
+ `model.settings.*` sampling twins from disk (kept for rollback/migration).
+ **Verified:** `ReadLints` clean, `eslint` clean, `tsc -b` clean on all
+ touched files.
+- **Owner:** team.
+- **Links:** [ATO-155](https://linear.app/atomicchat/issue/ATO-155), files:
+ [`web-app/src/hooks/useSamplingSettings.ts`](web-app/src/hooks/useSamplingSettings.ts),
+ [`web-app/src/lib/custom-chat-transport.ts`](web-app/src/lib/custom-chat-transport.ts),
+ [`web-app/src/containers/SamplerPopover.tsx`](web-app/src/containers/SamplerPopover.tsx),
+ [`web-app/src/containers/DropdownModelProvider.tsx`](web-app/src/containers/DropdownModelProvider.tsx),
+ [`web-app/src/containers/dialogs/AddEditAssistant.tsx`](web-app/src/containers/dialogs/AddEditAssistant.tsx),
+ [`web-app/src/containers/ModelSetting.tsx`](web-app/src/containers/ModelSetting.tsx),
+ [`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts).
+
+---
+
+### 2026-06-12 — Fix variant-row height jump on the Hub model-card page by giving the in-progress download the same pill button as the rest of the Hub
+- **Context:** The earlier same-day pill ADR (below) only converted the three
+ shared download components, but the **model-card variant table** renders its
+ action cell **inline** in
+ [`$modelId.tsx`](web-app/src/routes/hub/$modelId.tsx), not via
+ `ModelDownloadAction`. So clicking "Download" on a variant swapped a
+ `Button size="sm"` (~h-8) for a shorter inline cluster (thin `Progress w-12`
+ + percent text + an `icon-xs` ghost X), shrinking the `td` content height and
+ making the whole table jump.
+- **Decision:** Replace the inline in-progress cluster with the exact same
+ button-shaped pill used elsewhere — `Button variant="outline" size="sm"`
+ (`group relative ml-auto w-24 …`) with a `bg-primary/20` width-driven progress
+ fill, a `group-hover`-revealed `IconX` cancel, keeping the existing
+ `markResumableDownload` / `markDownloadCancellationRequested` /
+ `abortDownload` cancel wiring. Same footprint as the "Download" / "New chat"
+ buttons in the other two row states, so the row height is constant across
+ idle → downloading → downloaded. Removed the now-unused `Progress` import.
+- **Consequences:** No more layout shift when a variant download starts; the
+ variant table now matches the Hub-wide pill look. `tsc -b` + eslint clean.
+ Scope limited to the one inline surface that the prior pass missed.
+- **Amendment (same day) — variant-row pill is pause/resume, cancel moves to the
+ download popover.** The PM asked that the in-progress pill on the model-card
+ variant rows ([`$modelId.tsx`](web-app/src/routes/hub/$modelId.tsx)) toggle
+ **pause/resume** on hover (an `IconPlayerPause` / `IconPlayerPlay` revealed
+ over the percent), with **cancel (`IconX`) available only in the title-bar
+ download-management popover** ([`DownloadManegement.tsx`](web-app/src/containers/DownloadManegement.tsx)).
+ Implemented by mirroring that popover's ATO-154 pause/resume wiring into the
+ row: `handlePauseDownload` = `markPausedDownload` + `markResumableDownload` +
+ `abortDownload` (the partial GGUF is kept on disk; the global
+ `onFileDownloadStopped` paused-branch keeps the `downloads[id]` entry so the
+ pill survives with frozen progress), and `handleResumeDownload` = replay the
+ stored `resumeParams[id]` via `pullModelWithMetadata(..., resume=true)`.
+ Gated by `isPausableDownload` (non-`llamacpp*` / non-`mlx*`) — always true for
+ the GGUF variant table, kept as a safety gate (`disabled` + no hover icon
+ otherwise). The previous cancel wiring (`markDownloadCancellationRequested` +
+ `abortDownload`) and its now-unused import were dropped from the row.
+- **Owner:** team.
+- **Links:** the same-day ADR *Make the Hub download in-progress state a
+ button-shaped "pill" …* (below), the ATO-154 pause/resume model-download work,
+ files:
+ [`web-app/src/routes/hub/$modelId.tsx`](web-app/src/routes/hub/$modelId.tsx),
+ [`web-app/src/containers/DownloadManegement.tsx`](web-app/src/containers/DownloadManegement.tsx)
+ (cancel stays here).
+
+### 2026-06-12 — Force the model-status dot green while a llama.cpp model is running (drop the misleading "doesn't work on your device" red)
+- **Context:** The header model-status dot
+ ([`ModelSupportStatus`](web-app/src/containers/ModelSupportStatus.tsx)) for the
+ `llamacpp` / `llamacpp-upstream` providers is driven by a **static**
+ `serviceHub.models().isModelSupported(path, ctxSize)` probe → GREEN/YELLOW/RED
+ with tooltip "Works Well / Might work / Doesn't work on your device (ctx: N)".
+ That estimate is keyed off the **configured** context size, so a model with
+ ctx set to 16k–32k shows RED even though it loads and runs fine in practice
+ (the user rarely reaches that context, and runtime context overflow is
+ already surfaced by a dedicated error). PM: while the model is actually
+ running, the dot must always be green. (MLX already worked this way — its
+ status is derived from `activeModels`.)
+- **Decision:** Mirror the MLX behaviour for the llama.cpp providers. Added
+ `isModelRunning = !!modelId && activeModels.includes(modelId)`
+ (`activeModels` is populated from `getActiveModels()`, which queries the local
+ engines, so a running GGUF model's id is present). In the llama.cpp support
+ effect, short-circuit to `GREEN` when the model is in `activeModels` and skip
+ the static ctx probe (effect dep list gains `activeModels`). The GREEN tooltip
+ now reads "Model is running" when running, else keeps "Works Well on your
+ device (ctx: N)". The pre-start probe (GREEN/YELLOW/RED) is unchanged when the
+ model is **not** running — the red hint still helps before load.
+- **Consequences:** No more red "doesn't work" dot for a model that is in fact
+ loaded; changing the ctx slider while running no longer flips the dot to red.
+ Context-overflow feedback is unaffected (separate runtime error). Display-only
+ — no engine/IPC/store change. Verified: `tsc -b` clean, `eslint` clean.
+- **Owner:** team.
+- **Links:** files:
+ [`web-app/src/containers/ModelSupportStatus.tsx`](web-app/src/containers/ModelSupportStatus.tsx).
+
+### 2026-06-12 — Make the Hub download in-progress state a button-shaped "pill" and surface the title-bar download indicator (auto-open + pulse)
+- **Context:** PM feedback (screenshots) on the Hub: (1) once a variant
+ download starts, the row's action cell collapsed from a proper button
+ ("Download" / "New chat") to a thin `Progress` bar + "NN%" + a tiny ghost `X`
+ icon (`w-24` block), reading as a broken "недокнопка" next to the real
+ buttons; (2) the title-bar download indicator
+ ([`DownloadManagement`](web-app/src/containers/DownloadManegement.tsx)) — a
+ ghost icon with a faint progress ring shown only while `downloadCount > 0` —
+ was nearly invisible, so users didn't notice a download was running. The same
+ in-progress markup was triplicated across
+ [`ModelDownloadAction`](web-app/src/containers/ModelDownloadAction.tsx),
+ [`DownloadButton`](web-app/src/containers/DownloadButton.tsx) (Hub index
+ cards), and [`MlxModelDownloadAction`](web-app/src/containers/MlxModelDownloadAction.tsx).
+ **Correction (same day):** the `$modelId` variant table the PM actually
+ screenshotted does **not** use `ModelDownloadAction` — it renders the action
+ cell inline in [`$modelId.tsx`](web-app/src/routes/hub/$modelId.tsx), so the
+ first pass didn't change that surface. A follow-up applied the same pill there
+ too (see the same-day ADR *Fix variant-row height jump …* below).
+- **Decision (per the user's chosen options):**
+ 1. **Pill button** — replace the bar+%+X trio with a single
+ `variant="outline" size="sm"` button matching the "Download"/"New chat"
+ footprint (`w-24`): a left-anchored `bg-primary/20` width-`%` progress fill
+ behind the centered "NN%" label; on hover the percent fades out and a
+ centered `IconX` fades in; the whole button is the cancel control
+ (`onClick={handleCancelDownload}`, `title`/`aria-label` =
+ `common:cancelDownload`). Applied **identically to all three** Hub
+ download-action components for visual consistency (the PM only flagged the
+ variant rows, but the widget is shared — fixing one and leaving the others
+ inconsistent would be a half-fix). Inlined in each (no new shared
+ component/file). `Progress` import dropped from all three (sole consumer
+ removed).
+ 2. **Indicator visibility** — in `DownloadManagement`, when `downloadCount`
+ rises from `0`, briefly auto-open the popover (4s `setTimeout` auto-close;
+ refs `prevDownloadCount` / `autoCloseTimer`, cleared on unmount; the
+ controlled `onOpenChange` clears the timer on any manual open/close so we
+ never fight the user). **Amendment (same day, per user):** the visual
+ highlight that originally rode along — `highlightIndicator` pulse
+ (`animate-pulse ring-2 ring-primary/40`) and the `downloadCount > 0`
+ `text-primary` icon recolor — was **reverted**; only the auto-open logic was
+ kept. The icon stays its original `text-muted-foreground` with just the
+ existing progress ring.
+- **Consequences:** Downloading rows now look like first-class buttons and the
+ cancel affordance is the whole control (larger hit target) rather than a 12px
+ `X`. The title-bar indicator announces itself on start and stays
+ color-highlighted while active. Display-only — no change to download
+ start/cancel/resume logic, the store, IPC, or telemetry. Auto-open is
+ best-effort UX: it closes after 4s (acceptable per "briefly open") and yields
+ to manual interaction; a second concurrent download starting while one is
+ active does not re-open (trigger gated on `prev === 0`). Verified: `tsc -b`
+ clean, `eslint` clean on all four touched files.
+- **Owner:** team.
+- **Links:** files:
+ [`web-app/src/containers/ModelDownloadAction.tsx`](web-app/src/containers/ModelDownloadAction.tsx),
+ [`web-app/src/containers/DownloadButton.tsx`](web-app/src/containers/DownloadButton.tsx),
+ [`web-app/src/containers/MlxModelDownloadAction.tsx`](web-app/src/containers/MlxModelDownloadAction.tsx),
+ [`web-app/src/containers/DownloadManegement.tsx`](web-app/src/containers/DownloadManegement.tsx).
+
 ### 2026-06-11 — ATO-135 (web-app slice): clear the stuck "Failed to load" toast on a successful load (ATO-63) + map classified engine errors to actionable messages (ATO-121)
 - **Context:** Epic [ATO-135](https://linear.app/atomicchat/issue/ATO-135) bundles
   one root pattern (bundled runtime forks lag upstream on new architectures —

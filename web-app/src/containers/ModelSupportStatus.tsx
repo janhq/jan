@@ -35,6 +35,12 @@ export const ModelSupportStatus = ({
     }))
   )
 
+  // A running model works on this device regardless of the static ctx-size
+  // estimate (the user may set ctx 16k but only ever reach 2k). Runtime
+  // context overflow is surfaced separately via an error, so never show the
+  // "doesn't work" red dot while the model is actually loaded.
+  const isModelRunning = !!modelId && activeModels.includes(modelId)
+
   // Helper function to check model support with proper path resolution
   const checkModelSupportWithPath = useCallback(
     async (
@@ -130,7 +136,9 @@ export const ModelSupportStatus = ({
     }
     switch (modelSupportStatus) {
       case 'GREEN':
-        return `Works Well on your device (ctx: ${contextSize})`
+        return isModelRunning
+          ? 'Model is running'
+          : `Works Well on your device (ctx: ${contextSize})`
       case 'YELLOW':
         return `Might work on your device (ctx: ${contextSize})`
       case 'RED':
@@ -153,6 +161,11 @@ export const ModelSupportStatus = ({
         modelId &&
         (provider === 'llamacpp' || provider === 'llamacpp-upstream')
       ) {
+        // Running model → always green; skip the static ctx-size probe.
+        if (activeModels.includes(modelId)) {
+          setModelSupportStatus('GREEN')
+          return
+        }
         setModelSupportStatus('LOADING')
         try {
           const supportStatus = await checkModelSupportWithPath(
@@ -170,7 +183,7 @@ export const ModelSupportStatus = ({
     }
 
     checkModelSupport()
-  }, [modelId, provider, contextSize, checkModelSupportWithPath])
+  }, [modelId, provider, contextSize, checkModelSupportWithPath, activeModels])
 
   // Track MLX model running status (activeModels takes priority over loadingModel
   // to avoid showing "Starting…" when the model has already finished loading)

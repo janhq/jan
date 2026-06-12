@@ -10,7 +10,8 @@ import {
   IconDownload,
   IconClock,
   IconFileCode,
-  IconX,
+  IconPlayerPause,
+  IconPlayerPlay,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -20,14 +21,12 @@ import {
   getPreferredMmprojModel,
   getTotalDownloadFileSize,
 } from '@/lib/models'
-import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
-import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -69,6 +68,10 @@ function HubModelDetailContent() {
     addLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
+    pausedDownloads,
+    markPausedDownload,
+    clearPausedDownload,
+    resumeParams,
   } = useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
@@ -124,6 +127,47 @@ function HubModelDetailContent() {
         total: download.total,
       })),
     [downloads]
+  )
+
+  // ATO-154: only resumable model (GGUF) downloads can be paused. Backend
+  // binaries (`llamacpp*`) and MLX repos (`mlx*`) are cancel-only — but the
+  // variant table only ever lists GGUF quants, so this is a safety gate.
+  const isPausableDownload = (id: string): boolean =>
+    !id.startsWith('llamacpp') && !id.startsWith('mlx')
+
+  const handlePauseDownload = useCallback(
+    (id: string) => {
+      markPausedDownload(id)
+      markResumableDownload(id)
+      void serviceHub.models().abortDownload(id)
+    },
+    [markPausedDownload, markResumableDownload, serviceHub]
+  )
+
+  const handleResumeDownload = useCallback(
+    (id: string) => {
+      const params = resumeParams[id]
+      if (!params) {
+        clearPausedDownload(id)
+        return
+      }
+      clearPausedDownload(id)
+      markResumableDownload(id)
+      void serviceHub
+        .models()
+        .pullModelWithMetadata(
+          id,
+          params.modelPath,
+          params.mmprojPath,
+          params.hfToken,
+          params.skipVerification ?? true,
+          true
+        )
+        .catch((error) => {
+          console.error('[HubModelDetail] resume failed:', error)
+        })
+    },
+    [resumeParams, clearPausedDownload, markResumableDownload, serviceHub]
   )
 
   // Handle model use
@@ -505,40 +549,63 @@ function HubModelDetailContent() {
                             <td className="py-3 px-2 text-right ml-auto">
                               {(() => {
                                 if (isDownloading && !isDownloaded) {
+                                  const pausable = isPausableDownload(
+                                    variant.model_id
+                                  )
+                                  const isPaused = pausedDownloads.has(
+                                    variant.model_id
+                                  )
                                   return (
-                                    <div className="ml-auto flex items-center justify-end gap-1">
-                                      <Progress
-                                        value={downloadProgress * 100}
-                                        className="w-12 border"
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={!pausable}
+                                      onClick={() => {
+                                        if (!pausable) return
+                                        if (isPaused) {
+                                          handleResumeDownload(variant.model_id)
+                                        } else {
+                                          handlePauseDownload(variant.model_id)
+                                        }
+                                      }}
+                                      title={
+                                        isPaused
+                                          ? t('common:resumeDownload')
+                                          : t('common:pauseDownload')
+                                      }
+                                      aria-label={
+                                        isPaused
+                                          ? t('common:resumeDownload')
+                                          : t('common:pauseDownload')
+                                      }
+                                      className="group relative ml-auto w-24 justify-center overflow-hidden font-semibold"
+                                    >
+                                      <span
+                                        aria-hidden
+                                        className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+                                        style={{
+                                          width: `${Math.round(downloadProgress * 100)}%`,
+                                        }}
                                       />
-                                      <span className="text-xs text-muted-foreground text-right tabular-nums inline-block min-w-[34px]">
+                                      <span
+                                        className={cn(
+                                          'relative z-1 tabular-nums transition-opacity',
+                                          pausable && 'group-hover:opacity-0'
+                                        )}
+                                      >
                                         {Math.round(downloadProgress * 100)}%
                                       </span>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={() => {
-                                          markResumableDownload(
-                                            variant.model_id
-                                          )
-                                          markDownloadCancellationRequested(
-                                            variant.model_id
-                                          )
-                                          void serviceHub
-                                            .models()
-                                            .abortDownload(variant.model_id)
-                                        }}
-                                        title={t('common:cancelDownload')}
-                                        aria-label={t('common:cancelDownload')}
-                                        className="shrink-0"
-                                      >
-                                        <IconX
-                                          size={12}
-                                          className="text-muted-foreground"
-                                        />
-                                      </Button>
-                                    </div>
+                                      {pausable && (
+                                        <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                          {isPaused ? (
+                                            <IconPlayerPlay size={14} />
+                                          ) : (
+                                            <IconPlayerPause size={14} />
+                                          )}
+                                        </span>
+                                      )}
+                                    </Button>
                                   )
                                 }
 
@@ -550,6 +617,7 @@ function HubModelDetailContent() {
                                       onClick={() =>
                                         handleUseModel(variant.model_id)
                                       }
+                                      className="ml-auto w-24 justify-center"
                                     >
                                       {t('hub:newChat')}
                                     </Button>
@@ -576,7 +644,10 @@ function HubModelDetailContent() {
                                           )
                                         )
                                     }}
-                                    className={cn(isDownloading && 'hidden')}
+                                    className={cn(
+                                      'ml-auto w-24 justify-center',
+                                      isDownloading && 'hidden'
+                                    )}
                                     variant="outline"
                                   >
                                     Download

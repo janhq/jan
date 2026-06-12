@@ -13,8 +13,8 @@
   "nameRequired": "Укажите имя",
   "description": "Описание (необязательно)",
   "enterDescription": "Введите описание",
-  "instructions": "Инструкции",
-  "enterInstructions": "Введите инструкции",
+  "instructions": "Системный промт",
+  "enterInstructions": "Введите системный промт",
   "predefinedParameters": "Предустановленные параметры",
   "parameters": "Параметры",
   "key": "Ключ",
@@ -35,9 +35,12 @@
   "none": "Нет",
   "noAssistants": "Нет доступных ассистентов",
   "samplingTrigger": "Семплинг — {{name}}",
+  "contextSize": "Размер контекста",
+  "contextSizeHint": "Размер контекста промпта. Изменение перезапускает запущенную модель.",
   "paramCategory": {
     "sampling": "Семплинг",
     "penalties": "Штрафы",
-    "general": "Общие"
+    "general": "Общие",
+    "context": "Контекст"
   }
 }

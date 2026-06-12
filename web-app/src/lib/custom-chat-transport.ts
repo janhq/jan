@@ -45,7 +45,7 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useAssistant } from '@/hooks/useAssistant'
+import { useSamplingSettings } from '@/hooks/useSamplingSettings'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
@@ -396,9 +396,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           .getState()
           .getProviderByName(providerId)
 
-        // Get assistant parameters from current assistant
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const inferenceParams = currentAssistant?.parameters
+        // Global sampling parameters (no longer per-assistant). Injected
+        // verbatim into local-backend request bodies by ModelFactory.
+        const inferenceParams = useSamplingSettings.getState().getParams()
 
         // Global "Disable reasoning" setting — best-effort: dispatch the
         // provider-specific flag that skips the thinking phase. Unknown keys
@@ -584,7 +584,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // displayed tokens/sec.
     let streamStartTime: number | undefined
 
-    const maxOutputTokens = useAssistant.getState().currentAssistant?.parameters
+    const maxOutputTokens = useSamplingSettings.getState().getParams()
       ?.max_output_tokens as number | undefined
 
     const result = streamText({

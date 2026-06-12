@@ -13,8 +13,8 @@
   "nameRequired": "Name is required",
   "description": "Description (optional)",
   "enterDescription": "Enter description",
-  "instructions": "Instructions",
-  "enterInstructions": "Enter instructions",
+  "instructions": "System prompt",
+  "enterInstructions": "Enter system prompt",
   "predefinedParameters": "Predefined Parameters",
   "parameters": "Parameters",
   "key": "Key",
@@ -40,9 +40,12 @@
   "none": "None",
   "noAssistants": "No assistants available",
   "samplingTrigger": "Sampling — {{name}}",
+  "contextSize": "Context Size",
+  "contextSizeHint": "Size of the prompt context. Changing it restarts a running model.",
   "paramCategory": {
     "sampling": "Sampling",
     "penalties": "Penalties",
-    "general": "General"
+    "general": "General",
+    "context": "Context"
   }
 }

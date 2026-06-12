@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { route } from '@/constants/routes'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -206,28 +205,27 @@ export const MlxModelDownloadAction = memo(
     return (
       <div className="flex items-center">
         {isDownloading && !isDownloaded && (
-          <div className="flex items-center gap-1 w-24">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <Progress
-                className="border flex-1"
-                value={downloadProgress * 100}
-              />
-              <span className="text-xs text-center text-muted-foreground">
-                {Math.round(downloadProgress * 100)}%
-              </span>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={handleCancelDownload}
-              title={t('common:cancelDownload')}
-              aria-label={t('common:cancelDownload')}
-              className="shrink-0"
-            >
-              <IconX size={12} className="text-muted-foreground" />
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCancelDownload}
+            title={t('common:cancelDownload')}
+            aria-label={t('common:cancelDownload')}
+            className="group relative w-24 justify-center overflow-hidden font-semibold"
+          >
+            <span
+              aria-hidden
+              className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+              style={{ width: `${Math.round(downloadProgress * 100)}%` }}
+            />
+            <span className="relative z-1 tabular-nums transition-opacity group-hover:opacity-0">
+              {Math.round(downloadProgress * 100)}%
+            </span>
+            <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+              <IconX size={14} />
+            </span>
+          </Button>
         )}
         {isDownloaded ? (
           <Button

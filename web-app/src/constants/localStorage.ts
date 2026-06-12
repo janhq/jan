@@ -20,6 +20,10 @@ export const localStorageKey = {
   lastUsedModel: 'last-used-model',
   lastUsedAssistant: 'last-used-assistant',
   defaultAssistantId: 'default-assistant-id',
+  // Global sampling parameters (temperature/top_p/top_k/min_p/penalties).
+  // Sampling is no longer per-assistant; this single bag is injected into
+  // every local-backend chat request via custom-chat-transport.
+  samplingSettings: 'sampling-settings',
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
   // Marks that the user has completed (either Skip or Download) the dedicated
