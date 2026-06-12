@@ -1,0 +1,56 @@
+---
+title: TrustedRouter
+description: A step-by-step guide on connecting Jan to TrustedRouter.
+keywords:
+  [
+    Jan,
+    local AI,
+    privacy focus,
+    remote AI,
+    OpenAI-compatible API,
+    TrustedRouter,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# TrustedRouter
+
+## Integrate TrustedRouter with Jan
+
+[TrustedRouter](https://trustedrouter.com) is an OpenAI-compatible router for
+accessing multiple model providers through one API. It uses an open-source and
+verifiable attested router with zero prompt and output logging by default,
+which can be useful when chats contain private project context, code, or
+customer data.
+
+<Steps>
+
+### Step 1: Get Your API Key
+
+1. Visit [TrustedRouter](https://trustedrouter.com/console/keys)
+2. Create and copy a new API key
+
+<Callout type='info'>
+TrustedRouter keys work with the OpenAI-compatible base URL
+`https://api.trustedrouter.com/v1`.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Add a custom OpenAI-compatible provider
+3. Set the base URL to `https://api.trustedrouter.com/v1`
+4. Insert your **API Key**
+
+### Step 3: Start Using TrustedRouter Models
+
+Use a TrustedRouter routing alias or any model ID exposed by your account:
+
+- `trustedrouter/auto` for automatic routing
+- `trustedrouter/zdr` for zero data retention routing
+- `trustedrouter/e2e` for end-to-end encrypted routing where available
+
+</Steps>
+
