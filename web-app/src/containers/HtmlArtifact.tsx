@@ -268,7 +268,12 @@ function HtmlArtifactComponent({
       )}
       data-artifact="html"
     >
-      <div className="@container relative z-30 flex items-center justify-between gap-2 border-border border-b bg-muted/60 px-2 py-1.5">
+      <div
+        className={cn(
+          '@container relative z-30 flex items-center justify-between gap-2 border-border border-b bg-muted/60 px-2 py-1.5',
+          IS_WINDOWS && fill && 'pr-[8rem]'
+        )}
+      >
         <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border text-xs">
           <button
             type="button"
