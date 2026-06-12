@@ -60,6 +60,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
+import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import {
@@ -352,6 +353,7 @@ export function createCustomFetch(
   ): Record<string, unknown> => {
     if (!includeOurParams) {
       decodeAudioSentinelsInBody(rawBody)
+      decodeVideoSentinelsInBody(rawBody)
       return rawBody
     }
     const normalised: Record<string, unknown> = {}
@@ -373,6 +375,7 @@ export function createCustomFetch(
       merged.max_tokens = -1
     }
     decodeAudioSentinelsInBody(merged)
+    decodeVideoSentinelsInBody(merged)
     return merged
   }
 
@@ -560,6 +563,48 @@ export function decodeAudioSentinelsInBody(body: Record<string, unknown>): void 
         hasAudioSentinel((part as { text: string }).text)
       ) {
         const split = splitAudioSentinels((part as { text: string }).text)
+        if (split) {
+          next.push(...split)
+          touched = true
+          continue
+        }
+      }
+      next.push(part)
+    }
+    if (touched) m.content = next
+  }
+}
+
+// Rewrites any sentinel-bearing text content (planted by
+// CustomChatTransport.encodeVideoAttachments) back into llama-server
+// `input_video` content parts. Mutates `body.messages` in place. Runs after
+// decodeAudioSentinelsInBody, so it also handles content already promoted to
+// an array by the audio pass; the two sentinel markers are disjoint.
+export function decodeVideoSentinelsInBody(body: Record<string, unknown>): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'user') continue
+    if (typeof m.content === 'string') {
+      if (!hasVideoSentinel(m.content)) continue
+      const split = splitVideoSentinels(m.content)
+      if (split) m.content = split
+      continue
+    }
+    if (!Array.isArray(m.content)) continue
+    const next: unknown[] = []
+    let touched = false
+    for (const part of m.content) {
+      if (
+        part &&
+        typeof part === 'object' &&
+        (part as { type?: string }).type === 'text' &&
+        typeof (part as { text?: string }).text === 'string' &&
+        hasVideoSentinel((part as { text: string }).text)
+      ) {
+        const split = splitVideoSentinels((part as { text: string }).text)
         if (split) {
           next.push(...split)
           touched = true

@@ -732,7 +732,14 @@ export default class llamacpp_extension extends AIEngine {
    * the post-fit value — what `fit_ctx` settled on — so it's the right
    * denominator for the token-usage popup.
    */
-  async getModelProps(modelId: string): Promise<ModelProps | undefined> {
+  async getModelProps(
+    modelId: string
+  ): Promise<
+    | (ModelProps & {
+        modalities?: { vision: boolean; video: boolean; audio: boolean }
+      })
+    | undefined
+  > {
     const router = await this.getRouterInfo()
     if (!router || !modelId) return undefined
     // Router runs with models_autoload=true, so `/props?model=X` against an
@@ -754,15 +761,20 @@ export default class llamacpp_extension extends AIEngine {
         total_slots?: number
         model_alias?: string
         is_sleeping?: boolean
+        modalities?: { vision?: boolean; video?: boolean; audio?: boolean }
       }
       const n = json?.default_generation_settings?.n_ctx
       if (typeof n !== 'number' || n <= 0) return undefined
+      const m = json.modalities
       return {
         nCtx: n,
         totalSlots:
           typeof json.total_slots === 'number' ? json.total_slots : undefined,
         modelAlias: json.model_alias,
         isSleeping: !!json.is_sleeping,
+        modalities: m
+          ? { vision: !!m.vision, video: !!m.video, audio: !!m.audio }
+          : undefined,
       }
     } catch {
       return undefined
@@ -1939,6 +1951,10 @@ export default class llamacpp_extension extends AIEngine {
           )
           if (caps.vision) capabilities.push('vision')
           if (caps.audio) capabilities.push('audio')
+          // 'video' is intentionally NOT derived from the mmproj here — video
+          // support also depends on the backend being built with MTMD_VIDEO,
+          // which the GGUF can't reveal. It's reconciled from /props after the
+          // model loads (see useReconcileVideoCapability).
         }
 
         const mp = modelConfig.model_path ?? ''

@@ -75,6 +75,7 @@
     "tools": "Tools",
     "vision": "Vision",
     "audio": "Audio",
+    "video": "Video",
     "proactive": "Proactive (Experimental)",
     "embeddings": "Embeddings",
     "notAvailable": "Not available yet",

@@ -35,6 +35,7 @@ import {
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
+import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
 import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
@@ -1041,10 +1042,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const baseMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         resolveOrphanToolCalls(
-          this.encodeAudioAttachments(
-            stripUnsupportedImageParts(
-              this.mapUserInlineAttachments(effectiveMessages),
-              modelSupportsVision
+          this.encodeVideoAttachments(
+            this.encodeAudioAttachments(
+              stripUnsupportedImageParts(
+                this.mapUserInlineAttachments(effectiveMessages),
+                modelSupportsVision
+              )
             )
           )
         )
@@ -1229,6 +1232,33 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (!parsed) return part
           touched = true
           return { type: 'text' as const, text: encodeAudioSentinel(parsed.format, parsed.data) }
+        }
+        return part
+      })
+      if (!touched) return message
+      return { ...message, parts: nextParts } as UIMessage
+    })
+  }
+
+  // Replace video `file` parts on user messages with sentinel-bearing `text`
+  // parts, same mechanism as encodeAudioAttachments. The fetch wrapper in
+  // model-factory.ts decodes these into llama-server `input_video` content
+  // parts (frames decoded via the vision encoder + ffmpeg on the server).
+  encodeVideoAttachments(messages: UIMessage[]): UIMessage[] {
+    return messages.map((message) => {
+      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
+      let touched = false
+      const nextParts = message.parts.map((part) => {
+        if (
+          part?.type === 'file' &&
+          typeof (part as { mediaType?: string }).mediaType === 'string' &&
+          (part as { mediaType: string }).mediaType.startsWith('video/') &&
+          typeof (part as { url?: string }).url === 'string'
+        ) {
+          const parsed = parseVideoDataUrl((part as { url: string }).url)
+          if (!parsed) return part
+          touched = true
+          return { type: 'text' as const, text: encodeVideoSentinel(parsed.data) }
         }
         return part
       })

@@ -141,6 +141,7 @@ export enum ContentType {
   Reasoning = 'reasoning',
   Image = 'image_url',
   InputAudio = 'input_audio',
+  InputVideo = 'input_video',
   ToolCall = 'tool_call',
 }
 
@@ -172,6 +173,17 @@ export type InputAudioContentValue = {
 }
 
 /**
+ * The `InputVideoContentValue` type carries base64-encoded video for OAI-compatible
+ * `input_video` content parts (llama.cpp mtmd with a vision encoder + ffmpeg).
+ * The wire shape sent to llama-server is `{ data }`; `format` (the source MIME,
+ * e.g. `video/mp4`) is retained only to reconstruct the data URL for UI re-render.
+ */
+export type InputVideoContentValue = {
+  data: string
+  format?: string
+}
+
+/**
  * The `ThreadContent` type defines the shape of a message's content object
  * @data_transfer_object
  */
@@ -183,6 +195,8 @@ export type ThreadContent = {
   image_url?: ImageContentValue
   // For input_audio content
   input_audio?: InputAudioContentValue
+  // For input_video content
+  input_video?: InputVideoContentValue
   // For tool call content
   tool_call_id?: string
   tool_name?: string

@@ -39,7 +39,11 @@ import {
   ChatCompletionRole,
   ContentType,
 } from '@janhq/core'
-import { createImageAttachment } from '@/types/attachment'
+import {
+  createImageAttachment,
+  createAudioAttachment,
+  createVideoAttachment,
+} from '@/types/attachment'
 import {
   useChatAttachments,
   NEW_THREAD_ATTACHMENT_KEY,
@@ -671,24 +675,54 @@ function ThreadDetail() {
       titleAbortRef.current?.abort()
       titleAbortRef.current = null
 
-      // Get all attachments from the store (includes both images and documents)
+      // Get all attachments from the store (media transferred from the
+      // new-thread key, plus documents).
       const allAttachments = getAttachments(attachmentsKey)
 
-      // Convert image files to attachments for persistence
-      const imageAttachments = files?.map((file) => {
+      // In-thread sends pass media inline via `files`; reconstruct typed by
+      // mediaType (image/audio/video — not all images). New-thread sends pass
+      // no media in `files` (quota), so fall back to media already in the store.
+      const fileMediaAttachments = (files ?? []).map((file) => {
         const base64 = file.url.split(',')[1] || ''
+        const size = Math.ceil((base64.length * 3) / 4) // Estimate from base64
+        if (file.mediaType.startsWith('audio/')) {
+          return createAudioAttachment({
+            name: `audio-${Date.now()}`,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            audioFormat: file.mediaType === 'audio/mpeg' ? 'mp3' : 'wav',
+            size,
+          })
+        }
+        if (file.mediaType.startsWith('video/')) {
+          return createVideoAttachment({
+            name: `video-${Date.now()}`,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size,
+          })
+        }
         return createImageAttachment({
           name: `image-${Date.now()}`,
           mimeType: file.mediaType,
           dataUrl: file.url,
           base64,
-          size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
+          size,
         })
       })
 
-      // Combine image attachments with document attachments from the store
+      const storeMediaAttachments = allAttachments.filter(
+        (a) => a.type === 'image' || a.type === 'audio' || a.type === 'video'
+      )
+      const mediaAttachments = fileMediaAttachments.length
+        ? fileMediaAttachments
+        : storeMediaAttachments
+
+      // Combine media attachments with document attachments from the store
       const combinedAttachments = [
-        ...(imageAttachments || []),
+        ...mediaAttachments,
         ...allAttachments.filter((a) => a.type === 'document'),
       ]
 

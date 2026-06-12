@@ -308,6 +308,7 @@ export const MessageItem = memo(
       const isImage = part.mediaType?.startsWith('image/')
       const isAudio =
         part.mediaType === 'audio/wav' || part.mediaType === 'audio/mpeg'
+      const isVideo = part.mediaType?.startsWith('video/')
 
       if (isAudio && part.url) {
         const justify =
@@ -321,6 +322,23 @@ export const MessageItem = memo(
               controls
               src={part.url}
               className="max-w-[80%] rounded-md"
+            />
+          </div>
+        )
+      }
+
+      if (isVideo && part.url) {
+        const justify =
+          message.role === 'user' ? 'justify-end' : 'justify-start'
+        return (
+          <div
+            key={`${message.id}-${partIndex}`}
+            className={`flex ${justify} w-full my-2`}
+          >
+            <video
+              controls
+              src={part.url}
+              className="max-w-[80%] max-h-80 rounded-md border"
             />
           </div>
         )

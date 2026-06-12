@@ -68,6 +68,16 @@ export function convertUIMessageToThreadMessage(
           type: ContentType.InputAudio,
           input_audio: { data, format },
         })
+      } else if (mediaType?.startsWith('video/')) {
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: ContentType.InputVideo,
+          input_video: { data, format: mediaType },
+        })
       }
     }
   }
@@ -262,6 +272,13 @@ export function convertThreadMessageToUIMessage(
         mediaType,
         url: `data:${mediaType};base64,${content.input_audio.data}`,
       })
+    } else if (content.type === 'input_video' && content.input_video?.data) {
+      const mediaType = content.input_video.format || 'video/mp4'
+      parts.push({
+        type: 'file',
+        mediaType,
+        url: `data:${mediaType};base64,${content.input_video.data}`,
+      })
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
       // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
@@ -392,6 +409,8 @@ export function threadMessageIsEmpty(message: ThreadMessage): boolean {
       return false
     } else if (c.type === ContentType.InputAudio && c.input_audio?.data) {
       return false
+    } else if (c.type === ContentType.InputVideo && c.input_video?.data) {
+      return false
     } else if (c.type === ContentType.ToolCall) {
       return false
     }
@@ -468,6 +487,16 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
         content.push({
           type: 'input_audio' as ContentType.InputAudio,
           input_audio: { data, format },
+        })
+      } else if (mediaType?.startsWith('video/')) {
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: 'input_video' as ContentType.InputVideo,
+          input_video: { data, format: mediaType },
         })
       }
     } else if (part.type.startsWith('tool-')) {
