@@ -307,7 +307,7 @@
       "assistant": "Assistent",
       "selectAssistant": "Einen Assistenten auswählen (optional)",
       "noAssistant": "Kein Assistent",
-      "addAssistant": "Assistent hinzufügen",
+      "addAssistant": "Assistenten hinzufügen",
       "updateSuccess": "Projekt \"{{projectName}}\" erfolgreich aktualisiert"
     },
     "noConversationsIn": "Keine Chats in {{projectName}}",
