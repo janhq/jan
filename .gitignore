@@ -41,6 +41,8 @@ lerna-debug.log*
 # Rust / Cargo
 target/
 Cargo.lock
+# Keep the desktop shell lockfile committed for reproducible CI builds
+!src-tauri/Cargo.lock
 src-tauri/resources/
 src-tauri/resources/lib
 src-tauri/resources/bin
