@@ -89,7 +89,9 @@ export function ArtifactTrigger({
   )
 }
 
-const MIN_PANEL_WIDTH = 360
+// On Windows the custom caption controls (min/max/close) sit in the top-right
+// corner of the panel and consume ~120px, so the minimum must be wider.
+const MIN_PANEL_WIDTH = IS_WINDOWS ? 480 : 380
 // Keep at least this much room for the chat column when resizing the panel.
 const MIN_CHAT_WIDTH = MIN_PANEL_WIDTH + 100
 // Matches the `duration-300` slide in/out below.
