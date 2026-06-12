@@ -2454,8 +2454,14 @@ async fn proxy_request(
     for (key_idx, key_opt) in key_attempts.iter().enumerate() {
         let mut outbound_req = client.request(method.clone(), upstream_url.clone());
 
+        // Body is re-buffered/rewritten, so a stale inbound Content-Length would
+        // mismatch the bytes we send and stall the upstream; reqwest re-derives it.
         for (name, value) in headers.iter() {
-            if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+            if name != hyper::header::HOST
+                && name != hyper::header::AUTHORIZATION
+                && name != hyper::header::CONTENT_LENGTH
+                && name != hyper::header::TRANSFER_ENCODING
+            {
                 outbound_req = outbound_req.header(name, value);
             }
         }
