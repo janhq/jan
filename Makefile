@@ -976,8 +976,8 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(shell uname -s),Darwin)
-	cd src-tauri && cargo build --locked --release --features cli --bin jan-cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --locked --release --features cli --bin jan-cli --target x86_64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
 	lipo -create \
 		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
 		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
@@ -997,17 +997,17 @@ ifeq ($(shell uname -s),Darwin)
 
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(OS),Windows_NT)
-	cd src-tauri && cargo build --locked --release --features cli --bin jan-cli
+	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/release/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
-	cd src-tauri && cargo build --locked --release --features cli --bin jan-cli
+	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
 endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
 	mkdir -p src-tauri/resources/bin
-	cd src-tauri && cargo build --locked --features cli --bin jan-cli
+	cd src-tauri && cargo build --features cli --bin jan-cli
 ifeq ($(OS),Windows_NT)
 	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/debug/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
