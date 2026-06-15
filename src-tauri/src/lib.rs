@@ -454,6 +454,17 @@ pub fn run() {
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {
+        // macOS: clicking the dock icon while the window is hidden (after a
+        // close-to-tray) should bring the window back, like a normal macOS app.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = &event {
+            let _ = app.show();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 

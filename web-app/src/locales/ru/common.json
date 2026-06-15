@@ -95,6 +95,7 @@
   "reasoningToggleDisabled": "Ризонинг выключен",
   "proactive": "Проактивность",
   "selectAModel": "Выберите модель",
+  "downloadModel": "Скачать модель",
   "noToolsAvailable": "Нет доступных инструментов",
   "noModelsFoundFor": "Не найдены модели для \"{{searchValue}}\"",
   "failedToLoadModels": "Не удалось загрузить модели",

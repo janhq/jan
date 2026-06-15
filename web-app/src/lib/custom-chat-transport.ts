@@ -2,6 +2,7 @@ import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
   streamText,
+  NoSuchToolError,
   type ChatRequestOptions,
   type ChatTransport,
   type LanguageModel,
@@ -11,6 +12,7 @@ import {
   type TextStreamPart,
   jsonSchema,
 } from 'ai'
+import { repairToolCallArguments } from './repairToolCall'
 
 /// Hugging Face special-token convention (`<|im_end|>`, `<|eot_id|>`,
 /// `<|endoftext|>`, etc.). Some MLX backends — most visibly the DFlash
@@ -596,6 +598,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       system: effectiveSystemMessage,
       maxOutputTokens,
       experimental_transform: stripSpecialTokensTransform,
+      experimental_repairToolCall: async ({ toolCall, error }) => {
+        if (NoSuchToolError.isInstance(error)) return null
+        const repaired = repairToolCallArguments(toolCall.input)
+        if (repaired === null) return null
+        return { ...toolCall, input: repaired }
+      },
     })
 
     let tokensPerSecond = 0

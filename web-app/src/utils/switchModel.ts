@@ -21,6 +21,7 @@ import {
   shouldEmitModelLoadFailure,
 } from '@/lib/telemetry'
 import { captureHandledError } from '@/lib/sentry'
+import { getProviderTitle } from '@/lib/utils'
 
 type ModelSettingEntry = { controller_props?: { value?: unknown } }
 type LoadableModel = {
@@ -478,7 +479,7 @@ async function doSwitchToModel(params: {
         )
       }
     }
-    reportModelLoadError(error)
+    reportModelLoadError(error, providerName)
     throw error
   } finally {
     useAppState.getState().updateLoadingModel(false)
@@ -524,11 +525,42 @@ function isOutOfMemoryError(err: ErrorObject): boolean {
   return OOM_MESSAGE_PATTERNS.some((pattern) => haystack.includes(pattern))
 }
 
+// The two on-device llama.cpp engines are interchangeable for most models, so
+// when one rejects a model we can point the user at the other. `llamacpp` is the
+// turboquant fork; `llamacpp-upstream` is stock llama.cpp. The turboquant engine
+// only ships on macOS, so it's only a valid suggestion there.
+function alternateLocalBackend(providerName?: string): string | undefined {
+  if (providerName === 'llamacpp') return getProviderTitle('llamacpp-upstream')
+  if (providerName === 'llamacpp-upstream')
+    return IS_MACOS ? getProviderTitle('llamacpp') : undefined
+  return undefined
+}
+
+/**
+ * Build the description for an "unsupported by this backend" toast, naming the
+ * current backend and (when available) the backend to switch to. Falls back to
+ * a no-alternative variant on platforms that ship a single engine.
+ */
+function unsupportedDescription(
+  t: typeof i18n.t,
+  baseKey: 'multimodalUnsupported' | 'archNotSupported',
+  providerName?: string
+): string {
+  const backend = providerName ? getProviderTitle(providerName) : undefined
+  const alternative = alternateLocalBackend(providerName)
+  if (backend && alternative) {
+    return t(`model-errors:${baseKey}Description`, { backend, alternative })
+  }
+  return t(`model-errors:${baseKey}DescriptionNoAlt`, {
+    backend: backend ?? t('model-errors:currentBackendFallback'),
+  })
+}
+
 /**
  * Surface a user-visible banner when a model fails to load.
  * OOM errors get a persistent toast so the user cannot miss them.
  */
-function reportModelLoadError(rawError: unknown): void {
+function reportModelLoadError(rawError: unknown, providerName?: string): void {
   const err = toErrorObject(rawError)
   useModelLoad.getState().setModelLoadError(err)
 
@@ -550,7 +582,7 @@ function reportModelLoadError(rawError: unknown): void {
   if (err.code === 'MULTIMODAL_PROJECTOR_LOAD_FAILED') {
     toast.error(t('model-errors:multimodalUnsupportedTitle'), {
       id: 'model-load-error',
-      description: t('model-errors:multimodalUnsupportedDescription'),
+      description: unsupportedDescription(t, 'multimodalUnsupported', providerName),
       duration: 10000,
       closeButton: true,
     })
@@ -559,7 +591,7 @@ function reportModelLoadError(rawError: unknown): void {
   if (err.code === 'MODEL_ARCH_NOT_SUPPORTED') {
     toast.error(t('model-errors:archNotSupportedTitle'), {
       id: 'model-load-error',
-      description: t('model-errors:archNotSupportedDescription'),
+      description: unsupportedDescription(t, 'archNotSupported', providerName),
       duration: 10000,
       closeButton: true,
     })
@@ -569,6 +601,15 @@ function reportModelLoadError(rawError: unknown): void {
     toast.error(t('model-errors:modelFileMissingTitle'), {
       id: 'model-load-error',
       description: t('model-errors:modelFileMissingDescription'),
+      duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
+  if (err.code === 'MODEL_FILE_CORRUPT') {
+    toast.error(t('model-errors:modelFileCorruptTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:modelFileCorruptDescription'),
       duration: 10000,
       closeButton: true,
     })

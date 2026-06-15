@@ -9,7 +9,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
-import { IconSettings, IconX } from '@tabler/icons-react'
+import { IconSettings, IconX, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { ModelSetting } from '@/containers/ModelSetting'
@@ -240,6 +240,16 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     setSearchValue('')
     searchInputRef.current?.focus()
   }, [])
+
+  // Jump to the Hub to download a local model. Carry over whatever the user
+  // already typed so the Hub search is prefilled instead of starting blank.
+  const onDownloadModel = useCallback(() => {
+    setOpen(false)
+    navigate({
+      to: route.hub.index,
+      search: searchValue.trim() ? { q: searchValue.trim() } : {},
+    })
+  }, [navigate, searchValue])
 
   // Create searchable items from all models
   const searchableItems = useMemo(() => {
@@ -677,6 +687,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 })}
               </div>
             )}
+          </div>
+
+          {/* Download CTA — shortcut into the Hub so users can grab a local
+              model without leaving the selector first. */}
+          <div className="border-t p-1.5 mt-auto">
+            <button
+              type="button"
+              onClick={onDownloadModel}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
+            >
+              <IconDownload size={16} className="shrink-0" />
+              <span>{t('common:downloadModel')}</span>
+            </button>
           </div>
         </div>
       </PopoverContent>
