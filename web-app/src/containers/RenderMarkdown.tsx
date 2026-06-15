@@ -96,8 +96,12 @@ function RenderMarkdownComponent({
   isStreaming,
 }: MarkdownProps) {
 
-  // Memoize the normalized content to avoid reprocessing on every render
-  const normalizedContent = useMemo(() => normalizeLatex(content), [content])
+  // normalizeLatex is O(n) over the full string and its cache misses every chunk;
+  // skip it while streaming (LaTeX can't render mid-token) to avoid O(n²) cost.
+  const normalizedContent = useMemo(
+    () => (isStreaming ? content : normalizeLatex(content)),
+    [content, isStreaming]
+  )
 
   const mergedComponents = useMemo<Components>(() => {
     const Anchor = (
@@ -129,7 +133,7 @@ function RenderMarkdownComponent({
       <Streamdown
         mode={isStreaming ? 'streaming' : 'static'}
         parseIncompleteMarkdown={isStreaming ?? false}
-        animate={isAnimating ?? true}
+        animate={isStreaming ? false : (isAnimating ?? true)}
         animationDuration={500}
         linkSafety={{
           enabled: false,
