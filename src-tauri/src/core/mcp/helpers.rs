@@ -559,120 +559,144 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
         }
 
-        let mut cmd = Command::new(config_params.command.clone());
         let bun_x_path = if cfg!(windows) {
             bin_path.join("bun.exe")
         } else {
             bin_path.join("bun")
         };
-        if config_params.command.clone() == "npx"
-            && can_override_npx(bun_x_path.display().to_string())
-        {
-            let mut cache_dir = app_path.clone();
-            cache_dir.push(".npx");
-            cmd = Command::new(bun_x_path.display().to_string());
-            cmd.arg("x");
-            cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
-        }
-
         let uv_path = if cfg!(windows) {
             bin_path.join("uv.exe")
         } else {
             bin_path.join("uv")
         };
-        if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string())
-        {
-            let mut cache_dir = app_path.clone();
-            cache_dir.push(".uvx");
-            cmd = Command::new(uv_path);
-            cmd.arg("tool");
-            cmd.arg("run");
-            cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
-        }
-        #[cfg(windows)]
-        {
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
-        }
 
-        cmd.kill_on_drop(true);
+        // Whether the configured command would be rewritten to the bundled
+        // `bun x` / `uv tool run`. If the override-based handshake fails we fall
+        // back to the system `npx`/`uvx`, whose stdio plumbing differs and is
+        // what most published MCP servers are tested against.
+        let override_available = (config_params.command == "npx"
+            && can_override_npx(bun_x_path.display().to_string()))
+            || (config_params.command == "uvx"
+                && can_override_uvx(uv_path.display().to_string()));
 
-        config_params
-            .args
-            .iter()
-            .filter_map(Value::as_str)
-            .for_each(|arg| {
-                cmd.arg(arg);
-            });
-        config_params.envs.iter().for_each(|(k, v)| {
-            if let Some(v_str) = v.as_str() {
-                cmd.env(k, v_str);
+        let build_cmd = |use_override: bool| -> Command {
+            let mut cmd = Command::new(config_params.command.clone());
+            if use_override
+                && config_params.command == "npx"
+                && can_override_npx(bun_x_path.display().to_string())
+            {
+                let mut cache_dir = app_path.clone();
+                cache_dir.push(".npx");
+                cmd = Command::new(bun_x_path.display().to_string());
+                cmd.arg("x");
+                cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
             }
-        });
+            if use_override
+                && config_params.command == "uvx"
+                && can_override_uvx(uv_path.display().to_string())
+            {
+                let mut cache_dir = app_path.clone();
+                cache_dir.push(".uvx");
+                cmd = Command::new(uv_path.clone());
+                cmd.arg("tool");
+                cmd.arg("run");
+                cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
+            }
+            #[cfg(windows)]
+            {
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
+            }
+            cmd.kill_on_drop(true);
+            config_params
+                .args
+                .iter()
+                .filter_map(Value::as_str)
+                .for_each(|arg| {
+                    cmd.arg(arg);
+                });
+            config_params.envs.iter().for_each(|(k, v)| {
+                if let Some(v_str) = v.as_str() {
+                    cmd.env(k, v_str);
+                }
+            });
+            cmd
+        };
 
-        let (process, stderr) = TokioChildProcess::builder(cmd)
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                log::error!("Failed to run command {name}: {e}");
-                format!("Failed to run command {name}: {e}")
-            })?;
+        let mut use_override = true;
+        let (server, stderr) = loop {
+            let (process, stderr) = TokioChildProcess::builder(build_cmd(use_override))
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| {
+                    log::error!("Failed to run command {name}: {e}");
+                    format!("Failed to run command {name}: {e}")
+                })?;
 
-        let process_pid = process.id();
-        if let Some(pid) = process_pid {
-            log::info!("MCP server {name} spawned with PID {pid}");
-            let app_state = app.state::<AppState>();
-            let mut pids = app_state.mcp_server_pids.lock().await;
-            pids.insert(name.clone(), pid);
-        }
+            if let Some(pid) = process.id() {
+                log::info!("MCP server {name} spawned with PID {pid}");
+                let app_state = app.state::<AppState>();
+                let mut pids = app_state.mcp_server_pids.lock().await;
+                pids.insert(name.clone(), pid);
+            }
 
-        let service = ()
-            .serve(process)
-            .await
-            .map_err(|e| format!("Failed to start MCP server {name}: {e}"));
+            match ().serve(process).await {
+                Ok(server) => break (server, stderr),
+                Err(e) => {
+                    // The child often crashes here with a write EPIPE while
+                    // replying to `initialize` once its pipes are torn down;
+                    // capture its stderr so we report that instead of an opaque
+                    // serve() error.
+                    let mut buffer = String::new();
+                    if let Some(mut stderr_stream) = stderr {
+                        let _ = stderr_stream.read_to_string(&mut buffer).await;
+                    }
 
-        match service {
-            Ok(server) => {
-                // Keep the stderr pipe alive to prevent the child process from
-                // receiving SIGPIPE and to capture diagnostic output.
-                if let Some(mut stderr_stream) = stderr {
-                    let stderr_name = name.clone();
-                    tokio::spawn(async move {
-                        let mut buf = [0u8; 1024];
-                        while let Ok(n) = stderr_stream.read(&mut buf).await {
-                            if n == 0 {
-                                break;
-                            }
-                            if let Ok(text) = std::str::from_utf8(&buf[..n]) {
-                                for line in text.lines() {
-                                    if !line.trim().is_empty() {
-                                        log_mcp_stderr_line(&stderr_name, line);
-                                    }
-                                }
+                    if use_override && override_available {
+                        log::warn!(
+                            "MCP server {name} failed to start via bundled bun/uv override ({e}); retrying with system {}. stderr: {buffer}",
+                            config_params.command
+                        );
+                        use_override = false;
+                        continue;
+                    }
+
+                    let error = if buffer.trim().is_empty() {
+                        format!("Failed to start MCP server {name}: {e}")
+                    } else {
+                        format!("Failed to start MCP server {name}: {buffer}")
+                    };
+                    log::error!("{error}");
+                    return Err(error);
+                }
+            }
+        };
+
+        // Keep the stderr pipe alive to prevent the child process from
+        // receiving SIGPIPE and to capture diagnostic output.
+        if let Some(mut stderr_stream) = stderr {
+            let stderr_name = name.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = stderr_stream.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    if let Ok(text) = std::str::from_utf8(&buf[..n]) {
+                        for line in text.lines() {
+                            if !line.trim().is_empty() {
+                                log_mcp_stderr_line(&stderr_name, line);
                             }
                         }
-                    });
+                    }
                 }
-                log::trace!("Connected to server: {:#?}", server.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::NoInit(server));
-                log::info!("Server {name} started successfully.");
-            }
-            Err(_) => {
-                let mut buffer = String::new();
-                let error = match stderr
-                    .expect("stderr must be piped")
-                    .read_to_string(&mut buffer)
-                    .await
-                {
-                    Ok(_) => format!("Failed to start MCP server {name}: {buffer}"),
-                    Err(_) => format!("Failed to read MCP server {name} stderr"),
-                };
-                log::error!("{error}");
-                return Err(error);
-            }
+            });
         }
+        log::trace!("Connected to server: {:#?}", server.peer_info());
+        servers
+            .lock()
+            .await
+            .insert(name.clone(), RunningServiceEnum::NoInit(server));
+        log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
         // This prevents race conditions where the server quits immediately

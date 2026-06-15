@@ -868,28 +868,17 @@ export class ModelFactory {
       Origin: 'tauri://localhost',
     }
 
-    // Custom fetch that merges parameters and calls /cancel on abort
-    const customFetch: typeof httpFetch = async (
+    // Share the common fetch (param normalisation + error-body cleaning that
+    // rebuilds upstream errors from buffered text rather than re-decoding the
+    // raw stream) with every other provider, then layer MLX's /cancel-on-abort
+    // on top.
+    const baseCustomFetch = createCustomFetch(httpFetch, parameters)
+    const customFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
       init?: RequestInit
     ): Promise<Response> => {
-      if (init?.method === 'POST' || !init?.method) {
-        let body: Record<string, unknown> = {}
-        if (init?.body) {
-          try {
-            body = JSON.parse(init.body as string)
-          } catch (e) {
-            throw new Error(
-              `Failed to parse MLX request body as JSON: ${e instanceof Error ? e.message : String(e)}`
-            )
-          }
-        }
-        const mergedBody = { ...body, ...parameters }
-        init = { ...init, body: JSON.stringify(mergedBody) }
-      }
-
       // When the request is aborted, also call the server's /cancel endpoint
-      // to stop MLX inference immediately
+      // to stop MLX inference immediately.
       if (init?.signal) {
         init.signal.addEventListener('abort', () => {
           httpFetch(`${baseUrl}/v1/cancel`, {
@@ -902,7 +891,7 @@ export class ModelFactory {
         })
       }
 
-      return httpFetch(input, init)
+      return baseCustomFetch(input, init)
     }
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
