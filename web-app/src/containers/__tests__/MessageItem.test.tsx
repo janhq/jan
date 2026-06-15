@@ -100,6 +100,16 @@ vi.mock('@/components/ui/button', () => ({
   ),
 }))
 
+vi.mock('@/components/PromptProgress', () => ({
+  PromptProgress: () => <div data-testid="prompt-progress" />,
+}))
+
+const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
+vi.mock('@/hooks/useToolApproval', () => ({
+  useToolApproval: (selector: any) =>
+    selector({ pending: pendingApprovalsRef.current }),
+}))
+
 // Import after mocks
 import { MessageItem } from '../MessageItem'
 
@@ -115,6 +125,7 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
+    pendingApprovalsRef.current = {}
   })
 
   it('renders assistant text via RenderMarkdown', () => {
@@ -345,6 +356,43 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.getByTestId('tool-output')).toHaveTextContent('boom')
+  })
+
+  it('shows progress for an executing tool call (not awaiting approval)', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              { type: 'tool-search', state: 'input-available', toolCallId: 'tc1', input: {} },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+  })
+
+  it('hides progress while a tool call awaits approval', () => {
+    pendingApprovalsRef.current = { tc1: {} }
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              { type: 'tool-search', state: 'input-available', toolCallId: 'tc1', input: {} },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
   })
 
   it('passes full text to copy button', () => {
