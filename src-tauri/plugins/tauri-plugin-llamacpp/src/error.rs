@@ -6,6 +6,7 @@ use thiserror;
 pub enum ErrorCode {
     BinaryNotFound,
     ModelFileNotFound,
+    ModelFileCorrupt,
     LibraryPathInvalid,
 
     // --- Model Loading Errors ---
@@ -85,6 +86,23 @@ impl LlamacppError {
             return Self::new(
                 ErrorCode::MultimodalProjectorLoadFailed,
                 "This model's multimodal projector isn't supported by the current llama.cpp backend. Vision/audio is unavailable for this model on this backend.".into(),
+                Some(stderr.into()),
+            );
+        }
+
+        // A truncated or corrupt GGUF (interrupted download, bad disk write).
+        // llama.cpp's loader emits these when tensor data runs past the file
+        // bounds, the header magic is wrong, or the tensor count mismatches.
+        // Point the user at a re-download instead of the opaque generic error.
+        if lower_stderr.contains("corrupted or incomplete")
+            || lower_stderr.contains("invalid magic")
+            || lower_stderr.contains("wrong number of tensors")
+            || lower_stderr.contains("unexpectedly reached end of file")
+            || lower_stderr.contains("failed to read tensor")
+        {
+            return Self::new(
+                ErrorCode::ModelFileCorrupt,
+                "The model file appears to be incomplete or corrupted. Try deleting and re-downloading the model.".into(),
                 Some(stderr.into()),
             );
         }
