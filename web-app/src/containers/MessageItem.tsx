@@ -9,7 +9,6 @@ import {
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
 } from '@/components/ai-elements/chain-of-thought'
-import { Streamdown } from 'streamdown'
 import {
   Tool,
   ToolApprovalActions,
@@ -501,12 +500,12 @@ export const MessageItem = memo(
                           : 'h-auto opacity-100'
                       )}
                     >
-                      <Streamdown
-                        animate={true}
-                        animationDuration={500}
+                      <div
+                        dir="auto"
+                        className="select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70"
                       >
                         {part.text}
-                      </Streamdown>
+                      </div>
                     </div>
                     {partIsStreaming && !isReasoningAtBottom && (
                       <Button

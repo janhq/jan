@@ -300,7 +300,8 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.getByTestId('cot')).toBeInTheDocument()
-    expect(screen.getByTestId('streamdown')).toHaveTextContent('thinking...')
+    // Reasoning renders as plain text (not markdown) for performance.
+    expect(screen.getByText('thinking...')).toBeInTheDocument()
   })
 
   it('renders inline tool part (no reasoning → no CoT wrapper)', () => {
