@@ -5,6 +5,58 @@ export const MODEL_ACCESS_DENIED_TITLE = 'Model not available for your API key'
 export const MODEL_ACCESS_DENIED_MESSAGE =
   "This model needs to be enabled in your provider's key settings. Add it to the allowed models list and try again."
 
+export const CONTEXT_OVERFLOW_TITLE = 'Context window full'
+export const CONTEXT_OVERFLOW_MESSAGE =
+  'This message — including search results and tool output — is longer than the model can process at once. Increase the context size, or reduce the amount of attached / retrieved content (e.g. fewer web-search results) and try again.'
+
+/**
+ * Detects errors raised when a request exceeds the model's context window.
+ *
+ * Mirrors the Rust `is_context_limit_error` matcher in
+ * `src-tauri/src/core/server/proxy.rs` so the UI classifies the same engine
+ * error bodies the proxy does. llama-server and mlx-server are both
+ * OpenAI-compatible but phrase overflow differently: mlx-vlm rejects an
+ * over-budget request with `... but MAX_KV_SIZE is N` (ATO-170), llama.cpp
+ * references "context" + a size/length/limit keyword. Keep patterns lower-case.
+ */
+export function isContextLimitError(error: unknown): boolean {
+  if (!error) return false
+  const raw =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String((error as { message?: unknown }).message ?? '')
+          : ''
+  if (!raw) return false
+  const b = raw.toLowerCase()
+  if (b.includes(OUT_OF_CONTEXT_SIZE)) return true
+  if (
+    b.includes('max_kv_size') ||
+    b.includes('max-kv-size') ||
+    b.includes('max kv size')
+  ) {
+    return true
+  }
+  if (
+    b.includes('kv cache') &&
+    (b.includes('exceed') || b.includes('overflow') || b.includes('too'))
+  ) {
+    return true
+  }
+  if (!b.includes('context')) return false
+  return (
+    b.includes('size') ||
+    b.includes('length') ||
+    b.includes('limit') ||
+    b.includes('exceed') ||
+    b.includes('overflow') ||
+    b.includes('too long') ||
+    b.includes('too large')
+  )
+}
+
 /**
  * Detects provider errors that occur when the API key is valid but does not
  * have permission to call the selected model. This happens most often with

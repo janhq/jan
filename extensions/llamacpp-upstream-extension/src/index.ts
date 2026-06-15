@@ -40,6 +40,8 @@ import {
   getCudartDownloadUrl,
   getCudartArchiveName,
   getCudaToolkitVersion,
+  isConcreteOfCudaFamily,
+  resolveCudaFamilyConcrete,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
@@ -278,6 +280,34 @@ function get_backend_category(backend: string): string {
  * runnable by either engine.
  */
 const MODELS_PROVIDER_ROOT = 'llamacpp'
+
+/**
+ * Outcome of `detectIdealBackendType()`. ATO-161: distinguishes the two
+ * cases that used to both collapse to `null` and produce the misleading
+ * "You're already on the optimal backend" toast:
+ *   - `gpu`             — a better GPU backend exists for this host.
+ *   - `cpu-optimal`     — CPU genuinely is the best this hardware can do
+ *                         (no CUDA/Vulkan capability detected).
+ *   - `detection-failed`— detection could not complete (ggml-org release
+ *                         stream unreachable/slow, hardware probe threw, or
+ *                         the lookup timed out) — the current backend must
+ *                         be left untouched and the user told to retry.
+ */
+type IdealBackendResult =
+  | { kind: 'gpu'; backend: string }
+  | { kind: 'cpu-optimal' }
+  | { kind: 'detection-failed' }
+
+/**
+ * Sentinel `Error.message` thrown by `recheckOptimalBackend()` when backend
+ * detection could not complete (ATO-161). Callers
+ * (`SetupBackendStep` / `$providerName` "Find optimal backend" / the
+ * post-upgrade auto-recheck) match on this to show a "couldn't detect —
+ * keeping current backend" message instead of silently treating it as
+ * "CPU is optimal". The web-app handler matches the literal value (it can't
+ * import the extension bundle), so keep the two in sync.
+ */
+export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 
 export default class llamacpp_upstream_extension extends AIEngine {
   provider: string = 'llamacpp-upstream'
@@ -772,13 +802,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // intentionally unfiltered by hardware — a deliberate manual override so
       // the user can force-install e.g. CUDA even when the driver gate would
       // normally hide it.
+      // ATO-174 (finishes ATO-105): the CUDA entries are *minor-less family*
+      // ids (`win-cuda-12-x64` / `win-cuda-13-x64`), matching what the Rust
+      // matrix already emits. The concrete minor (`12.4`, `13.3`, …) is
+      // resolved against the live ggml-org release stream at selection time
+      // by `resolveLatestBackendString` (now family-aware), so a future
+      // ggml-org minor bump (13.3 → 13.4) no longer silently dead-ends the
+      // manual dropdown. `friendlyBackendLabel` renders these as "CUDA 12.4" /
+      // "CUDA 13".
       const staticVariants: string[] = IS_WINDOWS
-        ? [
-            'win-cpu-x64',
-            'win-cuda-12.4-x64',
-            'win-cuda-13.3-x64',
-            'win-vulkan-x64',
-          ]
+        ? ['win-cpu-x64', 'win-cuda-12-x64', 'win-cuda-13-x64', 'win-vulkan-x64']
         : IS_LINUX
           ? ['linux-cpu-x64', 'linux-vulkan-x64']
           : []
@@ -1253,7 +1286,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * janhq-mirror names (`linux-cuda-{12,13}-common_cpus-x64`) because the
    * upstream extension is currently only wired on macOS and Windows.
    */
-  private async detectIdealBackendType(): Promise<string | null> {
+  private async detectIdealBackendType(): Promise<IdealBackendResult> {
     try {
       const sysInfo = await getSystemInfo()
       const rawFeatures = await getSupportedFeaturesFromRust(
@@ -1317,10 +1350,32 @@ export default class llamacpp_upstream_extension extends AIEngine {
         for (const tier of tiers) {
           const probe = await this.tierEnumeratesDevices(tier, sysInfo)
           if (probe !== 'broken') {
-            return tier
+            return { kind: 'gpu', backend: tier }
           }
         }
-        return null
+
+        // ATO-161/ATO-174: no GPU tier could be picked. Distinguish "CPU is
+        // genuinely optimal" from "we couldn't fetch the GPU options". The
+        // host is GPU-capable when the driver/feature gate says CUDA/Vulkan
+        // is usable; ggml-org *always* publishes CUDA + Vulkan Windows
+        // assets, so a GPU-capable host with NO GPU backend anywhere in the
+        // merged local+remote catalog means the release-stream fetch
+        // (`fetchRemoteBackends`) returned `[]` — i.e. api.github.com was
+        // unreachable/slow/rate-limited, not that CPU is best.
+        const gpuCapable =
+          features.cuda13 ||
+          features.cuda12 ||
+          (features.vulkan && hasEnoughVram)
+        const anyGpuBackendAvailable = availableBackends.some((b) =>
+          /-(cuda-\d|vulkan)-/.test(b.backend)
+        )
+        if (gpuCapable && !anyGpuBackendAvailable) {
+          logger.warn(
+            'detectIdealBackendType: GPU-capable host but no GPU backend in catalog — treating as detection failure (release stream likely unreachable)'
+          )
+          return { kind: 'detection-failed' }
+        }
+        return { kind: 'cpu-optimal' }
       }
 
       // Linux — per 2026-05-28 ADR *Linux ships only `llamacpp-upstream`*,
@@ -1339,15 +1394,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // Rust plugin mirrors this matrix.
       if (sysInfo.os_type === 'linux') {
         if (features.vulkan && hasEnoughVram && archSuffix === 'x64') {
-          return 'linux-vulkan-x64'
+          return { kind: 'gpu', backend: 'linux-vulkan-x64' }
         }
-        return null
+        // Linux detection consults no network stream (the Vulkan recommend
+        // is derived purely from the Rust libvulkan probe), so a non-GPU
+        // outcome here is genuinely CPU-optimal, never a fetch failure.
+        return { kind: 'cpu-optimal' }
       }
 
-      return null
+      return { kind: 'cpu-optimal' }
     } catch (err) {
       logger.warn('detectIdealBackendType failed:', err)
-      return null
+      return { kind: 'detection-failed' }
     }
   }
 
@@ -1579,12 +1637,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
         })
       }
 
-      // Clean up old versions — best-effort, don't fail the update if this errors
+      // Clean up old versions — best-effort, don't fail the update if this errors.
+      // MUST target this provider's own backends tree (`llamacpp-upstream`),
+      // never the shared/turboquant `llamacpp` dir — otherwise the upstream
+      // auto-upgrade wipes turboquant backends (none of which match the
+      // upstream `latest_version`), bricking turboquant-bound models (ATO-153).
       try {
         const janDataFolderPath = await getJanDataFolderPath()
         const backendsDir = await joinPath([
           janDataFolderPath,
-          'llamacpp',
+          this.providerId,
           'backends',
         ])
 
@@ -1763,20 +1825,40 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // on a stalled IPC or network lookup. On timeout we behave as if no
       // GPU backend was recommended (CPU is the safe fallback) instead of
       // leaving the spinner up indefinitely.
-      const idealType = await this.withTimeout(
+      // ATO-104: bound the whole detection so onboarding can't hang. ATO-161:
+      // a timeout is a *detection failure*, not "CPU is optimal" — the
+      // discriminated fallback below makes the two paths distinguishable.
+      const detection = await this.withTimeout(
         this.detectIdealBackendType(),
         20_000,
-        null
+        { kind: 'detection-failed' } as const
       )
-      if (!idealType) {
-        // CPU is already the best the hardware can do, or detection failed.
+
+      if (detection.kind === 'detection-failed') {
+        // ATO-161: detection could not complete (release stream unreachable /
+        // slow / rate-limited, hardware probe threw, or the lookup timed out).
+        // Leave the current backend AND any prior recommendation untouched and
+        // raise a distinct, catchable signal so the UI says "couldn't detect —
+        // keeping current backend" rather than the misleading "already on the
+        // optimal backend". All callers already wrap this in try/catch
+        // (`SetupBackendStep` → detection-failed phase, the settings handler →
+        // distinct toast, the post-upgrade auto-recheck → warn-and-continue).
+        logger.warn(
+          'recheckOptimalBackend: backend detection failed — keeping current backend (no silent CPU fallback)'
+        )
+        throw new Error(BACKEND_DETECTION_FAILED)
+      }
+
+      if (detection.kind === 'cpu-optimal') {
+        // CPU genuinely is the best this hardware can do.
         logger.info(
-          'recheckOptimalBackend: no GPU backend recommended (CPU is optimal or detection failed)'
+          'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
 
+      const idealType = detection.backend
       const idealCat = get_backend_category(idealType)
       const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
@@ -1868,6 +1950,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
       return payload
     } catch (err) {
+      // ATO-161: propagate the detection-failure sentinel so callers can
+      // distinguish it from "CPU is optimal" (return null). Any *other*
+      // unexpected error is still swallowed to null — that path was always
+      // best-effort and must not regress onboarding.
+      if (err instanceof Error && err.message === BACKEND_DETECTION_FAILED) {
+        throw err
+      }
       logger.warn('recheckOptimalBackend failed:', err)
       return null
     }
@@ -2077,6 +2166,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
       if (match?.version) {
         return `${match.version}/${backend}`
       }
+      // ATO-174 (finishes ATO-105): a minor-less CUDA family id
+      // (`win-cuda-13-x64` / `win-cuda-12-x64`) never exact-matches the
+      // concrete published asset (`win-cuda-13.3-x64`). Resolve it to the
+      // newest concrete asset of that major so the manual dropdown's
+      // `latest/win-cuda-13-x64` sentinel keeps resolving across minor bumps.
+      const familyConcrete = resolveCudaFamilyConcrete(backend, remote)
+      if (familyConcrete) {
+        logger.info(
+          `[resolveLatestBackendString] resolved CUDA family '${backend}' -> ${familyConcrete}`
+        )
+        return familyConcrete
+      }
       logger.warn(
         `[resolveLatestBackendString] '${backend}' not found in latest release assets`
       )
@@ -2122,16 +2223,25 @@ export default class llamacpp_upstream_extension extends AIEngine {
   ): Promise<string | null> {
     try {
       const installed = await getLocalInstalledBackends()
-      const sameFamily = installed.filter(
-        (b) => stripBom(b.backend) === backendId
-      )
+      // ATO-174: a minor-less CUDA family id (`win-cuda-13-x64`) matches any
+      // installed concrete minor of that major (`win-cuda-13.3-x64`), so the
+      // offline fallback still finds a locally-installed CUDA copy when the
+      // dropdown sentinel is the family id. Non-CUDA / concrete ids keep the
+      // exact match.
+      const sameFamily = installed.filter((b) => {
+        const bn = stripBom(b.backend)
+        return bn === backendId || isConcreteOfCudaFamily(backendId, bn)
+      })
       if (sameFamily.length === 0) return null
       const buildNumber = (v: string): number => {
         const m = /(\d+)/.exec(stripBom(v))
         return m ? parseInt(m[1], 10) : 0
       }
       sameFamily.sort((a, b) => buildNumber(b.version) - buildNumber(a.version))
-      return `${stripBom(sameFamily[0].version)}/${backendId}`
+      // Return the *concrete* installed backend id, not the requested family
+      // id — `${version}/win-cuda-13-x64` would build a 404 download URL.
+      // For an exact (non-family) request `sameFamily[0].backend === backendId`.
+      return `${stripBom(sameFamily[0].version)}/${stripBom(sameFamily[0].backend)}`
     } catch (err) {
       logger.warn(`newestInstalledOfFamily('${backendId}') failed:`, err)
       return null
@@ -2223,8 +2333,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
 
       if (!concrete) {
+        // ATO-174: actionable dead-end message. The ggml-org release stream
+        // (api.github.com) is unreachable/slow/rate-limited and there is no
+        // local copy of this backend family to fall back to. Point the user
+        // at the concrete remedies instead of a bare failure.
         throw new Error(
-          `Could not resolve a release for '${backendId}': the ggml-org release stream is unreachable and no version of this backend is installed locally.`
+          `Could not download the ${friendlyBackendLabel(backendId)} backend: the GitHub release stream (api.github.com) is unreachable, slow, or rate-limited, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
         )
       }
 

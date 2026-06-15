@@ -184,9 +184,9 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       // Hard timeout: the Tauri HTTP plugin does not always honour
       // AbortSignal on macOS, so we race the request against a manual timer.
-      // 12s is generous for a /models endpoint but bounded enough to not
-      // leave the UI spinner running indefinitely.
-      const FETCH_MODELS_TIMEOUT_MS = 12000
+      // 30s accommodates slow providers (OpenRouter's /models has been
+      // observed at 8-19s) while still bounding the UI spinner.
+      const FETCH_MODELS_TIMEOUT_MS = 30000
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), FETCH_MODELS_TIMEOUT_MS)
 
@@ -241,7 +241,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       // The Tauri HTTP plugin has been observed to hang on `response.json()`
       // for some providers. Read raw text under a timeout, parse synchronously.
-      const BODY_READ_TIMEOUT_MS = 8000
+      const BODY_READ_TIMEOUT_MS = 15000
       const rawText = await Promise.race([
         response.text(),
         new Promise<never>((_, reject) =>

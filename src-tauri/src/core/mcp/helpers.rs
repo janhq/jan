@@ -471,6 +471,13 @@ async fn schedule_mcp_start_task<R: Runtime>(
 
         cmd.kill_on_drop(true);
 
+        // ATO-164 (defense-in-depth): launch the stdio server in its configured
+        // working directory so relative paths resolve there rather than the
+        // app's data dir. No-op when `cwd` is unset (inherits the app CWD).
+        if let Some(cwd) = config_params.cwd.as_deref() {
+            cmd.current_dir(cwd);
+        }
+
         config_params
             .args
             .iter()
@@ -594,6 +601,11 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
         .unwrap_or(&Value::Object(serde_json::Map::new()))
         .as_object()?
         .clone();
+    let cwd = obj
+        .get("cwd")
+        .and_then(|c| c.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
     Some(McpServerConfig {
         timeout,
         transport_type,
@@ -602,6 +614,7 @@ pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
         args,
         envs,
         headers,
+        cwd,
     })
 }
 

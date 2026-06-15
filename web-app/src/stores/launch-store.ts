@@ -27,12 +27,15 @@ function apply<T>(updater: T | ((prev: T) => T), prev: T): T {
 
 type LaunchState = {
   installed: Record<string, boolean>
+  /** True when the agent was only found inside a WSL distribution (Windows). */
+  viaWsl: Record<string, boolean>
   busy: Record<string, boolean>
   spinning: Record<string, boolean>
   phase: Record<string, RunPhase>
   logs: Record<string, string[]>
   openLog: Record<string, boolean>
   setInstalled: SetState<Record<string, boolean>>
+  setViaWsl: SetState<Record<string, boolean>>
   setBusy: SetState<Record<string, boolean>>
   setSpinning: SetState<Record<string, boolean>>
   setPhase: SetState<Record<string, RunPhase>>
@@ -42,6 +45,7 @@ type LaunchState = {
 
 export const useLaunchStore = create<LaunchState>((set) => ({
   installed: {},
+  viaWsl: {},
   busy: {},
   spinning: {},
   phase: {},
@@ -49,6 +53,7 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   openLog: {},
   setInstalled: (updater) =>
     set((s) => ({ installed: apply(updater, s.installed) })),
+  setViaWsl: (updater) => set((s) => ({ viaWsl: apply(updater, s.viaWsl) })),
   setBusy: (updater) => set((s) => ({ busy: apply(updater, s.busy) })),
   setSpinning: (updater) =>
     set((s) => ({ spinning: apply(updater, s.spinning) })),

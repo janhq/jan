@@ -13,6 +13,10 @@ pub struct McpServerConfig {
     pub envs: serde_json::Map<String, Value>,
     pub timeout: Option<Duration>,
     pub headers: serde_json::Map<String, Value>,
+    /// Working directory for a spawned stdio server (ATO-164, defense-in-depth).
+    /// When set, the child process is launched with this CWD so relative paths
+    /// resolve there instead of the app's data dir. `None` inherits the app CWD.
+    pub cwd: Option<String>,
 }
 
 fn default_tool_call_timeout_seconds() -> u64 {

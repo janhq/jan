@@ -2801,6 +2801,28 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
+    // ATO-153 recovery: the upstream provider's auto-upgrade cleanup could
+    // have wrongly deleted this turboquant backend from disk (it previously
+    // targeted the shared `llamacpp/backends` tree). The turboquant macOS
+    // backend is bundled in app resources — not in any release stream — so
+    // re-install it from resources before giving up. When the bundled SHA
+    // matches the model's pinned `version_backend`, this fully restores it;
+    // otherwise it's a harmless no-op and we fall through to the error.
+    try {
+      const restored = await this.tryInstallBundledBackend()
+      if (restored && (await isBackendInstalled(backend, version))) {
+        logger.info(
+          `Recovered missing backend ${backendKey} from bundled resources`
+        )
+        return
+      }
+    } catch (recoveryErr) {
+      logger.warn(
+        `Bundled backend recovery for ${backendKey} failed:`,
+        recoveryErr
+      )
+    }
+
     throw new Error(
       `Backend ${backendKey} is not installed and could not be downloaded. Switch this model to the "Llama.cpp" provider (Settings → Model Providers → Llama.cpp) and start it there, or check your internet connection and try reinstalling the app.`
     )

@@ -12,6 +12,9 @@ export type MCPServerConfig = {
   headers?: Record<string, string>
   timeout?: number
   official?: boolean
+  // Working directory for a spawned stdio server (ATO-164). Relative paths
+  // emitted by tools resolve here instead of the app's data dir.
+  cwd?: string
 }
 
 // Define the structure of all MCP servers

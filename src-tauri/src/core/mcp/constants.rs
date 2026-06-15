@@ -10,10 +10,34 @@ pub const DEFAULT_MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each ti
 /// with the per-user sandbox directory exposed to the filesystem MCP server.
 const FILESYSTEM_DIR_PLACEHOLDER: &str = "__JAN_DEFAULT_FS_DIR__";
 
+/// Sentinel inside `DEFAULT_MCP_CONFIG_TEMPLATE` replaced at runtime with the
+/// version-pinned filesystem MCP package spec (single source of truth =
+/// `FILESYSTEM_MCP_PINNED_VERSION`).
+const FILESYSTEM_SPEC_PLACEHOLDER: &str = "__JAN_FS_MCP_SPEC__";
+
 /// Literal placeholder path shipped in older versions of Atomic Chat. Existing
 /// `mcp_config.json` files on disk may still contain this value; the runtime
 /// migrates it to a real per-user sandbox path on next config read.
 pub const LEGACY_FILESYSTEM_PLACEHOLDER: &str = "/path/to/other/allowed/dir";
+
+/// npm package name of the filesystem MCP server. Used both in the default
+/// config template and by the on-disk config migration that pins it.
+pub const FILESYSTEM_MCP_PACKAGE: &str = "@modelcontextprotocol/server-filesystem";
+
+/// Pinned version of the filesystem MCP server (ATO-164). Unversioned installs
+/// resolved relative paths against `process.cwd()` (the app dir), so relative
+/// writes failed with "outside allowed directories" — upstream bug
+/// servers#2526, fixed in servers#2609. Pinning a *concrete* version also
+/// busts the stale `bun`/`BUN_INSTALL` cache: `bun x <pkg>@<ver>` misses the
+/// cached old version and fetches the fixed build. Bump this when a newer
+/// fixed release is validated.
+pub const FILESYSTEM_MCP_PINNED_VERSION: &str = "2026.1.14";
+
+/// Fully-qualified, version-pinned spec written into args, e.g.
+/// `@modelcontextprotocol/server-filesystem@2026.1.14`.
+pub fn filesystem_mcp_pinned_spec() -> String {
+    format!("{FILESYSTEM_MCP_PACKAGE}@{FILESYSTEM_MCP_PINNED_VERSION}")
+}
 
 const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
   "mcpServers": {
@@ -57,10 +81,11 @@ const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-filesystem",
+        "__JAN_FS_MCP_SPEC__",
         "__JAN_DEFAULT_FS_DIR__"
       ],
       "env": {},
+      "cwd": "__JAN_DEFAULT_FS_DIR__",
       "active": false
     },
     "sequential-thinking": {
@@ -105,4 +130,5 @@ pub fn default_mcp_config() -> String {
         .unwrap_or_else(|_| "\".\"".to_string());
     DEFAULT_MCP_CONFIG_TEMPLATE
         .replace(&format!("\"{FILESYSTEM_DIR_PLACEHOLDER}\""), &path_literal)
+        .replace(FILESYSTEM_SPEC_PLACEHOLDER, &filesystem_mcp_pinned_spec())
 }

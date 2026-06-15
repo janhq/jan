@@ -391,6 +391,91 @@ function ProviderDetail() {
     updateProvider(providerName, { ...provider, settings: next })
   }, [activeMlxModelId, provider, providerName, serviceHub, updateProvider])
 
+  /// ATO-54: the `llamacpp-upstream` `mtp` toggle is a PROVIDER-GLOBAL flag, so
+  /// it stays on when the active model changes. Switching from an MTP-capable
+  /// model to one without MTP layers left the Switch visually "on" even though
+  /// the load-time capability gate (ATO-122, `performLoad`) silently dropped it
+  /// — a confusing UI mismatch. Mirror the MLX reset-on-model-change effect
+  /// above, but capability-aware: when the new active model is NOT MTP-capable
+  /// we force `mtp` off (so the Switch reflects reality and the persisted flag
+  /// can't drive a stale spec-decode arg); MTP-capable targets keep the value.
+  const activeLlamacppUpstreamModelId = useMemo(() => {
+    if (provider?.provider !== 'llamacpp-upstream') return undefined
+    const upstreamIds = new Set(provider.models.map((m) => m.id))
+    return activeModels.find((id) => upstreamIds.has(id))
+  }, [activeModels, provider])
+
+  const prevActiveLlamacppUpstreamModelRef = useRef<string | undefined>(
+    undefined
+  )
+  useEffect(() => {
+    if (provider?.provider !== 'llamacpp-upstream' || !provider) {
+      prevActiveLlamacppUpstreamModelRef.current = undefined
+      return
+    }
+
+    const prev = prevActiveLlamacppUpstreamModelRef.current
+    prevActiveLlamacppUpstreamModelRef.current = activeLlamacppUpstreamModelId
+
+    /// Skip the very first render and no-op changes (same as the MLX effect).
+    if (prev === undefined) return
+    if (prev === activeLlamacppUpstreamModelId) return
+
+    const mtpSetting = provider.settings.find((s) => s.key === 'mtp')
+    const mtpOn = !!(
+      mtpSetting?.controller_props as { value?: boolean } | undefined
+    )?.value
+    if (!mtpOn) return
+
+    /// No active model after the switch → can't evaluate capability; leave the
+    /// flag (nothing is running, so there is no mismatch to surface yet).
+    const modelId = activeLlamacppUpstreamModelId
+    if (!modelId) return
+
+    let cancelled = false
+    const reconcile = async () => {
+      /// Same capability heuristic as `handleToggleLlamacppMtp` / the load gate:
+      /// a Qwen built-in-MTP GGUF (id carries "mtp") or a Gemma 4 MTP target.
+      const isQwenMtp = modelId.toLowerCase().includes('mtp')
+      let capable = isQwenMtp
+      if (!capable) {
+        try {
+          const engine = EngineManager.instance().get('llamacpp-upstream') as {
+            checkGemmaMtpSupport?: (id: string) => Promise<boolean>
+          } | null
+          capable = (await engine?.checkGemmaMtpSupport?.(modelId)) ?? false
+        } catch {
+          capable = false
+        }
+      }
+      if (cancelled || capable) return
+
+      const next = provider.settings.map((s) =>
+        s.key === 'mtp'
+          ? {
+              ...s,
+              controller_props: {
+                ...s.controller_props,
+                value: false as never,
+              },
+            }
+          : s
+      )
+      serviceHub.providers().updateSettings(providerName, next)
+      updateProvider(providerName, { ...provider, settings: next })
+    }
+    void reconcile()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    activeLlamacppUpstreamModelId,
+    provider,
+    providerName,
+    serviceHub,
+    updateProvider,
+  ])
+
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
     if (!provider) return
@@ -1362,6 +1447,19 @@ function ProviderDetail() {
         }
       )
     } catch (error) {
+      // ATO-161: distinguish "detection couldn't complete" (e.g. the
+      // ggml-org release stream / api.github.com was unreachable, slow, or
+      // rate-limited) from a genuine failure. The extension throws the
+      // `BACKEND_DETECTION_FAILED` sentinel in that case; surface a calm,
+      // actionable message and leave the current backend untouched instead
+      // of the misleading "you're already on the optimal backend".
+      if (
+        error instanceof Error &&
+        error.message === 'BACKEND_DETECTION_FAILED'
+      ) {
+        toast.info(t('settings:backendUpdater.detectionUnavailable'))
+        return
+      }
       console.error('Failed to recheck optimal backend:', error)
       toast.error(t('settings:backendUpdater.findOptimalFailed'))
     } finally {

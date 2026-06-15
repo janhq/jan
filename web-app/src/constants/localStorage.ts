@@ -44,6 +44,10 @@ export const localStorageKey = {
   // Autostart defaults to ON for all users (new and existing); after this
   // one-time seed, a user's manual choice in Settings is never overridden.
   autostartSeeded: 'autostart-seeded',
+  // Per-integration manual binary-path overrides for the Launch page. Lets a
+  // user fix a wrong "Not installed" status for agents installed in a
+  // non-standard location that PATH/WSL detection misses.
+  launchCustomPaths: 'launch-custom-paths',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

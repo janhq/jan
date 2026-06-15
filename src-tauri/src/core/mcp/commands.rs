@@ -5,7 +5,10 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use super::{
-    constants::{default_filesystem_root, default_mcp_config, LEGACY_FILESYSTEM_PLACEHOLDER},
+    constants::{
+        default_filesystem_root, default_mcp_config, filesystem_mcp_pinned_spec,
+        FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
+    },
     helpers::{restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
@@ -456,6 +459,41 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
                     "Migrating config: replaced legacy filesystem placeholder with default sandbox"
                 );
                 mutated = true;
+            }
+        }
+    }
+
+    // Migration (ATO-164): pin an unversioned `@modelcontextprotocol/
+    // server-filesystem` arg to a concrete, known-good version. Unversioned
+    // installs let `bun x` serve a stale cached build that resolved relative
+    // paths against the app's CWD (upstream servers#2526), so relative writes
+    // failed with "outside allowed directories". Pinning a concrete version
+    // forces a fresh fetch (cache miss) of the fixed build (servers#2609).
+    //
+    // We scan every server's args (not just the one named "filesystem") so
+    // custom-named entries are covered, and only rewrite the *bare* package
+    // token — an explicit user pin (`...@<ver>`) is left untouched. The check
+    // is idempotent: once rewritten, the arg equals the pinned spec and never
+    // re-triggers.
+    let pinned_spec = filesystem_mcp_pinned_spec();
+    if let Some(servers) = config_object
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+    {
+        for server in servers.values_mut() {
+            if let Some(args) = server
+                .get_mut("args")
+                .and_then(|v| v.as_array_mut())
+            {
+                for arg in args.iter_mut() {
+                    if arg.as_str() == Some(FILESYSTEM_MCP_PACKAGE) {
+                        *arg = Value::String(pinned_spec.clone());
+                        log::info!(
+                            "Migrating config: pinned filesystem MCP server to {pinned_spec}"
+                        );
+                        mutated = true;
+                    }
+                }
             }
         }
     }

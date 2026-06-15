@@ -60,20 +60,48 @@ function useDropdownPosition(
 // Components for the different sections of the dropdown
 const ErrorSection = ({
   error,
+  loading,
+  onRetry,
   t,
 }: {
   error: string
+  loading?: boolean
+  onRetry?: () => void
   t: (key: string) => string
-}) => (
-  <div className="px-3 py-2 text-sm text-destructive">
-    <div className="flex items-center justify-between">
-      <span className="text-destructive font-medium">
-        {t('common:failedToLoadModels')}
-      </span>
+}) => {
+  const isTimeout = error.toLowerCase().includes('timed out')
+  return (
+    <div className="px-3 py-2 text-sm text-destructive">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-destructive font-medium">
+          {isTimeout
+            ? t('common:failedToLoadModelsTimeout')
+            : t('common:failedToLoadModels')}
+        </span>
+        {onRetry && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={loading}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRetry()
+            }}
+          >
+            {loading ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconRefresh className="size-4" />
+            )}
+            <span className="ml-1">{t('common:retry')}</span>
+          </Button>
+        )}
+      </div>
+      <div className="text-xs text-muted-foreground mt-0">{error}</div>
     </div>
-    <div className="text-xs text-muted-foreground mt-0">{error}</div>
-  </div>
-)
+  )
+}
 
 const LoadingSection = ({ t }: { t: (key: string) => string }) => (
   <div className="flex items-center justify-center px-3 py-3 text-sm text-muted-foreground">
@@ -464,7 +492,14 @@ export function ModelCombobox({
               onWheel={(e) => e.stopPropagation()}
             >
               {/* Error state */}
-              {error && <ErrorSection error={error} t={t} />}
+              {error && (
+                <ErrorSection
+                  error={error}
+                  loading={loading}
+                  onRetry={onRefresh}
+                  t={t}
+                />
+              )}
 
               {/* Loading state */}
               {loading && <LoadingSection t={t} />}
