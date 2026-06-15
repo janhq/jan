@@ -42,6 +42,7 @@ import { HubModelCard } from '@/containers/HubModelCard'
 type SearchParams = {
   repo: string
   engine?: 'mlx' | 'gguf'
+  q?: string
 }
 
 function pickDefaultQuant(model: CatalogModel) {
@@ -102,6 +103,7 @@ export const Route = createFileRoute(route.hub.index as any)({
       search.engine === 'mlx' || search.engine === 'gguf'
         ? search.engine
         : undefined,
+    q: typeof search.q === 'string' ? search.q : undefined,
   }),
 })
 
@@ -110,7 +112,7 @@ function HubContent() {
   const parentRef = useRef(null)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const serviceHub = useServiceHub()
-  const { engine: engineSearchParam } = Route.useSearch()
+  const { engine: engineSearchParam, q: querySearchParam } = Route.useSearch()
 
   const { t } = useTranslation()
 
@@ -148,7 +150,7 @@ function HubContent() {
     }))
   )
 
-  const [searchValue, setSearchValue] = useState('')
+  const [searchValue, setSearchValue] = useState(querySearchParam ?? '')
   const [sortSelected, setSortSelected] = useState(
     engineSearchParam === 'mlx' || engineSearchParam === 'gguf'
       ? engineSearchParam
