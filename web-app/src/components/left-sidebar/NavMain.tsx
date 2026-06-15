@@ -114,21 +114,6 @@ const getNavMainItems = (
     ),
   },
   {
-    title: 'common:search',
-    animatedIcon: SearchIcon,
-    onClick: onSearch,
-    shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
-        <Kbd className="bg-transparent size-3">
-          <PlatformMetaKey />
-        </Kbd>
-        <Kbd className="bg-transparent size-3 uppercase">
-          {PlatformShortcuts[ShortcutAction.SEARCH].key}{' '}
-        </Kbd>
-      </KbdGroup>
-    ),
-  },
-  {
     title: 'common:models',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
@@ -142,6 +127,21 @@ const getNavMainItems = (
     title: 'common:settings',
     url: route.settings.general,
     animatedIcon: SettingsIcon,
+  },
+  {
+    title: 'common:search',
+    animatedIcon: SearchIcon,
+    onClick: onSearch,
+    shortcut: (
+      <KbdGroup className="ml-auto scale-90 gap-0">
+        <Kbd className="bg-transparent size-3">
+          <PlatformMetaKey />
+        </Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">
+          {PlatformShortcuts[ShortcutAction.SEARCH].key}{' '}
+        </Kbd>
+      </KbdGroup>
+    ),
   },
 ]
 
