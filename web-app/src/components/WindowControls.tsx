@@ -1,50 +1,72 @@
+import { useEffect, useState } from 'react'
 import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
+
+type ButtonId = 'minimize' | 'maximize' | 'close'
+type TitlebarLayout = { left: ButtonId[]; right: ButtonId[] }
+
+const DEFAULT_LAYOUT: TitlebarLayout = {
+  left: [],
+  right: ['minimize', 'maximize', 'close'],
+}
 
 export const WindowControls = () => {
   const appWindow = getCurrentWebviewWindow()
+  const [layout, setLayout] = useState<TitlebarLayout>(DEFAULT_LAYOUT)
 
-  const handleMinimize = async () => {
-    await appWindow.minimize()
+  useEffect(() => {
+    invoke<TitlebarLayout>('get_titlebar_layout')
+      .then((l) => setLayout(l))
+      .catch(() => setLayout(DEFAULT_LAYOUT))
+  }, [])
+
+  const actions: Record<ButtonId, () => Promise<void>> = {
+    minimize: () => appWindow.minimize(),
+    maximize: () => appWindow.toggleMaximize(),
+    close: () => appWindow.close(),
+  }
+  const icons: Record<ButtonId, React.ReactNode> = {
+    minimize: <Minus className="size-4" />,
+    maximize: <Square className="size-3" />,
+    close: <X className="size-4" />,
+  }
+  const labels: Record<ButtonId, string> = {
+    minimize: 'Minimize',
+    maximize: 'Maximize',
+    close: 'Close',
   }
 
-  const handleMaximize = async () => {
-    await appWindow.toggleMaximize()
-  }
-
-  const handleClose = async () => {
-    await appWindow.close()
-  }
+  const renderGroup = (ids: ButtonId[]) =>
+    ids.map((id) => (
+      <Button
+        key={id}
+        onClick={actions[id]}
+        aria-label={labels[id]}
+        variant="ghost"
+        size="icon-sm"
+      >
+        {icons[id]}
+      </Button>
+    ))
 
   return (
-    <div className="absolute top-0 z-50 right-4 h-15">
-      <div className="flex items-center h-full">
-        <Button
-          onClick={handleMinimize}
-          aria-label="Minimize"
-          variant="ghost"
-          size="icon-sm"
-        >
-          <Minus className="size-4" />
-        </Button>
-        <Button
-          onClick={handleMaximize}
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Maximize"
-        >
-          <Square className="size-3" />
-        </Button>
-        <Button
-          onClick={handleClose}
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-    </div>
+    <>
+      {layout.left.length > 0 && (
+        <div className="absolute top-0 z-50 left-4 h-15">
+          <div className="flex items-center h-full">
+            {renderGroup(layout.left)}
+          </div>
+        </div>
+      )}
+      {layout.right.length > 0 && (
+        <div className="absolute top-0 z-50 right-4 h-15">
+          <div className="flex items-center h-full">
+            {renderGroup(layout.right)}
+          </div>
+        </div>
+      )}
+    </>
   )
 }

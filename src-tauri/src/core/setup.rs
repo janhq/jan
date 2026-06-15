@@ -407,54 +407,6 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         .build(app)
 }
 
-/// Shrink tao's Wayland CSD titlebar (~46px → ~24px) and clear its hardcoded
-/// `decoration_layout` so buttons follow GNOME. Do NOT `set_titlebar` here —
-/// that replaces tao's drag-enabled HeaderBar and breaks drag/double-click.
-#[cfg(target_os = "linux")]
-pub fn shrink_gtk_headerbar<R: Runtime>(app: &App<R>) {
-    use gtk::prelude::*;
-
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    let is_csd_desktop = desktop
-        .split(':')
-        .any(|d| matches!(d, "GNOME" | "GNOME-Classic" | "Unity" | "Pantheon"));
-    if !is_csd_desktop {
-        log::info!(
-            "shrink_gtk_headerbar: skipping on XDG_CURRENT_DESKTOP={desktop:?} (not CSD-only)"
-        );
-        return;
-    }
-
-    let css = gtk::CssProvider::new();
-    let style = b"headerbar { min-height: 24px; padding: 0 4px; } \
-                  headerbar button { min-height: 20px; min-width: 20px; padding: 0 4px; } \
-                  headerbar .title { font-size: 0.9em; }";
-    if let Err(e) = css.load_from_data(style) {
-        log::warn!("shrink_gtk_headerbar: css load failed: {e}");
-    } else if let Some(screen) = gtk::gdk::Screen::default() {
-        gtk::StyleContext::add_provider_for_screen(
-            &screen,
-            &css,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-    }
-
-    // `None` layout falls back to gtk-decoration-layout, synced from GNOME.
-    let header = app
-        .get_webview_window("main")
-        .and_then(|w| w.gtk_window().ok())
-        .and_then(|gw| gw.titlebar())
-        .and_then(|tb| tb.downcast::<gtk::EventBox>().ok())
-        .and_then(|eb| eb.child())
-        .and_then(|c| c.downcast::<gtk::HeaderBar>().ok());
-    match header {
-        Some(h) => h.set_decoration_layout(None::<&str>),
-        None => {
-            log::warn!("shrink_gtk_headerbar: titlebar not the expected EventBox>HeaderBar shape")
-        }
-    }
-}
-
 pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     // Setup GTK window theme listener for main window
     if let Some(window) = app.get_webview_window("main") {
@@ -510,6 +462,121 @@ async fn read_xdg_portal_color_scheme() -> Result<Option<&'static str>, Box<dyn 
     Ok(match color_scheme {
         1 => Some("dark"),
         _ => Some("light"),
+    })
+}
+
+/// Window-control placement split by side. Values are `"minimize"`,
+/// `"maximize"`, `"close"`; the borderless frontend renders its own buttons in
+/// this order so they match the desktop's configured layout.
+#[derive(serde::Serialize)]
+pub struct TitlebarLayout {
+    pub left: Vec<String>,
+    pub right: Vec<String>,
+}
+
+impl Default for TitlebarLayout {
+    fn default() -> Self {
+        TitlebarLayout {
+            left: vec![],
+            right: vec![
+                "minimize".to_string(),
+                "maximize".to_string(),
+                "close".to_string(),
+            ],
+        }
+    }
+}
+
+/// Read the desktop's window-button layout so the borderless titlebar can place
+/// min/max/close on the side the user configured (KDE `kwinrc`, GNOME gsettings).
+/// Falls back to all-on-the-right on non-Linux or when the config is unreadable.
+#[tauri::command]
+pub fn get_titlebar_layout() -> TitlebarLayout {
+    #[cfg(target_os = "linux")]
+    {
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+        let is_kde = desktop.split(':').any(|d| d.eq_ignore_ascii_case("KDE"));
+        let layout = if is_kde {
+            read_kde_button_layout()
+        } else {
+            read_gnome_button_layout()
+        };
+        if let Some(layout) = layout {
+            return layout;
+        }
+    }
+    TitlebarLayout::default()
+}
+
+/// Parse `~/.config/kwinrc` `[org.kde.kdecoration2]` button codes
+/// (`I`=minimize, `A`=maximize, `X`=close; others ignored). Defaults match
+/// KDE's own (`MS` left / `IAX` right) when the keys are absent.
+#[cfg(target_os = "linux")]
+fn read_kde_button_layout() -> Option<TitlebarLayout> {
+    let home = std::env::var("HOME").ok()?;
+    let content =
+        fs::read_to_string(PathBuf::from(home).join(".config/kwinrc")).unwrap_or_default();
+
+    let mut left = "MS".to_string();
+    let mut right = "IAX".to_string();
+    let mut in_section = false;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_section = line == "[org.kde.kdecoration2]";
+        } else if in_section {
+            if let Some(v) = line.strip_prefix("ButtonsOnLeft=") {
+                left = v.trim().to_string();
+            } else if let Some(v) = line.strip_prefix("ButtonsOnRight=") {
+                right = v.trim().to_string();
+            }
+        }
+    }
+
+    let codes = |s: &str| -> Vec<String> {
+        s.chars()
+            .filter_map(|c| match c {
+                'I' => Some("minimize".to_string()),
+                'A' => Some("maximize".to_string()),
+                'X' => Some("close".to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    Some(TitlebarLayout {
+        left: codes(&left),
+        right: codes(&right),
+    })
+}
+
+/// Read GNOME's `button-layout` (`"appmenu:minimize,maximize,close"`); the side
+/// before `:` is the left cluster. Unknown tokens (appmenu/icon/spacer) ignored.
+#[cfg(target_os = "linux")]
+fn read_gnome_button_layout() -> Option<TitlebarLayout> {
+    let output = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let raw = raw.trim().trim_matches('\'');
+    let (left, right) = raw.split_once(':').unwrap_or(("", raw));
+
+    let tokens = |s: &str| -> Vec<String> {
+        s.split(',')
+            .filter_map(|t| match t.trim() {
+                "minimize" => Some("minimize".to_string()),
+                "maximize" => Some("maximize".to_string()),
+                "close" => Some("close".to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    Some(TitlebarLayout {
+        left: tokens(left),
+        right: tokens(right),
     })
 }
 

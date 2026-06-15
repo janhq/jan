@@ -107,6 +107,7 @@ macro_rules! invoke_commands_with_extras {
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
+        core::setup::get_titlebar_layout,
         $(
             $extra,
         )*
@@ -340,8 +341,6 @@ pub fn run() {
             #[cfg(desktop)]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
-            #[cfg(target_os = "linux")]
-            setup::shrink_gtk_headerbar(app);
             Ok(())
         })
         .build(tauri::generate_context!())
