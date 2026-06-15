@@ -27,6 +27,8 @@ import {
   IconPaperclip,
   IconArrowDown,
   IconAlertTriangle,
+  IconChevronLeft,
+  IconChevronRight,
 } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
@@ -64,6 +66,8 @@ export type MessageItemProps = {
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
+  versionInfo?: { index: number; count: number }
+  onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
   assistant?: { avatar?: React.ReactNode; name?: string }
   showAssistant?: boolean
   isAnimating?: boolean
@@ -85,6 +89,8 @@ export const MessageItem = memo(
     onRegenerate,
     onEdit,
     onDelete,
+    versionInfo,
+    onSwitchVersion,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
@@ -567,6 +573,33 @@ export const MessageItem = memo(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [message.parts, isStreaming, isReasoningAtBottom, grounding])
 
+    const versionNav =
+      versionInfo && versionInfo.count > 1 && onSwitchVersion ? (
+        <div className="flex items-center gap-0.5 text-muted-foreground">
+          <button
+            type="button"
+            className="hover:text-foreground disabled:opacity-40"
+            disabled={versionInfo.index <= 1}
+            onClick={() => onSwitchVersion(message.id, -1)}
+            title="Previous version"
+          >
+            <IconChevronLeft size={14} />
+          </button>
+          <span className="tabular-nums">
+            {versionInfo.index}/{versionInfo.count}
+          </span>
+          <button
+            type="button"
+            className="hover:text-foreground disabled:opacity-40"
+            disabled={versionInfo.index >= versionInfo.count}
+            onClick={() => onSwitchVersion(message.id, 1)}
+            title="Next version"
+          >
+            <IconChevronRight size={14} />
+          </button>
+        </div>
+      ) : null
+
     return (
       <div
         className={cn(
@@ -619,6 +652,7 @@ export const MessageItem = memo(
             <span className="text-muted-foreground">
               {formatDate(createdAt)}
             </span>
+            {versionNav}
             <CopyButton text={getFullTextContent()} />
 
             {onEdit && status !== CHAT_STATUS.STREAMING &&
@@ -651,6 +685,7 @@ export const MessageItem = memo(
                   (isStreaming || hideActions) && 'hidden'
                 )}
               >
+                {versionNav}
                 <CopyButton text={getFullTextContent()} />
 
                 {onEdit && !isStreaming && (
@@ -716,7 +751,9 @@ export const MessageItem = memo(
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
       prevProps.showAssistant === nextProps.showAssistant &&
-      prevProps.hideActions === nextProps.hideActions
+      prevProps.hideActions === nextProps.hideActions &&
+      prevProps.versionInfo?.index === nextProps.versionInfo?.index &&
+      prevProps.versionInfo?.count === nextProps.versionInfo?.count
     )
   }
 )

@@ -34,10 +34,19 @@ import {
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
 import {
+  computeActivePath,
+  backfillParentIds,
+  makeSibling,
+  withActiveChild,
+  getParentId,
+  getSiblings,
+  getVersionInfo,
+  hasBranching,
+} from '@/lib/message-branching'
+import {
   ThreadMessage,
   MessageStatus,
   ChatCompletionRole,
-  ContentType,
 } from '@janhq/core'
 import {
   createImageAttachment,
@@ -204,6 +213,9 @@ function ThreadDetail() {
     message: UIMessage
     text: string
   } | null>(null)
+  // Set before a generation when the resulting assistant message should be
+  // linked to a specific parent (versioning). Consumed once in onFinish.
+  const pendingAssistantParentId = useRef<string | null>(null)
 
   // Use the AI SDK chat hook
   const {
@@ -274,6 +286,9 @@ function ThreadDetail() {
           unknown
         >
 
+        const parentForAssistant = pendingAssistantParentId.current
+        pendingAssistantParentId.current = null
+
         const assistantMessage: ThreadMessage = {
           type: 'text',
           role: ChatCompletionRole.Assistant,
@@ -284,7 +299,10 @@ function ThreadDetail() {
           status: MessageStatus.Ready,
           created_at: Date.now(),
           completed_at: Date.now(),
-          metadata: messageMetadata,
+          metadata:
+            parentForAssistant != null
+              ? { ...messageMetadata, parentId: parentForAssistant }
+              : messageMetadata,
         }
 
         const existingMessages = useMessages.getState().getMessages(threadId)
@@ -293,9 +311,29 @@ function ThreadDetail() {
         )
 
         if (existingMessage) {
-          updateMessage(assistantMessage)
+          // Preserve the existing branch link on re-runs of onFinish.
+          const existingParent = getParentId(existingMessage)
+          updateMessage(
+            existingParent != null
+              ? {
+                  ...assistantMessage,
+                  metadata: {
+                    ...assistantMessage.metadata,
+                    parentId: existingParent,
+                  },
+                }
+              : assistantMessage
+          )
         } else {
           addMessage(assistantMessage)
+          // New generation becomes the active branch under its parent so
+          // version navigation lands on the latest reply by default.
+          if (parentForAssistant) {
+            const parent = existingMessages.find(
+              (m) => m.id === parentForAssistant
+            )
+            if (parent) updateMessage(withActiveChild(parent, assistantMessage.id))
+          }
         }
 
         for (const m of existingMessages) {
@@ -624,7 +662,14 @@ function ThreadDetail() {
           }
           useMessageErrors.getState().hydrate(hydrated)
 
-          const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
+          const activeRootId = (
+            useThreads.getState().threads[threadId]?.metadata as
+              | Record<string, unknown>
+              | undefined
+          )?.activeRootId as string | undefined
+          const uiMessages = convertThreadMessagesToUIMessages(
+            computeActivePath(messagesToSet, activeRootId)
+          )
           setChatMessages(uiMessages)
           currentThread.current = threadId
         }
@@ -809,12 +854,30 @@ function ThreadDetail() {
       }
 
       // Persist the final message to backend
-      const userMessage = newUserThreadContent(
+      const baseUserMessage = newUserThreadContent(
         threadId,
         text,
         processedAttachments,
         messageId
       )
+      // Once a thread has branches, link new turns into the active path so the
+      // assistant reply attaches to this message. Legacy threads stay linear.
+      const branchedMessages = useMessages.getState().getMessages(threadId)
+      let userMessage = baseUserMessage
+      if (hasBranching(branchedMessages)) {
+        const activeRootId = (
+          useThreads.getState().threads[threadId]?.metadata as
+            | Record<string, unknown>
+            | undefined
+        )?.activeRootId as string | undefined
+        const path = computeActivePath(branchedMessages, activeRootId)
+        const parentId = path.length ? path[path.length - 1].id : null
+        userMessage = {
+          ...baseUserMessage,
+          metadata: { ...(baseUserMessage.metadata ?? {}), parentId },
+        }
+        pendingAssistantParentId.current = messageId
+      }
       addMessage(userMessage)
 
       // Build parts for AI SDK (only images are sent as file parts)
@@ -949,128 +1012,164 @@ function ThreadDetail() {
     ]
   )
 
-  // Handle regenerate from any message (user or assistant)
-  // - For user messages: keeps the user message, deletes all after, regenerates assistant response
-  // - For assistant messages: finds the closest preceding user message, deletes from there
-  const handleRegenerate = useCallback((messageId?: string) => {
-    const hadBannerError =
-      useAppState.getState().oomError != null ||
-      useAppState.getState().backendError != null ||
-      contextLimitError != null
-    if (useAppState.getState().oomError) {
-      useAppState.getState().setOomError(undefined)
-    }
-    if (useAppState.getState().backendError) {
-      useAppState.getState().setBackendError(undefined)
-    }
-    if (contextLimitError) setContextLimitError(null)
-    if (hadBannerError) stripBannerMetadata()
-    // Cancel any in-flight title summarization before regenerating
-    titleAbortRef.current?.abort()
-    titleAbortRef.current = null
+  // Versioning helpers --------------------------------------------------------
 
-    const currentLocalMessages = useMessages.getState().getMessages(threadId)
+  // Assign parentId along the current linear path the first time a thread forks,
+  // so siblings and subtrees are well-defined. Idempotent. Returns the store.
+  const ensureBranched = useCallback(() => {
+    const msgs = useMessages.getState().getMessages(threadId)
+    if (hasBranching(msgs)) return msgs
+    const filled = backfillParentIds(msgs)
+    filled.forEach((m) => updateMessage(m))
+    return useMessages.getState().getMessages(threadId)
+  }, [threadId, updateMessage])
 
-    // If regenerating from a specific message, delete all messages after it
-    if (messageId) {
-      // Find the message in the current chat messages
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
-
-      if (messageIndex !== -1) {
-        const selectedMessage = currentLocalMessages[messageIndex]
-
-        // If it's an assistant message, find the closest preceding user message
-        let deleteFromIndex = messageIndex
-        if (selectedMessage.role === 'assistant') {
-          // Look backwards to find the closest user message
-          for (let i = messageIndex - 1; i >= 0; i--) {
-            if (currentLocalMessages[i].role === 'user') {
-              deleteFromIndex = i
-              break
-            }
-          }
-        }
-
-        // Get all messages after the delete point
-        const messagesToDelete = currentLocalMessages.slice(deleteFromIndex + 1)
-
-        // Delete from backend storage
-        if (messagesToDelete.length > 0) {
-          messagesToDelete.forEach((msg) => {
-            deleteMessage(threadId, msg.id)
-          })
-        }
-      }
-    }
-
-    // Call the AI SDK regenerate function - it will handle truncating the UI messages
-    // and generating a new response from the selected message
-    regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate, stripBannerMetadata, contextLimitError])
-
-  // Handle edit message - updates the message and regenerates from it
-  const handleEditMessage = useCallback(
-    (messageId: string, newText: string) => {
-      const currentLocalMessages = useMessages.getState().getMessages(threadId)
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
-
-      if (messageIndex === -1) return
-
-      const originalMessage = currentLocalMessages[messageIndex]
-
-      const priorMeta = (originalMessage.metadata || {}) as Record<
-        string,
-        unknown
-      >
-      const cleanedMeta = { ...priorMeta }
-      delete cleanedMeta.error
-      const updatedMessage = {
-        ...originalMessage,
-        content: [
-          {
-            type: ContentType.Text,
-            text: { value: newText, annotations: [] },
+  // Make `node` the active branch under its parent (or active root).
+  const setActiveBranch = useCallback(
+    (node: ThreadMessage) => {
+      const parentId = getParentId(node)
+      if (!parentId) {
+        const t = useThreads.getState().threads[threadId]
+        useThreads.getState().updateThread(threadId, {
+          metadata: {
+            ...((t?.metadata as Record<string, unknown> | undefined) ?? {}),
+            activeRootId: node.id,
           },
-        ],
-        metadata: cleanedMeta,
+        })
+        return
       }
-      updateMessage(updatedMessage)
-      useMessageErrors.getState().clearError(messageId)
+      const parent = useMessages
+        .getState()
+        .getMessages(threadId)
+        .find((m) => m.id === parentId)
+      if (parent) updateMessage(withActiveChild(parent, node.id))
+    },
+    [threadId, updateMessage]
+  )
 
-      // Update chat messages for UI
-      const updatedChatMessages = chatMessages.map((msg) => {
-        if (msg.id === messageId) {
-          return {
-            ...msg,
-            parts: [{ type: 'text' as const, text: newText }],
-          }
-        }
-        return msg
-      })
-      setChatMessages(updatedChatMessages)
+  // Rebuild the rendered conversation from the active path in the store.
+  const syncActivePath = useCallback(() => {
+    const msgs = useMessages.getState().getMessages(threadId)
+    const activeRootId = (
+      useThreads.getState().threads[threadId]?.metadata as
+        | Record<string, unknown>
+        | undefined
+    )?.activeRootId as string | undefined
+    setChatMessages(
+      convertThreadMessagesToUIMessages(computeActivePath(msgs, activeRootId))
+    )
+  }, [threadId, setChatMessages])
 
-      // Only regenerate if the edited message is from the user
-      if (updatedMessage.role === 'assistant') return
+  // Switch the visible version of a message (the `< n/m >` control).
+  const handleSwitchVersion = useCallback(
+    (messageId: string, dir: -1 | 1) => {
+      const msgs = useMessages.getState().getMessages(threadId)
+      const target = msgs.find((m) => m.id === messageId)
+      if (!target) return
+      const siblings = getSiblings(msgs, target)
+      const idx = siblings.findIndex((m) => m.id === messageId)
+      const next = siblings[idx + dir]
+      if (!next) return
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+      setActiveBranch(next)
+      syncActivePath()
+    },
+    [threadId, setActiveBranch, syncActivePath]
+  )
 
-      // Delete all messages after this one and regenerate
-      const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
-      messagesToDelete.forEach((msg) => {
-        deleteMessage(threadId, msg.id)
-      })
+  // Resolve the user message that an assistant reply hangs off of.
+  const resolveAssistantParent = useCallback(
+    (messageId: string | undefined): string | null => {
+      const msgs = useMessages.getState().getMessages(threadId)
+      const activeRootId = (
+        useThreads.getState().threads[threadId]?.metadata as
+          | Record<string, unknown>
+          | undefined
+      )?.activeRootId as string | undefined
+      const path = computeActivePath(msgs, activeRootId)
+      const idx =
+        messageId == null
+          ? path.length - 1
+          : path.findIndex((m) => m.id === messageId)
+      if (idx === -1) return null
+      const sel = path[idx]
+      if (sel.role === 'user') return sel.id
+      for (let i = idx; i >= 0; i--) {
+        if (path[i].role === 'user') return path[i].id
+      }
+      return null
+    },
+    [threadId]
+  )
 
-      // Regenerate from the edited message
-      regenerate({ messageId })
+  // Regenerate keeps the previous reply as a prior version (no deletion); the
+  // new reply arrives in onFinish as a sibling and becomes the active branch.
+  const handleRegenerate = useCallback(
+    (messageId?: string) => {
+      const hadBannerError =
+        useAppState.getState().oomError != null ||
+        useAppState.getState().backendError != null ||
+        contextLimitError != null
+      if (useAppState.getState().oomError) {
+        useAppState.getState().setOomError(undefined)
+      }
+      if (useAppState.getState().backendError) {
+        useAppState.getState().setBackendError(undefined)
+      }
+      if (contextLimitError) setContextLimitError(null)
+      if (hadBannerError) stripBannerMetadata()
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+
+      ensureBranched()
+      pendingAssistantParentId.current = resolveAssistantParent(messageId)
+
+      regenerate(messageId ? { messageId } : undefined)
     },
     [
-      threadId,
-      updateMessage,
-      deleteMessage,
-      chatMessages,
-      setChatMessages,
+      regenerate,
+      stripBannerMetadata,
+      contextLimitError,
+      ensureBranched,
+      resolveAssistantParent,
+    ]
+  )
+
+  // Editing forks a new sibling version (the original + its subtree are kept).
+  // User edits regenerate a reply for the new branch; assistant edits don't.
+  const handleEditMessage = useCallback(
+    (messageId: string, newText: string) => {
+      const msgs = ensureBranched()
+      const target = msgs.find((m) => m.id === messageId)
+      if (!target) return
+
+      useMessageErrors.getState().clearError(messageId)
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+
+      const newId = generateId()
+      const sibling = makeSibling(target, {
+        id: newId,
+        createdAt: Date.now(),
+        text: newText,
+      })
+      addMessage(sibling)
+      setActiveBranch(sibling)
+
+      if (target.role === 'user') {
+        pendingAssistantParentId.current = newId
+        syncActivePath()
+        regenerate({ messageId: newId })
+      } else {
+        syncActivePath()
+      }
+    },
+    [
+      ensureBranched,
+      addMessage,
+      setActiveBranch,
+      syncActivePath,
       regenerate,
     ]
   )
@@ -1330,6 +1429,17 @@ function ThreadDetail() {
     [searchThreadModel, thread]
   )
 
+  // Per-message version counts for the `< n/m >` navigation control.
+  const versionInfoById = useMemo(() => {
+    const map: Record<string, { index: number; count: number }> = {}
+    if (!localThreadMessages || !hasBranching(localThreadMessages)) return map
+    for (const m of localThreadMessages) {
+      const info = getVersionInfo(localThreadMessages, m)
+      if (info.count > 1) map[m.id] = info
+    }
+    return map
+  }, [localThreadMessages])
+
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
@@ -1361,6 +1471,8 @@ function ThreadDetail() {
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
+                    versionInfo={versionInfoById[message.id]}
+                    onSwitchVersion={handleSwitchVersion}
                     isAnimating={!pendingContinueMessage}
                     hideActions={!!pendingContinueMessage}
                   />
