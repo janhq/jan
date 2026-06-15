@@ -18,6 +18,12 @@ interface HtmlArtifactProps {
    * network access so it cannot phone home or pull remote payloads.
    */
   allowNetwork?: boolean
+  /**
+   * Static mode for SVG: no scripts at all (CSP script-src 'none' and the
+   * iframe drops allow-scripts). Code view highlights as the given language.
+   */
+  allowScripts?: boolean
+  language?: string
 }
 
 type View = 'code' | 'preview'
@@ -27,7 +33,16 @@ type View = 'code' | 'preview'
  * an opaque origin (sandbox without allow-same-origin), so this only governs
  * what the document itself may reach out to.
  */
-function buildCsp(allowNetwork: boolean): string {
+function buildCsp(allowNetwork: boolean, allowScripts: boolean): string {
+  if (!allowScripts) {
+    return [
+      "default-src 'none'",
+      'img-src data: blob:',
+      "style-src 'unsafe-inline'",
+      'font-src data:',
+      "connect-src 'none'",
+    ].join('; ')
+  }
   if (allowNetwork) {
     return [
       "default-src 'none'",
@@ -48,8 +63,12 @@ function buildCsp(allowNetwork: boolean): string {
   ].join('; ')
 }
 
-function buildSrcDoc(code: string, allowNetwork: boolean): string {
-  const csp = buildCsp(allowNetwork)
+function buildSrcDoc(
+  code: string,
+  allowNetwork: boolean,
+  allowScripts: boolean
+): string {
+  const csp = buildCsp(allowNetwork, allowScripts)
   const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`
   if (/<head[\s>]/i.test(code)) {
     return code.replace(/<head([^>]*)>/i, `<head$1>${meta}`)
@@ -65,13 +84,16 @@ function HtmlArtifactComponent({
   className,
   isStreaming,
   allowNetwork = false,
+  allowScripts = true,
+  language = 'html',
 }: HtmlArtifactProps) {
   const { t } = useTranslation()
   const [view, setView] = useState<View>('preview')
 
   const srcDoc = useMemo(
-    () => (view === 'preview' ? buildSrcDoc(code, allowNetwork) : ''),
-    [view, code, allowNetwork]
+    () =>
+      view === 'preview' ? buildSrcDoc(code, allowNetwork, allowScripts) : '',
+    [view, code, allowNetwork, allowScripts]
   )
 
   const previewDisabled = isStreaming ?? false
@@ -131,12 +153,12 @@ function HtmlArtifactComponent({
           title={t('htmlArtifact.preview')}
           data-testid="html-artifact-iframe"
           className="h-[600px] max-h-[80vh] min-h-64 w-full resize-y overflow-auto border-0 bg-white"
-          sandbox="allow-scripts"
+          sandbox={allowScripts ? 'allow-scripts' : ''}
           referrerPolicy="no-referrer"
           srcDoc={srcDoc}
         />
       ) : (
-        <CodeBlock code={code} language="html" />
+        <CodeBlock code={code} language={language} />
       )}
     </div>
   )

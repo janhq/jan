@@ -55,6 +55,25 @@ describe('HtmlArtifact', () => {
     expect(doc).toContain(HTML)
   })
 
+  it('drops allow-scripts and forbids scripts in static (svg) mode', async () => {
+    const user = userEvent.setup()
+    render(<HtmlArtifact code="<svg/>" allowScripts={false} language="xml" />)
+    const iframe = screen.getByTestId(
+      'html-artifact-iframe'
+    ) as HTMLIFrameElement
+    expect(iframe.getAttribute('sandbox')).toBe('')
+
+    await user.click(screen.getByRole('tab', { name: /preview/i }))
+    const doc = iframe.getAttribute('srcdoc') ?? ''
+    expect(doc).not.toContain('script-src')
+    expect(doc).toContain("default-src 'none'")
+
+    await user.click(screen.getByRole('tab', { name: /code/i }))
+    expect(screen.getByTestId('code-block').getAttribute('data-language')).toBe(
+      'xml'
+    )
+  })
+
   it('relaxes CSP for network when allowNetwork is set', async () => {
     const user = userEvent.setup()
     render(<HtmlArtifact code={HTML} allowNetwork />)

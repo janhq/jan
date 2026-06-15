@@ -58,31 +58,43 @@ export function disableIndentedCodeBlockPlugin() {
 }
 
 export interface MarkdownSegment {
-  type: 'markdown' | 'html'
+  type: 'markdown' | 'html' | 'svg'
   content: string
 }
 
-// Top-level fenced ```html block: opening fence (3+ backticks) + html lang,
-// body, matching closing fence on its own line. The \b stops langs like
-// "html5"/"htmlbar" from matching.
-const HTML_FENCE_RE = /(^|\n)(`{3,})[ \t]*html\b[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/gi
+// Standalone artifact, any of:
+//   1. ```html fenced block        → groups 1 (lead \n) 2 (ticks) 3 (lang) 4 (body)
+//   2. ```svg  fenced block        → same groups, lang === 'svg'
+//   3. raw <svg>…</svg> in prose   → group 5
+// \b stops langs like "html5"/"htmlbar" from matching. Raw SVG is matched
+// non-greedily so adjacent diagrams stay separate.
+const ARTIFACT_RE =
+  /(^|\n)(`{3,})[ \t]*(html|svg)\b[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)|(<svg\b[\s\S]*?<\/svg>)/gi
 
 /**
- * Split markdown into alternating prose and standalone HTML-artifact segments.
- * Used to render interactive HTML previews without replacing Streamdown's code
- * component (which would lose inline-code, mermaid, and Shiki handling).
+ * Split markdown into alternating prose and standalone artifact segments
+ * (interactive HTML previews and static SVG). Splitting the string keeps
+ * Streamdown's code/mermaid/inline handling intact for everything else —
+ * overriding its `code` component would replace all of it.
  */
 export function splitHtmlArtifacts(content: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
-  HTML_FENCE_RE.lastIndex = 0
-  while ((match = HTML_FENCE_RE.exec(content)) !== null) {
-    const blockStart = match.index + match[1].length
+  ARTIFACT_RE.lastIndex = 0
+  while ((match = ARTIFACT_RE.exec(content)) !== null) {
+    const isFence = match[2] !== undefined
+    // Fence keeps the leading newline as prose; raw SVG starts at match.index.
+    const blockStart = isFence ? match.index + match[1].length : match.index
     const before = content.slice(lastIndex, blockStart)
     if (before.length) segments.push({ type: 'markdown', content: before })
-    segments.push({ type: 'html', content: match[3] })
-    lastIndex = HTML_FENCE_RE.lastIndex
+    if (isFence) {
+      const type = match[3].toLowerCase() === 'svg' ? 'svg' : 'html'
+      segments.push({ type, content: match[4] })
+    } else {
+      segments.push({ type: 'svg', content: match[5] })
+    }
+    lastIndex = ARTIFACT_RE.lastIndex
   }
   const rest = content.slice(lastIndex)
   if (rest.length) segments.push({ type: 'markdown', content: rest })

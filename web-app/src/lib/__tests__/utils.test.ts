@@ -382,4 +382,30 @@ describe('splitHtmlArtifacts', () => {
     const segs = splitHtmlArtifacts('````html\n<p>z</p>\n````')
     expect(segs).toEqual([{ type: 'html', content: '<p>z</p>' }])
   })
+
+  it('extracts a ```svg fenced block as an svg segment', () => {
+    const segs = splitHtmlArtifacts('```svg\n<svg><rect/></svg>\n```')
+    expect(segs).toEqual([{ type: 'svg', content: '<svg><rect/></svg>' }])
+  })
+
+  it('extracts a raw <svg> block from prose', () => {
+    const content = 'before\n<svg width="10"><circle/></svg>\nafter'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg', 'markdown'])
+    expect(segs[1].content).toBe('<svg width="10"><circle/></svg>')
+    expect(segs[0].content).toContain('before')
+    expect(segs[2].content).toContain('after')
+  })
+
+  it('keeps adjacent raw <svg> blocks separate (non-greedy)', () => {
+    const segs = splitHtmlArtifacts('<svg>a</svg>\n<svg>b</svg>')
+    const svgs = segs.filter((s) => s.type === 'svg')
+    expect(svgs.map((s) => s.content)).toEqual(['<svg>a</svg>', '<svg>b</svg>'])
+  })
+
+  it('extracts html and svg artifacts side by side', () => {
+    const content = '```html\n<p>x</p>\n```\nmid\n```svg\n<svg/>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['html', 'markdown', 'svg'])
+  })
 })

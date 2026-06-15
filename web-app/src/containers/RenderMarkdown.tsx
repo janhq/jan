@@ -186,7 +186,9 @@ function RenderMarkdownComponent({
   const segments = useMemo(() => {
     if (isStreaming || !renderHtmlArtifacts) return null
     const segs = splitHtmlArtifacts(normalizedContent)
-    return segs.some((s) => s.type === 'html') ? segs : null
+    return segs.some((s) => s.type === 'html' || s.type === 'svg')
+      ? segs
+      : null
   }, [normalizedContent, isStreaming, renderHtmlArtifacts])
 
   return (
@@ -202,6 +204,13 @@ function RenderMarkdownComponent({
         ? segments.map((seg, i) =>
             seg.type === 'html' ? (
               <HtmlArtifact key={i} code={seg.content} />
+            ) : seg.type === 'svg' ? (
+              <HtmlArtifact
+                key={i}
+                code={seg.content}
+                allowScripts={false}
+                language="xml"
+              />
             ) : (
               <StreamdownView
                 key={i}
