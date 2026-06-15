@@ -181,6 +181,8 @@ export function HubModelCard({
     [total_memory, gpus]
   )
 
+  const fitKnown = budgetBytes > 0
+
   const format = modelFormat(model)
   const caps = useMemo(() => deriveCapabilities(model), [model])
 
@@ -267,23 +269,25 @@ export function HubModelCard({
             </div>
           </div>
         </div>
-        <div className="shrink-0">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className={cn(
-                  'text-xs font-semibold px-2.5 py-1 rounded-[6px] whitespace-nowrap',
-                  FIT_BADGE_CLASS[cardFit]
-                )}
-              >
-                {HARDWARE_FIT[cardFit].label}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{HARDWARE_FIT[cardFit].tip}</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
+        {fitKnown && (
+          <div className="shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'text-xs font-semibold px-2.5 py-1 rounded-[6px] whitespace-nowrap',
+                    FIT_BADGE_CLASS[cardFit]
+                  )}
+                >
+                  {HARDWARE_FIT[cardFit].label}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{HARDWARE_FIT[cardFit].tip}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
       </div>
 
       {/* Format badge + capability tags + actions */}
@@ -369,7 +373,7 @@ export function HubModelCard({
                 {idx > 0 && <div className="h-px bg-border" />}
                 <div className="flex items-center justify-between gap-3 -mx-2 px-2 py-3 rounded-[10px] hover:bg-muted/40">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <StatusIcon fit={vFit} />
+                    {fitKnown && <StatusIcon fit={vFit} />}
                     <span className="text-[13px] font-medium text-foreground truncate">
                       {name}
                     </span>
