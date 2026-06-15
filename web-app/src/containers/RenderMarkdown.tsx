@@ -1,6 +1,6 @@
 
-import { Components } from 'react-markdown'
-import { memo, useMemo } from 'react'
+import { Components, ExtraProps } from 'react-markdown'
+import { memo, useDeferredValue, useMemo } from 'react'
 import {
   cn,
   disableIndentedCodeBlockPlugin,
@@ -9,7 +9,11 @@ import {
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { HtmlArtifact } from '@/components/HtmlArtifact'
 // import 'katex/dist/katex.min.css'
-import { defaultRehypePlugins, Streamdown } from 'streamdown'
+import {
+  defaultRehypePlugins,
+  Streamdown,
+  type MermaidErrorComponentProps,
+} from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { mermaid } from '@streamdown/mermaid'
@@ -31,6 +35,45 @@ interface MarkdownProps {
   messageId?: string
   isAnimating?: boolean
 }
+
+// Hoisted so their identity is stable across renders — Streamdown is memoized
+// with a shallow prop compare, and fresh literals here would defeat it, forcing
+// a full re-parse + re-highlight on every streamed token.
+const REMARK_PLUGINS = [remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]
+const REHYPE_PLUGINS = [rehypeKatex, defaultRehypePlugins.harden]
+const STREAMDOWN_PLUGINS = { code, mermaid, cjk }
+const STREAMDOWN_CONTROLS = { mermaid: { fullscreen: false } }
+const LINK_SAFETY = { enabled: false }
+const EMPTY_MERMAID = {}
+
+// While streaming, the active (unclosed) code block would be re-highlighted by
+// Shiki over its whole contents on every commit — O(n) per render, and the
+// highlighted DOM is re-inserted wholesale (slow on webkitgtk). Render plain
+// text instead; Streamdown's Shiki CodeBlock takes over once streaming ends.
+type CodeProps = React.HTMLAttributes<HTMLElement> & ExtraProps
+function StreamingCode({ node, className, children, ...props }: CodeProps) {
+  const pos = node?.position
+  const isInline = !pos || pos.start.line === pos.end.line
+  if (isInline) {
+    return (
+      <code
+        className={cn(
+          'rounded bg-muted px-1.5 py-0.5 font-mono text-sm',
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </code>
+    )
+  }
+  return (
+    <pre className="my-4 overflow-x-auto rounded-lg border border-border bg-secondary p-4">
+      <code className={cn('font-mono text-sm', className)}>{children}</code>
+    </pre>
+  )
+}
+const STREAMING_COMPONENTS: Components = { code: StreamingCode }
 
 // Cache for normalized LaTeX content
 const latexCache = new Map<string, string>()
@@ -105,11 +148,18 @@ function RenderMarkdownComponent({
     (s) => s.renderHtmlArtifacts
   )
 
+  // Coalesce rapid streamed updates: React renders the deferred (older) value
+  // while new tokens arrive and skips intermediates under load, so the memoized
+  // Streamdown subtree re-renders far less than once per token. Always converges
+  // to the latest value, so it can't get stuck. Non-streaming uses content as-is.
+  const deferredContent = useDeferredValue(content)
+  const effectiveContent = isStreaming ? deferredContent : content
+
   // normalizeLatex is O(n) over the full string and its cache misses every chunk;
   // skip it while streaming (LaTeX can't render mid-token) to avoid O(n²) cost.
   const normalizedContent = useMemo(
-    () => (isStreaming ? content : normalizeLatex(content)),
-    [content, isStreaming]
+    () => (isStreaming ? effectiveContent : normalizeLatex(effectiveContent)),
+    [effectiveContent, isStreaming]
   )
 
   const mergedComponents = useMemo<Components>(() => {
@@ -187,7 +237,7 @@ interface StreamdownViewProps {
   messageId?: string
 }
 
-function StreamdownView({
+function StreamdownViewComponent({
   content,
   components,
   className,
@@ -195,46 +245,52 @@ function StreamdownView({
   isAnimating,
   messageId,
 }: StreamdownViewProps) {
+  const mermaidOptions = useMemo(
+    () =>
+      messageId
+        ? {
+            errorComponent: (props: MermaidErrorComponentProps) => (
+              <MermaidError messageId={messageId} {...props} />
+            ),
+          }
+        : EMPTY_MERMAID,
+    [messageId]
+  )
+
+  const mergedClassName = useMemo(
+    () =>
+      cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className),
+    [className]
+  )
+
+  // Skip Shiki on the in-progress code block while streaming.
+  const effectiveComponents = useMemo(
+    () =>
+      isStreaming ? { ...components, ...STREAMING_COMPONENTS } : components,
+    [components, isStreaming]
+  )
+
   return (
     <Streamdown
       mode={isStreaming ? 'streaming' : 'static'}
       parseIncompleteMarkdown={isStreaming ?? false}
       animate={isStreaming ? false : (isAnimating ?? true)}
       animationDuration={500}
-      linkSafety={{
-        enabled: false,
-      }}
-      className={cn(
-        'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
-        className
-      )}
-      remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
-      rehypePlugins={[rehypeKatex, defaultRehypePlugins.harden]}
-      components={components}
-      plugins={{
-        code: code,
-        mermaid: mermaid,
-        cjk: cjk,
-      }}
-      controls={{
-        mermaid: {
-          fullscreen: false,
-        },
-      }}
-      mermaid={
-        messageId
-          ? {
-              errorComponent: (props) => (
-                <MermaidError messageId={messageId} {...props} />
-              ),
-            }
-          : {}
-      }
+      linkSafety={LINK_SAFETY}
+      className={mergedClassName}
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
+      components={effectiveComponents}
+      plugins={STREAMDOWN_PLUGINS}
+      controls={STREAMDOWN_CONTROLS}
+      mermaid={mermaidOptions}
     >
       {content}
     </Streamdown>
   )
 }
+
+const StreamdownView = memo(StreamdownViewComponent)
 export const RenderMarkdown = memo(
   RenderMarkdownComponent,
   (prevProps, nextProps) =>
