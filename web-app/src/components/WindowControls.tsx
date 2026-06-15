@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
@@ -16,11 +16,24 @@ export const WindowControls = () => {
   const appWindow = getCurrentWebviewWindow()
   const [layout, setLayout] = useState<TitlebarLayout>(DEFAULT_LAYOUT)
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     invoke<TitlebarLayout>('get_titlebar_layout')
       .then((l) => setLayout(l))
       .catch(() => setLayout(DEFAULT_LAYOUT))
   }, [])
+
+  // Refetch on focus so changes made in the DE's settings (KDE/GNOME) while Jan
+  // was unfocused are picked up without a restart.
+  useEffect(() => {
+    refresh()
+    if (!IS_LINUX) return
+    const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) refresh()
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [appWindow, refresh])
 
   const actions: Record<ButtonId, () => Promise<void>> = {
     minimize: () => appWindow.minimize(),
