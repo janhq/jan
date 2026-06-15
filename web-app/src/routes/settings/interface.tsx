@@ -20,8 +20,13 @@ export const Route = createFileRoute(route.settings.interface as any)({
 
 function InterfaceSettings() {
   const { t } = useTranslation()
-  const { resetInterface, showTokenSpeed, setShowTokenSpeed } =
-    useInterfaceSettings()
+  const {
+    resetInterface,
+    showTokenSpeed,
+    setShowTokenSpeed,
+    coloredUserBubble,
+    setColoredUserBubble,
+  } = useInterfaceSettings()
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -64,6 +69,16 @@ function InterfaceSettings() {
                   <Switch
                     checked={showTokenSpeed}
                     onCheckedChange={setShowTokenSpeed}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:interface.coloredUserBubble')}
+                description={t('settings:interface.coloredUserBubbleDesc')}
+                actions={
+                  <Switch
+                    checked={coloredUserBubble}
+                    onCheckedChange={setColoredUserBubble}
                   />
                 }
               />

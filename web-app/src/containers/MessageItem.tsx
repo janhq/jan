@@ -21,6 +21,7 @@ import {
 import { CopyButton } from './CopyButton'
 import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useMessageErrors } from '@/stores/message-errors'
 import {
   IconRefresh,
@@ -87,6 +88,7 @@ export const MessageItem = memo(
     onDelete,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
     const metadata = message.metadata as Record<string, unknown> | undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
@@ -244,7 +246,14 @@ export const MessageItem = memo(
         <div key={`${message.id}-${partIndex}`} className="w-full">
           {message.role === 'user' ? (
             <div className="flex justify-end w-full h-full text-start wrap-break-word whitespace-normal">
-              <div className="bg-primary relative text-primary-foreground p-2 rounded-md inline-block max-w-[80%]">
+              <div
+                className={cn(
+                  'relative p-2 rounded-md inline-block max-w-[80%]',
+                  coloredUserBubble
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-foreground'
+                )}
+              >
                 {/* Show attached files if any */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">

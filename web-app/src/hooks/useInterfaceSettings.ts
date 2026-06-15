@@ -109,10 +109,12 @@ interface InterfaceSettingsState {
   accentColor: AccentColorValue
   notificationPosition: NotificationPosition
   showTokenSpeed: boolean
+  coloredUserBubble: boolean
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
   setNotificationPosition: (position: NotificationPosition) => void
   setShowTokenSpeed: (show: boolean) => void
+  setColoredUserBubble: (colored: boolean) => void
   resetInterface: () => void
 }
 
@@ -123,6 +125,7 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setAccentColor'
   | 'setNotificationPosition'
   | 'setShowTokenSpeed'
+  | 'setColoredUserBubble'
 >
 
 export const fontSizeOptions = [
@@ -141,6 +144,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     accentColor: DEFAULT_ACCENT_COLOR,
     notificationPosition: getDefaultNotificationPosition(),
     showTokenSpeed: true,
+    coloredUserBubble: true,
   }
 }
 
@@ -177,6 +181,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             accentColor: DEFAULT_ACCENT_COLOR,
             notificationPosition: getDefaultNotificationPosition(),
             showTokenSpeed: true,
+            coloredUserBubble: true,
           })
         },
 
@@ -204,6 +209,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         setShowTokenSpeed: (show) => {
           set({ showTokenSpeed: show })
         },
+
+        setColoredUserBubble: (colored) => {
+          set({ coloredUserBubble: colored })
+        },
       }
     },
     {
@@ -214,6 +223,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         accentColor: state.accentColor,
         notificationPosition: state.notificationPosition,
         showTokenSpeed: state.showTokenSpeed,
+        coloredUserBubble: state.coloredUserBubble,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
@@ -245,6 +255,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
           if (typeof state.showTokenSpeed !== 'boolean') {
             state.showTokenSpeed = true
+          }
+
+          if (typeof state.coloredUserBubble !== 'boolean') {
+            state.coloredUserBubble = true
           }
         }
 

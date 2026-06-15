@@ -96,6 +96,8 @@
     "notificationPositionBottomLeft": "Bottom left",
     "showTokenSpeed": "Show token speed",
     "showTokenSpeedDesc": "Display tokens/sec and token count inline below assistant messages. When off, a compact icon shows the details on click.",
+    "coloredUserBubble": "Colored user message bubble",
+    "coloredUserBubbleDesc": "Use the accent color as the background of your messages. When off, they match assistant messages with plain text on a neutral background.",
     "windowBackground": "Window Background",
     "windowBackgroundDesc": "Set the app window's background color.",
     "appMainView": "App Main View",
