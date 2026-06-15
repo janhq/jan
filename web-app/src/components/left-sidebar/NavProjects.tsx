@@ -67,7 +67,7 @@ function ProjectItem({
           <CollapsibleTrigger asChild>
             <SidebarMenuButton
               type="button"
-              className="w-8 shrink-0 p-0"
+              className="w-8 shrink-0 justify-center p-0"
               aria-label={isOpen ? 'Collapse project' : 'Expand project'}
             >
               <ChevronRight
