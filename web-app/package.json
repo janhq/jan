@@ -1,7 +1,7 @@
 {
   "name": "@janhq/web-app",
   "private": true,
-  "version": "1.1.112",
+  "version": "1.1.113",
   "type": "module",
   "scripts": {
     "seed-catalog": "node scripts/fetch-seed-catalog.mjs",
