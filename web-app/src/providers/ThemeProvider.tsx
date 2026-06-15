@@ -3,7 +3,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 export function ThemeProvider() {
-  const { isDark, setIsDark } = useTheme()
+  const { isDark, setIsDark, activeTheme } = useTheme()
 
   useEffect(() => {
     if (isDark) {
@@ -71,7 +71,9 @@ export function ThemeProvider() {
       mediaQuery.removeEventListener('change', handleMediaChange)
       unlistenTauri?.()
     }
-  }, [setIsDark])
+    // Re-query the portal on activeTheme change: matchMedia stays pinned to the
+    // prior explicit theme after window.setTheme(), so 'auto' needs a fresh read.
+  }, [setIsDark, activeTheme])
 
   return null
 }
