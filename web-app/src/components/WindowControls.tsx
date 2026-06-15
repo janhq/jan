@@ -1,26 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
-
-type ButtonId = 'minimize' | 'maximize' | 'close'
-type TitlebarLayout = { left: ButtonId[]; right: ButtonId[] }
-
-const DEFAULT_LAYOUT: TitlebarLayout = {
-  left: [],
-  right: ['minimize', 'maximize', 'close'],
-}
+import {
+  useTitlebarLayout,
+  type ButtonId,
+  type TitlebarLayout,
+  DEFAULT_TITLEBAR_LAYOUT,
+} from '@/stores/titlebar-layout-store'
 
 export const WindowControls = () => {
   const appWindow = getCurrentWebviewWindow()
-  const [layout, setLayout] = useState<TitlebarLayout>(DEFAULT_LAYOUT)
+  const layout = useTitlebarLayout((s) => s.layout)
+  const setLayout = useTitlebarLayout((s) => s.setLayout)
 
   const refresh = useCallback(() => {
     invoke<TitlebarLayout>('get_titlebar_layout')
       .then((l) => setLayout(l))
-      .catch(() => setLayout(DEFAULT_LAYOUT))
-  }, [])
+      .catch(() => setLayout(DEFAULT_TITLEBAR_LAYOUT))
+  }, [setLayout])
 
   // Refetch on focus so changes made in the DE's settings (KDE/GNOME) while Jan
   // was unfocused are picked up without a restart.
@@ -67,14 +66,14 @@ export const WindowControls = () => {
   return (
     <>
       {layout.left.length > 0 && (
-        <div className="absolute top-0 z-50 left-4 h-15">
+        <div className="absolute top-0 z-[60] left-4 h-15">
           <div className="flex items-center h-full">
             {renderGroup(layout.left)}
           </div>
         </div>
       )}
       {layout.right.length > 0 && (
-        <div className="absolute top-0 z-50 right-4 h-15">
+        <div className="absolute top-0 z-[60] right-4 h-15">
           <div className="flex items-center h-full">
             {renderGroup(layout.right)}
           </div>
