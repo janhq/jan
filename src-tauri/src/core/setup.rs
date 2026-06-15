@@ -492,6 +492,10 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => {
+                // Close-to-tray hides the whole app (NSApplication) on macOS, so
+                // un-hide it first before showing/focusing the window.
+                #[cfg(target_os = "macos")]
+                let _ = app.show();
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.show();
@@ -640,8 +644,13 @@ fn setup_window_theme_listener<R: Runtime>(
     let window_label = window.label().to_string();
     let app_handle_clone = app_handle.clone();
 
-    window.on_window_event(move |event| {
-        if let WindowEvent::ThemeChanged(theme) = event {
+    // The close handler hides the window instead of destroying it, so keep a
+    // clone to call `hide()` from inside the event closure.
+    #[cfg(target_os = "macos")]
+    let window_for_close = window.clone();
+
+    window.on_window_event(move |event| match event {
+        WindowEvent::ThemeChanged(theme) => {
             let theme_str = match theme {
                 tauri::Theme::Light => "light",
                 tauri::Theme::Dark => "dark",
@@ -650,5 +659,37 @@ fn setup_window_theme_listener<R: Runtime>(
             log::info!("System theme changed to: {theme_str} for window: {window_label}");
             let _ = app_handle_clone.emit("theme-changed", theme_str);
         }
+        // On macOS the red traffic-light button should send the app to the
+        // background (keeping the llama.cpp server running) instead of quitting,
+        // matching typical menu-bar app behavior. We hide both the window and the
+        // application (NSApplication): `window.hide()` alone leaves the window in
+        // Mission Control / the app switcher, while `app.hide()` alone leaves the
+        // transparent vibrancy window painted on screen. Hide order matters —
+        // hide the window first, then the app, then veto the close. The app is
+        // restored via the dock icon (RunEvent::Reopen) or the tray "Open" item.
+        // Real quit still goes through Cmd+Q / the tray "Quit" item, which trigger
+        // RunEvent::Exit and the process cleanup.
+        #[cfg(target_os = "macos")]
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            if window_for_close.is_fullscreen().unwrap_or(false) {
+                // macOS can't hide a window while it's in a native-fullscreen Space.
+                // Leave fullscreen first (a brief, unavoidable exit animation), then
+                // hide once the transition has settled — hiding mid-animation
+                // black-screens the window. The next show is a normal window.
+                let _ = window_for_close.set_fullscreen(false);
+                let win = window_for_close.clone();
+                let app = app_handle_clone.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                    let _ = win.hide();
+                    let _ = app.hide();
+                });
+            } else {
+                let _ = window_for_close.hide();
+                let _ = app_handle_clone.hide();
+            }
+        }
+        _ => {}
     });
 }
