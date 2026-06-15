@@ -3,7 +3,23 @@ import { listen } from '@tauri-apps/api/event'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useMessages } from '@/hooks/useMessages'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { isPlatformTauri } from '@/lib/platform/utils'
+
+// Router errors are only user-facing when they could have killed an in-flight
+// llamacpp generation. At launch/idle the router can emit startup noise with no
+// active request — surfacing it would banner a provider the user never invoked
+// (e.g. MLX selected on macOS).
+function hasActiveLlamacppRequest(): boolean {
+  if (useModelProvider.getState().selectedProvider !== 'llamacpp') return false
+  const app = useAppState.getState()
+  return (
+    Object.keys(app.abortControllers).length > 0 ||
+    Object.keys(app.busyThreads).length > 0 ||
+    Object.keys(app.loadingModels).length > 0 ||
+    Object.keys(app.streamingContents).length > 0
+  )
+}
 
 function stampErrorOnLastUserMessage(
   field: 'oomError' | 'backendError',
@@ -48,6 +64,7 @@ export default function LlamacppOomListener() {
   useEffect(() => {
     if (!isPlatformTauri()) return
     const unlistenOom = listen<string>('llamacpp-router-oom', (event) => {
+      if (!hasActiveLlamacppRequest()) return
       const payload = event.payload ?? ''
       stampErrorOnLastUserMessage('oomError', payload)
       clearActiveWork()
@@ -59,6 +76,7 @@ export default function LlamacppOomListener() {
     const unlistenBackend = listen<string>(
       'llamacpp-router-backend-error',
       (event) => {
+        if (!hasActiveLlamacppRequest()) return
         const payload = event.payload ?? ''
         stampErrorOnLastUserMessage('backendError', payload)
         clearActiveWork()
