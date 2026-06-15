@@ -57,6 +57,38 @@ export function disableIndentedCodeBlockPlugin() {
   }
 }
 
+export interface MarkdownSegment {
+  type: 'markdown' | 'html'
+  content: string
+}
+
+// Top-level fenced ```html block: opening fence (3+ backticks) + html lang,
+// body, matching closing fence on its own line. The \b stops langs like
+// "html5"/"htmlbar" from matching.
+const HTML_FENCE_RE = /(^|\n)(`{3,})[ \t]*html\b[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/gi
+
+/**
+ * Split markdown into alternating prose and standalone HTML-artifact segments.
+ * Used to render interactive HTML previews without replacing Streamdown's code
+ * component (which would lose inline-code, mermaid, and Shiki handling).
+ */
+export function splitHtmlArtifacts(content: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  HTML_FENCE_RE.lastIndex = 0
+  while ((match = HTML_FENCE_RE.exec(content)) !== null) {
+    const blockStart = match.index + match[1].length
+    const before = content.slice(lastIndex, blockStart)
+    if (before.length) segments.push({ type: 'markdown', content: before })
+    segments.push({ type: 'html', content: match[3] })
+    lastIndex = HTML_FENCE_RE.lastIndex
+  }
+  const rest = content.slice(lastIndex)
+  if (rest.length) segments.push({ type: 'markdown', content: rest })
+  return segments
+}
+
 /**
  * Get the display name for a model, falling back to the model ID if no display name is set
  */

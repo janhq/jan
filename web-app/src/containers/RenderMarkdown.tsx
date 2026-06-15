@@ -1,7 +1,13 @@
 
 import { Components } from 'react-markdown'
 import { memo, useMemo } from 'react'
-import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
+import {
+  cn,
+  disableIndentedCodeBlockPlugin,
+  splitHtmlArtifacts,
+} from '@/lib/utils'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { HtmlArtifact } from '@/components/HtmlArtifact'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
@@ -95,6 +101,9 @@ function RenderMarkdownComponent({
   isAnimating,
   isStreaming,
 }: MarkdownProps) {
+  const renderHtmlArtifacts = useInterfaceSettings(
+    (s) => s.renderHtmlArtifacts
+  )
 
   // normalizeLatex is O(n) over the full string and its cache misses every chunk;
   // skip it while streaming (LaTeX can't render mid-token) to avoid O(n²) cost.
@@ -120,7 +129,16 @@ function RenderMarkdownComponent({
     return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
   }, [components])
 
-  // Render the markdown content
+  // Interactive HTML artifacts: only when the user opted in and the stream is
+  // complete (an incomplete fence must not be torn out mid-token). Splitting the
+  // string keeps Streamdown's code/mermaid/inline handling intact for everything
+  // else — overriding its `code` component would replace all of it.
+  const segments = useMemo(() => {
+    if (isStreaming || !renderHtmlArtifacts) return null
+    const segs = splitHtmlArtifacts(normalizedContent)
+    return segs.some((s) => s.type === 'html') ? segs : null
+  }, [normalizedContent, isStreaming, renderHtmlArtifacts])
+
   return (
     <div
       dir="auto"
@@ -130,47 +148,91 @@ function RenderMarkdownComponent({
         className
       )}
     >
-      <Streamdown
-        mode={isStreaming ? 'streaming' : 'static'}
-        parseIncompleteMarkdown={isStreaming ?? false}
-        animate={isStreaming ? false : (isAnimating ?? true)}
-        animationDuration={500}
-        linkSafety={{
-          enabled: false,
-        }}
-        className={cn(
-          'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
-          className
+      {segments
+        ? segments.map((seg, i) =>
+            seg.type === 'html' ? (
+              <HtmlArtifact key={i} code={seg.content} />
+            ) : (
+              <StreamdownView
+                key={i}
+                content={seg.content}
+                isStreaming={isStreaming}
+                isAnimating={isAnimating}
+                messageId={messageId}
+                className={className}
+                components={mergedComponents}
+              />
+            )
+          )
+        : (
+          <StreamdownView
+            content={normalizedContent}
+            isStreaming={isStreaming}
+            isAnimating={isAnimating}
+            messageId={messageId}
+            className={className}
+            components={mergedComponents}
+          />
         )}
-        remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
-        rehypePlugins={[
-          rehypeKatex,
-          defaultRehypePlugins.harden,
-        ]}
-        components={mergedComponents}
-        plugins={{
-          code: code,
-          mermaid: mermaid,
-          cjk: cjk,
-        }}
-        controls={{
-          mermaid: {
-            fullscreen: false,
-          },
-        }}
-        mermaid={
-          messageId
-            ? {
-                errorComponent: (props) => (
-                  <MermaidError messageId={messageId} {...props} />
-                ),
-              }
-            : {}
-        }
-      >
-        {normalizedContent}
-      </Streamdown>
     </div>
+  )
+}
+
+interface StreamdownViewProps {
+  content: string
+  components: Components
+  className?: string
+  isStreaming?: boolean
+  isAnimating?: boolean
+  messageId?: string
+}
+
+function StreamdownView({
+  content,
+  components,
+  className,
+  isStreaming,
+  isAnimating,
+  messageId,
+}: StreamdownViewProps) {
+  return (
+    <Streamdown
+      mode={isStreaming ? 'streaming' : 'static'}
+      parseIncompleteMarkdown={isStreaming ?? false}
+      animate={isStreaming ? false : (isAnimating ?? true)}
+      animationDuration={500}
+      linkSafety={{
+        enabled: false,
+      }}
+      className={cn(
+        'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+        className
+      )}
+      remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
+      rehypePlugins={[rehypeKatex, defaultRehypePlugins.harden]}
+      components={components}
+      plugins={{
+        code: code,
+        mermaid: mermaid,
+        cjk: cjk,
+      }}
+      controls={{
+        mermaid: {
+          fullscreen: false,
+        },
+      }}
+      mermaid={
+        messageId
+          ? {
+              errorComponent: (props) => (
+                <MermaidError messageId={messageId} {...props} />
+              ),
+            }
+          : {}
+      }
+    >
+      {content}
+    </Streamdown>
   )
 }
 export const RenderMarkdown = memo(

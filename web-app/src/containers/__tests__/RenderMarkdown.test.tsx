@@ -1,6 +1,7 @@
-import { render } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { render, waitFor, act, cleanup } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RenderMarkdown } from '../RenderMarkdown'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 
 vi.mock('@i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -364,6 +365,63 @@ describe('RenderMarkdown', () => {
       const katexContainer = document.querySelector('.katex')
       // Should not treat < $2, So choose the $1 one.\n\n> as HTML tag
       expect(katexContainer).toBeNull()
+    })
+  })
+
+  describe('interactive HTML artifacts', () => {
+    const HTML_MSG = 'Here:\n\n```html\n<h1>hi</h1>\n```\n'
+
+    // CodeBlock highlights via async Shiki; await the resulting <pre> so the
+    // post-render state update settles inside the test rather than leaking.
+    const flush = (container: HTMLElement) =>
+      waitFor(() => expect(container.querySelector('pre')).toBeTruthy())
+
+    afterEach(() => {
+      // Unmount before resetting so the store update doesn't re-render a live,
+      // subscribed RenderMarkdown outside act.
+      cleanup()
+      act(() => {
+        useInterfaceSettings.getState().setRenderHtmlArtifacts(false)
+      })
+    })
+
+    it('renders the Streamdown code block (not an artifact) when the setting is off', async () => {
+      const { container } = render(<RenderMarkdown content={HTML_MSG} />)
+      expect(container.querySelector('[data-testid="html-artifact"]')).toBeNull()
+      expect(
+        container.querySelector('[data-streamdown="code-block"]')
+      ).toBeTruthy()
+      await flush(container)
+    })
+
+    it('renders an HtmlArtifact when the setting is on and not streaming', async () => {
+      useInterfaceSettings.getState().setRenderHtmlArtifacts(true)
+      const { container } = render(<RenderMarkdown content={HTML_MSG} />)
+      expect(
+        container.querySelector('[data-testid="html-artifact"]')
+      ).toBeTruthy()
+      // Defaults to the Preview iframe (no async Shiki highlight to flush).
+      expect(
+        container.querySelector('[data-testid="html-artifact-iframe"]')
+      ).toBeTruthy()
+    })
+
+    it('falls through to the code block while streaming even when the setting is on', async () => {
+      useInterfaceSettings.getState().setRenderHtmlArtifacts(true)
+      const { container } = render(
+        <RenderMarkdown content={HTML_MSG} isStreaming />
+      )
+      expect(container.querySelector('[data-testid="html-artifact"]')).toBeNull()
+      await flush(container)
+    })
+
+    it('does not create an artifact for non-html code when the setting is on', async () => {
+      useInterfaceSettings.getState().setRenderHtmlArtifacts(true)
+      const { container } = render(
+        <RenderMarkdown content={'```js\nconst x = 1\n```'} />
+      )
+      expect(container.querySelector('[data-testid="html-artifact"]')).toBeNull()
+      await flush(container)
     })
   })
 })

@@ -110,11 +110,13 @@ interface InterfaceSettingsState {
   notificationPosition: NotificationPosition
   showTokenSpeed: boolean
   coloredUserBubble: boolean
+  renderHtmlArtifacts: boolean
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
   setNotificationPosition: (position: NotificationPosition) => void
   setShowTokenSpeed: (show: boolean) => void
   setColoredUserBubble: (colored: boolean) => void
+  setRenderHtmlArtifacts: (render: boolean) => void
   resetInterface: () => void
 }
 
@@ -126,6 +128,7 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setNotificationPosition'
   | 'setShowTokenSpeed'
   | 'setColoredUserBubble'
+  | 'setRenderHtmlArtifacts'
 >
 
 export const fontSizeOptions = [
@@ -145,6 +148,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     notificationPosition: getDefaultNotificationPosition(),
     showTokenSpeed: true,
     coloredUserBubble: true,
+    renderHtmlArtifacts: false,
   }
 }
 
@@ -182,6 +186,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             notificationPosition: getDefaultNotificationPosition(),
             showTokenSpeed: true,
             coloredUserBubble: true,
+            renderHtmlArtifacts: false,
           })
         },
 
@@ -213,6 +218,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         setColoredUserBubble: (colored) => {
           set({ coloredUserBubble: colored })
         },
+
+        setRenderHtmlArtifacts: (render) => {
+          set({ renderHtmlArtifacts: render })
+        },
       }
     },
     {
@@ -224,6 +233,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         notificationPosition: state.notificationPosition,
         showTokenSpeed: state.showTokenSpeed,
         coloredUserBubble: state.coloredUserBubble,
+        renderHtmlArtifacts: state.renderHtmlArtifacts,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
@@ -259,6 +269,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
           if (typeof state.coloredUserBubble !== 'boolean') {
             state.coloredUserBubble = true
+          }
+
+          if (typeof state.renderHtmlArtifacts !== 'boolean') {
+            state.renderHtmlArtifacts = false
           }
         }
 

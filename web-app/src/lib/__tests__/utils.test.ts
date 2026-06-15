@@ -8,6 +8,7 @@ import {
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
+  splitHtmlArtifacts,
 } from '../utils'
 
 describe('getProviderLogo', () => {
@@ -325,5 +326,60 @@ describe('getModelDisplayName', () => {
       displayName: 'Model (Version 2.0) - Fine-tuned',
     } as Model
     expect(getModelDisplayName(model)).toBe('Model (Version 2.0) - Fine-tuned')
+  })
+})
+
+describe('splitHtmlArtifacts', () => {
+  it('returns a single markdown segment when there is no html block', () => {
+    const segs = splitHtmlArtifacts('hello **world**')
+    expect(segs).toEqual([{ type: 'markdown', content: 'hello **world**' }])
+  })
+
+  it('extracts a standalone html block with surrounding prose', () => {
+    const content = 'before\n\n```html\n<h1>hi</h1>\n```\n\nafter'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'html', 'markdown'])
+    expect(segs[1].content).toBe('<h1>hi</h1>')
+    expect(segs[0].content).toContain('before')
+    expect(segs[2].content).toContain('after')
+  })
+
+  it('handles an html block as the entire content (no trailing newline)', () => {
+    const segs = splitHtmlArtifacts('```html\n<p>x</p>\n```')
+    expect(segs).toEqual([{ type: 'html', content: '<p>x</p>' }])
+  })
+
+  it('extracts multiple html blocks', () => {
+    const content = '```html\n<a>1</a>\n```\nmid\n```html\n<b>2</b>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual([
+      'html',
+      'markdown',
+      'html',
+    ])
+    expect(segs[0].content).toBe('<a>1</a>')
+    expect(segs[2].content).toBe('<b>2</b>')
+  })
+
+  it('is case-insensitive on the language tag', () => {
+    const segs = splitHtmlArtifacts('```HTML\n<i>y</i>\n```')
+    expect(segs).toEqual([{ type: 'html', content: '<i>y</i>' }])
+  })
+
+  it('does not match languages that merely start with html', () => {
+    const content = '```html5\n<x/>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown'])
+  })
+
+  it('does not match non-html code fences', () => {
+    const content = '```js\nconst x = 1\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs).toEqual([{ type: 'markdown', content }])
+  })
+
+  it('matches a fence with more than three backticks via the closing backref', () => {
+    const segs = splitHtmlArtifacts('````html\n<p>z</p>\n````')
+    expect(segs).toEqual([{ type: 'html', content: '<p>z</p>' }])
   })
 })

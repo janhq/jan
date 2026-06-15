@@ -26,6 +26,8 @@ function InterfaceSettings() {
     setShowTokenSpeed,
     coloredUserBubble,
     setColoredUserBubble,
+    renderHtmlArtifacts,
+    setRenderHtmlArtifacts,
   } = useInterfaceSettings()
 
   return (
@@ -79,6 +81,16 @@ function InterfaceSettings() {
                   <Switch
                     checked={coloredUserBubble}
                     onCheckedChange={setColoredUserBubble}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:interface.renderHtmlArtifacts')}
+                description={t('settings:interface.renderHtmlArtifactsDesc')}
+                actions={
+                  <Switch
+                    checked={renderHtmlArtifacts}
+                    onCheckedChange={setRenderHtmlArtifacts}
                   />
                 }
               />
