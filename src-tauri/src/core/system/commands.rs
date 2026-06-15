@@ -1478,6 +1478,10 @@ fn agent_install_spec(
             let (p, a) = npm("cline");
             Ok((p, a, "npm", "https://docs.cline.bot/cline-cli/getting-started"))
         }
+        "mimo" => {
+            let (p, a) = npm("@mimo-ai/cli");
+            Ok((p, a, "npm", "https://mimo.xiaomi.com/mimocode/"))
+        }
         "droid" => {
             let (p, a) = npm("droid");
             Ok((
@@ -1860,6 +1864,81 @@ pub fn configure_opencode(
     std::fs::write(&path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     log::info!("OpenCode configured: baseURL={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure MiMo Code by upserting `provider.atomic` in
+/// `~/.config/mimocode/mimocode.json` (strict JSON, other providers preserved).
+/// MiMo Code is a fork of OpenCode, so its config system is OpenCode's
+/// field-for-field; only the paths and `$schema` differ.
+#[tauri::command]
+pub fn configure_mimo(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".config").join("mimocode");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.config/mimocode: {}", e))?;
+    let path = dir.join("mimocode.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "mimocode.json is not a JSON object".to_string())?;
+    obj.entry("$schema")
+        .or_insert_with(|| serde_json::json!("https://mimo.xiaomi.com/config.json"));
+
+    let provider = obj
+        .entry("provider")
+        .or_insert_with(|| serde_json::json!({}));
+    if !provider.is_object() {
+        *provider = serde_json::json!({});
+    }
+
+    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let mut models = serde_json::Map::new();
+    models.insert(model.clone(), serde_json::json!({ "name": model }));
+
+    provider.as_object_mut().unwrap().insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Atomic Chat",
+            "options": { "baseURL": api_url, "apiKey": key_val },
+            "models": serde_json::Value::Object(models),
+        }),
+    );
+
+    // Select Atomic as the active default model so MiMo Code opens on it without
+    // a manual `/models` pick. Format is `<providerId>/<modelId>`. Pressing Run
+    // is an explicit "use this", so we overwrite any prior selection.
+    obj.insert(
+        "model".to_string(),
+        serde_json::json!(format!("atomic/{}", model)),
+    );
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("MiMo Code configured: baseURL={}, model={}", api_url, model);
     Ok(())
 }
 

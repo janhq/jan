@@ -99,6 +99,18 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: true,
   },
   {
+    id: 'mimo',
+    name: 'MiMo Code',
+    description: "Xiaomi's open-source agentic coding tool for your terminal.",
+    kind: 'coding',
+    detectBin: 'mimo',
+    docsUrl: 'https://mimo.xiaomi.com/mimocode/',
+    installable: true,
+    configurable: true,
+    requiresModel: true,
+    endpointWithPrefix: true,
+  },
+  {
     id: 'droid',
     name: 'Droid',
     description: "Factory.ai's agentic software development tool.",
