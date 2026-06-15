@@ -87,6 +87,18 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: true,
   },
   {
+    id: 'cline',
+    name: 'Cline CLI',
+    description: 'Autonomous open-source coding agent for your terminal.',
+    kind: 'coding',
+    detectBin: 'cline',
+    docsUrl: 'https://docs.cline.bot/cline-cli/getting-started',
+    installable: true,
+    configurable: true,
+    requiresModel: true,
+    endpointWithPrefix: true,
+  },
+  {
     id: 'droid',
     name: 'Droid',
     description: "Factory.ai's agentic software development tool.",

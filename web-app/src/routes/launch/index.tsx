@@ -202,6 +202,16 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           />
         </IconBox>
       )
+    case 'cline':
+      return (
+        <IconBox bg="#2b303b">
+          <img
+            src="/images/integrations/cline.png"
+            alt={agent.name}
+            className="size-full object-cover"
+          />
+        </IconBox>
+      )
     default:
       return (
         <IconBox bg="#52525b">
@@ -424,6 +434,9 @@ function LaunchPage() {
           break
         case 'opencode':
           await invoke('configure_opencode', { apiUrl, model, apiKey: key })
+          break
+        case 'cline':
+          await invoke('configure_cline', { apiUrl, model, apiKey: key })
           break
         case 'copilot':
           await invoke('configure_copilot', { apiUrl, model, apiKey: key })
