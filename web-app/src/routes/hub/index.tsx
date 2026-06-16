@@ -255,12 +255,10 @@ function HubContent() {
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
-      // Read from the reactive `providers` list (a memo dependency) rather than
-      // useModelProvider.getState(), so the filtered set recomputes when a
-      // model is deleted and its card disappears immediately (ATO-180).
+      const providerState = useModelProvider.getState()
       const llamacppModels =
-        providers.find((p) => p.provider === 'llamacpp')?.models ?? []
-      const mlxModels = providers.find((p) => p.provider === 'mlx')?.models ?? []
+        providerState.getProviderByName('llamacpp')?.models ?? []
+      const mlxModels = providerState.getProviderByName('mlx')?.models ?? []
 
       const matchedLlamacppIds = new Set<string>()
       const matchedMlxIds = new Set<string>()
