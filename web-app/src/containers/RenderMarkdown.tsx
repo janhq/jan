@@ -122,6 +122,15 @@ const normalizeLatex = (input: string): string => {
         (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
 
+    // Emphasis glued between a word char and punctuation (e.g. "word**,**")
+    // is neither left- nor right-flanking per CommonMark, so the markers render
+    // literally. Inject a zero-width space just inside the delimiter to restore
+    // flanking — invisible, and CommonMark treats U+200B as non-punctuation.
+    if (s.includes('*') || s.includes('_'))
+      s = s
+        .replace(/(?<=[\p{L}\p{N}])(\*\*?|__?)(?=[^\s\p{L}\p{N}*_])/gu, '$1​')
+        .replace(/(?<=[^\s\p{L}\p{N}*_])(\*\*?|__?)(?=[\p{L}\p{N}])/gu, '​$1')
+
     result += s;
   }
 

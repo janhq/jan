@@ -358,6 +358,40 @@ describe('RenderMarkdown', () => {
     })
   })
 
+  describe('emphasis glued to punctuation (CommonMark flanking)', () => {
+    const strong = () =>
+      document.querySelector('.markdown [data-streamdown="strong"]')
+
+    it('renders bold punctuation glued to a word as strong', async () => {
+      render(
+        <RenderMarkdown content={'I went home**,** and slept'} isAnimating={false} />
+      )
+      await waitFor(() => expect(strong()).toBeTruthy())
+      expect(strong()?.textContent?.replace(/​/g, '')).toBe(',')
+      expect(document.querySelector('.markdown')?.textContent).not.toContain('**')
+    })
+
+    it('handles glued bold around CJK punctuation', async () => {
+      render(<RenderMarkdown content={'中文**，**测试'} isAnimating={false} />)
+      await waitFor(() => expect(strong()).toBeTruthy())
+      expect(strong()?.textContent?.replace(/​/g, '')).toBe('，')
+    })
+
+    it('leaves stray asterisks alone (no false emphasis)', async () => {
+      render(<RenderMarkdown content={'use 2 ** 3 maybe'} isAnimating={false} />)
+      await waitFor(() =>
+        expect(document.querySelector('.markdown p')).toBeTruthy()
+      )
+      expect(strong()).toBeNull()
+    })
+
+    it('does not touch normal bold spans', async () => {
+      render(<RenderMarkdown content={'a **bold** word'} isAnimating={false} />)
+      await waitFor(() => expect(strong()).toBeTruthy())
+      expect(strong()?.textContent).toBe('bold')
+    })
+  })
+
   describe('LaTeX normalization - HTML tag recognition', () => {
     it('does not treat invalid ("<",">") pairs as HTML tag', () => {
       const content = '$1 < $2, So choose the $1 one.\n\n> quoted content'
