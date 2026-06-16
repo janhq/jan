@@ -54,6 +54,7 @@ import {
 } from '@/constants/chat'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
+import { AssistantSwitcher } from '@/containers/AssistantSwitcher'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
@@ -2025,20 +2026,23 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
+                <AssistantSwitcher
+                  assistants={assistants}
+                  currentThread={currentThread}
+                  selectedAssistantId={selectedAssistantId}
+                  setSelectedAssistantId={setSelectedAssistantId}
+                  updateCurrentThreadAssistant={updateCurrentThreadAssistant}
+                />
                 <SamplerPopover
                   providerId={selectedProvider}
                   modelId={selectedModel?.id}
-                  assistantSwitcher={
-                    !projectId
-                      ? {
-                          assistants,
-                          currentThread,
-                          selectedAssistantId,
-                          setSelectedAssistantId,
-                          updateCurrentThreadAssistant,
-                        }
-                      : undefined
-                  }
+                  assistantSwitcher={{
+                    assistants,
+                    currentThread,
+                    selectedAssistantId,
+                    setSelectedAssistantId,
+                    updateCurrentThreadAssistant,
+                  }}
                 />
                 {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>

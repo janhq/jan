@@ -76,6 +76,8 @@
     "newLine": "New Line",
     "newLineDesc": "Insert a new line.",
     "shiftEnter": "Shift + Enter",
+    "switchAssistant": "Switch Assistant",
+    "switchAssistantDesc": "Cycle to the next assistant in the chat.",
     "navigation": "Navigation",
     "search": "Search",
     "searchDesc": "Open the search dialog.",

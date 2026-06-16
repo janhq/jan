@@ -371,7 +371,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           ...state.threads,
           [state.currentThreadId as string]: {
             ...state.threads[state.currentThreadId as string],
-            assistants: assistant ? [assistant] : [],
+            assistants: assistant
+              ? [{ ...assistant, model: currentThread?.model }]
+              : [],
             updated: Date.now() / 1000,
           },
         },

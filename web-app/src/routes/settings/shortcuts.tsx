@@ -134,6 +134,13 @@ function Shortcuts() {
                   </KbdGroup>
                 }
               />
+              <CardItem
+                title={t('settings:shortcuts.switchAssistant')}
+                description={t('settings:shortcuts.switchAssistantDesc')}
+                actions={
+                  <ShortcutLabel action={ShortcutAction.SWITCH_ASSISTANT} />
+                }
+              />
             </Card>
 
             {/* Navigation */}

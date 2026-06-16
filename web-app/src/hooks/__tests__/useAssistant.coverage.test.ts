@@ -132,7 +132,7 @@ describe('useAssistant - coverage', () => {
     expect(result.current.assistants.find(a => a.id === 'jan')).toBeUndefined()
   })
 
-  it('setCurrentAssistant should not change if defaultAssistantId matches', () => {
+  it('setCurrentAssistant switches even when a default assistant is set', () => {
     const { result } = renderHook(() => useAssistant())
 
     act(() => {
@@ -144,8 +144,7 @@ describe('useAssistant - coverage', () => {
       result.current.setCurrentAssistant(a2)
     })
 
-    // Should not change because current is the default
-    expect(result.current.currentAssistant?.id).toBe('jan')
+    expect(result.current.currentAssistant?.id).toBe('a2')
   })
 
   it('setCurrentAssistant with saveToStorage false', () => {
