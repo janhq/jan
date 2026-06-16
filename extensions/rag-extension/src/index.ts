@@ -547,13 +547,20 @@ export default class RagExtension extends RAGExtension {
 
   // Locally implement embedding logic (previously in embeddings-extension)
   private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName(
-      '@janhq/llamacpp-extension'
-    ) as AIEngine & {
+    type EmbeddingEngine = AIEngine & {
       embed?: (
         texts: string[]
       ) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
     }
+    // The upstream engine is the default; fall back to the legacy turboquant
+    // engine for users still on it.
+    const llm = (['@janhq/llamacpp-upstream-extension', '@janhq/llamacpp-extension']
+      .map((name) =>
+        window.core?.extensionManager.getByName(name) as
+          | EmbeddingEngine
+          | undefined
+      )
+      .find((ext) => ext?.embed)) as EmbeddingEngine | undefined
     if (!llm?.embed) throw new Error('llamacpp extension not available')
     const res = await llm.embed(texts)
     const data: Array<{ embedding: number[]; index: number }> = res?.data || []
