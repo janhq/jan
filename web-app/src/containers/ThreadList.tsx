@@ -150,7 +150,13 @@ const ThreadItem = memo(
     const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
 
     return (
-      <MenuItemWrapper className={cn(subItem && 'relative group/menu-item')}>
+      // SidebarMenuSubItem is a bare <li>; give it its OWN positioning + hover
+      // group (distinct from the parent project's group/menu-item) so the "..."
+      // action anchors to this row and reveals only when THIS chat is hovered —
+      // not when hovering the project or sibling chats.
+      <MenuItemWrapper
+        className={cn(subItem && 'group/menu-sub-item relative')}
+      >
         {currentProjectId ? (
           <Link
             to="/threads/$threadId"
@@ -174,11 +180,12 @@ const ThreadItem = memo(
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction
-              showOnHover
+              showOnHover={!subItem}
               className={cn(
                 'hover:bg-sidebar-foreground/8',
                 currentProjectId && 'mt-4 mr-2',
-                subItem && '-right-5 top-1'
+                subItem &&
+                  'top-1 transition-opacity group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0'
               )}
             >
               <MoreHorizontal />

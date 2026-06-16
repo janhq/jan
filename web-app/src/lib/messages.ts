@@ -6,6 +6,15 @@ import type { UIMessage } from '@ai-sdk/react'
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
 /**
+ * Derive an image media type from a (possibly data:) URL. Falls back to JPEG so
+ * older messages without an explicit type keep working.
+ */
+function mediaTypeFromImageUrl(url: string): string {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+)[;,]/.exec(url)
+  return match?.[1] ?? 'image/jpeg'
+}
+
+/**
  * Convert AI SDK UIMessage to Jan's ThreadMessage format.
  * This allows using chatMessages from useChat with ThreadContent component.
  */
@@ -239,7 +248,7 @@ export function convertThreadMessageToUIMessage(
     } else if (content.type === 'image_url' && content.image_url?.url) {
       parts.push({
         type: 'file',
-        mediaType: 'image/jpeg',
+        mediaType: mediaTypeFromImageUrl(content.image_url.url),
         url: content.image_url.url,
       })
     } else if (content.type === 'tool_call') {

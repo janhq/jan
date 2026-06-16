@@ -1,0 +1,12 @@
+{
+  "welcome": "안녕하세요, 잘 지내시나요?",
+  "description": "오늘 무엇을 도와드릴까요?",
+  "temporaryChat": "임시 채팅",
+  "temporaryChatDescription": "채팅 기록에 저장되지 않는 임시 대화를 시작합니다.",
+  "status": {
+    "empty": "채팅을 찾을 수 없습니다"
+  },
+  "sendMessage": "메시지 보내기",
+  "newConversation": "새 대화",
+  "clearHistory": "기록 지우기"
+}
