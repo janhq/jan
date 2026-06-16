@@ -1,5 +1,15 @@
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import type { ResizeDirection } from '@tauri-apps/api/window'
+
+// @tauri-apps/api declares ResizeDirection locally but doesn't export it.
+type ResizeDirection =
+  | 'East'
+  | 'North'
+  | 'NorthEast'
+  | 'NorthWest'
+  | 'South'
+  | 'SouthEast'
+  | 'SouthWest'
+  | 'West'
 
 /**
  * Invisible edge/corner grips that restore window resizing for a borderless

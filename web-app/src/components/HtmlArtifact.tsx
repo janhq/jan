@@ -3,6 +3,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { CodeIcon, EyeIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from '@/components/ai-elements/code-block'
+import type { BundledLanguage } from 'shiki'
 
 interface HtmlArtifactProps {
   code: string
@@ -158,7 +159,7 @@ function HtmlArtifactComponent({
           srcDoc={srcDoc}
         />
       ) : (
-        <CodeBlock code={code} language={language} />
+        <CodeBlock code={code} language={language as BundledLanguage} />
       )}
     </div>
   )
