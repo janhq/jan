@@ -1,0 +1,12 @@
+{
+  "title": "도구 호출 요청",
+  "description": "어시스턴트가 다음 도구를 사용하려고 합니다: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>보안 알림:</strong> 악의적인 도구나 대화 내용이 어시스턴트를 속여 해로운 작업을 시도하게 만들 수 있습니다. 승인하기 전에 각 도구 호출을 주의 깊게 검토하세요.",
+  "deny": "거부",
+  "allowOnce": "한 번 허용",
+  "alwaysAllow": "스레드에서 허용",
+  "permissions": "권한",
+  "approve": "승인",
+  "reject": "거절",
+  "parameters": "도구 매개변수"
+}

@@ -1,0 +1,22 @@
+{
+  "title": "컨텍스트 초과 오류",
+  "description": "이 채팅이 화이트보드가 가득 차듯 AI의 메모리 한계에 도달하고 있습니다. 메모리 창(컨텍스트 크기)을 늘려 더 많이 기억하게 할 수 있지만, 컴퓨터 메모리를 더 많이 사용할 수 있습니다. 또는 입력을 잘라내어 일부 대화 기록을 지우고 새 메시지를 위한 공간을 확보할 수도 있습니다.",
+  "increaseContextSizeDescription": "컨텍스트 크기를 늘리시겠습니까?",
+  "truncateInput": "입력 잘라내기",
+  "increaseContextSize": "컨텍스트 크기 늘리기",
+  "outOfMemoryTitle": "모델을 불러올 메모리가 부족합니다",
+  "outOfMemoryDescription": "이 모델은 현재 사용 가능한 것보다 더 많은 RAM 또는 VRAM이 필요합니다. 다른 애플리케이션을 닫거나, 더 작은/더 양자화된 모델을 선택하거나, 컨텍스트 크기를 줄여 보세요.",
+  "modelLoadFailedTitle": "모델을 불러오지 못했습니다",
+  "modelLoadFailedDescription": "모델을 시작할 수 없습니다. {{message}}",
+  "currentBackendFallback": "현재 백엔드",
+  "multimodalUnsupportedTitle": "이 백엔드에서 비전/오디오를 지원하지 않습니다",
+  "multimodalUnsupportedDescription": "이 모델은 현재 백엔드({{backend}})에서 지원되지 않습니다. 설정 → 모델 제공자에서 {{alternative}}(으)로 전환하거나 앱을 업데이트해 보세요.",
+  "multimodalUnsupportedDescriptionNoAlt": "이 모델은 현재 백엔드({{backend}})에서 지원되지 않습니다. 앱을 업데이트하거나 다른 모델을 사용해 보세요.",
+  "archNotSupportedTitle": "이 백엔드에서 지원하지 않는 모델입니다",
+  "archNotSupportedDescription": "이 모델의 아키텍처는 아직 현재 백엔드({{backend}})에서 지원되지 않습니다. 설정 → 모델 제공자에서 {{alternative}}(으)로 전환하거나 앱을 업데이트해 보세요.",
+  "archNotSupportedDescriptionNoAlt": "이 모델의 아키텍처는 아직 현재 백엔드({{backend}})에서 지원되지 않습니다. 앱을 업데이트하거나 다른 모델을 사용해 보세요.",
+  "modelFileMissingTitle": "모델 파일을 찾을 수 없습니다",
+  "modelFileMissingDescription": "모델 파일을 찾을 수 없습니다 — 이동되었거나 삭제되었을 수 있습니다. 모델을 다시 다운로드해 보세요.",
+  "modelFileCorruptTitle": "모델 파일이 손상되었습니다",
+  "modelFileCorruptDescription": "모델 파일이 불완전하거나 손상된 것으로 보이며, 다운로드가 중단되었을 가능성이 높습니다. 모델을 삭제하고 다시 다운로드하세요."
+}
