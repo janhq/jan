@@ -8,6 +8,11 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+
+// Longest-edge presets (px) offered for the image downscale setting. `0`
+// keeps the original resolution (no limit).
+const IMAGE_SIZE_PRESETS = [0, 768, 1024, 1536, 2048, 3072] as const
 
 export const Route = createFileRoute('/settings/attachments')({
   component: AttachmentsSettings,
@@ -45,6 +50,8 @@ function AttachmentsSettings() {
   const { t } = useTranslation()
   const hookDefs = useAttachments((s) => s.settingsDefs)
   const loadDefs = useAttachments((s) => s.loadSettingsDefs)
+  const maxImageSizePx = useGeneralSetting((s) => s.maxImageSizePx)
+  const setMaxImageSizePx = useGeneralSetting((s) => s.setMaxImageSizePx)
   const [defs, setDefs] = useState<SettingComponentProps[]>([])
 
   // Load schema from extension via the hook once
@@ -271,6 +278,28 @@ function AttachmentsSettings() {
                   />
                 )
               })}
+            </Card>
+
+            <Card title={t('settings:attachments.images')}>
+              <CardItem
+                title={t('settings:attachments.maxImageSize')}
+                description={t('settings:attachments.maxImageSizeDesc')}
+                actions={
+                  <select
+                    className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+                    value={maxImageSizePx}
+                    onChange={(e) => setMaxImageSizePx(Number(e.target.value))}
+                  >
+                    {IMAGE_SIZE_PRESETS.map((px) => (
+                      <option key={px} value={px}>
+                        {px === 0
+                          ? t('settings:attachments.original')
+                          : `${px} px`}
+                      </option>
+                    ))}
+                  </select>
+                }
+              />
             </Card>
           </div>
         </div>
