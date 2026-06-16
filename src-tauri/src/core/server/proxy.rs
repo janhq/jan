@@ -75,6 +75,33 @@ fn emit_api_request_event<R: Runtime>(app: &AppHandle<R>, event: ApiRequestEvent
     }
 }
 
+/// Surface a Local API Server bind failure (e.g. the requested port is in use
+/// and no free port could be obtained) as a dedicated analytics signal. This
+/// never rides a real request because binding fails before the proxy serves
+/// anything (ATO-112 / ATO-189).
+fn emit_server_bind_failed<R: Runtime>(app: &AppHandle<R>) {
+    emit_api_request_event(
+        app,
+        ApiRequestEvent {
+            source: "local_api_server",
+            endpoint: "other",
+            method: "BIND",
+            model_id: None,
+            backend: "",
+            provider: None,
+            stream: false,
+            status: 0,
+            latency_ms: 0,
+            is_anthropic_fallback: false,
+            error_kind: Some("server_bind_failed"),
+            upstream_status: None,
+            oom_detected: false,
+            ctx_overflow_detected: false,
+            server_bind_failed: true,
+        },
+    );
+}
+
 const TTFT_TIMING_CHANNEL: &str = "ttft-timing";
 
 #[derive(serde::Serialize, Clone)]
@@ -3263,16 +3290,57 @@ async fn start_server_internal<R: Runtime>(
         return Err("Server is already running".into());
     }
 
-    let addr: SocketAddr = format!("{host}:{port}")
+    let requested_addr: SocketAddr = format!("{host}:{port}")
         .parse()
         .map_err(|e| format!("Invalid address: {e}"))?;
+
+    // ATO-112 / ATO-189: surface local-server bind failures (e.g. the requested
+    // port is already in use) as analytics. Cloned up front because `app_handle`
+    // is later moved into `make_svc`.
+    let app_handle_for_bind = app_handle.clone();
+
+    // ATO-189: bind a std `TcpListener` ourselves so we can (a) transparently
+    // fall back to an OS-assigned free port when the requested port is already
+    // in use (another app instance or a third-party process holding 1337 →
+    // EADDRINUSE / Windows WSAEADDRINUSE 10048), and (b) learn the actual bound
+    // port *before* building the proxy config / spawning the server. The actual
+    // port is returned to the caller, which persists it and surfaces the real
+    // URL to the user.
+    let listener = match std::net::TcpListener::bind(requested_addr) {
+        Ok(listener) => listener,
+        Err(e) if port != 0 && e.kind() == std::io::ErrorKind::AddrInUse => {
+            log::warn!(
+                "Local API Server port {port} on {host} is already in use; \
+                 falling back to an OS-assigned free port"
+            );
+            let fallback_addr: SocketAddr = format!("{host}:0")
+                .parse()
+                .map_err(|e| format!("Invalid address: {e}"))?;
+            match std::net::TcpListener::bind(fallback_addr) {
+                Ok(listener) => listener,
+                Err(e) => {
+                    log::error!("Failed to bind a fallback port on {host}: {e}");
+                    emit_server_bind_failed(&app_handle_for_bind);
+                    return Err(Box::new(e));
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to bind to {requested_addr}: {e}");
+            emit_server_bind_failed(&app_handle_for_bind);
+            return Err(Box::new(e));
+        }
+    };
+
+    let bound_addr = listener.local_addr()?;
+    let actual_port = bound_addr.port();
 
     let config = ProxyConfig {
         prefix,
         proxy_api_key,
         trusted_hosts,
         host: host.clone(),
-        port,
+        port: actual_port,
     };
 
     let client = Client::builder()
@@ -3287,10 +3355,6 @@ async fn start_server_internal<R: Runtime>(
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .no_proxy()
         .build()?;
-
-    // ATO-112: kept for the bind-failure analytics emit below, since `app_handle`
-    // is moved into `make_svc`.
-    let app_handle_for_bind = app_handle.clone();
 
     let make_svc = make_service_fn(move |_conn| {
         let client = client.clone();
@@ -3321,37 +3385,15 @@ async fn start_server_internal<R: Runtime>(
         }
     });
 
-    let server = match Server::try_bind(&addr) {
+    let server = match Server::from_tcp(listener) {
         Ok(builder) => builder.serve(make_svc),
         Err(e) => {
-            log::error!("Failed to bind to {addr}: {e}");
-            // ATO-112: surface local-server bind failures (e.g. port already in
-            // use) as a dedicated analytics signal. This never rides a real
-            // request because binding fails before the proxy serves anything.
-            emit_api_request_event(
-                &app_handle_for_bind,
-                ApiRequestEvent {
-                    source: "local_api_server",
-                    endpoint: "other",
-                    method: "BIND",
-                    model_id: None,
-                    backend: "",
-                    provider: None,
-                    stream: false,
-                    status: 0,
-                    latency_ms: 0,
-                    is_anthropic_fallback: false,
-                    error_kind: Some("server_bind_failed"),
-                    upstream_status: None,
-                    oom_detected: false,
-                    ctx_overflow_detected: false,
-                    server_bind_failed: true,
-                },
-            );
+            log::error!("Failed to start server on {bound_addr}: {e}");
+            emit_server_bind_failed(&app_handle_for_bind);
             return Err(Box::new(e));
         }
     };
-    log::info!("Atomic Chat API server started on http://{addr}");
+    log::info!("Atomic Chat API server started on http://{bound_addr}");
 
     let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
@@ -3362,7 +3404,6 @@ async fn start_server_internal<R: Runtime>(
     });
 
     *handle_guard = Some(server_task);
-    let actual_port = addr.port();
     log::info!("Atomic Chat API server started successfully on port {actual_port}");
     Ok(actual_port)
 }
