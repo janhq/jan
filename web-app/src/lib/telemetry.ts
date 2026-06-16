@@ -314,6 +314,9 @@ export function shouldCaptureModelLoadSentry(
  */
 const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   'MODEL_FILE_NOT_FOUND',
+  // A partial / incomplete download (ATO-187) is a recoverable user condition
+  // fixed by re-downloading — not a backend crash.
+  'MODEL_FILE_CORRUPT',
   'BINARY_NOT_FOUND',
   'MULTIMODAL_PROJECTOR_LOAD_FAILED',
   // ATO-190: deterministic environment incompatibility (macOS too old for the

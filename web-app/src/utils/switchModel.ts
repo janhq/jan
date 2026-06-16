@@ -135,6 +135,9 @@ const autoStartFailures = new Map<string, AutoStartFailure>()
 const AUTO_START_BACKOFF_MS = 30_000
 const TERMINAL_LOAD_CODES = new Set([
   'MODEL_FILE_NOT_FOUND',
+  // A partial / corrupt download (ATO-187) won't fix itself on auto-retry —
+  // only a manual re-download resolves it, so don't loop the auto-start.
+  'MODEL_FILE_CORRUPT',
   'BINARY_NOT_FOUND',
   // ATO-190: the bundled macOS engine requires a newer macOS than the host
   // (missing Metal symbol). This never resolves on retry, so never auto-retry.

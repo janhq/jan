@@ -121,6 +121,16 @@ const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
 /// llama.cpp/libmtmd build cannot parse (e.g. Gemma 4 `gemma4a` audio).
 /// On this error we retry the load text-only (without --mmproj).
 const ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED = 'MULTIMODAL_PROJECTOR_LOAD_FAILED'
+/// ATO-187: the model / mmproj GGUF is missing on disk (an interrupted
+/// download that never produced the final file, a file removed outside the
+/// app, or a stale path). Matches the Rust `ModelFileNotFound` code; the
+/// web-app maps it to an actionable "re-download the model" message.
+const ERR_MODEL_FILE_NOT_FOUND = 'MODEL_FILE_NOT_FOUND'
+/// ATO-187: the model / mmproj GGUF exists but is smaller than the size
+/// recorded at import — a partially-downloaded / incomplete file. Matches the
+/// Rust `ModelFileCorrupt` code; the web-app maps it to a "delete and
+/// re-download" message.
+const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
 /// Broadcast channel emitted after a model that crashed on an unsupported
 /// multimodal projector is successfully reloaded in text-only mode. The
 /// web-app shows a one-shot, non-fatal toast so the user knows vision/audio
@@ -218,6 +228,17 @@ function toLoadError(err: unknown): Error {
     if (typeof e.details === 'string') wrapped.details = e.details
   }
   return wrapped
+}
+
+/**
+ * Build an `Error` carrying a `code` own-property so the web-app's
+ * `reportModelLoadError` (switchModel.ts → `toErrorObject`) can classify it
+ * into the actionable MODEL_FILE_* toast instead of the opaque generic one.
+ */
+function codedLoadError(code: string, message: string): Error & { code: string } {
+  const e = new Error(message) as Error & { code: string }
+  e.code = code
+  return e
 }
 
 /**
@@ -3403,6 +3424,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
       mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
 
+    // ATO-187: fail fast with an actionable, classified error when the model
+    // (or mmproj) file is missing or incomplete on disk, instead of spawning
+    // llama-server only for it to crash with an opaque truncated-path error.
+    await this.validateModelArtifacts(modelConfig, modelPath, mmprojPath)
+
     // Gemma 4 MTP: the draft head is a separate GGUF keyed to the loaded
     // target, so resolve it lazily here rather than only at toggle time. If
     // MTP is enabled, this model is a Gemma 4 31B / 26B-A4B target, and the
@@ -3578,6 +3604,68 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       logger.error('Error in load command:\n' + formatLoadError(error))
       throw toLoadError(error)
+    }
+  }
+
+  /**
+   * ATO-187: validate that the model (and mmproj) GGUF exists on disk and is
+   * complete before handing it to llama-server.
+   *
+   * Two failure modes this guards against, both reported as MODEL_FILE_NOT_FOUND
+   * crashes in the field (epic ATO-181):
+   *  - The file is genuinely missing — an interrupted download that never
+   *    produced the final GGUF, a file removed outside the app, or a stale
+   *    path. The Rust loader already classifies this, but only after spinning
+   *    up the backend; doing it here skips the wasted process spawn and the
+   *    opaque truncated-path stderr.
+   *  - The file exists but is a partial download (smaller than the size
+   *    recorded at import). This slips past the Rust `.exists()` check and
+   *    fails deep inside the loader with a confusing error; here we classify
+   *    it as MODEL_FILE_CORRUPT so the UI guides the user to re-download.
+   */
+  private async validateModelArtifacts(
+    modelConfig: ModelConfig,
+    modelPath: string,
+    mmprojPath?: string
+  ): Promise<void> {
+    // `model_size_bytes` / `mmproj_size_bytes` are the expected per-file sizes
+    // recorded at import from the download manifest (absent for models imported
+    // from a local file — then we only check existence).
+    const sizes = modelConfig as ModelConfig & {
+      model_size_bytes?: number
+      mmproj_size_bytes?: number
+    }
+    await this.assertCompleteGguf(modelPath, sizes.model_size_bytes)
+    if (mmprojPath) {
+      await this.assertCompleteGguf(mmprojPath, sizes.mmproj_size_bytes)
+    }
+  }
+
+  private async assertCompleteGguf(
+    filePath: string,
+    expectedSize?: number
+  ): Promise<void> {
+    let stat: { size: number } | undefined
+    try {
+      stat = await fs.fileStat(filePath)
+    } catch {
+      stat = undefined
+    }
+    if (!stat) {
+      throw codedLoadError(
+        ERR_MODEL_FILE_NOT_FOUND,
+        `The specified model file does not exist or is not accessible: ${filePath}`
+      )
+    }
+    if (
+      typeof expectedSize === 'number' &&
+      expectedSize > 0 &&
+      stat.size < expectedSize
+    ) {
+      throw codedLoadError(
+        ERR_MODEL_FILE_CORRUPT,
+        `The model file is incomplete (${stat.size} of ${expectedSize} bytes), likely from an interrupted download: ${filePath}`
+      )
     }
   }
 
