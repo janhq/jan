@@ -97,7 +97,7 @@ describe('HtmlArtifact', () => {
     expect(screen.getByTestId('code-block')).toBeInTheDocument()
   })
 
-  it('preserves an existing <head> when injecting CSP', async () => {
+  it('wraps a full document so the CSP meta precedes the model markup', async () => {
     const user = userEvent.setup()
     const fullDoc = '<html><head><title>t</title></head><body>x</body></html>'
     render(<HtmlArtifact code={fullDoc} />)
@@ -106,6 +106,8 @@ describe('HtmlArtifact', () => {
     const iframe = screen.getByTestId('html-artifact-iframe') as HTMLIFrameElement
     const doc = iframe.getAttribute('srcdoc') ?? ''
     expect(doc).toContain('<title>t</title>')
-    expect((doc.match(/<head/gi) ?? []).length).toBe(1)
+    expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(
+      doc.indexOf('<title>t</title>')
+    )
   })
 })

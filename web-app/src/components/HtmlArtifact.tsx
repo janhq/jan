@@ -8,32 +8,19 @@ import type { BundledLanguage } from 'shiki'
 interface HtmlArtifactProps {
   code: string
   className?: string
-  /**
-   * When true the live preview cannot be opened yet (content still streaming).
-   * The toggle stays on the Code view and the Preview tab is disabled.
-   */
+  // While streaming, Preview is disabled and the toggle stays on Code.
   isStreaming?: boolean
-  /**
-   * Relax the iframe CSP to permit https: scripts/styles/fonts/images and
-   * outbound connections. Off by default: model-generated HTML runs with no
-   * network access so it cannot phone home or pull remote payloads.
-   */
+  // Off by default so model HTML has no network access; on relaxes CSP to https:.
   allowNetwork?: boolean
-  /**
-   * Static mode for SVG: no scripts at all (CSP script-src 'none' and the
-   * iframe drops allow-scripts). Code view highlights as the given language.
-   */
+  // Off (SVG static mode) forbids scripts via CSP and drops iframe allow-scripts.
   allowScripts?: boolean
   language?: string
 }
 
 type View = 'code' | 'preview'
 
-/**
- * Strict CSP keeps model HTML inert on the network. The iframe already runs in
- * an opaque origin (sandbox without allow-same-origin), so this only governs
- * what the document itself may reach out to.
- */
+// Strict CSP governs what model HTML can reach out to; the iframe is already
+// sandboxed to an opaque origin (no allow-same-origin).
 function buildCsp(allowNetwork: boolean, allowScripts: boolean): string {
   if (!allowScripts) {
     return [
@@ -71,12 +58,8 @@ function buildSrcDoc(
 ): string {
   const csp = buildCsp(allowNetwork, allowScripts)
   const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`
-  if (/<head[\s>]/i.test(code)) {
-    return code.replace(/<head([^>]*)>/i, `<head$1>${meta}`)
-  }
-  if (/<html[\s>]/i.test(code)) {
-    return code.replace(/<html([^>]*)>/i, `<html$1><head>${meta}</head>`)
-  }
+  // Always wrap so the CSP meta precedes all model markup — a meta CSP is only
+  // honored before resource-fetching content, and a later one can't loosen it.
   return `<!doctype html><html><head>${meta}</head><body>${code}</body></html>`
 }
 
