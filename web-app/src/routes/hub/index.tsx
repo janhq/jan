@@ -427,6 +427,9 @@ function HubContent() {
     sortSelected,
     sources,
     enrichedOrphans,
+    // Recompute the downloaded-filtered set when provider models change so a
+    // deleted model's card disappears immediately (ATO-180).
+    providers,
   ])
 
   // Collect orphan model IDs that need HuggingFace enrichment
