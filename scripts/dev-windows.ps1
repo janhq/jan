@@ -242,6 +242,85 @@ function Test-VulkanSupport {
     return (Test-Path $vulkanDll)
 }
 
+function Test-BackendSatisfiedBy {
+    # True when an already-downloaded concrete backend satisfies the selected
+    # backend: an exact match, or a concrete CUDA minor that belongs to the
+    # selected minor-less CUDA family (e.g. win-cuda-13.3-x64 satisfies
+    # win-cuda-13-x64). Avoids a needless re-download on every dev run.
+    param([string]$Existing, [string]$Selected)
+    if (-not $Existing) { return $false }
+    if ($Existing -eq $Selected) { return $true }
+    if ($Selected -match '^win-cuda-(\d+)-x64$') {
+        return ($Existing -match ('^win-cuda-' + $Matches[1] + '\.\d+-x64$'))
+    }
+    return $false
+}
+
+function Resolve-BackendFromReleases {
+    # Given the parsed ggml-org/llama.cpp releases array and a selected backend
+    # id, return @{ Backend; Tag } for the asset to download. A minor-less CUDA
+    # family id (win-cuda-13-x64) resolves to the highest published concrete
+    # minor (win-cuda-13.3-x64); any other id is matched by exact asset name.
+    # Mirrors resolveCudaFamilyConcrete() in
+    # extensions/llamacpp-upstream-extension/src/backend.ts.
+    param([object[]]$Releases, [string]$Backend)
+    if ($Backend -match '^win-cuda-(\d+)-x64$') {
+        $major = $Matches[1]
+        foreach ($r in $Releases) {
+            if ($r.draft -or $r.prerelease) { continue }
+            $assetRe = '^llama-' + [regex]::Escape($r.tag_name) + "-bin-win-cuda-$major\.(\d+)-x64\.zip$"
+            $best = $null
+            $bestMinor = -1
+            foreach ($a in $r.assets) {
+                if ($a.name -match $assetRe) {
+                    $minor = [int]$Matches[1]
+                    if ($minor -gt $bestMinor) {
+                        $bestMinor = $minor
+                        $best = "win-cuda-$major.$minor-x64"
+                    }
+                }
+            }
+            if ($best) { return [pscustomobject]@{ Backend = $best; Tag = $r.tag_name } }
+        }
+        return $null
+    }
+    foreach ($r in $Releases) {
+        if ($r.draft -or $r.prerelease) { continue }
+        $want = "llama-$($r.tag_name)-bin-$Backend.zip"
+        if ($r.assets | Where-Object { $_.name -eq $want }) {
+            return [pscustomobject]@{ Backend = $Backend; Tag = $r.tag_name }
+        }
+    }
+    return $null
+}
+
+function Invoke-GitHubReleases {
+    # Fetch the releases list with retry/backoff, mirroring the Makefile's
+    # _gh_fetch (retries 403 rate-limit / 429 / 5xx). Returns the parsed array,
+    # or $null when the API stays unreachable. A primary 60-req/hr rate limit
+    # won't clear within the backoff window — the caller degrades to an
+    # already-installed backend or an actionable GH_TOKEN hint.
+    param([string]$Uri, [hashtable]$Headers)
+    for ($i = 1; $i -le 5; $i++) {
+        try {
+            return Invoke-RestMethod -Uri $Uri -Headers $Headers -UseBasicParsing
+        } catch {
+            $code = $null
+            $resp = $_.Exception.Response
+            if ($resp) { try { $code = [int]$resp.StatusCode } catch {} }
+            if ($code -in 403, 429, 500, 502, 503, 504) {
+                $wait = $i * 3
+                Write-Host "  GitHub API attempt $i/5: HTTP $code, retrying in ${wait}s..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $wait
+                continue
+            }
+            Write-Host "  GitHub API error: $($_.Exception.Message)" -ForegroundColor Yellow
+            return $null
+        }
+    }
+    return $null
+}
+
 $nvidiaDriver = Get-NvidiaDriverVersion
 $hasVulkan = Test-VulkanSupport
 $cudaTier = $null
@@ -250,14 +329,17 @@ if ($nvidiaDriver) {
     Write-Host "  NVIDIA GPU detected, driver version: $nvidiaDriver" -ForegroundColor Green
 
     # Thresholds match src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs
-    # ggml-org publishes CUDA 12.4 and 13.1 Windows builds; CUDA 11 is no longer
-    # produced upstream and is therefore unsupported on Windows after the
-    # llamacpp-upstream consolidation (ADR 2026-05-22).
-    if ((Compare-VersionStrings $nvidiaDriver '581') -ge 0) {
-        $cudaTier = 131
-        Write-Host "  CUDA tier: 13.1 (driver >= 581)" -ForegroundColor Green
+    # (min_cuda13_driver = 581.15, min_cuda12_driver = 551.61). ggml-org
+    # publishes CUDA 12.4 and 13.x Windows builds; CUDA 11 is no longer produced
+    # upstream and is unsupported on Windows after the llamacpp-upstream
+    # consolidation (ADR 2026-05-22). The concrete CUDA-13 minor (13.1 → 13.3 →
+    # …) drifts release to release, so we select a minor-less *family* id here
+    # and resolve the published minor from the release assets below (ATO-174).
+    if ((Compare-VersionStrings $nvidiaDriver '581.15') -ge 0) {
+        $cudaTier = 13
+        Write-Host "  CUDA tier: 13.x (driver >= 581.15)" -ForegroundColor Green
     } elseif ((Compare-VersionStrings $nvidiaDriver '551.61') -ge 0) {
-        $cudaTier = 124
+        $cudaTier = 12
         Write-Host "  CUDA tier: 12.4 (driver >= 551.61)" -ForegroundColor Green
     } else {
         Write-Host "  NVIDIA driver too old for upstream CUDA ($nvidiaDriver < 551.61)" -ForegroundColor Yellow
@@ -303,12 +385,13 @@ Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVra
 
 # Priority order matches prioritize_backends() in
 # src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
-#   With enough VRAM: cuda-13.1 → cuda-12.4 → vulkan → cpu
-#   Without enough VRAM: cuda-13.1 → cuda-12.4 → cpu → vulkan
-if ($cudaTier -ge 131) {
-    $backend = 'win-cuda-13.1-x64'
-} elseif ($cudaTier -ge 124) {
-    $backend = 'win-cuda-12.4-x64'
+#   With enough VRAM: cuda → vulkan → cpu;  without: cuda → cpu → vulkan.
+# CUDA is selected as a minor-less family id (win-cuda-13-x64 / win-cuda-12-x64);
+# Resolve-BackendFromReleases turns it into the highest published concrete minor.
+if ($cudaTier -eq 13) {
+    $backend = 'win-cuda-13-x64'
+} elseif ($cudaTier -eq 12) {
+    $backend = 'win-cuda-12-x64'
 } elseif ($hasVulkan -and $hasEnoughVram) {
     $backend = 'win-vulkan-x64'
 } else {
@@ -344,8 +427,9 @@ if ($SkipBackendDownload -and (Test-Path $llamaServerExe)) {
     Write-Host "  -SkipBackendDownload: reusing existing backend ($existingLabel), no fetch." -ForegroundColor Yellow
     if ($existingBackend) { $backend = $existingBackend }
     $skipDownload = $true
-} elseif ((Test-Path $llamaServerExe) -and ($existingBackend -eq $backend)) {
-    Write-Host "  llamacpp backend ($backend) already exists, skipping download."
+} elseif ((Test-Path $llamaServerExe) -and (Test-BackendSatisfiedBy $existingBackend $backend)) {
+    Write-Host "  llamacpp backend ($existingBackend) already present for selection '$backend', skipping download."
+    $backend = $existingBackend
     $skipDownload = $true
 }
 
@@ -355,15 +439,6 @@ if ($skipDownload) {
     if ($SkipBackendDownload) {
         Write-Host '  -SkipBackendDownload set, but no llama-server.exe found — falling back to download.' -ForegroundColor Yellow
     }
-    if ($existingBackend -and ($existingBackend -ne $backend)) {
-        Write-Host "  Backend changed: $existingBackend -> $backend, re-downloading..." -ForegroundColor Yellow
-        Remove-Item -Recurse -Force $llamacppDir -ErrorAction SilentlyContinue
-    }
-
-    if (-not (Test-Path $llamacppDir)) {
-        New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
-    }
-
     # ATO-95: list recent releases and pick the newest one whose asset for the
     # selected backend is ACTUALLY uploaded. ggml-org marks a fresh bXXXX tag
     # "latest" before its per-platform assets finish uploading, so trusting
@@ -375,70 +450,96 @@ if ($skipDownload) {
     }
 
     Write-Host '  Fetching recent releases...'
-    $releases = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing
-    $tag = ''
-    foreach ($r in $releases) {
-        if ($r.draft -or $r.prerelease) { continue }
-        $want = "llama-$($r.tag_name)-bin-$backend.zip"
-        if ($r.assets | Where-Object { $_.name -eq $want }) { $tag = $r.tag_name; break }
-    }
-    if (-not $tag) {
-        Write-Host "[FATAL] No recent release carries asset llama-<tag>-bin-$backend.zip (upstream asset upload may be in progress)" -ForegroundColor Red
+    $releases = Invoke-GitHubReleases -Uri $apiUrl -Headers $headers
+    # Resolve a CUDA family id to the highest published concrete minor, or match
+    # a concrete/cpu/vulkan id by exact asset name (ATO-174).
+    $resolved = if ($releases) { Resolve-BackendFromReleases -Releases $releases -Backend $backend } else { $null }
+
+    if ($resolved) {
+        $tag = $resolved.Tag
+        $backend = $resolved.Backend
+        Write-Host "  Resolved backend: $backend (release $tag)"
+
+        # Only discard a differing existing backend once a replacement is
+        # confirmed — a failed/rate-limited fetch must never destroy a working
+        # backend (ATO-174 follow-up).
+        if ($existingBackend -and ($existingBackend -ne $backend)) {
+            Write-Host "  Backend changed: $existingBackend -> $backend, re-downloading..." -ForegroundColor Yellow
+            Remove-Item -Recurse -Force $llamacppDir -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-Path $llamacppDir)) {
+            New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
+        }
+
+        # ggml-org publishes Windows binaries as .zip (not .tar.gz like the
+        # legacy janhq mirror), so use Expand-Archive instead of tar.
+        $archiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.zip"
+        $archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
+
+        Write-Host "  Release: $tag  Backend: $backend"
+        Write-Host "  Downloading: $archiveUrl"
+
+        $downloaded = $false
+        for ($i = 1; $i -le 5; $i++) {
+            try {
+                Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
+                $downloaded = $true
+                break
+            } catch {
+                Write-Host "  Download attempt $i/5 failed: $($_.Exception.Message); retrying..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 3
+            }
+        }
+        if (-not $downloaded) {
+            Write-Host "[FATAL] Failed to download $archiveUrl after 5 attempts" -ForegroundColor Red
+            exit 1
+        }
+
+        Set-Content -Path "$llamacppDir/version.txt" -Value $tag -NoNewline
+        Set-Content -Path "$llamacppDir/backend.txt" -Value $backend -NoNewline
+
+        Write-Host '  Extracting...'
+        Expand-Archive -Path $archivePath -DestinationPath $llamacppDir -Force
+        Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+
+        # Relocate flat-extracted binaries into build/bin/ (matches CI logic)
+        if (-not (Test-Path "$llamacppDir/build/bin/llama-server.exe")) {
+            if (Test-Path "$llamacppDir/llama-server.exe") {
+                Write-Host '  Relocating flat-extracted binaries into build/bin/...'
+                New-Item -ItemType Directory -Path "$llamacppDir/build/bin" -Force | Out-Null
+                Get-ChildItem -Path $llamacppDir -Filter '*.exe' -File |
+                    Move-Item -Destination "$llamacppDir/build/bin/" -Force
+                Get-ChildItem -Path $llamacppDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
+                    Move-Item -Destination "$llamacppDir/build/bin/" -Force
+            }
+        }
+
+        # Merge CUDA Toolkit runtime DLLs from the matching cudart archive
+        # (AtomicBot-ai/Atomic-Chat#14). No-op for non-CUDA backends.
+        & (Join-Path $PSScriptRoot 'download-llamacpp-cudart-windows.ps1') `
+            -BackendDir $llamacppDir -Backend $backend -Tag $tag
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '  cudart merge failed (continuing — GPU detection may not work)' -ForegroundColor Yellow
+        }
+
+        Write-Host "  llamacpp backend ($backend) downloaded successfully" -ForegroundColor Green
+    } elseif (Test-Path $llamaServerExe) {
+        # GitHub unreachable / rate-limited / asset still uploading: keep the
+        # already-installed backend rather than aborting `make dev`.
+        $reuse = if ($existingBackend) { $existingBackend } else { '<unknown>' }
+        Write-Host "  Could not resolve a downloadable backend; reusing existing backend ($reuse) on disk." -ForegroundColor Yellow
+        if ($existingBackend) { $backend = $existingBackend }
+    } else {
+        Write-Host "[FATAL] Could not fetch a llama.cpp backend for '$backend'." -ForegroundColor Red
+        if (-not $releases) {
+            Write-Host '        GitHub API was unreachable or rate-limited (unauthenticated = 60 req/hr per IP).' -ForegroundColor Red
+            Write-Host '        Set a GH_TOKEN to raise the limit (5000 req/hr), then re-run:' -ForegroundColor Red
+            Write-Host '          $env:GH_TOKEN = "<github_pat>"; make dev-windows' -ForegroundColor Red
+        } else {
+            Write-Host "        No recent release carries an asset for '$backend' (upstream upload may be in progress)." -ForegroundColor Red
+        }
         exit 1
     }
-
-    # ggml-org publishes Windows binaries as .zip (not .tar.gz like the
-    # legacy janhq mirror), so use Expand-Archive instead of tar.
-    $archiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-$backend.zip"
-    $archivePath = Join-Path $env:TEMP 'llamacpp-upstream-backend.zip'
-
-    Write-Host "  Release: $tag  Backend: $backend"
-    Write-Host "  Downloading: $archiveUrl"
-
-    $downloaded = $false
-    for ($i = 1; $i -le 5; $i++) {
-        try {
-            Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
-            $downloaded = $true
-            break
-        } catch {
-            Write-Host "  Download attempt $i/5 failed: $($_.Exception.Message); retrying..." -ForegroundColor Yellow
-            Start-Sleep -Seconds 3
-        }
-    }
-    if (-not $downloaded) {
-        Write-Host "[FATAL] Failed to download $archiveUrl after 5 attempts" -ForegroundColor Red
-        exit 1
-    }
-
-    Set-Content -Path "$llamacppDir/version.txt" -Value $tag -NoNewline
-    Set-Content -Path "$llamacppDir/backend.txt" -Value $backend -NoNewline
-
-    Write-Host '  Extracting...'
-    Expand-Archive -Path $archivePath -DestinationPath $llamacppDir -Force
-    Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
-
-    # Relocate flat-extracted binaries into build/bin/ (matches CI logic)
-    if (-not (Test-Path "$llamacppDir/build/bin/llama-server.exe")) {
-        if (Test-Path "$llamacppDir/llama-server.exe") {
-            Write-Host '  Relocating flat-extracted binaries into build/bin/...'
-            New-Item -ItemType Directory -Path "$llamacppDir/build/bin" -Force | Out-Null
-            Get-ChildItem -Path $llamacppDir -Filter '*.exe' -File |
-                Move-Item -Destination "$llamacppDir/build/bin/" -Force
-            Get-ChildItem -Path $llamacppDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
-                Move-Item -Destination "$llamacppDir/build/bin/" -Force
-        }
-    }
-
-    # Merge CUDA Toolkit runtime DLLs from the matching cudart archive
-    # (AtomicBot-ai/Atomic-Chat#14). No-op for non-CUDA backends.
-    & (Join-Path $PSScriptRoot 'download-llamacpp-cudart-windows.ps1') `
-        -BackendDir $llamacppDir -Backend $backend -Tag $tag
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host '  cudart merge failed (continuing — GPU detection may not work)' -ForegroundColor Yellow
-    }
-
-    Write-Host "  llamacpp backend ($backend) downloaded successfully" -ForegroundColor Green
 }
 
 # ── Build CLI (debug) ─────────────────────────────────────────

@@ -751,10 +751,10 @@ else ifeq ($(OS),Windows_NT)
 			NV_MAJOR=$$(echo "$$NV_DRIVER" | cut -d. -f1); \
 			NV_MINOR=$$(echo "$$NV_DRIVER" | cut -d. -f2); \
 			NV_VAL=$$((NV_MAJOR * 100 + NV_MINOR)); \
-			if [ $$NV_VAL -ge 58100 ]; then \
-				BACKEND="win-cuda-13.1-x64"; \
+			if [ $$NV_VAL -ge 58115 ]; then \
+				BACKEND="win-cuda-13-x64"; \
 			elif [ $$NV_VAL -ge 55161 ]; then \
-				BACKEND="win-cuda-12.4-x64"; \
+				BACKEND="win-cuda-12-x64"; \
 			fi; \
 		fi; \
 		if [ -z "$$BACKEND" ] && [ "$$HAS_VULKAN" = "true" ] && [ "$${VRAM_MIB:-0}" -ge 6144 ]; then \
@@ -805,9 +805,16 @@ else ifeq ($(OS),Windows_NT)
 		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 		   rm -f "$$TMPREL"; exit 1 ;; \
 	esac; \
-	TAG=$$(jq -r --arg suf "-bin-$$BACKEND.zip" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
-	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-		echo "Error: no recent release carries asset llama-<tag>-bin-$$BACKEND.zip (upstream asset upload may be in progress):"; \
+	if echo "$$BACKEND" | grep -Eq '^win-cuda-[0-9]+-x64$$'; then \
+		CUDA_MAJOR=$$(echo "$$BACKEND" | sed -E 's/^win-cuda-([0-9]+)-x64$$/\1/'); \
+		RESOLVED=$$(jq -r --arg major "$$CUDA_MAJOR" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | { tag: .tag_name, minors: [ (.assets // [])[].name | select(test("-bin-win-cuda-" + $$major + "\\.[0-9]+-x64\\.zip$$")) | capture("-bin-win-cuda-" + $$major + "\\.(?<m>[0-9]+)-x64\\.zip$$") | .m | tonumber ] } | select((.minors | length) > 0) | { tag: .tag, minor: (.minors | max) } ] | .[0] | if . then "\(.tag) win-cuda-\($$major).\(.minor)-x64" else empty end' "$$TMPREL"); \
+		TAG=$$(echo "$$RESOLVED" | cut -d" " -f1); \
+		BACKEND=$$(echo "$$RESOLVED" | cut -d" " -f2); \
+	else \
+		TAG=$$(jq -r --arg suf "-bin-$$BACKEND.zip" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
+	fi; \
+	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ] || [ -z "$$BACKEND" ]; then \
+		echo "Error: no recent release carries an asset for backend $$BACKEND (upstream asset upload may be in progress):"; \
 		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 		rm -f "$$TMPREL"; exit 1; \
 	fi; \

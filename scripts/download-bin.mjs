@@ -193,11 +193,13 @@ async function main() {
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun'),
       path.join(binDir)
     )
-    fs.chmod(path.join(binDir, 'bun'), 0o755, (err) => {
-      if (err) {
-        console.log('Add execution permission failed!', err)
-      }
-    })
+    if (platform !== 'win32') {
+      fs.chmod(path.join(binDir, 'bun'), 0o755, (err) => {
+        if (err) {
+          console.log('Add execution permission failed!', err)
+        }
+      })
+    }
     if (platform === 'darwin') {
       copyFile(
         path.join(binDir, 'bun'),
@@ -270,11 +272,13 @@ async function main() {
   }
   try {
     copySync(path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'), path.join(binDir))
-    fs.chmod(path.join(binDir, 'uv'), 0o755, (err) => {
-      if (err) {
-        console.log('Add execution permission failed!', err)
-      }
-    })
+    if (platform !== 'win32') {
+      fs.chmod(path.join(binDir, 'uv'), 0o755, (err) => {
+        if (err) {
+          console.log('Add execution permission failed!', err)
+        }
+      })
+    }
     if (platform === 'darwin') {
       copyFile(
         path.join(binDir, 'uv'),

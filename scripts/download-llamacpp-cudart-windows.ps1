@@ -4,7 +4,7 @@
 # backend bundle.
 #
 # Per ADR 2026-05-22 ("Windows ships only `llamacpp-upstream`") the Windows
-# `llama-{tag}-bin-win-cuda-{12.4,13.1}-x64.zip` archives are sourced from
+# `llama-{tag}-bin-win-cuda-{12.x,13.x}-x64.zip` archives are sourced from
 # ggml-org/llama.cpp. They ship llama-server.exe + direct deps only; the
 # CUDA Toolkit runtime DLLs (cudart64_*.dll, cublas64_*.dll,
 # cublasLt64_*.dll, …) live in companion `cudart-llama-bin-win-cuda-{X.Y}-x64.zip`
@@ -14,19 +14,23 @@
 # (cf. AtomicBot-ai/Atomic-Chat#14).
 #
 # This script:
-#   1. Maps `win-cuda-{12.4,13.1}-x64` → matching cudart archive name.
+#   1. Derives the cudart archive name + marker DLL from the concrete CUDA
+#      backend id (any 12.x / 13.x minor — the minor drifts release to
+#      release, so nothing is hard-coded; ATO-174).
 #   2. Downloads the archive from the same ggml-org/llama.cpp release.
 #   3. Extracts it to a temp dir and copies every *.dll into
 #      <BackendDir>/build/bin/.
 #
 # Idempotent — no-op when the cudart marker DLL is already present, or
-# when the backend is not a Windows CUDA variant.
+# when the backend is not a Windows CUDA variant. ggml-org dropped CUDA 11,
+# so only CUDA 12.x / 13.x are recognised; older drivers fall back to the CPU
+# build via runtime driver-version gating.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts/download-llamacpp-cudart-windows.ps1 `
 #       -BackendDir src-tauri/resources/llamacpp-backend-upstream `
-#       -Backend win-cuda-13.1-x64 `
-#       -Tag b8892
+#       -Backend win-cuda-13.3-x64 `
+#       -Tag b9670
 
 param(
     [Parameter(Mandatory = $true)][string]$BackendDir,
@@ -36,24 +40,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Mapping mirrors `WINDOWS_CUDART_FILENAME` in
-# extensions/llamacpp-upstream-extension/src/backend.ts. ggml-org dropped
-# CUDA 11 — hosts whose driver only supports CUDA 11 fall back to the CPU
-# build via runtime driver-version gating, so there's no `cuda-11` entry.
-# Marker DLL = soname-versioned cudart filename for each toolkit version.
-$cudaMap = @{
-    'cuda-12.4' = @{ Archive = 'cudart-llama-bin-win-cuda-12.4-x64.zip'; Marker = 'cudart64_12.dll' }
-    'cuda-13.1' = @{ Archive = 'cudart-llama-bin-win-cuda-13.1-x64.zip'; Marker = 'cudart64_13.dll' }
-}
-
-if ($Backend -notmatch '^win-(cuda-(?:12\.4|13\.1))-x64$') {
+# Accept any concrete CUDA 12.x / 13.x Windows variant. The cudart archive name
+# is the backend id with a `cudart-llama-bin-` prefix
+# (win-cuda-13.3-x64 → cudart-llama-bin-win-cuda-13.3-x64.zip), and the marker
+# DLL is the soname-versioned cudart filename for the toolkit *major*
+# (cudart64_13.dll / cudart64_12.dll). Mirrors `WINDOWS_CUDART_FILENAME` in
+# extensions/llamacpp-upstream-extension/src/backend.ts.
+if ($Backend -notmatch '^win-cuda-(\d+)\.\d+-x64$') {
     Write-Host "  Backend '$Backend' is not a Windows CUDA variant, skipping cudart merge."
     exit 0
 }
-$cudaKey = $Matches[1]
-$entry = $cudaMap[$cudaKey]
-$archiveName = $entry.Archive
-$markerDll = $entry.Marker
+$cudaMajor = $Matches[1]
+$archiveName = "cudart-llama-bin-$Backend.zip"
+$markerDll = "cudart64_$cudaMajor.dll"
 
 $buildBinDir = Join-Path $BackendDir 'build/bin'
 $markerPath = Join-Path $buildBinDir $markerDll
@@ -68,7 +67,7 @@ if (-not (Test-Path $buildBinDir)) {
 
 $url = "https://github.com/ggml-org/llama.cpp/releases/download/$Tag/$archiveName"
 $archivePath = Join-Path $env:TEMP $archiveName
-$extractDir = Join-Path $env:TEMP ("cudart-" + $cudaKey + "-" + $Tag)
+$extractDir = Join-Path $env:TEMP ("cudart-" + $Backend + "-" + $Tag)
 
 Write-Host "  Downloading cudart: $url"
 try {
