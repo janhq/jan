@@ -380,6 +380,531 @@ Append-only. Newest at top. Each entry follows this shape:
 - **Owner:** team.
 - **Links:** branch `feat/launch-mimo-code`; `XiaomiMiMo/MiMo-Code`.
 
+### 2026-06-15 — Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends (point cleanup at the provider's own tree) + recover the bundled macOS turboquant backend if missing (ATO-153)
+- **Context:** On macOS both llama.cpp providers ship side-by-side and **share
+  the on-disk GGUF tree** (`MODELS_PROVIDER_ROOT='llamacpp'`), but their
+  **backend binaries are isolated** —
+  `<jan>/llamacpp/backends/` (turboquant, bundled-in-resources, *not* in any
+  release stream) vs `<jan>/llamacpp-upstream/backends/` (downloaded from
+  ggml-org). When the upstream provider auto-upgraded its backend, the cleanup
+  step in
+  [`updateBackend`](extensions/llamacpp-upstream-extension/src/index.ts)
+  built the "remove old versions" path from a **hardcoded `'llamacpp'`**
+  segment instead of the provider id, so
+  [`removeOldBackendVersions`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs)
+  ran against the **turboquant** `llamacpp/backends` dir and deleted every
+  version that didn't equal the upstream `latest_version` — i.e. **all**
+  turboquant backends (none match an upstream tag). Turboquant-bound models
+  then failed to load with the generic "not installed" error, even though the
+  turboquant binary ships in app resources ([ATO-153](https://linear.app/atomicchat/issue/ATO-153)).
+- **Decision (per chosen scope — Fix #1 primary + Fix #3 recovery; Fix #2
+  deferred):**
+  1. **#1 Primary fix.** In `updateBackend` the cleanup `backendsDir` is now
+     built from `this.providerId` (= `llamacpp-upstream`), never the literal
+     `'llamacpp'`, so the upstream auto-upgrade only ever prunes its **own**
+     backends tree. This matches `getBackendDir`
+     ([`backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts)),
+     which already correctly uses the `llamacpp-upstream` segment — the
+     hardcoded literal in the cleanup path was the lone inconsistency.
+  2. **#3 Recovery (defense-in-depth).** In
+     [`ensureBackendReady`](extensions/llamacpp-extension/src/index.ts) (the
+     turboquant provider), before throwing the terminal "not installed" error
+     on macOS, attempt `tryInstallBundledBackend()` and re-check
+     `isBackendInstalled`; if the bundled SHA matches the model's pinned
+     `version_backend` this fully restores a backend wrongly deleted by a
+     *pre-fix* upstream upgrade (otherwise it's a harmless no-op and we fall
+     through to the unchanged error). This rescues users already bricked by the
+     #1 bug without a reinstall.
+- **Consequences:** Upstream backend upgrades no longer touch the turboquant
+  tree; already-affected macOS users self-heal on next turboquant start.
+  **Deliberately NOT done:** Fix #2 (a Rust-side guard in
+  `remove_old_backend_versions` to refuse a `backends_dir` outside the calling
+  provider) — the TS fix removes the only caller that passed the wrong dir, and
+  the Rust guard is a larger cross-plugin change deferred as belt-and-suspenders.
+  Windows/Linux ship only `llamacpp-upstream` (no turboquant tree to wipe), so
+  this is a macOS-only impact; the recovery is macOS-gated. Scope: 2 extension
+  TS files + 1 test; no Rust, IPC, on-disk layout, or settings-schema change.
+  **Verified:** rolldown build clean on both extensions (`dist/index.js`
+  213.54 kB upstream / 181.56 kB turboquant, exit 0 — the authoritative compile;
+  standalone `tsc --noEmit` module-resolution noise is pre-existing per prior
+  ADRs); new vitest case *cleanup target directory (ATO-153)* passes (asserts
+  the cleanup `joinPath` resolves the `llamacpp-upstream` tree, never
+  `llamacpp`) — suite 36 passed / 9 failed, the 9 failures confirmed
+  pre-existing by a stash-baseline on HEAD (35 passed / 9 failed). Extensions
+  have no eslint config (no `lint` script), consistent with prior ADRs.
+- **Owner:** team.
+- **Links:** [ATO-153](https://linear.app/atomicchat/issue/ATO-153), the
+  2026-05-19 ADR *Ship upstream `ggml-org/llama.cpp` as a second macOS
+  provider* (shared-GGUF / isolated-backends model), the 2026-05-22 ADR
+  *Windows ships only `llamacpp-upstream`*, files:
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`updateBackend` cleanup `backendsDir`),
+  [`extensions/llamacpp-extension/src/index.ts`](extensions/llamacpp-extension/src/index.ts)
+  (`ensureBackendReady` bundled-backend recovery),
+  [`extensions/llamacpp-upstream-extension/src/test/index.test.ts`](extensions/llamacpp-upstream-extension/src/test/index.test.ts)
+  (ATO-153 cleanup-path test),
+  [`src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs`](src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs)
+  (`remove_old_backend_versions`).
+
+### 2026-06-15 — Detect Launch-page agents installed inside WSL + add a manual binary-path override (detection-only) (ATO-169)
+- **Context:** Community request (Discord, m.iko). On Windows many CLI agents are
+  installed inside **WSL** (they want a bash environment), not in native
+  cmd/PowerShell. Detection
+  ([`detect_agent_installed`](src-tauri/src/core/system/commands.rs)) was a pure
+  native-PATH lookup — `where` (Windows) / `which` (Unix) — with
+  `apply_login_path` a no-op on Windows. So a WSL-installed tool was invisible
+  (`where.exe` only sees the Win32 PATH) and showed as "Not installed" with no
+  way for the user to correct it. There was also no manual path override for
+  agents installed in any non-standard location. The frontend
+  ([`launch/index.tsx`](web-app/src/routes/launch/index.tsx)) ran detection per
+  catalog entry ([`integrations.ts`](web-app/src/constants/integrations.ts)).
+- **Decision (per the chosen scope — *detection-only*):** Both new signals
+  affect **only** the Installed/Not status; Enable/Run stays native and
+  unchanged. A full end-to-end WSL path (configure into the WSL home + launch via
+  `wsl.exe`) was **deliberately deferred** — a Windows process cannot exec the
+  Linux ELF binary directly even given its `\\wsl$\…` path, so making Enable work
+  through WSL is a large, separate cross-filesystem effort. Manual path is
+  likewise scoped to detection (it mainly helps native installs in odd
+  locations; it does not make WSL launch work).
+  1. **Rust** ([`commands.rs`](src-tauri/src/core/system/commands.rs)):
+     `detect_agent_installed` now takes `custom_path: Option<String>` and returns
+     a struct `AgentDetection { installed, via_wsl }` (was `bool`). Resolution
+     order: (1) `custom_path` is authoritative when non-empty — installed iff the
+     file exists; (2) native PATH lookup (`detect_on_native_path`); (3) Windows
+     only — `detect_via_wsl` runs `wsl.exe -e sh -lc 'command -v <bin>'` (login
+     shell so the user's WSL `PATH` is in scope), setting `via_wsl = true`. Both
+     spawned probes keep `CREATE_NO_WINDOW`. The agent names come from a fixed
+     catalog, so the `sh -lc` interpolation has no injection surface. The
+     internal `install_agent` prereq caller was updated to `…(prereq, None).await.installed`.
+  2. **Frontend:** new persisted store
+     [`launch-settings-store.ts`](web-app/src/stores/launch-settings-store.ts)
+     (`customPaths`, key `launch-custom-paths` in
+     [`localStorage.ts`](web-app/src/constants/localStorage.ts)) — survives
+     reloads, unlike the intentionally-transient
+     [`launch-store.ts`](web-app/src/stores/launch-store.ts) (which gained a
+     transient `viaWsl` map). `detect` passes `customPath` and records
+     `installed` + `viaWsl`; the mount effect re-detects when `customPaths`
+     changes, so saving a path refreshes status automatically. UI: an
+     "Installed (WSL)" badge variant, and a collapsible per-agent "Set binary
+     path" editor (shared `Input` + Save, local draft state). New EN i18n keys in
+     [`launch.json`](web-app/src/locales/en/launch.json) (only EN exists for this
+     namespace; others fall back).
+- **Consequences:** WSL-installed agents on Windows now show "Installed (WSL)"
+  instead of "Not installed", and any agent can be force-marked installed via an
+  explicit path — directly fixing the "can't even see it's installed / can't fix
+  it" complaint. **Deliberately not done (deferred):** running configure/launch
+  through WSL, and threading the custom path into `configure_*` / the launch
+  terminal (so enabling a WSL-only agent still isn't wired end-to-end — the badge
+  is informational). Scope: 1 Rust command (+2 helpers, 1 struct) and 4 web-app
+  files; no IPC beyond the command's new param/return shape, no on-disk layout
+  change. **Verified:** `cargo check -p Atomic-Chat` 0 errors (pre-existing
+  dead_code warnings only; the `#[cfg(windows)]` WSL helper isn't compiled on the
+  macOS dev host); `tsc -b` clean; `eslint` clean on all touched web-app files.
+- **Owner:** team.
+- **Links:** [ATO-169](https://linear.app/atomicchat/issue/ATO-169), the
+  2026-06-04 ADR *Resolve the login-shell PATH for Launch-page agent detection*,
+  the 2026-06-01 ADR *Add a "Launch" page …*, files:
+  [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs)
+  (`detect_agent_installed`, `detect_on_native_path`, `detect_via_wsl`,
+  `AgentDetection`),
+  [`web-app/src/stores/launch-settings-store.ts`](web-app/src/stores/launch-settings-store.ts),
+  [`web-app/src/stores/launch-store.ts`](web-app/src/stores/launch-store.ts),
+  [`web-app/src/routes/launch/index.tsx`](web-app/src/routes/launch/index.tsx),
+  [`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts),
+  [`web-app/src/locales/en/launch.json`](web-app/src/locales/en/launch.json).
+
+### 2026-06-15 — Raise the MLX default load context to `min(train-max, 16384)` + surface a clear context-overflow message instead of raw "Error generating response" (ATO-170)
+- **Context:** With Exa (or any large tool-result) enabled, generation on MLX
+  models failed with a raw "Error generating response". Root cause (proven in
+  [ATO-170](https://linear.app/atomicchat/issue/ATO-170)) is **context
+  overflow**, not a tool/serialization bug: the bundled mlx-vlm server
+  preflights the budget (`validate_context_budget` → `PromptTooLongError`) and
+  rejects an over-budget request with HTTP 400 `Request needs N context tokens
+  (...), but MAX_KV_SIZE is M`. MLX models were loaded at a **hardcoded 4096**
+  (`extensions/mlx-extension/src/index.ts` `ctx_size: Number(cfg.ctx_size ??
+  4096)`); Exa returns full-text pages so 2-3 results blow past 4096. The
+  extension already reads the model's training-max
+  (`resolveModelMaxCtxTrain`, resolved into `modelMaxCtxTrain` early in
+  `performLoad`) for the auto-increase ceiling but never used it at load time.
+  MLX `model.yml` carries **no** `settings` block (`import` writes only
+  `model_path`/`name`/`size_bytes`/caps), so `startModel` passes
+  `settings=undefined` → `cfg.ctx_size` is genuinely unset on a normal start,
+  which lets us distinguish "default" from a user-pinned value.
+- **Decision (scope = #1 prevention + #2 graceful degradation; #3 KV-quant
+  no-op deferred, needs reporter logs):**
+  1. **#1 Prevention (the proven primary fix).** In `performLoad`, when
+     `cfg.ctx_size` is not a valid positive number, default the load context to
+     `min(trainMax, MLX_DEFAULT_CTX_CAP)` (`MLX_DEFAULT_CTX_CAP = 16384`),
+     falling back to `MLX_DEFAULT_CTX_FALLBACK = 4096` only when the
+     training-max couldn't be read from `config.json`. An explicit, valid
+     `ctx_size` (user-pinned, or the auto-increase override `{ ctx_size: … }`)
+     always wins. The cap (chosen over the issue's literal "full
+     `max_position_embeddings`") avoids blindly allocating a huge KV cache —
+     **OOM risk** on smaller Macs and on huge-context coder models (Qwen3-Coder
+     train-ctx reaches 256K). The auto-increase ladder still has headroom
+     (`computeNextCtxLen(16384) → 32768`, capped at train-max).
+  2. **#2 Graceful degradation.** New `isContextLimitError(error)` +
+     `CONTEXT_OVERFLOW_TITLE` / `CONTEXT_OVERFLOW_MESSAGE` in
+     [`web-app/src/utils/error.ts`](web-app/src/utils/error.ts), mirroring the
+     Rust `is_context_limit_error` matcher in
+     [`proxy.rs`](src-tauri/src/core/server/proxy.rs) (matches `max_kv_size`,
+     `kv cache` + exceed/overflow/too, and `context` + size/length/limit/…).
+     [`$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx) now uses the
+     helper for **both** the client-side auto-increase trigger effect and the
+     error-render block; when the failure is a context overflow it shows the
+     clear title/message (and keeps the existing "Increase Context Size" button)
+     instead of the generic "Error generating response" + raw engine 400 body.
+- **Consequences:** The common Exa scenario no longer 400s on the first
+  large turn (load floor is now up to 16K), and a genuine overflow (auto-increase
+  exhausted / at train-max) renders an actionable message rather than opaque
+  engine text. **Deliberately not done:** the issue's #3 — when KV-quant
+  (TurboQuant) is on, the mlx-vlm server can't raise `MAX_KV_SIZE` on reload
+  (`". uses QuantizedKVCache, can't set max KV size."`) so auto-increase
+  silently no-ops; fixing that needs the reporter's `app.log` (to split case
+  (a) retry-still-too-big vs (b) KV-quant block) and likely a Python-side
+  change in the `mlx-vlm` fork + sidecar rebuild — out of this slice. **Scope:**
+  one MLX extension TS file + two web-app files; no Rust, IPC, schema, or
+  persistence change. **Verified:** `tsc -b` clean on web-app; eslint clean on
+  the two web-app files (one pre-existing `exhaustive-deps` warning untouched,
+  confirmed by stash-baseline). The 2 standalone `tsc --noEmit` errors in the
+  MLX extension (`eagle3`/`DraftKind`) are **pre-existing** (confirmed by
+  stash-baseline on HEAD) and unrelated; the extension ships via rolldown.
+- **Owner:** team.
+- **Links:** [ATO-170](https://linear.app/atomicchat/issue/ATO-170),
+  [ATO-135](https://linear.app/atomicchat/issue/ATO-135) (TurboQuant epic; KV-quant
+  no-op lives there), the 2026-06-02 ADR *Surface MLX KV-cache quantization …*,
+  files:
+  [`extensions/mlx-extension/src/index.ts`](extensions/mlx-extension/src/index.ts)
+  (`MLX_DEFAULT_CTX_CAP`, `performLoad` ctx resolution),
+  [`web-app/src/utils/error.ts`](web-app/src/utils/error.ts)
+  (`isContextLimitError`, `CONTEXT_OVERFLOW_TITLE`/`_MESSAGE`),
+  [`web-app/src/routes/threads/$threadId.tsx`](web-app/src/routes/threads/$threadId.tsx),
+  [`src-tauri/src/core/server/proxy.rs`](src-tauri/src/core/server/proxy.rs)
+  (`is_context_limit_error`).
+
+---
+
+### 2026-06-15 — Pin the filesystem MCP server version (cache-bust the stale `bun` copy) + add a `cwd` field for spawned stdio servers (ATO-164)
+- **Context:** A Windows user set the filesystem MCP
+  (`@modelcontextprotocol/server-filesystem`) with allowed dir
+  `…\Documents\Atomic_chat`, but the model writing a **relative** path
+  (`test_data/test.md`) failed with `Access denied - path outside allowed
+  directories`, resolving against the **app** dir
+  (`…\AppData\Local\Atomic Chat\…`) instead of the allowed dir; absolute paths
+  worked ([ATO-164](https://linear.app/atomicchat/issue/ATO-164)). Root cause
+  (code-reviewed): the user ran an **outdated** server. Old versions resolved
+  relative paths against `process.cwd()` (upstream
+  [servers#2526](https://github.com/modelcontextprotocol/servers/issues/2526),
+  fixed in [servers#2609](https://github.com/modelcontextprotocol/servers/pull/2609));
+  current npm `latest` is **`2026.1.14`** (the issue's "0.6.3" was stale info,
+  verified via `npm view`), which resolves relative paths against the allowed
+  dirs and succeeds. Why users got the old build is **our** side: (1) the
+  default config template and the user's config invoke the server via
+  `npx -y @modelcontextprotocol/server-filesystem` **with no pinned version**,
+  and `start_mcp_server` rewrites `npx` → `bun x` with `BUN_INSTALL` pointing
+  at our app cache (`<app>/.npx`) — a stale cached copy keeps being served;
+  (2) spawned stdio MCP servers never set `current_dir`, so the child inherits
+  the app CWD (`AppData\Local\Atomic Chat`), which is exactly where old-version
+  relative resolution lands. The "different dir each retry" loop is model
+  behaviour (small local model hallucinating paths), **not** the cwd/version
+  bug, and is out of scope.
+- **Decision (per chosen scope — primary fix + defense-in-depth #2; pin a
+  concrete version):**
+  1. **Pin a concrete version (primary).** New constants in
+     [`constants.rs`](src-tauri/src/core/mcp/constants.rs):
+     `FILESYSTEM_MCP_PACKAGE`, `FILESYSTEM_MCP_PINNED_VERSION = "2026.1.14"`,
+     and `filesystem_mcp_pinned_spec()` (=
+     `@modelcontextprotocol/server-filesystem@2026.1.14`). The default config
+     template's filesystem arg now uses a `__JAN_FS_MCP_SPEC__` placeholder
+     substituted from that single source of truth in `default_mcp_config()`
+     (no literal/const drift). Pinning a **concrete** version is the
+     cache-bust: `bun x <pkg>@2026.1.14` misses the cached old version and
+     fetches the fixed build — `@latest` would not reliably do so. Trade-off:
+     the version must be bumped manually when a newer fixed release is
+     validated (deliberately chosen over `@latest`).
+  2. **Migrate existing on-disk configs** ([`commands.rs :: get_mcp_configs`](src-tauri/src/core/mcp/commands.rs),
+     mirroring the existing `LEGACY_FILESYSTEM_PLACEHOLDER` migration): scan
+     **every** server's `args` (not just the one named `filesystem`, so
+     custom-named entries are covered) and rewrite a **bare** unpinned
+     `@modelcontextprotocol/server-filesystem` token → the pinned spec. Only
+     the bare token is rewritten — an explicit user pin (`…@<ver>`) is left
+     untouched — and the rewrite is idempotent (once pinned it equals the
+     spec and never re-triggers).
+  3. **`cwd` field for spawned stdio servers (defense-in-depth #2).** Added
+     `cwd: Option<String>` to `McpServerConfig`
+     ([`models.rs`](src-tauri/src/core/mcp/models.rs)), parsed in
+     `extract_command_args` ([`helpers.rs`](src-tauri/src/core/mcp/helpers.rs),
+     empty-string filtered), and applied via `cmd.current_dir(cwd)` in
+     `start_mcp_server` before spawn (no-op when unset → inherits app CWD).
+     The default template's `filesystem` entry now also carries
+     `"cwd": "__JAN_DEFAULT_FS_DIR__"` (= the sandbox root) so relative paths
+     land in the allowed dir even on an old server. TS parity:
+     `cwd?: string` added to `MCPServerConfig`
+     ([`useMCPServers.ts`](web-app/src/hooks/useMCPServers.ts)).
+- **Consequences:** Fresh installs get the fixed, version-pinned server with a
+  sandbox CWD; existing installs are auto-migrated to the pinned version on
+  next config read (the concrete-version pin busts their stale `bun` cache),
+  so relative-path writes resolve against the allowed dir. **Deliberately NOT
+  done:** defense-in-depth #3 (advertising MCP **roots** / injecting allowed
+  dirs into the system prompt — deferred per chosen scope); retrofitting `cwd`
+  into *existing* on-disk filesystem entries (the version pin already fixes
+  them; `cwd` default ships only for fresh installs and manual use); upgrading
+  an explicitly user-pinned *old* version (left to the user). The retry-loop
+  is a model-quality issue, untouched. Scope: 3 Rust files (mcp constants /
+  commands / models / helpers) + 1 web-app type; no IPC, on-disk layout, or
+  settings-schema-shape change beyond the additive optional `cwd` field.
+  **Verified:** `cargo check -p Atomic-Chat` 0 errors (pre-existing
+  unrelated `dead_code` warnings only); `tsc -b` clean; `eslint` clean on the
+  touched TS file.
+- **Owner:** team.
+- **Links:** [ATO-164](https://linear.app/atomicchat/issue/ATO-164),
+  [servers#2526](https://github.com/modelcontextprotocol/servers/issues/2526),
+  [servers#2609](https://github.com/modelcontextprotocol/servers/pull/2609),
+  files:
+  [`src-tauri/src/core/mcp/constants.rs`](src-tauri/src/core/mcp/constants.rs)
+  (`FILESYSTEM_MCP_*`, `filesystem_mcp_pinned_spec`, template placeholders),
+  [`src-tauri/src/core/mcp/commands.rs`](src-tauri/src/core/mcp/commands.rs)
+  (`get_mcp_configs` pin migration),
+  [`src-tauri/src/core/mcp/models.rs`](src-tauri/src/core/mcp/models.rs)
+  (`McpServerConfig.cwd`),
+  [`src-tauri/src/core/mcp/helpers.rs`](src-tauri/src/core/mcp/helpers.rs)
+  (`extract_command_args`, `start_mcp_server` `current_dir`),
+  [`web-app/src/hooks/useMCPServers.ts`](web-app/src/hooks/useMCPServers.ts)
+  (`MCPServerConfig.cwd`).
+
+### 2026-06-15 — Reset the global `llamacpp-upstream` MTP toggle on active-model change so it can't stay "on" for a non-MTP model (ATO-54)
+- **Context:** The `llamacpp-upstream` **MTP** toggle is a **provider-global**
+ boolean (`mtp` in the extension settings, surfaced as a Switch in
+ [`$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx)).
+ Support was validated **only on manual toggle-on** (`handleToggleLlamacppMtp`),
+ never when the active model changed. Two reported scenarios
+ ([ATO-54](https://linear.app/atomicchat/issue/ATO-54)): (1) MTP "auto-on" /
+ stale global flag applied to a non-MTP model (`Qwen3.6-…-APEX`) → opaque load
+ failure; (2) toggle stays on when switching from an MTP-capable model A to a
+ non-capable model B → same failure. The 2026-06-10 load-time capability gate
+ (ATO-122, `performLoad`) already **prevents the crash** (silently drops
+ `cfg.mtp` for non-capable targets), but the **UI Switch stayed visually "on"**,
+ a confusing mismatch — exactly ATO-54's remaining ask.
+- **Decision:** Per the user's chosen option (**MLX parity, capability-aware**;
+ the alternative of true per-model `model.yml` persistence was explicitly
+ rejected as the larger change ADR 2026-06-10 had already deferred). Added a
+ brother-effect to the existing MLX reset-on-model-change effect, scoped to
+ `provider === 'llamacpp-upstream'`: a `useMemo` tracks the active upstream
+ model id (`activeModels ∩ provider.models`), and a `useEffect` (skipping first
+ mount + no-op changes, mirroring the MLX one) reconciles on change — when
+ `mtp` is on and the new active model is **not** MTP-capable (same heuristic as
+ the toggle handler / load gate: Qwen built-in MTP = id contains `"mtp"`, or
+ `engine.checkGemmaMtpSupport(id)` for Gemma 4 31B/26B-A4B), it writes
+ `mtp = false` via `updateSettings` + `updateProvider`. MTP-capable targets keep
+ the value. The capability probe is async (Gemma check) and guarded by a
+ `cancelled` flag for unmount safety.
+- **Consequences:** Switching to a non-MTP model now flips the Switch off and
+ persists `mtp = false`, so the UI reflects reality and no stale spec-decode arg
+ is carried (the ATO-122 load gate remains as defense-in-depth). **Trade-off
+ (accepted, = MLX parity):** the flag is still **provider-global**, not true
+ per-model memory — re-selecting a previously-MTP model A does **not** restore
+ its toggle (it defaults off). **First-mount is intentionally skipped** (MLX
+ parity), so opening Settings with an already-active non-MTP model + a stale
+ `mtp` flag won't auto-reset until the next model change; correctness is
+ unaffected because the load gate still drops MTP. Scope: web-app only (1 effect
+ + 1 memo + 1 ref in `$providerName.tsx`); no Rust, IPC, `model.yml`/settings
+ schema, or extension change. macOS turboquant `llamacpp` (no MTP toggle) and
+ MLX (already has its own reset) are untouched. **Verified:** `tsc -b` clean
+ (exit 0); `eslint` clean ("No issues found") on the touched file.
+- **Owner:** team.
+- **Links:** [ATO-54](https://linear.app/atomicchat/issue/ATO-54),
+ [ATO-122](https://linear.app/atomicchat/issue/ATO-122), the 2026-06-10 ADR
+ *Gate the global `mtp` flag on per-model capability at load time …*, files:
+ [`web-app/src/routes/settings/providers/$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx)
+ (`activeLlamacppUpstreamModelId` memo + reset effect, mirroring the MLX
+ `activeMlxModelId` reset).
+
+### 2026-06-15 — Stop "Find optimal backend" from silently degrading to CPU when the ggml-org release stream is unreachable (ATO-161) + de-hardcode the Windows CUDA minor to a family id (ATO-174)
+- **Context:** Two coupled `llamacpp-upstream` defects around the
+ GitHub-hosted backend release stream
+ (`api.github.com/repos/ggml-org/llama.cpp/releases`).
+ - **[ATO-161](https://linear.app/atomicchat/issue/ATO-161):**
+ `detectIdealBackendType()` returned `string | null`, conflating two very
+ different outcomes in the single `null`: "CPU is genuinely the best this
+ hardware can do" **and** "I couldn't fetch the GPU options because the
+ release stream was unreachable / slow / rate-limited". `recheckOptimalBackend()`
+ logged the merged *"CPU is optimal or detection failed"* and returned
+ `null`; the "Find optimal backend" handler
+ ([`$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx))
+ then showed the reassuring **"You're already on the optimal backend"**
+ toast. Net effect on a GPU-capable host with a flaky/blocked GitHub: the
+ app silently stayed on (or implied) CPU and *told the user that was
+ optimal* — actively misleading.
+ - **[ATO-174](https://linear.app/atomicchat/issue/ATO-174):** the manual
+ backend dropdown's `staticVariants` hard-coded concrete Windows CUDA
+ minors (`win-cuda-12.4-x64`, `win-cuda-13.3-x64`), and
+ `resolveLatestBackendString` / `newestInstalledOfFamily` matched the
+ selected id against published assets by **exact string**. ggml-org bumps
+ the CUDA minor over time (`13.3 → 13.4 → …`); the next bump would make the
+ hard-coded sentinel exact-match nothing → `latest/win-cuda-13.3-x64`
+ resolves to no asset → dead-end. Manual CUDA selection also surfaced only a
+ generic failure when `api.github.com` was unreachable, with no offline path
+ and no actionable guidance. This finishes the 2026-06-08 ATO-105 work
+ (which already made the *detection* path family-aware but left the manual
+ dropdown + resolvers on hard-coded minors).
+- **Decision:** Web-app + extension only; no Rust, IPC, on-disk layout, or
+ settings-schema change.
+ 1. **ATO-161 — discriminated detection result.** New
+ `IdealBackendResult = { kind: 'gpu'; backend } | { kind: 'cpu-optimal' } |
+ { kind: 'detection-failed' }` and an exported `BACKEND_DETECTION_FAILED`
+ sentinel in
+ [`index.ts`](extensions/llamacpp-upstream-extension/src/index.ts).
+ `detectIdealBackendType()` now returns this union instead of
+ `string | null`: a picked GPU tier → `{ kind: 'gpu', backend }`; a
+ **GPU-capable** host (driver/feature gate says CUDA/Vulkan usable) with
+ **no** GPU backend anywhere in the merged local+remote catalog → `{ kind:
+ 'detection-failed' }` (ggml-org *always* publishes CUDA+Vulkan Windows
+ assets, so an empty GPU catalog means `fetchRemoteBackends()` returned `[]`
+ — a fetch failure, not "CPU is best"); the `catch` and the genuine
+ no-GPU-hardware paths → `{ kind: 'cpu-optimal' }`. Linux's non-GPU outcome
+ stays `cpu-optimal` (its Vulkan recommend is a pure local libvulkan probe,
+ no network). `recheckOptimalBackend()` wraps detection in the existing
+ 20 s `withTimeout` (timeout → `detection-failed`), **throws
+ `Error(BACKEND_DETECTION_FAILED)`** on failure, and returns `null` only for
+ real `cpu-optimal`/already-optimal. Its outer `catch` re-throws the
+ sentinel and still swallows every *other* error to `null` (onboarding must
+ not regress). All three callers handle the throw:
+ [`$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx)
+ → distinct `backendUpdater.detectionUnavailable` toast (not "already
+ optimal"); [`SetupBackendStep.tsx`](web-app/src/containers/SetupBackendStep.tsx)
+ → its existing `detection-failed` phase (CPU stays a usable fallback,
+ onboarding advances); the `useBackendUpdater` post-upgrade auto-recheck →
+ warn-and-continue.
+ 2. **ATO-174 — family-id resolution.** `staticVariants` (Windows) now lists
+ the minor-less family ids `win-cuda-12-x64` / `win-cuda-13-x64` (the
+ dropdown renders them as "Latest CUDA 12 / CUDA 13" via the existing
+ `friendlyBackendLabel`). Three pure helpers in
+ [`backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts) —
+ `cudaFamilyMajor`, `isConcreteOfCudaFamily`, `resolveCudaFamilyConcrete`
+ (picks the **highest** published minor of a major). `resolveLatestBackendString`
+ falls back to `resolveCudaFamilyConcrete` when the exact id isn't a
+ published asset (so `latest/win-cuda-13-x64` → `b____/win-cuda-13.<newest>-x64`
+ across minor bumps); `newestInstalledOfFamily` matches a family id against
+ any installed concrete minor (offline fallback returns the **concrete**
+ installed id, never the family id, which would 404). `downloadManualBackend`'s
+ dead-end now throws an actionable message naming `api.github.com` and
+ pointing at Settings → Proxy / "Install backend from file" instead of a
+ bare failure. The `detectIdealBackendType` Windows CUDA-13 picker was
+ already family-aware (`^win-cuda-13\.\d+-`) from ATO-105 and is untouched;
+ CUDA-12 stays `12.4` (the only 12.x ggml-org ships).
+ 3. **i18n:** new `backendUpdater.detectionUnavailable` (EN + RU); other
+ locales fall back to EN.
+- **Consequences:** A GPU-capable user with blocked/slow GitHub now sees a
+ calm, accurate *"couldn't reach the release stream — keeping your current
+ backend, check connection/proxy"* instead of a false "already optimal", and
+ is never silently parked on CPU. Manual CUDA selection survives future
+ ggml-org minor bumps and degrades to the newest locally-installed CUDA copy
+ when offline. **Trade-off / lossy by design:** `detection-failed` is
+ *inferred* on Windows from "GPU-capable + empty GPU catalog" rather than a
+ first-class network-error signal threaded up from `fetchRemoteBackends()`
+ — a rare false-positive is possible if a GPU-capable host legitimately has
+ zero GPU assets for some other reason, but ggml-org's release matrix makes
+ that practically impossible. Broader network resilience (retries, response
+ caching, authenticated requests, a server-side mirror) was **deliberately
+ deferred** — out of this slice. **Verified:** rolldown build clean
+ (`dist/index.js` 213.53 kB, exit 0 — the authoritative extension compile;
+ standalone `tsc --noEmit` noise from missing ambient base-class globals is
+ pre-existing and not introduced here); web-app `tsc -b` clean; `eslint`
+ clean on `$providerName.tsx`; both locale JSONs parse; all three
+ `recheckOptimalBackend` call sites confirmed to handle the new sentinel.
+- **Owner:** team.
+- **Links:** [ATO-161](https://linear.app/atomicchat/issue/ATO-161),
+ [ATO-174](https://linear.app/atomicchat/issue/ATO-174),
+ [ATO-105](https://linear.app/atomicchat/issue/ATO-105),
+ [ATO-95](https://linear.app/atomicchat/issue/ATO-95), the 2026-06-08 ADR
+ *Windows: fix clean-install config persistence (ATO-107), de-hardcode the
+ CUDA-13 minor (ATO-105) …* and the 2026-06-05 ADR *Resolve the
+ `latest/<backend>` sentinel …*, files:
+ [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+ (`IdealBackendResult`, `BACKEND_DETECTION_FAILED`, `detectIdealBackendType`,
+ `recheckOptimalBackend`, `resolveLatestBackendString`,
+ `newestInstalledOfFamily`, `downloadManualBackend`, `staticVariants`),
+ [`extensions/llamacpp-upstream-extension/src/backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts)
+ (`cudaFamilyMajor`, `isConcreteOfCudaFamily`, `resolveCudaFamilyConcrete`),
+ [`web-app/src/routes/settings/providers/$providerName.tsx`](web-app/src/routes/settings/providers/$providerName.tsx)
+ (`handleFindOptimalBackend` catch),
+ [`web-app/src/containers/SetupBackendStep.tsx`](web-app/src/containers/SetupBackendStep.tsx),
+ [`web-app/src/locales/en/settings.json`](web-app/src/locales/en/settings.json),
+ [`web-app/src/locales/ru/settings.json`](web-app/src/locales/ru/settings.json).
+
+### 2026-06-15 — Migrate the stale macOS `llamacpp` default to `llamacpp-upstream` for pre-ATO-116 profiles (ATO-136)
+- **Context:** ADR 2026-06-09 *Default the macOS local llama.cpp engine to
+  `llamacpp-upstream`* (ATO-116) made upstream the default so the Recommended
+  Gemma 4 vision model loads out of the box. A user on the built v1.1.106
+  reported it "not effective": freshly downloaded GGUFs on macOS still ran on
+  the turboquant fork (`llamacpp`), crashing on new archs (gemma4uv / lfm2moe).
+  Investigation ([ATO-136](https://linear.app/atomicchat/issue/ATO-136))
+  showed the reporter's "proof" (models living in `data/llamacpp/models/`,
+  `data/llamacpp-upstream/models/` empty) is a **false signal** — both
+  providers deliberately share the on-disk GGUF tree
+  (`MODELS_PROVIDER_ROOT='llamacpp'` in
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)),
+  so an upstream import lands there too. The **real** cause: ATO-116 only
+  flipped the *constants* (`LOCAL_LLAMACPP_PROVIDER='llamacpp-upstream'`,
+  `getModelToStart` order) and deliberately left the persisted-state
+  migration `IS_WINDOWS`-gated (to avoid the macOS "hanging-thread" risk it
+  documented). So a **pre-ATO-116 macOS profile** keeps `selectedProvider:
+  'llamacpp'` in the zustand `model-provider` store *and* `{ provider:
+  'llamacpp' }` in the non-zustand `lastUsedModel` localStorage blob; both
+  validate fine on macOS (the turboquant provider still ships) and drive
+  `DataProvider` auto-start + the model-bar default back onto turboquant.
+  Fresh installs were unaffected (they start at the new default); only
+  upgraded users were stuck.
+- **Decision:** Move only the **global default selection** off turboquant on
+  macOS, in two coordinated one-shot migrations — explicitly *not* removing
+  the turboquant `llamacpp` provider (still a valid manual choice on macOS)
+  and *not* touching per-thread bindings (so the ADR 2026-06-09 "don't hang
+  existing threads" constraint holds). This reverses only the *default*
+  clause of the `IS_WINDOWS` gate, not the whole gate.
+  1. **zustand `selectedProvider`** ([`useModelProvider.ts`](web-app/src/hooks/useModelProvider.ts)):
+     persist `version` bumped `13 → 14`; new `migrate` block redirects
+     `selectedProvider 'llamacpp' → LOCAL_LLAMACPP_PROVIDER` when `version <=
+     13 && IS_MACOS`. `selectedModel` is intentionally left untouched —
+     `setProviders` re-resolves it against the upstream provider's copy of the
+     same shared-tree model on first paint (same mechanism the v13 Windows
+     block relies on). The version bump is required because v1.1.106 already
+     persists `version: 13`, so a one-time edit to the v13 block alone would
+     never re-run for those users.
+  2. **`lastUsedModel` localStorage blob** (NEW
+     [`web-app/src/lib/macosLlamacppDefaultMigration.ts`](web-app/src/lib/macosLlamacppDefaultMigration.ts)):
+     mirrors the Windows sibling
+     [`windowsProviderMigration.ts`](web-app/src/lib/windowsProviderMigration.ts)
+     (shared `{ provider, model }` rewrite shape, one-shot flag
+     `atomic_macos_llamacpp_default_to_upstream_v1`, non-fatal try/catch) but
+     macOS-gated and trimmed to just the `lastUsedModel` rewrite (no Windows
+     optimal-backend recheck). Called from
+     [`main.tsx`](web-app/src/main.tsx) right after
+     `runWindowsLlamacppProviderMigration()`, *before* React mounts, so the
+     first `DataProvider` auto-start reads the upstream provider.
+- **Consequences:** Upgraded macOS users now auto-start / default GGUFs on
+  `llamacpp-upstream` (a superset of turboquant that handles the new archs),
+  fixing the ATO-136 crash-on-load without re-downloading or re-importing
+  models. **Trade-off:** a macOS user who *deliberately* selected turboquant
+  before this build is redirected to upstream **once** and must re-select
+  turboquant if they want it — accepted, matching the Windows v13 redirect's
+  behaviour and the "turboquant is a manual/advanced choice" framing. Scope:
+  web-app only (1 store migration + 1 new lib module + 1 `main.tsx` call); no
+  Rust, IPC, on-disk layout, or settings-schema change; Windows/Linux are
+  no-ops (the new module early-returns on `!IS_MACOS`, the v14 block on
+  `!IS_MACOS`). **Verified:** `tsc -b` clean (exit 0); `eslint` clean on the
+  three touched/new files.
+- **Owner:** team.
+- **Links:** [ATO-136](https://linear.app/atomicchat/issue/ATO-136),
+  [ATO-116](https://linear.app/atomicchat/issue/ATO-116), the 2026-06-09 ADR
+  *Default the macOS local llama.cpp engine to `llamacpp-upstream`*, the
+  2026-05-22 ADR *Windows ships only `llamacpp-upstream`*, files:
+  [`web-app/src/hooks/useModelProvider.ts`](web-app/src/hooks/useModelProvider.ts)
+  (v14 migrate block),
+  [`web-app/src/lib/macosLlamacppDefaultMigration.ts`](web-app/src/lib/macosLlamacppDefaultMigration.ts),
+  [`web-app/src/main.tsx`](web-app/src/main.tsx),
+  [`web-app/src/lib/windowsProviderMigration.ts`](web-app/src/lib/windowsProviderMigration.ts)
+  (mirrored pattern).
+
 ### 2026-06-12 — Make sampling global (model-bar popover) + slim the assistant to persona-only (ATO-155 rework)
 - **Context:** Sampling parameters (`temperature`/`top_p`/`top_k`/`min_p`/
  penalties + optional `max_output_tokens`) lived **per-assistant** in

@@ -662,9 +662,32 @@ export const useModelProvider = create<ModelProviderState>()(
           }
         }
 
+        // v14 — macOS: ATO-116 made `llamacpp-upstream` the default local
+        // engine, but the v13 redirect above is IS_WINDOWS-gated, so macOS
+        // users carrying a pre-ATO-116 `selectedProvider: 'llamacpp'` (the
+        // turboquant fork, which crashes on new archs like gemma4uv /
+        // lfm2moe) were never moved off it — auto-start and the model-bar
+        // default kept loading GGUFs on turboquant (ATO-136). Redirect ONLY
+        // the global default selection to the upstream provider. We
+        // deliberately:
+        //   - do NOT remove the turboquant `llamacpp` provider (still shipped
+        //     on macOS as an explicit manual choice), and
+        //   - do NOT touch per-thread bindings (left to their own history),
+        // so this reverses only the *default* clause of the IS_WINDOWS gate.
+        // The on-disk GGUF tree is shared (MODELS_PROVIDER_ROOT='llamacpp'),
+        // so `setProviders` re-resolves `selectedModel` against the upstream
+        // provider's copy of the same model (see the v13 note above).
+        if (
+          version <= 13 &&
+          IS_MACOS &&
+          state?.selectedProvider === LEGACY_LLAMACPP_PROVIDER
+        ) {
+          state.selectedProvider = LOCAL_LLAMACPP_PROVIDER
+        }
+
         return state
       },
-      version: 13,
+      version: 14,
     }
   )
 )

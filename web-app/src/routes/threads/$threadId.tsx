@@ -56,7 +56,10 @@ import {
   OUT_OF_CONTEXT_SIZE,
   MODEL_ACCESS_DENIED_TITLE,
   MODEL_ACCESS_DENIED_MESSAGE,
+  CONTEXT_OVERFLOW_TITLE,
+  CONTEXT_OVERFLOW_MESSAGE,
   isModelAccessError,
+  isContextLimitError,
 } from '@/utils/error'
 import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
@@ -973,13 +976,7 @@ function ThreadDetail() {
       selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
       true
     if (!autoIncrease) return
-    const isContextError =
-      (error.message?.toLowerCase().includes('context') &&
-        (error.message?.toLowerCase().includes('size') ||
-          error.message?.toLowerCase().includes('length') ||
-          error.message?.toLowerCase().includes('limit'))) ||
-      error.message === OUT_OF_CONTEXT_SIZE
-    if (isContextError) {
+    if (isContextLimitError(error)) {
       setIsAutoIncreasingContext(true)
       handleContextSizeIncrease()
     }
@@ -1092,21 +1089,22 @@ function ThreadDetail() {
                 (() => {
                   const activeError = error ?? contextLimitError
                   const rawMessage = activeError?.message
-                  const lowerMessage = rawMessage?.toLowerCase() ?? ''
-                  const isContextError =
-                    (lowerMessage.includes('context') &&
-                      (lowerMessage.includes('size') ||
-                        lowerMessage.includes('length') ||
-                        lowerMessage.includes('limit'))) ||
-                    rawMessage === OUT_OF_CONTEXT_SIZE
+                  const isContextError = isContextLimitError(activeError)
                   const isAccessError =
                     !isContextError && isModelAccessError(activeError)
-                  const title = isAccessError
-                    ? MODEL_ACCESS_DENIED_TITLE
-                    : 'Error generating response'
-                  const body = isAccessError
-                    ? MODEL_ACCESS_DENIED_MESSAGE
-                    : rawMessage
+                  // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
+                  // "... but MAX_KV_SIZE is N") with a clear, actionable message
+                  // instead of the generic "Error generating response".
+                  const title = isContextError
+                    ? CONTEXT_OVERFLOW_TITLE
+                    : isAccessError
+                      ? MODEL_ACCESS_DENIED_TITLE
+                      : 'Error generating response'
+                  const body = isContextError
+                    ? CONTEXT_OVERFLOW_MESSAGE
+                    : isAccessError
+                      ? MODEL_ACCESS_DENIED_MESSAGE
+                      : rawMessage
                   return (
                     <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                       <div className="flex items-start gap-3">

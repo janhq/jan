@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import {
   IconChevronDown,
   IconExternalLink,
+  IconFolder,
   IconLoader2,
   IconTerminal2,
 } from '@tabler/icons-react'
@@ -20,11 +21,13 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Card } from '@/containers/Card'
 import { LocalApiServerPanel } from '@/containers/LocalApiServerPanel'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
+import { useLaunchSettings } from '@/stores/launch-settings-store'
 import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -265,6 +268,49 @@ function InstallingLabel() {
   )
 }
 
+// Manual binary-path override editor. Local draft state so typing doesn't
+// thrash the persisted store; only `onSave` commits (and re-triggers detect).
+function CustomPathRow({
+  value,
+  onSave,
+}: {
+  value: string
+  onSave: (path: string) => void
+}) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSave(draft)
+          }}
+          placeholder={t('launch:customPathPlaceholder')}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          className="h-8 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          onClick={() => onSave(draft)}
+        >
+          {t('launch:savePath')}
+        </Button>
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {t('launch:customPathHint')}
+      </p>
+    </div>
+  )
+}
+
 function LaunchPage() {
   const { t } = useTranslation()
   const {
@@ -286,6 +332,10 @@ function LaunchPage() {
   // keeps running; we must keep showing its progress on return).
   const installed = useLaunchStore((s) => s.installed)
   const setInstalled = useLaunchStore((s) => s.setInstalled)
+  const viaWsl = useLaunchStore((s) => s.viaWsl)
+  const setViaWsl = useLaunchStore((s) => s.setViaWsl)
+  const customPaths = useLaunchSettings((s) => s.customPaths)
+  const setCustomPath = useLaunchSettings((s) => s.setCustomPath)
   const busy = useLaunchStore((s) => s.busy)
   const setBusy = useLaunchStore((s) => s.setBusy)
   const spinning = useLaunchStore((s) => s.spinning)
@@ -297,21 +347,28 @@ function LaunchPage() {
   const openLog = useLaunchStore((s) => s.openLog)
   const setOpenLog = useLaunchStore((s) => s.setOpenLog)
   const [runningModels, setRunningModels] = useState<string[]>([])
+  const [openPath, setOpenPath] = useState<Record<string, boolean>>({})
 
   const detect = useCallback(
     async (agent: IntegrationAgent): Promise<boolean> => {
       try {
-        const ok = await invoke<boolean>('detect_agent_installed', {
-          bin: agent.detectBin,
-        })
-        setInstalled((prev) => ({ ...prev, [agent.id]: ok }))
-        return ok
+        const result = await invoke<{ installed: boolean; viaWsl: boolean }>(
+          'detect_agent_installed',
+          {
+            bin: agent.detectBin,
+            customPath: customPaths[agent.id] || null,
+          }
+        )
+        setInstalled((prev) => ({ ...prev, [agent.id]: result.installed }))
+        setViaWsl((prev) => ({ ...prev, [agent.id]: result.viaWsl }))
+        return result.installed
       } catch {
         setInstalled((prev) => ({ ...prev, [agent.id]: false }))
+        setViaWsl((prev) => ({ ...prev, [agent.id]: false }))
         return false
       }
     },
-    [setInstalled]
+    [setInstalled, setViaWsl, customPaths]
   )
 
   const refreshRunningModels = useCallback(async () => {
@@ -585,6 +642,7 @@ function LaunchPage() {
 
   const renderAgent = (agent: IntegrationAgent) => {
     const isInstalled = installed[agent.id]
+    const isViaWsl = viaWsl[agent.id]
     const isBusy = busy[agent.id]
     const isSpinning = spinning[agent.id]
     const runPhase = phase[agent.id]
@@ -606,7 +664,11 @@ function LaunchPage() {
                   : 'bg-muted text-muted-foreground'
               )}
             >
-              {isInstalled ? t('launch:installed') : t('launch:notInstalled')}
+              {isInstalled
+                ? isViaWsl
+                  ? t('launch:installedViaWsl')
+                  : t('launch:installed')
+                : t('launch:notInstalled')}
             </span>
           )}
 
@@ -649,6 +711,36 @@ function LaunchPage() {
         <p className="mt-2 text-sm leading-normal text-muted-foreground">
           {agent.description}
         </p>
+
+        <div className="mt-3">
+          <button
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              setOpenPath((prev) => ({
+                ...prev,
+                [agent.id]: !prev[agent.id],
+              }))
+            }
+          >
+            <IconFolder size={14} />
+            {customPaths[agent.id]
+              ? t('launch:customPathSet')
+              : t('launch:setCustomPath')}
+            <IconChevronDown
+              size={14}
+              className={cn(
+                'transition-transform',
+                openPath[agent.id] && 'rotate-180'
+              )}
+            />
+          </button>
+          {openPath[agent.id] && (
+            <CustomPathRow
+              value={customPaths[agent.id] ?? ''}
+              onSave={(path) => setCustomPath(agent.id, path)}
+            />
+          )}
+        </div>
 
         {agentLogs.length > 0 && (
           <div className="mt-3">

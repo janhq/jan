@@ -1645,12 +1645,21 @@ fn apply_login_path(cmd: &mut std::process::Command) {
 #[cfg(windows)]
 fn apply_login_path(_cmd: &mut std::process::Command) {}
 
-/// Probe whether a CLI binary is reachable on PATH (`which` / `where`).
-#[tauri::command]
-pub async fn detect_agent_installed(bin: String) -> bool {
+/// Result of probing whether an external CLI agent is reachable.
+#[derive(serde::Serialize)]
+pub struct AgentDetection {
+    /// Whether the binary was found (native PATH, WSL, or a user-supplied path).
+    pub installed: bool,
+    /// True only when the binary was found inside a WSL distribution (Windows),
+    /// where it is reachable via `wsl.exe` but not from the native Win32 PATH.
+    pub via_wsl: bool,
+}
+
+/// Probe whether a CLI binary is reachable on the native PATH (`which`/`where`).
+async fn detect_on_native_path(bin: &str) -> bool {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     let mut cmd = std::process::Command::new(which_cmd);
-    cmd.arg(&bin);
+    cmd.arg(bin);
     apply_login_path(&mut cmd);
 
     #[cfg(windows)]
@@ -1667,6 +1676,78 @@ pub async fn detect_agent_installed(bin: String) -> bool {
     )
 }
 
+/// Probe whether a CLI binary is reachable inside a WSL distribution.
+///
+/// Many CLI agents are installed inside WSL (they want a bash environment), so
+/// the native `where.exe` PATH lookup misses them. We run the lookup through a
+/// login shell (`sh -lc`) so the user's WSL `PATH` (e.g. `~/.local/bin`,
+/// npm-global) is in scope. Returns false when WSL is absent or the lookup
+/// fails. The agent binary names come from a fixed catalog, so there is no
+/// shell-injection surface here.
+#[cfg(windows)]
+async fn detect_via_wsl(bin: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+    let probe = format!("command -v {}", bin);
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.arg("-e").arg("sh").arg("-lc").arg(&probe);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    matches!(
+        tokio::task::spawn_blocking(move || cmd.output()).await,
+        Ok(Ok(out))
+            if out.status.success()
+                && !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    )
+}
+
+/// Probe whether an external CLI agent is reachable.
+///
+/// Resolution order:
+/// 1. `custom_path` (authoritative when provided) — a user-supplied path,
+///    reported installed iff the file exists. This is the manual override that
+///    lets users fix a wrong "Not installed" status for non-standard installs.
+/// 2. native PATH lookup (`which` / `where`).
+/// 3. (Windows only) a WSL fallback so agents installed inside a WSL
+///    distribution are detected instead of showing as missing.
+#[tauri::command]
+pub async fn detect_agent_installed(
+    bin: String,
+    custom_path: Option<String>,
+) -> AgentDetection {
+    if let Some(path) = custom_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        return AgentDetection {
+            installed: std::path::Path::new(path).is_file(),
+            via_wsl: false,
+        };
+    }
+
+    if detect_on_native_path(&bin).await {
+        return AgentDetection {
+            installed: true,
+            via_wsl: false,
+        };
+    }
+
+    #[cfg(windows)]
+    {
+        if detect_via_wsl(&bin).await {
+            return AgentDetection {
+                installed: true,
+                via_wsl: true,
+            };
+        }
+    }
+
+    AgentDetection {
+        installed: false,
+        via_wsl: false,
+    }
+}
+
 /// Install an external agent by spawning its official installer, streaming
 /// stdout/stderr to the UI via the `agent_install_log:<agent_id>` event.
 #[tauri::command]
@@ -1676,7 +1757,10 @@ pub async fn install_agent<R: Runtime>(
 ) -> Result<(), String> {
     let (program, args, prereq, docs) = agent_install_spec(&agent_id)?;
 
-    if !detect_agent_installed(prereq.to_string()).await {
+    if !detect_agent_installed(prereq.to_string(), None)
+        .await
+        .installed
+    {
         return Err(format!(
             "'{}' is required to install this agent but was not found on PATH. \
              Install it first, then try again: {}",

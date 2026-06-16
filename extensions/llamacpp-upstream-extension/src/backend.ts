@@ -361,6 +361,69 @@ export function getCudaToolkitVersion(backend: string): string | null {
   return matchWindowsCudaBackend(backend)
 }
 
+/**
+ * Matches a *minor-less* Windows CUDA family id (e.g. `win-cuda-13-x64`,
+ * `win-cuda-12-x64`). These are the family ids the Rust matrix
+ * (`determine_supported_backends`) and the TS dropdown `staticVariants`
+ * emit — the concrete minor (`13.3`, `12.4`) is only known once the
+ * ggml-org release stream is queried (ATO-105/ATO-174).
+ */
+const WIN_CUDA_FAMILY_RE = /^win-cuda-(\d+)-x64$/
+
+/**
+ * The CUDA major (`"13"`, `"12"`) of a minor-less family id, or `null` if
+ * `backend` is not a minor-less Windows CUDA family id (concrete ids like
+ * `win-cuda-13.3-x64` deliberately return `null` here — they need no
+ * family resolution).
+ */
+export function cudaFamilyMajor(backend: string): string | null {
+  const m = WIN_CUDA_FAMILY_RE.exec(backend.replace(/\uFEFF/g, '').trim())
+  return m ? m[1] : null
+}
+
+/**
+ * True when `concrete` (e.g. `win-cuda-13.3-x64`) belongs to the minor-less
+ * CUDA family `familyBackend` (e.g. `win-cuda-13-x64`). False for a
+ * non-family `familyBackend` or a non-matching major.
+ */
+export function isConcreteOfCudaFamily(
+  familyBackend: string,
+  concrete: string
+): boolean {
+  const major = cudaFamilyMajor(familyBackend)
+  if (!major) return false
+  return new RegExp(`^win-cuda-${major}\\.\\d+-x64$`).test(
+    concrete.replace(/\uFEFF/g, '').trim()
+  )
+}
+
+/**
+ * Resolves a minor-less CUDA family id (`win-cuda-13-x64`) to the newest
+ * concrete `<tag>/<backend>` of that major in `remote` (e.g.
+ * `b9596/win-cuda-13.3-x64`). Picks the highest minor when ggml-org ships
+ * more than one. Returns `null` when `familyBackend` is not a family id or
+ * no concrete asset of that major is present.
+ */
+export function resolveCudaFamilyConcrete(
+  familyBackend: string,
+  remote: BackendVersion[]
+): string | null {
+  const major = cudaFamilyMajor(familyBackend)
+  if (!major) return null
+  const concreteRe = new RegExp(`^win-cuda-${major}\\.(\\d+)-x64$`)
+  let best: { version: string; backend: string; minor: number } | null = null
+  for (const b of remote) {
+    const backendName = b.backend.replace(/\uFEFF/g, '').trim()
+    const m = concreteRe.exec(backendName)
+    if (!m) continue
+    const minor = parseInt(m[1], 10)
+    if (!best || minor > best.minor) {
+      best = { version: b.version, backend: backendName, minor }
+    }
+  }
+  return best ? `${best.version}/${best.backend}` : null
+}
+
 export async function listSupportedBackends(): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const osType = sysInfo.os_type

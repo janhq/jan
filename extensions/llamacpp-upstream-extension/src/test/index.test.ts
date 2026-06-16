@@ -830,6 +830,58 @@ describe('llamacpp_extension', () => {
         )
       })
     })
+
+    describe('cleanup target directory (ATO-153)', () => {
+      it('should resolve the cleanup dir under this provider (llamacpp-upstream), never the shared/turboquant llamacpp dir', async () => {
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['getStoredBackendType'] = vi
+          .fn()
+          .mockReturnValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn()
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+        vi.mocked(joinPath).mockImplementation((paths) =>
+          Promise.resolve(paths.join('/'))
+        )
+
+        // The extension imports the guest-js helpers via a RELATIVE path, so
+        // the `@janhq/tauri-plugin-llamacpp-upstream-api` mock does not
+        // intercept them — they hit the real Tauri `invoke` bridge. Stub the
+        // bridge so `mapOldBackendToNew` / `remove_old_backend_versions` / the
+        // log plugin resolve and `updateBackend` reaches the cleanup block.
+        const originalTauriInternals = (window as any).__TAURI_INTERNALS__
+        ;(window as any).__TAURI_INTERNALS__ = {
+          invoke: vi.fn(async (cmd: string, args: any) => {
+            if (cmd.endsWith('map_old_backend_to_new')) return args.oldBackend
+            if (cmd.endsWith('remove_old_backend_versions')) return []
+            return undefined
+          }),
+        }
+
+        try {
+          await extension.updateBackend('v2.0.0/linux-avx2-x64')
+        } finally {
+          ;(window as any).__TAURI_INTERNALS__ = originalTauriInternals
+        }
+
+        // The cleanup MUST build its path from this provider's own tree
+        // (`llamacpp-upstream`), so the upstream auto-upgrade never wipes
+        // the turboquant `llamacpp/backends` dir (ATO-153).
+        expect(joinPath).toHaveBeenCalledWith([
+          '/path/to/jan',
+          'llamacpp-upstream',
+          'backends',
+        ])
+        expect(joinPath).not.toHaveBeenCalledWith([
+          '/path/to/jan',
+          'llamacpp',
+          'backends',
+        ])
+      })
+    })
   })
 })
 

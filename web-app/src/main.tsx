@@ -10,6 +10,7 @@ import './index.css'
 import './i18n'
 import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
 import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
+import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigration'
 import { initSentryFrontend } from './lib/sentry'
 import GlobalError from './containers/GlobalError'
 
@@ -140,6 +141,14 @@ disablePageZoom()
 // `ChatInput` / `SetupScreen` sees the rewritten `'llamacpp-upstream'`
 // value in `lastUsedModel`. No-op on macOS / Linux and on second launch.
 runWindowsLlamacppProviderMigration()
+
+// One-time, macOS-only migration of the `lastUsedModel` localStorage entry
+// that still points at the turboquant `llamacpp` provider (ATO-136 / ADR
+// 2026-06-09). Pairs with the zustand v14 `selectedProvider` redirect in
+// `useModelProvider`. Must run BEFORE React mounts so the first auto-start
+// in `DataProvider` resolves the model on `'llamacpp-upstream'`. No-op on
+// Windows / Linux and on second launch.
+runMacosLlamacppDefaultMigration()
 
 // Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
 // code-block download button needs to go through Tauri's save dialog.

@@ -42,12 +42,15 @@ export const WindowControls = () => {
         isMaximized ? 'right-0' : 'right-4'
       )}
     >
-      <div className="flex items-center h-full">
+      <div
+        className={cn('flex h-full', isMaximized ? 'items-stretch' : 'items-center')}
+      >
         <Button
           onClick={handleMinimize}
           aria-label="Minimize"
           variant="ghost"
           size="icon-sm"
+          className={cn(isMaximized && 'h-full')}
         >
           <Minus className="size-4" />
         </Button>
@@ -56,6 +59,7 @@ export const WindowControls = () => {
           variant="ghost"
           size="icon-sm"
           aria-label="Maximize"
+          className={cn(isMaximized && 'h-full')}
         >
           <Square className="size-3" />
         </Button>
@@ -64,7 +68,9 @@ export const WindowControls = () => {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
-          className={cn(isMaximized && 'rounded-none hover:rounded-none')}
+          className={cn(
+            isMaximized && 'h-full rounded-none hover:rounded-none'
+          )}
         >
           <X className="size-4" />
         </Button>

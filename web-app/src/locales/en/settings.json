@@ -358,6 +358,7 @@
     "findOptimalSwitching": "Switching…",
     "alreadyOptimal": "You're already on the optimal backend for this device.",
     "findOptimalFailed": "Could not check for an optimal backend. Try again later.",
+    "detectionUnavailable": "Couldn't reach the backend release stream (GitHub). Keeping your current backend — check your connection or proxy and try again.",
     "pendingBackendLabel": "Pending:",
     "pendingBackendHint": "will activate after restart",
     "hotSwapping": "Switching backend",

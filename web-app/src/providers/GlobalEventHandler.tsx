@@ -14,6 +14,29 @@ export function GlobalEventHandler() {
   const serviceHub = useServiceHub()
   const setHardwareData = useHardware((state) => state.setHardwareData)
 
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+
+    let cancelled = false
+
+    const loadHardwareInfo = async () => {
+      try {
+        const data = await serviceHub.hardware().getHardwareInfo()
+        if (!cancelled && data) {
+          setHardwareData(data)
+        }
+      } catch (error) {
+        console.error('Failed to load hardware info on startup:', error)
+      }
+    }
+
+    loadHardwareInfo()
+
+    return () => {
+      cancelled = true
+    }
+  }, [serviceHub, setHardwareData])
+
   // Re-detect GPU when app becomes visible again (e.g. after system sleep on Linux - #6447)
   useEffect(() => {
     if (!isPlatformTauri()) return

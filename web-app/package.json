@@ -1,7 +1,7 @@
 {
   "name": "@janhq/web-app",
   "private": true,
-  "version": "1.1.112",
+  "version": "1.1.114",
   "type": "module",
   "scripts": {
     "seed-catalog": "node scripts/fetch-seed-catalog.mjs",
@@ -69,6 +69,7 @@
     "framer-motion": "12.23.12",
     "fzf": "0.5.2",
     "i18next": "25.0.2",
+    "jsonrepair": "3.14.0",
     "katex": "0.16.22",
     "lodash": "^4.17.23",
     "lodash.clonedeep": "4.5.0",

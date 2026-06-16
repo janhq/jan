@@ -150,7 +150,7 @@ const ThreadItem = memo(
     const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
 
     return (
-      <MenuItemWrapper>
+      <MenuItemWrapper className={cn(subItem && 'relative group/menu-item')}>
         {currentProjectId ? (
           <Link
             to="/threads/$threadId"
@@ -178,7 +178,7 @@ const ThreadItem = memo(
               className={cn(
                 'hover:bg-sidebar-foreground/8',
                 currentProjectId && 'mt-4 mr-2',
-                subItem && 'top-1'
+                subItem && '-right-5 top-1'
               )}
             >
               <MoreHorizontal />
