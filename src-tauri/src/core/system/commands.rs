@@ -1474,6 +1474,14 @@ fn agent_install_spec(
             let (p, a) = npm("opencode-ai");
             Ok((p, a, "npm", "https://opencode.ai"))
         }
+        "cline" => {
+            let (p, a) = npm("cline");
+            Ok((p, a, "npm", "https://docs.cline.bot/cline-cli/getting-started"))
+        }
+        "mimo" => {
+            let (p, a) = npm("@mimo-ai/cli");
+            Ok((p, a, "npm", "https://mimo.xiaomi.com/mimocode/"))
+        }
         "droid" => {
             let (p, a) = npm("droid");
             Ok((
@@ -1940,6 +1948,81 @@ pub fn configure_opencode(
     std::fs::write(&path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     log::info!("OpenCode configured: baseURL={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure MiMo Code by upserting `provider.atomic` in
+/// `~/.config/mimocode/mimocode.json` (strict JSON, other providers preserved).
+/// MiMo Code is a fork of OpenCode, so its config system is OpenCode's
+/// field-for-field; only the paths and `$schema` differ.
+#[tauri::command]
+pub fn configure_mimo(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let dir = PathBuf::from(&home).join(".config").join("mimocode");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ~/.config/mimocode: {}", e))?;
+    let path = dir.join("mimocode.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. Fix or remove the file and try again.",
+                    path.display(),
+                    e
+                )
+            })?
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = root
+        .as_object_mut()
+        .ok_or_else(|| "mimocode.json is not a JSON object".to_string())?;
+    obj.entry("$schema")
+        .or_insert_with(|| serde_json::json!("https://mimo.xiaomi.com/config.json"));
+
+    let provider = obj
+        .entry("provider")
+        .or_insert_with(|| serde_json::json!({}));
+    if !provider.is_object() {
+        *provider = serde_json::json!({});
+    }
+
+    let key_val = api_key.as_deref().filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let mut models = serde_json::Map::new();
+    models.insert(model.clone(), serde_json::json!({ "name": model }));
+
+    provider.as_object_mut().unwrap().insert(
+        "atomic".to_string(),
+        serde_json::json!({
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Atomic Chat",
+            "options": { "baseURL": api_url, "apiKey": key_val },
+            "models": serde_json::Value::Object(models),
+        }),
+    );
+
+    // Select Atomic as the active default model so MiMo Code opens on it without
+    // a manual `/models` pick. Format is `<providerId>/<modelId>`. Pressing Run
+    // is an explicit "use this", so we overwrite any prior selection.
+    obj.insert(
+        "model".to_string(),
+        serde_json::json!(format!("atomic/{}", model)),
+    );
+
+    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    log::info!("MiMo Code configured: baseURL={}, model={}", api_url, model);
     Ok(())
 }
 
@@ -2679,6 +2762,76 @@ pub fn configure_kilo(
     std::fs::write(&path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     log::info!("KiloCode configured: baseURL={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Configure Cline CLI by RUNNING its official non-interactive setup command
+/// (`cline auth ...`) rather than writing a config file. Cline has no clean
+/// user-facing config file and no base-URL env var; its on-disk state
+/// (`~/.cline/globalState.json`) is a brittle legacy format that must not be
+/// hand-written. The `cline auth` path is exactly what `ollama launch cline`
+/// invokes under the hood. `cline` is guaranteed on PATH by the time this runs
+/// (handleRun installs the agent before configuring).
+#[tauri::command]
+pub fn configure_cline(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    // Cline rejects an empty apikey (and an empty modelid; model is always set
+    // because requiresModel is true), so fall back to a non-empty placeholder
+    // when the local server runs without a key.
+    let key_val = api_key
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .unwrap_or("local");
+
+    let auth_args = [
+        "auth",
+        "--provider",
+        "openai-compatible",
+        "--apikey",
+        key_val,
+        "--modelid",
+        &model,
+        "--baseurl",
+        &api_url,
+    ];
+
+    // On Windows the npm-installed `cline` is a batch shim (`cline.cmd`). Rust's
+    // `std::process::Command` spawns via `CreateProcessW`, which only resolves
+    // `.exe` on PATH and refuses to execute `.cmd`/`.bat` directly
+    // (rust-lang/rust#37519). Route through `cmd.exe` so the shim is found and
+    // run — the same workaround the `npm()` helper uses. On macOS/Linux spawn
+    // `cline` directly.
+    #[cfg(windows)]
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.arg("/C").arg("cline").args(auth_args);
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("cline");
+        cmd.args(auth_args);
+        cmd
+    };
+    // Find the npm-installed `cline` even when launched from Finder/Dock with a
+    // minimal PATH (macOS/Linux); no-op on Windows.
+    apply_login_path(&mut cmd);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to spawn 'cline': {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("`cline auth` failed: {}", stderr.trim()));
+    }
+
+    log::info!("Cline configured: baseUrl={}, model={}", api_url, model);
     Ok(())
 }
 

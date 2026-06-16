@@ -114,6 +114,14 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           </svg>
         </IconBox>
       )
+    case 'mimo':
+      return (
+        <IconBox bg="#ff6700">
+          <span className="text-sm font-semibold text-white">
+            {agent.name.charAt(0)}
+          </span>
+        </IconBox>
+      )
     case 'copilot':
       return (
         <IconBox bg="#000000">
@@ -202,6 +210,16 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
             src="/images/integrations/hermes.png"
             alt={agent.name}
             className="size-full object-contain"
+          />
+        </IconBox>
+      )
+    case 'cline':
+      return (
+        <IconBox bg="#2b303b">
+          <img
+            src="/images/integrations/cline.png"
+            alt={agent.name}
+            className="size-full object-cover"
           />
         </IconBox>
       )
@@ -481,6 +499,12 @@ function LaunchPage() {
           break
         case 'opencode':
           await invoke('configure_opencode', { apiUrl, model, apiKey: key })
+          break
+        case 'cline':
+          await invoke('configure_cline', { apiUrl, model, apiKey: key })
+          break
+        case 'mimo':
+          await invoke('configure_mimo', { apiUrl, model, apiKey: key })
           break
         case 'copilot':
           await invoke('configure_copilot', { apiUrl, model, apiKey: key })
