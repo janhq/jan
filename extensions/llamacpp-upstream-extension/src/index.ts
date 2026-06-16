@@ -34,6 +34,8 @@ import {
   getBackendExePath,
   getBackendDir,
   getLocalInstalledBackends,
+  findCompatibleInstalledBackend,
+  cleanupIncompleteBackends,
   fetchRemoteBackends,
   friendlyBackendLabel,
   getBackendDownloadUrl,
@@ -446,6 +448,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     // Activate a pending backend that was downloaded before the last restart.
     await this.activatePendingBackend()
+
+    // ATO-179 (AC3): sweep orphan / incomplete backend folders (exist on disk
+    // but carry no llama-server exe — e.g. empty stubs from a failed download)
+    // so they neither masquerade as installed nor block a clean re-download.
+    // Best-effort; runs after activatePendingBackend (a completed pending
+    // backend has a valid exe and is therefore never removed) and before
+    // configureBackends.
+    try {
+      const removed = await cleanupIncompleteBackends()
+      if (removed.length > 0) {
+        logger.info(
+          `[onLoad] Cleaned ${removed.length} incomplete/orphan backend dir(s): ${removed.join(', ')}`
+        )
+      }
+    } catch (cleanupErr) {
+      logger.warn('[onLoad] Incomplete-backend cleanup failed:', cleanupErr)
+    }
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -3308,7 +3327,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    const [version, backend] = cfg.version_backend.split('/')
+    let [version, backend] = cfg.version_backend.split('/')
 
     if (!version || !backend) {
       throw new Error(
@@ -3327,8 +3346,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding. The returned
+    // pair may differ from the requested one when an ATO-179 fallback to an
+    // installed compatible backend kicks in; use it for the exe path below.
+    ;({ version, backend } = await this.ensureBackendReady(
+      backend,
+      version,
+      true
+    ))
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -3762,10 +3787,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
     return value.replace(/[^A-Za-z0-9_-]/g, '_')
   }
 
+  /**
+   * Ensure a usable llama-server backend exists for the requested
+   * `version`/`backend`, returning the EFFECTIVE `{ version, backend }` that
+   * the caller should actually run (it may differ from the requested pair when
+   * an ATO-179 fallback kicks in).
+   *
+   * @param allowFallback when true and the requested backend can't be obtained,
+   *   fall back to an installed compatible backend (same type, any version)
+   *   instead of throwing. Only the load paths (`performLoad`, `getDevices`)
+   *   pass this; explicit user-driven backend switches keep the strict
+   *   throw-on-failure behavior.
+   */
   private async ensureBackendReady(
     backend: string,
-    version: string
-  ): Promise<void> {
+    version: string,
+    allowFallback: boolean = false
+  ): Promise<{ version: string; backend: string }> {
     backend = stripBom(backend)
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
@@ -3787,7 +3825,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
           )
         }
       }
-      return
+      return { version, backend }
+    }
+
+    // ATO-179 (AC1): a stale, incomplete folder for this exact target (exists
+    // but carries no llama-server exe) must not block a clean re-download.
+    // Remove it so the decompress writes into a clean directory and the model
+    // is never left stuck on an empty stub.
+    try {
+      const staleDir = await getBackendDir(backend, version)
+      if (await fs.existsSync(staleDir)) {
+        logger.warn(
+          `[ensureBackendReady] Removing incomplete backend dir before re-download: ${backendKey}`
+        )
+        await fs.rm(staleDir)
+      }
+    } catch (rmErr) {
+      logger.warn(
+        `[ensureBackendReady] Failed to remove incomplete dir for ${backendKey}:`,
+        rmErr
+      )
     }
 
     // Both bundled (re-codesigned macOS / GPU-detected Windows) and
@@ -3804,12 +3861,60 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     if (await isBackendInstalled(backend, version)) {
-      return
+      return { version, backend }
+    }
+
+    // ATO-179 (AC2): the requested backend is unavailable (download failed or
+    // the tag was pruned upstream), but a working compatible backend (same
+    // type, any version) may already be on disk. Fall back to it and persist
+    // the corrected `version_backend` instead of failing the load with
+    // BINARY_NOT_FOUND. Limited to load paths via `allowFallback`.
+    if (allowFallback) {
+      const fallback = await findCompatibleInstalledBackend(backend)
+      if (fallback) {
+        const fallbackString = `${fallback.version}/${fallback.backend}`
+        logger.warn(
+          `Backend ${backendKey} unavailable; falling back to installed compatible backend ${fallbackString}.`
+        )
+        await this.persistVersionBackend(fallbackString)
+        return { version: fallback.version, backend: fallback.backend }
+      }
     }
 
     throw new Error(
       `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
     )
+  }
+
+  /**
+   * Persist a resolved `version_backend` to settings + in-memory config and
+   * notify the UI. Used by the ATO-179 fallback so the corrected backend
+   * survives restarts and the provider settings page reflects reality.
+   */
+  private async persistVersionBackend(targetBackendString: string): Promise<void> {
+    try {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = targetBackendString
+          }
+          return item
+        })
+      )
+    } catch (e) {
+      logger.warn(
+        `Failed to persist version_backend=${targetBackendString} to settings:`,
+        e
+      )
+    }
+    this.config.version_backend = targetBackendString
+    if (events && typeof events.emit === 'function') {
+      events.emit('settingsChanged', {
+        key: 'version_backend',
+        value: targetBackendString,
+      })
+    }
   }
 
   /**
@@ -4603,7 +4708,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     const cfg = this.config
-    const [version, backend] = cfg.version_backend.split('/')
+    let [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {
       throw new Error(
         'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
@@ -4613,8 +4718,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const envs: Record<string, string> = {}
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    // Ensure backend is downloaded and ready before proceeding (ATO-179: fall
+    // back to an installed compatible backend if the pinned one is missing).
+    ;({ version, backend } = await this.ensureBackendReady(
+      backend,
+      version,
+      true
+    ))
     logger.info('Calling Tauri command getDevices with arg --list-devices')
     const backendPath = await getBackendExePath(backend, version)
 

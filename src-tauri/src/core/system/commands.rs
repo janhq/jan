@@ -2913,3 +2913,52 @@ pub fn open_agent_terminal(command: String) -> Result<(), String> {
     #[allow(unreachable_code)]
     Ok(())
 }
+
+/// One-time macOS migration for the autostart launcher switch from
+/// `MacosLauncher::LaunchAgent` to `MacosLauncher::AppleScript` (real Login
+/// Item). The legacy launcher wrote `~/Library/LaunchAgents/{app_name}.plist`
+/// (where `{app_name}` is `package_info().name`, the exact value the plugin
+/// used). Detecting that plist tells us the user had launch-at-startup ON under
+/// the old mechanism: we remove the stale plist (so it can't double-launch the
+/// app on reboot or point at a stale binary path) and return `true`, so the
+/// caller can re-register a proper Login Item via the AppleScript launcher. A
+/// user who never enabled it / turned it off has no plist -> returns `false`
+/// and the caller leaves autostart untouched, preserving the choice. No-op
+/// (returns `false`) on non-macOS.
+#[tauri::command]
+pub fn migrate_macos_autostart_launchagent<R: Runtime>(
+    #[allow(unused_variables)] app: AppHandle<R>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = app
+            .path()
+            .home_dir()
+            .map_err(|e| format!("Failed to resolve home directory: {e}"))?;
+        let app_name = app.package_info().name.clone();
+        let plist = home
+            .join("Library")
+            .join("LaunchAgents")
+            .join(format!("{app_name}.plist"));
+        if !plist.exists() {
+            return Ok(false);
+        }
+        // Best-effort: unload from the current launchd session so the stale
+        // agent doesn't linger; ignore errors (it may not be loaded).
+        let _ = std::process::Command::new("launchctl")
+            .args(["unload", &plist.to_string_lossy()])
+            .output();
+        fs::remove_file(&plist)
+            .map_err(|e| format!("Failed to remove legacy autostart plist: {e}"))?;
+        log::info!(
+            "Migrated legacy macOS autostart LaunchAgent plist: {}",
+            plist.display()
+        );
+        Ok(true)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = &app;
+        Ok(false)
+    }
+}

@@ -309,6 +309,147 @@ Append-only. Newest at top. Each entry follows this shape:
 
 ---
 
+### 2026-06-16 — Treat empty/incomplete `llamacpp-upstream` backend folders as not-installed, fall back to a compatible installed backend on load, and sweep orphan folders at startup (ATO-179)
+- **Context:** A user hit `BINARY_NOT_FOUND` on model load: the model's pinned
+  `version_backend` pointed at a backend whose on-disk folder
+  (`llamacpp-upstream/backends/<tag>/<type>/`) was an **empty stub** (no
+  `llama-server` exe — left by a failed/interrupted download or a pruned
+  upstream tag), even though a **working compatible** backend of the same type
+  (different tag, e.g. `b9652/macos-arm64` vs the pinned `b9642/macos-arm64`)
+  was already installed. The load dead-ended instead of self-healing. Root
+  cause is not the install check itself —
+  [`isBackendInstalled`](extensions/llamacpp-upstream-extension/src/backend.ts)
+  and the Rust `get_local_installed_backends` already gate on exe presence — but
+  three missing recoveries: (1) a stale incomplete dir for the exact pinned pair
+  wasn't cleared before re-download, (2) when the pinned backend couldn't be
+  obtained at all there was no fallback to a working sibling, only a throw, and
+  (3) nothing ever swept the orphan stub folders.
+- **Decision (the issue's 3 acceptance criteria; extension-only, no Rust/IPC/
+  schema change):**
+  1. **AC1 — clear stale stub before re-download.** In
+     [`ensureBackendReady`](extensions/llamacpp-upstream-extension/src/index.ts),
+     when the requested pair isn't installed (exe missing), `fs.rm` its dir (if
+     present) before attempting the download so decompress writes into a clean
+     dir and the model is never stuck on an empty stub.
+  2. **AC2 — fall back to a compatible installed backend.** `ensureBackendReady`
+     now returns the **effective** `{ version, backend }` and takes an
+     `allowFallback` flag (true only from the load paths `performLoad` /
+     `getDevices`; explicit user-driven backend switches keep strict
+     throw-on-failure). When the pinned backend can't be obtained, new
+     `findCompatibleInstalledBackend(type)`
+     ([`backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts))
+     returns the newest installed backend of the **same type** (any tag), the
+     corrected `version_backend` is persisted via new `persistVersionBackend`
+     (settings + in-memory config + `settingsChanged` emit), and the load runs
+     on it instead of failing. **Compatibility is deliberately same-type-only**
+     (every tag of a type targets the same platform/GPU variant and is
+     interchangeable); cross-type fallback (e.g. cuda→cpu) is intentionally NOT
+     automatic — it's a feature/perf trade-off that must stay a user choice.
+  3. **AC3 — sweep orphans at startup.** New `cleanupIncompleteBackends()`
+     ([`backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts))
+     scans `llamacpp-upstream/backends/`, `fs.rm`s any `<tag>/<type>` dir with no
+     exe and any now-empty `<tag>` dir, and returns the removed ids. Called from
+     `onLoad` right **after** `activatePendingBackend` (a completed pending
+     backend has a valid exe → never removed) and before `configureBackends`.
+     Scoped strictly to the upstream backends tree — the shared GGUF model tree
+     and the turboquant `llamacpp` backends are never touched.
+- **Consequences:** A model pinned to a missing/incomplete backend now
+  re-downloads cleanly, and if that fails but a compatible build is on disk it
+  loads on the sibling (with the pin corrected) instead of `BINARY_NOT_FOUND`;
+  empty stub folders self-clean at startup. Same-type-only fallback exactly
+  covers the reported case (`b9642`→`b9652`, both `macos-arm64`). macOS
+  turboquant `llamacpp` and MLX are untouched (this is the upstream provider).
+  **Verified:** rolldown build clean (`dist/index.js` 217.54 kB, exit 0 — the
+  authoritative compile); vitest suite 88 passed / 14 failed — the 14 failures
+  are **pre-existing** (stash-baseline on HEAD: identical 14 failed / 88 passed,
+  env/network `__TAURI_INTERNALS__` in the sandbox), unchanged by this diff.
+- **Owner:** team.
+- **Links:** [ATO-179](https://linear.app/atomicchat/issue/ATO-179),
+  [ATO-176](https://linear.app/atomicchat/issue/ATO-176), the 2026-06-15 ADR
+  *Stop the `llamacpp-upstream` auto-upgrade from wiping turboquant backends …
+  (ATO-153)*, files:
+  [`extensions/llamacpp-upstream-extension/src/backend.ts`](extensions/llamacpp-upstream-extension/src/backend.ts)
+  (`findCompatibleInstalledBackend`, `cleanupIncompleteBackends`),
+  [`extensions/llamacpp-upstream-extension/src/index.ts`](extensions/llamacpp-upstream-extension/src/index.ts)
+  (`ensureBackendReady`, `persistVersionBackend`, `performLoad`, `getDevices`,
+  `onLoad`).
+
+### 2026-06-16 — Switch macOS autostart from `LaunchAgent` to `AppleScript` (real Login Item) + one-time choice-preserving migration for existing users
+- **Context:** User report — the "Launch at startup" toggle exists (ATO-96 +
+ the 2026-06-10 default-ON seed), but on macOS the app does **not** start on
+ reboot and does not appear in `System Settings → General → Login Items →
+ "Open at Login"`. Root cause: the autostart plugin was registered with
+ `MacosLauncher::LaunchAgent`
+ ([`src-tauri/src/lib.rs`](src-tauri/src/lib.rs)). Confirmed against the crate
+ sources: `tauri-plugin-autostart` 2.5.1 → `auto-launch` 0.5.0
+ (`src/macos.rs`) — LaunchAgent mode writes
+ `~/Library/LaunchAgents/{app_name}.plist` (`{app_name}` =
+ `app.package_info().name`, here `"Atomic Chat"`; `RunAtLoad=true`) instead of
+ registering a Login Item. So (a) it never shows under "Open at Login" (it can
+ only appear under "Allow in the Background"), and (b) if autostart was ever
+ enabled from a **dev** build, the plist's `ProgramArguments` points at the
+ `target/debug` binary, which doesn't exist after a normal reboot → launchd
+ can't launch it. The earlier ADR (ATO-96) chose LaunchAgent deliberately to
+ avoid the Apple Events prompt.
+- **Decision (per the user's chosen option — AppleScript Login Item, with a
+ migration that preserves prior on/off choice):**
+ 1. **Launcher switch.** `MacosLauncher::LaunchAgent` →
+ `MacosLauncher::AppleScript` in [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
+ AppleScript mode registers a real Login Item via `osascript`
+ (`make login item …`), visible in System Settings and started by
+ `loginwindow` on reboot. Trade-off (accepted): a one-time
+ automation-permission prompt on first enable.
+ 2. **Choice-preserving migration (macOS only, one-shot).** New Rust command
+ `migrate_macos_autostart_launchagent`
+ ([`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs),
+ registered in both `generate_handler!` lists in
+ [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs)): resolves the **exact** legacy
+ plist path from `app.package_info().name` (the same value the plugin used, so
+ the filename matches by construction), and if `~/Library/LaunchAgents/{app_name}.plist`
+ exists — i.e. the user had launch-at-startup **ON** under the old launcher —
+ best-effort `launchctl unload`s it, removes it (so it can't double-launch or
+ point at a stale binary), and returns `true`; otherwise returns `false`
+ (and `false` on non-macOS). Frontend
+ ([`web-app/src/providers/DataProvider.tsx`](web-app/src/providers/DataProvider.tsx)):
+ a new `IS_MACOS`-gated effect, guarded by a one-shot localStorage flag
+ `autostart-applescript-migrated`
+ ([`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts)),
+ calls the command; when it reports a prior ON, re-registers the Login Item via
+ `enableAutostart()` (guarded by `!isAutostartEnabled()`), so the user **keeps**
+ autostart — now as a Login Item. A user who had it **off** has no legacy plist
+ → no-op → choice preserved. New users are covered by the existing default-ON
+ seed (which now creates an AppleScript Login Item); the migration is a no-op
+ for them.
+- **Consequences:** Existing macOS users who had autostart enabled keep it (now
+ a reboot-reliable Login Item visible in System Settings); those who disabled it
+ stay disabled; new users get the Login Item by default. The stale LaunchAgent
+ plist is cleaned up so it can't double-launch alongside the Login Item. Scope:
+ 1 Rust command + the launcher line + 1 web-app effect + 1 localStorage key; no
+ IPC shape change beyond the additive command, no on-disk layout or settings
+ schema change. Windows/Linux unaffected (the command returns `false` off
+ macOS; their autostart paths are unchanged). **Verified:**
+ `cargo check -p Atomic-Chat` 0 errors (pre-existing `dead_code` warnings only);
+ `eslint` clean on the two touched web-app files; `tsc -b` shows only the
+ pre-existing, unrelated `jsonrepair` missing-module error (dependency declared
+ in `package.json` but not installed in the sandbox), nothing from the edited
+ files. **Caveat:** first enable triggers the macOS automation-permission
+ prompt; the migration is keyed on localStorage, so a cleared localStorage /
+ factory reset re-runs it once (harmless — it re-detects the real plist state).
+- **Owner:** team.
+- **Links:** [ATO-96](https://linear.app/atomicchat/issue/ATO-96), the 2026-06-09
+ ADR *Add a cross-platform "Launch at startup" toggle …* and the 2026-06-10 ADR
+ *Default "Launch at startup" to ON for all users …*,
+ [`tauri-plugin-autostart` 2.5.1](https://crates.io/crates/tauri-plugin-autostart) /
+ `auto-launch` 0.5.0 (`src/macos.rs`), files:
+ [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs)
+ (`MacosLauncher::AppleScript`, command registration),
+ [`src-tauri/src/core/system/commands.rs`](src-tauri/src/core/system/commands.rs)
+ (`migrate_macos_autostart_launchagent`),
+ [`web-app/src/providers/DataProvider.tsx`](web-app/src/providers/DataProvider.tsx)
+ (migration effect),
+ [`web-app/src/constants/localStorage.ts`](web-app/src/constants/localStorage.ts)
+ (`autostartAppleScriptMigrated`).
+
 ### 2026-06-15 — Add Cline CLI as a one-click Launch-page coding agent (configure by running `cline auth`, not writing a file)
 - **Context:** The Launch page one-click installs + configures external coding
   agents against the local OpenAI-compatible server. Cline CLI was requested

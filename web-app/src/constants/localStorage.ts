@@ -44,6 +44,10 @@ export const localStorageKey = {
   // Autostart defaults to ON for all users (new and existing); after this
   // one-time seed, a user's manual choice in Settings is never overridden.
   autostartSeeded: 'autostart-seeded',
+  // macOS only: marks the one-time migration of the autostart launcher from the
+  // legacy LaunchAgent plist to a real AppleScript Login Item. Preserves prior
+  // state — users who had autostart ON keep it; those who had it off stay off.
+  autostartAppleScriptMigrated: 'autostart-applescript-migrated',
   // Per-integration manual binary-path overrides for the Launch page. Lets a
   // user fix a wrong "Not installed" status for agents installed in a
   // non-standard location that PATH/WSL detection misses.

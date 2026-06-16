@@ -552,6 +552,88 @@ export async function isBackendInstalled(
   return result
 }
 
+/**
+ * Find a working, already-installed backend of the SAME type as `backendType`
+ * (e.g. `macos-arm64`), regardless of its release tag. Used as a fallback
+ * (ATO-179, AC2) when the model's pinned `version_backend` can't be obtained
+ * (download failed / the tag was pruned upstream) but a compatible build is
+ * already on disk — so the load degrades to a working backend instead of
+ * failing with `BINARY_NOT_FOUND`.
+ *
+ * "Compatible" is deliberately limited to the identical backend type: every
+ * release tag of the same type targets the same platform / GPU variant and is
+ * interchangeable. We do NOT cross types here (e.g. cuda → cpu) — that is a
+ * feature/perf trade-off that must stay an explicit user choice.
+ *
+ * Returns the newest (by on-disk mtime, via `order`) matching backend, or
+ * `null` when none is installed.
+ */
+export async function findCompatibleInstalledBackend(
+  backendType: string
+): Promise<BackendVersion | null> {
+  const normalized = backendType.replace(/\uFEFF/g, '').trim()
+  const installed = await getLocalInstalledBackends()
+  const sameType = installed.filter(
+    (b) => b.backend.replace(/\uFEFF/g, '').trim() === normalized
+  )
+  if (sameType.length === 0) return null
+  sameType.sort((a, b) => (b.order ?? 0) - (a.order ?? 0))
+  return sameType[0]
+}
+
+/**
+ * Remove orphan / incomplete backend directories from this provider's
+ * backends tree (ATO-179, AC3). An "incomplete" directory is one that exists
+ * on disk but carries no `llama-server` executable — e.g. an empty stub left
+ * by an interrupted/failed download, which would otherwise be mistaken for a
+ * usable backend or block a clean re-download.
+ *
+ * Scoped strictly to `llamacpp-upstream/backends/` so the shared GGUF model
+ * tree and the turboquant `llamacpp` backends are never touched. Best-effort:
+ * a failure on any single entry is logged by the caller and does not abort the
+ * sweep. Returns the list of removed `<version>/<backend>` identifiers.
+ */
+export async function cleanupIncompleteBackends(): Promise<string[]> {
+  const janDataFolderPath = await getJanDataFolderPath()
+  const backendsRoot = await joinPath([
+    janDataFolderPath,
+    'llamacpp-upstream',
+    'backends',
+  ])
+
+  const removed: string[] = []
+  if (!(await fs.existsSync(backendsRoot))) return removed
+
+  const versionDirs: string[] = await fs.readdirSync(backendsRoot)
+  for (const version of versionDirs) {
+    const versionPath = await joinPath([backendsRoot, version])
+    let backendTypes: string[]
+    try {
+      backendTypes = await fs.readdirSync(versionPath)
+    } catch {
+      // Not a directory (stray file) — skip; it does not match our layout.
+      continue
+    }
+
+    for (const backendType of backendTypes) {
+      if (await isBackendInstalled(backendType, version)) continue
+      const dir = await getBackendDir(backendType, version)
+      await fs.rm(dir)
+      removed.push(`${version}/${backendType}`)
+    }
+
+    // Drop a now-empty version directory.
+    try {
+      const remaining: string[] = await fs.readdirSync(versionPath)
+      if (remaining.length === 0) await fs.rm(versionPath)
+    } catch {
+      // ignore
+    }
+  }
+
+  return removed
+}
+
 async function _getSupportedFeatures() {
   const sysInfo = await getSystemInfo()
   return await getSupportedFeaturesFromRust(
