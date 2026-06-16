@@ -255,10 +255,12 @@ function HubContent() {
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {
-      const providerState = useModelProvider.getState()
+      // Read from the reactive `providers` list (a memo dependency) rather than
+      // useModelProvider.getState(), so the filtered set recomputes when a
+      // model is deleted and its card disappears immediately (ATO-180).
       const llamacppModels =
-        providerState.getProviderByName('llamacpp')?.models ?? []
-      const mlxModels = providerState.getProviderByName('mlx')?.models ?? []
+        providers.find((p) => p.provider === 'llamacpp')?.models ?? []
+      const mlxModels = providers.find((p) => p.provider === 'mlx')?.models ?? []
 
       const matchedLlamacppIds = new Set<string>()
       const matchedMlxIds = new Set<string>()
@@ -427,6 +429,9 @@ function HubContent() {
     sortSelected,
     sources,
     enrichedOrphans,
+    // Recompute the downloaded-filtered set when provider models change so a
+    // deleted model's card disappears immediately (ATO-180).
+    providers,
   ])
 
   // Collect orphan model IDs that need HuggingFace enrichment
