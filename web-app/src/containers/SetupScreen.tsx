@@ -291,15 +291,6 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Auto-start download when screen is shown
-  const hasAutoStarted = useRef(false)
-  useEffect(() => {
-    if (hasAutoStarted.current || isDownloaded) return
-    hasAutoStarted.current = true
-    handleQuickStart()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Use ref to track if we've already navigated
   const hasNavigatedRef = useRef(false)
 
