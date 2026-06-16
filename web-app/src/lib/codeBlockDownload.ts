@@ -11,6 +11,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import { getServiceHub, isServiceHubInitialized } from '@/hooks/useServiceHub'
+import { useThreads } from '@/hooks/useThreads'
 
 const DOWNLOAD_BUTTON_SELECTOR =
   '[data-streamdown="code-block-download-button"]'
@@ -117,6 +118,39 @@ type CodeBlockPayload = {
   language: string
 }
 
+const DEFAULT_FILE_BASENAME = 'file'
+
+/**
+ * Turn a project name into a safe filename stem: strip path separators and
+ * characters that are illegal on common filesystems, collapse whitespace, and
+ * trim. Returns `null` when nothing usable remains.
+ */
+const sanitizeFileBaseName = (name: string): string | null => {
+  const cleaned = name
+    .replace(/[/\\:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned.length > 0 ? cleaned : null
+}
+
+/**
+ * Default filename stem for a generated file. Uses the current thread's project
+ * name when available so downloads land as e.g. `My Project.py` instead of the
+ * generic `file.py`.
+ */
+const getDefaultFileBaseName = (): string => {
+  try {
+    const projectName =
+      useThreads.getState().getCurrentThread()?.metadata?.project?.name
+    if (typeof projectName === 'string') {
+      return sanitizeFileBaseName(projectName) ?? DEFAULT_FILE_BASENAME
+    }
+  } catch (error) {
+    console.debug('[code-block-download] could not resolve project name:', error)
+  }
+  return DEFAULT_FILE_BASENAME
+}
+
 const extractCodeBlockPayload = (
   button: Element,
 ): CodeBlockPayload | null => {
@@ -153,7 +187,7 @@ const downloadViaTauri = async (
   payload: CodeBlockPayload,
 ): Promise<void> => {
   const ext = LANG_TO_EXT[payload.language] ?? 'txt'
-  const defaultPath = `file.${ext}`
+  const defaultPath = `${getDefaultFileBaseName()}.${ext}`
 
   if (!isServiceHubInitialized()) {
     console.warn('[code-block-download] ServiceHub not initialized yet')
