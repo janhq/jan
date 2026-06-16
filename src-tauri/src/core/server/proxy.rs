@@ -726,6 +726,64 @@ fn body_indicates_oom(body: &str) -> bool {
         || b.contains("erroroutofdevicememory")
 }
 
+/// ATO-182: Build an OpenAI-compatible structured error envelope so every
+/// client (the in-app UI plus external agents that hit `localhost:1337/v1`)
+/// receives a parseable `{"error": {...}}` document with a typed `code`,
+/// instead of a raw stderr dump / plaintext line. `type` follows the OpenAI
+/// error taxonomy.
+fn structured_error_json(message: &str, error_type: &str, code: &str) -> String {
+    serde_json::json!({
+        "error": {
+            "message": message,
+            "type": error_type,
+            "code": code,
+        }
+    })
+    .to_string()
+}
+
+/// ATO-182: True when `body` is already a structured `{"error": {...}}`
+/// envelope (llama.cpp and remote providers emit this shape), so we never
+/// double-wrap it.
+fn is_structured_error_body(body: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("error").map(|e| e.is_object()))
+        .unwrap_or(false)
+}
+
+/// ATO-182: Pick the typed OpenAI error `code` for a local-backend failure
+/// from the already-computed OOM / context-overflow signals.
+fn error_code_for(oom: bool, ctx_overflow: bool) -> &'static str {
+    if ctx_overflow {
+        "context_length_exceeded"
+    } else if oom {
+        "insufficient_memory"
+    } else {
+        "server_error"
+    }
+}
+
+/// ATO-182: Normalize a *local-backend* error body for the OpenAI chat path.
+/// If the backend already returned a structured `{"error": {...}}` envelope
+/// (llama.cpp), forward it unchanged. Otherwise wrap the raw body (mlx-vlm's
+/// `{"detail": ...}`, plaintext stderr, "Failed to read error body", …) into a
+/// structured envelope carrying a typed `code`. The original text is preserved
+/// inside `message`, so the UI/Rust context-overflow + OOM matchers — which key
+/// off the message text — keep working.
+fn structure_backend_error_body(body: &str, oom: bool, ctx_overflow: bool) -> String {
+    if is_structured_error_body(body) {
+        return body.to_string();
+    }
+    let code = error_code_for(oom, ctx_overflow);
+    let error_type = if ctx_overflow {
+        "invalid_request_error"
+    } else {
+        "server_error"
+    };
+    structured_error_json(body, error_type, code)
+}
+
 /// Parses the client's buffered request body and extracts `max_tokens` (or
 /// the newer `max_completion_tokens` alias that some OpenAI SDKs already
 /// emit). Returns `None` when the field is absent/invalid — meaning the
@@ -3026,6 +3084,20 @@ async fn inner_proxy_request<R: Runtime>(
                 state.upstream_status = Some(status.as_u16());
                 state.oom_detected = body_indicates_oom(&error_body);
                 state.ctx_overflow_detected = is_context_limit_error(status, &error_body);
+                // ATO-182: For local engines (llama.cpp / mlx), forward a
+                // structured OpenAI error envelope with a typed `code` instead
+                // of a raw stderr dump / `{"detail": ...}`. Remote providers
+                // already return their own structured error shape, so we leave
+                // those untouched.
+                let client_body = if is_local_backend(state.backend) {
+                    structure_backend_error_body(
+                        &error_body,
+                        state.oom_detected,
+                        state.ctx_overflow_detected,
+                    )
+                } else {
+                    error_body
+                };
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
@@ -3033,7 +3105,7 @@ async fn inner_proxy_request<R: Runtime>(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from(error_body)).unwrap());
+                return Ok(error_response.body(Body::from(client_body)).unwrap());
             }
 
             // Success case.
@@ -3187,14 +3259,36 @@ async fn inner_proxy_request<R: Runtime>(
             // crash, so it must not flood the SentryLogger bridge. The PostHog
             // error_kind above still records it for analytics.
             log::warn!("{error_msg}");
-            let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
+            // ATO-182: A transport error reaching a *local* model server means
+            // the backend inference process is down / crashed / not yet
+            // listening — distinct from a real upstream 500. Map it to 503
+            // (temporarily unavailable, retriable) with a structured OpenAI
+            // error envelope + Retry-After, instead of an opaque 502 plaintext
+            // line. Remote-provider transport failures keep 502 (a genuine
+            // gateway-to-upstream error).
+            let (status, code) = if is_local_backend(state.backend) {
+                (StatusCode::SERVICE_UNAVAILABLE, "backend_unavailable")
+            } else {
+                (StatusCode::BAD_GATEWAY, "upstream_unreachable")
+            };
+            let body = structured_error_json(
+                &format!("The model backend is not reachable: {e}"),
+                "server_error",
+                code,
+            );
+            let mut error_response = Response::builder()
+                .status(status)
+                .header(hyper::header::CONTENT_TYPE, "application/json");
+            if status == StatusCode::SERVICE_UNAVAILABLE {
+                error_response = error_response.header(hyper::header::RETRY_AFTER, "1");
+            }
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
             );
-            Ok(error_response.body(Body::from(error_msg)).unwrap())
+            Ok(error_response.body(Body::from(body)).unwrap())
         }
     }
 }
@@ -3850,6 +3944,75 @@ mod auto_increase_ctx_tests {
         ] {
             assert!(!is_context_limit_error(code, body), "should ignore {code}");
         }
+    }
+
+    // --- ATO-182 structured backend error mapping ------------------------------
+
+    #[test]
+    fn structured_error_json_shape() {
+        let body = structured_error_json("boom", "server_error", "backend_unavailable");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["error"]["message"], "boom");
+        assert_eq!(v["error"]["type"], "server_error");
+        assert_eq!(v["error"]["code"], "backend_unavailable");
+    }
+
+    #[test]
+    fn detects_already_structured_error_body() {
+        let body = r#"{"error":{"code":500,"message":"x","type":"server_error"}}"#;
+        assert!(is_structured_error_body(body));
+        // plaintext / mlx `{"detail":...}` / empty are not structured envelopes
+        assert!(!is_structured_error_body("Failed to read error body: connection reset"));
+        assert!(!is_structured_error_body(r#"{"detail":"Generation failed: ..."}"#));
+        assert!(!is_structured_error_body(""));
+    }
+
+    #[test]
+    fn error_code_for_prioritizes_ctx_overflow_then_oom() {
+        assert_eq!(error_code_for(true, true), "context_length_exceeded");
+        assert_eq!(error_code_for(false, true), "context_length_exceeded");
+        assert_eq!(error_code_for(true, false), "insufficient_memory");
+        assert_eq!(error_code_for(false, false), "server_error");
+    }
+
+    #[test]
+    fn structure_backend_error_body_passes_through_structured() {
+        let body = r#"{"error":{"code":500,"message":"keep me","type":"server_error"}}"#;
+        // Already structured → forwarded byte-for-byte.
+        assert_eq!(structure_backend_error_body(body, false, false), body);
+    }
+
+    #[test]
+    fn structure_backend_error_body_wraps_mlx_detail_with_ctx_code() {
+        // mlx-vlm `{"detail": ...}` is not an `{"error": {...}}` envelope, so we
+        // wrap it. The original text must be preserved so the UI ctx matcher
+        // still fires.
+        let raw = r#"{"detail":"Generation failed: kv cache exceeded max_kv_size=8192"}"#;
+        let wrapped = structure_backend_error_body(raw, false, true);
+        let v: serde_json::Value = serde_json::from_str(&wrapped).unwrap();
+        assert_eq!(v["error"]["code"], "context_length_exceeded");
+        assert_eq!(v["error"]["type"], "invalid_request_error");
+        let msg = v["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("max_kv_size"));
+        assert!(is_context_limit_error(StatusCode::INTERNAL_SERVER_ERROR, &wrapped));
+    }
+
+    #[test]
+    fn structure_backend_error_body_wraps_plaintext_as_server_error() {
+        let raw = "Failed to read error body: connection reset by peer";
+        let wrapped = structure_backend_error_body(raw, false, false);
+        let v: serde_json::Value = serde_json::from_str(&wrapped).unwrap();
+        assert_eq!(v["error"]["code"], "server_error");
+        assert_eq!(v["error"]["type"], "server_error");
+        assert_eq!(v["error"]["message"], raw);
+    }
+
+    #[test]
+    fn structure_backend_error_body_wraps_oom_with_oom_code() {
+        let raw = "ggml_cuda: CUDA_ERROR_OUT_OF_MEMORY: failed to allocate";
+        let wrapped = structure_backend_error_body(raw, true, false);
+        let v: serde_json::Value = serde_json::from_str(&wrapped).unwrap();
+        assert_eq!(v["error"]["code"], "insufficient_memory");
     }
 
     // --- is_context_overflow_finish_length -------------------------------------
