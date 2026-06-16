@@ -17,6 +17,9 @@ pub enum ErrorCode {
     ModelLoadTimedOut,
     LlamaCppProcessError,
 
+    // --- System / Runtime Compatibility Errors ---
+    OsVersionUnsupported,
+
     // --- Memory Errors ---
     OutOfMemory,
 
@@ -50,6 +53,26 @@ impl LlamacppError {
     /// Parses stderr from llama.cpp and creates a specific LlamacppError.
     pub fn from_stderr(stderr: &str) -> Self {
         let lower_stderr = stderr.to_lowercase();
+
+        // The bundled macOS `llama-server` is built against a recent macOS SDK
+        // and links Metal symbols (e.g. the Objective-C class
+        // `MTLResidencySetDescriptor`) that only exist on newer macOS runtimes.
+        // On an older macOS (e.g. 10.15.7 Catalina) the dynamic linker cannot
+        // resolve the symbol and aborts the process at load time
+        // (`dyld[...]: Symbol not found: _OBJC_CLASS_$_MTLResidencySetDescriptor`),
+        // before any model load argument is read — so a CPU fallback within the
+        // same binary is impossible. Classify this as an unsupported-OS error so
+        // the caller can show an actionable "update macOS" message instead of an
+        // opaque "unexpected error", and so the auto-start loop stops retrying a
+        // permanently-failing load.
+        if lower_stderr.contains("dyld") && lower_stderr.contains("symbol not found") {
+            return Self::new(
+                ErrorCode::OsVersionUnsupported,
+                "The model engine couldn't start because it requires a newer version of macOS than the one on this Mac.".into(),
+                Some(stderr.into()),
+            );
+        }
+
         // TODO: add others
         let is_out_of_memory = lower_stderr.contains("out of memory")
             || lower_stderr.contains("failed to allocate")

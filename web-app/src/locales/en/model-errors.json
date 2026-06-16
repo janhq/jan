@@ -18,5 +18,7 @@
   "modelFileMissingTitle": "Model file not found",
   "modelFileMissingDescription": "The model file couldn't be found — it may have been moved or deleted. Try re-downloading the model.",
   "modelFileCorruptTitle": "Model file is corrupted",
-  "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again."
+  "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again.",
+  "osVersionUnsupportedTitle": "macOS version not supported",
+  "osVersionUnsupportedDescription": "The local model engine requires a newer version of macOS than the one on this Mac. Please update macOS to run local models here."
 }
