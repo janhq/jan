@@ -1128,6 +1128,8 @@ const ChatInput = memo(function ChatInput({
         return 'image/jpeg'
       case 'png':
         return 'image/png'
+      case 'webp':
+        return 'image/webp'
       default:
         return ''
     }
@@ -1175,7 +1177,12 @@ const ChatInput = memo(function ChatInput({
   }
 
   const IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024
-  const IMAGE_ALLOWED_MIME_TYPES = ['image/jpg', 'image/jpeg', 'image/png']
+  const IMAGE_ALLOWED_MIME_TYPES = [
+    'image/jpg',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ]
 
   type ImageValidationOutcome = {
     candidates: Attachment[]
@@ -1398,7 +1405,7 @@ const ChatInput = memo(function ChatInput({
 
     if (invalidType.length > 0) {
       errors.push(
-        `Invalid file type${invalidType.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidType.join(', ')}`
+        `Invalid file type${invalidType.length > 1 ? 's' : ''} (only JPEG, JPG, PNG, WEBP allowed): ${invalidType.join(', ')}`
       )
     }
 
@@ -1448,7 +1455,7 @@ const ChatInput = memo(function ChatInput({
           filters: [
             {
               name: 'Images',
-              extensions: ['jpg', 'jpeg', 'png'],
+              extensions: ['jpg', 'jpeg', 'png', 'webp'],
             },
           ],
         })
@@ -1476,8 +1483,8 @@ const ChatInput = memo(function ChatInput({
               const mimeType =
                 ext === 'png'
                   ? 'image/png'
-                  : ext === 'jpg' || ext === 'jpeg'
-                    ? 'image/jpeg'
+                  : ext === 'webp'
+                    ? 'image/webp'
                     : 'image/jpeg'
 
               const file = new File([blob], fileName, { type: mimeType })

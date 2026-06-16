@@ -11,6 +11,8 @@ const mimeTypeFromExtension = (name: string): string => {
       return 'image/jpeg'
     case 'png':
       return 'image/png'
+    case 'webp':
+      return 'image/webp'
     default:
       return ''
   }
