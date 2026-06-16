@@ -9,6 +9,7 @@ type ThreadManagementState = {
   setFolders: (folders: ThreadFolder[]) => void
   addFolder: (name: string, assistantId?: string) => Promise<ThreadFolder>
   updateFolder: (id: string, name: string, assistantId?: string) => Promise<void>
+  reorderFolders: (activeId: string, overId: string) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
   deleteFolderWithThreads: (id: string) => Promise<void>
   getFolderById: (id: string) => ThreadFolder | undefined
@@ -35,6 +36,23 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
     await projectsService.updateProject(id, name, assistantId)
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })
+  },
+
+  reorderFolders: async (activeId, overId) => {
+    if (activeId === overId) return
+    const { folders } = get()
+    const oldIndex = folders.findIndex((f) => f.id === activeId)
+    const newIndex = folders.findIndex((f) => f.id === overId)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = [...folders]
+    const [moved] = reordered.splice(oldIndex, 1)
+    reordered.splice(newIndex, 0, moved)
+
+    // Optimistically update the UI, then persist the new order
+    set({ folders: reordered })
+    const projectsService = getServiceHub().projects()
+    await projectsService.setProjects(reordered)
   },
 
   deleteFolder: async (id) => {
