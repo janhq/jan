@@ -20,5 +20,7 @@
   "modelFileCorruptTitle": "Model file is corrupted",
   "modelFileCorruptDescription": "The model file appears to be incomplete or corrupted, likely from an interrupted download. Delete the model and download it again.",
   "osVersionUnsupportedTitle": "macOS version not supported",
-  "osVersionUnsupportedDescription": "The local model engine requires a newer version of macOS than the one on this Mac. Please update macOS to run local models here."
+  "osVersionUnsupportedDescription": "The local model engine requires a newer version of macOS than the one on this Mac. Please update macOS to run local models here.",
+  "cpuNoAvxTitle": "Your CPU is not supported",
+  "cpuNoAvxDescription": "This processor doesn't support the AVX instruction set that the bundled engine requires, so local models can't run on it. A newer CPU (with AVX or AVX2) is needed."
 }

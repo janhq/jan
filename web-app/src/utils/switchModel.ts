@@ -636,6 +636,19 @@ function reportModelLoadError(rawError: unknown, providerName?: string): void {
     })
     return
   }
+  // ATO-185: the host CPU lacks the AVX instruction set the bundled engine
+  // requires; loading would otherwise crash with a silent SIGILL surfaced as
+  // the opaque LLAMA_CPP_PROCESS_ERROR. Tell the user plainly that their CPU
+  // is unsupported instead.
+  if (err.code === 'CPU_NO_AVX') {
+    toast.error(t('model-errors:cpuNoAvxTitle'), {
+      id: 'model-load-error',
+      description: t('model-errors:cpuNoAvxDescription'),
+      duration: 10000,
+      closeButton: true,
+    })
+    return
+  }
 
   toast.error(t('model-errors:modelLoadFailedTitle'), {
     id: 'model-load-error',

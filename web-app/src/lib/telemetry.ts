@@ -322,6 +322,10 @@ const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   // ATO-190: deterministic environment incompatibility (macOS too old for the
   // bundled Metal engine), not a code crash — don't flood the crash channel.
   'OS_VERSION_UNSUPPORTED',
+  // ATO-185: the host CPU lacks the AVX baseline the bundled engine requires.
+  // This is an expected hardware-incompatibility condition, not a backend
+  // crash, so it must not be reported to Sentry as a crash event.
+  'CPU_NO_AVX',
 ])
 
 export function isRecoverableModelLoadCode(
