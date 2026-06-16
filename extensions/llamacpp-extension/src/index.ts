@@ -2397,9 +2397,69 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       const result = await loadingPromise
+      void this.syncLoadedCtxSize(result, isEmbedding)
+
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  private async syncLoadedCtxSize(
+    sInfo: SessionInfo,
+    isEmbedding: boolean
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const response = await globalThis.fetch(
+        `http://localhost:${sInfo.port}/props`,
+        { headers: { Authorization: `Bearer ${sInfo.api_key}` } }
+      )
+      if (!response.ok) {
+        logger.warn(
+          `syncLoadedCtxSize: /props returned ${response.status} for ${sInfo.model_id}`
+        )
+        return
+      }
+      const props = (await response.json()) as {
+        default_generation_settings?: { n_ctx?: number }
+        n_ctx?: number
+      }
+
+      const realCtx =
+        props?.default_generation_settings?.n_ctx ?? props?.n_ctx
+      if (
+        typeof realCtx !== 'number' ||
+        !Number.isFinite(realCtx) ||
+        realCtx <= 0
+      ) {
+        return
+      }
+
+      const prev = this.modelCtxSize.get(sInfo.model_id)
+      this.modelCtxSize.set(sInfo.model_id, realCtx)
+      if (prev === realCtx) return
+
+      const notifyPayload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        newCtxLen: realCtx,
+      }
+      if (events && typeof events.emit === 'function') {
+        events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+      }
+      try {
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+      } catch (e) {
+        logger.warn(
+          `syncLoadedCtxSize: failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
+        )
+      }
+      logger.info(
+        `syncLoadedCtxSize: ${sInfo.model_id} real ctx=${realCtx} (recorded ${prev ?? 'unknown'}) → mirrored to UI`
+      )
+    } catch (e) {
+      logger.warn(`syncLoadedCtxSize failed for ${sInfo.model_id}: ${e}`)
     }
   }
 

@@ -325,9 +325,20 @@ pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<St
     let mut dialog = AsyncFileDialog::new();
 
     if let Some(opts) = options {
-        // Set default path
+        // `default_path` may be a bare filename ("file.py") or a full path.
+        // For a save dialog the filename portion must go through
+        // `set_file_name` — passing it to `set_directory` (as before) made the
+        // OS treat "file.py" as a folder and fall back to an "Untitled" name.
         if let Some(path) = opts.default_path {
-            dialog = dialog.set_directory(&path);
+            let p = std::path::Path::new(&path);
+            if let Some(parent) = p.parent() {
+                if !parent.as_os_str().is_empty() {
+                    dialog = dialog.set_directory(parent);
+                }
+            }
+            if let Some(name) = p.file_name() {
+                dialog = dialog.set_file_name(name.to_string_lossy().into_owned());
+            }
         }
 
         // Set filters

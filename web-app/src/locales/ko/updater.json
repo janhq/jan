@@ -1,0 +1,11 @@
+{
+  "newVersion": "새 버전 {{version}}",
+  "updateAvailable": "업데이트 사용 가능",
+  "nightlyBuild": "나이틀리 빌드",
+  "showReleaseNotes": "릴리스 노트 보기",
+  "hideReleaseNotes": "릴리스 노트 숨기기",
+  "remindMeLater": "나중에 알림",
+  "downloading": "다운로드 중...",
+  "updateNow": "지금 업데이트",
+  "relaunchingWindows": "업데이트가 설치되었습니다. 앱이 자동으로 재시작됩니다."
+}

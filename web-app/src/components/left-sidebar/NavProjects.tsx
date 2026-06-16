@@ -3,6 +3,7 @@ import {
   FolderEditIcon,
   FolderIcon,
   FolderOpenIcon,
+  GripVertical,
   MoreHorizontal,
   Trash2,
 } from 'lucide-react'
@@ -33,6 +34,22 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
 import { Link, useNavigate } from '@tanstack/react-router'
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  KeyboardSensor,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ThreadFolder } from '@/services/projects/types'
@@ -59,15 +76,39 @@ function ProjectItem({
   onDelete: (project: ThreadFolder) => void
 }) {
   const navigate = useNavigate()
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
 
   return (
-    <Collapsible open={isOpen} onOpenChange={onOpenChange} className="group/collapsible">
+    <div ref={setNodeRef} style={style} className={cn(isDragging && 'z-10')}>
+      <Collapsible open={isOpen} onOpenChange={onOpenChange} className="group/collapsible">
       <SidebarMenuItem>
-        <div className="flex w-full items-center">
+        <div className="group/project-row relative flex w-full items-center">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag to reorder project"
+            className="text-muted-foreground/50 flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center opacity-0 transition-opacity group-hover/project-row:opacity-100 active:cursor-grabbing"
+          >
+            <GripVertical className="size-3.5" />
+          </button>
           <CollapsibleTrigger asChild>
-            <SidebarMenuButton
+            <button
               type="button"
-              className="w-8 shrink-0 justify-center p-0"
+              className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
               aria-label={isOpen ? 'Collapse project' : 'Expand project'}
             >
               <ChevronRight
@@ -76,7 +117,7 @@ function ProjectItem({
                   isOpen && 'rotate-90'
                 )}
               />
-            </SidebarMenuButton>
+            </button>
           </CollapsibleTrigger>
           <SidebarMenuButton asChild className="min-w-0 flex-1 pr-8">
             <Link to="/project/$projectId" params={{ projectId: item.id }}>
@@ -84,38 +125,38 @@ function ProjectItem({
               <span className="truncate">{item.name}</span>
             </Link>
           </SidebarMenuButton>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuAction showOnHover className="hover:bg-sidebar-foreground/8">
-              <MoreHorizontal />
-              <span className="sr-only">More</span>
-            </SidebarMenuAction>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-48"
-            side={isMobile ? 'bottom' : 'right'}
-            align={isMobile ? 'end' : 'start'}
-          >
-            <DropdownMenuItem
-              onSelect={() => {
-                navigate({ to: '/project/$projectId', params: { projectId: item.id } })
-              }}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuAction className="hover:bg-sidebar-foreground/8 transition-opacity group-hover/project-row:opacity-100 group-focus-within/project-row:opacity-100 data-[state=open]:opacity-100 md:opacity-0">
+                <MoreHorizontal />
+                <span className="sr-only">More</span>
+              </SidebarMenuAction>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="w-48"
+              side={isMobile ? 'bottom' : 'right'}
+              align={isMobile ? 'end' : 'start'}
             >
-              <FolderOpenIcon className="text-muted-foreground" />
-              <span>View Project</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onEdit(item)}>
-              <FolderEditIcon className="text-muted-foreground" />
-              <span>Edit Project</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
-              <Trash2 />
-              <span>Delete Project</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem
+                onSelect={() => {
+                  navigate({ to: '/project/$projectId', params: { projectId: item.id } })
+                }}
+              >
+                <FolderOpenIcon className="text-muted-foreground" />
+                <span>View Project</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onEdit(item)}>
+                <FolderEditIcon className="text-muted-foreground" />
+                <span>Edit Project</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
+                <Trash2 />
+                <span>Delete Project</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <CollapsibleContent>
           {threads.length > 0 && (
             <SidebarMenuSub>
@@ -124,14 +165,15 @@ function ProjectItem({
           )}
         </CollapsibleContent>
       </SidebarMenuItem>
-    </Collapsible>
+      </Collapsible>
+    </div>
   )
 }
 
 export function NavProjects() {
   const { t } = useTranslation()
   const { isMobile } = useSidebar()
-  const { folders, updateFolder } = useThreadManagement()
+  const { folders, updateFolder, reorderFolders } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const projectExpanded = useLeftPanel((state) => state.projectExpanded)
@@ -183,6 +225,25 @@ export function NavProjects() {
     return false
   }
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      // Distance-based activation: drag starts as soon as the pointer moves
+      // a few px from the grip. (Delay-based activation required holding still
+      // first, so a natural grab-and-move was misread as a click.)
+      activationConstraint: {
+        distance: 4,
+      },
+    }),
+    useSensor(KeyboardSensor)
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      reorderFolders(String(active.id), String(over.id))
+    }
+  }
+
   if (folders.length === 0) {
     return null
   }
@@ -192,22 +253,36 @@ export function NavProjects() {
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel>{t('common:projects.title')}</SidebarGroupLabel>
         <SidebarMenu>
-          {folders.map((item) => {
-            const projectThreads = threadsByProject[item.id] ?? []
-            const open = isProjectOpen(item.id, projectThreads)
-            return (
-              <ProjectItem
-                key={item.id}
-                item={item}
-                isMobile={isMobile}
-                threads={projectThreads}
-                isOpen={open}
-                onOpenChange={(expanded) => setProjectExpanded(item.id, expanded)}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            )
-          })}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={folders.map((f) => f.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {folders.map((item) => {
+                const projectThreads = threadsByProject[item.id] ?? []
+                const open = isProjectOpen(item.id, projectThreads)
+                return (
+                  <ProjectItem
+                    key={item.id}
+                    item={item}
+                    isMobile={isMobile}
+                    threads={projectThreads}
+                    isOpen={open}
+                    onOpenChange={(expanded) =>
+                      setProjectExpanded(item.id, expanded)
+                    }
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                )
+              })}
+            </SortableContext>
+          </DndContext>
         </SidebarMenu>
       </SidebarGroup>
 

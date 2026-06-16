@@ -321,7 +321,11 @@
     "chunkSize": "Chunk Size (characters)",
     "chunkSizeDesc": "Approximate max characters per chunk for embeddings.",
     "chunkOverlap": "Overlap (characters)",
-    "chunkOverlapDesc": "Character overlap between consecutive chunks."
+    "chunkOverlapDesc": "Character overlap between consecutive chunks.",
+    "images": "Images",
+    "maxImageSize": "Maximum image size",
+    "maxImageSizeDesc": "Images larger than this on their longest edge are downscaled before being sent to the model, so they don’t flood the context window.",
+    "original": "Original"
   },
   "dialogs": {
     "changeDataFolder": {

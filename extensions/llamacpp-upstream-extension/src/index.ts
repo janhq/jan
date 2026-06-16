@@ -3280,9 +3280,86 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     try {
       const result = await loadingPromise
+      // Reconcile the UI with the context window the server *actually*
+      // allocated (which can differ from the requested ctx_size when Fit is
+      // on or the request is clamped to the model's training-max). Fire and
+      // forget: this must never block or fail the load.
+      void this.syncLoadedCtxSize(result, isEmbedding)
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /// After a model loads, the context window the llama-server actually
+  /// allocated can differ from the requested `ctx_size`: with Fit enabled the
+  /// server sizes ctx to fit VRAM (floored at `fit_ctx`), and any request is
+  /// clamped to the model's training-max. The web-app store only knows the
+  /// *requested* `ctx_len`, so the chat context indicators (token counter,
+  /// support-status tooltip, attachment thresholds) can drift out of sync with
+  /// reality — e.g. settings show 200k while the running session is 32k.
+  ///
+  /// Read the live server's real per-sequence context from `/props` and, when
+  /// it differs from what we recorded, mirror it into the UI through the same
+  /// channel the auto-increase flow uses, so every readout stays honest.
+  private async syncLoadedCtxSize(
+    sInfo: SessionInfo,
+    isEmbedding: boolean
+  ): Promise<void> {
+    if (isEmbedding) return
+    try {
+      const response = await globalThis.fetch(
+        `http://localhost:${sInfo.port}/props`,
+        { headers: { Authorization: `Bearer ${sInfo.api_key}` } }
+      )
+      if (!response.ok) {
+        logger.warn(
+          `syncLoadedCtxSize: /props returned ${response.status} for ${sInfo.model_id}`
+        )
+        return
+      }
+      const props = (await response.json()) as {
+        default_generation_settings?: { n_ctx?: number }
+        n_ctx?: number
+      }
+      // `default_generation_settings.n_ctx` is the per-sequence context (the
+      // window a single conversation can use), which is exactly what the chat
+      // indicators care about. Fall back to the top-level `n_ctx` for older
+      // server builds.
+      const realCtx =
+        props?.default_generation_settings?.n_ctx ?? props?.n_ctx
+      if (
+        typeof realCtx !== 'number' ||
+        !Number.isFinite(realCtx) ||
+        realCtx <= 0
+      ) {
+        return
+      }
+
+      const prev = this.modelCtxSize.get(sInfo.model_id)
+      this.modelCtxSize.set(sInfo.model_id, realCtx)
+      if (prev === realCtx) return
+
+      const notifyPayload = {
+        provider: this.provider,
+        modelId: sInfo.model_id,
+        newCtxLen: realCtx,
+      }
+      if (events && typeof events.emit === 'function') {
+        events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+      }
+      try {
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+      } catch (e) {
+        logger.warn(
+          `syncLoadedCtxSize: failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`
+        )
+      }
+      logger.info(
+        `syncLoadedCtxSize: ${sInfo.model_id} real ctx=${realCtx} (recorded ${prev ?? 'unknown'}) → mirrored to UI`
+      )
+    } catch (e) {
+      logger.warn(`syncLoadedCtxSize failed for ${sInfo.model_id}: ${e}`)
     }
   }
 

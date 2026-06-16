@@ -78,6 +78,7 @@ import {
 } from '@/types/attachment'
 import { AttachmentChip } from '@/containers/AttachmentChip'
 import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
+import { downscaleImageDataUrl } from '@/lib/imageDownscale'
 import { useTauriDragDrop } from '@/containers/chatInput/useTauriDragDrop'
 import {
   DOCUMENT_EXTENSIONS,
@@ -137,6 +138,7 @@ const ChatInput = memo(function ChatInput({
   const tokenCounterCompact = useGeneralSetting(
     (state) => state.tokenCounterCompact
   )
+  const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
@@ -1126,6 +1128,8 @@ const ChatInput = memo(function ChatInput({
         return 'image/jpeg'
       case 'png':
         return 'image/png'
+      case 'webp':
+        return 'image/webp'
       default:
         return ''
     }
@@ -1173,7 +1177,12 @@ const ChatInput = memo(function ChatInput({
   }
 
   const IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024
-  const IMAGE_ALLOWED_MIME_TYPES = ['image/jpg', 'image/jpeg', 'image/png']
+  const IMAGE_ALLOWED_MIME_TYPES = [
+    'image/jpg',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ]
 
   type ImageValidationOutcome = {
     candidates: Attachment[]
@@ -1218,13 +1227,21 @@ const ChatInput = memo(function ChatInput({
       })
       if (!dataUrl) continue
 
+      // Downscale oversized images before they enter the conversation so they
+      // don't flood the model's context (see "Max image size" setting).
+      const downscaled = await downscaleImageDataUrl(
+        dataUrl,
+        maxImageSizePx,
+        actualType
+      )
+
       candidates.push(
         createImageAttachment({
           name: file.name,
-          size: file.size,
-          mimeType: actualType,
-          base64: dataUrl.split(',')[1] ?? '',
-          dataUrl,
+          size: downscaled?.size ?? file.size,
+          mimeType: downscaled?.mimeType ?? actualType,
+          base64: downscaled?.base64 ?? dataUrl.split(',')[1] ?? '',
+          dataUrl: downscaled?.dataUrl ?? dataUrl,
         })
       )
     }
@@ -1250,6 +1267,20 @@ const ChatInput = memo(function ChatInput({
         if (typeof att.size === 'number' && att.size > IMAGE_MAX_SIZE_BYTES) {
           oversized.push(att.name)
           continue
+        }
+        // Downscale oversized images so they don't flood the model's context.
+        if (att.dataUrl) {
+          const downscaled = await downscaleImageDataUrl(
+            att.dataUrl,
+            maxImageSizePx,
+            att.mimeType
+          )
+          if (downscaled) {
+            att.dataUrl = downscaled.dataUrl
+            att.base64 = downscaled.base64
+            att.mimeType = downscaled.mimeType
+            att.size = downscaled.size
+          }
         }
         candidates.push(att)
       } catch (e) {
@@ -1374,7 +1405,7 @@ const ChatInput = memo(function ChatInput({
 
     if (invalidType.length > 0) {
       errors.push(
-        `Invalid file type${invalidType.length > 1 ? 's' : ''} (only JPEG, JPG, PNG allowed): ${invalidType.join(', ')}`
+        `Invalid file type${invalidType.length > 1 ? 's' : ''} (only JPEG, JPG, PNG, WEBP allowed): ${invalidType.join(', ')}`
       )
     }
 
@@ -1424,7 +1455,7 @@ const ChatInput = memo(function ChatInput({
           filters: [
             {
               name: 'Images',
-              extensions: ['jpg', 'jpeg', 'png'],
+              extensions: ['jpg', 'jpeg', 'png', 'webp'],
             },
           ],
         })
@@ -1452,8 +1483,8 @@ const ChatInput = memo(function ChatInput({
               const mimeType =
                 ext === 'png'
                   ? 'image/png'
-                  : ext === 'jpg' || ext === 'jpeg'
-                    ? 'image/jpeg'
+                  : ext === 'webp'
+                    ? 'image/webp'
                     : 'image/jpeg'
 
               const file = new File([blob], fileName, { type: mimeType })

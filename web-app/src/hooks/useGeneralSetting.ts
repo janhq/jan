@@ -9,6 +9,13 @@ export type ReasoningBudgetLevel =
   | 'high'
   | 'unlimited'
 
+/**
+ * Longest-edge cap (in pixels) applied to images before they are sent to the
+ * model. Large images otherwise flood the context window. `0` disables
+ * downscaling. Default keeps quality high while taming 4K photos/screenshots.
+ */
+export const DEFAULT_MAX_IMAGE_SIZE_PX = 2048
+
 type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
@@ -16,6 +23,7 @@ type GeneralSettingState = {
   disableReasoning: boolean
   reasoningBudget: ReasoningBudgetLevel
   preloadModelOnStartup: boolean
+  maxImageSizePx: number
   huggingfaceToken?: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
@@ -23,6 +31,7 @@ type GeneralSettingState = {
   setDisableReasoning: (value: boolean) => void
   setReasoningBudget: (value: ReasoningBudgetLevel) => void
   setPreloadModelOnStartup: (value: boolean) => void
+  setMaxImageSizePx: (value: number) => void
   setCurrentLanguage: (value: Language) => void
 }
 
@@ -35,12 +44,15 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       disableReasoning: true,
       reasoningBudget: 'medium',
       preloadModelOnStartup: true,
+      maxImageSizePx: DEFAULT_MAX_IMAGE_SIZE_PX,
       huggingfaceToken: undefined,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
       setReasoningBudget: (value) => set({ reasoningBudget: value }),
       setPreloadModelOnStartup: (value) => set({ preloadModelOnStartup: value }),
+      setMaxImageSizePx: (value) =>
+        set({ maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0 }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })

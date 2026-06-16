@@ -2,6 +2,7 @@ export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   'jpg',
   'jpeg',
   'png',
+  'webp',
 ])
 
 export const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
