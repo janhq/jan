@@ -3969,25 +3969,39 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return { version, backend }
     }
 
-    // ATO-179 (AC2): the requested backend is unavailable (download failed or
-    // the tag was pruned upstream), but a working compatible backend (same
-    // type, any version) may already be on disk. Fall back to it and persist
-    // the corrected `version_backend` instead of failing the load with
-    // BINARY_NOT_FOUND. Limited to load paths via `allowFallback`.
+    // ATO-179 (AC2) + ATO-178: the requested concrete tag is unavailable — the
+    // download failed / 404'd for this platform, the tag was pruned upstream,
+    // or the ggml-org release stream is unreachable. On the load path, fall
+    // back through a tiered resolver so the model can still run instead of a
+    // hard BINARY_NOT_FOUND. Explicit install/update flows (allowFallback=false)
+    // keep the strict throw so a deliberate selection is never silently swapped.
     if (allowFallback) {
-      const fallback = await findCompatibleInstalledBackend(backend)
+      const fallback = await this.resolveBackendFallback(backend, version)
       if (fallback) {
         const fallbackString = `${fallback.version}/${fallback.backend}`
         logger.warn(
-          `Backend ${backendKey} unavailable; falling back to installed compatible backend ${fallbackString}.`
+          `Backend ${backendKey} unavailable (404 / release stream unreachable); ` +
+            `falling back to ${fallbackString}${
+              fallback.persist ? '' : ' (temporary degrade, not persisted)'
+            }.`
         )
-        await this.persistVersionBackend(fallbackString)
+        if (fallback.persist) {
+          await this.persistVersionBackend(fallbackString)
+        } else {
+          // Last-resort degrade (e.g. GPU → bundled CPU): keep it in-memory
+          // only so a later "Find optimal backend" / manual pick re-targets
+          // the right tier once the release stream recovers.
+          this.config.version_backend = fallbackString
+        }
         return { version: fallback.version, backend: fallback.backend }
       }
     }
 
     throw new Error(
-      `Backend ${backendKey} is not installed and could not be downloaded. Check your internet connection or try reinstalling the app.`
+      `Backend ${backendKey} could not be downloaded — the ggml-org release ` +
+        `stream may be unreachable or that release has no build for your ` +
+        `platform, and no compatible backend is installed locally. Check your ` +
+        `internet connection (Settings → Proxy) and try again later.`
     )
   }
 
@@ -4020,6 +4034,107 @@ export default class llamacpp_upstream_extension extends AIEngine {
         value: targetBackendString,
       })
     }
+  }
+
+  /**
+   * ATO-178: resolve a usable backend when the requested concrete
+   * `<version>/<backend>` can be neither downloaded (404 / release stream
+   * unreachable) nor found on disk. Resolution order, most-preferred first:
+   *
+   *   1. Newest locally-installed backend of the SAME type — instant,
+   *      offline-safe, preserves the variant (the common "pinned tag
+   *      empty/missing but a sibling tag works" repro from ATO-176).
+   *      Persisted (same variant, just a different tag).
+   *   2. Newest PUBLISHED tag of the same family on ggml-org — covers a 404
+   *      where the requested release simply lacks this platform's asset but a
+   *      newer release ships it. Downloaded; adopted only if it installs.
+   *      Persisted (same variant, newer tag).
+   *   3. Newest installed backend of ANY family — last-resort safety net so
+   *      the app stays usable (e.g. degrade a GPU variant to the bundled CPU
+   *      build; installed backends are host-compatible by construction). NOT
+   *      persisted: a temporary degrade must let a later "Find optimal
+   *      backend" / manual pick re-target the right tier once the stream
+   *      recovers.
+   *
+   * Returns the resolved pair plus whether the caller should persist it, or
+   * `null` when nothing usable can be produced.
+   */
+  private async resolveBackendFallback(
+    backend: string,
+    failedVersion: string
+  ): Promise<{ version: string; backend: string; persist: boolean } | null> {
+    const failedKey = `${failedVersion}/${backend}`
+
+    // Tier 1 — same-type copy already on disk.
+    const sameType = await findCompatibleInstalledBackend(backend)
+    if (sameType) {
+      const key = `${sameType.version}/${sameType.backend}`
+      if (
+        key !== failedKey &&
+        (await isBackendInstalled(sameType.backend, sameType.version))
+      ) {
+        return {
+          version: sameType.version,
+          backend: sameType.backend,
+          persist: true,
+        }
+      }
+    }
+
+    // Tier 2 — newest published tag of the same family (the requested tag may
+    // lack this platform's asset; a newer release usually ships it).
+    try {
+      const latest = await this.resolveLatestBackendString(backend)
+      if (latest && latest !== failedKey) {
+        const [lv, lb] = latest.split('/')
+        if (!(await isBackendInstalled(lb, lv))) {
+          try {
+            await this.downloadAndInstallBackend(latest)
+          } catch (err) {
+            logger.warn(
+              `[resolveBackendFallback] Fallback download of ${latest} failed:`,
+              err
+            )
+          }
+        }
+        if (await isBackendInstalled(lb, lv)) {
+          return { version: lv, backend: lb, persist: true }
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        '[resolveBackendFallback] resolving newest published tag failed:',
+        err
+      )
+    }
+
+    // Tier 3 — any installed backend keeps the app usable (typically the
+    // bundled CPU build). Newest by build number; not persisted.
+    try {
+      const installed = await getLocalInstalledBackends()
+      const candidates = installed
+        .map((b) => ({
+          version: stripBom(b.version),
+          backend: stripBom(b.backend),
+        }))
+        .filter((b) => `${b.version}/${b.backend}` !== failedKey)
+      candidates.sort(
+        (a, b) =>
+          (parseBuildNumber(b.version) ?? 0) - (parseBuildNumber(a.version) ?? 0)
+      )
+      for (const c of candidates) {
+        if (await isBackendInstalled(c.backend, c.version)) {
+          return { version: c.version, backend: c.backend, persist: false }
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        '[resolveBackendFallback] enumerating installed backends failed:',
+        err
+      )
+    }
+
+    return null
   }
 
   /**
