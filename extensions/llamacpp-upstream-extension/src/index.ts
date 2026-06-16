@@ -52,6 +52,9 @@ import {
   mergeEmbedResponses,
   isConcreteVersionBackend,
   matchesMtpLoadFailure,
+  isCpuBackend,
+  isUnsupportedNoAvxCpu,
+  CPU_NO_AVX_ERROR_CODE,
   type EmbedBatchResult,
 } from './util'
 import {
@@ -3381,6 +3384,45 @@ export default class llamacpp_upstream_extension extends AIEngine {
       const buildNum = parseBuildNumber(version)
       if (buildNum !== null && buildNum < 6325) {
         cfg.flash_attn = 'off'
+      }
+    }
+
+    // ATO-185: the shipped ggml-org CPU build executes AVX instructions
+    // unconditionally, so loading a CPU backend on an x86 host with no AVX at
+    // all makes llama-server die with SIGILL (Unix signal 4) /
+    // STATUS_ILLEGAL_INSTRUCTION (Windows) the instant it starts — leaving
+    // empty stderr that surfaced only as the opaque generic
+    // LLAMA_CPP_PROCESS_ERROR (PostHog 30d: cpu_avx='none' fails 31.6% vs avx
+    // 0.39%, so the floor is AVX, not AVX2). Detect the incompatibility up
+    // front and fail with a clear, actionable error instead of a silent crash.
+    // The probe is gated to CPU backends so GPU loads don't pay for it, and a
+    // hardware-probe failure never blocks the load (we only block on a
+    // positive no-AVX signal).
+    if (isCpuBackend(backend)) {
+      let cpuArch = ''
+      let cpuExtensions: string[] | null = null
+      try {
+        const sysInfo = await getSystemInfo()
+        cpuArch = sysInfo.cpu?.arch ?? ''
+        cpuExtensions = sysInfo.cpu?.extensions ?? []
+      } catch (probeErr) {
+        logger.warn(
+          `[performLoad] CPU feature preflight skipped (hardware probe failed): ${
+            probeErr instanceof Error ? probeErr.message : String(probeErr)
+          }`
+        )
+      }
+      if (isUnsupportedNoAvxCpu(cpuArch, backend, cpuExtensions)) {
+        logger.error(
+          `[performLoad] Refusing to load CPU backend '${backend}' on a CPU without AVX (arch=${cpuArch}, extensions=${(
+            cpuExtensions ?? []
+          ).join(',')}).`
+        )
+        const cpuError = new Error(
+          "Your CPU is too old to run this model: it doesn't support the AVX instruction set that the bundled engine requires. The app cannot run local models on this processor."
+        ) as Error & { code?: string }
+        cpuError.code = CPU_NO_AVX_ERROR_CODE
+        throw cpuError
       }
     }
 

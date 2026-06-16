@@ -41,6 +41,64 @@ export function isConcreteVersionBackend(
 }
 
 /**
+ * ATO-185: structured error code for "host CPU lacks the SIMD baseline the
+ * shipped ggml-org CPU build requires". Surfaced to the web-app load-error
+ * handler so it can render a clear, actionable message instead of the opaque
+ * generic LLAMA_CPP_PROCESS_ERROR a silent SIGILL crash produces.
+ */
+export const CPU_NO_AVX_ERROR_CODE = 'CPU_NO_AVX'
+
+/**
+ * True iff `backend` is one of the CPU-only backend builds (no GPU offload).
+ * Matches `win-cpu-x64`, `win-cpu-arm64`, `linux-cpu-x64`, `linux-cpu-arm64`.
+ * The macOS backends (`macos-x64` / `macos-arm64`) deliberately do NOT match —
+ * macOS is unaffected by the AVX issue (Apple Silicon has no AVX concept and
+ * Intel Macs all ship AVX).
+ */
+export function isCpuBackend(backend: string | undefined | null): boolean {
+  const b = (backend ?? '').replace(/\uFEFF/g, '').trim().toLowerCase()
+  return b.includes('-cpu-')
+}
+
+/**
+ * True iff the detected CPU extension list reports at least AVX. The shipped
+ * ggml-org CPU build's lowest variant requires AVX (the "sandybridge" tier);
+ * AVX2 / AVX-512 imply AVX. Mirrors the web-app `cpuAvxLevel` classification.
+ */
+export function cpuHasAvx(extensions: string[] | undefined | null): boolean {
+  if (!extensions || extensions.length === 0) return false
+  return extensions.some((e) => {
+    const x = e.toLowerCase()
+    return x === 'avx' || x === 'avx2' || x.startsWith('avx512')
+  })
+}
+
+/**
+ * ATO-185: decide whether to block a CPU-backend load because the host CPU is
+ * too old to run the shipped binary. The shipped ggml-org CPU build executes
+ * AVX instructions unconditionally, so an x86 CPU with no AVX at all dies with
+ * SIGILL (Unix signal 4 / Windows STATUS_ILLEGAL_INSTRUCTION) the moment it
+ * starts — leaving empty stderr that only surfaced as the opaque generic
+ * LLAMA_CPP_PROCESS_ERROR (PostHog 30d: cpu_avx='none' fails 31.6% vs avx
+ * 0.39%). We block only when we have a POSITIVE no-AVX signal: x86 arch, a
+ * CPU backend, and a non-empty extension list that lacks AVX. An empty list
+ * (non-x86 host or a hardware-probe failure) is never treated as "no AVX", so
+ * we never false-block a capable machine.
+ */
+export function isUnsupportedNoAvxCpu(
+  arch: string | undefined | null,
+  backend: string | undefined | null,
+  extensions: string[] | undefined | null
+): boolean {
+  const a = (arch ?? '').trim().toLowerCase()
+  const isX86 = a === 'x86_64' || a === 'x86' || a === 'amd64'
+  if (!isX86) return false
+  if (!isCpuBackend(backend)) return false
+  if (!extensions || extensions.length === 0) return false
+  return !cpuHasAvx(extensions)
+}
+
+/**
  * True iff the load-error text is an MTP-rejection (MTP requested on a model
  * with no MTP layers / no draft head). llama.cpp surfaces no structured error
  * code for this, so we match the stderr text (ATO-125).

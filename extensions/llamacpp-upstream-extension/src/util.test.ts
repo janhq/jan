@@ -3,6 +3,9 @@ import {
   getProxyConfig,
   isConcreteVersionBackend,
   matchesMtpLoadFailure,
+  isCpuBackend,
+  cpuHasAvx,
+  isUnsupportedNoAvxCpu,
 } from './util'
 
 // Mock console.log and console.error to avoid noise in tests
@@ -622,5 +625,106 @@ describe('matchesMtpLoadFailure (ATO-125)', () => {
 
   it('returns false for an empty string', () => {
     expect(matchesMtpLoadFailure('')).toBe(false)
+  })
+})
+
+describe('isCpuBackend (ATO-185)', () => {
+  it('matches the Windows x64 CPU backend', () => {
+    expect(isCpuBackend('win-cpu-x64')).toBe(true)
+  })
+
+  it('matches the Linux x64 CPU backend', () => {
+    expect(isCpuBackend('linux-cpu-x64')).toBe(true)
+  })
+
+  it('matches arm64 CPU backends', () => {
+    expect(isCpuBackend('win-cpu-arm64')).toBe(true)
+    expect(isCpuBackend('linux-cpu-arm64')).toBe(true)
+  })
+
+  it('does not match GPU backends', () => {
+    expect(isCpuBackend('win-cuda-13-x64')).toBe(false)
+    expect(isCpuBackend('win-vulkan-x64')).toBe(false)
+    expect(isCpuBackend('linux-vulkan-x64')).toBe(false)
+  })
+
+  it('does not match macOS backends', () => {
+    expect(isCpuBackend('macos-x64')).toBe(false)
+    expect(isCpuBackend('macos-arm64')).toBe(false)
+  })
+
+  it('strips BOM / whitespace and is case-insensitive', () => {
+    expect(isCpuBackend('\uFEFF  WIN-CPU-X64 ')).toBe(true)
+  })
+
+  it('returns false for nullish input', () => {
+    expect(isCpuBackend(undefined)).toBe(false)
+    expect(isCpuBackend(null)).toBe(false)
+    expect(isCpuBackend('')).toBe(false)
+  })
+})
+
+describe('cpuHasAvx (ATO-185)', () => {
+  it('is true when AVX is present', () => {
+    expect(cpuHasAvx(['sse', 'sse2', 'avx'])).toBe(true)
+  })
+
+  it('is true when AVX2 is present (implies AVX)', () => {
+    expect(cpuHasAvx(['sse4_2', 'avx2'])).toBe(true)
+  })
+
+  it('is true when an AVX-512 sub-feature is present', () => {
+    expect(cpuHasAvx(['avx512_f', 'avx512_dq'])).toBe(true)
+  })
+
+  it('is case-insensitive', () => {
+    expect(cpuHasAvx(['AVX2'])).toBe(true)
+  })
+
+  it('is false for an SSE-only (no-AVX) CPU', () => {
+    expect(cpuHasAvx(['fpu', 'mmx', 'sse', 'sse2', 'sse3', 'ssse3'])).toBe(false)
+  })
+
+  it('is false for an empty / nullish list', () => {
+    expect(cpuHasAvx([])).toBe(false)
+    expect(cpuHasAvx(undefined)).toBe(false)
+    expect(cpuHasAvx(null)).toBe(false)
+  })
+})
+
+describe('isUnsupportedNoAvxCpu (ATO-185)', () => {
+  const noAvxExts = ['fpu', 'mmx', 'sse', 'sse2', 'sse3', 'ssse3', 'sse4_1']
+
+  it('blocks an x86_64 CPU backend with no AVX', () => {
+    expect(isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', noAvxExts)).toBe(true)
+    expect(isUnsupportedNoAvxCpu('x86_64', 'linux-cpu-x64', noAvxExts)).toBe(
+      true
+    )
+  })
+
+  it('allows an x86 CPU that has AVX', () => {
+    expect(
+      isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', [...noAvxExts, 'avx'])
+    ).toBe(false)
+  })
+
+  it('does not block GPU backends even on a no-AVX CPU', () => {
+    expect(isUnsupportedNoAvxCpu('x86_64', 'win-vulkan-x64', noAvxExts)).toBe(
+      false
+    )
+  })
+
+  it('does not block non-x86 hosts (no AVX concept)', () => {
+    expect(isUnsupportedNoAvxCpu('arm64', 'linux-cpu-arm64', [])).toBe(false)
+    expect(isUnsupportedNoAvxCpu('aarch64', 'win-cpu-arm64', [])).toBe(false)
+  })
+
+  it('never blocks when the extension list is empty (probe failure)', () => {
+    expect(isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', [])).toBe(false)
+    expect(isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', null)).toBe(false)
+  })
+
+  it('accepts the amd64 arch alias', () => {
+    expect(isUnsupportedNoAvxCpu('amd64', 'win-cpu-x64', noAvxExts)).toBe(true)
   })
 })
