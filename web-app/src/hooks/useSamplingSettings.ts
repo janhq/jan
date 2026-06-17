@@ -16,9 +16,16 @@ import { defaultAssistant } from '@/hooks/useAssistant'
  *
  * Seed: the built-in default assistant's parameters, so the historical
  * defaults survive the move off the assistant.
+ *
+ * `userOverridden` flips to true the moment the user edits any value in the
+ * Sampling popover. It gates model-family recommended defaults (e.g. Gemma 4
+ * QAT temp/top_p/top_k) applied at request time in `custom-chat-transport`:
+ * recommended values are layered on only while the user has not tuned
+ * sampling themselves, so an explicit choice is never silently overridden.
  */
 interface SamplingSettingsState {
   params: Record<string, unknown>
+  userOverridden: boolean
   setParam: (key: string, value: unknown) => void
   setParams: (params: Record<string, unknown>) => void
   getParams: () => Record<string, unknown>
@@ -28,15 +35,22 @@ export const useSamplingSettings = create<SamplingSettingsState>()(
   persist(
     (set, get) => ({
       params: { ...(defaultAssistant.parameters ?? {}) },
+      userOverridden: false,
       setParam: (key, value) =>
-        set((state) => ({ params: { ...state.params, [key]: value } })),
-      setParams: (params) => set({ params }),
+        set((state) => ({
+          params: { ...state.params, [key]: value },
+          userOverridden: true,
+        })),
+      setParams: (params) => set({ params, userOverridden: true }),
       getParams: () => get().params,
     }),
     {
       name: localStorageKey.samplingSettings,
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ params: state.params }),
+      partialize: (state) => ({
+        params: state.params,
+        userOverridden: state.userOverridden,
+      }),
     }
   )
 )

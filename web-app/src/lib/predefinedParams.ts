@@ -129,3 +129,41 @@ export const paramGroups: Record<ParamCategory, string[]> = {
 export const SAMPLING_PARAM_KEYS: string[] = paramCategories.flatMap(
   (category) => paramGroups[category.id]
 )
+
+/**
+ * Google's recommended sampler for Gemma 4 (incl. the QAT checkpoints):
+ * temperature 1.0 / top_p 0.95 / top_k 64. Layered over the global sampling
+ * bag at request time for matching models, never written to the store.
+ */
+export const GEMMA4_QAT_RECOMMENDED_SAMPLING: Record<string, number> = {
+  temperature: 1.0,
+  top_p: 0.95,
+  top_k: 64,
+}
+
+/**
+ * True for Gemma 4 QAT (quantization-aware-trained) model ids — a Gemma 4
+ * family id that also carries a `qat` token (unsloth's QAT conversions).
+ * Boundary-aware so `qat` inside an unrelated word never false-matches.
+ */
+export function isGemma4Qat(modelId: string): boolean {
+  const id = modelId.toLowerCase()
+  const isGemma4 = /gemma[-_ ]?4/.test(id)
+  const isQat = /(^|[-_/. ])qat([-_/. ]|$)/.test(id)
+  return isGemma4 && isQat
+}
+
+/**
+ * Layer the model-family recommended sampler over the given params. Pure and
+ * non-destructive: returns the input unchanged unless the model is Gemma 4 QAT
+ * and the user has not tuned sampling themselves. Only the recommended keys
+ * (temperature/top_p/top_k) are overridden; everything else is preserved.
+ */
+export function withRecommendedSampling(
+  modelId: string | undefined,
+  params: Record<string, unknown>,
+  userOverridden: boolean
+): Record<string, unknown> {
+  if (userOverridden || !modelId || !isGemma4Qat(modelId)) return params
+  return { ...params, ...GEMMA4_QAT_RECOMMENDED_SAMPLING }
+}
