@@ -10,14 +10,21 @@ import {
   DEFAULT_TITLEBAR_LAYOUT,
 } from '@/stores/titlebar-layout-store'
 
+// The native command always returns both sides, but a malformed/partial payload
+// must not crash the render — coerce to arrays and fall back to defaults.
+const sanitizeLayout = (l: Partial<TitlebarLayout> | null | undefined): TitlebarLayout => ({
+  left: Array.isArray(l?.left) ? l.left : DEFAULT_TITLEBAR_LAYOUT.left,
+  right: Array.isArray(l?.right) ? l.right : DEFAULT_TITLEBAR_LAYOUT.right,
+})
+
 export const WindowControls = () => {
   const appWindow = getCurrentWebviewWindow()
-  const layout = useTitlebarLayout((s) => s.layout)
+  const layout = sanitizeLayout(useTitlebarLayout((s) => s.layout))
   const setLayout = useTitlebarLayout((s) => s.setLayout)
 
   const refresh = useCallback(() => {
     invoke<TitlebarLayout>('get_titlebar_layout')
-      .then((l) => setLayout(l))
+      .then((l) => setLayout(sanitizeLayout(l)))
       .catch(() => setLayout(DEFAULT_TITLEBAR_LAYOUT))
   }, [setLayout])
 
