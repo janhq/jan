@@ -418,11 +418,14 @@ pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
     let name_lower = process_info.name.to_lowercase();
     let cmd_str = process_info.cmd.join(" ").to_lowercase();
 
+    // lsof may return a truncated thread name rather than "node"; cmd is more reliable.
+    if cmd_str.contains("search-mcp-server") {
+        return true;
+    }
+
     let is_js_runtime =
         name_lower.contains("node") || name_lower.contains("npx") || name_lower.contains("bun");
-    let is_jan_mcp_server = cmd_str.contains("search-mcp-server")
-        || (cmd_str.contains("jan") && cmd_str.contains("mcp"))
-        || cmd_str.contains("node")
+    let is_jan_mcp_server = (cmd_str.contains("jan") && cmd_str.contains("mcp"))
         || cmd_str.contains("bun");
 
     is_js_runtime && is_jan_mcp_server

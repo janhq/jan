@@ -790,6 +790,7 @@ fn test_mcp_lock_file_serde_round_trip() {
     use super::lockfile::McpLockFile;
     let lock = McpLockFile {
         pid: 4242,
+        jan_pid: std::process::id(),
         port: 17389,
         server_name: "Jan Browser MCP".to_string(),
         created_at: "2026-01-01T00:00:00+00:00".to_string(),
@@ -838,11 +839,13 @@ fn test_create_read_delete_lock_file_round_trip() {
     // Ensure clean slate
     let _ = delete_lock_file(app.handle(), port);
 
-    create_lock_file(app.handle(), port, "test-server").expect("create_lock_file");
+    let fake_child_pid = std::process::id().wrapping_add(1);
+    create_lock_file(app.handle(), port, "test-server", fake_child_pid).expect("create_lock_file");
     let lock = read_lock_file(app.handle(), port).expect("read_lock_file");
     assert_eq!(lock.port, port);
     assert_eq!(lock.server_name, "test-server");
-    assert_eq!(lock.pid, std::process::id());
+    assert_eq!(lock.pid, fake_child_pid);
+    assert_eq!(lock.jan_pid, std::process::id());
     assert!(!lock.created_at.is_empty());
     assert!(!lock.hostname.is_empty());
 
@@ -886,8 +889,8 @@ async fn test_check_and_cleanup_stale_lock_keeps_live_lock() {
     let app = mock_app();
     let port: u16 = 53_115;
     let _ = delete_lock_file(app.handle(), port);
-    create_lock_file(app.handle(), port, "live").unwrap();
-    // Lock points at the current PID, which is alive → must NOT be removed
+    create_lock_file(app.handle(), port, "live", std::process::id()).unwrap();
+    // Lock pid is the current process (alive) → must NOT be removed
     let cleaned = check_and_cleanup_stale_lock(app.handle(), port).await.unwrap();
     assert!(!cleaned);
     assert!(read_lock_file(app.handle(), port).is_some());
@@ -910,6 +913,7 @@ async fn test_check_and_cleanup_stale_lock_removes_dead_pid_lock() {
     let dead_pid: u32 = i32::MAX as u32;
     let lock = McpLockFile {
         pid: dead_pid,
+        jan_pid: std::process::id(),
         port,
         server_name: "ghost".to_string(),
         created_at: "2020-01-01T00:00:00+00:00".to_string(),
@@ -937,17 +941,18 @@ fn test_cleanup_own_locks_removes_only_current_pid_locks() {
     let _ = delete_lock_file(app.handle(), own_port);
     let _ = delete_lock_file(app.handle(), other_port);
 
-    // Lock owned by us
-    create_lock_file(app.handle(), own_port, "ours").unwrap();
+    // Lock owned by us (jan_pid matches current process)
+    let fake_child_pid = std::process::id().wrapping_add(1);
+    create_lock_file(app.handle(), own_port, "ours", fake_child_pid).unwrap();
 
-    // Lock owned by some other PID — write directly into the SAME dir lockfile uses
+    // Lock owned by a different Jan instance — write directly into the SAME dir lockfile uses
     let app_data_dir = app.handle().path().app_data_dir().expect("app data dir");
     std::fs::create_dir_all(&app_data_dir).ok();
     let other_path = app_data_dir.join(format!("mcp_lock_{}.json", other_port));
-    // Pick a PID that is definitely not us (and survives wrap)
-    let foreign_pid = if std::process::id() == 1 { 2 } else { 1 };
+    let foreign_jan_pid = if std::process::id() == 1 { 2 } else { 1 };
     let foreign = McpLockFile {
-        pid: foreign_pid,
+        pid: foreign_jan_pid,
+        jan_pid: foreign_jan_pid,
         port: other_port,
         server_name: "theirs".into(),
         created_at: "2020-01-01T00:00:00+00:00".into(),

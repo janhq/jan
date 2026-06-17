@@ -221,6 +221,7 @@ const ChatInput = memo(function ChatInput({
     dialogOpen: extensionDialogOpen,
     dialogState: extensionDialogState,
     toggleBrowser: handleBrowseClick,
+    disableDueToIncompatibleModel,
     handleCancel: handleExtensionDialogCancel,
     setDialogOpen: setExtensionDialogOpen,
   } = useJanBrowserExtension()
@@ -234,9 +235,11 @@ const ChatInput = memo(function ChatInput({
   // Auto-disable browser feature when model doesn't support it
   useEffect(() => {
     if (janBrowserMCPActive && !modelSupportsBrowser) {
-      handleBrowseClick()
+      disableDueToIncompatibleModel()
     }
-  }, [janBrowserMCPActive, modelSupportsBrowser, handleBrowseClick])
+    // disableDueToIncompatibleModel omitted: its !isActive guard makes stale closures safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [janBrowserMCPActive, modelSupportsBrowser])
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)

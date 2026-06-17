@@ -24,6 +24,8 @@ use crate::core::{
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 
+const BRIDGE_KILL_SETTLE_MS: u64 = 100; // settle after graceful cancel before port check
+
 #[derive(Debug, Clone, Copy)]
 pub enum ShutdownContext {
     AppExit,       // User closing app - be fast
@@ -772,14 +774,22 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // If all attempts failed, we still proceed to emit the event.
         // The health monitor will handle ongoing reconnection.
 
-        // Create lock file for Jan Browser MCP
         if name == "Jan Browser MCP" {
             if let Some(port_str) = config_params.envs.get("BRIDGE_PORT") {
                 if let Some(port_str) = port_str.as_str() {
                     if let Ok(port) = port_str.parse::<u16>() {
                         use crate::core::mcp::lockfile::create_lock_file;
-                        if let Err(e) = create_lock_file(&app, port, &name) {
-                            log::warn!("Failed to create lock file for port {}: {}", port, e);
+                        let child_pid = app
+                            .state::<AppState>()
+                            .mcp_server_pids
+                            .lock()
+                            .await
+                            .get(&name)
+                            .copied();
+                        if let Some(pid) = child_pid {
+                            if let Err(e) = create_lock_file(&app, port, &name, pid) {
+                                log::warn!("Failed to create lock file for port {}: {}", port, e);
+                            }
                         }
                     }
                 }
@@ -903,8 +913,8 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
         if !is_process_alive(lock.pid) {
             log::info!("Lock file stale, process {} is dead", lock.pid);
             check_and_cleanup_stale_lock(app, port).await?;
-            return Ok(true);
-        }
+            // Fall through — port may still be held by a grandchild that outlived this PID.
+        } else {
 
         // Process from lock file is alive - verify it's still the MCP process
         if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
@@ -940,6 +950,7 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
                 lock.pid
             );
             check_and_cleanup_stale_lock(app, port).await?;
+        }
         }
     }
 
@@ -984,7 +995,7 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
 }
 
 #[cfg(unix)]
-async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+pub async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
 
@@ -1008,7 +1019,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+pub async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     use std::process::Command;
 
     #[cfg(windows)]
@@ -1152,10 +1163,17 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
 
                 if name == "Jan Browser MCP" {
                     if let Some(port) = port {
-                        use crate::core::mcp::lockfile::delete_lock_file;
                         if success {
-                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            sleep(Duration::from_millis(BRIDGE_KILL_SETTLE_MS)).await;
                         }
+                        if !jan_utils::network::is_port_available(port) {
+                            if let Some(info) = jan_utils::network::find_process_using_port(port) {
+                                if let Err(e) = kill_process_by_pid(info.pid).await {
+                                    log::warn!("Failed to kill port {} holder PID {}: {}", port, info.pid, e);
+                                }
+                            }
+                        }
+                        use crate::core::mcp::lockfile::delete_lock_file;
                         let _ = delete_lock_file(&app_clone, port);
                     }
                 }
