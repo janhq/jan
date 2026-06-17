@@ -34,6 +34,9 @@ export interface CatalogModel {
   downloads: number
   num_quants?: number
   quants?: ModelQuant[]
+  // MTP draft companions split out of `quants` for display; resolved against
+  // the chosen quant at download time (see lib/mtp.ts).
+  mtpQuants?: ModelQuant[]
   mmproj_models?: MMProjModel[]
   num_mmproj?: number
   safetensors_files?: SafetensorsFile[]
@@ -120,14 +123,16 @@ export interface ModelsService {
     modelSize?: number,
     mmprojPath?: string,
     mmprojSha256?: string,
-    mmprojSize?: number
+    mmprojSize?: number,
+    mtpPath?: string
   ): Promise<void>
   pullModelWithMetadata(
     id: string,
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification?: boolean
+    skipVerification?: boolean,
+    mtpPath?: string
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   pauseDownload(id: string): Promise<void>

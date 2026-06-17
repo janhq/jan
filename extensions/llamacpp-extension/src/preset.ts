@@ -28,6 +28,7 @@ type ModelYaml = ModelConfig & {
   batch_size?: number
   mtp_layers?: number
   mtp?: boolean
+  mtp_model_path?: string
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
@@ -405,13 +406,18 @@ export async function generatePreset(
       lines.push('mmproj-offload = false')
     }
 
-    if (
-      mc.mtp === true &&
-      typeof mc.mtp_layers === 'number' &&
-      mc.mtp_layers > 0 &&
-      supportsMtp
-    ) {
+    // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
+    // draft gguf (mtp_model_path), which is passed to llama-server as the draft.
+    const hasMtpModel =
+      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
+    const hasMtpLayers =
+      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
+    if (mc.mtp === true && supportsMtp && (hasMtpLayers || hasMtpModel)) {
       lines.push('spec-type = draft-mtp')
+      if (hasMtpModel) {
+        const mtpAbs = await joinPath([janDataFolderPath, mc.mtp_model_path!])
+        lines.push(`spec-draft-model = ${escapeIniValue(mtpAbs)}`)
+      }
       if (
         typeof mc.spec_draft_n_max === 'number' &&
         mc.spec_draft_n_max > 0

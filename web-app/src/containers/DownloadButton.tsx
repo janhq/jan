@@ -12,6 +12,7 @@ import {
 } from '@/lib/models'
 import { toast } from 'sonner'
 import { cn, sanitizeModelId } from '@/lib/utils'
+import { pickMtpSibling } from '@/lib/mtp'
 import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -131,6 +132,9 @@ export function DownloadButtonPlaceholder({
         (e) => e.model_id.toLowerCase() === 'mmproj-f16'
       ) || model.mmproj_models?.[0]
     )?.path
+    const mtpPath = quant
+      ? pickMtpSibling(model.mtpQuants, quant)?.path
+      : undefined
     setResumeParams(modelId, {
       modelPath: modelUrl,
       mmprojPath,
@@ -139,7 +143,14 @@ export function DownloadButtonPlaceholder({
     try {
       await serviceHub
         .models()
-        .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
+        .pullModelWithMetadata(
+          modelId,
+          modelUrl,
+          mmprojPath,
+          huggingfaceToken,
+          undefined,
+          mtpPath
+        )
     } catch (err) {
       removeLocalDownloadingModel(modelId)
       console.error('Failed to start download:', err)

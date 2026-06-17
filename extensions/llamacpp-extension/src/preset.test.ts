@@ -92,6 +92,26 @@ describe('generatePreset MTP emission', () => {
     expect(ini).not.toContain('spec-type')
   })
 
+  it('emits spec-draft-model for a separate MTP gguf even when main reports 0 heads', async () => {
+    setupModel('gemma', {
+      mtp: true,
+      mtp_layers: 0,
+      mtp_model_path: 'models/gemma/mtp.gguf',
+    })
+    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type = draft-mtp')
+    expect(ini).toContain('spec-draft-model = /jan/models/gemma/mtp.gguf')
+  })
+
+  it('does not emit spec-draft-model for embedded MTP (no draft path)', async () => {
+    setupModel('glm', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: true })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type = draft-mtp')
+    expect(ini).not.toContain('spec-draft-model')
+  })
+
   it('skips out-of-range spec tunables', async () => {
     setupModel('glm', {
       mtp: true,

@@ -2292,8 +2292,17 @@ export default class llamacpp_extension extends AIEngine {
           save_path: localPath,
           proxy: getProxyConfig(),
           sha256:
-            saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
-          size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
+            saveName === 'model.gguf'
+              ? opts.modelSha256
+              : saveName === 'mmproj.gguf'
+                ? opts.mmprojSha256
+                : undefined,
+          size:
+            saveName === 'model.gguf'
+              ? opts.modelSize
+              : saveName === 'mmproj.gguf'
+                ? opts.mmprojSize
+                : undefined,
           model_id: modelId,
         })
         return localPath
@@ -2309,6 +2318,10 @@ export default class llamacpp_extension extends AIEngine {
     let modelPath = await maybeDownload(opts.modelPath, 'model.gguf')
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
+      : undefined
+    // MTP draft companion (speculative decoding); paired with the main model.
+    let mtpModelPath = opts.mtpPath
+      ? await maybeDownload(opts.mtpPath, 'mtp.gguf')
       : undefined
 
     if (downloadItems.length > 0) {
@@ -2420,6 +2433,15 @@ export default class llamacpp_extension extends AIEngine {
           `Mmproj GGUF validation successful: version ${mmprojMetadata.version}, tensors: ${mmprojMetadata.tensor_count}`
         )
       }
+
+      // Validate MTP draft and read its head count (the main gguf usually
+      // lacks nextn_predict_layers when MTP ships as a separate file).
+      if (mtpModelPath) {
+        const fullMtpPath = await joinPath([janDataFolderPath, mtpModelPath])
+        const mtpMetadata = await readGgufMetadata(fullMtpPath)
+        const draftLayers = detectMtpLayersFromGgufMeta(mtpMetadata.metadata)
+        mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
+      }
     } catch (error) {
       logger.error('GGUF validation failed:', error)
       throw new Error(
@@ -2434,6 +2456,11 @@ export default class llamacpp_extension extends AIEngine {
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
+      ).size
+    }
+    if (mtpModelPath) {
+      size_bytes += (
+        await fs.fileStat(await joinPath([janDataFolderPath, mtpModelPath]))
       ).size
     }
 
@@ -2456,6 +2483,9 @@ export default class llamacpp_extension extends AIEngine {
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+      // A separate draft gguf is downloaded only to be used — enable MTP by
+      // default. Embedded-MTP models keep MTP opt-in (no flag written here).
+      ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),

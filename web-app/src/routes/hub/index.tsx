@@ -5,6 +5,7 @@ import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, formatBytes, sanitizeModelId } from '@/lib/utils'
 import { sumMlxModelBytes } from '@/lib/modelCompatibility'
+import { isMtpQuant } from '@/lib/mtp'
 import {
   useState,
   useMemo,
@@ -189,7 +190,14 @@ function HubContent() {
   }, [searchValue])
 
   const filteredModels = useMemo(() => {
-    let filtered = sortedModels
+    // MTP companion ggufs are draft models, not standalone variants — move them
+    // out of `quants` (so they don't show as downloadable) into `mtpQuants`,
+    // where DownloadButton resolves them against the chosen quant.
+    let filtered = sortedModels.map((model) => ({
+      ...model,
+      quants: model.quants?.filter((q) => !isMtpQuant(q)),
+      mtpQuants: model.quants?.filter((q) => isMtpQuant(q)),
+    }))
     // Apply search filter
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
