@@ -449,15 +449,6 @@ export const MessageItem = memo(
       )
     }
 
-    // Group consecutive reasoning + tool parts into a single CoT block.
-    // Empty text parts and step-start markers (inserted by the AI SDK during
-    // multi-step tool use) are absorbed so they don't split the group.
-    const isCotPart = (part: any) =>
-      part.type === CONTENT_TYPE.REASONING ||
-      part.type.startsWith('tool-') ||
-      part.type === 'step-start' ||
-      (part.type === CONTENT_TYPE.TEXT && (!part.text || part.text.trim() === ''))
-
     type PartEntry = { part: any; index: number }
 
     const renderCotGroup = (
@@ -465,32 +456,53 @@ export const MessageItem = memo(
       groupKey: string,
       hasFollowingContent: boolean
     ) => {
-      const hasReasoning = entries.some(
-        (e) => e.part.type === CONTENT_TYPE.REASONING
-      )
-
-      // No reasoning in this group — render tool parts directly, no CoT wrapper
-      if (!hasReasoning) {
-        return entries.map(({ part, index: partIndex }) =>
-          renderToolInline(part, partIndex)
-        )
-      }
+      const hasTools = entries.some((e) => e.part.type.startsWith('tool-'))
 
       const lastEntryIndex = entries[entries.length - 1].index
       const groupIsStreaming =
         isStreaming && lastEntryIndex === message.parts.length - 1
+
+      // Keep the trace expanded while a tool is still running or awaiting the
+      // user's approval — collapsing it would hide the approval controls.
+      const keepOpen = hasPendingToolCall || awaitingApproval
+
+      // While streaming, surface only the latest step (current reasoning
+      // paragraph or tool call) so each step replaces the previous one rather
+      // than the whole trace scrolling by. The full trace renders once done.
+      const isMeaningfulEntry = ({ part }: PartEntry) => {
+        if (part.type === CONTENT_TYPE.REASONING || part.type === CONTENT_TYPE.TEXT) {
+          return Boolean(part.text && part.text.trim())
+        }
+        return part.type.startsWith('tool-') && 'state' in part
+      }
+      const meaningful = entries.filter(isMeaningfulEntry)
+      const visibleEntries =
+        groupIsStreaming && meaningful.length > 0
+          ? [meaningful[meaningful.length - 1]]
+          : entries
+
+      // Streaming label reflects the current step, not whether the whole trace
+      // ever used a tool — otherwise it sticks on "Using tools…" once the model
+      // resumes reasoning after a tool call.
+      const currentStepIsTool =
+        meaningful.length > 0 &&
+        meaningful[meaningful.length - 1].part.type.startsWith('tool-')
 
       return (
         <ChainOfThought
           key={groupKey}
           className="w-full text-muted-foreground"
           isStreaming={groupIsStreaming}
-          shouldCollapse={hasFollowingContent}
+          shouldCollapse={hasFollowingContent && !keepOpen}
+          forceOpen={keepOpen}
           defaultOpen={true}
         >
-          <ChainOfThoughtHeader />
+          <ChainOfThoughtHeader
+            streamingLabel={currentStepIsTool ? 'Using tools...' : 'Reasoning...'}
+            completedVerb={hasTools ? 'Worked' : 'Thought'}
+          />
           <ChainOfThoughtContent>
-            {entries.map(({ part, index: partIndex }) => {
+            {visibleEntries.map(({ part, index: partIndex }) => {
               if (part.type === CONTENT_TYPE.REASONING) {
                 const isLastMsgPart =
                   partIndex === message.parts.length - 1
@@ -538,6 +550,24 @@ export const MessageItem = memo(
                 )
               }
 
+              // Interstitial narration emitted between steps — fold into the trace
+              if (part.type === CONTENT_TYPE.TEXT) {
+                if (!part.text || part.text.trim() === '') return null
+                return (
+                  <div
+                    key={`${message.id}-it-${partIndex}`}
+                    dir="auto"
+                    className="select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70"
+                  >
+                    {part.text}
+                  </div>
+                )
+              }
+
+              if (part.type === CONTENT_TYPE.FILE) {
+                return renderFilePart(part, partIndex)
+              }
+
               // Tool part inside CoT
               return renderToolInline(part, partIndex)
             })}
@@ -547,37 +577,50 @@ export const MessageItem = memo(
     }
 
     const renderedParts = useMemo(() => {
+      const parts = message.parts as any[]
       const elements: React.ReactNode[] = []
-      let cotBuffer: PartEntry[] = []
 
-      const flushCot = (hasFollowing: boolean) => {
-        if (cotBuffer.length === 0) return
-        const key = `${message.id}-cot-${cotBuffer[0].index}`
-        elements.push(renderCotGroup(cotBuffer, key, hasFollowing))
-        cotBuffer = []
-      }
-
-      for (let i = 0; i < message.parts.length; i++) {
-        const part = message.parts[i] as any
-        if (isCotPart(part)) {
-          cotBuffer.push({ part, index: i })
-        } else {
-          flushCot(true) // text/file follows → collapse the CoT
-          switch (part.type) {
-            case CONTENT_TYPE.TEXT:
-              elements.push(
-                renderTextPart(part as { type: 'text'; text: string }, i)
-              )
-              break
-            case CONTENT_TYPE.FILE:
-              elements.push(renderFilePart(part as any, i))
-              break
-            default:
-              break
-          }
+      // Anchor the working trace at the last reasoning/tool part: everything up
+      // to it (reasoning, tools, step-start markers, interstitial narration)
+      // folds into a single collapsible CoT group; only the trailing answer
+      // text/files render in the main message body.
+      let lastCotAnchor = -1
+      for (let i = 0; i < parts.length; i++) {
+        const t = parts[i].type
+        if (t === CONTENT_TYPE.REASONING || t.startsWith('tool-')) {
+          lastCotAnchor = i
         }
       }
-      flushCot(false) // end of message, no following content → keep open
+
+      if (lastCotAnchor >= 0) {
+        const cotEntries: PartEntry[] = []
+        for (let i = 0; i <= lastCotAnchor; i++) {
+          cotEntries.push({ part: parts[i], index: i })
+        }
+        elements.push(
+          renderCotGroup(
+            cotEntries,
+            `${message.id}-cot`,
+            lastCotAnchor < parts.length - 1
+          )
+        )
+      }
+
+      for (let i = lastCotAnchor + 1; i < parts.length; i++) {
+        const part = parts[i]
+        switch (part.type) {
+          case CONTENT_TYPE.TEXT:
+            elements.push(
+              renderTextPart(part as { type: 'text'; text: string }, i)
+            )
+            break
+          case CONTENT_TYPE.FILE:
+            elements.push(renderFilePart(part as any, i))
+            break
+          default:
+            break
+        }
+      }
 
       return elements
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -625,7 +668,7 @@ export const MessageItem = memo(
           message.role === 'assistant' &&
           !awaitingApproval &&
           (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
-            <PromptProgress />
+            <PromptProgress hideIdle={hasPendingToolCall} />
           )}
 
         {typeof messageError === 'string' && messageError.length > 0 && (

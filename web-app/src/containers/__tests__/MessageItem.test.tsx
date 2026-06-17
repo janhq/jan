@@ -315,7 +315,7 @@ describe('MessageItem', () => {
     expect(screen.getByText('thinking...')).toBeInTheDocument()
   })
 
-  it('renders inline tool part (no reasoning → no CoT wrapper)', () => {
+  it('folds a tool part into the CoT working trace', () => {
     render(
       <MessageItem
         message={
@@ -333,7 +333,7 @@ describe('MessageItem', () => {
     )
     expect(screen.getByTestId('tool')).toBeInTheDocument()
     expect(screen.getByTestId('tool-header')).toHaveTextContent('search')
-    expect(screen.queryByTestId('cot')).not.toBeInTheDocument()
+    expect(screen.getByTestId('cot')).toBeInTheDocument()
   })
 
   it('renders tool error when state is output-error', () => {

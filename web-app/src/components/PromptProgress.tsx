@@ -3,7 +3,7 @@ import { Loader } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { Progress } from '@/components/ui/progress'
 
-export function PromptProgress() {
+export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
   const params = useParams({ strict: false })
   const threadId = (params as { threadId?: string })?.threadId
   const promptProgress = useAppState((state) =>
@@ -24,6 +24,13 @@ export function PromptProgress() {
     promptProgress &&
     promptProgress.total > 0 &&
     percentage < 100
+
+  // Nothing concrete to report (no model load, no prompt-reading progress).
+  // Callers driving their own activity label (e.g. tool-call traces) pass
+  // hideIdle to suppress the redundant generic "Working…" fallback.
+  if (hideIdle && !loadingModel && !showReading) {
+    return null
+  }
 
   const label = loadingModel
     ? 'Loading model…'
