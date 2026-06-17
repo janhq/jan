@@ -69,7 +69,10 @@ fn is_backend_error_line(line_lower: &str) -> bool {
 }
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
-use jan_utils::{binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags};
+use jan_utils::{
+    binary_requires_cuda, binary_requires_rocm, find_cuda_paths, find_rocm_paths,
+    setup_library_path, setup_windows_process_flags,
+};
 
 /// A handle to a running router-mode `llama-server` process.
 pub struct RouterHandle {
@@ -160,7 +163,17 @@ pub async fn start_router(
              Process may fail to start."
         );
     }
-    setup_library_path(backend_exe.parent(), &cuda, &mut command);
+    let rocm = find_rocm_paths();
+    if rocm.lib_paths.is_empty()
+        && rocm.bin_paths.is_empty()
+        && binary_requires_rocm(&backend_exe)
+    {
+        log::warn!(
+            "llama.cpp router backend appears to require ROCm/HIP, but ROCm not found. \
+             Process may fail to start."
+        );
+    }
+    setup_library_path(backend_exe.parent(), &cuda.merged(rocm), &mut command);
 
     let mut child = command.spawn().map_err(ServerError::Io)?;
 
