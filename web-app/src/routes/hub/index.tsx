@@ -193,7 +193,7 @@ function HubContent() {
     // MTP companion ggufs are draft models, not standalone variants — move them
     // out of `quants` (so they don't show as downloadable) into `mtpQuants`,
     // where DownloadButton resolves them against the chosen quant.
-    let filtered = sortedModels.map((model) => ({
+    let filtered: CatalogModel[] = sortedModels.map((model) => ({
       ...model,
       quants: model.quants?.filter((q) => !isMtpQuant(q)),
       mtpQuants: model.quants?.filter((q) => isMtpQuant(q)),
