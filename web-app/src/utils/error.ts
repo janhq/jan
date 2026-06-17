@@ -9,6 +9,10 @@ export const CONTEXT_OVERFLOW_TITLE = 'Context window full'
 export const CONTEXT_OVERFLOW_MESSAGE =
   'This message — including search results and tool output — is longer than the model can process at once. Increase the context size, or reduce the amount of attached / retrieved content (e.g. fewer web-search results) and try again.'
 
+export const OUT_OF_MEMORY_TITLE = 'Ran out of memory'
+export const OUT_OF_MEMORY_MESSAGE =
+  'The model ran out of memory while processing this request. Try a smaller or lighter model, reduce the context size, or remove attached images. On Apple Silicon, memory is shared with the system, so closing other memory-heavy apps can free up headroom.'
+
 /**
  * Detects errors raised when a request exceeds the model's context window.
  *
@@ -54,6 +58,41 @@ export function isContextLimitError(error: unknown): boolean {
     b.includes('overflow') ||
     b.includes('too long') ||
     b.includes('too large')
+  )
+}
+
+/**
+ * Detects a fatal compute / out-of-memory failure from a local backend.
+ *
+ * Mirrors the Rust `is_compute_backend_error` / `body_indicates_oom` matchers
+ * in `src-tauri/src/core/server/proxy.rs`: a Metal/CUDA/Vulkan GPU OOM during
+ * prompt processing leaves the engine returning "Compute error" (the OOM
+ * detail lives only in the server's stderr). The proxy already rewrites those
+ * into a clear `insufficient_memory` envelope (ATO-197), so this matcher keys
+ * off both the explicit OOM wording and the raw decode/compute-failure
+ * phrasing as a backstop. Keep patterns lower-case.
+ */
+export function isOutOfMemoryError(error: unknown): boolean {
+  if (!error) return false
+  const raw =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String((error as { message?: unknown }).message ?? '')
+          : ''
+  if (!raw) return false
+  const b = raw.toLowerCase()
+  return (
+    b.includes('out of memory') ||
+    b.includes('outofmemory') ||
+    b.includes('insufficient memory') ||
+    b.includes('insufficient_memory') ||
+    b.includes('cuda_error_out_of_memory') ||
+    b.includes('erroroutofdevicememory') ||
+    b.includes('failed to allocate') ||
+    b.includes('compute error')
   )
 }
 

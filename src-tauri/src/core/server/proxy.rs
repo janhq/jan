@@ -726,6 +726,43 @@ fn body_indicates_oom(body: &str) -> bool {
         || b.contains("erroroutofdevicememory")
 }
 
+/// ATO-197: Detects a *fatal* llama.cpp compute/decode failure that poisons
+/// the backend. On Apple Silicon (Metal) a GPU out-of-memory during prompt
+/// processing returns HTTP 500 `{"error":{"message":"Compute error"}}` and
+/// leaves the ggml Metal backend in a permanent error state ("backend is in
+/// error state from a previous command buffer failure - recreate the backend
+/// to recover"). The OOM detail (`kIOGPUCommandBufferCallbackErrorOutOfMemory`)
+/// only appears in the server's stderr, never the HTTP body, so we key off the
+/// body's decode/compute-failure phrasing. Context-overflow errors are handled
+/// separately and checked first, so they never reach this matcher.
+fn is_compute_backend_error(status: StatusCode, body: &str) -> bool {
+    if status != StatusCode::INTERNAL_SERVER_ERROR {
+        return false;
+    }
+    let b = body.to_lowercase();
+    b.contains("compute error")
+        || b.contains("failed to decode")
+        || b.contains("failed to compute graph")
+        || b.contains("backend is in error state")
+        || b.contains("ggml_backend_sched_graph_compute")
+}
+
+/// ATO-197: human-readable, actionable error envelope for a fatal compute/OOM
+/// failure from a local backend. Replaces the opaque "Compute error" the
+/// engine returns with guidance, and carries the OpenAI `insufficient_memory`
+/// code. `oom` is `true` when the upstream body itself pinned an OOM cause; on
+/// macOS Metal the bare "Compute error" is overwhelmingly an out-of-memory
+/// condition, so the non-`oom` wording still leads with that as the likely
+/// cause but hedges.
+fn compute_error_envelope(oom: bool) -> String {
+    let message = if oom {
+        "The model ran out of memory while processing this request. Try a smaller or lighter model, reduce the context size, or remove attached images. On Apple Silicon, memory is shared with the system, so closing other memory-heavy apps can free up headroom."
+    } else {
+        "The model failed during computation — most often because it ran out of memory. Try a smaller or lighter model, reduce the context size, or remove attached images. On Apple Silicon, memory is shared with the system, so closing other memory-heavy apps can free up headroom."
+    };
+    structured_error_json(message, "server_error", "insufficient_memory")
+}
+
 /// ATO-182: Build an OpenAI-compatible structured error envelope so every
 /// client (the in-app UI plus external agents that hit `localhost:1337/v1`)
 /// receives a parseable `{"error": {...}}` document with a typed `code`,
@@ -3080,6 +3117,62 @@ async fn inner_proxy_request<R: Runtime>(
                     }
                 }
 
+                // ATO-197: A fatal Metal/compute failure (e.g. a GPU OOM during
+                // prompt processing) poisons the ggml backend — every subsequent
+                // request to the same llama-server returns "Compute error" until
+                // the backend is recreated. Retrying the identical request (the
+                // AI SDK's default 3× retry on HTTP 500) just hammers the dead
+                // backend and surfaces the opaque "Failed after 3 attempts. Last
+                // error: Compute error." So we:
+                //   1. recreate the backend (reload the model with the SAME ctx)
+                //      so the *next* request works again, and
+                //   2. return a clear, NON-retryable (HTTP 400) OOM error for
+                //      THIS request so the client stops looping and the user sees
+                //      an actionable message.
+                // We deliberately do NOT auto-retry the same request here: a
+                // deterministic prompt-processing OOM would just re-poison the
+                // fresh backend.
+                if can_retry_local && is_compute_backend_error(status, &error_body) {
+                    let model_id = state.model_id.clone().unwrap();
+                    let backend = state.backend;
+                    log::warn!(
+                        "Fatal compute error detected (status={status} backend={backend} model_id={model_id}); recreating backend, not retrying"
+                    );
+                    // Only the upstream extension understands the
+                    // `compute_error_recovery` trigger (reload same-ctx). Other
+                    // local backends would misinterpret it as a context grow, so
+                    // we skip the reload for them and only return the clear error.
+                    if backend == "llamacpp-upstream" {
+                        let _ = maybe_auto_increase_and_retry(
+                            &app_handle,
+                            &auto_increase_state,
+                            backend,
+                            &model_id,
+                            &sessions,
+                            &sessions_upstream,
+                            &mlx_sessions,
+                            "compute_error_recovery",
+                        )
+                        .await;
+                    }
+
+                    let oom = body_indicates_oom(&error_body);
+                    state.error_kind = Some(upstream_error_kind(state.backend));
+                    state.upstream_status = Some(status.as_u16());
+                    state.oom_detected = true;
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(compute_error_envelope(oom)))
+                        .unwrap());
+                }
+
                 state.error_kind = Some(upstream_error_kind(state.backend));
                 state.upstream_status = Some(status.as_u16());
                 state.oom_detected = body_indicates_oom(&error_body);
@@ -4013,6 +4106,58 @@ mod auto_increase_ctx_tests {
         let wrapped = structure_backend_error_body(raw, true, false);
         let v: serde_json::Value = serde_json::from_str(&wrapped).unwrap();
         assert_eq!(v["error"]["code"], "insufficient_memory");
+    }
+
+    // --- is_compute_backend_error (ATO-197) ------------------------------------
+
+    #[test]
+    fn detects_metal_compute_error_body() {
+        // The exact body llama-server returns on a Metal OOM during prefill.
+        let body = r#"{"error":{"code":500,"message":"Compute error","type":"server_error"}}"#;
+        assert!(is_compute_backend_error(StatusCode::INTERNAL_SERVER_ERROR, body));
+        // Other decode/compute phrasings.
+        assert!(is_compute_backend_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "llama_decode: failed to decode, ret = -3"
+        ));
+        assert!(is_compute_backend_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "process_ubatch: failed to compute graph, compute status: -1"
+        ));
+        assert!(is_compute_backend_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "backend is in error state from a previous command buffer failure"
+        ));
+    }
+
+    #[test]
+    fn ignores_non_compute_errors() {
+        // Only 500s are fatal-compute candidates.
+        assert!(!is_compute_backend_error(StatusCode::BAD_REQUEST, "Compute error"));
+        assert!(!is_compute_backend_error(StatusCode::OK, "Compute error"));
+        // Unrelated 500 bodies must not match.
+        assert!(!is_compute_backend_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error"
+        ));
+        assert!(!is_compute_backend_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":{"message":"the request exceeds the available context size."}}"#
+        ));
+    }
+
+    #[test]
+    fn compute_error_envelope_is_structured_oom() {
+        for oom in [true, false] {
+            let env = compute_error_envelope(oom);
+            let v: serde_json::Value = serde_json::from_str(&env).unwrap();
+            assert_eq!(v["error"]["code"], "insufficient_memory");
+            let msg = v["error"]["message"].as_str().unwrap().to_lowercase();
+            // The message must read as out-of-memory so the UI matcher fires and
+            // the user gets actionable guidance instead of "Compute error".
+            assert!(msg.contains("out of memory"));
+            assert!(msg.contains("smaller"));
+        }
     }
 
     // --- is_context_overflow_finish_length -------------------------------------

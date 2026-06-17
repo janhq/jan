@@ -58,8 +58,11 @@ import {
   MODEL_ACCESS_DENIED_MESSAGE,
   CONTEXT_OVERFLOW_TITLE,
   CONTEXT_OVERFLOW_MESSAGE,
+  OUT_OF_MEMORY_TITLE,
+  OUT_OF_MEMORY_MESSAGE,
   isModelAccessError,
   isContextLimitError,
+  isOutOfMemoryError,
 } from '@/utils/error'
 import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
@@ -1092,6 +1095,13 @@ function ThreadDetail() {
                   const isContextError = isContextLimitError(activeError)
                   const isAccessError =
                     !isContextError && isModelAccessError(activeError)
+                  // ATO-197: a fatal Metal/compute failure (GPU OOM) surfaces
+                  // as the opaque "Compute error" / the proxy's
+                  // `insufficient_memory` envelope — show clear OOM guidance.
+                  const isOomError =
+                    !isContextError &&
+                    !isAccessError &&
+                    isOutOfMemoryError(activeError)
                   // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
                   // "... but MAX_KV_SIZE is N") with a clear, actionable message
                   // instead of the generic "Error generating response".
@@ -1099,12 +1109,16 @@ function ThreadDetail() {
                     ? CONTEXT_OVERFLOW_TITLE
                     : isAccessError
                       ? MODEL_ACCESS_DENIED_TITLE
-                      : 'Error generating response'
+                      : isOomError
+                        ? OUT_OF_MEMORY_TITLE
+                        : 'Error generating response'
                   const body = isContextError
                     ? CONTEXT_OVERFLOW_MESSAGE
                     : isAccessError
                       ? MODEL_ACCESS_DENIED_MESSAGE
-                      : rawMessage
+                      : isOomError
+                        ? OUT_OF_MEMORY_MESSAGE
+                        : rawMessage
                   return (
                     <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                       <div className="flex items-start gap-3">

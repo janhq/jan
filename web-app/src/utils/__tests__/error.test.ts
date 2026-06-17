@@ -4,6 +4,7 @@ import {
   MODEL_ACCESS_DENIED_TITLE,
   MODEL_ACCESS_DENIED_MESSAGE,
   isModelAccessError,
+  isOutOfMemoryError,
 } from '../error'
 
 describe('error utilities', () => {
@@ -86,6 +87,45 @@ describe('error utilities', () => {
       expect(isModelAccessError(null)).toBe(false)
       expect(isModelAccessError(undefined)).toBe(false)
       expect(isModelAccessError({})).toBe(false)
+    })
+  })
+
+  describe('isOutOfMemoryError', () => {
+    const positives: Array<[string, string]> = [
+      ['raw metal compute error', 'Compute error'],
+      [
+        'proxy insufficient_memory envelope',
+        'The model ran out of memory while processing this request. Try a smaller or lighter model.',
+      ],
+      ['cuda oom', 'ggml_cuda: CUDA_ERROR_OUT_OF_MEMORY'],
+      ['vulkan oom', 'ErrorOutOfDeviceMemory'],
+      ['alloc failure', 'failed to allocate buffer'],
+      ['insufficient memory', 'error: Insufficient Memory'],
+    ]
+
+    it.each(positives)('detects %s', (_label, message) => {
+      expect(isOutOfMemoryError(new Error(message))).toBe(true)
+      expect(isOutOfMemoryError(message)).toBe(true)
+      expect(isOutOfMemoryError({ message })).toBe(true)
+    })
+
+    const negatives: Array<[string, string]> = [
+      ['empty string', ''],
+      ['context size', OUT_OF_CONTEXT_SIZE],
+      ['rate limit', 'Rate limit exceeded'],
+      ['generic 500', 'Internal server error'],
+    ]
+
+    it.each(negatives)('does not match %s', (_label, message) => {
+      expect(isOutOfMemoryError(message ? new Error(message) : message)).toBe(
+        false
+      )
+    })
+
+    it('handles null / undefined safely', () => {
+      expect(isOutOfMemoryError(null)).toBe(false)
+      expect(isOutOfMemoryError(undefined)).toBe(false)
+      expect(isOutOfMemoryError({})).toBe(false)
     })
   })
 })

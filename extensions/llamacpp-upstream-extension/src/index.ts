@@ -100,8 +100,14 @@ interface AutoIncreaseCtxRequest {
   request_id: string
   backend: 'llamacpp' | 'llamacpp-upstream' | 'mlx'
   model_id: string
-  trigger: 'error' | 'finish_length'
+  trigger: 'error' | 'finish_length' | 'compute_error_recovery'
 }
+
+/// ATO-197: trigger value the Rust proxy sends when a fatal Metal/compute
+/// failure (e.g. a GPU OOM during prompt processing) poisons the ggml backend.
+/// Unlike `error` / `finish_length` (which grow the context window), this asks
+/// us to reload the model with the SAME ctx to recreate the dead backend.
+const COMPUTE_ERROR_RECOVERY_TRIGGER = 'compute_error_recovery'
 
 /// Tauri channel constants used by the Rust proxy (`proxy.rs`) to coordinate
 /// a context-window grow with the owning backend extension.
@@ -3876,6 +3882,30 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     try {
+      // ATO-197: the proxy asks us to recreate a poisoned backend after a
+      // fatal Metal/compute error (e.g. a GPU OOM during prompt processing).
+      // Reload the model with its existing settings to drop the broken ggml
+      // backend and spin up a fresh one — do NOT grow the context window (that
+      // would only make an OOM worse), and do not emit the ctx-grow UI notify.
+      if (trigger === COMPUTE_ERROR_RECOVERY_TRIGGER) {
+        logger.info(
+          `compute_error_recovery (llamacpp-upstream): recreating backend for model=${model_id}`
+        )
+        try {
+          await this.unload(model_id)
+        } catch (e) {
+          logger.warn(
+            `compute_error_recovery unload failed for ${model_id}, proceeding anyway: ${e}`
+          )
+        }
+        const sInfo = await this.load(model_id, {}, false, true)
+        await sendDone({ ok: true })
+        logger.info(
+          `compute_error_recovery (llamacpp-upstream): reload complete model=${model_id} port=${sInfo?.port}`
+        )
+        return
+      }
+
       const currentCtxLen =
         this.modelCtxSize.get(model_id) ?? this.config?.ctx_size ?? 8192
       const maxCtxLen = this.modelMaxCtxTrain.get(model_id)
