@@ -388,4 +388,56 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://pinstripes.io/v1',
+    explore_models_url: 'https://pinstripes.io',
+    provider: 'pinstripes',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Pinstripes API uses API keys for authentication. Visit [Pinstripes](https://pinstripes.io) to create an API key for your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'ps/deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash',
+        version: '1.0',
+        description: 'High-performance MoE model offering exceptional speed and quality.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'ps/glm-4.5-air',
+        name: 'GLM-4.5-Air',
+        version: '1.0',
+        description: 'Lightweight model from Zhipu AI with strong instruction-following.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'ps/qwen3-35b',
+        name: 'Qwen3 35B',
+        version: '1.0',
+        description: 'High-quality dense model from Alibaba Cloud with strong reasoning.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'ps/minimax-m2.7',
+        name: 'MiniMax M2.7',
+        version: '1.0',
+        description: 'Flagship model from MiniMax with ultra-long context and advanced reasoning.',
+        capabilities: ['completion'],
+      },
+    ],
+  },
 ]
