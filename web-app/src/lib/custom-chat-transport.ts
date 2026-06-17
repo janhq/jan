@@ -551,6 +551,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private continueFromContent: string | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
+  /**
+   * Monotonic per-request token. The transport instance is reused across
+   * regenerate, so a superseded request's terminal onError/onFinish must not
+   * clear loading/stream state that the newer request has already set.
+   */
+  private streamGeneration = 0
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -832,6 +838,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = this.threadId ?? options.chatId
+    const myGeneration = ++this.streamGeneration
     useAppState.getState().setCurrentStreamThreadId(threadId)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
@@ -1148,12 +1155,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
-        useAppState.getState().updatePromptProgress(undefined)
-        useAppState.getState().updateLoadingModel(false)
-        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-        useAppState.getState().updateThreadLoadingModel(threadId, false)
-        if (useAppState.getState().currentStreamThreadId === threadId) {
-          useAppState.getState().setCurrentStreamThreadId(undefined)
+        // A superseded request (e.g. after Reload) must not clear loading/stream
+        // state the newer request already owns.
+        if (this.streamGeneration === myGeneration) {
+          useAppState.getState().updatePromptProgress(undefined)
+          useAppState.getState().updateLoadingModel(false)
+          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          if (useAppState.getState().currentStreamThreadId === threadId) {
+            useAppState.getState().setCurrentStreamThreadId(undefined)
+          }
         }
         const unwrapped = unwrapRetryError(error)
         const rawMessage = unwrapped == null
@@ -1172,12 +1183,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return baseMessage
       },
       onFinish: ({ responseMessage }) => {
-        useAppState.getState().updatePromptProgress(undefined)
-        useAppState.getState().updateLoadingModel(false)
-        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-        useAppState.getState().updateThreadLoadingModel(threadId, false)
-        if (useAppState.getState().currentStreamThreadId === threadId) {
-          useAppState.getState().setCurrentStreamThreadId(undefined)
+        if (this.streamGeneration === myGeneration) {
+          useAppState.getState().updatePromptProgress(undefined)
+          useAppState.getState().updateLoadingModel(false)
+          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          if (useAppState.getState().currentStreamThreadId === threadId) {
+            useAppState.getState().setCurrentStreamThreadId(undefined)
+          }
         }
         if (responseMessage) {
           const metadata = responseMessage.metadata as
