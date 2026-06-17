@@ -1154,6 +1154,26 @@ mod server_tests {
     }
 
     #[test]
+    fn inject_sampling_defaults_fills_only_missing_keys() {
+        let mut body = json!({
+            "model": "m",
+            "messages": [],
+            "temperature": 0.2
+        });
+        let defaults = json!({
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "repetition_penalty": 1.1
+        });
+        proxy::inject_sampling_defaults(&mut body, &defaults);
+        // Caller-provided value wins.
+        assert_eq!(body["temperature"], json!(0.2));
+        // Omitted defaults are added.
+        assert_eq!(body["top_p"], json!(0.9));
+        assert_eq!(body["repetition_penalty"], json!(1.1));
+    }
+
+    #[test]
     fn strip_billing_header_in_body_handles_block_content() {
         let header = "x-anthropic-billing-header: cc_version=1;\n";
         let mut body = json!({

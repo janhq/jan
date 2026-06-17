@@ -71,6 +71,7 @@ macro_rules! invoke_commands_with_extras {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::set_model_param_defaults,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
@@ -265,6 +266,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            model_param_defaults: Arc::new(Mutex::new(HashMap::new())),
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
         .setup(|app| {

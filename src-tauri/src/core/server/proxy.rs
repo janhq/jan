@@ -334,6 +334,22 @@ pub(crate) fn strip_billing_header_in_body(body: &mut serde_json::Value) {
     }
 }
 
+/// Fills in top-level sampling defaults the caller omitted. Used for MLX
+/// targets, which (unlike the llama.cpp router) have no preset to carry
+/// server-side defaults. `defaults` is already in the target's key form
+/// (e.g. `repetition_penalty`, not `repeat_penalty`); a present key is never
+/// overwritten, so a per-request value always wins.
+pub(crate) fn inject_sampling_defaults(body: &mut serde_json::Value, defaults: &serde_json::Value) {
+    let (Some(obj), Some(defaults_obj)) = (body.as_object_mut(), defaults.as_object()) else {
+        return;
+    };
+    for (k, v) in defaults_obj {
+        if !obj.contains_key(k) {
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+}
+
 /// Convert Anthropic message format to OpenAI format
 pub(crate) fn convert_messages(
     anth_messages: &serde_json::Value,
@@ -1241,6 +1257,7 @@ async fn proxy_request(
     llama_state: Arc<LlamacppState>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
@@ -1510,6 +1527,9 @@ async fn proxy_request(
     let mut buffered_body: Option<Bytes> = None;
     let mut target_base_url: Option<String> = None;
     let mut is_anthropic_messages = false;
+    // Model id when the request resolves to an MLX session — MLX has no preset,
+    // so sampling defaults are injected into the body before forwarding.
+    let mut mlx_model_id: Option<String> = None;
 
     match (method.clone(), destination_path.as_str()) {
         // Anthropic /messages endpoint - tries /messages first, falls back to /chat/completions on error
@@ -1658,6 +1678,7 @@ async fn proxy_request(
                             if let Some(info) = mlx_session_info {
                                 let target_port = info.port;
                                 session_api_keys = vec![info.api_key.clone()];
+                                mlx_model_id = Some(model_id.to_string());
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some((url, key)) =
@@ -2214,6 +2235,7 @@ async fn proxy_request(
                             if let Some(info) = mlx_session_info {
                                 let target_port = info.port;
                                 session_api_keys = vec![info.api_key.clone()];
+                                mlx_model_id = Some(model_id.to_string());
                                 log::debug!("Found MLX session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
@@ -2515,7 +2537,7 @@ async fn proxy_request(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
 
-    let body_bytes_for_proxy = match buffered_body.clone() {
+    let mut body_bytes_for_proxy = match buffered_body.clone() {
         Some(b) => b,
         None => {
             log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
@@ -2531,6 +2553,24 @@ async fn proxy_request(
                 .unwrap());
         }
     };
+
+    // MLX targets carry no router preset, so apply the model's stored sampling
+    // defaults here for keys the caller omitted (llamacpp uses the preset;
+    // remote providers are intentionally left untouched).
+    if let Some(mid) = &mlx_model_id {
+        let defaults = {
+            let guard = model_param_defaults.lock().await;
+            guard.get(mid).cloned()
+        };
+        if let Some(defaults) = defaults {
+            if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&body_bytes_for_proxy) {
+                inject_sampling_defaults(&mut v, &defaults);
+                if let Ok(bytes) = serde_json::to_vec(&v) {
+                    body_bytes_for_proxy = Bytes::from(bytes);
+                }
+            }
+        }
+    }
 
     let key_attempts: Vec<Option<String>> = if session_api_keys.is_empty() {
         vec![None]
@@ -2846,6 +2886,7 @@ pub async fn start_server(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
@@ -2862,6 +2903,7 @@ pub async fn start_server(
         trusted_hosts,
         proxy_timeout,
         provider_configs,
+        model_param_defaults,
         mcp_servers,
         mcp_settings,
         jan_data_folder,
@@ -2882,6 +2924,7 @@ async fn start_server_internal(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
@@ -2926,6 +2969,7 @@ async fn start_server_internal(
         let llama_state = llama_state.clone();
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
+        let model_param_defaults = model_param_defaults.clone();
         let mcp_servers = mcp_servers.clone();
         let mcp_settings = mcp_settings.clone();
         let jan_data_folder = jan_data_folder.clone();
@@ -2939,6 +2983,7 @@ async fn start_server_internal(
                     llama_state.clone(),
                     mlx_sessions.clone(),
                     provider_configs.clone(),
+                    model_param_defaults.clone(),
                     mcp_servers.clone(),
                     mcp_settings.clone(),
                     jan_data_folder.clone(),
