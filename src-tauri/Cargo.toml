@@ -163,6 +163,8 @@ tauri-plugin-updater = "2"
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-autostart = "2.5.1"
+# GH #45: persist & restore the main window's size/position across restarts.
+tauri-plugin-window-state = "2"
 # ATO-113: Sentry crash/error telemetry (desktop only; never on mobile). The
 # `log` feature bridges `log::error!` -> Sentry via SentryLogger; default
 # features bring the panic hook, backtraces, contexts, and the reqwest/native-tls
