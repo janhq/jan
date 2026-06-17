@@ -355,6 +355,10 @@ function ThreadDetail() {
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
 
+      // Keep the thread marked busy while awaiting approval and executing tools,
+      // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
+      useAppState.getState().setThreadBusy(threadId, true)
+
       // Process tool calls sequentially, requesting approval for each if needed
       ;(async () => {
         for (const toolCall of sessionData.tools) {
@@ -438,6 +442,7 @@ function ThreadDetail() {
         // Clear tools after processing all
         sessionData.tools = []
         toolCallAbortController.current = null
+        useAppState.getState().setThreadBusy(threadId, false)
       })().catch((error) => {
         // Ignore abort errors
         if (error.name !== 'AbortError') {
@@ -445,6 +450,7 @@ function ThreadDetail() {
         }
         sessionData.tools = []
         toolCallAbortController.current = null
+        useAppState.getState().setThreadBusy(threadId, false)
       })
 
       if (!isAbort) {

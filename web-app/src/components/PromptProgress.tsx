@@ -47,7 +47,7 @@ export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
         <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
         <span className="font-medium text-foreground">{label}</span>
       </div>
-      {showReading && (
+      {showReading && !loadingModel && (
         <Progress value={percentage} className="h-1 bg-secondary/60" />
       )}
       {detail && (
