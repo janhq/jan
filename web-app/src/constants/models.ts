@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  pinstripes: {
+    models: ['ps/deepseek-v4-flash', 'ps/glm-4.5-air', 'ps/qwen3-35b', 'ps/minimax-m2.7'],
+    supportsCompletion: true,
+    supportsStreaming: ['ps/deepseek-v4-flash', 'ps/glm-4.5-air', 'ps/qwen3-35b', 'ps/minimax-m2.7'],
+    supportsJSON: ['ps/deepseek-v4-flash', 'ps/glm-4.5-air', 'ps/qwen3-35b', 'ps/minimax-m2.7'],
+    supportsImages: [],
+    supportsToolCalls: ['ps/deepseek-v4-flash', 'ps/glm-4.5-air', 'ps/qwen3-35b', 'ps/minimax-m2.7'],
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,

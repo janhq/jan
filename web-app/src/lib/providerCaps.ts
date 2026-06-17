@@ -153,6 +153,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  pinstripes: OPENAI_STRICT,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }
