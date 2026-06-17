@@ -1109,4 +1109,59 @@ mod server_tests {
         assert_eq!(schema["oneOf"][0]["properties"], json!({}));
         assert_eq!(schema["allOf"][0]["type"], json!("string"));
     }
+
+    const PROMPT: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+    #[test]
+    fn strip_billing_header_inline_form() {
+        let text = format!(
+            "x-anthropic-billing-header: cc_version=2.1.150.d66; cc_entrypoint=cli; cch=b378b;\n{PROMPT}"
+        );
+        assert_eq!(proxy::strip_anthropic_billing_header(&text), PROMPT);
+    }
+
+    #[test]
+    fn strip_billing_header_wrapped_form() {
+        let text = format!(
+            "x-anthropic-billing-header:\n   cc_version=2.1.150.d66; cc_entrypoint=cli; cch=934c8;\n{PROMPT}"
+        );
+        assert_eq!(proxy::strip_anthropic_billing_header(&text), PROMPT);
+    }
+
+    #[test]
+    fn strip_billing_header_leaves_regular_content() {
+        assert_eq!(proxy::strip_anthropic_billing_header(PROMPT), PROMPT);
+        // A header-like word that isn't the billing prefix is untouched.
+        let other = "x-anthropic-version: 2023-06-01\nhello";
+        assert_eq!(proxy::strip_anthropic_billing_header(other), other);
+    }
+
+    #[test]
+    fn strip_billing_header_in_body_covers_system_and_first_message() {
+        let header = "x-anthropic-billing-header: cc_version=1; cch=z;\n";
+        let mut body = json!({
+            "system": format!("{header}{PROMPT}"),
+            "messages": [
+                { "role": "user", "content": format!("{header}first") },
+                { "role": "user", "content": format!("{header}second") }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(body["system"], json!(PROMPT));
+        assert_eq!(body["messages"][0]["content"], json!("first"));
+        // Only the first message is touched.
+        assert_eq!(body["messages"][1]["content"], json!(format!("{header}second")));
+    }
+
+    #[test]
+    fn strip_billing_header_in_body_handles_block_content() {
+        let header = "x-anthropic-billing-header: cc_version=1;\n";
+        let mut body = json!({
+            "messages": [
+                { "role": "user", "content": [ { "type": "text", "text": format!("{header}{PROMPT}") } ] }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(body["messages"][0]["content"][0]["text"], json!(PROMPT));
+    }
 }

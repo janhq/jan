@@ -255,6 +255,85 @@ pub(crate) fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<
     Some(result)
 }
 
+/// Strips the `x-anthropic-billing-header:` attribution that Claude Code
+/// prepends to the system prompt / first message. Its values (cc_version, cch,
+/// …) are dynamic, so leaving them in the content busts Anthropic prompt
+/// caching and leaks CLI metadata to the model. Handles both observed shapes:
+///   inline:  "x-anthropic-billing-header: cc_version=…;\n<prompt>"
+///   wrapped: "x-anthropic-billing-header:\n   cc_version=…;\n<prompt>"
+pub(crate) fn strip_anthropic_billing_header(text: &str) -> &str {
+    const KEY: &str = "x-anthropic-billing-header:";
+    if text.len() < KEY.len() || !text[..KEY.len()].eq_ignore_ascii_case(KEY) {
+        return text;
+    }
+    let first_nl = match text.find('\n') {
+        Some(i) => i,
+        None => return text,
+    };
+    let after_first = &text[first_nl + 1..];
+
+    // Inline form: metadata sits on the header line itself.
+    if text[..first_nl].contains("cc_version=") || text[..first_nl].contains("cc_entrypoint=") {
+        return after_first;
+    }
+    // Wrapped form: metadata is the continuation line.
+    if let Some(rel) = after_first.find('\n') {
+        let cont = &after_first[..rel];
+        if cont.contains("cc_version=") || cont.contains("cc_entrypoint=") || cont.contains("cch=")
+        {
+            return &after_first[rel + 1..];
+        }
+    }
+    text
+}
+
+/// Applies `strip_anthropic_billing_header` to a message/system `content` value
+/// (a bare string or an array of content blocks — only the first text block can
+/// carry the header).
+fn strip_billing_header_in_content(content: &mut serde_json::Value) {
+    match content {
+        serde_json::Value::String(s) => {
+            let stripped = strip_anthropic_billing_header(s);
+            if stripped.len() != s.len() {
+                *s = stripped.to_string();
+            }
+        }
+        serde_json::Value::Array(blocks) => {
+            for block in blocks.iter_mut() {
+                if let Some(text_val) = block.get_mut("text") {
+                    if let Some(orig) = text_val.as_str() {
+                        let stripped = strip_anthropic_billing_header(orig);
+                        if stripped.len() != orig.len() {
+                            let owned = stripped.to_string();
+                            *text_val = serde_json::Value::String(owned);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Strips the Claude Code billing header from an in-flight request body, in
+/// place, before it is forwarded upstream. Covers the Anthropic `system` field
+/// and the first message's content (the only places Claude Code injects it).
+pub(crate) fn strip_billing_header_in_body(body: &mut serde_json::Value) {
+    if let Some(system) = body.get_mut("system") {
+        strip_billing_header_in_content(system);
+    }
+    if let Some(first) = body
+        .get_mut("messages")
+        .and_then(|v| v.as_array_mut())
+        .and_then(|arr| arr.first_mut())
+    {
+        if let Some(content) = first.get_mut("content") {
+            strip_billing_header_in_content(content);
+        }
+    }
+}
+
 /// Convert Anthropic message format to OpenAI format
 pub(crate) fn convert_messages(
     anth_messages: &serde_json::Value,
@@ -1459,7 +1538,15 @@ async fn proxy_request(
 
             // Parse body to get model_id for routing (don't transform yet)
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                Ok(json_body) => {
+                Ok(mut json_body) => {
+                    // Drop Claude Code's billing-header attribution before it is
+                    // forwarded (passthrough) or transformed, so it can't bust
+                    // upstream prompt caching or reach the model.
+                    strip_billing_header_in_body(&mut json_body);
+                    if let Ok(cleaned) = serde_json::to_vec(&json_body) {
+                        buffered_body = Some(cleaned.into());
+                    }
+
                     if config.enable_server_tool_execution
                         && !json_body
                             .get("stream")
@@ -1984,9 +2071,12 @@ async fn proxy_request(
                     // This happens for OpenAI-style tool schemas used with /chat/completions.
                     if destination_path == "/chat/completions" {
                         normalize_openai_tools_in_chat_body(&mut json_body);
-                        if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
-                            buffered_body = Some(normalized_bytes.into());
-                        }
+                    }
+                    // Strip Claude Code's billing header from chat/token-count
+                    // bodies too (it lands in the first message content here).
+                    strip_billing_header_in_body(&mut json_body);
+                    if let Ok(cleaned) = serde_json::to_vec(&json_body) {
+                        buffered_body = Some(cleaned.into());
                     }
 
                     if config.enable_server_tool_execution
