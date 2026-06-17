@@ -77,10 +77,7 @@ export function DownloadManagement() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
-  // Briefly auto-open the popover when a download starts so the otherwise-subtle
-  // title-bar indicator is noticeable.
   const prevDownloadCount = useRef(0)
-  const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const serviceHub = useServiceHub()
   const {
     downloads,
@@ -184,27 +181,15 @@ export function DownloadManagement() {
     return total
   }, [downloadProcesses, appUpdateState.isDownloading])
 
-  // When a download starts from idle, briefly auto-open the popover. Auto-close
-  // after a few seconds unless the user takes over (their manual open/close
-  // clears the timer via onOpenChange).
   useEffect(() => {
     const prev = prevDownloadCount.current
     prevDownloadCount.current = downloadCount
     if (downloadCount > 0 && prev === 0) {
       setIsPopoverOpen(true)
-      if (autoCloseTimer.current) clearTimeout(autoCloseTimer.current)
-      autoCloseTimer.current = setTimeout(() => {
-        setIsPopoverOpen(false)
-        autoCloseTimer.current = null
-      }, 4000)
+    } else if (downloadCount === 0 && prev > 0) {
+      setIsPopoverOpen(false)
     }
   }, [downloadCount])
-
-  useEffect(() => {
-    return () => {
-      if (autoCloseTimer.current) clearTimeout(autoCloseTimer.current)
-    }
-  }, [])
 
   const overallProgress = useMemo(() => {
     const modelTotal = downloadProcesses.reduce((acc, download) => {
@@ -653,16 +638,7 @@ export function DownloadManagement() {
 
   return (
     <>
-      <Popover
-        open={isPopoverOpen}
-        onOpenChange={(open) => {
-          setIsPopoverOpen(open)
-          if (autoCloseTimer.current) {
-            clearTimeout(autoCloseTimer.current)
-            autoCloseTimer.current = null
-          }
-        }}
-      >
+      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
@@ -702,7 +678,13 @@ export function DownloadManagement() {
           className="p-0 overflow-hidden text-sm select-none rounded-2xl"
           sideOffset={6}
           collisionPadding={8}
-          onFocusOutside={(e) => e.preventDefault}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onFocusOutside={(e) => {
+            if (downloadCount > 0) e.preventDefault()
+          }}
+          onInteractOutside={(e) => {
+            if (downloadCount > 0) e.preventDefault()
+          }}
         >
           <div className="flex flex-col">
             {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (

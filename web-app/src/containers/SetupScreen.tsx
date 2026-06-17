@@ -347,6 +347,29 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
   }, [navigate, selectModelProvider, serviceHub, setProviders])
 
+  const enterChatForDownload = useCallback(
+    (modelId: string, providerName: LocalLlamacppProvider | 'mlx') => {
+      if (hasNavigatedRef.current) return
+
+      hasNavigatedRef.current = true
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+      window.dispatchEvent(new Event('app:setup-completed'))
+      localStorage.setItem(
+        localStorageKey.lastUsedModel,
+        JSON.stringify({ provider: providerName, model: modelId })
+      )
+      
+      void navigate({
+        to: route.home,
+        replace: true,
+        search: {
+          threadModel: { id: modelId, provider: providerName },
+        },
+      })
+    },
+    [navigate]
+  )
+
   const handleSkip = useCallback(() => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
     // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
@@ -520,8 +543,16 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 if (!model) return
                                 if (isMlx) {
                                   void startMlxDownload(model)
+                                  enterChatForDownload(
+                                    getMlxModelId(model),
+                                    'mlx'
+                                  )
                                 } else if (variant) {
                                   startDownload(model, variant)
+                                  enterChatForDownload(
+                                    variant.model_id,
+                                    LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
+                                  )
                                 }
                               }}
                               className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
