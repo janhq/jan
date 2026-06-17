@@ -29,6 +29,14 @@ type ModelYaml = ModelConfig & {
   mtp_layers?: number
   mtp?: boolean
   mtp_model_path?: string
+  temperature?: number
+  top_k?: number
+  top_p?: number
+  min_p?: number
+  repeat_last_n?: number
+  repeat_penalty?: number
+  presence_penalty?: number
+  frequency_penalty?: number
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
@@ -436,6 +444,27 @@ export async function generatePreset(
         mc.spec_draft_p_min <= 1
       ) {
         lines.push(`spec-draft-p-min = ${mc.spec_draft_p_min}`)
+      }
+    }
+
+    // Per-model sampling defaults. llama-server applies these as server-side
+    // defaults for every request to the model (chat and external API clients);
+    // a per-request JSON field still overrides them. INI keys are the CLI
+    // long-form names minus dashes.
+    const samplingIniKeys: Array<[keyof ModelYaml, string]> = [
+      ['temperature', 'temperature'],
+      ['top_k', 'top-k'],
+      ['top_p', 'top-p'],
+      ['min_p', 'min-p'],
+      ['repeat_last_n', 'repeat-last-n'],
+      ['repeat_penalty', 'repeat-penalty'],
+      ['presence_penalty', 'presence-penalty'],
+      ['frequency_penalty', 'frequency-penalty'],
+    ]
+    for (const [yamlKey, iniKey] of samplingIniKeys) {
+      const v = mc[yamlKey]
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        lines.push(`${iniKey} = ${v}`)
       }
     }
 

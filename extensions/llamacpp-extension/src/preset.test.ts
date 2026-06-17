@@ -112,6 +112,38 @@ describe('generatePreset MTP emission', () => {
     expect(ini).not.toContain('spec-draft-model')
   })
 
+  it('emits per-model sampling defaults with CLI-style INI keys', async () => {
+    setupModel('s', {
+      temperature: 0,
+      top_k: 40,
+      top_p: 0.9,
+      min_p: 0.05,
+      repeat_last_n: 64,
+      repeat_penalty: 1.1,
+      presence_penalty: 0.5,
+      frequency_penalty: 0.25,
+    })
+    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: false })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('temperature = 0')
+    expect(ini).toContain('top-k = 40')
+    expect(ini).toContain('top-p = 0.9')
+    expect(ini).toContain('min-p = 0.05')
+    expect(ini).toContain('repeat-last-n = 64')
+    expect(ini).toContain('repeat-penalty = 1.1')
+    expect(ini).toContain('presence-penalty = 0.5')
+    expect(ini).toContain('frequency-penalty = 0.25')
+  })
+
+  it('omits sampling keys that are absent or non-numeric', async () => {
+    setupModel('s', { temperature: 0.7 })
+    await generatePreset('/p', '/jan', CONFIG, { supportsMtp: false })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('temperature = 0.7')
+    expect(ini).not.toContain('top-p')
+    expect(ini).not.toContain('min-p')
+  })
+
   it('skips out-of-range spec tunables', async () => {
     setupModel('glm', {
       mtp: true,

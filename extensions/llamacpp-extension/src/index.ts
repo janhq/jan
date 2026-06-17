@@ -180,6 +180,20 @@ const MODEL_PROVIDER_LOCAL_STORAGE_KEY = 'model-provider'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
   'llamacpp_model_yaml_backfill_v1'
 
+// Sampling defaults are floats/ints where 0 is a meaningful value (e.g.
+// temperature=0), so unlike ctx_len these coercions keep 0 and only reject
+// blank/non-finite input.
+const coerceFloatSetting = (v: unknown): YamlSettingValue => {
+  if (v === '' || v == null) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+const coerceIntSetting = (v: unknown): YamlSettingValue => {
+  if (v === '' || v == null) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? Math.floor(n) : null
+}
+
 const MODEL_SETTINGS_YAML_MAPPING: Record<
   string,
   {
@@ -187,6 +201,21 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
     coerce: (v: unknown) => YamlSettingValue
   }
 > = {
+  // Sampling defaults: persisted to model.yml and emitted into the router
+  // preset so they apply server-side to every request (chat and external API),
+  // overridable per-request. Keys mirror MODEL_SAMPLING_SETTING_KEYS in the
+  // web-app transport.
+  temperature: { yamlKey: 'temperature', coerce: coerceFloatSetting },
+  top_k: { yamlKey: 'top_k', coerce: coerceIntSetting },
+  top_p: { yamlKey: 'top_p', coerce: coerceFloatSetting },
+  min_p: { yamlKey: 'min_p', coerce: coerceFloatSetting },
+  repeat_last_n: { yamlKey: 'repeat_last_n', coerce: coerceIntSetting },
+  repeat_penalty: { yamlKey: 'repeat_penalty', coerce: coerceFloatSetting },
+  presence_penalty: { yamlKey: 'presence_penalty', coerce: coerceFloatSetting },
+  frequency_penalty: {
+    yamlKey: 'frequency_penalty',
+    coerce: coerceFloatSetting,
+  },
   ctx_len: {
     yamlKey: 'ctx_size',
     coerce: (v) => {

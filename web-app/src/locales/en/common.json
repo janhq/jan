@@ -245,6 +245,10 @@
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
     "description": "Configure model settings to optimize performance and behavior.",
+    "samplingDefaults": {
+      "title": "Default sampling parameters",
+      "description": "Used by the local API server (and new chats) when a request doesn't set them. Per-request values always override these."
+    },
     "mtp": {
       "section": "Multi-Token Prediction (MTP)",
       "enable": "Enable MTP",
