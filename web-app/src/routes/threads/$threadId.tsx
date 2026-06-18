@@ -545,6 +545,13 @@ function ThreadDetail() {
     sendAutomaticallyWhen: followUpMessage,
   })
 
+  // Our error banners (oom/backend/context) can arrive out-of-band for the
+  // router path, leaving the SDK stream stuck at 'submitted' so the
+  // "Using tools…" indicator shimmers forever. Force a terminal status when a
+  // banner is up — regenerate/reload restarts the turn anyway.
+  const hasBannerError = !!(oomError || backendError || contextLimitError)
+  const effectiveStatus = hasBannerError ? 'ready' : status
+
   // Get disabled tools for this thread to trigger re-render when they change
   const disabledTools = useToolAvailable((state) =>
     state.getDisabledToolsForThread(threadId)
@@ -1486,13 +1493,22 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
+                // A banner error stands in for the failed assistant turn:
+                // regenerate/reload restarts it from scratch, so hide the
+                // partial (tool calls, "Worked for Ns") and show only the banner.
+                if (
+                  isLastMessage &&
+                  hasBannerError &&
+                  message.role === 'assistant'
+                )
+                  return null
                 return (
                   <MessageItem
                     key={message.id}
                     message={message}
                     isFirstMessage={isFirstMessage}
                     isLastMessage={isLastMessage}
-                    status={status}
+                    status={effectiveStatus}
                     reasoningContainerRef={reasoningContainerRef}
                     isReasoningAtBottom={isReasoningAtBottom}
                     onReasoningScroll={handleReasoningScroll}
@@ -1513,7 +1529,7 @@ function ThreadDetail() {
                   message={pendingContinueMessage}
                   isFirstMessage={false}
                   isLastMessage={true}
-                  status={status}
+                  status={effectiveStatus}
                   reasoningContainerRef={reasoningContainerRef}
                   isReasoningAtBottom={isReasoningAtBottom}
                   onReasoningScroll={handleReasoningScroll}
@@ -1625,9 +1641,7 @@ function ThreadDetail() {
             model={threadModel}
             onSubmit={handleSubmit}
             onStop={stop}
-            chatStatus={
-              oomError || backendError || contextLimitError ? 'ready' : status
-            }
+            chatStatus={effectiveStatus}
           />
         </div>
       </div>
