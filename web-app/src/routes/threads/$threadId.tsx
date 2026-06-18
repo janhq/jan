@@ -67,6 +67,7 @@ import {
 } from '@/utils/error'
 import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
+import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -1135,7 +1136,11 @@ function ThreadDetail() {
                               className="text-sm text-muted-foreground table-cell align-middle"
                               style={{ wordWrap: 'break-word' }}
                             >
-                              {body}
+                              {/* The raw provider message can embed links
+                                  (e.g. the model-policy banner's "Open
+                                  dashboard" / "View agreement"); render them
+                                  clickable instead of as dead text. */}
+                              <LinkifiedText text={body ?? ''} />
                             </span>
                           </div>
                           {isContextError ? (
