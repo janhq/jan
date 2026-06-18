@@ -453,6 +453,26 @@ export function coalesceMessagesForAlternation(
   return out
 }
 
+const TOOL_RESPONSE_ONLY = /^<tool_response>[\s\S]*<\/tool_response>$/
+
+/**
+ * A "genuine" user query is a user-role message with non-empty text that isn't
+ * entirely a <tool_response> wrapper. Qwen3.5+ chat templates raise
+ * "No user query found in messages" when none survives — e.g. the user deletes
+ * the only real user turn (leaving orphaned assistant/tool turns) or token
+ * eviction drops it. Guard the send so we fail with a clear message instead.
+ */
+export function hasGenuineUserQuery(messages: UIMessage[]): boolean {
+  return messages.some((m) => {
+    if (m.role !== 'user') return false
+    const text = (m.parts ?? [])
+      .map((p) => (p.type === 'text' ? (p.text ?? '') : ''))
+      .join('')
+      .trim()
+    return text.length > 0 && !TOOL_RESPONSE_ONLY.test(text)
+  })
+}
+
 type ToolInputSchema = Record<string, unknown>
 
 // Keep this behavior aligned with `normalize_openai_tool_parameters_schema` in Rust.
@@ -1042,6 +1062,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           )
         }
       }
+    }
+
+    // Many chat templates (Qwen3.5+) reject a window with no genuine user query
+    // and throw a cryptic Jinja error. Fail early with a clear message when
+    // deletion/eviction has left no real user turn to respond to.
+    if (!hasGenuineUserQuery(effectiveMessages)) {
+      throw new Error(
+        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
+      )
     }
 
     const modelSupportsVision =
