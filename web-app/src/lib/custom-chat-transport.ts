@@ -13,6 +13,7 @@ import {
   jsonSchema,
 } from 'ai'
 import { repairToolCallArguments } from './repairToolCall'
+import { prepareToolResultImagesForModel } from './toolResultImages'
 
 /// Hugging Face special-token convention (`<|im_end|>`, `<|eot_id|>`,
 /// `<|endoftext|>`, etc.). Some MLX backends — most visibly the DFlash
@@ -643,9 +644,26 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // first: they are delivered out-of-band as `input_audio` (see
     // extractAudioInputParts), and the OpenAI-compatible converter throws on
     // any non-image file part.
-    const baseMessages = convertToModelMessages(
-      stripAudioFileParts(this.mapUserInlineAttachments(messagesToConvert))
+    let preparedMessages = stripAudioFileParts(
+      this.mapUserInlineAttachments(messagesToConvert)
     )
+    // Local backends serialize tool results to a `role: "tool"` text message
+    // (JSON.stringify), so an image in a tool result (e.g. an MCP screenshot
+    // tool) would otherwise be sent as full base64 TEXT and flood the context
+    // window — the root cause of ATO-208's MLX 400s. Strip the base64 out of
+    // the model payload (placeholder) and, for vision models, re-attach the
+    // image as a proper multimodal user message. Cloud providers are left
+    // untouched (they have large contexts and handle this differently).
+    if (LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)) {
+      const supportsVision =
+        useModelProvider
+          .getState()
+          .selectedModel?.capabilities?.includes('vision') ?? false
+      preparedMessages = prepareToolResultImagesForModel(preparedMessages, {
+        supportsVision,
+      })
+    }
+    const baseMessages = convertToModelMessages(preparedMessages)
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.

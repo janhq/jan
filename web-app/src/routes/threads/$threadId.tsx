@@ -53,6 +53,8 @@ import {
   NEW_THREAD_ATTACHMENT_KEY,
 } from '@/hooks/useChatAttachments'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import { downscaleToolResultContent } from '@/lib/toolResultImages'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -368,10 +370,18 @@ function ThreadDetail() {
                 errorText: `Error: ${result.error}`,
               })
             } else {
+              // Downscale any image blocks in the tool result (e.g. MCP
+              // screenshot tools) so oversized images don't bloat persisted
+              // history or the in-chat preview. The base64 is additionally
+              // stripped from the model-bound payload in the transport layer.
+              const processedOutput = await downscaleToolResultContent(
+                result.content,
+                useGeneralSetting.getState().maxImageSizePx
+              )
               addToolOutput({
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                output: result.content,
+                output: processedOutput,
               })
             }
           } catch (error) {
