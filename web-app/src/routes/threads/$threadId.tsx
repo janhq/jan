@@ -61,7 +61,12 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE, isContextOverflowMessage } from '@/utils/error'
+import {
+  OUT_OF_CONTEXT_SIZE,
+  isContextOverflowMessage,
+  parseContextOverflow,
+} from '@/utils/error'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -82,16 +87,19 @@ const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 
 // Persist the out-of-context error onto the latest user message so the banner
 // survives thread switches, mirroring how LlamacppOomListener stamps oom/backend.
-function stampContextErrorOnThread(threadId: string) {
+function stampContextErrorOnThread(
+  threadId: string,
+  message: string = OUT_OF_CONTEXT_SIZE
+) {
   const messages = useMessages.getState().getMessages(threadId)
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
     if (m.role !== 'user') continue
     const meta = (m.metadata as Record<string, unknown> | undefined) ?? {}
-    if (meta.contextError === OUT_OF_CONTEXT_SIZE) return
+    if (typeof meta.contextError === 'string') return
     useMessages.getState().updateMessage({
       ...m,
-      metadata: { ...meta, contextError: OUT_OF_CONTEXT_SIZE },
+      metadata: { ...meta, contextError: message },
     })
     return
   }
@@ -187,6 +195,21 @@ function ThreadDetail() {
     useState<UIMessage | null>(null)
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
   const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
+  const { t } = useTranslation()
+
+  // llama-server's overflow string is raw English; localize it, interpolating
+  // the parsed request/context token counts when available.
+  const contextBannerMessage = useMemo(() => {
+    const raw = contextLimitError?.message
+    if (!raw) return undefined
+    const info = parseContextOverflow(raw)
+    if (info)
+      return t('model-errors:contextOverflowDetail', {
+        request: info.requestTokens.toLocaleString(),
+        context: info.contextTokens.toLocaleString(),
+      })
+    return t('model-errors:contextOverflowGeneric')
+  }, [contextLimitError, t])
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
   const oomErrorRaw = useAppState((s) => s.oomError)
@@ -1383,8 +1406,8 @@ function ThreadDetail() {
     // Context overflow is owned by the global "Increase Context Size" banner;
     // a per-message Regenerate would just re-overflow the same prompt.
     if (isContextOverflowMessage(errMessage)) {
-      stampContextErrorOnThread(threadId)
-      setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+      stampContextErrorOnThread(threadId, errMessage)
+      setContextLimitError(new Error(errMessage))
       useMessageErrors.getState().clearError(targetId)
       return
     }
@@ -1542,7 +1565,7 @@ function ThreadDetail() {
                           }
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {oomError ?? backendError ?? contextLimitError?.message}
+                          {oomError ?? backendError ?? contextBannerMessage}
                         </span>
                       </div>
                       {oomError && (

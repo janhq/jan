@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useState, useRef, memo } from 'react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -44,6 +45,7 @@ export const TokenCounter = memo(function TokenCounter({
   className,
   additionalTokens = 0,
 }: TokenCounterProps) {
+  const { t } = useTranslation()
   const { calculateTokens, ...tokenData } = useTokensCount(messages)
 
   const [isAnimating, setIsAnimating] = useState(false)
@@ -238,6 +240,11 @@ export const TokenCounter = memo(function TokenCounter({
                 style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
               />
             </div>
+            {tokenData.isOverflow && (
+              <div className="mt-1.5 text-[11px] text-destructive leading-snug">
+                {t('model-errors:lastRequestOverflowed')}
+              </div>
+            )}
           </div>
 
           {/* Token breakdown */}
