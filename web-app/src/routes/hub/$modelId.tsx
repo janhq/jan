@@ -18,9 +18,11 @@ import { useModelSources } from '@/hooks/useModelSources'
 import {
   extractDescription,
   extractModelName,
+  getMlxTotalFileSize,
   getPreferredMmprojModel,
   getTotalDownloadFileSize,
 } from '@/lib/models'
+import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -441,6 +443,39 @@ function HubModelDetailContent() {
                 </div>
               )}
             </div>
+
+            {/* MLX Download Section */}
+            {modelData.is_mlx && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <IconDownload size={20} className="text-muted-foreground" />
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Download
+                  </h2>
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">
+                        {extractModelName(modelData.model_name) ||
+                          modelData.model_name}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-extrabold tracking-wider px-2 py-0.5 rounded-[6px] uppercase leading-tight border border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                        MLX
+                      </span>
+                    </div>
+                    {getMlxTotalFileSize(modelData) && (
+                      <span className="text-xs text-muted-foreground">
+                        {getMlxTotalFileSize(modelData)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="shrink-0">
+                    <MlxModelDownloadAction model={modelData} />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Variants Section */}
             {modelData.quants && modelData.quants.length > 0 && (
