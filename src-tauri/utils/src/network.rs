@@ -17,6 +17,25 @@ pub fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
+/// Poll until `port` is free or `timeout` elapses; returns whether it freed.
+/// Yields to the async runtime between checks instead of blocking a fixed delay.
+pub async fn wait_for_port_free(
+    port: u16,
+    timeout: std::time::Duration,
+    interval: std::time::Duration,
+) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        if is_port_available(port) {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        tokio::time::sleep(interval).await;
+    }
+}
+
 /// Generate a random port that's not in the used_ports set and is available
 pub fn generate_random_port(used_ports: &HashSet<u16>) -> Result<u16, String> {
     const MAX_ATTEMPTS: u32 = 20000;
@@ -429,4 +448,33 @@ pub fn is_orphaned_mcp_process(process_info: &ProcessUsingPort) -> bool {
         || cmd_str.contains("bun");
 
     is_js_runtime && is_jan_mcp_server
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wait_for_port_free;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn wait_for_port_free_returns_true_when_free() {
+        // Bind then drop to get a port that is currently free.
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        assert!(
+            wait_for_port_free(port, Duration::from_millis(500), Duration::from_millis(20)).await
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_port_free_times_out_when_held() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Listener stays bound for the whole call → never frees → times out.
+        assert!(
+            !wait_for_port_free(port, Duration::from_millis(150), Duration::from_millis(20)).await
+        );
+        drop(listener);
+    }
 }

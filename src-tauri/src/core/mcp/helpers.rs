@@ -24,8 +24,6 @@ use crate::core::{
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 
-const BRIDGE_KILL_SETTLE_MS: u64 = 100; // settle after graceful cancel before port check
-
 #[derive(Debug, Clone, Copy)]
 pub enum ShutdownContext {
     AppExit,       // User closing app - be fast
@@ -608,6 +606,13 @@ async fn schedule_mcp_start_task<R: Runtime>(
             {
                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
             }
+            // Make the child a process-group leader (pgid == pid) so teardown can
+            // signal the whole tree; MCP bridges fork grandchildren that hold the
+            // port and outlive a single-PID kill.
+            #[cfg(unix)]
+            {
+                cmd.process_group(0);
+            }
             cmd.kill_on_drop(true);
             config_params
                 .args
@@ -984,9 +989,13 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
     log::info!("Killing orphaned MCP process: PID {}", process_info.pid);
     kill_process_by_pid(process_info.pid).await?;
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    if jan_utils::network::is_port_available(port) {
+    if jan_utils::network::wait_for_port_free(
+        port,
+        Duration::from_millis(2000),
+        Duration::from_millis(50),
+    )
+    .await
+    {
         log::info!("Cleaned up orphaned process on port {}", port);
         Ok(true)
     } else {
@@ -995,31 +1004,42 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
 }
 
 #[cfg(unix)]
-pub async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
-    use nix::sys::signal::{kill, Signal};
-    use nix::unistd::Pid;
+async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+    use nix::sys::signal::{kill, killpg, Signal};
+    use nix::unistd::{getpgid, Pid};
 
     let nix_pid = Pid::from_raw(pid as i32);
 
-    kill(nix_pid, Signal::SIGTERM)
+    // Signal the whole process group so forked grandchildren (which may hold the
+    // port) die with the parent. We spawn MCP children as group leaders, so this
+    // targets only our subtree. Fall back to the single PID if the group can't be
+    // resolved (e.g. an orphan found by port scan) or resolves to init.
+    let pgid = getpgid(Some(nix_pid)).ok().filter(|g| g.as_raw() > 1);
+    let send = |sig: Signal| match pgid {
+        Some(g) => killpg(g, sig),
+        None => kill(nix_pid, sig),
+    };
+
+    send(Signal::SIGTERM)
         .map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
 
     for _ in 0..30 {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Liveness of the leader PID is sufficient; the group dies with it.
         if kill(nix_pid, None).is_err() {
             return Ok(());
         }
     }
 
-    log::warn!("Process {} unresponsive, sending SIGKILL", pid);
-    kill(nix_pid, Signal::SIGKILL)
+    log::warn!("Process group {} unresponsive, sending SIGKILL", pid);
+    send(Signal::SIGKILL)
         .map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
 
     Ok(())
 }
 
 #[cfg(windows)]
-pub async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     use std::process::Command;
 
     #[cfg(windows)]
@@ -1041,6 +1061,43 @@ pub async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Tear down a Jan Browser MCP child and confirm its `port` is released.
+/// Kills the recorded child's process group (Phase 1 makes children group
+/// leaders, so this reaps forked grandchildren that hold the port), then polls;
+/// if some straggler still binds the port it is found and group-killed too.
+pub async fn terminate_browser_mcp(pid: Option<u32>, port: u16) {
+    use crate::core::mcp::constants::{MCP_PORT_FREE_TIMEOUT, MCP_PORT_POLL_INTERVAL};
+
+    if let Some(pid) = pid {
+        if let Err(e) = kill_process_by_pid(pid).await {
+            log::warn!("Failed to kill Browser MCP group (PID {}): {}", pid, e);
+        }
+    }
+
+    if jan_utils::network::wait_for_port_free(port, MCP_PORT_FREE_TIMEOUT, MCP_PORT_POLL_INTERVAL)
+        .await
+    {
+        return;
+    }
+
+    if let Some(info) = jan_utils::network::find_process_using_port(port) {
+        log::info!(
+            "Port {} still held after teardown; killing straggler PID {}",
+            port,
+            info.pid
+        );
+        if let Err(e) = kill_process_by_pid(info.pid).await {
+            log::warn!("Failed to kill straggler PID {} on port {}: {}", info.pid, port, e);
+        }
+        let _ = jan_utils::network::wait_for_port_free(
+            port,
+            MCP_PORT_FREE_TIMEOUT,
+            MCP_PORT_POLL_INTERVAL,
+        )
+        .await;
+    }
 }
 
 pub async fn background_cleanup_mcp_servers<R: Runtime>(
@@ -1147,6 +1204,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         .into_iter()
         .map(|(name, service, port)| {
             let app_clone = app.clone();
+            let child_pid = pids_snapshot.get(&name).copied();
 
             tauri::async_runtime::spawn(async move {
                 let cancel_future = async {
@@ -1163,17 +1221,8 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
 
                 if name == "Jan Browser MCP" {
                     if let Some(port) = port {
-                        if success {
-                            sleep(Duration::from_millis(BRIDGE_KILL_SETTLE_MS)).await;
-                        }
-                        if !jan_utils::network::is_port_available(port) {
-                            if let Some(info) = jan_utils::network::find_process_using_port(port) {
-                                if let Err(e) = kill_process_by_pid(info.pid).await {
-                                    log::warn!("Failed to kill port {} holder PID {}: {}", port, info.pid, e);
-                                }
-                            }
-                        }
                         use crate::core::mcp::lockfile::delete_lock_file;
+                        terminate_browser_mcp(child_pid, port).await;
                         let _ = delete_lock_file(&app_clone, port);
                     }
                 }

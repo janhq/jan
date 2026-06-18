@@ -973,3 +973,39 @@ fn test_cleanup_own_locks_removes_only_current_pid_locks() {
     // Cleanup
     let _ = std::fs::remove_file(&other_path);
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn terminate_browser_mcp_reaps_process_group() {
+    use super::helpers::terminate_browser_mcp;
+    use std::os::unix::process::CommandExt;
+    use std::process::Command;
+
+    // Group leader (pgid == pid) that keeps a backgrounded grandchild alive.
+    // killpg must reap the whole group, not just the leader.
+    let mut child = {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 30 & wait");
+        cmd.process_group(0);
+        cmd.spawn().expect("spawn group leader")
+    };
+    let pid = child.id();
+
+    // A port nothing binds → terminate kills the group, finds the port already
+    // free, and returns. (We're the leader's parent, so after the kill it sits as
+    // a zombie until we wait() below.)
+    let free_port = {
+        let l = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let p = l.local_addr().unwrap().port();
+        drop(l);
+        p
+    };
+
+    terminate_browser_mcp(Some(pid), free_port).await;
+
+    let status = child.wait().expect("reap leader");
+    assert!(
+        !status.success(),
+        "group leader should have been signalled, got {status:?}"
+    );
+}
