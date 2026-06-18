@@ -75,73 +75,110 @@ function StreamingCode({ node, className, children, ...props }: CodeProps) {
 }
 const STREAMING_COMPONENTS: Components = { code: StreamingCode }
 
+const ZWSP = '​'
+
+// "word**,**" is neither left- nor right-flanking per CommonMark, so the markers
+// render literally; a ZWSP just inside restores flanking (U+200B is treated as
+// non-punctuation). Runs after math/code are masked, so '_'/'*' subscripts never
+// get a ZWSP — that made KaTeX warn "Unrecognized Unicode character 8203".
+const fixEmphasisFlanking = (s: string): string =>
+  s.includes('*') || s.includes('_')
+    ? s
+        .replace(/(?<=[\p{L}\p{N}])(\*\*?|__?)(?=[^\s\p{L}\p{N}*_])/gu, `$1${ZWSP}`)
+        .replace(/(?<=[^\s\p{L}\p{N}*_])(\*\*?|__?)(?=[\p{L}\p{N}])/gu, `${ZWSP}$1`)
+    : s
+
+// Placeholder-protection pipeline (adapted from llama.cpp's webui / LibreChat):
+// remark-math only parses $…$/$$…$$, so brackets need converting — but converting,
+// escaping currency, and fixing emphasis would corrupt each other unless code and
+// math are first lifted out as opaque tokens. PUA-delimited tokens can't occur in
+// model output and are inert to every transform here.
+const CODE_BLOCK = /(```[\s\S]*?```|`[^`\n]+`)/g
+const BRACKET_MATH =
+  /(\$\$[\s\S]*?\$\$|(?<!\\)\\\[[\s\S]*?\\\]|(?<!\\)\\\(.*?\\\))/g
+const tok = (kind: 'C' | 'L', n: number) => `\uE000${kind}${n}\uE000`
+
+// Mask genuine inline $…$ math; leave currency/identifiers ($5, a$b) in place.
+// Per-line so a stray $ can't swallow the rest.
+const maskInlineMath = (content: string, store: string[]): string => {
+  if (!content.includes('$')) return content
+  return content
+    .split('\n')
+    .map((line) => {
+      if (!line.includes('$')) return line
+      let out = ''
+      let pos = 0
+      while (pos < line.length) {
+        const open = line.indexOf('$', pos)
+        if (open === -1) {
+          out += line.slice(pos)
+          break
+        }
+        const close = line.indexOf('$', open + 1)
+        if (close === -1) {
+          out += line.slice(pos)
+          break
+        }
+
+        const before = open > 0 ? line[open - 1] : ''
+        const afterOpen = line[open + 1]
+        const beforeClose = open + 1 < close ? line[close - 1] : ''
+        const afterClose = close + 1 < line.length ? line[close + 1] : ''
+
+        const empty = close === open + 1
+        const gluedLeft = /[A-Za-z0-9_$-]/.test(before)
+        const looksMoney =
+          /[0-9]/.test(afterOpen) &&
+          (/[A-Za-z0-9_$-]/.test(afterClose) || beforeClose === ' ')
+
+        if (empty || gluedLeft || looksMoney) {
+          out += line.slice(pos, open + 1)
+          pos = open + 1
+          continue
+        }
+
+        out += line.slice(pos, open)
+        store.push(line.slice(open, close + 1))
+        out += tok('L', store.length - 1)
+        pos = close + 1
+      }
+      return out
+    })
+    .join('\n')
+}
+
 // Cache for normalized LaTeX content
 const latexCache = new Map<string, string>()
 
-/**
- * Optimized preprocessor: normalize LaTeX fragments into $ / $$.
- * Uses caching to avoid reprocessing the same content.
- */
 const normalizeLatex = (input: string): string => {
-  // Check cache first
-  if (latexCache.has(input)) {
-    return latexCache.get(input)!
-  }
+  if (latexCache.has(input)) return latexCache.get(input)!
 
-  const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[a-zA-Z/_!][^>]*>)/g)
+  const code: string[] = []
+  const math: string[] = []
 
-  let result = '';
+  let s = input
+    .replace(CODE_BLOCK, (m) => tok('C', code.push(m) - 1))
+    .replace(BRACKET_MATH, (m) => tok('L', math.push(m) - 1))
 
-  for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
-    if (!segment) continue;
+  s = maskInlineMath(s, math)
+  s = s.replace(/\$(?=\d)/g, '\\$') // leftover currency renders literally
+  s = fixEmphasisFlanking(s)
 
-    // Captured code blocks, inline code, html tags
-    if (i % 2 === 1) {
-      result += segment;
-      continue;
-    }
+  // Restore math, converting bracket delimiters to $… / $$… for remark-math.
+  s = s.replace(/\uE000L(\d+)\uE000/g, (_, n) => {
+    const expr = math[Number(n)]
+    if (expr.startsWith('\\[')) return `$$\n${expr.slice(2, -2).trim()}\n$$`
+    if (expr.startsWith('\\(')) return `$${expr.slice(2, -2).trim()}$`
+    return expr
+  })
+  s = s.replace(/\uE000C(\d+)\uE000/g, (_, n) => code[Number(n)])
 
-    let s = segment;
-
-    // --- Escape suspicious $<number> to prevent Markdown from treating it as LaTeX
-    // Example: "$1" → "\$1"
-    s = s.replace(/\$(\d+)(?![^\n]*\$([^\d]|$))/g, (_, num) => '\\$' + num)
-
-    // --- Display math: \[...\] surrounded by newlines
-    if (s.includes('\\['))
-      s = s.replace(
-        /(^|\n)\\\[\s*\n([\s\S]*?)\n\s*\\\](?=\n|$)/g,
-        (_, pre, inner) => `${pre}$$\n${inner.trim()}\n$$`
-      )
-
-    // --- Inline math: space \( ... \)
-    if (s.includes('\\('))
-      s = s.replace(
-        /(^|[^$\\])\\\((.+?)\\\)(?=[^$\\]|$)/g,
-        (_, pre, inner) => `${pre}$${inner.trim()}$`
-      )
-
-    // Emphasis glued between a word char and punctuation (e.g. "word**,**")
-    // is neither left- nor right-flanking per CommonMark, so the markers render
-    // literally. Inject a zero-width space just inside the delimiter to restore
-    // flanking — invisible, and CommonMark treats U+200B as non-punctuation.
-    if (s.includes('*') || s.includes('_'))
-      s = s
-        .replace(/(?<=[\p{L}\p{N}])(\*\*?|__?)(?=[^\s\p{L}\p{N}*_])/gu, '$1​')
-        .replace(/(?<=[^\s\p{L}\p{N}*_])(\*\*?|__?)(?=[\p{L}\p{N}])/gu, '​$1')
-
-    result += s;
-  }
-
-  // Cache the result (with size limit to prevent memory leaks)
   if (latexCache.size > 100) {
     const firstKey = latexCache.keys().next().value || ''
     latexCache.delete(firstKey)
   }
-  latexCache.set(input, result)
-
-  return result
+  latexCache.set(input, s)
+  return s
 }
 
 function RenderMarkdownComponent({

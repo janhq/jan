@@ -146,6 +146,20 @@ describe('RenderMarkdown', () => {
       expect(katexContainer).toBeTruthy()
       expect(katexError).toBeNull()
     })
+
+    it('does not inject a ZWSP into subscripts (emphasis fix must skip math)', () => {
+      // '_' is a LaTeX subscript; the emphasis-flanking fix must not touch it,
+      // else KaTeX warns "Unrecognized Unicode character 8203" (U+200B).
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const content = 'The term $x_{i}$ and $a_1 + b_2$ are indexed'
+      render(<RenderMarkdown content={content} />)
+      expect(document.querySelector('.katex')).toBeTruthy()
+      const warnedAboutZwsp = warn.mock.calls
+        .flat()
+        .some((arg) => typeof arg === 'string' && arg.includes('8203'))
+      expect(warnedAboutZwsp).toBe(false)
+      warn.mockRestore()
+    })
   })
 
   it('does not format 4-space indented text as code blocks', () => {
@@ -336,6 +350,13 @@ describe('RenderMarkdown', () => {
       // Inline math should be rendered
       expect(katexContainer).toBeTruthy()
     })
+
+    it('converts \\[...\\] mid-sentence (no surrounding newlines)', () => {
+      const content = 'Inline display \\[a^2 + b^2\\] right here'
+      render(<RenderMarkdown content={content} />)
+      expect(document.querySelector('.katex')).toBeTruthy()
+      expect(document.querySelector('.katex-error')).toBeNull()
+    })
   })
 
   describe('LaTeX normalization - code block preservation', () => {
@@ -355,6 +376,15 @@ describe('RenderMarkdown', () => {
       const markdownContainer = document.querySelector('.markdown')
       const text = markdownContainer?.textContent || ''
       expect(text).toContain('$100')
+    })
+
+    it('does not convert bracket math inside inline code', () => {
+      // Code is masked first, so \(x\) stays literal instead of becoming $x$.
+      const content = 'Type `\\(x\\)` to write inline math'
+      render(<RenderMarkdown content={content} />)
+      const text = document.querySelector('.markdown')?.textContent || ''
+      expect(text).toContain('\\(x\\)')
+      expect(document.querySelector('.katex')).toBeNull()
     })
   })
 
