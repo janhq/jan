@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
@@ -18,7 +18,9 @@ const sanitizeLayout = (l: Partial<TitlebarLayout> | null | undefined): Titlebar
 })
 
 export const WindowControls = () => {
-  const appWindow = getCurrentWebviewWindow()
+  // getCurrentWebviewWindow() returns a fresh instance each call; memoize so it
+  // doesn't re-trigger the focus-listener effect on every render (infinite loop).
+  const appWindow = useMemo(() => getCurrentWebviewWindow(), [])
   const layout = sanitizeLayout(useTitlebarLayout((s) => s.layout))
   const setLayout = useTitlebarLayout((s) => s.setLayout)
 
