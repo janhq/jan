@@ -574,18 +574,14 @@ download-llamacpp-upstream-backend-win-cpu:
 		$$dir = 'src-tauri/resources/llamacpp-backend-upstream'; \
 		if (Test-Path $$dir) { Remove-Item $$dir -Recurse -Force }; \
 		New-Item -ItemType Directory -Path $$dir -Force | Out-Null; \
-		Write-Host 'Fetching latest release tag from ggml-org/llama.cpp...'; \
+		Write-Host 'Resolving backend index from atomic-chat-conf manifest (ATO-199)...'; \
 		$$headers = @{ 'User-Agent' = 'atomic-chat' }; \
-		if ($$env:GH_TOKEN) { $$headers['Authorization'] = \"Bearer $$env:GH_TOKEN\" }; \
 		$$backend = 'win-cpu-x64'; \
-		$$releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers $$headers; \
+		$$manifest = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json' -Headers $$headers; \
 		$$tag = ''; \
-		foreach ($$r in $$releases) { \
-			if ($$r.draft -or $$r.prerelease) { continue }; \
-			$$want = \"llama-$$($$r.tag_name)-bin-$${backend}.zip\"; \
-			if ($$r.assets | Where-Object { $$_.name -eq $$want }) { $$tag = $$r.tag_name; break }; \
-		}; \
-		if (-not $$tag) { throw 'No recent ggml-org release carries the win-cpu-x64 asset yet (upstream asset upload may be in progress)' }; \
+		$$want = \"llama-$$($$manifest.tag_name)-bin-$${backend}.zip\"; \
+		if ($$manifest.assets | Where-Object { $$_.name -eq $$want }) { $$tag = $$manifest.tag_name }; \
+		if (-not $$tag) { throw 'atomic-chat-conf backend manifest does not list the win-cpu-x64 asset (update backends/manifest.json)' }; \
 		$$url = \"https://github.com/ggml-org/llama.cpp/releases/download/$$tag/llama-$${tag}-bin-$${backend}.zip\"; \
 		[System.IO.File]::WriteAllText(\"$$dir/version.txt\", $$tag); \
 		[System.IO.File]::WriteAllText(\"$$dir/backend.txt\", $$backend); \
@@ -632,7 +628,15 @@ endif
 # (TurboQuant fork) at runtime. The upstream binary is NOT a fork — we just
 # re-codesign the official release with our Developer ID so it survives
 # notarization. See ADR in AGENTS.md §7.
-# Supports GH_TOKEN env var for authenticated GitHub API requests.
+#
+# Backend-index source (ATO-199): the Windows and Linux branches resolve the
+# release tag + asset names from the static manifest in atomic-chat-conf
+# (raw.githubusercontent.com — no per-IP rate limit), mirroring the runtime
+# `fetchRemoteBackends()` source. The archive downloads themselves still come
+# from the ggml-org CDN (LLAMACPP_DOWNLOAD_BASE). macOS stays on
+# api.github.com — its macos-arm64/-x64 assets are not in the manifest
+# (macOS is bundle-only at runtime). GH_TOKEN only matters for the macOS
+# branch now.
 # Override LLAMACPP_UPSTREAM_TAG to pin a specific upstream release, e.g.:
 #   make download-llamacpp-upstream-backend LLAMACPP_UPSTREAM_TAG=b9222
 LLAMACPP_UPSTREAM_TAG ?=
@@ -765,56 +769,28 @@ else ifeq ($(OS),Windows_NT)
 		fi; \
 		echo "Auto-selected backend: $$BACKEND"; \
 	fi; \
-	echo "Fetching latest llama.cpp release from ggml-org/llama.cpp..."; \
+	echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."; \
 	TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-	API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"; \
-	_gh_get() { \
-		if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
-			curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-		else \
-			curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-		fi; \
-	}; \
-	_gh_fetch() { \
-		HTTP_CODE=""; \
-		for attempt in 1 2 3 4 5; do \
-			HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
-			case "$$HTTP_CODE" in \
-				2*) return 0 ;; \
-				403|429|5*|000) \
-					echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-					sleep $$((attempt * 2)) ;; \
-				*) return 1 ;; \
-			esac; \
-		done; \
-		return 1; \
-	}; \
-	_tag_ok() { \
-		[ -s "$$1" ] && [ "$$(jq -r 'if type=="array" then length else 0 end' "$$1" 2>/dev/null)" -gt 0 ]; \
-	}; \
-	USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
-	_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
-	FIRST_CODE="$$HTTP_CODE"; \
-	if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
-		echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
-		_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+	MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"; \
+	if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
+		echo "Error: failed to fetch backend manifest from $$MANIFEST_URL"; \
+		rm -f "$$TMPREL"; exit 1; \
 	fi; \
-	case "$$HTTP_CODE" in \
-		2*) ;; \
-		*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
-		   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-		   rm -f "$$TMPREL"; exit 1 ;; \
-	esac; \
+	if ! jq -e '.tag_name' "$$TMPREL" >/dev/null 2>&1; then \
+		echo "Error: backend manifest did not parse or lacks tag_name:"; \
+		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+		rm -f "$$TMPREL"; exit 1; \
+	fi; \
 	if echo "$$BACKEND" | grep -Eq '^win-cuda-[0-9]+-x64$$'; then \
 		CUDA_MAJOR=$$(echo "$$BACKEND" | sed -E 's/^win-cuda-([0-9]+)-x64$$/\1/'); \
-		RESOLVED=$$(jq -r --arg major "$$CUDA_MAJOR" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | { tag: .tag_name, minors: [ (.assets // [])[].name | select(test("-bin-win-cuda-" + $$major + "\\.[0-9]+-x64\\.zip$$")) | capture("-bin-win-cuda-" + $$major + "\\.(?<m>[0-9]+)-x64\\.zip$$") | .m | tonumber ] } | select((.minors | length) > 0) | { tag: .tag, minor: (.minors | max) } ] | .[0] | if . then "\(.tag) win-cuda-\($$major).\(.minor)-x64" else empty end' "$$TMPREL"); \
+		RESOLVED=$$(jq -r --arg major "$$CUDA_MAJOR" '. as $$r | { tag: $$r.tag_name, minors: [ ($$r.assets // [])[].name | select(test("-bin-win-cuda-" + $$major + "\\.[0-9]+-x64\\.zip$$")) | capture("-bin-win-cuda-" + $$major + "\\.(?<m>[0-9]+)-x64\\.zip$$") | .m | tonumber ] } | select((.minors | length) > 0) | "\(.tag) win-cuda-\($$major).\(.minors | max)-x64"' "$$TMPREL"); \
 		TAG=$$(echo "$$RESOLVED" | cut -d" " -f1); \
 		BACKEND=$$(echo "$$RESOLVED" | cut -d" " -f2); \
 	else \
-		TAG=$$(jq -r --arg suf "-bin-$$BACKEND.zip" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
+		TAG=$$(jq -r --arg suf "-bin-$$BACKEND.zip" '. as $$r | if (($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) then $$r.tag_name else empty end' "$$TMPREL"); \
 	fi; \
 	if [ -z "$$TAG" ] || [ "$$TAG" = "null" ] || [ -z "$$BACKEND" ]; then \
-		echo "Error: no recent release carries an asset for backend $$BACKEND (upstream asset upload may be in progress):"; \
+		echo "Error: backend manifest does not list an asset for backend $$BACKEND (update atomic-chat-conf/backends/manifest.json):"; \
 		head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 		rm -f "$$TMPREL"; exit 1; \
 	fi; \
@@ -854,49 +830,21 @@ else ifeq ($(shell uname -s),Linux)
 		TAG="$(LLAMACPP_UPSTREAM_TAG)"; \
 		echo "Using pinned upstream release: $$TAG"; \
 	else \
-		echo "Fetching latest upstream llama.cpp release..."; \
+		echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."; \
 		TMPREL=$$(mktemp /tmp/llamacpp-upstream-XXXXXX.json); \
-		API_URL="https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"; \
-		_gh_get() { \
-			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
-				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-			else \
-				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-			fi; \
-		}; \
-		_gh_fetch() { \
-			HTTP_CODE=""; \
-			for attempt in 1 2 3 4 5; do \
-				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
-				case "$$HTTP_CODE" in \
-					2*) return 0 ;; \
-					403|429|5*|000) \
-						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-						sleep $$((attempt * 2)) ;; \
-					*) return 1 ;; \
-				esac; \
-			done; \
-			return 1; \
-		}; \
-		_tag_ok() { \
-			[ -s "$$1" ] && [ "$$(jq -r 'if type=="array" then length else 0 end' "$$1" 2>/dev/null)" -gt 0 ]; \
-		}; \
-		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
-		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
-		FIRST_CODE="$$HTTP_CODE"; \
-		if ! _tag_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
-			echo "Token-authenticated request did not yield a tag_name (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
-			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+		MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"; \
+		if ! curl -sS --retry 5 --retry-delay 3 -H "User-Agent: atomic-chat-ci" -o "$$TMPREL" "$$MANIFEST_URL"; then \
+			echo "Error: failed to fetch backend manifest from $$MANIFEST_URL"; \
+			rm -f "$$TMPREL"; exit 1; \
 		fi; \
-		case "$$HTTP_CODE" in \
-			2*) ;; \
-			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
-			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			   rm -f "$$TMPREL"; exit 1 ;; \
-		esac; \
-		TAG=$$(jq -r --arg suf "-bin-$$UPSTREAM_INFIX.tar.gz" '[ .[] | select((.draft // false)|not) | select((.prerelease // false)|not) | . as $$r | select(($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) ] | .[0].tag_name // empty' "$$TMPREL"); \
+		if ! jq -e '.tag_name' "$$TMPREL" >/dev/null 2>&1; then \
+			echo "Error: backend manifest did not parse or lacks tag_name:"; \
+			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
+			rm -f "$$TMPREL"; exit 1; \
+		fi; \
+		TAG=$$(jq -r --arg suf "-bin-$$UPSTREAM_INFIX.tar.gz" '. as $$r | if (($$r.assets // []) | any(.name == ("llama-" + $$r.tag_name + $$suf))) then $$r.tag_name else empty end' "$$TMPREL"); \
 		if [ -z "$$TAG" ] || [ "$$TAG" = "null" ]; then \
-			echo "Error: no recent release carries asset llama-<tag>-bin-$$UPSTREAM_INFIX.tar.gz (upstream asset upload may be in progress):"; \
+			echo "Error: backend manifest does not list asset llama-<tag>-bin-$$UPSTREAM_INFIX.tar.gz (update atomic-chat-conf/backends/manifest.json):"; \
 			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
 			rm -f "$$TMPREL"; exit 1; \
 		fi; \

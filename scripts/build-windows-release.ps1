@@ -180,27 +180,32 @@ $backend = 'win-cpu-x64'
 if (Test-Path $llamacppDir) { Remove-Item $llamacppDir -Recurse -Force }
 New-Item -ItemType Directory -Path $llamacppDir -Force | Out-Null
 
-# ATO-95: list recent releases and pick the newest one whose win-cpu-x64
-# asset is ACTUALLY uploaded. ggml-org marks a fresh bXXXX tag "latest" the
-# instant it's created, but uploads the per-platform assets minutes later, so
-# trusting /releases/latest then building the asset URL raced the upload and
-# returned 404.
-$apiUrl = 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20'
+# ATO-199: resolve backend index from atomic-chat-conf static manifest.
+$manifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
 $headers = @{ 'User-Agent' = 'atomic-chat-build' }
-if ($env:GH_TOKEN) {
-    $headers['Authorization'] = "Bearer $env:GH_TOKEN"
-}
 
-Write-Host '  Fetching recent releases...'
-$releases = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing
+Write-Host '  Fetching backend manifest...'
+$manifest = $null
+for ($i = 1; $i -le 5; $i++) {
+    try {
+        $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers $headers -UseBasicParsing
+        break
+    } catch {
+        Write-Host "  Manifest fetch attempt $i/5 failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Start-Sleep -Seconds ($i * 2)
+    }
+}
+if (-not $manifest -or -not $manifest.tag_name -or -not $manifest.assets) {
+    Write-Host "[FATAL] Could not read backend manifest from $manifestUrl" -ForegroundColor Red
+    exit 1
+}
 $tag = ''
-foreach ($r in $releases) {
-    if ($r.draft -or $r.prerelease) { continue }
-    $want = "llama-$($r.tag_name)-bin-$backend.zip"
-    if ($r.assets | Where-Object { $_.name -eq $want }) { $tag = $r.tag_name; break }
+$want = "llama-$($manifest.tag_name)-bin-$backend.zip"
+if ($manifest.assets | Where-Object { $_.name -eq $want }) {
+    $tag = $manifest.tag_name
 }
 if (-not $tag) {
-    Write-Host "[FATAL] No recent release carries asset llama-<tag>-bin-$backend.zip (upstream asset upload may be in progress)" -ForegroundColor Red
+    Write-Host "[FATAL] Backend manifest does not list asset llama-<tag>-bin-$backend.zip. Update atomic-chat-conf/backends/manifest.json." -ForegroundColor Red
     exit 1
 }
 

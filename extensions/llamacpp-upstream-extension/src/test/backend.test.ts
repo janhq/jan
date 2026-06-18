@@ -3,8 +3,10 @@ import {
   getBackendDir,
   getBackendExePath,
   isBackendInstalled,
+  fetchRemoteBackends,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 import { fs, getJanDataFolderPath } from '@janhq/core'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
@@ -25,6 +27,12 @@ vi.mock('@janhq/core', () => ({
 }))
 vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),
+}))
+vi.mock('@tauri-apps/plugin-http', () => ({
+  fetch: vi.fn(),
+}))
+vi.mock('../util', () => ({
+  getProxyConfig: vi.fn(() => undefined),
 }))
 
 vi.stubGlobal('IS_WINDOWS', false)
@@ -124,5 +132,125 @@ describe('Backend functions', () => {
         `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
       )
     })
+  })
+})
+
+describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
+  // Mirrors the static manifest in atomic-chat-conf/backends/manifest.json:
+  // a GitHub release shape ({ tag_name, assets: [{ name }] }).
+  const MANIFEST = {
+    $schema: './schema.json',
+    updated_at: '2026-06-17T00:00:00Z',
+    tag_name: 'b9691',
+    assets: [
+      { name: 'llama-b9691-bin-win-cpu-x64.zip' },
+      { name: 'llama-b9691-bin-win-cuda-12.4-x64.zip' },
+      { name: 'llama-b9691-bin-win-cuda-13.3-x64.zip' },
+      { name: 'llama-b9691-bin-win-vulkan-x64.zip' },
+      { name: 'llama-b9691-bin-ubuntu-x64.tar.gz' },
+      { name: 'llama-b9691-bin-ubuntu-vulkan-x64.tar.gz' },
+      { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
+      { name: 'cudart-llama-bin-win-cuda-13.3-x64.zip' },
+    ],
+  }
+
+  const RAW_MANIFEST_URL =
+    'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
+
+  const okResponse = (body: unknown) =>
+    ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => body,
+    }) as unknown as Response
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(tauriFetch).mockResolvedValue(okResponse(MANIFEST))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resolves the manifest from raw atomic-chat-conf, not api.github.com', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'windows',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+
+    await fetchRemoteBackends()
+
+    expect(tauriFetch).toHaveBeenCalledTimes(1)
+    const calledUrl = vi.mocked(tauriFetch).mock.calls[0][0]
+    expect(calledUrl).toBe(RAW_MANIFEST_URL)
+    expect(calledUrl).not.toContain('api.github.com')
+  })
+
+  it('returns the whitelisted Windows backend catalog', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'windows',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+
+    const backends = await fetchRemoteBackends()
+    const names = backends.map((b) => b.backend).sort()
+
+    expect(names).toEqual([
+      'win-cpu-x64',
+      'win-cuda-12.4-x64',
+      'win-cuda-13.3-x64',
+      'win-vulkan-x64',
+    ])
+    // cudart companions are not surfaced as backends.
+    expect(names).not.toContain('cudart-llama-bin-win-cuda-12.4-x64')
+    backends.forEach((b) => expect(b.version).toBe('b9691'))
+  })
+
+  it('returns cpu + vulkan for Linux x64', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'linux',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+
+    const backends = await fetchRemoteBackends()
+    const names = backends.map((b) => b.backend).sort()
+
+    expect(names).toEqual(['linux-cpu-x64', 'linux-vulkan-x64'])
+    backends.forEach((b) => expect(b.version).toBe('b9691'))
+  })
+
+  it('returns [] on macOS without any network call to the manifest', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'macos',
+      cpu: { arch: 'arm64', extensions: [] },
+      gpus: [],
+    } as any)
+
+    const backends = await fetchRemoteBackends()
+
+    expect(backends).toEqual([])
+    expect(tauriFetch).not.toHaveBeenCalled()
+  })
+
+  it('returns [] when the manifest fetch fails (offline floor)', async () => {
+    vi.mocked(getSystemInfo).mockResolvedValue({
+      os_type: 'windows',
+      cpu: { arch: 'x86_64', extensions: [] },
+      gpus: [],
+    } as any)
+    vi.mocked(tauriFetch).mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: { get: () => null },
+      json: async () => ({}),
+    } as unknown as Response)
+
+    const backends = await fetchRemoteBackends()
+    expect(backends).toEqual([])
   })
 })

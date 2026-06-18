@@ -256,50 +256,46 @@ function Test-BackendSatisfiedBy {
     return $false
 }
 
-function Resolve-BackendFromReleases {
-    # Given the parsed ggml-org/llama.cpp releases array and a selected backend
-    # id, return @{ Backend; Tag } for the asset to download. A minor-less CUDA
-    # family id (win-cuda-13-x64) resolves to the highest published concrete
-    # minor (win-cuda-13.3-x64); any other id is matched by exact asset name.
-    # Mirrors resolveCudaFamilyConcrete() in
+function Resolve-BackendFromManifest {
+    # Given the parsed backend manifest object from atomic-chat-conf and a
+    # selected backend id, resolve to @{ Backend; Tag }. Minor-less CUDA family
+    # ids (win-cuda-13-x64 / win-cuda-12-x64) are resolved to the highest
+    # concrete minor listed in manifest assets. Mirrors the runtime resolver in
     # extensions/llamacpp-upstream-extension/src/backend.ts.
-    param([object[]]$Releases, [string]$Backend)
+    param([object]$Manifest, [string]$Backend)
+    if (-not $Manifest -or -not $Manifest.tag_name -or -not $Manifest.assets) {
+        return $null
+    }
     if ($Backend -match '^win-cuda-(\d+)-x64$') {
         $major = $Matches[1]
-        foreach ($r in $Releases) {
-            if ($r.draft -or $r.prerelease) { continue }
-            $assetRe = '^llama-' + [regex]::Escape($r.tag_name) + "-bin-win-cuda-$major\.(\d+)-x64\.zip$"
-            $best = $null
-            $bestMinor = -1
-            foreach ($a in $r.assets) {
-                if ($a.name -match $assetRe) {
-                    $minor = [int]$Matches[1]
-                    if ($minor -gt $bestMinor) {
-                        $bestMinor = $minor
-                        $best = "win-cuda-$major.$minor-x64"
-                    }
+        $assetRe = '^llama-' + [regex]::Escape($Manifest.tag_name) + "-bin-win-cuda-$major\.(\d+)-x64\.zip$"
+        $best = $null
+        $bestMinor = -1
+        foreach ($a in $Manifest.assets) {
+            if ($a.name -match $assetRe) {
+                $minor = [int]$Matches[1]
+                if ($minor -gt $bestMinor) {
+                    $bestMinor = $minor
+                    $best = "win-cuda-$major.$minor-x64"
                 }
             }
-            if ($best) { return [pscustomobject]@{ Backend = $best; Tag = $r.tag_name } }
+        }
+        if ($best) {
+            return [pscustomobject]@{ Backend = $best; Tag = $Manifest.tag_name }
         }
         return $null
     }
-    foreach ($r in $Releases) {
-        if ($r.draft -or $r.prerelease) { continue }
-        $want = "llama-$($r.tag_name)-bin-$Backend.zip"
-        if ($r.assets | Where-Object { $_.name -eq $want }) {
-            return [pscustomobject]@{ Backend = $Backend; Tag = $r.tag_name }
-        }
+
+    $want = "llama-$($Manifest.tag_name)-bin-$Backend.zip"
+    if ($Manifest.assets | Where-Object { $_.name -eq $want }) {
+        return [pscustomobject]@{ Backend = $Backend; Tag = $Manifest.tag_name }
     }
     return $null
 }
 
-function Invoke-GitHubReleases {
-    # Fetch the releases list with retry/backoff, mirroring the Makefile's
-    # _gh_fetch (retries 403 rate-limit / 429 / 5xx). Returns the parsed array,
-    # or $null when the API stays unreachable. A primary 60-req/hr rate limit
-    # won't clear within the backoff window — the caller degrades to an
-    # already-installed backend or an actionable GH_TOKEN hint.
+function Invoke-BackendManifest {
+    # Fetch the static backend manifest with retry/backoff. Returns parsed JSON
+    # object or $null when raw.githubusercontent.com remains unreachable.
     param([string]$Uri, [hashtable]$Headers)
     for ($i = 1; $i -le 5; $i++) {
         try {
@@ -310,11 +306,11 @@ function Invoke-GitHubReleases {
             if ($resp) { try { $code = [int]$resp.StatusCode } catch {} }
             if ($code -in 403, 429, 500, 502, 503, 504) {
                 $wait = $i * 3
-                Write-Host "  GitHub API attempt $i/5: HTTP $code, retrying in ${wait}s..." -ForegroundColor Yellow
+                Write-Host "  Manifest fetch attempt $i/5: HTTP $code, retrying in ${wait}s..." -ForegroundColor Yellow
                 Start-Sleep -Seconds $wait
                 continue
             }
-            Write-Host "  GitHub API error: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  Manifest fetch error: $($_.Exception.Message)" -ForegroundColor Yellow
             return $null
         }
     }
@@ -387,7 +383,7 @@ Write-Host "  GPU VRAM: $gpuVramMiB MiB (enough for GPU inference: $hasEnoughVra
 # src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs:
 #   With enough VRAM: cuda → vulkan → cpu;  without: cuda → cpu → vulkan.
 # CUDA is selected as a minor-less family id (win-cuda-13-x64 / win-cuda-12-x64);
-# Resolve-BackendFromReleases turns it into the highest published concrete minor.
+# Resolve-BackendFromManifest turns it into the highest published concrete minor.
 if ($cudaTier -eq 13) {
     $backend = 'win-cuda-13-x64'
 } elseif ($cudaTier -eq 12) {
@@ -439,21 +435,16 @@ if ($skipDownload) {
     if ($SkipBackendDownload) {
         Write-Host '  -SkipBackendDownload set, but no llama-server.exe found — falling back to download.' -ForegroundColor Yellow
     }
-    # ATO-95: list recent releases and pick the newest one whose asset for the
-    # selected backend is ACTUALLY uploaded. ggml-org marks a fresh bXXXX tag
-    # "latest" before its per-platform assets finish uploading, so trusting
-    # /releases/latest then building the asset URL raced the upload and 404'd.
-    $apiUrl = 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20'
+    # Resolve from the static backend manifest (ATO-199) and map family ids
+    # (win-cuda-13-x64 / win-cuda-12-x64) to concrete published minors.
+    $manifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
     $headers = @{ 'User-Agent' = 'atomic-chat-dev' }
-    if ($env:GH_TOKEN) {
-        $headers['Authorization'] = "Bearer $env:GH_TOKEN"
-    }
 
-    Write-Host '  Fetching recent releases...'
-    $releases = Invoke-GitHubReleases -Uri $apiUrl -Headers $headers
+    Write-Host '  Fetching backend manifest...'
+    $manifest = Invoke-BackendManifest -Uri $manifestUrl -Headers $headers
     # Resolve a CUDA family id to the highest published concrete minor, or match
-    # a concrete/cpu/vulkan id by exact asset name (ATO-174).
-    $resolved = if ($releases) { Resolve-BackendFromReleases -Releases $releases -Backend $backend } else { $null }
+    # a concrete/cpu/vulkan id by exact asset name.
+    $resolved = if ($manifest) { Resolve-BackendFromManifest -Manifest $manifest -Backend $backend } else { $null }
 
     if ($resolved) {
         $tag = $resolved.Tag
@@ -524,19 +515,18 @@ if ($skipDownload) {
 
         Write-Host "  llamacpp backend ($backend) downloaded successfully" -ForegroundColor Green
     } elseif (Test-Path $llamaServerExe) {
-        # GitHub unreachable / rate-limited / asset still uploading: keep the
+        # Manifest unreachable / malformed / missing asset: keep the
         # already-installed backend rather than aborting `make dev`.
         $reuse = if ($existingBackend) { $existingBackend } else { '<unknown>' }
         Write-Host "  Could not resolve a downloadable backend; reusing existing backend ($reuse) on disk." -ForegroundColor Yellow
         if ($existingBackend) { $backend = $existingBackend }
     } else {
-        Write-Host "[FATAL] Could not fetch a llama.cpp backend for '$backend'." -ForegroundColor Red
-        if (-not $releases) {
-            Write-Host '        GitHub API was unreachable or rate-limited (unauthenticated = 60 req/hr per IP).' -ForegroundColor Red
-            Write-Host '        Set a GH_TOKEN to raise the limit (5000 req/hr), then re-run:' -ForegroundColor Red
-            Write-Host '          $env:GH_TOKEN = "<github_pat>"; make dev-windows' -ForegroundColor Red
+        Write-Host "[FATAL] Could not resolve a llama.cpp backend for '$backend' from backend manifest." -ForegroundColor Red
+        if (-not $manifest) {
+            Write-Host "        Backend manifest was unreachable or invalid: $manifestUrl" -ForegroundColor Red
+            Write-Host '        Check connection/proxy and re-run make dev-windows.' -ForegroundColor Red
         } else {
-            Write-Host "        No recent release carries an asset for '$backend' (upstream upload may be in progress)." -ForegroundColor Red
+            Write-Host "        Manifest does not list an asset for '$backend'. Update atomic-chat-conf/backends/manifest.json." -ForegroundColor Red
         }
         exit 1
     }

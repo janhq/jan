@@ -15,10 +15,20 @@ import {
 // Upstream provider points at the official ggml-org/llama.cpp release stream.
 // Note: this is intentionally NOT janhq/llama.cpp (legacy fork mirror) and
 // NOT AtomicBot-ai/atomic-llama-cpp-turboquant (our TurboQuant fork).
-const LLAMACPP_RELEASES_API =
-  'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
+//
+// The backend *index* (what builds exist) is resolved from a static manifest
+// in our atomic-chat-conf repo, served via raw.githubusercontent.com (no
+// per-IP rate limit). This dodges GitHub's unauthenticated API limit
+// (60 req/hr/IP) that dead-ended fresh installs on shared/NAT/VPN networks
+// (ATO-199). The manifest mirrors the GitHub release shape
+// ({ tag_name, assets: [{ name }] }) so the parser below is unchanged. The
+// backend *archives* themselves are still downloaded from the ggml-org CDN
+// via LLAMACPP_DOWNLOAD_BASE.
+const LLAMACPP_BACKEND_MANIFEST_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
 const LLAMACPP_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
+const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 
 export async function getLocalInstalledBackends(): Promise<BackendVersion[]> {
   const janDataFolderPath = await getJanDataFolderPath()
@@ -98,6 +108,112 @@ function buildHttpProxyOptions(): {
   return { proxy: { all: proxyConfig } }
 }
 
+async function fetchManifestWithTimeout(
+  useProxy: boolean
+): Promise<Response> {
+  // Guard each request with a hard Promise timeout because some
+  // `@tauri-apps/plugin-http` code paths may ignore AbortSignal under
+  // certain network/proxy failures, which then lets the outer
+  // `recheckOptimalBackend` 20s guard fire first and forces a false
+  // detection-failed (current backend kept) even when fallback paths
+  // could have succeeded.
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  const request = tauriFetch(LLAMACPP_BACKEND_MANIFEST_URL, {
+    headers: { 'User-Agent': 'atomic-chat' },
+    connectTimeout: MANIFEST_FETCH_TIMEOUT_MS,
+    ...(useProxy ? buildHttpProxyOptions() : {}),
+  })
+  const timeout = new Promise<Response>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(
+        new Error(
+          `Manifest fetch timed out after ${MANIFEST_FETCH_TIMEOUT_MS}ms`
+        )
+      )
+    }, MANIFEST_FETCH_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([request, timeout])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+}
+
+async function fetchManifestWithWebFetch(): Promise<Response> {
+  const controller = new AbortController()
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  // `globalThis.fetch` (NOT bare `fetch`) is mandatory here: the production
+  // rolldown build injects `fetch` -> `@tauri-apps/plugin-http`'s fetch (see
+  // rolldown.config.mjs), so a bare `fetch` call would silently route through
+  // plugin-http too. `globalThis.fetch` is the real WebView fetch, which the
+  // registry loaders (provider-registry.ts etc.) prove resolves reliably and
+  // quickly against raw.githubusercontent.com while plugin-http hangs on this
+  // host. This is the primary/preferred manifest transport.
+  const request = globalThis.fetch(LLAMACPP_BACKEND_MANIFEST_URL, {
+    headers: { Accept: 'application/json', 'User-Agent': 'atomic-chat' },
+    signal: controller.signal,
+  })
+  const timeout = new Promise<Response>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      controller.abort()
+      reject(
+        new Error(
+          `Manifest web fetch timed out after ${MANIFEST_FETCH_TIMEOUT_MS}ms`
+        )
+      )
+    }, MANIFEST_FETCH_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([request, timeout])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+}
+
+async function fetchManifestWithFallbacks(): Promise<Response> {
+  // WebView fetch is the proven-reliable primary path for this host (mirrors
+  // the registry loaders in web-app/src/services/*-registry.ts). The two
+  // plugin-http variants are kept as fallbacks for air-gapped/corporate-proxy
+  // setups where the WebView fetch is intercepted but the Rust HTTP client
+  // (plugin-http) is allowed through. All run in parallel; `Promise.any`
+  // takes whichever resolves first, so a fast WebView fetch wins normally.
+  const attempts: Array<{
+    label: string
+    runner: () => Promise<Response>
+  }> = [
+    { label: 'webview fetch', runner: () => fetchManifestWithWebFetch() },
+    { label: 'proxy-aware tauri fetch', runner: () => fetchManifestWithTimeout(true) },
+    { label: 'direct tauri fetch', runner: () => fetchManifestWithTimeout(false) },
+  ]
+
+  const wrapped = attempts.map(({ label, runner }) =>
+    runner()
+      .then((resp) => ({ label, resp }))
+      .catch((err) => {
+        const reason = err instanceof Error ? err.message : String(err)
+        throw new Error(`${label}: ${reason}`)
+      })
+  )
+
+  try {
+    const winner = await Promise.any(wrapped)
+    console.info(
+      `[fetchRemoteBackends] Manifest fetch succeeded via ${winner.label}`
+    )
+    return winner.resp
+  } catch (aggregateErr) {
+    const reasons =
+      aggregateErr instanceof AggregateError
+        ? aggregateErr.errors
+            .map((e) => (e instanceof Error ? e.message : String(e)))
+            .join(' | ')
+        : aggregateErr instanceof Error
+          ? aggregateErr.message
+          : String(aggregateErr)
+    throw new Error(`All manifest fetch attempts failed: ${reasons}`)
+  }
+}
+
 /**
  * Fetches the list of available backend builds from ggml-org/llama.cpp
  * GitHub releases for the current platform/arch.
@@ -107,7 +223,7 @@ function buildHttpProxyOptions(): {
  * only get the bundled (re-codesigned) build that ships with each Atomic
  * Chat release.
  *
- * Windows: returns the ggml-org Windows assets (CPU / CUDA 12.4 / CUDA 13.x
+ * Windows: returns the ggml-org Windows assets (CPU / CUDA 12.x / CUDA 13.x
  * / Vulkan) so the runtime update flow can fetch fresh builds without
  * shipping a new installer.
  *
@@ -127,7 +243,6 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   // tarball is hand-picked + re-codesigned at build time; we deliberately
   // don't pull from ggml-org at runtime.
   if (osType === 'macos') {
-    void LLAMACPP_RELEASES_API
     return []
   }
 
@@ -139,29 +254,13 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
   try {
-    console.info(`[fetchRemoteBackends] Fetching ${LLAMACPP_RELEASES_API}...`)
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15_000)
-    let resp: Response
-    try {
-      // Use the Tauri HTTP client (reqwest) so we can (a) honor the
-      // user-configured HTTPS proxy from Settings → Proxy and (b) apply a
-      // hard `connectTimeout`. The plain WebView `fetch` ignores the app's
-      // proxy config, which made this lookup fail on GitHub-restricted
-      // networks even when the user had a working proxy set up.
-      resp = await tauriFetch(LLAMACPP_RELEASES_API, {
-        headers: { 'User-Agent': 'atomic-chat' },
-        signal: controller.signal,
-        connectTimeout: 15_000,
-        ...buildHttpProxyOptions(),
-      })
-    } finally {
-      clearTimeout(timeout)
-    }
+    console.info(
+      `[fetchRemoteBackends] Fetching ${LLAMACPP_BACKEND_MANIFEST_URL}...`
+    )
+    const resp = await fetchManifestWithFallbacks()
     if (!resp.ok) {
-      const rateLimitRemaining = resp.headers.get('x-ratelimit-remaining')
       console.warn(
-        `[fetchRemoteBackends] GitHub API returned ${resp.status} (rate-limit-remaining: ${rateLimitRemaining}), using local backends only`
+        `[fetchRemoteBackends] Backend manifest returned ${resp.status}, using local backends only`
       )
       return []
     }
@@ -187,7 +286,7 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
       // periodically bumps the toolkit minor in release assets.
       const isAllowedWindowsBackend = (backendName: string): boolean =>
         backendName === 'win-cpu-x64' ||
-        backendName === 'win-cuda-12.4-x64' ||
+        /^win-cuda-12\.\d+-x64$/.test(backendName) ||
         /^win-cuda-13\.\d+-x64$/.test(backendName) ||
         backendName === 'win-vulkan-x64'
 
@@ -291,7 +390,7 @@ export function friendlyBackendLabel(backend: string): string {
   const id = backend.replace(/\uFEFF/g, '').trim()
   if (id.endsWith('cpu-x64')) return 'CPU'
   if (id.includes('cuda-13')) return 'CUDA 13'
-  if (id.includes('cuda-12')) return 'CUDA 12.4'
+  if (id.includes('cuda-12')) return 'CUDA 12'
   if (id.includes('vulkan')) return 'Vulkan'
   return id
 }
@@ -312,7 +411,7 @@ export function friendlyBackendLabel(backend: string): string {
  * shipped is CUDA 12.4. Hosts whose driver only supports CUDA 11 fall
  * back to the CPU build via runtime driver-version gating.
  */
-const WINDOWS_CUDA_BACKEND_RE = /^win-cuda-(12\.4|13\.\d+)-x64$/
+const WINDOWS_CUDA_BACKEND_RE = /^win-cuda-(12\.\d+|13\.\d+)-x64$/
 
 function matchWindowsCudaBackend(
   backend: string

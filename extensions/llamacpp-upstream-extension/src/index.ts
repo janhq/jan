@@ -1385,7 +1385,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           new RegExp(`^win-cuda-13\\.\\d+-${archSuffix}$`)
         )
         const cuda12Backend = pickBackend(
-          new RegExp(`^win-cuda-12\\.4-${archSuffix}$`)
+          new RegExp(`^win-cuda-12\\.\\d+-${archSuffix}$`)
         )
         const vulkanBackend = pickBackend(
           new RegExp(`^win-vulkan-${archSuffix}$`)
@@ -1425,9 +1425,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // host is GPU-capable when the driver/feature gate says CUDA/Vulkan
         // is usable; ggml-org *always* publishes CUDA + Vulkan Windows
         // assets, so a GPU-capable host with NO GPU backend anywhere in the
-        // merged local+remote catalog means the release-stream fetch
-        // (`fetchRemoteBackends`) returned `[]` — i.e. api.github.com was
-        // unreachable/slow/rate-limited, not that CPU is best.
+        // merged local+remote catalog means the manifest fetch
+        // (`fetchRemoteBackends`) returned `[]` — i.e.
+        // raw.githubusercontent.com was unreachable/slow, not that CPU is best.
         const gpuCapable =
           features.cuda13 ||
           features.cuda12 ||
@@ -2399,12 +2399,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
 
       if (!concrete) {
-        // ATO-174: actionable dead-end message. The ggml-org release stream
-        // (api.github.com) is unreachable/slow/rate-limited and there is no
+        // ATO-174: actionable dead-end message. The backend manifest stream
+        // (raw.githubusercontent.com) is unreachable/slow and there is no
         // local copy of this backend family to fall back to. Point the user
         // at the concrete remedies instead of a bare failure.
         throw new Error(
-          `Could not download the ${friendlyBackendLabel(backendId)} backend: the GitHub release stream (api.github.com) is unreachable, slow, or rate-limited, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
+          `Could not download the ${friendlyBackendLabel(backendId)} backend: the backend manifest stream (raw.githubusercontent.com) is unreachable or slow, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
         )
       }
 
