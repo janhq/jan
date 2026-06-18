@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-llamacpp"
-version = "0.8.2"
+version = "0.8.3"
 authors = ["Jan <service@jan.ai>"]
 description = "Tauri plugin for managing Jan LlamaCpp server processes and model loading"
 license = "MIT"
