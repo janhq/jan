@@ -26,6 +26,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorld,
+  IconMusic,
 } from '@tabler/icons-react'
 import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -75,14 +76,21 @@ import {
   Attachment,
   createImageAttachment,
   createDocumentAttachment,
+  createAudioAttachment,
 } from '@/types/attachment'
 import { AttachmentChip } from '@/containers/AttachmentChip'
 import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
+import {
+  readAudioAttachmentFromPath,
+  audioMimeTypeFromExtension,
+  getAudioDurationSeconds,
+} from '@/containers/chatInput/audioFromPath'
 import { downscaleImageDataUrl } from '@/lib/imageDownscale'
 import { useTauriDragDrop } from '@/containers/chatInput/useTauriDragDrop'
 import {
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
+  AUDIO_EXTENSIONS,
   classifyDroppedPaths,
 } from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
@@ -294,6 +302,15 @@ const ChatInput = memo(function ChatInput({
     return capabilities.includes('vision') && capabilities.includes('tools')
   }, [selectedModel?.capabilities])
 
+  // Audio input is gated on the model's `audio` capability (omni/audio-capable
+  // models such as Gemma 4 via the MLX backend). The "Add audio" menu item is
+  // hidden entirely for non-audio models — unlike images, there is no
+  // download-a-model prompt to fall back to.
+  const hasAudio = useMemo(
+    () => selectedModel?.capabilities?.includes('audio') ?? false,
+    [selectedModel?.capabilities]
+  )
+
   // Auto-disable browser feature when model doesn't support it
   useEffect(() => {
     if (janBrowserMCPActive && !modelSupportsBrowser) {
@@ -458,10 +475,15 @@ const ChatInput = memo(function ChatInput({
     if (onSubmit) {
       // Build file parts for AI SDK
       const files = attachments
-        .filter((att) => att.type === 'image' && att.dataUrl)
+        .filter(
+          (att) =>
+            (att.type === 'image' || att.type === 'audio') && att.dataUrl
+        )
         .map((att) => ({
           type: 'file',
-          mediaType: att.mimeType ?? 'image/jpeg',
+          mediaType:
+            att.mimeType ??
+            (att.type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
           url: att.dataUrl!,
         }))
 
@@ -477,10 +499,15 @@ const ChatInput = memo(function ChatInput({
 
       // Build message payload with attachments
       const files = attachments
-        .filter((att) => att.type === 'image' && att.dataUrl)
+        .filter(
+          (att) =>
+            (att.type === 'image' || att.type === 'audio') && att.dataUrl
+        )
         .map((att) => ({
           type: 'file',
-          mediaType: att.mimeType ?? 'image/jpeg',
+          mediaType:
+            att.mimeType ??
+            (att.type === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
           url: att.dataUrl!,
         }))
 
@@ -745,6 +772,7 @@ const ChatInput = memo(function ChatInput({
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
 
   const processNewDocumentAttachments = useCallback(
     async (docs: Attachment[]) => {
@@ -1523,6 +1551,229 @@ const ChatInput = memo(function ChatInput({
     setShowVisionModelPrompt(true)
   }
 
+  // --- Audio attachments (omni/audio-capable models) -----------------------
+  // Audio mirrors the image attachment pipeline (validate → read as base64 →
+  // commit to the per-thread chip store) but is never downscaled/transcoded,
+  // and is forwarded to the model as an `input_audio` content part rather than
+  // an `image_url` file part (handled in the MLX transport).
+  const AUDIO_MAX_SIZE_BYTES = 25 * 1024 * 1024
+  const AUDIO_WARN_DURATION_SECONDS = 90
+  const AUDIO_ALLOWED_MIME_TYPES = [
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/wave',
+  ]
+
+  const prepareAudioAttachmentsFromFiles = async (
+    files: readonly File[]
+  ): Promise<ImageValidationOutcome> => {
+    const oversized: string[] = []
+    const invalidType: string[] = []
+    const candidates: Attachment[] = []
+
+    for (const file of files) {
+      if (file.size > AUDIO_MAX_SIZE_BYTES) {
+        oversized.push(file.name)
+        continue
+      }
+      const mimeType = audioMimeTypeFromExtension(file.name) || file.type
+      if (!AUDIO_ALLOWED_MIME_TYPES.includes(mimeType)) {
+        invalidType.push(file.name)
+        continue
+      }
+
+      const dataUrl = await new Promise<string | null>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result
+          resolve(typeof result === 'string' ? result : null)
+        }
+        reader.onerror = () => resolve(null)
+        reader.readAsDataURL(file)
+      })
+      if (!dataUrl) continue
+
+      candidates.push(
+        createAudioAttachment({
+          name: file.name,
+          size: file.size,
+          mimeType,
+          base64: dataUrl.split(',')[1] ?? '',
+          dataUrl,
+        })
+      )
+    }
+
+    return { candidates, oversized, invalidType }
+  }
+
+  const prepareAudioAttachmentsFromPaths = async (
+    paths: readonly string[]
+  ): Promise<ImageValidationOutcome> => {
+    const oversized: string[] = []
+    const invalidType: string[] = []
+    const candidates: Attachment[] = []
+
+    for (const p of paths) {
+      const ext = (p.split(/[\\/]/).pop()?.split('.').pop() || '').toLowerCase()
+      if (!AUDIO_EXTENSIONS.has(ext)) {
+        invalidType.push(p.split(/[\\/]/).pop() || p)
+        continue
+      }
+      try {
+        const att = await readAudioAttachmentFromPath(p)
+        if (typeof att.size === 'number' && att.size > AUDIO_MAX_SIZE_BYTES) {
+          oversized.push(att.name)
+          continue
+        }
+        candidates.push(att)
+      } catch (e) {
+        console.error('Failed to read dropped audio', p, e)
+        invalidType.push(p.split(/[\\/]/).pop() || p)
+      }
+    }
+
+    return { candidates, oversized, invalidType }
+  }
+
+  const commitAudioAttachments = async (
+    outcome: ImageValidationOutcome
+  ): Promise<void> => {
+    const { candidates, oversized, invalidType } = outcome
+
+    // Audio payloads are large (a 20MB FLAC is a ~27MB base64 string). Hashing
+    // that on the main thread blocks the attach. Dedup by name+size instead —
+    // cheap and more than precise enough for audio files.
+    const audioKey = (a: Attachment) => `${a.name}:${a.size ?? 0}`
+
+    // Use the live key ref, not the captured `attachmentsKey`. `openAudioPicker`
+    // is memoized on [serviceHub], so it captures a stale commit closure bound
+    // to the mount-time key (`__new-thread__`); writing there made the chip only
+    // appear after a remount transferred it to the real thread key.
+    const targetKey = attachmentsKeyRef.current
+
+    const currentAttachments = useChatAttachments
+      .getState()
+      .getAttachments(targetKey)
+
+    const existingKeys = new Set<string>()
+    for (const a of currentAttachments) {
+      if (a.type !== 'audio') continue
+      existingKeys.add(audioKey(a))
+    }
+
+    const duplicates: string[] = []
+    const newFiles: Attachment[] = []
+    const seenKeysInBatch = new Set<string>()
+    for (const att of candidates) {
+      const key = audioKey(att)
+      if (existingKeys.has(key) || seenKeysInBatch.has(key)) {
+        duplicates.push(att.name)
+        continue
+      }
+      seenKeysInBatch.add(key)
+      newFiles.push(att)
+    }
+
+    setAttachmentsForThread(targetKey, (prev) =>
+      newFiles.length > 0 ? [...prev, ...newFiles] : prev
+    )
+
+    // Soft warning for long clips: local omni models (e.g. gemma-3n) get very
+    // slow / time out on multi-minute audio. We don't block the attach — just
+    // warn — so the user understands a timeout is likely before sending.
+    if (newFiles.length > 0) {
+      void (async () => {
+        const longClips: string[] = []
+        for (const att of newFiles) {
+          const previewSrc =
+            att.dataUrl ??
+            (att.base64 && att.mimeType
+              ? `data:${att.mimeType};base64,${att.base64}`
+              : '')
+          if (!previewSrc) continue
+          const seconds = await getAudioDurationSeconds(previewSrc)
+          if (seconds > AUDIO_WARN_DURATION_SECONDS) longClips.push(att.name)
+        }
+        if (longClips.length > 0) {
+          toast.warning('Long audio may time out', {
+            description: `${longClips.join(', ')} ${
+              longClips.length === 1 ? 'is' : 'are'
+            } longer than ${AUDIO_WARN_DURATION_SECONDS}s — local models may respond slowly or time out.`,
+          })
+        }
+      })()
+    }
+
+    const errors: string[] = []
+    if (oversized.length > 0) {
+      errors.push(
+        `${oversized.join(', ')} exceeds the ${Math.round(
+          AUDIO_MAX_SIZE_BYTES / (1024 * 1024)
+        )}MB audio limit`
+      )
+    }
+    if (invalidType.length > 0) {
+      errors.push(`${invalidType.join(', ')} is not a supported audio file`)
+    }
+    if (duplicates.length > 0) {
+      toast.info(
+        `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already attached`
+      )
+    }
+    if (errors.length > 0) {
+      toast.error('Could not attach audio', { description: errors.join(' | ') })
+    }
+  }
+
+  const processAudioFiles = async (files: File[]) => {
+    const outcome = await prepareAudioAttachmentsFromFiles(files)
+    await commitAudioAttachments(outcome)
+  }
+
+  const ingestAudioPaths = async (paths: readonly string[]) => {
+    const outcome = await prepareAudioAttachmentsFromPaths(paths)
+    await commitAudioAttachments(outcome)
+  }
+
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      void processAudioFiles(Array.from(files))
+      if (audioInputRef.current) audioInputRef.current.value = ''
+    }
+    if (textareaRef.current) textareaRef.current.focus()
+  }
+
+  const openAudioPicker = useCallback(async () => {
+    if (isPlatformTauri()) {
+      try {
+        const selected = await serviceHub.dialog().open({
+          multiple: true,
+          filters: [
+            {
+              name: 'Audio',
+              extensions: ['mp3', 'wav'],
+            },
+          ],
+        })
+
+        if (selected) {
+          const paths = Array.isArray(selected) ? selected : [selected]
+          await ingestAudioPaths(paths)
+        }
+      } catch (error) {
+        console.error('Failed to open audio dialog:', error)
+      }
+      if (textareaRef.current) textareaRef.current.focus()
+    } else {
+      audioInputRef.current?.click()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceHub])
+
   const handleVisionModelDownloadComplete = useCallback(
     (modelId: string) => {
       setShowVisionModelPrompt(false)
@@ -1584,7 +1835,7 @@ const ChatInput = memo(function ChatInput({
       toast.info('Attachments are disabled in Settings')
       return
     }
-    const { images, docs, unsupported } = classifyDroppedPaths(paths)
+    const { images, audio, docs, unsupported } = classifyDroppedPaths(paths)
 
     if (unsupported.length > 0) {
       const names = unsupported.map((p) => p.split(/[\\/]/).pop() || p)
@@ -1600,6 +1851,16 @@ const ChatInput = memo(function ChatInput({
         })
       } else {
         void ingestImagePaths(images)
+      }
+    }
+
+    if (audio.length > 0) {
+      if (!hasAudio) {
+        toast.error('Audio model required', {
+          description: 'Select a model with audio support to attach audio.',
+        })
+      } else {
+        void ingestAudioPaths(audio)
       }
     }
 
@@ -1665,13 +1926,30 @@ const ChatInput = memo(function ChatInput({
       const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
       return IMAGE_EXTENSIONS.has(ext) || f.type.startsWith('image/')
     })
-    const nonImageFiles = fileArr.filter((f) => !imageFiles.includes(f))
+    const audioFiles = fileArr.filter((f) => {
+      if (imageFiles.includes(f)) return false
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+      return AUDIO_EXTENSIONS.has(ext) || f.type.startsWith('audio/')
+    })
+    const otherFiles = fileArr.filter(
+      (f) => !imageFiles.includes(f) && !audioFiles.includes(f)
+    )
 
-    if (nonImageFiles.length > 0) {
-      const names = nonImageFiles.map((f) => f.name)
+    if (otherFiles.length > 0) {
+      const names = otherFiles.map((f) => f.name)
       toast.warning('Document drag-and-drop unavailable here', {
         description: `${names.join(', ')} - drop documents in the desktop app or use the attach menu.`,
       })
+    }
+
+    if (audioFiles.length > 0) {
+      if (!hasAudio) {
+        toast.error('Audio model required', {
+          description: 'Select a model with audio support to attach audio.',
+        })
+      } else {
+        void processAudioFiles(audioFiles)
+      }
     }
 
     if (imageFiles.length === 0) return
@@ -2020,6 +2298,25 @@ const ChatInput = memo(function ChatInput({
                           onChange={handleFileChange}
                         />
                       </DropdownMenuItem>
+                      {/* Audio attachment — only shown for omni/audio-capable
+                          models (gated on the `audio` capability). */}
+                      {hasAudio && (
+                        <DropdownMenuItem onClick={openAudioPicker}>
+                          <IconMusic
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                          <span>Add audio</span>
+                          <input
+                            type="file"
+                            ref={audioInputRef}
+                            className="hidden"
+                            accept="audio/mpeg,audio/wav,.mp3,.wav"
+                            multiple
+                            onChange={handleAudioFileChange}
+                          />
+                        </DropdownMenuItem>
+                      )}
                       {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                       <DropdownMenuItem
                         onClick={handleAttachDocsIngest}

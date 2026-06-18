@@ -5,6 +5,16 @@ export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   'webp',
 ])
 
+// Audio formats accepted by the omni backend (mlx-vlm / mlx-audio) as
+// `input_audio`. Restricted to mp3/wav: both are reliably decoded by the
+// backend AND playable in the WebKit preview. Heavier/edge formats (FLAC, OGG)
+// are intentionally excluded — FLAC can't be decoded by WebKit for in-app
+// playback. Kept in sync with `audioMimeTypeFromExtension`.
+export const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set([
+  'mp3',
+  'wav',
+])
+
 export const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
   // Documents
   'pdf',
@@ -103,6 +113,7 @@ const extensionFromPath = (path: string): string =>
 
 export type ClassifiedPaths = {
   images: string[]
+  audio: string[]
   docs: string[]
   unsupported: string[]
 }
@@ -111,6 +122,7 @@ export const classifyDroppedPaths = (
   paths: readonly string[]
 ): ClassifiedPaths => {
   const images: string[] = []
+  const audio: string[] = []
   const docs: string[] = []
   const unsupported: string[] = []
   for (const p of paths) {
@@ -122,8 +134,9 @@ export const classifyDroppedPaths = (
       continue
     }
     if (IMAGE_EXTENSIONS.has(ext)) images.push(p)
+    else if (AUDIO_EXTENSIONS.has(ext)) audio.push(p)
     else if (DOCUMENT_EXTENSIONS.has(ext)) docs.push(p)
     else unsupported.push(p)
   }
-  return { images, docs, unsupported }
+  return { images, audio, docs, unsupported }
 }

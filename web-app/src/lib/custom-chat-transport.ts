@@ -74,6 +74,82 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'foundation-models',
 ])
 
+/// Map an audio MIME type to the `format` string expected by the OpenAI-style
+/// `input_audio` content part (which the MLX/omni backend consumes).
+function audioMediaTypeToFormat(mediaType: string): string {
+  const mt = mediaType.toLowerCase()
+  if (mt.includes('mpeg') || mt.includes('mp3')) return 'mp3'
+  if (mt.includes('wav') || mt.includes('wave')) return 'wav'
+  if (mt.includes('ogg')) return 'ogg'
+  if (mt.includes('flac')) return 'flac'
+  // Fall back to the subtype (audio/<x> → <x>); the backend rejects unknowns.
+  return mt.split('/')[1] ?? 'mp3'
+}
+
+/// Pull audio attachments out of the latest user message as `input_audio`
+/// payloads. Audio is carried in the UI as a `file` part with an `audio/*`
+/// media type, but the `@ai-sdk/openai-compatible` message converter only
+/// understands `image/*` file parts and throws `UnsupportedFunctionalityError`
+/// on anything else — so audio never travels through the normal message path.
+/// Instead we extract it here and inject it at the MLX fetch layer.
+export function extractAudioInputParts(
+  messages: UIMessage[]
+): Array<{ data: string; format: string }> {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.role !== 'user') continue
+    const parts = Array.isArray(message.parts) ? message.parts : []
+    const audio: Array<{ data: string; format: string }> = []
+    for (const part of parts as Array<Record<string, unknown>>) {
+      if (
+        part.type === 'file' &&
+        typeof part.mediaType === 'string' &&
+        part.mediaType.startsWith('audio/') &&
+        typeof part.url === 'string'
+      ) {
+        const url = part.url as string
+        const data = url.includes(',') ? url.slice(url.indexOf(',') + 1) : url
+        audio.push({ data, format: audioMediaTypeToFormat(part.mediaType) })
+      }
+    }
+    // Only the most recent user turn can carry freshly attached audio.
+    return audio
+  }
+  return []
+}
+
+/// Return a copy of `messages` with audio `file` parts removed. The audio is
+/// delivered out-of-band (see extractAudioInputParts), and leaving the parts in
+/// place would make the OpenAI-compatible converter throw. Non-audio parts and
+/// untouched messages are preserved by reference.
+function stripAudioFileParts(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    const parts = Array.isArray(message.parts) ? message.parts : []
+    const hasAudio = parts.some(
+      (p) =>
+        (p as Record<string, unknown>).type === 'file' &&
+        typeof (p as Record<string, unknown>).mediaType === 'string' &&
+        ((p as Record<string, unknown>).mediaType as string).startsWith(
+          'audio/'
+        )
+    )
+    if (!hasAudio) return message
+    return {
+      ...message,
+      parts: parts.filter(
+        (p) =>
+          !(
+            (p as Record<string, unknown>).type === 'file' &&
+            typeof (p as Record<string, unknown>).mediaType === 'string' &&
+            ((p as Record<string, unknown>).mediaType as string).startsWith(
+              'audio/'
+            )
+          )
+      ),
+    } as UIMessage
+  })
+}
+
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
   messageId: string
@@ -475,12 +551,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
         const hasOverride = Object.keys(reasoningOverride).length > 0
 
+        // Audio attachments (omni/audio-capable models, MLX backend) are
+        // injected as `input_audio` at the MLX fetch layer rather than as
+        // file parts — the OpenAI-compatible converter rejects audio file
+        // parts. Only the MLX provider consumes them today.
+        const audioInputParts =
+          effectiveProviderName === 'mlx'
+            ? extractAudioInputParts(options.messages)
+            : []
+
         ttftMark('deltaStart')
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
           inferenceParams ?? {},
-          hasOverride ? reasoningOverride : undefined
+          hasOverride ? reasoningOverride : undefined,
+          audioInputParts.length > 0 ? audioInputParts : undefined
         )
         ttftMark('deltaEnd')
       } catch (error) {
@@ -542,9 +628,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     })()
 
-    // Convert UI messages to model messages
+    // Convert UI messages to model messages. Audio file parts are stripped
+    // first: they are delivered out-of-band as `input_audio` (see
+    // extractAudioInputParts), and the OpenAI-compatible converter throws on
+    // any non-image file part.
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(messagesToConvert)
+      stripAudioFileParts(this.mapUserInlineAttachments(messagesToConvert))
     )
 
     // If continuing a truncated response, append the partial assistant content as a

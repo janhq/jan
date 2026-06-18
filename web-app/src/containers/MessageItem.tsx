@@ -13,6 +13,7 @@ import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { IconRefresh } from '@tabler/icons-react'
+import { AudioPlayer } from '@/containers/AudioPlayer'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -41,6 +42,7 @@ type TextTraceBlock = Extract<TraceBlock, { kind: 'text' }>
 type ReasoningTraceBlock = Extract<TraceBlock, { kind: 'reasoning' }>
 type ToolTraceBlock = Extract<TraceBlock, { kind: 'tool' }>
 type FileTraceBlock = Extract<TraceBlock, { kind: 'file' }>
+type AudioTraceBlock = Extract<TraceBlock, { kind: 'audio' }>
 
 export type MessageItemProps = {
   message: UIMessage
@@ -276,6 +278,25 @@ export const MessageItem = memo(
       )
     }
 
+    const renderAudioBlock = (block: AudioTraceBlock) => {
+      return (
+        <div
+          key={block.key}
+          className={cn(
+            'flex w-full mt-2 mb-2',
+            message.role === 'user' ? 'justify-end' : 'justify-start'
+          )}
+        >
+          <AudioPlayer
+            src={block.url}
+            mediaType={block.mediaType}
+            filename={block.filename}
+            className="w-80 max-w-[80%]"
+          />
+        </div>
+      )
+    }
+
     const renderToolBlock = (block: ToolTraceBlock) => {
       return (
         <Tool
@@ -304,6 +325,8 @@ export const MessageItem = memo(
               return renderReasoningBlock(block, index)
             case 'file':
               return renderFileBlock(block)
+            case 'audio':
+              return renderAudioBlock(block)
             case 'tool':
               return renderToolBlock(block)
             default:

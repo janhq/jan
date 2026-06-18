@@ -3,18 +3,29 @@ import { describe, expect, it } from 'vitest'
 import { classifyDroppedPaths } from '@/containers/chatInput/classifyDroppedPaths'
 
 describe('classifyDroppedPaths', () => {
-  it('routes images, docs and unsupported separately', () => {
+  it('routes images, audio, docs and unsupported separately', () => {
     const result = classifyDroppedPaths([
       '/tmp/photo.png',
       '/tmp/scan.JPG',
+      '/tmp/voice.mp3',
+      '/tmp/clip.WAV',
+      '/tmp/song.flac',
+      '/tmp/audio.ogg',
       '/tmp/report.pdf',
       '/tmp/notes.md',
       '/tmp/archive.zip',
       '/tmp/tool.exe',
     ])
     expect(result.images).toEqual(['/tmp/photo.png', '/tmp/scan.JPG'])
+    // Only mp3/wav are accepted as audio; FLAC/OGG fall through to unsupported.
+    expect(result.audio).toEqual(['/tmp/voice.mp3', '/tmp/clip.WAV'])
     expect(result.docs).toEqual(['/tmp/report.pdf', '/tmp/notes.md'])
-    expect(result.unsupported).toEqual(['/tmp/archive.zip', '/tmp/tool.exe'])
+    expect(result.unsupported).toEqual([
+      '/tmp/song.flac',
+      '/tmp/audio.ogg',
+      '/tmp/archive.zip',
+      '/tmp/tool.exe',
+    ])
   })
 
   it('handles paths without extensions and Windows separators', () => {
@@ -30,6 +41,7 @@ describe('classifyDroppedPaths', () => {
   it('returns empty buckets for empty input', () => {
     expect(classifyDroppedPaths([])).toEqual({
       images: [],
+      audio: [],
       docs: [],
       unsupported: [],
     })

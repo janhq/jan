@@ -55,6 +55,13 @@ export type TraceBlock =
       filename?: string
     }
   | {
+      kind: 'audio'
+      key: string
+      url: string
+      mediaType: string
+      filename?: string
+    }
+  | {
       kind: 'tool'
       key: string
       toolName: string

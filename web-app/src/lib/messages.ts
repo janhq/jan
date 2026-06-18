@@ -273,6 +273,23 @@ export function convertThreadMessageToUIMessage(
     }
   }
 
+  // Reconstruct audio attachments from metadata (persisted there because
+  // @janhq/core has no audio ContentType). Mirrors the image `file` part shape
+  // so the chat UI and the MLX transport handle them identically to a freshly
+  // attached clip.
+  const inputAudio = (threadMessage.metadata as any)?.input_audio
+  if (Array.isArray(inputAudio)) {
+    for (const clip of inputAudio) {
+      if (clip?.url && clip?.mediaType) {
+        parts.push({
+          type: 'file',
+          mediaType: clip.mediaType,
+          url: clip.url,
+        })
+      }
+    }
+  }
+
   // BACKWARD COMPATIBILITY: Handle tool calls from metadata (old format)
   // New messages will have tool calls as separate messages with tool_call_id
   const toolCalls = (threadMessage.metadata as any)?.tool_calls

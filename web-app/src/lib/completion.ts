@@ -23,8 +23,9 @@ export const newUserThreadContent = (
   attachments?: Attachment[],
   id?: string
 ): ThreadMessage => {
-  // Separate images and documents
+  // Separate images, audio and documents
   const images = attachments?.filter((a) => a.type === 'image') || []
+  const audio = attachments?.filter((a) => a.type === 'audio') || []
   const documents = attachments?.filter((a) => a.type === 'document') || []
 
   const inlineDocuments = documents.filter(
@@ -68,6 +69,30 @@ export const newUserThreadContent = (
     }
   })
 
+  // Audio attachments are persisted in metadata (there is no `ContentType.Audio`
+  // in @janhq/core). On reload they are reconstructed into `file` parts by
+  // convertThreadMessageToUIMessage, mirroring how images round-trip via the
+  // content array. Stored as a self-contained `data:` URL so no filesystem
+  // path is required.
+  const audioMeta = audio
+    .filter((clip) => clip.base64 && clip.mimeType)
+    .map((clip) => ({
+      name: clip.name,
+      mediaType: clip.mimeType as string,
+      url: clip.dataUrl ?? `data:${clip.mimeType};base64,${clip.base64}`,
+    }))
+
+  const metadata: Record<string, unknown> = {}
+  if (inlineDocuments.length > 0) {
+    metadata.inline_file_contents = inlineDocuments.map((doc) => ({
+      name: doc.name,
+      content: doc.inlineContent,
+    }))
+  }
+  if (audioMeta.length > 0) {
+    metadata.input_audio = audioMeta
+  }
+
   return {
     type: 'text',
     role: ChatCompletionRole.User,
@@ -78,15 +103,7 @@ export const newUserThreadContent = (
     status: MessageStatus.Ready,
     created_at: 0,
     completed_at: 0,
-    metadata:
-      inlineDocuments.length > 0
-        ? {
-            inline_file_contents: inlineDocuments.map((doc) => ({
-              name: doc.name,
-              content: doc.inlineContent,
-            })),
-          }
-        : undefined,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   }
 }
 
