@@ -121,8 +121,13 @@ function HubContent() {
   const searchOptions = useMemo(
     () => ({
       includeScore: true,
-      // Search in `author` and in `tags` array
-      keys: ['model_name', 'quants.model_id'],
+      // Tighter than the 0.6 default so a precise query (e.g. a full HF
+      // namespace) stops surfacing loosely-related catalog models.
+      threshold: 0.3,
+      // Repo ids are long; without this Fuse penalizes matches far from the
+      // string start and misses substrings.
+      ignoreLocation: true,
+      keys: ['model_name', 'developer', 'quants.model_id'],
     }),
     []
   )
@@ -520,13 +525,17 @@ function HubContent() {
                             <div
                               className="cursor-pointer min-w-0 flex-1"
                               onClick={() => {
+                                const name =
+                                  filteredModels[virtualItem.index].model_name
+                                const isHfRepo = name.includes('/')
                                 navigate({
                                   to: route.hub.model,
                                   params: {
-                                    modelId:
-                                      filteredModels[virtualItem.index]
-                                        .model_name,
+                                    modelId: isHfRepo
+                                      ? name.split('/').pop()!
+                                      : name,
                                   },
+                                  search: isHfRepo ? { repo: name } : {},
                                 })
                               }}
                             >
