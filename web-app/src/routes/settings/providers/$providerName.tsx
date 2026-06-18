@@ -41,13 +41,23 @@ import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
+  providerCanFetchWithoutKey,
   API_KEY_FALLBACKS_SETTING_KEY,
   serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
 } from '@/lib/remoteModelCatalog'
+
+function lemonadeMcpUrl(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).origin + '/mcp'
+  } catch {
+    return 'http://127.0.0.1:13305/mcp'
+  }
+}
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -258,7 +268,7 @@ function ProviderDetail() {
     if (!provider) return
     if (!supportsRemoteCatalog(provider)) return
     if (provider.models.length > 0) return
-    if (!providerHasRemoteApiKeys(provider)) return
+    if (!providerHasRemoteApiKeys(provider) && !providerCanFetchWithoutKey(provider.provider)) return
     if (autoCatalogAttempted.current.has(provider.provider)) return
     autoCatalogAttempted.current.add(provider.provider)
     handleRefreshModels()
@@ -474,7 +484,7 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url || !providerHasRemoteApiKeys(provider)) {
+    if (!provider || !provider.base_url || (!providerHasRemoteApiKeys(provider) && !providerCanFetchWithoutKey(provider.provider))) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
@@ -492,6 +502,7 @@ function ProviderDetail() {
           name: m.id,
           capabilities: m.capabilities,
           version: '1.0',
+          ...(m.contextLength ? { contextLength: m.contextLength } : {}),
         }))
       } else {
         const modelIds = await serviceHub
@@ -596,7 +607,6 @@ function ProviderDetail() {
   }
 
   const handleStopModel = (modelId: string) => {
-    // Original: stopModel(modelId).then(() => { setActiveModels((prevModels) => prevModels.filter((model) => model !== modelId)) })
     serviceHub
       .models()
       .stopModel(modelId, provider?.provider)
@@ -675,14 +685,16 @@ function ProviderDetail() {
               {!(
                 isPredefinedProvider &&
                 provider?.provider !== 'llamacpp' &&
-                provider?.provider !== 'mlx'
+                provider?.provider !== 'mlx' &&
+                provider?.provider !== 'lemonade'
               ) && (
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
                   if (
                     setting.key === 'api-key' &&
                     provider?.provider !== 'llamacpp' &&
-                    provider?.provider !== 'mlx'
+                    provider?.provider !== 'mlx' &&
+                    provider?.provider !== 'lemonade'
                   ) {
                     return null
                   }
@@ -729,6 +741,60 @@ function ProviderDetail() {
                                 typeof newValue === 'string'
                               ) {
                                 updateObj.base_url = newValue
+                                if (provider.provider === 'lemonade') {
+                                  const mcpEnabled =
+                                    newSettings.find((s) => s.key === 'mcp-enabled')
+                                      ?.controller_props?.value === true
+                                  if (mcpEnabled) {
+                                    try {
+                                      const mcpUrl = lemonadeMcpUrl(newValue)
+                                      // useMCPServers.getState() — Zustand store singleton, not a React hook
+                                      const mcpStore = useMCPServers.getState()
+                                      mcpStore.addServer('lemonade', {
+                                        command: '',
+                                        args: [],
+                                        env: {},
+                                        type: 'http',
+                                        url: mcpUrl,
+                                        active: true,
+                                        description: 'Lemonade local AI server',
+                                      })
+                                      mcpStore.syncServersAndRestart().catch(console.error)
+                                    } catch {
+                                      // invalid URL
+                                    }
+                                  }
+                                }
+                              } else if (
+                                provider.provider === 'lemonade' &&
+                                settingKey === 'api-format' &&
+                                typeof newValue === 'string'
+                              ) {
+                                if (newValue === 'openai' || newValue === 'anthropic') {
+                                  updateObj.api_type = newValue
+                                }
+                              } else if (
+                                provider.provider === 'lemonade' &&
+                                settingKey === 'mcp-enabled'
+                              ) {
+                                // useMCPServers.getState() — Zustand store singleton, not a React hook
+                                const mcpStore = useMCPServers.getState()
+                                const baseUrl = provider.base_url ?? 'http://127.0.0.1:13305/v1'
+                                const mcpUrl = lemonadeMcpUrl(baseUrl)
+                                if (newValue === true) {
+                                  mcpStore.addServer('lemonade', {
+                                    command: '',
+                                    args: [],
+                                    env: {},
+                                    type: 'http',
+                                    url: mcpUrl,
+                                    active: true,
+                                    description: 'Lemonade local AI server',
+                                  })
+                                } else {
+                                  mcpStore.deleteServer('lemonade')
+                                }
+                                mcpStore.syncServersAndRestart().catch(console.error)
                               }
 
                               serviceHub
@@ -800,7 +866,8 @@ function ProviderDetail() {
 
               {provider &&
                 provider.provider !== 'llamacpp' &&
-                provider.provider !== 'mlx' && (
+                provider.provider !== 'mlx' &&
+                provider.provider !== 'lemonade' && (
                   <Card>
                     {provider.provider === 'azure' && (
                       <div className="space-y-2 mb-4">
@@ -1124,7 +1191,7 @@ function ProviderDetail() {
                                 predefinedProviders.some(
                                   (p) => p.provider === provider.provider
                                 ) &&
-                                providerHasRemoteApiKeys(provider))) && (
+                                (providerHasRemoteApiKeys(provider) || providerCanFetchWithoutKey(provider.provider)))) && (
                               <FavoriteModelAction model={model} />
                             )}
                             <DialogDeleteModel

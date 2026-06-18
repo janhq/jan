@@ -49,6 +49,8 @@ type Model = {
   /** Chat-template kwargs the model's template accepts (llamacpp only). */
   template_kwargs?: TemplateKwarg[]
   settings?: Record<string, ProviderSetting>
+  /** Maximum context window in tokens as reported by the provider at catalog fetch time. */
+  contextLength?: number
   /** Whether this model is an embedding model (e.g., BERT-based) */
   embedding?: boolean
   /** Whether this model was imported from a user-supplied local file

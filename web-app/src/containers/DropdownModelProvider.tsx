@@ -21,7 +21,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
-import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { providerHasRemoteApiKeys, providerCanFetchWithoutKey } from '@/lib/provider-api-keys'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
@@ -277,6 +277,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           provider &&
           provider.provider !== 'llamacpp' &&
           !providerHasRemoteApiKeys(provider) &&
+          !providerCanFetchWithoutKey(provider.provider) &&
           (isPredefined || provider.models.length === 0)
         )
           return
@@ -361,9 +362,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           )
           const aHasApiKeyOrCustomModel =
             providerHasRemoteApiKeys(a) ||
+            providerCanFetchWithoutKey(a.provider) ||
             (!aIsPredefined && a.models.length > 0)
           const bHasApiKeyOrCustomModel =
             providerHasRemoteApiKeys(b) ||
+            providerCanFetchWithoutKey(b.provider) ||
             (!bIsPredefined && b.models.length > 0)
           // Providers with API keys or custom with models filled second
           if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1
