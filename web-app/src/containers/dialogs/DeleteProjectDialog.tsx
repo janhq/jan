@@ -75,11 +75,11 @@ export function DeleteProjectDialog({
         <DialogHeader>
           <DialogTitle>{t('projects.deleteProjectDialog.title')}</DialogTitle>
           <DialogDescription>
-            {hasThreads ? (
-              <p>{t('projects.deleteProjectDialog.permanentDelete')}</p>
-            ) : (
-              <p>{t('projects.deleteProjectDialog.deleteEmptyProject', { projectName })}</p>
-            )}
+            {hasThreads
+              ? t('projects.deleteProjectDialog.permanentDelete')
+              : t('projects.deleteProjectDialog.deleteEmptyProject', {
+                  projectName,
+                })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
