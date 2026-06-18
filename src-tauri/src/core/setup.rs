@@ -33,10 +33,11 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
     }
 
     let extensions_path = get_jan_extensions_path(app.clone());
+    let extensions_json_path = extensions_path.join("extensions.json");
     let pre_install_path = app
         .path()
         .resource_dir()
-        .unwrap()
+        .map_err(|e| format!("Could not resolve resource dir: {e}"))?
         .join("resources")
         .join("pre-install");
 
@@ -47,23 +48,33 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
         clean_up = true;
     }
     log::info!("Installing extensions. Clean up: {clean_up}");
-    if !clean_up && extensions_path.exists() {
+    // A bare directory is not proof of a completed install; gate on the manifest
+    // so a previously-aborted run self-heals on the next launch.
+    if !clean_up && extensions_json_path.exists() {
         return Ok(());
     }
 
-    // Attempt to remove extensions folder
+    // Validate the install source before mutating anything. A missing/unreadable
+    // pre-install dir must not wipe a working install or leave a half-built one.
+    let pre_install_entries = match fs::read_dir(&pre_install_path) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::warn!(
+                "Skipping extension install; pre-install dir unavailable at {pre_install_path:?}: {e}"
+            );
+            return Ok(());
+        }
+    };
+
+    // Source is good — now it's safe to clear and recreate the target.
     if extensions_path.exists() {
         fs::remove_dir_all(&extensions_path).unwrap_or_else(|_| {
             log::info!("Failed to remove existing extensions folder, it may not exist.");
         });
     }
-
-    // Attempt to create it again
     if !extensions_path.exists() {
         fs::create_dir_all(&extensions_path).map_err(|e| e.to_string())?;
     }
-
-    let extensions_json_path = extensions_path.join("extensions.json");
     let mut extensions_list = if extensions_json_path.exists() {
         let existing_data =
             fs::read_to_string(&extensions_json_path).unwrap_or_else(|_| "[]".to_string());
@@ -72,7 +83,7 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
         vec![]
     };
 
-    for entry in fs::read_dir(&pre_install_path).map_err(|e| e.to_string())? {
+    for entry in pre_install_entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
