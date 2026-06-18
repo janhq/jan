@@ -511,7 +511,49 @@ jobs:
 
       - name: Download upstream llamacpp backend (manifest resolver)
         shell: bash
-        run: make download-llamacpp-upstream-backend-win-cpu
+        run: |
+          set -euo pipefail
+          # Per ADR 2026-05-22 Windows ships only `llamacpp-upstream`; per
+          # ATO-199 the backend INDEX is resolved from the static
+          # atomic-chat-conf manifest (raw.githubusercontent.com, no
+          # api.github.com rate limit). The archive itself still comes from the
+          # ggml-org CDN. Inline bash (not `make ...-win-cpu`) because that
+          # make target is a PowerShell one-liner whose `$(...)` is mangled by
+          # make's /usr/bin/sh under `shell: bash`.
+          DIR="src-tauri/resources/llamacpp-backend-upstream"
+          BACKEND="win-cpu-x64"
+          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json"
+          rm -rf "$DIR"
+          mkdir -p "$DIR"
+          echo "Resolving backend index from atomic-chat-conf manifest (ATO-199)..."
+          TMP="$(mktemp)"
+          curl -fsSL --retry 5 --retry-delay 3 "$MANIFEST_URL" -o "$TMP"
+          TAG="$(jq -r '.tag_name // empty' "$TMP")"
+          if [ -z "$TAG" ]; then
+            echo "Error: atomic-chat-conf manifest has no tag_name"
+            head -c 500 "$TMP" 2>/dev/null || true; echo
+            rm -f "$TMP"; exit 1
+          fi
+          WANT="llama-${TAG}-bin-${BACKEND}.zip"
+          if [ "$(jq -r --arg w "$WANT" '[.assets[]? | select(.name == $w)] | length' "$TMP")" -lt 1 ]; then
+            echo "Error: manifest does not list the ${BACKEND} asset (${WANT}); update atomic-chat-conf backends/manifest.json"
+            rm -f "$TMP"; exit 1
+          fi
+          rm -f "$TMP"
+          URL="https://github.com/ggml-org/llama.cpp/releases/download/${TAG}/${WANT}"
+          echo "$TAG" > "$DIR/version.txt"
+          echo "$BACKEND" > "$DIR/backend.txt"
+          echo "Release: $TAG  Backend: $BACKEND"
+          echo "Downloading: $URL"
+          curl -fSL --retry 5 --retry-delay 3 "$URL" -o /tmp/llamacpp-upstream-backend.zip
+          unzip -o /tmp/llamacpp-upstream-backend.zip -d "$DIR"
+          rm -f /tmp/llamacpp-upstream-backend.zip
+          if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then
+            echo "Relocating flat-extracted binaries into build/bin/..."
+            mkdir -p "$DIR/build/bin"
+            mv "$DIR"/*.exe "$DIR/build/bin/" 2>/dev/null || true
+          fi
+          echo "CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
 
       - name: Build web app and generate icons
         env:
