@@ -3410,9 +3410,12 @@ fn add_cors_headers_with_host_and_origin(
         builder = builder
             .header("Access-Control-Allow-Origin", origin)
             .header("Access-Control-Allow-Credentials", "true");
-    } else {
+    } else if !origin.is_empty() {
+        // Non-empty but untrusted origin — a real browser CORS mismatch worth surfacing.
         log::warn!("CORS: Origin '{}' is not trusted, not reflecting origin", origin);
     }
+    // Empty origin means no Origin header at all (curl, Python openai client, server-to-server,
+    // native apps). CORS is a browser-only mechanism; silently skipping ACAO is correct here.
 
     builder
 }
@@ -4285,5 +4288,60 @@ mod auto_increase_ctx_tests {
         let got = read_auto_increase_outcome(&state, "m1").await.unwrap();
         assert!(got.ok);
         assert_eq!(got.new_ctx_len, Some(16384));
+    }
+
+    // --- add_cors_headers_with_host_and_origin (ATO-203) -----------------------
+
+    /// Non-browser clients (curl, Python openai SDK, …) send no Origin header.
+    /// The proxy substitutes "" for the missing header and must NOT log a WARN
+    /// nor set any Access-Control-Allow-Origin header.
+    #[test]
+    fn cors_empty_origin_does_not_set_acao() {
+        let builder = hyper::Response::builder();
+        let response = add_cors_headers_with_host_and_origin(builder, "localhost:1337", "", &[])
+            .body(hyper::Body::empty())
+            .unwrap();
+        assert!(
+            response.headers().get("Access-Control-Allow-Origin").is_none(),
+            "ACAO header must not be set when origin is empty"
+        );
+    }
+
+    /// A browser request from a trusted origin must get the ACAO header reflected.
+    /// localhost is in the default-valid-hosts allowlist, so trusted_hosts may be empty.
+    #[test]
+    fn cors_trusted_origin_reflects_acao() {
+        let builder = hyper::Response::builder();
+        let response = add_cors_headers_with_host_and_origin(
+            builder,
+            "localhost:1337",
+            "http://localhost:3000",
+            &[],
+        )
+        .body(hyper::Body::empty())
+        .unwrap();
+        assert_eq!(
+            response.headers().get("Access-Control-Allow-Origin").map(|v| v.to_str().unwrap()),
+            Some("http://localhost:3000"),
+            "Trusted origin must be reflected in ACAO"
+        );
+    }
+
+    /// A browser request from an untrusted (non-empty) origin must NOT get an ACAO header.
+    #[test]
+    fn cors_untrusted_origin_omits_acao() {
+        let builder = hyper::Response::builder();
+        let response = add_cors_headers_with_host_and_origin(
+            builder,
+            "localhost:1337",
+            "http://evil.example.com",
+            &[],
+        )
+        .body(hyper::Body::empty())
+        .unwrap();
+        assert!(
+            response.headers().get("Access-Control-Allow-Origin").is_none(),
+            "Untrusted origin must not be reflected in ACAO"
+        );
     }
 }
