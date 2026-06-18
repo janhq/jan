@@ -39,6 +39,16 @@ export interface ModelParameters {
   stop_sequences?: string[]
 }
 
+/**
+ * Audio attachment payload delivered to omni/audio-capable models as an
+ * OpenAI-style `input_audio` content part. `data` is base64 (no data-URL
+ * prefix) and `format` is the short codec name (mp3/wav/ogg/flac).
+ */
+export interface AudioInputPart {
+  data: string
+  format: string
+}
+
 import {
   extractReasoningMiddleware,
   wrapLanguageModel,
@@ -219,6 +229,63 @@ function createCustomFetch(
       }
     }
 
+    return baseFetch(input, init)
+  }
+}
+
+/**
+ * Wrap a fetch so it injects `input_audio` content parts into the latest user
+ * message of an outgoing chat-completions request body.
+ *
+ * Why this exists: the `@ai-sdk/openai-compatible` message converter only
+ * understands `image/*` file parts and throws on audio, so audio can't ride the
+ * normal message path. We therefore strip audio upstream and re-attach it here,
+ * directly on the JSON the MLX (mlx-vlm/omni) server receives. The audio is
+ * appended to the last `role: 'user'` message so it stays attached to the
+ * user's turn across tool-call round-trips.
+ */
+function createAudioInjectingFetch(
+  baseFetch: typeof httpFetch,
+  audioParts: AudioInputPart[]
+): typeof httpFetch {
+  if (audioParts.length === 0) return baseFetch
+
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    const isPost = !init?.method || init.method.toUpperCase() === 'POST'
+
+    if (isPost && typeof init?.body === 'string') {
+      try {
+        const body = JSON.parse(init.body)
+
+        if (Array.isArray(body?.messages)) {
+          for (let i = body.messages.length - 1; i >= 0; i--) {
+            const msg = body.messages[i]
+            if (msg?.role !== 'user') continue
+
+            let content = msg.content
+            if (typeof content === 'string') {
+              content = content ? [{ type: 'text', text: content }] : []
+            }
+
+            if (!Array.isArray(content)) content = []
+            for (const audio of audioParts) {
+              content.push({
+                type: 'input_audio',
+                input_audio: { data: audio.data, format: audio.format },
+              })
+            }
+            msg.content = content
+            break
+          }
+          init = { ...init, body: JSON.stringify(body) }
+        }
+      } catch {
+        /* non-JSON or unexpected shape — forward unchanged */
+      }
+    }
     return baseFetch(input, init)
   }
 }
@@ -631,7 +698,8 @@ export class ModelFactory {
     modelId: string,
     provider: ProviderObject,
     parameters: Record<string, unknown> = {},
-    reasoningOverride?: Record<string, unknown>
+    reasoningOverride?: Record<string, unknown>,
+    audioParts?: AudioInputPart[]
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
     const override = reasoningOverride ?? {}
@@ -656,7 +724,7 @@ export class ModelFactory {
         )
 
       case 'mlx':
-        return this.createMlxModel(modelId, provider, localInjected)
+        return this.createMlxModel(modelId, provider, localInjected, audioParts)
 
       case 'foundation-models':
         return this.createFoundationModelsModel(
@@ -753,7 +821,8 @@ export class ModelFactory {
   private static async createMlxModel(
     modelId: string,
     provider?: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    audioParts?: AudioInputPart[]
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
       'mlx',
@@ -775,7 +844,14 @@ export class ModelFactory {
     // client TCP connection drops). The IPC streaming bridge propagates
     // `AbortSignal` to the underlying socket teardown for us, so we simply
     // forward `init` and rely on the backend's disconnect handler.
-    const customFetch = createLocalStreamingFetch(httpFetch, parameters)
+    const streamingFetch = createLocalStreamingFetch(httpFetch, parameters)
+    // Re-attach audio attachments as `input_audio` on the request body the
+    // mlx-vlm/omni server receives (they were stripped from the AI SDK message
+    // path because the OpenAI-compatible converter rejects audio file parts).
+    const customFetch = createAudioInjectingFetch(
+      streamingFetch,
+      audioParts ?? []
+    )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'mlx',

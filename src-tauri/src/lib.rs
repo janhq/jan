@@ -45,6 +45,16 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::AppleScript,
             None,
         ));
+
+        builder = builder.plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        );
     }
 
     let mut app_builder = builder

@@ -48,6 +48,14 @@ export function buildTraceBlocks(
           mediaType: filePart.mediaType,
           filename: filePart.filename,
         })
+      } else if (filePart.url && filePart.mediaType?.startsWith('audio/')) {
+        blocks.push({
+          kind: 'audio',
+          key: `${message.id}-${i}`,
+          url: filePart.url,
+          mediaType: filePart.mediaType,
+          filename: filePart.filename,
+        })
       }
       continue
     }

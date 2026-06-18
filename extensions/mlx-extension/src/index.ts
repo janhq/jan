@@ -388,6 +388,34 @@ export default class mlx_extension extends AIEngine {
         capabilities.push('vision')
       }
 
+      // Audio: probe the model's config.json live (mirrors how isToolSupported
+      // reads per-model metadata here). Probing — rather than relying solely on
+      // an `audio` flag written at import — means models imported before audio
+      // support existed light up after an app update, with no re-import. Falls
+      // back to the stored flag if the weights dir can't be resolved/read.
+      try {
+        const mp = modelConfig.model_path
+        if (mp) {
+          const janDataFolderPath = await getJanDataFolderPath()
+          const absModelPath =
+            mp.startsWith('/') || mp.includes(':')
+              ? mp
+              : await joinPath([janDataFolderPath, mp])
+          if (await this.isAudioSupported(absModelPath)) {
+            capabilities.push('audio')
+          } else if ((modelConfig as { audio?: boolean }).audio) {
+            capabilities.push('audio')
+          }
+        } else if ((modelConfig as { audio?: boolean }).audio) {
+          capabilities.push('audio')
+        }
+      } catch (e) {
+        logger.warn(`Failed to check audio support for ${modelId}: ${e}`)
+        if ((modelConfig as { audio?: boolean }).audio) {
+          capabilities.push('audio')
+        }
+      }
+
       // Check for tool support
       try {
         if (await this.isToolSupported(modelId)) {
@@ -1210,10 +1238,12 @@ export default class mlx_extension extends AIEngine {
 
       // Detect capabilities after download
       const isVision = await this.isVisionSupported(localPath)
+      const isAudio = await this.isAudioSupported(localPath)
 
       // Build capabilities array
       const capabilities: string[] = []
       if (isVision) capabilities.push('vision')
+      if (isAudio) capabilities.push('audio')
 
       // Create model.yml with relative path
       const modelConfig: any = {
@@ -1226,6 +1256,11 @@ export default class mlx_extension extends AIEngine {
       if (isVision) {
         modelConfig.mmproj_path = `mlx/models/${modelId}/model.safetensors`
         logger.info(`Vision model detected: ${modelId}`)
+      }
+      // Persist audio capability so listModels can re-derive it on restart.
+      if (isAudio) {
+        modelConfig.audio = true
+        logger.info(`Audio model detected: ${modelId}`)
       }
 
       // Add capabilities array
@@ -1257,10 +1292,12 @@ export default class mlx_extension extends AIEngine {
 
       // Detect capabilities by checking model folder
       const isVision = await this.isVisionSupported(sourcePath)
+      const isAudio = await this.isAudioSupported(sourcePath)
 
       // Build capabilities array
       const capabilities: string[] = []
       if (isVision) capabilities.push('vision')
+      if (isAudio) capabilities.push('audio')
 
       // Create model.yml with absolute folder path
       const modelConfig: any = {
@@ -1273,6 +1310,11 @@ export default class mlx_extension extends AIEngine {
       if (isVision) {
         modelConfig.mmproj_path = sourcePath
         logger.info(`Vision model detected: ${modelId}`)
+      }
+      // Persist audio capability so listModels can re-derive it on restart.
+      if (isAudio) {
+        modelConfig.audio = true
+        logger.info(`Audio model detected: ${modelId}`)
       }
 
       // Add capabilities array
@@ -1442,6 +1484,105 @@ export default class mlx_extension extends AIEngine {
       return false
     } catch (e) {
       logger.warn(`Failed to check vision support for ${modelPath}: ${e}`)
+      return false
+    }
+  }
+
+  /**
+   * Detect whether an MLX model accepts audio input (omni / audio-capable
+   * models such as Gemma 4). Mirrors `isVisionSupported`: inspects `config.json`
+   * architecture/fields and any audio feature-extractor config. The mlx-vlm
+   * (omni) backend already handles audio under the hood; this just lets the UI
+   * surface the audio attachment affordance via the `audio` capability.
+   */
+  async isAudioSupported(modelPath: string): Promise<boolean> {
+    const stat = await fs.fileStat(modelPath).catch(() => null)
+    const modelDir =
+      stat && stat.isDirectory
+        ? modelPath
+        : modelPath.substring(0, modelPath.lastIndexOf('/'))
+    const configPath = await joinPath([modelDir, 'config.json'])
+
+    if (!(await fs.existsSync(configPath))) {
+      return false
+    }
+
+    try {
+      const configContent = await invoke<string>('read_file_sync', {
+        args: [configPath],
+      })
+      const config = JSON.parse(configContent)
+
+      // Architecture name heuristics for omni / audio models.
+      const architectures = config.architectures
+      if (architectures && Array.isArray(architectures)) {
+        const archString = architectures[0]?.toString().toLowerCase() ?? ''
+        const audioPatterns = [
+          'omni',
+          'audio',
+          'qwen2audio',
+          'qwen2_5_omni',
+          'qwen3omni',
+          'gemma3n',
+          'whisper',
+        ]
+        if (audioPatterns.some((pattern) => archString.includes(pattern))) {
+          logger.info(
+            `Audio support detected from config.json: ${architectures[0]}`
+          )
+          return true
+        }
+      }
+
+      // Audio-related configuration fields (HF omni configs nest these, often
+      // under a thinker/talker sub-config for unified models).
+      if (
+        config.audio_config ||
+        config.audio_tower ||
+        config.audio_token_index !== undefined ||
+        config.thinker_config?.audio_config
+      ) {
+        logger.info('Audio support detected from audio_config/audio_tower')
+        return true
+      }
+
+      // Dedicated audio processor config.
+      const audioProcessorPath = await joinPath([
+        modelDir,
+        'audio_processor_config.json',
+      ])
+      if (await fs.existsSync(audioProcessorPath)) {
+        logger.info('Audio support detected from audio_processor_config.json')
+        return true
+      }
+
+      // Preprocessor config that exposes an audio feature extractor.
+      const preprocessorConfigPath = await joinPath([
+        modelDir,
+        'preprocessor_config.json',
+      ])
+      if (await fs.existsSync(preprocessorConfigPath)) {
+        try {
+          const preprocessorConfig = await invoke<string>('read_file_sync', {
+            args: [preprocessorConfigPath],
+          })
+          const pc = JSON.parse(preprocessorConfig)
+          if (
+            pc.feature_extractor_type ||
+            pc.sampling_rate ||
+            pc.feature_size
+          ) {
+            logger.info('Audio support detected from preprocessor_config.json')
+            return true
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+
+      return false
+    } catch (e) {
+      logger.warn(`Failed to check audio support for ${modelPath}: ${e}`)
       return false
     }
   }

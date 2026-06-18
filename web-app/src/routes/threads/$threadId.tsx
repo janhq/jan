@@ -43,7 +43,11 @@ import {
   type AIEngine,
 } from '@janhq/core'
 import { toast } from 'sonner'
-import { Attachment, createImageAttachment } from '@/types/attachment'
+import {
+  Attachment,
+  createImageAttachment,
+  createAudioAttachment,
+} from '@/types/attachment'
 import {
   useChatAttachments,
   NEW_THREAD_ATTACHMENT_KEY,
@@ -66,6 +70,7 @@ import {
 } from '@/utils/error'
 import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
+import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -567,21 +572,34 @@ function ThreadDetail() {
         documentAttachments.length
       )
 
-      // Convert image files to attachments for persistence
-      const imageAttachments = files?.map((file) => {
+      // Convert image/audio files to attachments for persistence. Audio is
+      // identified by its `audio/*` media type and persisted separately (see
+      // newUserThreadContent → metadata.input_audio) so it round-trips when the
+      // thread is reloaded.
+      const mediaAttachments = files?.map((file) => {
         const base64 = file.url.split(',')[1] || ''
+        const size = Math.ceil((base64.length * 3) / 4) // Estimate from base64
+        if (file.mediaType?.startsWith('audio/')) {
+          return createAudioAttachment({
+            name: `audio-${Date.now()}`,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size,
+          })
+        }
         return createImageAttachment({
           name: `image-${Date.now()}`,
           mimeType: file.mediaType,
           dataUrl: file.url,
           base64,
-          size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
+          size,
         })
       })
 
-      // Combine image attachments with document attachments
+      // Combine image/audio attachments with document attachments
       const combinedAttachments = [
-        ...(imageAttachments || []),
+        ...(mediaAttachments || []),
         ...documentAttachments,
       ]
 
@@ -1132,7 +1150,11 @@ function ThreadDetail() {
                               className="text-sm text-muted-foreground table-cell align-middle"
                               style={{ wordWrap: 'break-word' }}
                             >
-                              {body}
+                              {/* The raw provider message can embed links
+                                  (e.g. the model-policy banner's "Open
+                                  dashboard" / "View agreement"); render them
+                                  clickable instead of as dead text. */}
+                              <LinkifiedText text={body ?? ''} />
                             </span>
                           </div>
                           {isContextError ? (

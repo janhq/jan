@@ -132,6 +132,14 @@ export const processAttachmentsForSend = async (
     }
   }
 
+  // Audio: no ingestion/indexing. The base64 payload is forwarded directly to
+  // the model as an `input_audio` content part (see the MLX transport), so we
+  // simply pass these attachments through unchanged for persistence.
+  const audio = attachments.filter((a) => a.type === 'audio')
+  for (const clip of audio) {
+    processedAttachments.push({ ...clip, processing: false, processed: true })
+  }
+
   const documents = attachments.filter((a) => a.type === 'document')
   for (const doc of documents) {
     try {
