@@ -28,6 +28,7 @@ import {
 
 import { AssistantsMenu } from '@/components/AssistantsMenu'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ParametersSection } from '@/containers/ParametersSection'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -256,6 +257,7 @@ function AssistantHeader({
   currentAssistant,
   assistantSwitcher,
 }: AssistantHeaderProps) {
+  const { t } = useTranslation()
   const label = (
     <span className="flex items-center gap-1.5 min-w-0">
       {currentAssistant?.avatar ? (
@@ -268,7 +270,7 @@ function AssistantHeader({
         <IconUser size={14} className="text-muted-foreground" />
       )}
       <span className="text-sm font-medium truncate">
-        {currentAssistant?.name ?? 'No assistant'}
+        {currentAssistant?.name ?? t('common:noAssistant')}
       </span>
     </span>
   )

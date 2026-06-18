@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
 import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export interface AssistantSwitcherProps {
   assistants: Assistant[]
@@ -37,6 +38,7 @@ export function AssistantSwitcher({
   setSelectedAssistantId,
   updateCurrentThreadAssistant,
 }: AssistantSwitcherProps) {
+  const { t } = useTranslation()
   const open = useAssistantSwitcher((s) => s.open)
   const setOpen = useAssistantSwitcher((s) => s.setOpen)
   const setCycleHandler = useAssistantSwitcher((s) => s.setCycleHandler)
@@ -101,7 +103,7 @@ export function AssistantSwitcher({
                 <IconUser size={14} className="text-muted-foreground" />
               )}
               <span className="text-sm font-medium truncate max-w-32">
-                {activeAssistant?.name ?? 'No assistant'}
+                {activeAssistant?.name ?? t('common:noAssistant')}
               </span>
               <IconChevronDown size={14} className="text-muted-foreground" />
             </Button>

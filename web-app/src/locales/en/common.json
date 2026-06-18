@@ -114,6 +114,7 @@
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
   "failedToLoadModels": "Failed to load models",
   "noModels": "No models found",
+  "noAssistant": "No assistant",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
   "jan": "Jan",
