@@ -187,7 +187,14 @@ export function DataProvider() {
         console.warn('Failed to load assistants, keeping default:', error)
       })
     serviceHub.deeplink().getCurrent().then(handleDeepLink)
-    serviceHub.deeplink().onOpenUrl(handleDeepLink)
+
+    let unsubscribeOpenUrl = () => {}
+    serviceHub
+      .deeplink()
+      .onOpenUrl(handleDeepLink)
+      .then((unsub) => {
+        unsubscribeOpenUrl = unsub
+      })
 
     // Listen for deep link events
     let unsubscribe = () => {}
@@ -201,6 +208,7 @@ export function DataProvider() {
         unsubscribe = unsub
       })
     return () => {
+      unsubscribeOpenUrl()
       unsubscribe()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,13 +262,17 @@ export function DataProvider() {
   }, [checkForUpdate, autoUpdateCheck])
 
   useEffect(() => {
-    events.on(AppEvent.onModelImported, () => {
+    const handler = () => {
       serviceHub.providers().getProviders().then((providers) => {
         setProviders(providers)
         syncRemoteProviders()
         syncModelParamDefaults()
       })
-    })
+    }
+    events.on(AppEvent.onModelImported, handler)
+    return () => {
+      events.off(AppEvent.onModelImported, handler)
+    }
   }, [serviceHub, setProviders])
 
   // Auto-start Local API Server on app startup if enabled

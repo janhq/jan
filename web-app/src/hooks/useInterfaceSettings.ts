@@ -285,10 +285,15 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
 // Subscribe to theme changes to update accent color sidebar variant
 let prevIsDark = useTheme.getState().isDark
-useTheme.subscribe((state) => {
+const unsubscribeTheme = useTheme.subscribe((state) => {
   if (state.isDark !== prevIsDark) {
     prevIsDark = state.isDark
     const { accentColor } = useInterfaceSettings.getState()
     applyAccentColorToDOM(accentColor, state.isDark)
   }
 })
+
+// Detach the module-level subscription on HMR so reloads don't stack listeners.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => unsubscribeTheme())
+}
