@@ -388,4 +388,63 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'http://127.0.0.1:13305/v1',
+    explore_models_url: 'https://lemonade-server.ai/',
+    provider: 'lemonade',
+    api_type: 'openai',
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The Lemonade server endpoint. Defaults to localhost port 13305.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://127.0.0.1:13305/v1',
+          value: 'http://127.0.0.1:13305/v1',
+        },
+      },
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Optional. Only required if your Lemonade server requires authentication.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Leave empty if not configured',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'api-format',
+        title: 'API Format',
+        description:
+          'Wire format for inference requests. Use **OpenAI** for standard chat completions. Use **Anthropic** for the `/v1/messages` compatible endpoint.',
+        controller_type: 'dropdown',
+        controller_props: {
+          value: 'openai',
+          options: [
+            { value: 'openai', name: 'OpenAI' },
+            { value: 'anthropic', name: 'Anthropic' },
+          ],
+        },
+      },
+      {
+        key: 'mcp-enabled',
+        title: 'Enable MCP Server',
+        description:
+          'Register the Lemonade MCP gateway with Jan. Once enabled, individual projects can activate it via the MCP settings panel.',
+        controller_type: 'checkbox',
+        controller_props: {
+          value: false,
+        },
+      },
+    ],
+    models: [],
+  },
 ]

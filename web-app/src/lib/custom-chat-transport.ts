@@ -1016,7 +1016,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const maxContextTokens = (() => {
       const raw = inferenceParams.max_context_tokens
-      return typeof raw === 'number' ? raw : (Number(raw) || 0)
+      const explicit = typeof raw === 'number' ? raw : (Number(raw) || 0)
+      if (explicit > 0) return explicit
+      // Fall back to the model's advertised context window when the user has not
+      // set an explicit budget — prevents silently overflowing small-context models.
+      return selectedModel?.contextLength ?? 0
     })()
     const autoCompact =
       inferenceParams.auto_compact === true ||

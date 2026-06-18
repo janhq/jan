@@ -4,6 +4,7 @@ export type RemoteCatalogModel = {
   id: string
   capabilities: string[]
   createdMs: number
+  contextLength?: number
 }
 
 type ProviderLike = {
@@ -22,7 +23,8 @@ export function supportsRemoteCatalog(providerName: string): boolean {
   return (
     providerName === 'openai' ||
     providerName === 'anthropic' ||
-    providerName === 'gemini'
+    providerName === 'gemini' ||
+    providerName === 'lemonade'
   )
 }
 
@@ -99,6 +101,47 @@ function inferAnthropicCapabilities(id: string): string[] | null {
   return ['completion', 'tools', 'vision']
 }
 
+const NON_CHAT_LABELS = new Set([
+  'transcription',
+  'tts',
+  'image',
+  'embeddings',
+  'reranking',
+  'upscaling',
+])
+
+export function inferLemonadeCapabilities(labels: string[]): string[] | null {
+  if (labels.some((l) => NON_CHAT_LABELS.has(l))) return null
+  const caps: string[] = ['completion']
+  if (labels.includes('vision')) caps.push('vision')
+  if (labels.includes('tool-calling')) caps.push('tools')
+  if (labels.includes('chat-transcription')) caps.push('audio')
+  return caps
+}
+
+function normalizeLemonadeCatalog(rows: unknown[]): RemoteCatalogModel[] {
+  const parsed: RemoteCatalogModel[] = []
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const row = raw as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : null
+    if (!id) continue
+    const labels = Array.isArray(row.labels)
+      ? (row.labels as unknown[]).filter((l): l is string => typeof l === 'string')
+      : []
+    const caps = inferLemonadeCapabilities(labels)
+    if (!caps) continue
+    const createdMs = parseCreated(row.created, row.created_at)
+    const contextLength =
+      typeof row.max_context_window === 'number' && row.max_context_window > 0
+        ? row.max_context_window
+        : undefined
+    parsed.push({ id, capabilities: caps, createdMs, contextLength })
+  }
+  parsed.sort((a, b) => b.createdMs - a.createdMs || a.id.localeCompare(b.id))
+  return parsed
+}
+
 function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (key) {
@@ -169,6 +212,9 @@ export async function fetchTopRemoteModels(
 }
 
 function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogModel[] {
+  if (providerName === 'lemonade') {
+    return normalizeLemonadeCatalog(rows)
+  }
   const inferCaps =
     providerName === 'openai'
       ? inferOpenAICapabilities
