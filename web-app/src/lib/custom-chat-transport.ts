@@ -60,13 +60,14 @@ import { ttftMark } from '@/lib/ttft-timing'
 
 /// Local inference backends (mlx, llamacpp, llamacpp-upstream,
 /// foundation-models) get special handling at the `streamText` boundary:
-///   * the assistant system prompt is dropped **only when tools are also
-///     active**, because gemma-4 and similar local models reliably
+///   * when tools are also active, the assistant system prompt is not passed
+///     as a `system` message — gemma-4 and similar local models reliably
 ///     auto-emit a chain-of-thought block whenever the rendered prompt
 ///     contains BOTH a system message and tools, even with
-///     `chat_template_kwargs.enable_thinking=false`. When no tools are
-///     active there is no CoT risk, so the user's assistant instructions
-///     reach the model normally.
+///     `chat_template_kwargs.enable_thinking=false`. To avoid silently losing
+///     the user's instructions they are instead folded into the first user
+///     message (see foldSystemIntoFirstUserMessage). When no tools are active
+///     there is no CoT risk, so the system prompt is sent normally.
 /// Tool inclusion is **independent of the reasoning toggle** for all
 /// providers: tools are forwarded whenever the tools on/off setting has
 /// them enabled and the model supports tool calling.
@@ -152,6 +153,39 @@ function stripAudioFileParts(messages: UIMessage[]): UIMessage[] {
       ),
     } as UIMessage
   })
+}
+
+/// Fold the assistant system prompt into the first user message.
+///
+/// Local backends (gemma-4 et al.) reliably emit a spurious chain-of-thought
+/// block when the rendered prompt contains BOTH a `system` message and tools,
+/// so we cannot pass `system` alongside tools. Dropping it entirely, however,
+/// means the user's assistant instructions are silently ignored whenever an
+/// MCP/RAG tool is active. Instead we prepend the instructions to the first
+/// user turn — the same position a system prompt occupies once gemma's chat
+/// template merges it — so the model still honors them without the CoT trigger.
+export function foldSystemIntoFirstUserMessage<
+  T extends { role: string; content: unknown },
+>(messages: T[], system: string): T[] {
+  const idx = messages.findIndex((m) => m.role === 'user')
+  if (idx === -1) {
+    return [{ role: 'user', content: system } as unknown as T, ...messages]
+  }
+
+  const target = messages[idx]
+  const content = target.content
+  let newContent: unknown
+  if (typeof content === 'string') {
+    newContent = `${system}\n\n${content}`
+  } else if (Array.isArray(content)) {
+    newContent = [{ type: 'text', text: `${system}\n\n` }, ...content]
+  } else {
+    newContent = system
+  }
+
+  const copy = [...messages]
+  copy[idx] = { ...target, content: newContent } as T
+  return copy
 }
 
 export type TokenUsageCallback = (
@@ -248,6 +282,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   updateSystemMessage(systemMessage: string | undefined) {
     this.systemMessage = systemMessage
+  }
+
+  /** Thread this transport is bound to. RAG/project lookups key off it. */
+  getThreadId(): string | undefined {
+    return this.threadId
   }
 
   setOnTokenUsage(callback: TokenUsageCallback | undefined) {
@@ -677,11 +716,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       : baseMessages
 
     // Local-providers (mlx, llamacpp, llamacpp-upstream, foundation-models):
-    // drop the system prompt ONLY when tools are also active, because gemma-4
-    // and similar local models reliably auto-emit a chain-of-thought block
-    // whenever the rendered prompt contains BOTH a system message and tools.
-    // Without tools there is no CoT risk, so the user's assistant instructions
-    // are forwarded normally.
+    // when tools are also active we don't pass a `system` message (gemma-4 and
+    // similar local models reliably auto-emit a chain-of-thought block whenever
+    // the rendered prompt contains BOTH a system message and tools). Instead of
+    // discarding the user's assistant instructions, they are folded into the
+    // first user message below so the model still honors them. Without tools
+    // there is no CoT risk, so the system prompt is forwarded normally.
     // See LOCAL_INFERENCE_PROVIDERS for rationale. Tool inclusion is
     // independent of the reasoning toggle and governed solely by the tools
     // on/off setting (via refreshTools -> useToolAvailable).
@@ -694,8 +734,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
-    const effectiveSystemMessage =
-      isLocalProvider && shouldEnableTools ? undefined : this.systemMessage
+    const dropSystemForTools =
+      isLocalProvider && shouldEnableTools && !!this.systemMessage
+    const effectiveSystemMessage = dropSystemForTools
+      ? undefined
+      : this.systemMessage
+
+    // When we drop the `system` field for the gemma+tools CoT workaround, fold
+    // the instructions into the first user message so they still reach the
+    // model instead of being silently lost.
+    const finalModelMessages =
+      dropSystemForTools && this.systemMessage
+        ? foldSystemIntoFirstUserMessage(modelMessages, this.systemMessage)
+        : modelMessages
 
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),
@@ -710,7 +761,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const result = streamText({
       model: this.model,
-      messages: modelMessages,
+      messages: finalModelMessages,
       abortSignal: options.abortSignal,
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,

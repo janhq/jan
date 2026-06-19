@@ -159,19 +159,24 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
-  const threadRef = useRef(thread)
-  const projectId = threadRef.current?.metadata?.project?.id
 
-  // Get system message from thread's assistant instructions (if thread has an assigned assistant)
-  // Only use assistant instructions if the thread was created with one (e.g., via a project)
+  // Get system message from the thread's assigned assistant instructions.
+  // The thread stores an assistant *snapshot* taken at creation time, so
+  // instructions edited afterwards would never reach the model for that
+  // thread. Prefer the *live* assistant (looked up by id) so edits to the
+  // system prompt apply immediately — including to already-open threads —
+  // and fall back to the snapshot if the assistant was since deleted.
   const threadAssistant = thread?.assistants?.[0]
-  const systemMessage = threadAssistant?.instructions
-    ? renderInstructions(threadAssistant.instructions)
+  const liveAssistant = useAssistant((state) =>
+    threadAssistant?.id
+      ? state.assistants.find((a) => a.id === threadAssistant.id)
+      : undefined
+  )
+  const effectiveInstructions =
+    liveAssistant?.instructions ?? threadAssistant?.instructions
+  const systemMessage = effectiveInstructions
+    ? renderInstructions(effectiveInstructions)
     : undefined
-
-  useEffect(() => {
-    threadRef.current = thread
-  }, [thread])
 
   // Holds the partial assistant message while the model reloads after a
   // context-limit hit, so the user sees it instead of a blank gap.
@@ -343,12 +348,18 @@ function ThreadDetail() {
 
             // Route to the appropriate service based on tool name
             if (ragToolNames.has(toolName)) {
+              // Resolve the project scope from the live thread record (keyed on
+              // the route's threadId) at call time — a render-captured value
+              // could belong to a previously open thread and leak its project
+              // files into this chat via RAG.
+              const currentProjectId =
+                useThreads.getState().threads[threadId]?.metadata?.project?.id
               result = await serviceHub.rag().callTool({
                 toolName,
                 arguments: toolCall.input,
                 threadId,
-                projectId: projectId,
-                scope: projectId ? 'project' : 'thread',
+                projectId: currentProjectId,
+                scope: currentProjectId ? 'project' : 'thread',
               })
             } else if (mcpToolNames.has(toolName)) {
               result = await serviceHub.mcp().callTool({
