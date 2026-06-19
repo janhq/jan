@@ -162,11 +162,22 @@ function ThreadDetail() {
   const threadRef = useRef(thread)
   const projectId = threadRef.current?.metadata?.project?.id
 
-  // Get system message from thread's assistant instructions (if thread has an assigned assistant)
-  // Only use assistant instructions if the thread was created with one (e.g., via a project)
+  // Get system message from the thread's assigned assistant instructions.
+  // The thread stores an assistant *snapshot* taken at creation time, so
+  // instructions edited afterwards would never reach the model for that
+  // thread. Prefer the *live* assistant (looked up by id) so edits to the
+  // system prompt apply immediately — including to already-open threads —
+  // and fall back to the snapshot if the assistant was since deleted.
   const threadAssistant = thread?.assistants?.[0]
-  const systemMessage = threadAssistant?.instructions
-    ? renderInstructions(threadAssistant.instructions)
+  const liveAssistant = useAssistant((state) =>
+    threadAssistant?.id
+      ? state.assistants.find((a) => a.id === threadAssistant.id)
+      : undefined
+  )
+  const effectiveInstructions =
+    liveAssistant?.instructions ?? threadAssistant?.instructions
+  const systemMessage = effectiveInstructions
+    ? renderInstructions(effectiveInstructions)
     : undefined
 
   useEffect(() => {
