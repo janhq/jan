@@ -260,6 +260,8 @@
     "keepAppDataDesc": "Your chat history and conversations will be preserved.",
     "keepModelsAndConfigs": "Keep all models and configurations",
     "keepModelsAndConfigsDesc": "Downloaded models, engine settings, and MCP configurations will be preserved.",
+    "clearWebData": "Clear cached interface data",
+    "clearWebDataDesc": "Removes cached local storage and UI preferences kept by the app window. The interface resets to its default state.",
     "cancel": "Cancel",
     "reset": "Reset",
     "huggingfaceToken": "HuggingFace Token",

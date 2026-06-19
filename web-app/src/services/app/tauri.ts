@@ -28,11 +28,16 @@ export class TauriAppService extends DefaultAppService {
 
     const keepAppData = options?.keepAppData ?? false
     const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
+    const clearWebData = options?.clearWebData ?? false
 
-    if (!keepAppData && !keepModelsAndConfigs) {
+    if (!keepAppData && !keepModelsAndConfigs && !clearWebData) {
       await invoke('factory_reset')
     } else {
-      await invoke('factory_reset', { keepAppData, keepModelsAndConfigs })
+      await invoke('factory_reset', {
+        keepAppData,
+        keepModelsAndConfigs,
+        clearWebData,
+      })
     }
   }
 

@@ -76,6 +76,37 @@ fn delete_settings(data_folder: &std::path::Path) {
     }
 }
 
+/// Clear the WebKit/WRY webview profile (localStorage, cookies, IndexedDB,
+/// updater state) stored in the bundle-id app-data dir (e.g. `jan.ai.app/`).
+/// Distinct from the product-name data folder; only removed on explicit opt-in.
+fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_folder: &std::path::Path) {
+    let webview_dir = match app_handle.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::warn!("Cannot resolve webview profile dir: {e}");
+            return;
+        }
+    };
+
+    // Never touch the dir if it is the user's data folder or contains it.
+    if webview_dir == data_folder || data_folder.starts_with(&webview_dir) {
+        log::warn!(
+            "Skipping webview clear: data folder lives inside {}",
+            webview_dir.display()
+        );
+        return;
+    }
+
+    if !webview_dir.is_dir() || !is_safe_to_delete(&webview_dir) {
+        return;
+    }
+
+    log::info!("Clearing webview profile: {}", webview_dir.display());
+    if let Err(e) = fs::remove_dir_all(&webview_dir) {
+        log::warn!("Failed to clear webview profile {}: {e}", webview_dir.display());
+    }
+}
+
 /// Detect the user's default shell and return the appropriate env file path.
 /// Returns (shell_name, env_file_path).
 fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
@@ -127,9 +158,11 @@ pub fn factory_reset<R: Runtime>(
     state: State<'_, AppState>,
     keep_app_data: Option<bool>,
     keep_models_and_configs: Option<bool>,
+    clear_web_data: Option<bool>,
 ) {
     let keep_app_data = keep_app_data.unwrap_or(false);
     let keep_models_and_configs = keep_models_and_configs.unwrap_or(false);
+    let clear_web_data = clear_web_data.unwrap_or(false);
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
@@ -142,9 +175,10 @@ pub fn factory_reset<R: Runtime>(
     }
     let data_folder = get_jan_data_folder_path(app_handle.clone());
     log::info!(
-        "Factory reset (keep_app_data={}, keep_models_and_configs={}), data folder: {:?}",
+        "Factory reset (keep_app_data={}, keep_models_and_configs={}, clear_web_data={}), data folder: {:?}",
         keep_app_data,
         keep_models_and_configs,
+        clear_web_data,
         data_folder
     );
 
@@ -199,6 +233,10 @@ pub fn factory_reset<R: Runtime>(
             let _ = update_app_configuration(app_handle.clone(), default_config);
         }
 
+        if clear_web_data {
+            clear_webview_profile(&app_handle, &data_folder);
+        }
+
         app_handle.restart();
     });
 }
@@ -210,10 +248,7 @@ pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
 
 #[tauri::command]
 pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    let app_path = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    let app_path = get_jan_data_folder_path(app.clone());
     let program = if cfg!(target_os = "windows") {
         "explorer"
     } else if cfg!(target_os = "macos") {

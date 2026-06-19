@@ -69,6 +69,7 @@ describe('TauriAppService – coverage', () => {
       expect(invoke).toHaveBeenCalledWith('factory_reset', {
         keepAppData: true,
         keepModelsAndConfigs: false,
+        clearWebData: false,
       })
     })
 
@@ -81,6 +82,7 @@ describe('TauriAppService – coverage', () => {
       expect(invoke).toHaveBeenCalledWith('factory_reset', {
         keepAppData: false,
         keepModelsAndConfigs: true,
+        clearWebData: false,
       })
     })
 
