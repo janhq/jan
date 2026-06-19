@@ -163,16 +163,26 @@ export const MessageItem = memo(
           status === CHAT_STATUS.SUBMITTED)) ||
       hasPendingToolCall
 
-    const ragCitations = useMemo<RagCitation[]>(() => {
-      if (message.role !== 'assistant') return []
+    // Aggregate RAG citations in part order and record each rag tool part's
+    // base offset, so its card numbers/anchors continue the same global
+    // sequence the inline superscript markers use.
+    const { ragCitations, citationOffsets } = useMemo(() => {
       const out: RagCitation[] = []
-      for (const part of message.parts as any[]) {
-        if (!part.type?.startsWith('tool-')) continue
-        if (part.state !== 'output-available') continue
-        const parsed = parseCitationsFromToolOutput(part.output)
-        if (parsed?.kind === 'rag') out.push(...parsed.citations)
+      const offsets = new Map<number, number>()
+      if (message.role === 'assistant') {
+        const parts = message.parts as any[]
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i]
+          if (!part.type?.startsWith('tool-')) continue
+          if (part.state !== 'output-available') continue
+          const parsed = parseCitationsFromToolOutput(part.output)
+          if (parsed?.kind === 'rag') {
+            offsets.set(i, out.length)
+            out.push(...parsed.citations)
+          }
+        }
       }
-      return out
+      return { ragCitations: out, citationOffsets: offsets }
     }, [message.parts, message.role])
 
     const serviceHub = useServiceHub()
@@ -435,6 +445,7 @@ export const MessageItem = memo(
                 output={part.output}
                 resolver={(input) => Promise.resolve(input)}
                 errorText={undefined}
+                citationOffset={citationOffsets.get(partIndex) ?? 0}
               />
             )}
             {part.state === 'output-error' && (
