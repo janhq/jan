@@ -24,6 +24,7 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
+import { Citations } from '@/components/Citations'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
 
 type ToolContextValue = {
@@ -319,6 +320,7 @@ export type ToolOutputProps = ComponentProps<'div'> & {
 
 export const ToolOutput = memo(
   ({ className, output, errorText, resolver, ...props }: ToolOutputProps) => {
+    const { messageId } = useTool()
     const citationPayload = useMemo(
       () => (output ? parseCitationsFromToolOutput(output) : null),
       [output]
@@ -329,11 +331,13 @@ export const ToolOutput = memo(
         return null
       }
 
-      // Citation payloads are surfaced as an always-visible card in the message
-      // body (see MessageItem); rendering them here too would duplicate the
-      // anchor ids and hide the sources inside the collapsible trace.
       if (citationPayload) {
-        return null
+        return (
+          <Citations
+            payload={citationPayload}
+            anchorPrefix={messageId ? `cite-${messageId}` : undefined}
+          />
+        )
       }
 
       // Handle string output
@@ -451,7 +455,7 @@ export const ToolOutput = memo(
       }
 
       return <div>{output as ReactNode}</div>
-    }, [output, errorText, resolver, citationPayload])
+    }, [output, errorText, resolver, citationPayload, messageId])
 
     if (!(output || errorText)) {
       return null

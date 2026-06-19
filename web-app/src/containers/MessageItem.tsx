@@ -40,8 +40,7 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
-import { Citations } from '@/components/Citations'
-import type { CitationsPayload, RagCitation } from '@/components/Citations'
+import type { RagCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
 import { injectCitationMarkers } from '@/lib/grounding'
 
@@ -164,31 +163,17 @@ export const MessageItem = memo(
           status === CHAT_STATUS.SUBMITTED)) ||
       hasPendingToolCall
 
-    // Aggregate citation payloads from every retrieve/search tool call. The RAG
-    // payloads are merged into one (so grounding anchors `cite-<id>-<n>` line up
-    // with a single ordered list); web payloads stay per-call.
-    const { ragPayload, webPayloads } = useMemo(() => {
-      const rags: Extract<CitationsPayload, { kind: 'rag' }>[] = []
-      const webs: Extract<CitationsPayload, { kind: 'web' }>[] = []
-      if (message.role === 'assistant') {
-        for (const part of message.parts as any[]) {
-          if (!part.type?.startsWith('tool-')) continue
-          if (part.state !== 'output-available') continue
-          const parsed = parseCitationsFromToolOutput(part.output)
-          if (parsed?.kind === 'rag') rags.push(parsed)
-          else if (parsed?.kind === 'web') webs.push(parsed)
-        }
+    const ragCitations = useMemo<RagCitation[]>(() => {
+      if (message.role !== 'assistant') return []
+      const out: RagCitation[] = []
+      for (const part of message.parts as any[]) {
+        if (!part.type?.startsWith('tool-')) continue
+        if (part.state !== 'output-available') continue
+        const parsed = parseCitationsFromToolOutput(part.output)
+        if (parsed?.kind === 'rag') out.push(...parsed.citations)
       }
-      const merged: CitationsPayload | null = rags.length
-        ? { ...rags[0], citations: rags.flatMap((r) => r.citations) }
-        : null
-      return { ragPayload: merged, webPayloads: webs }
+      return out
     }, [message.parts, message.role])
-
-    const ragCitations = useMemo<RagCitation[]>(
-      () => (ragPayload?.kind === 'rag' ? ragPayload.citations : []),
-      [ragPayload]
-    )
 
     const serviceHub = useServiceHub()
     const grounding = useGroundingStore((s) => s.byMessageId[message.id])
@@ -678,15 +663,6 @@ export const MessageItem = memo(
 
         {/* Render message parts */}
         {renderedParts}
-
-        {/* Sources stay in the message body so they remain visible after the
-            working trace auto-collapses, and so inline citation anchors resolve. */}
-        {ragPayload && (
-          <Citations payload={ragPayload} anchorPrefix={`cite-${message.id}`} />
-        )}
-        {webPayloads.map((payload, i) => (
-          <Citations key={`web-cite-${message.id}-${i}`} payload={payload} />
-        ))}
 
         {isLastMessage &&
           message.role === 'assistant' &&
