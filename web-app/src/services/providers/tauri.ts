@@ -146,7 +146,29 @@ export class TauriProvidersService extends DefaultProvidersService {
       throw new Error('Provider must have base_url configured')
     }
 
-    const url = `${provider.base_url}/models`
+    // Normalize the base URL so that bare host:port URLs (e.g. "http://host:8000")
+    // correctly resolve to the OpenAI-compatible /v1/models endpoint instead of
+    // the non-standard /models path (ATO-209, root cause 2).
+    //
+    // Rules:
+    //  • Strip trailing slashes first.
+    //  • If the URL has no path component (or just "/"), the provider is a bare
+    //    host:port — OpenAI-compat servers serve their model list at /v1/models.
+    //  • Otherwise the user already specified a path (e.g. "…/v1"), so just
+    //    append /models as before.
+    const normalizedBase = (() => {
+      const stripped = provider.base_url.replace(/\/+$/, '')
+      try {
+        const parsed = new URL(stripped)
+        if (!parsed.pathname || parsed.pathname === '/') {
+          return `${stripped}/v1`
+        }
+      } catch {
+        // Not a valid URL — fall through and use as-is.
+      }
+      return stripped
+    })()
+    const url = `${normalizedBase}/models`
     const hasApiKey = Boolean(provider.api_key)
 
     // The Tauri HTTP plugin runs requests through the Rust IPC layer, which
