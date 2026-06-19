@@ -86,6 +86,35 @@ describe('TauriAppService – coverage', () => {
       })
     })
 
+    it('prunes model + setup localStorage on a full wipe', async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      localStorage.setItem('model-provider', '{"providers":[]}')
+      localStorage.setItem('last-used-model', 'ghost')
+      localStorage.setItem('setup-completed', 'true')
+      localStorage.setItem('threads', '[]')
+
+      await svc.factoryReset({ keepAppData: false, keepModelsAndConfigs: false })
+
+      expect(localStorage.getItem('model-provider')).toBeNull()
+      expect(localStorage.getItem('last-used-model')).toBeNull()
+      expect(localStorage.getItem('setup-completed')).toBeNull()
+      expect(localStorage.getItem('threads')).toBeNull()
+    })
+
+    it('keeps model localStorage when models are preserved', async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      localStorage.setItem('model-provider', '{"providers":[]}')
+      localStorage.setItem('setup-completed', 'true')
+
+      await svc.factoryReset({ keepAppData: false, keepModelsAndConfigs: true })
+
+      expect(localStorage.getItem('model-provider')).toBe('{"providers":[]}')
+      // setup flag only cleared on a full wipe
+      expect(localStorage.getItem('setup-completed')).toBe('true')
+    })
+
     it('handles engine with no active models', async () => {
       // Re-mock to return null/empty from getLoadedModels
       const { invoke } = await import('@tauri-apps/api/core')
