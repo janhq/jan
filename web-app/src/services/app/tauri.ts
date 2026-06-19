@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
 import type { FactoryResetOptions, LogEntry } from './types'
 import { DefaultAppService } from './default'
-import { localStorageKey } from '@/constants/localStorage'
+import { pruneLocalStorageByFlags } from './reset-localstorage'
 
 export class TauriAppService extends DefaultAppService {
   /**
@@ -19,9 +19,9 @@ export class TauriAppService extends DefaultAppService {
    * wiped on disk by the Rust side.
    *
    * Persisted UI state (selected model, provider list, threads) lives in the
-   * webview localStorage, not the data folder — so it must be pruned here to
-   * match what the Rust side deletes. Otherwise stale providers keep
-   * `hasValidProviders` true (skipping setup) with a now-deleted model selected.
+   * webview localStorage, not the data folder. The reliable clear happens on
+   * next startup via a Rust sentinel (see `main.tsx`) — renderer-side removal
+   * here is a best-effort supplement that races the restart flush.
    */
   async factoryReset(options?: FactoryResetOptions): Promise<void> {
     const { EngineManager } = await import('@janhq/core')
@@ -36,7 +36,7 @@ export class TauriAppService extends DefaultAppService {
     const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
     const clearWebData = options?.clearWebData ?? false
 
-    this.pruneLocalStorage(keepAppData, keepModelsAndConfigs)
+    pruneLocalStorageByFlags({ keepAppData, keepModelsAndConfigs })
 
     if (!keepAppData && !keepModelsAndConfigs && !clearWebData) {
       await invoke('factory_reset')
@@ -46,45 +46,6 @@ export class TauriAppService extends DefaultAppService {
         keepModelsAndConfigs,
         clearWebData,
       })
-    }
-  }
-
-  /**
-   * Remove webview-persisted UI state for whatever the reset is wiping, so the
-   * app rehydrates from the (now empty) disk instead of stale localStorage.
-   */
-  private pruneLocalStorage(
-    keepAppData: boolean,
-    keepModelsAndConfigs: boolean
-  ): void {
-    if (typeof localStorage === 'undefined') return
-
-    const k = localStorageKey
-    const remove = (keys: string[]) => keys.forEach((key) => localStorage.removeItem(key))
-
-    if (!keepModelsAndConfigs) {
-      remove([
-        k.modelProvider,
-        k.modelSources,
-        k.lastUsedModel,
-        k.lastUsedAssistant,
-        k.defaultAssistantId,
-        k.favoriteModels,
-        k.latestJanModel,
-        k.defaultEmbeddingModel,
-        k.modelSupportCache,
-        k.janModelPromptDismissed,
-        k.pausedDownloads,
-      ])
-    }
-
-    if (!keepAppData) {
-      remove([k.threads, k.messages, k.threadManagement, k.recentSearches])
-    }
-
-    // A full wipe should land back on first-run onboarding.
-    if (!keepAppData && !keepModelsAndConfigs) {
-      remove([k.setupCompleted])
     }
   }
 

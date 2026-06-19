@@ -1,12 +1,13 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-
-// Import the generated route tree
-import { routeTree } from './routeTree.gen'
+import { invoke } from '@tauri-apps/api/core'
+import {
+  pruneLocalStorageByFlags,
+  type WebdataResetFlags,
+} from '@/services/app/reset-localstorage'
 
 import './index.css'
-import './i18n'
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
@@ -56,29 +57,48 @@ const preventDefaultFileDrop = () => {
   })
 }
 
-// Initialize mobile setup
-setupMobileViewport()
-
-// Prevent files from opening when dropped
-preventDefaultFileDrop()
-
-// Create a new router instance
-const router = createRouter({ routeTree })
-
 // Register the router instance for type safety
 declare module '@tanstack/react-router' {
   interface Register {
-    router: typeof router
+    router: ReturnType<typeof createRouter>
   }
 }
 
-// Render the app
-const rootElement = document.getElementById('root')!
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement)
-  root.render(
-    <StrictMode>
-      <RouterProvider router={router} />
-    </StrictMode>
-  )
+// Consume a pending factory-reset sentinel and prune persisted UI state BEFORE
+// any store module loads (Zustand persist hydrates synchronously at import).
+// This is the only race-free, cross-platform way to clear webview localStorage.
+const consumePendingWebdataReset = async () => {
+  try {
+    const flags = await invoke<WebdataResetFlags | null>(
+      'take_pending_webdata_reset'
+    )
+    if (flags) pruneLocalStorageByFlags(flags)
+  } catch {
+    // Non-Tauri (web) build or no sentinel — nothing to do.
+  }
 }
+
+const boot = async () => {
+  setupMobileViewport()
+  preventDefaultFileDrop()
+
+  await consumePendingWebdataReset()
+
+  // Dynamic imports keep store hydration AFTER the localStorage prune above.
+  const { routeTree } = await import('./routeTree.gen')
+  await import('./i18n')
+
+  const router = createRouter({ routeTree })
+
+  const rootElement = document.getElementById('root')!
+  if (!rootElement.innerHTML) {
+    const root = ReactDOM.createRoot(rootElement)
+    root.render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>
+    )
+  }
+}
+
+boot().catch((e) => console.error('Failed to boot app:', e))

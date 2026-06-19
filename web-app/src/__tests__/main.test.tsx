@@ -18,12 +18,16 @@ vi.mock('@tanstack/react-router', () => ({
   createRootRoute: vi.fn(),
 }))
 
-// Mock route tree
+// take_pending_webdata_reset returns null (no pending reset) by default
+const mockInvoke = vi.fn().mockResolvedValue(null)
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
+}))
+
+// Dynamically-imported modules (deferred until after the reset prune)
 vi.mock('../routeTree.gen', () => ({
   routeTree: 'mocked-route-tree',
 }))
-
-// Mock CSS imports
 vi.mock('../index.css', () => ({}))
 vi.mock('../i18n', () => ({}))
 
@@ -40,40 +44,43 @@ describe('main.tsx', () => {
       value: mockGetElementById,
       writable: true,
     })
-    
-    // Clear all mocks
+
     vi.clearAllMocks()
+    mockInvoke.mockResolvedValue(null)
   })
 
   afterEach(() => {
     vi.resetModules()
   })
 
-  it('should render app when root element is empty', async () => {
-    mockRootElement.innerHTML = ''
-    
+  it('consumes the pending-reset sentinel before rendering', async () => {
     await import('../main')
-    
-    expect(mockGetElementById).toHaveBeenCalledWith('root')
+
+    await vi.waitFor(() => expect(mockRender).toHaveBeenCalled())
+    expect(mockInvoke).toHaveBeenCalledWith('take_pending_webdata_reset')
     expect(mockCreateRoot).toHaveBeenCalledWith(mockRootElement)
-    expect(mockRender).toHaveBeenCalled()
   })
 
   it('should not render app when root element already has content', async () => {
     mockRootElement.innerHTML = '<div>existing content</div>'
-    
+
     await import('../main')
-    
-    expect(mockGetElementById).toHaveBeenCalledWith('root')
+
+    await vi.waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('take_pending_webdata_reset')
+    )
     expect(mockCreateRoot).not.toHaveBeenCalled()
     expect(mockRender).not.toHaveBeenCalled()
   })
 
-  it('should throw error when root element is not found', async () => {
+  it('does not render when root element is missing', async () => {
     mockGetElementById.mockReturnValue(null)
-    
-    await expect(async () => {
-      await import('../main')
-    }).rejects.toThrow()
+
+    await import('../main')
+
+    await vi.waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('take_pending_webdata_reset')
+    )
+    expect(mockRender).not.toHaveBeenCalled()
   })
 })

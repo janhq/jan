@@ -4,7 +4,8 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
-    default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
+    default_data_folder_path, get_configuration_file_path, get_jan_data_folder_path,
+    update_app_configuration,
 };
 use crate::core::app::constants::{
     JAN_DATA_DIRS_COMMON, JAN_DATA_DIRS_CONVERSATIONS, JAN_DATA_DIRS_MODELS,
@@ -105,6 +106,69 @@ fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_fold
     if let Err(e) = fs::remove_dir_all(&webview_dir) {
         log::warn!("Failed to clear webview profile {}: {e}", webview_dir.display());
     }
+}
+
+const WEBDATA_RESET_SENTINEL: &str = ".pending-webdata-reset";
+
+/// Flags describing what a pending reset should prune from webview localStorage.
+/// Consumed by the frontend on next startup before stores hydrate.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct WebdataResetFlags {
+    pub keep_app_data: bool,
+    pub keep_models_and_configs: bool,
+    pub clear_web_data: bool,
+}
+
+/// Sentinel lives in the app config dir (alongside settings.json), which
+/// survives the data-folder wipe.
+fn webdata_reset_sentinel_path<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    get_configuration_file_path(app_handle.clone())
+        .parent()
+        .map(|dir| dir.join(WEBDATA_RESET_SENTINEL))
+}
+
+fn write_webdata_reset_sentinel<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    keep_app_data: bool,
+    keep_models_and_configs: bool,
+    clear_web_data: bool,
+) {
+    let Some(path) = webdata_reset_sentinel_path(app_handle) else {
+        return;
+    };
+    let flags = WebdataResetFlags {
+        keep_app_data,
+        keep_models_and_configs,
+        clear_web_data,
+    };
+    match serde_json::to_string(&flags) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&path, json) {
+                log::warn!("Failed to write webdata reset sentinel: {e}");
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize webdata reset flags: {e}"),
+    }
+}
+
+/// Read and remove the pending-reset sentinel. Returns the flags if one existed
+/// so the frontend can prune the matching localStorage keys before hydration.
+#[tauri::command]
+pub fn take_pending_webdata_reset<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Option<WebdataResetFlags> {
+    let path = webdata_reset_sentinel_path(&app_handle)?;
+    if !path.is_file() {
+        return None;
+    }
+    let flags = fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<WebdataResetFlags>(&content).ok());
+    if let Err(e) = fs::remove_file(&path) {
+        log::warn!("Failed to remove webdata reset sentinel: {e}");
+    }
+    flags
 }
 
 /// Detect the user's default shell and return the appropriate env file path.
@@ -233,11 +297,22 @@ pub fn factory_reset<R: Runtime>(
             let _ = update_app_configuration(app_handle.clone(), default_config);
         }
 
-        // A full wipe must also clear the webview profile: persisted UI state
-        // (model-provider, setup flag) lives in localStorage there, not the data
-        // folder. Renderer-side removal races the restart flush, so delete the
-        // files directly. The opt-in flag additionally covers partial resets.
+        // Persisted UI state (model-provider, setup flag) lives in webview
+        // localStorage, not the data folder. Renderer-side removal races the
+        // restart flush, and the on-disk localStorage location is
+        // platform-specific (esp. macOS WKWebView), so instead drop a sentinel
+        // that the frontend consumes on next startup to clear localStorage via
+        // the webview API before stores hydrate. File-level profile deletion
+        // (Linux cookies/cache) stays as a best-effort supplement.
         let full_wipe = !keep_app_data && !keep_models_and_configs;
+        if !keep_app_data || !keep_models_and_configs || clear_web_data {
+            write_webdata_reset_sentinel(
+                &app_handle,
+                keep_app_data,
+                keep_models_and_configs,
+                clear_web_data,
+            );
+        }
         if clear_web_data || full_wipe {
             clear_webview_profile(&app_handle, &data_folder);
         }
