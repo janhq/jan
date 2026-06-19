@@ -284,6 +284,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.systemMessage = systemMessage
   }
 
+  /** Thread this transport is bound to. RAG/project lookups key off it. */
+  getThreadId(): string | undefined {
+    return this.threadId
+  }
+
   setOnTokenUsage(callback: TokenUsageCallback | undefined) {
     this.onTokenUsage = callback
   }

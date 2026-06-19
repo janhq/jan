@@ -52,15 +52,20 @@ export function useChat(
     ? useChatSessions.getState().sessions[sessionId]?.transport
     : undefined
 
-  // Create transport immediately with modelId and provider
-  if (!transportRef.current) {
-    transportRef.current =
-      existingSessionTransport ?? new CustomChatTransport(systemMessage, sessionId)
-  } else if (
-    existingSessionTransport &&
-    transportRef.current !== existingSessionTransport
-  ) {
+  // Bind the transport to the *current* session. This route component does
+  // not unmount when navigating between threads (only the param changes), so
+  // transportRef survives. If we kept the previous thread's transport for a
+  // freshly-opened thread, RAG/project lookups (keyed on transport.threadId)
+  // would run against the previous thread's project — leaking its files into
+  // unrelated chats. So: prefer the session-scoped transport, otherwise create
+  // a fresh one whenever the cached transport belongs to a different thread.
+  if (existingSessionTransport) {
     transportRef.current = existingSessionTransport
+  } else if (
+    !transportRef.current ||
+    transportRef.current.getThreadId() !== sessionId
+  ) {
+    transportRef.current = new CustomChatTransport(systemMessage, sessionId)
   }
 
   useEffect(() => {
