@@ -4,6 +4,7 @@ import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
@@ -358,7 +359,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         localStorageKey.lastUsedModel,
         JSON.stringify({ provider: providerName, model: modelId })
       )
-      
+
+      useLeftPanel.getState().setLeftPanel(true)
+
       void navigate({
         to: route.home,
         replace: true,
