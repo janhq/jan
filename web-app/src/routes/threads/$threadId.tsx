@@ -68,7 +68,7 @@ import {
 } from '@/utils/error'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
+import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -1546,8 +1546,16 @@ function ThreadDetail() {
                 />
               )}
               {processingEmbeddings && (
-                <div className="flex flex-row items-center gap-2">
-                  <Shimmer duration={1}>Processing embeddings...</Shimmer>
+                <div className="flex items-start gap-3 px-4 py-3 mx-4 my-2 rounded-lg border border-primary/20 bg-primary/5">
+                  <IconLoader2 className="size-5 text-primary shrink-0 mt-0.5 animate-spin" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-main-view-fg mb-0.5">
+                      {t('chat:embeddings.title')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('chat:embeddings.description')}
+                    </p>
+                  </div>
                 </div>
               )}
               {!oomError &&
