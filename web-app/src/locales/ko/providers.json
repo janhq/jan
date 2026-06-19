@@ -3,6 +3,7 @@
   "refreshModelsSuccess": "{{provider}}에서 새 모델 {{count}}개를 추가했습니다.",
   "noNewModels": "새 모델을 찾을 수 없습니다. 사용 가능한 모든 모델이 이미 추가되어 있습니다.",
   "refreshModelsFailed": "{{provider}}에서 모델을 가져오지 못했습니다. API 키와 기본 URL을 확인하세요.",
+  "refreshModelsLiveFailed": "{{provider}}의 실시간 모델 목록을 가져올 수 없습니다: {{error}}. 레지스트리 모델만 표시합니다.",
   "models": "모델",
   "refreshing": "새로고침 중...",
   "refresh": "새로고침",

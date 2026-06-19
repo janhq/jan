@@ -3,6 +3,7 @@
   "refreshModelsSuccess": "Добавлено {{count}} новых моделей от {{provider}}.",
   "noNewModels": "Новых моделей не найдено. Все доступные модели уже добавлены.",
   "refreshModelsFailed": "Не удалось получить модели от {{provider}}. Пожалуйста, проверьте ваш ключ API и базовый URL.",
+  "refreshModelsLiveFailed": "Не удалось получить живой список моделей от {{provider}}: {{error}}. Отображаются только модели из реестра.",
   "models": "Модели",
   "refreshing": "Обновление…",
   "refresh": "Обновить",
