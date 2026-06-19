@@ -92,6 +92,34 @@ struct ChatMessage: Codable {
     var tool_call_id: String?
     var name: String?
 
+    enum CodingKeys: String, CodingKey {
+        case role, content, images, videos, tool_calls, tool_call_id, name
+    }
+
+    init(role: String, content: ContentType, images: [String]? = nil,
+         videos: [String]? = nil, tool_calls: [ToolCallInfo]? = nil,
+         tool_call_id: String? = nil, name: String? = nil) {
+        self.role = role
+        self.content = content
+        self.images = images
+        self.videos = videos
+        self.tool_calls = tool_calls
+        self.tool_call_id = tool_call_id
+        self.name = name
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decode(String.self, forKey: .role)
+        // Assistant tool-call turns carry `content: null`; absent/null → empty.
+        content = try container.decodeIfPresent(ContentType.self, forKey: .content) ?? .string("")
+        images = try container.decodeIfPresent([String].self, forKey: .images)
+        videos = try container.decodeIfPresent([String].self, forKey: .videos)
+        tool_calls = try container.decodeIfPresent([ToolCallInfo].self, forKey: .tool_calls)
+        tool_call_id = try container.decodeIfPresent(String.self, forKey: .tool_call_id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+    }
+
     enum ContentType: Codable {
         case string(String)
         case array([ContentPart])
