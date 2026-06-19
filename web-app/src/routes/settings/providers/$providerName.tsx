@@ -59,6 +59,7 @@ import {
   useProviderRegistryStore,
 } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { getModelCapabilities } from '@/lib/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { switchToModel } from '@/utils/switchModel'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
@@ -506,11 +507,8 @@ function ProviderDetail() {
 
     setRefreshingModels(true)
     try {
-      // Pull the latest manifest from our remote registry on GitHub. We
-      // intentionally do NOT hit the provider's own `/models` endpoint here
-      // — that path is unreliable across providers and runtimes (some hang,
-      // some require an API key the user hasn't entered yet, etc.). The
-      // registry is the canonical, curated source.
+      // Step 1 — Pull the latest manifest from our remote registry on GitHub
+      // (the curated source for known cloud providers).
       try {
         await useProviderRegistryStore.getState().refresh({ force: true })
       } catch (err) {
@@ -535,14 +533,71 @@ function ProviderDetail() {
         (p) => p.provider === provider.provider
       )
       const existingIds = new Set(provider.models.map((m) => m.id))
-      const newCount = registryProvider
+      let newCount = registryProvider
         ? registryProvider.models.filter((m) => !existingIds.has(m.id)).length
         : 0
 
-      // `setProviders` merges new models from registry into useModelProvider
-      // while preserving API keys, base URLs, and user-tweaked settings on
-      // a per-provider basis. Existing models are NEVER removed.
-      setProviders(fresh)
+      // Step 2 — Hybrid: also query the provider's live /v1/models endpoint
+      // (ATO-209). The registry only covers known cloud providers; custom /
+      // self-hosted providers (vLLM, llama-server, LM Studio, etc.) are
+      // invisible to the registry, so this is the only path that surfaces
+      // their actual model list. We do it for all non-local providers that
+      // have a base_url configured. Errors are non-fatal — if the live
+      // endpoint is unavailable we still apply the registry results.
+      let finalProviders = fresh
+      if (
+        provider.base_url &&
+        !isLocalProvider(provider.provider)
+      ) {
+        try {
+          const liveModelIds = await serviceHub
+            .providers()
+            .fetchModelsFromProvider(provider)
+
+          // Collect IDs already present after the registry pass so we only
+          // add genuinely new entries.
+          const afterRegistryIds = new Set([
+            ...existingIds,
+            ...(registryProvider?.models ?? []).map((m) => m.id),
+          ])
+          const liveNewModels = liveModelIds
+            .filter((id) => !afterRegistryIds.has(id))
+            .map((id) => ({
+              id,
+              model: id,
+              name: id,
+              capabilities: getModelCapabilities(provider.provider, id),
+              version: '1.0',
+            }))
+
+          if (liveNewModels.length > 0) {
+            newCount += liveNewModels.length
+            // Inject the live-only models into the fresh providers snapshot
+            // so setProviders persists them together with the registry ones.
+            finalProviders = fresh.map((p) =>
+              p.provider === provider.provider
+                ? { ...p, models: [...(p.models ?? []), ...liveNewModels] }
+                : p
+            )
+          }
+
+          console.info(
+            `[providers:${provider.provider}] live /models: ${liveModelIds.length} total, ${liveNewModels.length} new`
+          )
+        } catch (liveErr) {
+          // Non-fatal: registry results still apply even if the live
+          // endpoint is unreachable or returns an error.
+          console.warn(
+            `[providers:${provider.provider}] live /models fetch failed (non-fatal):`,
+            liveErr
+          )
+        }
+      }
+
+      // `setProviders` merges new models into useModelProvider while
+      // preserving API keys, base URLs, and user-tweaked settings on a
+      // per-provider basis. Existing models are NEVER removed.
+      setProviders(finalProviders)
 
       if (newCount > 0) {
         toast.success(t('providers:models'), {
