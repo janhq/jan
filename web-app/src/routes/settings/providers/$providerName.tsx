@@ -543,11 +543,23 @@ function ProviderDetail() {
       // invisible to the registry, so this is the only path that surfaces
       // their actual model list. We do it for all non-local providers that
       // have a base_url configured. Errors are non-fatal — if the live
-      // endpoint is unavailable we still apply the registry results.
+      // endpoint is unavailable we still apply the registry results, but we
+      // remember the error so the toast can warn instead of falsely claiming
+      // "no new models" (ATO-210).
+      //
+      // P2 (ATO — registry-driven behavior): a registry provider may opt out
+      // of live model listing via `supports_model_listing: false` (some clouds
+      // expose hundreds of junk/internal IDs at /v1/models). When the flag is
+      // explicitly false we show the curated registry list only and skip the
+      // live probe. Missing/true keeps the hybrid behavior.
       let finalProviders = fresh
+      let liveFetchError: Error | null = null
+      const registrySupportsListing =
+        registryProvider?.supports_model_listing !== false
       if (
         provider.base_url &&
-        !isLocalProvider(provider.provider)
+        !isLocalProvider(provider.provider) &&
+        registrySupportsListing
       ) {
         try {
           const liveModelIds = await serviceHub
@@ -586,7 +598,10 @@ function ProviderDetail() {
           )
         } catch (liveErr) {
           // Non-fatal: registry results still apply even if the live
-          // endpoint is unreachable or returns an error.
+          // endpoint is unreachable or returns an error. We surface the error
+          // in the toast below so the user knows the list may be incomplete.
+          liveFetchError =
+            liveErr instanceof Error ? liveErr : new Error(String(liveErr))
           console.warn(
             `[providers:${provider.provider}] live /models fetch failed (non-fatal):`,
             liveErr
@@ -604,6 +619,19 @@ function ProviderDetail() {
           description: t('providers:refreshModelsSuccess', {
             count: newCount,
             provider: provider.provider,
+          }),
+        })
+      } else if (liveFetchError) {
+        // Live fetch failed, so the "no new models" result may be incomplete —
+        // warn with the underlying error instead of a misleading success.
+        toast.warning(t('providers:models'), {
+          description: t('providers:refreshModelsLiveFailed', {
+            provider: provider.provider,
+            error:
+              liveFetchError.message ||
+              t('providers:refreshModelsFailed', {
+                provider: provider.provider,
+              }),
           }),
         })
       } else {

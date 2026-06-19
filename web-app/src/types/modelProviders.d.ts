@@ -51,6 +51,14 @@ type ProviderObject = {
   models: Model[]
   persist?: boolean
   custom_header?: ProviderCustomHeader[] | null
+  /**
+   * Registry-driven flag controlling whether the Settings → Providers Refresh
+   * button probes the provider's live `/v1/models` endpoint. Defaults to
+   * `true` (or when absent). Set to `false` in the atomic-chat-conf registry
+   * for providers whose live listing is noisy/unusable, so only the curated
+   * registry model list is shown. (ATO P2)
+   */
+  supports_model_listing?: boolean
 }
 
 /**
