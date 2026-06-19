@@ -233,7 +233,12 @@ pub fn factory_reset<R: Runtime>(
             let _ = update_app_configuration(app_handle.clone(), default_config);
         }
 
-        if clear_web_data {
+        // A full wipe must also clear the webview profile: persisted UI state
+        // (model-provider, setup flag) lives in localStorage there, not the data
+        // folder. Renderer-side removal races the restart flush, so delete the
+        // files directly. The opt-in flag additionally covers partial resets.
+        let full_wipe = !keep_app_data && !keep_models_and_configs;
+        if clear_web_data || full_wipe {
             clear_webview_profile(&app_handle, &data_folder);
         }
 
