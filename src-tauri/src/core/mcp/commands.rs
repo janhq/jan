@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
-    helpers::{restart_active_mcp_servers, start_mcp_server},
+    helpers::{kill_process_by_pid, restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
@@ -18,6 +18,9 @@ use crate::core::{
     state::{RunningServiceEnum, SharedMcpServers},
 };
 use std::{collections::HashSet, fs, time::Duration};
+
+const BRIDGE_KILL_SETTLE_MS: u64 = 100; // settle after graceful cancel before port check
+const PORT_FREE_SETTLE_MS: u64 = 500; // settle after force-kill before returning
 
 async fn tool_call_timeout(state: &AppState) -> Duration {
     state.mcp_settings.lock().await.tool_call_timeout_duration()
@@ -156,7 +159,7 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         let active_servers = state.mcp_active_servers.lock().await;
         active_servers.get(&name).and_then(|config| {
             config
-                .get("envs")
+                .get("env")
                 .and_then(|envs| envs.get("BRIDGE_PORT"))
                 .and_then(|port| port.as_str())
                 .and_then(|port_str| port_str.parse::<u16>().ok())
@@ -199,11 +202,25 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         let mut pids = state.mcp_server_pids.lock().await;
         pids.remove(&name);
     }
-    // Delete lock file if this is Jan Browser MCP and we have a port
+
     if name == "Jan Browser MCP" {
         if let Some(port) = bridge_port {
-            use crate::core::mcp::lockfile::delete_lock_file;
+            tokio::time::sleep(Duration::from_millis(BRIDGE_KILL_SETTLE_MS)).await;
 
+            // Port 17389 is application-specific; the ~100 ms race window before another
+            // process could grab it is negligible in practice.
+            if !jan_utils::network::is_port_available(port) {
+                if let Some(info) = jan_utils::network::find_process_using_port(port) {
+                    log::info!("Killing process on port {} after deactivation: PID={}", port, info.pid);
+                    if let Err(e) = kill_process_by_pid(info.pid).await {
+                        log::warn!("Failed to kill PID {}: {}", info.pid, e);
+                    } else {
+                        tokio::time::sleep(Duration::from_millis(PORT_FREE_SETTLE_MS)).await;
+                    }
+                }
+            }
+
+            use crate::core::mcp::lockfile::delete_lock_file;
             if let Err(e) = delete_lock_file(&app, port) {
                 log::warn!("Failed to delete lock file for port {}: {}", port, e);
             }
