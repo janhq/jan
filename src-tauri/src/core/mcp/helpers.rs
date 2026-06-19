@@ -559,120 +559,151 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
         }
 
-        let mut cmd = Command::new(config_params.command.clone());
         let bun_x_path = if cfg!(windows) {
             bin_path.join("bun.exe")
         } else {
             bin_path.join("bun")
         };
-        if config_params.command.clone() == "npx"
-            && can_override_npx(bun_x_path.display().to_string())
-        {
-            let mut cache_dir = app_path.clone();
-            cache_dir.push(".npx");
-            cmd = Command::new(bun_x_path.display().to_string());
-            cmd.arg("x");
-            cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
-        }
-
         let uv_path = if cfg!(windows) {
             bin_path.join("uv.exe")
         } else {
             bin_path.join("uv")
         };
-        if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string())
-        {
-            let mut cache_dir = app_path.clone();
-            cache_dir.push(".uvx");
-            cmd = Command::new(uv_path);
-            cmd.arg("tool");
-            cmd.arg("run");
-            cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
-        }
-        #[cfg(windows)]
-        {
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
-        }
 
-        cmd.kill_on_drop(true);
+        // Whether the configured command would be rewritten to the bundled
+        // `bun x` / `uv tool run`. If the override-based handshake fails we fall
+        // back to the system `npx`/`uvx`, whose stdio plumbing differs and is
+        // what most published MCP servers are tested against.
+        let override_available = (config_params.command == "npx"
+            && can_override_npx(bun_x_path.display().to_string()))
+            || (config_params.command == "uvx"
+                && can_override_uvx(uv_path.display().to_string()));
 
-        config_params
-            .args
-            .iter()
-            .filter_map(Value::as_str)
-            .for_each(|arg| {
-                cmd.arg(arg);
-            });
-        config_params.envs.iter().for_each(|(k, v)| {
-            if let Some(v_str) = v.as_str() {
-                cmd.env(k, v_str);
+        let build_cmd = |use_override: bool| -> Command {
+            let mut cmd = Command::new(config_params.command.clone());
+            if use_override
+                && config_params.command == "npx"
+                && can_override_npx(bun_x_path.display().to_string())
+            {
+                let mut cache_dir = app_path.clone();
+                cache_dir.push(".npx");
+                cmd = Command::new(bun_x_path.display().to_string());
+                cmd.arg("x");
+                cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
             }
-        });
+            if use_override
+                && config_params.command == "uvx"
+                && can_override_uvx(uv_path.display().to_string())
+            {
+                let mut cache_dir = app_path.clone();
+                cache_dir.push(".uvx");
+                cmd = Command::new(uv_path.clone());
+                cmd.arg("tool");
+                cmd.arg("run");
+                cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
+            }
+            #[cfg(windows)]
+            {
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
+            }
+            // Make the child a process-group leader (pgid == pid) so teardown can
+            // signal the whole tree; MCP bridges fork grandchildren that hold the
+            // port and outlive a single-PID kill.
+            #[cfg(unix)]
+            {
+                cmd.process_group(0);
+            }
+            cmd.kill_on_drop(true);
+            config_params
+                .args
+                .iter()
+                .filter_map(Value::as_str)
+                .for_each(|arg| {
+                    cmd.arg(arg);
+                });
+            config_params.envs.iter().for_each(|(k, v)| {
+                if let Some(v_str) = v.as_str() {
+                    cmd.env(k, v_str);
+                }
+            });
+            cmd
+        };
 
-        let (process, stderr) = TokioChildProcess::builder(cmd)
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                log::error!("Failed to run command {name}: {e}");
-                format!("Failed to run command {name}: {e}")
-            })?;
+        let mut use_override = true;
+        let (server, stderr) = loop {
+            let (process, stderr) = TokioChildProcess::builder(build_cmd(use_override))
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| {
+                    log::error!("Failed to run command {name}: {e}");
+                    format!("Failed to run command {name}: {e}")
+                })?;
 
-        let process_pid = process.id();
-        if let Some(pid) = process_pid {
-            log::info!("MCP server {name} spawned with PID {pid}");
-            let app_state = app.state::<AppState>();
-            let mut pids = app_state.mcp_server_pids.lock().await;
-            pids.insert(name.clone(), pid);
-        }
+            if let Some(pid) = process.id() {
+                log::info!("MCP server {name} spawned with PID {pid}");
+                let app_state = app.state::<AppState>();
+                let mut pids = app_state.mcp_server_pids.lock().await;
+                pids.insert(name.clone(), pid);
+            }
 
-        let service = ()
-            .serve(process)
-            .await
-            .map_err(|e| format!("Failed to start MCP server {name}: {e}"));
+            match ().serve(process).await {
+                Ok(server) => break (server, stderr),
+                Err(e) => {
+                    // The child often crashes here with a write EPIPE while
+                    // replying to `initialize` once its pipes are torn down;
+                    // capture its stderr so we report that instead of an opaque
+                    // serve() error.
+                    let mut buffer = String::new();
+                    if let Some(mut stderr_stream) = stderr {
+                        let _ = stderr_stream.read_to_string(&mut buffer).await;
+                    }
 
-        match service {
-            Ok(server) => {
-                // Keep the stderr pipe alive to prevent the child process from
-                // receiving SIGPIPE and to capture diagnostic output.
-                if let Some(mut stderr_stream) = stderr {
-                    let stderr_name = name.clone();
-                    tokio::spawn(async move {
-                        let mut buf = [0u8; 1024];
-                        while let Ok(n) = stderr_stream.read(&mut buf).await {
-                            if n == 0 {
-                                break;
-                            }
-                            if let Ok(text) = std::str::from_utf8(&buf[..n]) {
-                                for line in text.lines() {
-                                    if !line.trim().is_empty() {
-                                        log_mcp_stderr_line(&stderr_name, line);
-                                    }
-                                }
+                    if use_override && override_available {
+                        log::warn!(
+                            "MCP server {name} failed to start via bundled bun/uv override ({e}); retrying with system {}. stderr: {buffer}",
+                            config_params.command
+                        );
+                        use_override = false;
+                        continue;
+                    }
+
+                    let error = if buffer.trim().is_empty() {
+                        format!("Failed to start MCP server {name}: {e}")
+                    } else {
+                        format!("Failed to start MCP server {name}: {buffer}")
+                    };
+                    log::error!("{error}");
+                    return Err(error);
+                }
+            }
+        };
+
+        // Keep the stderr pipe alive to prevent the child process from
+        // receiving SIGPIPE and to capture diagnostic output.
+        if let Some(mut stderr_stream) = stderr {
+            let stderr_name = name.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = stderr_stream.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    if let Ok(text) = std::str::from_utf8(&buf[..n]) {
+                        for line in text.lines() {
+                            if !line.trim().is_empty() {
+                                log_mcp_stderr_line(&stderr_name, line);
                             }
                         }
-                    });
+                    }
                 }
-                log::trace!("Connected to server: {:#?}", server.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::NoInit(server));
-                log::info!("Server {name} started successfully.");
-            }
-            Err(_) => {
-                let mut buffer = String::new();
-                let error = match stderr
-                    .expect("stderr must be piped")
-                    .read_to_string(&mut buffer)
-                    .await
-                {
-                    Ok(_) => format!("Failed to start MCP server {name}: {buffer}"),
-                    Err(_) => format!("Failed to read MCP server {name} stderr"),
-                };
-                log::error!("{error}");
-                return Err(error);
-            }
+            });
         }
+        log::trace!("Connected to server: {:#?}", server.peer_info());
+        servers
+            .lock()
+            .await
+            .insert(name.clone(), RunningServiceEnum::NoInit(server));
+        log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
         // This prevents race conditions where the server quits immediately
@@ -748,14 +779,22 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // If all attempts failed, we still proceed to emit the event.
         // The health monitor will handle ongoing reconnection.
 
-        // Create lock file for Jan Browser MCP
         if name == "Jan Browser MCP" {
             if let Some(port_str) = config_params.envs.get("BRIDGE_PORT") {
                 if let Some(port_str) = port_str.as_str() {
                     if let Ok(port) = port_str.parse::<u16>() {
                         use crate::core::mcp::lockfile::create_lock_file;
-                        if let Err(e) = create_lock_file(&app, port, &name) {
-                            log::warn!("Failed to create lock file for port {}: {}", port, e);
+                        let child_pid = app
+                            .state::<AppState>()
+                            .mcp_server_pids
+                            .lock()
+                            .await
+                            .get(&name)
+                            .copied();
+                        if let Some(pid) = child_pid {
+                            if let Err(e) = create_lock_file(&app, port, &name, pid) {
+                                log::warn!("Failed to create lock file for port {}: {}", port, e);
+                            }
                         }
                     }
                 }
@@ -879,8 +918,8 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
         if !is_process_alive(lock.pid) {
             log::info!("Lock file stale, process {} is dead", lock.pid);
             check_and_cleanup_stale_lock(app, port).await?;
-            return Ok(true);
-        }
+            // Fall through — port may still be held by a grandchild that outlived this PID.
+        } else {
 
         // Process from lock file is alive - verify it's still the MCP process
         if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
@@ -917,6 +956,7 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
             );
             check_and_cleanup_stale_lock(app, port).await?;
         }
+        }
     }
 
     // Fallback: Use lsof/netstat to find process on port
@@ -949,9 +989,13 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
     log::info!("Killing orphaned MCP process: PID {}", process_info.pid);
     kill_process_by_pid(process_info.pid).await?;
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    if jan_utils::network::is_port_available(port) {
+    if jan_utils::network::wait_for_port_free(
+        port,
+        Duration::from_millis(2000),
+        Duration::from_millis(50),
+    )
+    .await
+    {
         log::info!("Cleaned up orphaned process on port {}", port);
         Ok(true)
     } else {
@@ -961,23 +1005,34 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
 
 #[cfg(unix)]
 async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
-    use nix::sys::signal::{kill, Signal};
-    use nix::unistd::Pid;
+    use nix::sys::signal::{kill, killpg, Signal};
+    use nix::unistd::{getpgid, Pid};
 
     let nix_pid = Pid::from_raw(pid as i32);
 
-    kill(nix_pid, Signal::SIGTERM)
+    // Signal the whole process group so forked grandchildren (which may hold the
+    // port) die with the parent. We spawn MCP children as group leaders, so this
+    // targets only our subtree. Fall back to the single PID if the group can't be
+    // resolved (e.g. an orphan found by port scan) or resolves to init.
+    let pgid = getpgid(Some(nix_pid)).ok().filter(|g| g.as_raw() > 1);
+    let send = |sig: Signal| match pgid {
+        Some(g) => killpg(g, sig),
+        None => kill(nix_pid, sig),
+    };
+
+    send(Signal::SIGTERM)
         .map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
 
     for _ in 0..30 {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Liveness of the leader PID is sufficient; the group dies with it.
         if kill(nix_pid, None).is_err() {
             return Ok(());
         }
     }
 
-    log::warn!("Process {} unresponsive, sending SIGKILL", pid);
-    kill(nix_pid, Signal::SIGKILL)
+    log::warn!("Process group {} unresponsive, sending SIGKILL", pid);
+    send(Signal::SIGKILL)
         .map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
 
     Ok(())
@@ -1006,6 +1061,43 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Tear down a Jan Browser MCP child and confirm its `port` is released.
+/// Kills the recorded child's process group (Phase 1 makes children group
+/// leaders, so this reaps forked grandchildren that hold the port), then polls;
+/// if some straggler still binds the port it is found and group-killed too.
+pub async fn terminate_browser_mcp(pid: Option<u32>, port: u16) {
+    use crate::core::mcp::constants::{MCP_PORT_FREE_TIMEOUT, MCP_PORT_POLL_INTERVAL};
+
+    if let Some(pid) = pid {
+        if let Err(e) = kill_process_by_pid(pid).await {
+            log::warn!("Failed to kill Browser MCP group (PID {}): {}", pid, e);
+        }
+    }
+
+    if jan_utils::network::wait_for_port_free(port, MCP_PORT_FREE_TIMEOUT, MCP_PORT_POLL_INTERVAL)
+        .await
+    {
+        return;
+    }
+
+    if let Some(info) = jan_utils::network::find_process_using_port(port) {
+        log::info!(
+            "Port {} still held after teardown; killing straggler PID {}",
+            port,
+            info.pid
+        );
+        if let Err(e) = kill_process_by_pid(info.pid).await {
+            log::warn!("Failed to kill straggler PID {} on port {}: {}", info.pid, port, e);
+        }
+        let _ = jan_utils::network::wait_for_port_free(
+            port,
+            MCP_PORT_FREE_TIMEOUT,
+            MCP_PORT_POLL_INTERVAL,
+        )
+        .await;
+    }
 }
 
 pub async fn background_cleanup_mcp_servers<R: Runtime>(
@@ -1112,6 +1204,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         .into_iter()
         .map(|(name, service, port)| {
             let app_clone = app.clone();
+            let child_pid = pids_snapshot.get(&name).copied();
 
             tauri::async_runtime::spawn(async move {
                 let cancel_future = async {
@@ -1129,9 +1222,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
                 if name == "Jan Browser MCP" {
                     if let Some(port) = port {
                         use crate::core::mcp::lockfile::delete_lock_file;
-                        if success {
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                        }
+                        terminate_browser_mcp(child_pid, port).await;
                         let _ = delete_lock_file(&app_clone, port);
                     }
                 }

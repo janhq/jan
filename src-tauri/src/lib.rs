@@ -57,6 +57,7 @@ macro_rules! invoke_commands_with_extras {
         core::system::commands::open_app_directory,
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
+        core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
@@ -71,6 +72,7 @@ macro_rules! invoke_commands_with_extras {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::set_model_param_defaults,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
@@ -107,6 +109,7 @@ macro_rules! invoke_commands_with_extras {
         // Theme
         core::setup::get_system_theme,
         core::setup::set_gtk_prefer_dark,
+        core::setup::get_titlebar_layout,
         $(
             $extra,
         )*
@@ -264,6 +267,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            model_param_defaults: Arc::new(Mutex::new(HashMap::new())),
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
         .setup(|app| {
@@ -340,8 +344,6 @@ pub fn run() {
             #[cfg(desktop)]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
-            #[cfg(target_os = "linux")]
-            setup::shrink_gtk_headerbar(app);
             Ok(())
         })
         .build(tauri::generate_context!())

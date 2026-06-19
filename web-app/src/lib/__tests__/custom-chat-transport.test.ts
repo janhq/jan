@@ -4,6 +4,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import {
   buildLlamacppReasoningParams,
   coalesceMessagesForAlternation,
+  hasGenuineUserQuery,
   extractContextInfoFromError,
   normalizeToolInputSchema,
   resolveOrphanToolCalls,
@@ -713,5 +714,45 @@ describe('unwrapRetryError', () => {
     expect(unwrapRetryError(null)).toBeNull()
     expect(unwrapRetryError(undefined)).toBeUndefined()
     expect(unwrapRetryError('boom')).toBe('boom')
+  })
+})
+
+describe('hasGenuineUserQuery', () => {
+  const toolResponseUser = (id: string, text: string): UIMessage =>
+    ({ id, role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
+
+  it('returns true when a real user query is present', () => {
+    expect(
+      hasGenuineUserQuery([userMsg('u1', 'What is the capital of France?')])
+    ).toBe(true)
+  })
+
+  it('returns false for an empty message list', () => {
+    expect(hasGenuineUserQuery([])).toBe(false)
+  })
+
+  it('returns false when only assistant turns survive (user message deleted)', () => {
+    expect(hasGenuineUserQuery([assistantMsg('a1', [])])).toBe(false)
+  })
+
+  it('returns false when the only user turn is a tool_response wrapper', () => {
+    expect(
+      hasGenuineUserQuery([
+        toolResponseUser('u1', '<tool_response>{"ok":true}</tool_response>'),
+      ])
+    ).toBe(false)
+  })
+
+  it('ignores blank user turns', () => {
+    expect(hasGenuineUserQuery([userMsg('u1', '   ')])).toBe(false)
+  })
+
+  it('returns true when a real query coexists with tool_response turns', () => {
+    expect(
+      hasGenuineUserQuery([
+        toolResponseUser('u1', '<tool_response>x</tool_response>'),
+        userMsg('u2', 'Summarize the result'),
+      ])
+    ).toBe(true)
   })
 })

@@ -156,9 +156,13 @@ export const Citations = memo(
   ({
     payload,
     anchorPrefix,
+    indexOffset = 0,
   }: {
     payload: CitationsPayload
     anchorPrefix?: string
+    // Number/anchor cards from this base so a turn's multiple retrieve cards
+    // share one continuous numbering that matches the inline superscripts.
+    indexOffset?: number
   }) => {
   useEnsureAttachmentNames(
     payload.kind === 'rag' ? payload.scope : undefined,
@@ -171,19 +175,22 @@ export const Citations = memo(
 
   const items = useMemo(() => {
     if (payload.kind === 'rag') {
-      return payload.citations.map((c, i) => (
-        <RagCitationItem
-          key={c.id}
-          c={c}
-          index={i}
-          anchorId={anchorPrefix ? `${anchorPrefix}-${i + 1}` : undefined}
-        />
-      ))
+      return payload.citations.map((c, i) => {
+        const n = i + indexOffset
+        return (
+          <RagCitationItem
+            key={c.id}
+            c={c}
+            index={n}
+            anchorId={anchorPrefix ? `${anchorPrefix}-${n + 1}` : undefined}
+          />
+        )
+      })
     }
     return payload.citations.map((c, i) => (
       <WebCitationItem key={`${c.url}-${i}`} c={c} />
     ))
-  }, [payload, anchorPrefix])
+  }, [payload, anchorPrefix, indexOffset])
 
   if (!items.length) return null
 

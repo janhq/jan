@@ -5,6 +5,7 @@ import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, formatBytes, sanitizeModelId } from '@/lib/utils'
 import { sumMlxModelBytes } from '@/lib/modelCompatibility'
+import { isMtpQuant } from '@/lib/mtp'
 import {
   useState,
   useMemo,
@@ -120,8 +121,13 @@ function HubContent() {
   const searchOptions = useMemo(
     () => ({
       includeScore: true,
-      // Search in `author` and in `tags` array
-      keys: ['model_name', 'quants.model_id'],
+      // Tighter than the 0.6 default so a precise query (e.g. a full HF
+      // namespace) stops surfacing loosely-related catalog models.
+      threshold: 0.3,
+      // Repo ids are long; without this Fuse penalizes matches far from the
+      // string start and misses substrings.
+      ignoreLocation: true,
+      keys: ['model_name', 'developer', 'quants.model_id'],
     }),
     []
   )
@@ -189,7 +195,14 @@ function HubContent() {
   }, [searchValue])
 
   const filteredModels = useMemo(() => {
-    let filtered = sortedModels
+    // MTP companion ggufs are draft models, not standalone variants — move them
+    // out of `quants` (so they don't show as downloadable) into `mtpQuants`,
+    // where DownloadButton resolves them against the chosen quant.
+    let filtered: CatalogModel[] = sortedModels.map((model) => ({
+      ...model,
+      quants: model.quants?.filter((q) => !isMtpQuant(q)),
+      mtpQuants: model.quants?.filter((q) => isMtpQuant(q)),
+    }))
     // Apply search filter
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
@@ -512,13 +525,17 @@ function HubContent() {
                             <div
                               className="cursor-pointer min-w-0 flex-1"
                               onClick={() => {
+                                const name =
+                                  filteredModels[virtualItem.index].model_name
+                                const isHfRepo = name.includes('/')
                                 navigate({
                                   to: route.hub.model,
                                   params: {
-                                    modelId:
-                                      filteredModels[virtualItem.index]
-                                        .model_name,
+                                    modelId: isHfRepo
+                                      ? name.split('/').pop()!
+                                      : name,
                                   },
+                                  search: isHfRepo ? { repo: name } : {},
                                 })
                               }}
                             >

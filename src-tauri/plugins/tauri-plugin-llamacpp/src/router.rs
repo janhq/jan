@@ -50,11 +50,29 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     if line_lower.contains("terminate called after throwing") {
         return true;
     }
+    // glibc heap-corruption / stack-protector aborts (SIGABRT). A native memory
+    // bug in the backend (e.g. the mtmd video decode path) prints one of these
+    // to stderr just before the process dies — without classifying them the
+    // crash is silent and the model load appears to hang/loop forever.
+    if line_lower.contains("corrupted size vs. prev_size")
+        || line_lower.contains("corrupted double-linked list")
+        || line_lower.contains("double free or corruption")
+        || line_lower.contains("malloc(): ")
+        || line_lower.contains("free(): ")
+        || line_lower.contains("munmap_chunk(): invalid pointer")
+        || line_lower.contains("stack smashing detected")
+        || line_lower.contains("buffer overflow detected")
+    {
+        return true;
+    }
     false
 }
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
-use jan_utils::{binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags};
+use jan_utils::{
+    binary_requires_cuda, binary_requires_rocm, find_cuda_paths, find_rocm_paths,
+    setup_library_path, setup_windows_process_flags,
+};
 
 /// A handle to a running router-mode `llama-server` process.
 pub struct RouterHandle {
@@ -145,7 +163,17 @@ pub async fn start_router(
              Process may fail to start."
         );
     }
-    setup_library_path(backend_exe.parent(), &cuda, &mut command);
+    let rocm = find_rocm_paths();
+    if rocm.lib_paths.is_empty()
+        && rocm.bin_paths.is_empty()
+        && binary_requires_rocm(&backend_exe)
+    {
+        log::warn!(
+            "llama.cpp router backend appears to require ROCm/HIP, but ROCm not found. \
+             Process may fail to start."
+        );
+    }
+    setup_library_path(backend_exe.parent(), &cuda.merged(rocm), &mut command);
 
     let mut child = command.spawn().map_err(ServerError::Io)?;
 
@@ -647,6 +675,12 @@ mod tests {
         ));
         assert!(is_backend_error_line("cuda error: out of memory"));
         assert!(is_backend_error_line("ggml_assert(cond) failed"));
+        // glibc heap-corruption aborts (e.g. mtmd video decode crash).
+        assert!(is_backend_error_line("corrupted size vs. prev_size"));
+        assert!(is_backend_error_line(
+            "malloc(): corrupted top size"
+        ));
+        assert!(is_backend_error_line("stack smashing detected"));
         assert!(!is_backend_error_line(
             "srv log_server_r: request: post /v1/chat/completions"
         ));

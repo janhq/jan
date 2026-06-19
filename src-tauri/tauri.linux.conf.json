@@ -13,7 +13,7 @@
         "zoomHotkeysEnabled": true,
         "center": true,
         "transparent": false,
-        "decorations": true,
+        "decorations": false,
         "dragDropEnabled": false
       }
     ]

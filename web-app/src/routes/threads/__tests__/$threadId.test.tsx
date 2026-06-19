@@ -53,6 +53,10 @@ const h = vi.hoisted(() => {
     mcpToolNames: new Set<string>(),
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
+    busyThreads: {} as Record<string, boolean>,
+    embeddingThreads: {} as Record<string, boolean>,
+    setThreadBusy: vi.fn(),
+    setThreadEmbedding: vi.fn(),
   }
   const useAppStateMock: any = (selector: any) => selector(appStateState)
   useAppStateMock.getState = () => appStateState
@@ -197,9 +201,27 @@ vi.mock('@/containers/ChatInput', () => ({
 }))
 
 vi.mock('@/containers/MessageItem', () => ({
-  MessageItem: ({ message, onRegenerate, onEdit, onDelete }: any) => (
+  MessageItem: ({
+    message,
+    onRegenerate,
+    onEdit,
+    onDelete,
+    versionInfo,
+    onSwitchVersion,
+  }: any) => (
     <div data-testid={`message-${message.id}`} data-role={message.role}>
       <span>{message.id}</span>
+      {versionInfo && (
+        <span data-testid={`version-${message.id}`}>
+          {versionInfo.index}/{versionInfo.count}
+        </span>
+      )}
+      <button
+        data-testid={`prev-${message.id}`}
+        onClick={() => onSwitchVersion?.(message.id, -1)}
+      >
+        prev
+      </button>
       <button
         data-testid={`regen-${message.id}`}
         onClick={() => onRegenerate(message.id)}
@@ -480,28 +502,34 @@ describe('ThreadDetail route', () => {
     expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'u1' })
   })
 
-  it('regenerate from an assistant message deletes msgs after preceding user', () => {
+  it('regenerate from an assistant message keeps the prior version (no delete)', () => {
     h.chatState.messages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
       { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }] },
     ]
     renderComponent()
     screen.getByTestId('regen-a1').click()
-    expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', 'a1')
+    // Versioning: the old reply is preserved, parent links are backfilled.
+    expect(h.messagesState.deleteMessage).not.toHaveBeenCalled()
+    expect(h.messagesState.updateMessage).toHaveBeenCalled()
     expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'a1' })
   })
 
-  it('edit on a user message updates and regenerates', () => {
+  it('edit on a user message forks a new version and regenerates', () => {
     h.chatState.messages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
       { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }] },
     ]
     renderComponent()
     screen.getByTestId('edit-u1').click()
+    // A new sibling version is added; the original branch is not deleted.
+    expect(h.messagesState.addMessage).toHaveBeenCalled()
     expect(h.messagesState.updateMessage).toHaveBeenCalled()
     expect(h.mockSetChatMessages).toHaveBeenCalled()
-    expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', 'a1')
-    expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'u1' })
+    expect(h.messagesState.deleteMessage).not.toHaveBeenCalled()
+    expect(h.mockRegenerate).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: expect.any(String) })
+    )
   })
 
   it('edit on an assistant message updates without regenerating', () => {
@@ -512,6 +540,46 @@ describe('ThreadDetail route', () => {
     renderComponent()
     screen.getByTestId('edit-a1').click()
     expect(h.messagesState.updateMessage).toHaveBeenCalled()
+    expect(h.mockRegenerate).not.toHaveBeenCalled()
+  })
+
+  it('shows a version chip and switches branches without regenerating', () => {
+    const branched = [
+      {
+        id: 'u1',
+        role: 'user',
+        created_at: 1,
+        content: [{ type: 'text', text: { value: 'hi', annotations: [] } }],
+        metadata: { parentId: null },
+      },
+      {
+        id: 'a1a',
+        role: 'assistant',
+        created_at: 2,
+        content: [{ type: 'text', text: { value: 'v1', annotations: [] } }],
+        metadata: { parentId: 'u1' },
+      },
+      {
+        id: 'a1b',
+        role: 'assistant',
+        created_at: 3,
+        content: [{ type: 'text', text: { value: 'v2', annotations: [] } }],
+        metadata: { parentId: 'u1' },
+      },
+    ]
+    h.messagesState.messages = { 'thread-1': branched }
+    h.messagesState.getMessages = vi.fn(() => branched)
+    h.chatState.messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1b', role: 'assistant', parts: [{ type: 'text', text: 'v2' }] },
+    ]
+    renderComponent()
+    // The active (newest) reply shows as version 2 of 2.
+    expect(screen.getByTestId('version-a1b').textContent).toBe('2/2')
+    screen.getByTestId('prev-a1b').click()
+    // Switching pins the parent's active child and re-renders, no regeneration.
+    expect(h.messagesState.updateMessage).toHaveBeenCalled()
+    expect(h.mockSetChatMessages).toHaveBeenCalled()
     expect(h.mockRegenerate).not.toHaveBeenCalled()
   })
 

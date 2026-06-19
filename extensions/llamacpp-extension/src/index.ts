@@ -180,6 +180,20 @@ const MODEL_PROVIDER_LOCAL_STORAGE_KEY = 'model-provider'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
   'llamacpp_model_yaml_backfill_v1'
 
+// Sampling defaults are floats/ints where 0 is a meaningful value (e.g.
+// temperature=0), so unlike ctx_len these coercions keep 0 and only reject
+// blank/non-finite input.
+const coerceFloatSetting = (v: unknown): YamlSettingValue => {
+  if (v === '' || v == null) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+const coerceIntSetting = (v: unknown): YamlSettingValue => {
+  if (v === '' || v == null) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? Math.floor(n) : null
+}
+
 const MODEL_SETTINGS_YAML_MAPPING: Record<
   string,
   {
@@ -187,6 +201,21 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
     coerce: (v: unknown) => YamlSettingValue
   }
 > = {
+  // Sampling defaults: persisted to model.yml and emitted into the router
+  // preset so they apply server-side to every request (chat and external API),
+  // overridable per-request. Keys mirror MODEL_SAMPLING_SETTING_KEYS in the
+  // web-app transport.
+  temperature: { yamlKey: 'temperature', coerce: coerceFloatSetting },
+  top_k: { yamlKey: 'top_k', coerce: coerceIntSetting },
+  top_p: { yamlKey: 'top_p', coerce: coerceFloatSetting },
+  min_p: { yamlKey: 'min_p', coerce: coerceFloatSetting },
+  repeat_last_n: { yamlKey: 'repeat_last_n', coerce: coerceIntSetting },
+  repeat_penalty: { yamlKey: 'repeat_penalty', coerce: coerceFloatSetting },
+  presence_penalty: { yamlKey: 'presence_penalty', coerce: coerceFloatSetting },
+  frequency_penalty: {
+    yamlKey: 'frequency_penalty',
+    coerce: coerceFloatSetting,
+  },
   ctx_len: {
     yamlKey: 'ctx_size',
     coerce: (v) => {
@@ -732,7 +761,14 @@ export default class llamacpp_extension extends AIEngine {
    * the post-fit value — what `fit_ctx` settled on — so it's the right
    * denominator for the token-usage popup.
    */
-  async getModelProps(modelId: string): Promise<ModelProps | undefined> {
+  async getModelProps(
+    modelId: string
+  ): Promise<
+    | (ModelProps & {
+        modalities?: { vision: boolean; video: boolean; audio: boolean }
+      })
+    | undefined
+  > {
     const router = await this.getRouterInfo()
     if (!router || !modelId) return undefined
     // Router runs with models_autoload=true, so `/props?model=X` against an
@@ -754,15 +790,20 @@ export default class llamacpp_extension extends AIEngine {
         total_slots?: number
         model_alias?: string
         is_sleeping?: boolean
+        modalities?: { vision?: boolean; video?: boolean; audio?: boolean }
       }
       const n = json?.default_generation_settings?.n_ctx
       if (typeof n !== 'number' || n <= 0) return undefined
+      const m = json.modalities
       return {
         nCtx: n,
         totalSlots:
           typeof json.total_slots === 'number' ? json.total_slots : undefined,
         modelAlias: json.model_alias,
         isSleeping: !!json.is_sleeping,
+        modalities: m
+          ? { vision: !!m.vision, video: !!m.video, audio: !!m.audio }
+          : undefined,
       }
     } catch {
       return undefined
@@ -1939,6 +1980,10 @@ export default class llamacpp_extension extends AIEngine {
           )
           if (caps.vision) capabilities.push('vision')
           if (caps.audio) capabilities.push('audio')
+          // 'video' is intentionally NOT derived from the mmproj here — video
+          // support also depends on the backend being built with MTMD_VIDEO,
+          // which the GGUF can't reveal. It's reconciled from /props after the
+          // model loads (see useReconcileVideoCapability).
         }
 
         const mp = modelConfig.model_path ?? ''
@@ -2276,8 +2321,17 @@ export default class llamacpp_extension extends AIEngine {
           save_path: localPath,
           proxy: getProxyConfig(),
           sha256:
-            saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
-          size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
+            saveName === 'model.gguf'
+              ? opts.modelSha256
+              : saveName === 'mmproj.gguf'
+                ? opts.mmprojSha256
+                : undefined,
+          size:
+            saveName === 'model.gguf'
+              ? opts.modelSize
+              : saveName === 'mmproj.gguf'
+                ? opts.mmprojSize
+                : undefined,
           model_id: modelId,
         })
         return localPath
@@ -2293,6 +2347,10 @@ export default class llamacpp_extension extends AIEngine {
     let modelPath = await maybeDownload(opts.modelPath, 'model.gguf')
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
+      : undefined
+    // MTP draft companion (speculative decoding); paired with the main model.
+    let mtpModelPath = opts.mtpPath
+      ? await maybeDownload(opts.mtpPath, 'mtp.gguf')
       : undefined
 
     if (downloadItems.length > 0) {
@@ -2404,6 +2462,15 @@ export default class llamacpp_extension extends AIEngine {
           `Mmproj GGUF validation successful: version ${mmprojMetadata.version}, tensors: ${mmprojMetadata.tensor_count}`
         )
       }
+
+      // Validate MTP draft and read its head count (the main gguf usually
+      // lacks nextn_predict_layers when MTP ships as a separate file).
+      if (mtpModelPath) {
+        const fullMtpPath = await joinPath([janDataFolderPath, mtpModelPath])
+        const mtpMetadata = await readGgufMetadata(fullMtpPath)
+        const draftLayers = detectMtpLayersFromGgufMeta(mtpMetadata.metadata)
+        mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
+      }
     } catch (error) {
       logger.error('GGUF validation failed:', error)
       throw new Error(
@@ -2418,6 +2485,11 @@ export default class llamacpp_extension extends AIEngine {
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
+      ).size
+    }
+    if (mtpModelPath) {
+      size_bytes += (
+        await fs.fileStat(await joinPath([janDataFolderPath, mtpModelPath]))
       ).size
     }
 
@@ -2440,6 +2512,9 @@ export default class llamacpp_extension extends AIEngine {
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+      // A separate draft gguf is downloaded only to be used — enable MTP by
+      // default. Embedded-MTP models keep MTP opt-in (no flag written here).
+      ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),

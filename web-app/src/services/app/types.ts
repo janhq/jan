@@ -12,6 +12,7 @@ export interface LogEntry {
 export interface FactoryResetOptions {
   keepAppData: boolean
   keepModelsAndConfigs: boolean
+  clearWebData?: boolean
 }
 
 export interface AppService {

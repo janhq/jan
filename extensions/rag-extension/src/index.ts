@@ -21,7 +21,7 @@ export default class RagExtension extends RAGExtension {
     chunkSizeChars: 512,
     overlapChars: 64,
     searchMode: 'auto' as 'auto' | 'ann' | 'linear',
-    maxFileSizeMB: 20,
+    maxFileSizeMB: 100,
     parseMode: 'auto' as 'auto' | 'inline' | 'embeddings' | 'prompt',
     autoInlineContextRatio: 0.75,
   }

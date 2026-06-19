@@ -33,7 +33,7 @@
     "titleKey": "settings:attachments.maxFile",
     "descriptionKey": "settings:attachments.maxFileDesc",
     "controllerType": "input",
-    "controllerProps": { "value": 20, "type": "number", "min": 1, "max": 200, "step": 1, "textAlign": "right" }
+    "controllerProps": { "value": 100, "type": "number", "min": 1, "max": 200, "step": 1, "textAlign": "right" }
   },
   {
     "key": "retrieval_limit",

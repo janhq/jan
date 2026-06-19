@@ -255,6 +255,101 @@ pub(crate) fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<
     Some(result)
 }
 
+/// Strips the `x-anthropic-billing-header:` attribution that Claude Code
+/// prepends to the system prompt / first message. Its values (cc_version, cch,
+/// …) are dynamic, so leaving them in the content busts Anthropic prompt
+/// caching and leaks CLI metadata to the model. Handles both observed shapes:
+///   inline:  "x-anthropic-billing-header: cc_version=…;\n<prompt>"
+///   wrapped: "x-anthropic-billing-header:\n   cc_version=…;\n<prompt>"
+pub(crate) fn strip_anthropic_billing_header(text: &str) -> &str {
+    const KEY: &str = "x-anthropic-billing-header:";
+    if text.len() < KEY.len() || !text[..KEY.len()].eq_ignore_ascii_case(KEY) {
+        return text;
+    }
+    let first_nl = match text.find('\n') {
+        Some(i) => i,
+        None => return text,
+    };
+    let after_first = &text[first_nl + 1..];
+
+    // Inline form: metadata sits on the header line itself.
+    if text[..first_nl].contains("cc_version=") || text[..first_nl].contains("cc_entrypoint=") {
+        return after_first;
+    }
+    // Wrapped form: metadata is the continuation line.
+    if let Some(rel) = after_first.find('\n') {
+        let cont = &after_first[..rel];
+        if cont.contains("cc_version=") || cont.contains("cc_entrypoint=") || cont.contains("cch=")
+        {
+            return &after_first[rel + 1..];
+        }
+    }
+    text
+}
+
+/// Applies `strip_anthropic_billing_header` to a message/system `content` value
+/// (a bare string or an array of content blocks — only the first text block can
+/// carry the header).
+fn strip_billing_header_in_content(content: &mut serde_json::Value) {
+    match content {
+        serde_json::Value::String(s) => {
+            let stripped = strip_anthropic_billing_header(s);
+            if stripped.len() != s.len() {
+                *s = stripped.to_string();
+            }
+        }
+        serde_json::Value::Array(blocks) => {
+            for block in blocks.iter_mut() {
+                if let Some(text_val) = block.get_mut("text") {
+                    if let Some(orig) = text_val.as_str() {
+                        let stripped = strip_anthropic_billing_header(orig);
+                        if stripped.len() != orig.len() {
+                            let owned = stripped.to_string();
+                            *text_val = serde_json::Value::String(owned);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Strips the Claude Code billing header from an in-flight request body, in
+/// place, before it is forwarded upstream. Covers the Anthropic `system` field
+/// and the first message's content (the only places Claude Code injects it).
+pub(crate) fn strip_billing_header_in_body(body: &mut serde_json::Value) {
+    if let Some(system) = body.get_mut("system") {
+        strip_billing_header_in_content(system);
+    }
+    if let Some(first) = body
+        .get_mut("messages")
+        .and_then(|v| v.as_array_mut())
+        .and_then(|arr| arr.first_mut())
+    {
+        if let Some(content) = first.get_mut("content") {
+            strip_billing_header_in_content(content);
+        }
+    }
+}
+
+/// Fills in top-level sampling defaults the caller omitted. Used for MLX
+/// targets, which (unlike the llama.cpp router) have no preset to carry
+/// server-side defaults. `defaults` is already in the target's key form
+/// (e.g. `repetition_penalty`, not `repeat_penalty`); a present key is never
+/// overwritten, so a per-request value always wins.
+pub(crate) fn inject_sampling_defaults(body: &mut serde_json::Value, defaults: &serde_json::Value) {
+    let (Some(obj), Some(defaults_obj)) = (body.as_object_mut(), defaults.as_object()) else {
+        return;
+    };
+    for (k, v) in defaults_obj {
+        if !obj.contains_key(k) {
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+}
+
 /// Convert Anthropic message format to OpenAI format
 pub(crate) fn convert_messages(
     anth_messages: &serde_json::Value,
@@ -1162,6 +1257,7 @@ async fn proxy_request(
     llama_state: Arc<LlamacppState>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
@@ -1431,6 +1527,9 @@ async fn proxy_request(
     let mut buffered_body: Option<Bytes> = None;
     let mut target_base_url: Option<String> = None;
     let mut is_anthropic_messages = false;
+    // Model id when the request resolves to an MLX session — MLX has no preset,
+    // so sampling defaults are injected into the body before forwarding.
+    let mut mlx_model_id: Option<String> = None;
 
     match (method.clone(), destination_path.as_str()) {
         // Anthropic /messages endpoint - tries /messages first, falls back to /chat/completions on error
@@ -1459,7 +1558,15 @@ async fn proxy_request(
 
             // Parse body to get model_id for routing (don't transform yet)
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                Ok(json_body) => {
+                Ok(mut json_body) => {
+                    // Drop Claude Code's billing-header attribution before it is
+                    // forwarded (passthrough) or transformed, so it can't bust
+                    // upstream prompt caching or reach the model.
+                    strip_billing_header_in_body(&mut json_body);
+                    if let Ok(cleaned) = serde_json::to_vec(&json_body) {
+                        buffered_body = Some(cleaned.into());
+                    }
+
                     if config.enable_server_tool_execution
                         && !json_body
                             .get("stream")
@@ -1571,6 +1678,7 @@ async fn proxy_request(
                             if let Some(info) = mlx_session_info {
                                 let target_port = info.port;
                                 session_api_keys = vec![info.api_key.clone()];
+                                mlx_model_id = Some(model_id.to_string());
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some((url, key)) =
@@ -1984,9 +2092,12 @@ async fn proxy_request(
                     // This happens for OpenAI-style tool schemas used with /chat/completions.
                     if destination_path == "/chat/completions" {
                         normalize_openai_tools_in_chat_body(&mut json_body);
-                        if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
-                            buffered_body = Some(normalized_bytes.into());
-                        }
+                    }
+                    // Strip Claude Code's billing header from chat/token-count
+                    // bodies too (it lands in the first message content here).
+                    strip_billing_header_in_body(&mut json_body);
+                    if let Ok(cleaned) = serde_json::to_vec(&json_body) {
+                        buffered_body = Some(cleaned.into());
                     }
 
                     if config.enable_server_tool_execution
@@ -2124,6 +2235,7 @@ async fn proxy_request(
                             if let Some(info) = mlx_session_info {
                                 let target_port = info.port;
                                 session_api_keys = vec![info.api_key.clone()];
+                                mlx_model_id = Some(model_id.to_string());
                                 log::debug!("Found MLX session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
@@ -2425,7 +2537,7 @@ async fn proxy_request(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
 
-    let body_bytes_for_proxy = match buffered_body.clone() {
+    let mut body_bytes_for_proxy = match buffered_body.clone() {
         Some(b) => b,
         None => {
             log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
@@ -2442,6 +2554,24 @@ async fn proxy_request(
         }
     };
 
+    // MLX targets carry no router preset, so apply the model's stored sampling
+    // defaults here for keys the caller omitted (llamacpp uses the preset;
+    // remote providers are intentionally left untouched).
+    if let Some(mid) = &mlx_model_id {
+        let defaults = {
+            let guard = model_param_defaults.lock().await;
+            guard.get(mid).cloned()
+        };
+        if let Some(defaults) = defaults {
+            if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&body_bytes_for_proxy) {
+                inject_sampling_defaults(&mut v, &defaults);
+                if let Ok(bytes) = serde_json::to_vec(&v) {
+                    body_bytes_for_proxy = Bytes::from(bytes);
+                }
+            }
+        }
+    }
+
     let key_attempts: Vec<Option<String>> = if session_api_keys.is_empty() {
         vec![None]
     } else {
@@ -2454,8 +2584,14 @@ async fn proxy_request(
     for (key_idx, key_opt) in key_attempts.iter().enumerate() {
         let mut outbound_req = client.request(method.clone(), upstream_url.clone());
 
+        // Body is re-buffered/rewritten, so a stale inbound Content-Length would
+        // mismatch the bytes we send and stall the upstream; reqwest re-derives it.
         for (name, value) in headers.iter() {
-            if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+            if name != hyper::header::HOST
+                && name != hyper::header::AUTHORIZATION
+                && name != hyper::header::CONTENT_LENGTH
+                && name != hyper::header::TRANSFER_ENCODING
+            {
                 outbound_req = outbound_req.header(name, value);
             }
         }
@@ -2750,6 +2886,7 @@ pub async fn start_server(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
@@ -2766,6 +2903,7 @@ pub async fn start_server(
         trusted_hosts,
         proxy_timeout,
         provider_configs,
+        model_param_defaults,
         mcp_servers,
         mcp_settings,
         jan_data_folder,
@@ -2786,6 +2924,7 @@ async fn start_server_internal(
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
@@ -2830,6 +2969,7 @@ async fn start_server_internal(
         let llama_state = llama_state.clone();
         let mlx_sessions = mlx_sessions.clone();
         let provider_configs = provider_configs.clone();
+        let model_param_defaults = model_param_defaults.clone();
         let mcp_servers = mcp_servers.clone();
         let mcp_settings = mcp_settings.clone();
         let jan_data_folder = jan_data_folder.clone();
@@ -2843,6 +2983,7 @@ async fn start_server_internal(
                     llama_state.clone(),
                     mlx_sessions.clone(),
                     provider_configs.clone(),
+                    model_param_defaults.clone(),
                     mcp_servers.clone(),
                     mcp_settings.clone(),
                     jan_data_folder.clone(),

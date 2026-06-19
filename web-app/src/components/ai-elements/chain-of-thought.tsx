@@ -62,6 +62,8 @@ export type ChainOfThoughtProps = ComponentProps<typeof Collapsible> & {
   isStreaming?: boolean
   /** When true the collapsible auto-collapses (e.g. text content appeared after this CoT group). */
   shouldCollapse?: boolean
+  /** When true the collapsible is forced open and overrides auto-collapse (e.g. a tool is awaiting approval). */
+  forceOpen?: boolean
   open?: boolean
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
@@ -72,6 +74,7 @@ export const ChainOfThought = memo(
     className,
     isStreaming = false,
     shouldCollapse = false,
+    forceOpen = false,
     open,
     defaultOpen = true,
     onOpenChange,
@@ -84,12 +87,15 @@ export const ChainOfThought = memo(
       onChange: onOpenChange,
     })
 
-    // Auto-collapse once text content appears after this CoT group
+    // Auto-collapse once text content appears after this CoT group, unless
+    // something inside still needs the user's attention (forceOpen).
     useEffect(() => {
-      if (shouldCollapse) {
+      if (forceOpen) {
+        setIsOpen(true)
+      } else if (shouldCollapse) {
         setIsOpen(false)
       }
-    }, [shouldCollapse, setIsOpen])
+    }, [forceOpen, shouldCollapse, setIsOpen])
 
     const handleOpenChange = (newOpen: boolean) => {
       setIsOpen(newOpen)
@@ -135,10 +141,21 @@ export type ChainOfThoughtHeaderProps = ComponentProps<
   typeof CollapsibleTrigger
 > & {
   title?: string
+  /** Label shown while streaming, e.g. "Working...". Defaults to "Reasoning...". */
+  streamingLabel?: string
+  /** Past-tense verb for the completed state, e.g. "Worked". Defaults to "Thought". */
+  completedVerb?: string
 }
 
 export const ChainOfThoughtHeader = memo(
-  ({ className, title, children, ...props }: ChainOfThoughtHeaderProps) => {
+  ({
+    className,
+    title,
+    streamingLabel = 'Reasoning...',
+    completedVerb = 'Thought',
+    children,
+    ...props
+  }: ChainOfThoughtHeaderProps) => {
     const { isStreaming, isOpen, duration } = useChainOfThought()
 
     return (
@@ -153,13 +170,15 @@ export const ChainOfThoughtHeader = memo(
           <>
             <SparklesIcon className="size-4" />
             {isStreaming || duration === 0 ? (
-              <Shimmer duration={1}>Reasoning...</Shimmer>
+              <Shimmer duration={1}>{streamingLabel}</Shimmer>
             ) : title ? (
               <p>{title}</p>
             ) : duration === undefined ? (
-              <p>Thought for a few seconds</p>
+              <p>{completedVerb} for a few seconds</p>
             ) : (
-              <p>Thought for {duration} seconds</p>
+              <p>
+                {completedVerb} for {duration} seconds
+              </p>
             )}
             <ChevronDownIcon
               className={cn(

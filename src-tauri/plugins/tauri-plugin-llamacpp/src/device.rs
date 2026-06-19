@@ -7,7 +7,10 @@ use tokio::time::timeout;
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::validate_binary_path;
-use jan_utils::{binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags};
+use jan_utils::{
+    binary_requires_cuda, binary_requires_rocm, find_cuda_paths, find_rocm_paths,
+    setup_library_path, setup_windows_process_flags,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -40,7 +43,13 @@ pub async fn get_devices_from_backend(
             "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
         );
     }
-    setup_library_path(bin_path.parent(), &cuda, &mut command);
+    let rocm = find_rocm_paths();
+    if rocm.lib_paths.is_empty() && rocm.bin_paths.is_empty() && binary_requires_rocm(&bin_path) {
+        log::warn!(
+            "llama.cpp backend appears to require ROCm/HIP, but ROCm not found. Process may fail to start. Please install the ROCm runtime and try again!"
+        );
+    }
+    setup_library_path(bin_path.parent(), &cuda.merged(rocm), &mut command);
 
     // Execute the command and wait for completion
     let output = timeout(Duration::from_secs(30), command.output())

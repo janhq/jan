@@ -8,5 +8,9 @@
   },
   "sendMessage": "Send Message",
   "newConversation": "New Conversation",
-  "clearHistory": "Clear History"
+  "clearHistory": "Clear History",
+  "embeddings": {
+    "title": "Preparing your documents",
+    "description": "Indexing the attached files so they can be searched and cited. This may take a moment for large documents."
+  }
 }

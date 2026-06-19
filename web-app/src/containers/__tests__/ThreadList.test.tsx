@@ -9,6 +9,8 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
+  useParams: ({ select }: any = {}) =>
+    select ? select({ threadId: undefined }) : { threadId: undefined },
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({

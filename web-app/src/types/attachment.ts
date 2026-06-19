@@ -3,11 +3,11 @@
  */
 export type Attachment = {
   name: string
-  type: 'image' | 'document' | 'audio'
+  type: 'image' | 'document' | 'audio' | 'video'
 
   /** For audio attachments: 'wav' or 'mp3' per llama.cpp mtmd support. */
   audioFormat?: 'wav' | 'mp3'
-  /** Audio duration in seconds (decoded client-side for the chip preview). */
+  /** Audio/video duration in seconds (decoded client-side for the chip preview). */
   durationSec?: number
 
   // Common fields
@@ -65,6 +65,23 @@ export function createAudioAttachment(data: {
   return {
     ...data,
     type: 'audio',
+  }
+}
+
+/**
+ * Helper to create video attachment
+ */
+export function createVideoAttachment(data: {
+  name: string
+  base64: string
+  dataUrl: string
+  mimeType: string
+  size: number
+  durationSec?: number
+}): Attachment {
+  return {
+    ...data,
+    type: 'video',
   }
 }
 

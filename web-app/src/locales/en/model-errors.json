@@ -3,5 +3,8 @@
   "description": "This chat is reaching the AI’s memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer’s memory. We can also truncate the input, which means it will forget some of the chat history to make room for new messages.",
   "increaseContextSizeDescription": "Do you want to increase the context size?",
   "truncateInput": "Truncate Input",
-  "increaseContextSize": "Increase Context Size"
+  "increaseContextSize": "Increase Context Size",
+  "lastRequestOverflowed": "Last request overflowed the context window.",
+  "contextOverflowDetail": "This request needed {{request}} tokens, but the model’s context window holds only {{context}}.",
+  "contextOverflowGeneric": "The request exceeds the available context size."
 }

@@ -161,6 +161,22 @@ describe('TokenCounter', () => {
     expect(tooltipContent.textContent).toMatch(/Remaining\s*0/)
   })
 
+  it('shows the overflow note and failing-request numbers when isOverflow', () => {
+    mockTokens({ tokenCount: 1200, maxTokens: 1000, isOverflow: true })
+    const { container } = render(<TokenCounter />)
+    const tooltipContent = screen.getByTestId('tooltip-content')
+    expect(tooltipContent.textContent).toMatch(/overflow/i)
+    expect(screen.getAllByText('120.0%').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('does not show the overflow note when not overflowing', () => {
+    mockTokens({ tokenCount: 500, maxTokens: 1000, isOverflow: false })
+    render(<TokenCounter />)
+    expect(screen.getByTestId('tooltip-content').textContent).not.toMatch(
+      /overflow/i
+    )
+  })
+
   it('accepts className prop', () => {
     mockTokens({ tokenCount: 0, maxTokens: 1000 })
     const { container } = render(<TokenCounter className="custom-class" />)

@@ -167,10 +167,10 @@ describe('SetupScreen', () => {
   it('clicking download triggers pullModelWithMetadata once metadata is ready', async () => {
     hoisted.janModel = sampleModel
     render(<SetupScreen />)
+    fireEvent.click(screen.getByText('Download'))
     await waitFor(() =>
       expect(hoisted.downloadStore.addLocalDownloadingModel).toHaveBeenCalled()
     )
-    // auto-start calls pull once support check completes
     await waitFor(() =>
       expect(hoisted.pullModelWithMetadataMock).toHaveBeenCalled()
     )

@@ -57,6 +57,50 @@ export function disableIndentedCodeBlockPlugin() {
   }
 }
 
+export interface MarkdownSegment {
+  type: 'markdown' | 'html' | 'svg'
+  content: string
+}
+
+// Standalone artifact, any of:
+//   1. ```html fenced block        → groups 1 (lead \n) 2 (ticks) 3 (lang) 4 (body)
+//   2. ```svg  fenced block        → same groups, lang === 'svg'
+//   3. raw <svg>…</svg> in prose   → group 5
+// \b stops langs like "html5"/"htmlbar" from matching. Raw SVG is matched
+// non-greedily so adjacent diagrams stay separate.
+const ARTIFACT_RE =
+  /(^|\n)(`{3,})[ \t]*(html|svg)\b[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)|(<svg\b[\s\S]*?<\/svg>)/gi
+
+/**
+ * Split markdown into alternating prose and standalone artifact segments
+ * (interactive HTML previews and static SVG). Splitting the string keeps
+ * Streamdown's code/mermaid/inline handling intact for everything else —
+ * overriding its `code` component would replace all of it.
+ */
+export function splitHtmlArtifacts(content: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  ARTIFACT_RE.lastIndex = 0
+  while ((match = ARTIFACT_RE.exec(content)) !== null) {
+    const isFence = match[2] !== undefined
+    // Fence keeps the leading newline as prose; raw SVG starts at match.index.
+    const blockStart = isFence ? match.index + match[1].length : match.index
+    const before = content.slice(lastIndex, blockStart)
+    if (before.length) segments.push({ type: 'markdown', content: before })
+    if (isFence) {
+      const type = match[3].toLowerCase() === 'svg' ? 'svg' : 'html'
+      segments.push({ type, content: match[4] })
+    } else {
+      segments.push({ type: 'svg', content: match[5] })
+    }
+    lastIndex = ARTIFACT_RE.lastIndex
+  }
+  const rest = content.slice(lastIndex)
+  if (rest.length) segments.push({ type: 'markdown', content: rest })
+  return segments
+}
+
 /**
  * Get the display name for a model, falling back to the model ID if no display name is set
  */

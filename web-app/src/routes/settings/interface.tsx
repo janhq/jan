@@ -20,8 +20,15 @@ export const Route = createFileRoute(route.settings.interface as any)({
 
 function InterfaceSettings() {
   const { t } = useTranslation()
-  const { resetInterface, showTokenSpeed, setShowTokenSpeed } =
-    useInterfaceSettings()
+  const {
+    resetInterface,
+    showTokenSpeed,
+    setShowTokenSpeed,
+    coloredUserBubble,
+    setColoredUserBubble,
+    renderHtmlArtifacts,
+    setRenderHtmlArtifacts,
+  } = useInterfaceSettings()
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -64,6 +71,33 @@ function InterfaceSettings() {
                   <Switch
                     checked={showTokenSpeed}
                     onCheckedChange={setShowTokenSpeed}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:interface.coloredUserBubble')}
+                description={t('settings:interface.coloredUserBubbleDesc')}
+                actions={
+                  <Switch
+                    checked={coloredUserBubble}
+                    onCheckedChange={setColoredUserBubble}
+                  />
+                }
+              />
+              <CardItem
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <span>{t('settings:interface.renderHtmlArtifacts')}</span>
+                    <span className="text-xs bg-secondary border text-muted-foreground rounded-full py-0.5 px-2">
+                      {t('common:experimental')}
+                    </span>
+                  </span>
+                }
+                description={t('settings:interface.renderHtmlArtifactsDesc')}
+                actions={
+                  <Switch
+                    checked={renderHtmlArtifacts}
+                    onCheckedChange={setRenderHtmlArtifacts}
                   />
                 }
               />
