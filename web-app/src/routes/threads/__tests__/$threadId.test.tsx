@@ -53,6 +53,10 @@ const h = vi.hoisted(() => {
     mcpToolNames: new Set<string>(),
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
+    busyThreads: {} as Record<string, boolean>,
+    embeddingThreads: {} as Record<string, boolean>,
+    setThreadBusy: vi.fn(),
+    setThreadEmbedding: vi.fn(),
   }
   const useAppStateMock: any = (selector: any) => selector(appStateState)
   useAppStateMock.getState = () => appStateState

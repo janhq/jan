@@ -194,7 +194,11 @@ function ThreadDetail() {
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
-  const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
+  // Per-thread so the shimmer survives navigating away and back while the
+  // embedding run is still in flight.
+  const processingEmbeddings = useAppState(
+    (s) => !!s.embeddingThreads[threadId]
+  )
   const { t } = useTranslation()
 
   // llama-server's overflow string is raw English; localize it, interpolating
@@ -842,7 +846,7 @@ function ThreadDetail() {
       const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
         if (hasEmbeddingDocuments) {
-          setProcessingEmbeddings(true)
+          useAppState.getState().setThreadEmbedding(threadId, true)
           useAppState.getState().setThreadBusy(threadId, true)
         }
         try {
@@ -878,7 +882,7 @@ function ThreadDetail() {
           }
           return
         } finally {
-          setProcessingEmbeddings(false)
+          useAppState.getState().setThreadEmbedding(threadId, false)
           useAppState.getState().setThreadBusy(threadId, false)
         }
       }
