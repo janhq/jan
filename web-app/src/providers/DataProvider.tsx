@@ -307,12 +307,38 @@ export function DataProvider() {
       const providerName = provider?.provider ?? LOCAL_LLAMACPP_PROVIDER
       console.log('[LocalAPI] Provider for model:', providerName)
 
-      const currentStatus = useAppState.getState().serverStatus
-      console.log('[LocalAPI] Current server status:', currentStatus)
+      console.log(
+        '[LocalAPI] Current server status:',
+        useAppState.getState().serverStatus
+      )
 
-      if (currentStatus === 'pending') {
-        console.log('[LocalAPI] Server status is pending — skipping auto-start')
-        return
+      // A model switch / server start may already be in flight (e.g. the
+      // startup auto-start fired right as the download finished). Previously
+      // we bailed out on 'pending', which left the freshly downloaded model
+      // with nothing running and forced the user to start it manually from
+      // Settings after onboarding. Instead, wait for the in-flight operation
+      // to settle, then switch to the just-imported model so it auto-starts.
+      if (useAppState.getState().serverStatus === 'pending') {
+        console.log('[LocalAPI] Server pending — waiting before auto-start')
+        const settled = await new Promise<boolean>((resolve) => {
+          const startedAt = Date.now()
+          const poll = () => {
+            if (useAppState.getState().serverStatus !== 'pending') {
+              resolve(true)
+            } else if (Date.now() - startedAt > 20000) {
+              resolve(false)
+            } else {
+              setTimeout(poll, 500)
+            }
+          }
+          poll()
+        })
+        if (!settled) {
+          console.log(
+            '[LocalAPI] Server still pending after wait — skipping auto-start'
+          )
+          return
+        }
       }
 
       // switchToModel handles stopAllModels, start the new model, start/restart
