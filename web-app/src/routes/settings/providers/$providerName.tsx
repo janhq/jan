@@ -48,6 +48,7 @@ import {
   API_KEY_FALLBACKS_SETTING_KEY,
   serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
+import { getProviderRefreshErrorMessage } from '@/services/providers/errors'
 import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
@@ -595,14 +596,19 @@ function ProviderDetail() {
         })
       }
     } catch (error) {
+      const fallbackMessage = t('providers:refreshModelsFailed', {
+        provider: provider.provider,
+      })
+      const description = getProviderRefreshErrorMessage(
+        error,
+        fallbackMessage
+      )
       console.error(
         t('providers:refreshModelsFailed', { provider: provider.provider }),
         error
       )
       toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsFailed', {
-          provider: provider.provider,
-        }),
+        description,
       })
     } finally {
       setRefreshingModels(false)
