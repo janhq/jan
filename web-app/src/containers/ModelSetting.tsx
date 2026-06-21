@@ -231,7 +231,7 @@ export function ModelSetting({
           <IconSettings size={18} className="text-muted-foreground" />
         </Button>
       </SheetTrigger>
-      <SheetContent className="overflow-y-auto">
+      <SheetContent>
         <SheetHeader>
           <SheetTitle>
             {t('common:modelSettings.title', {
@@ -243,7 +243,7 @@ export function ModelSetting({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="px-4 space-y-8 pb-4">
+        <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
           {provider.provider === 'llamacpp' && (
             <MtpPanel modelId={model.id} provider={provider} />
           )}
