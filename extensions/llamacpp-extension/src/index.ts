@@ -2176,12 +2176,9 @@ export default class llamacpp_extension extends AIEngine {
     const expectedBinDir = await joinPath([backendDir, 'build', 'bin'])
     const expectedBinPath = await joinPath([expectedBinDir, serverName])
 
-    // Archive layouts vary: Jan-published tarballs expand to
-    // `<backendDir>/build/bin/llama-server`, while upstream llama.cpp
-    // GitHub release tarballs (e.g. `llama-b9193-bin-...`) expand to
-    // a flat `<backendDir>/llama-bXXXX/llama-server`. If the binary is
-    // not at the expected path, scan the extracted tree for it and
-    // relocate its containing directory into `build/bin/`.
+    // Normalize varying archive layouts to `build/bin/`: Jan tarballs already
+    // ship it; upstream Linux tarballs nest under `llama-bXXXX/`; upstream
+    // Windows zips are flat with the binary + DLLs at the root.
     if (!(await fs.existsSync(expectedBinPath))) {
       const foundDir = await findLlamaServerDir(backendDir, serverName)
       if (!foundDir) {
@@ -2191,19 +2188,23 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
       if (foundDir !== expectedBinDir) {
+        const staging = `${backendDir}.staging`
         try {
-          // Rename the whole directory in one shot — moving entries
-          // individually breaks relative symlinks (libggml.so →
-          // libggml.so.0 → libggml.so.0.10.0) as soon as the first
-          // target is renamed.
-          const buildDir = await joinPath([backendDir, 'build'])
-          await fs.mkdir(buildDir)
-          await fs.mv(foundDir, expectedBinDir)
+          // Move the binary's dir into build/bin in one rename to keep relative
+          // symlinks intact (libggml.so → .so.0 → .so.0.10.0). A flat-root
+          // archive can't rename into its own subtree, so stage to a sibling.
+          if (foundDir === backendDir) {
+            await fs.mv(backendDir, staging)
+            await fs.mkdir(await joinPath([backendDir, 'build']))
+            await fs.mv(staging, expectedBinDir)
+          } else {
+            await fs.mkdir(await joinPath([backendDir, 'build']))
+            await fs.mv(foundDir, expectedBinDir)
+          }
         } catch (e) {
-          await fs.rm(backendDir)
-          throw new Error(
-            `Failed to normalize backend layout: ${String(e)}`
-          )
+          if (await fs.existsSync(staging)) await fs.rm(staging)
+          if (await fs.existsSync(backendDir)) await fs.rm(backendDir)
+          throw new Error(`Failed to normalize backend layout: ${String(e)}`)
         }
       }
     }
