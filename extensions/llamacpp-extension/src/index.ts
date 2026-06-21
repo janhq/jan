@@ -41,6 +41,7 @@ import {
   verifyBackendInstallation,
   getBackendExePath,
   getBackendDir,
+  getLocalInstalledBackends,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -2227,6 +2228,58 @@ export default class llamacpp_extension extends AIEngine {
         `Backend installed but failed to refresh UI: ${String(e)}`
       )
     }
+  }
+
+  /**
+   * Install the supplementary CUDA runtime DLLs that upstream ships separately
+   * (`cudart-llama-bin-<backend>.zip`) into every installed backend of that
+   * type, so llama-server can resolve cublas/cudart at launch.
+   */
+  async installCudaRuntime(path: string): Promise<void> {
+    if (
+      !(await fs.existsSync(path)) ||
+      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
+    ) {
+      throw new Error(`Invalid path or file ${path}`)
+    }
+
+    const archiveName = await basename(path)
+    const match = /^cudart-llama-bin-(.+?)\.(?:tar\.gz|zip)$/.exec(archiveName)
+    if (!match || !match[1]) {
+      throw new Error(
+        `Not a CUDA runtime archive: ${archiveName}. Expected cudart-llama-bin-<backend>.(zip|tar.gz)`
+      )
+    }
+    const backendType = match[1]
+
+    const targets = (await getLocalInstalledBackends()).filter(
+      (b) => b.backend === backendType
+    )
+    if (targets.length === 0) {
+      throw new Error(
+        `No installed "${backendType}" backend found. Install that backend first, then add the CUDA runtime.`
+      )
+    }
+
+    let installed = 0
+    for (const t of targets) {
+      const binDir = await joinPath([
+        await getBackendDir(t.backend, t.version),
+        'build',
+        'bin',
+      ])
+      if (!(await fs.existsSync(binDir))) continue
+      await invoke('decompress', { path, outputDir: binDir })
+      installed++
+    }
+    if (installed === 0) {
+      throw new Error(
+        `Found ${backendType} backend(s) but none had a build/bin directory to install into.`
+      )
+    }
+    logger.info(
+      `CUDA runtime installed into ${installed} ${backendType} backend(s)`
+    )
   }
 
   /**

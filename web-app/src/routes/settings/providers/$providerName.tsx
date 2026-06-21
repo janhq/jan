@@ -75,6 +75,7 @@ function ProviderDetail() {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
+  const [isInstallingCuda, setIsInstallingCuda] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [apiKeysDraft, setApiKeysDraft] = useState('')
   const [baseUrlDraft, setBaseUrlDraft] = useState('')
@@ -83,8 +84,11 @@ function ProviderDetail() {
   const [keyCheckResults, setKeyCheckResults] = useState<
     { index: number; masked: string; status: string; detail: string }[]
   >([])
-  const { checkForUpdate: checkForBackendUpdate, installBackend } =
-    useBackendUpdater()
+  const {
+    checkForUpdate: checkForBackendUpdate,
+    installBackend,
+    installCudaRuntime,
+  } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider, addDeletedModels } =
     useModelProvider()
@@ -726,6 +730,34 @@ function ProviderDetail() {
     }
   }, [provider, serviceHub, refreshSettings, t, installBackend])
 
+  const handleInstallCudaRuntime = useCallback(async () => {
+    if (provider?.provider !== 'llamacpp') return
+
+    setIsInstallingCuda(true)
+    try {
+      const selectedFile = await serviceHub.dialog().open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'CUDA Runtime Archive', extensions: ['zip'] }],
+      })
+
+      if (selectedFile && typeof selectedFile === 'string') {
+        await installCudaRuntime(selectedFile)
+        toast.success(t('settings:backendInstallSuccess'), {
+          description: 'CUDA runtime installed',
+        })
+      }
+    } catch (error) {
+      console.error('Failed to install CUDA runtime:', error)
+      toast.error(t('settings:backendInstallError'), {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      })
+    } finally {
+      setIsInstallingCuda(false)
+    }
+  }, [provider, serviceHub, t, installCudaRuntime])
+
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
@@ -987,6 +1019,28 @@ function ProviderDetail() {
                                       : 'Install Backend from File'}
                                   </span>
                                 </Button>
+                                {provider?.provider === 'llamacpp' &&
+                                  IS_WINDOWS && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={handleInstallCudaRuntime}
+                                      disabled={isInstallingCuda}
+                                    >
+                                      <IconUpload
+                                        size={12}
+                                        className={cn(
+                                          'text-muted-foreground',
+                                          isInstallingCuda && 'animate-pulse'
+                                        )}
+                                      />
+                                      <span>
+                                        {isInstallingCuda
+                                          ? 'Installing CUDA Runtime...'
+                                          : 'Install CUDA Runtime'}
+                                      </span>
+                                    </Button>
+                                  )}
                               </div>
                             )}
                         </>
