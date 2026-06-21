@@ -106,7 +106,7 @@ export const paramsSettings: Record<string, ParamDef> = {
     key: 'temperature',
     title: 'Temperature',
     description: 'Controls response randomness.',
-    value: 0.7,
+    value: 0.8,
     controllerType: 'slider',
     controllerProps: { min: 0, max: 2, step: 0.05, warnAbove: 1.5 },
     capability: 'core',
@@ -177,7 +177,7 @@ export const paramsSettings: Record<string, ParamDef> = {
     title: 'Repeat Penalty',
     description:
       'llama.cpp-style multiplicative penalty for repeated tokens. 1.0 = disabled.',
-    value: 1.1,
+    value: 1.0,
     controllerType: 'slider',
     controllerProps: { min: 1, max: 2, step: 0.01, warnAbove: 1.3 },
     capability: 'repetition',
@@ -348,6 +348,50 @@ export const paramsSettings: Record<string, ParamDef> = {
     controllerType: 'checkbox',
     capability: 'ignore_eos',
   },
+}
+
+/**
+ * Sampler keys exposed as per-model defaults in the model edit dialog. Persist
+ * to the model (model.yml → router preset for llamacpp) and act as defaults the
+ * local API server uses; per-assistant and per-request values override them.
+ * `repeat_last_n` is intentionally omitted — it has no paramsSettings entry.
+ */
+export const SAMPLER_DEFAULT_KEYS = [
+  'temperature',
+  'top_p',
+  'top_k',
+  'min_p',
+  'repeat_penalty',
+  'presence_penalty',
+  'frequency_penalty',
+] as const
+
+// The MLX server only forwards these to GenerateParameters (top_k/min_p/
+// presence/frequency are silently dropped); see mlx-server Server.swift.
+export const MLX_SAMPLER_KEYS = [
+  'temperature',
+  'top_p',
+  'repeat_penalty',
+] as const
+
+/** Sampler keys a provider actually honors. */
+export function samplerKeysForProvider(
+  providerId: string
+): readonly string[] {
+  return providerId === 'mlx' ? MLX_SAMPLER_KEYS : SAMPLER_DEFAULT_KEYS
+}
+
+/**
+ * Model settings seed sampler keys with '' (predefined.ts); `??` wouldn't catch
+ * the empty string, so resolve ''/null/undefined to the param's default.
+ */
+export function resolveSamplerValue(
+  stored: unknown,
+  fallback: string | number | boolean
+): string | number | boolean {
+  return stored === undefined || stored === null || stored === ''
+    ? fallback
+    : (stored as string | number | boolean)
 }
 
 /**

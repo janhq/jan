@@ -14,28 +14,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
+import { SamplerDefaults } from '@/containers/SamplerDefaults'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-import { paramsSettings } from '@/lib/predefinedParams'
+import { paramsSettings, samplerKeysForProvider } from '@/lib/predefinedParams'
 
 const MTP_MIN_BUILD = 9193
-
-// Sampling defaults shown in the model settings sheet. These persist to the
-// model (model.yml → router preset for llamacpp) and act as server-side
-// defaults for the local API server; per-request values still override.
-// `repeat_last_n` is intentionally omitted — it has no paramsSettings entry.
-const SAMPLER_DEFAULT_KEYS = [
-  'temperature',
-  'top_p',
-  'top_k',
-  'min_p',
-  'repeat_penalty',
-  'presence_penalty',
-  'frequency_penalty',
-] as const
 
 function parseBuildNumber(version: unknown): number | null {
   if (typeof version !== 'string') return null
@@ -260,45 +247,14 @@ export function ModelSetting({
           {provider.provider === 'llamacpp' && (
             <MtpPanel modelId={model.id} provider={provider} />
           )}
-          {(provider.provider === 'llamacpp' || provider.provider === 'mlx') && (
-            <div className="space-y-4">
-              <div>
-                <span className="font-medium">
-                  {t('common:modelSettings.samplingDefaults.title')}
-                </span>
-                <p className="text-muted-foreground leading-normal text-xs">
-                  {t('common:modelSettings.samplingDefaults.description')}
-                </p>
-              </div>
-              {SAMPLER_DEFAULT_KEYS.map((key) => {
-                const def = paramsSettings[key]
-                if (!def) return null
-                const stored = model.settings?.[key]?.controller_props?.value
-                const value = stored ?? def.value
-                return (
-                  <div key={key} className="space-y-2">
-                    <div className="flex items-start justify-between gap-8">
-                      <div className="mb-1 truncate">
-                        <span title={def.title} className="font-medium">
-                          {def.title}
-                        </span>
-                      </div>
-                      <DynamicControllerSetting
-                        title={def.title}
-                        description={def.description}
-                        controllerType={def.controllerType}
-                        controllerProps={{ ...(def.controllerProps ?? {}), value }}
-                        onChange={(newValue) => handleSettingChange(key, newValue)}
-                      />
-                    </div>
-                    <p className="text-muted-foreground leading-normal text-xs">
-                      {def.description}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
+            (model as { embedding?: boolean }).embedding !== true && (
+              <SamplerDefaults
+                model={model}
+                keys={samplerKeysForProvider(provider.provider)}
+                onChange={handleSettingChange}
+              />
+            )}
           {fitEnabled && fitCtxSetting && (
             <div key="fit_ctx" className="space-y-2">
               <div className="flex items-start justify-between gap-8">
