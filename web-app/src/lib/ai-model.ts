@@ -136,6 +136,13 @@ export function createLanguageModel(
             'X-Title': 'Jan',
           }
         : {}),
+      // Requesty identification headers
+      ...(provider.provider === 'requesty'
+        ? {
+            'HTTP-Referer': 'https://jan.ai',
+            'X-Title': 'Jan',
+          }
+        : {}),
     },
     // Include usage data in streaming responses for token speed calculation
     includeUsage: true,
