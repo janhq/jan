@@ -744,7 +744,7 @@ function ProviderDetail() {
       if (selectedFile && typeof selectedFile === 'string') {
         await installCudaRuntime(selectedFile)
         toast.success(t('settings:backendInstallSuccess'), {
-          description: 'CUDA runtime installed',
+          description: t('settings:cudaRuntimeInstalled'),
         })
       }
     } catch (error) {
@@ -1015,8 +1015,8 @@ function ProviderDetail() {
                                   />
                                   <span>
                                     {isInstallingBackend
-                                      ? 'Installing Backend...'
-                                      : 'Install Backend from File'}
+                                      ? t('settings:installingBackend')
+                                      : t('settings:installBackendFromFile')}
                                   </span>
                                 </Button>
                                 {provider?.provider === 'llamacpp' &&
@@ -1036,8 +1036,8 @@ function ProviderDetail() {
                                       />
                                       <span>
                                         {isInstallingCuda
-                                          ? 'Installing CUDA Runtime...'
-                                          : 'Install CUDA Runtime'}
+                                          ? t('settings:installingCudaRuntime')
+                                          : t('settings:installCudaRuntime')}
                                       </span>
                                     </Button>
                                   )}
