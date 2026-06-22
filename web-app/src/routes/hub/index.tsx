@@ -107,6 +107,9 @@ export const Route = createFileRoute(route.hub.index as any)({
   }),
 })
 
+// Module-level cache (survives the Hub route remount on back-navigation) that preserves list scroll; `q` ties the offset to the search it belongs to.
+const hubScrollCache: { q: string; offset: number } = { q: '', offset: 0 }
+
 function HubContent() {
   const [isPending, startTransition] = useTransition()
   const parentRef = useRef(null)
@@ -671,6 +674,62 @@ function HubContent() {
 
   const navigate = useNavigate()
 
+  // Mirror the (debounced) search query into the URL `q` param so it survives opening a model detail page and coming back (Hub re-seeds `searchValue` from `q`); `replace` avoids history spam.
+  useEffect(() => {
+    const current = querySearchParam ?? ''
+    const next = debouncedSearchValue.trim()
+    if (next === current) return
+    void navigate({
+      to: route.hub.index,
+      search: (prev) => ({ ...prev, q: next || undefined }),
+      replace: true,
+    })
+  }, [debouncedSearchValue, querySearchParam, navigate])
+
+  // Open a model detail page, remembering the search query and list scroll position so the back button restores where the user was (see restore effect below).
+  const openModel = useCallback(
+    (modelId: string) => {
+      const el = parentRef.current as HTMLElement | null
+      const query = searchValue.trim()
+      hubScrollCache.q = query
+      hubScrollCache.offset = el ? el.scrollTop : 0
+      void navigate({
+        to: route.hub.model,
+        params: { modelId },
+        search: query ? { q: query } : {},
+      })
+    },
+    [navigate, searchValue]
+  )
+
+  // Restore the saved scroll offset once the list is populated after back-navigation; the container can still be growing (clamping an early `scrollTop`), so re-apply across a few frames until it sticks, then consume it.
+  const didRestoreScroll = useRef(false)
+  useEffect(() => {
+    if (didRestoreScroll.current) return
+    if (virtualListModels.length === 0) return
+
+    const target = hubScrollCache.offset
+    const matchesQuery = hubScrollCache.q === (querySearchParam ?? '')
+    if (target <= 0 || !matchesQuery) {
+      didRestoreScroll.current = true
+      return
+    }
+
+    didRestoreScroll.current = true
+    hubScrollCache.offset = 0
+    let attempts = 0
+    const apply = () => {
+      const el = parentRef.current as HTMLElement | null
+      if (!el) return
+      el.scrollTop = target
+      attempts += 1
+      if (Math.abs(el.scrollTop - target) > 2 && attempts < 12) {
+        requestAnimationFrame(apply)
+      }
+    }
+    requestAnimationFrame(apply)
+  }, [virtualListModels.length, querySearchParam])
+
   const isRecommendedModel = useCallback((modelId: string) => {
     return (extractModelName(modelId)?.toLowerCase() ===
       'jan-nano-gguf') as boolean
@@ -890,12 +949,7 @@ function HubContent() {
                               title={
                                 extractModelName(rec.modelName) || rec.modelName
                               }
-                              onClick={() =>
-                                navigate({
-                                  to: route.hub.model,
-                                  params: { modelId: rec.modelName },
-                                })
-                              }
+                              onClick={() => openModel(rec.modelName)}
                             >
                               {extractModelName(rec.modelName) || rec.modelName}
                             </h1>
@@ -915,12 +969,7 @@ function HubContent() {
                         onToggleVariants={() =>
                           toggleModelExpansion(model.model_name)
                         }
-                        onOpenModel={() =>
-                          navigate({
-                            to: route.hub.model,
-                            params: { modelId: model.model_name },
-                          })
-                        }
+                        onOpenModel={() => openModel(model.model_name)}
                         handleUseModel={handleUseModel}
                         getDownloadedModel={getDownloadedModel}
                       />
@@ -1018,13 +1067,9 @@ function HubContent() {
                           )
                         }
                         onOpenModel={() =>
-                          navigate({
-                            to: route.hub.model,
-                            params: {
-                              modelId:
-                                virtualListModels[virtualItem.index].model_name,
-                            },
-                          })
+                          openModel(
+                            virtualListModels[virtualItem.index].model_name
+                          )
                         }
                         handleUseModel={handleUseModel}
                         getDownloadedModel={getDownloadedModel}
