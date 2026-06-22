@@ -22,7 +22,8 @@ export function supportsRemoteCatalog(providerName: string): boolean {
   return (
     providerName === 'openai' ||
     providerName === 'anthropic' ||
-    providerName === 'gemini'
+    providerName === 'gemini' ||
+    providerName === 'nearai'
   )
 }
 
@@ -148,9 +149,10 @@ export async function fetchTopRemoteModels(
   let lastStatus = 0
   let lastStatusText = ''
   for (let i = 0; i < attempts.length; i++) {
+    const catalogPath = provider.provider === 'nearai' ? 'model/list' : 'models'
     const result = await getJson(
       fetchImpl,
-      `${provider.base_url}/models`,
+      `${provider.base_url}/${catalogPath}`,
       buildHeaders(provider, attempts[i])
     )
     lastStatus = result.status
@@ -161,6 +163,13 @@ export async function fetchTopRemoteModels(
     }
 
     const body = result.body as { data?: unknown }
+    if (provider.provider === 'nearai') {
+      const nearBody = result.body as { models?: unknown }
+      const nearRows = Array.isArray(nearBody?.models)
+        ? (nearBody.models as unknown[])
+        : []
+      return normalizeNearAICatalog(nearRows)
+    }
     const rows = Array.isArray(body?.data) ? (body.data as unknown[]) : []
     return normalizeCatalog(provider.provider, rows)
   }
@@ -199,6 +208,60 @@ function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogM
     parsed.sort((a, b) => b.createdMs - a.createdMs || a.id.localeCompare(b.id))
   }
   return parsed.slice(0, TOP_N)
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function normalizeNearAICatalog(rows: unknown[]): RemoteCatalogModel[] {
+  const parsed: (RemoteCatalogModel & { score: number })[] = []
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const row = raw as Record<string, unknown>
+    const id =
+      typeof row.modelId === 'string'
+        ? row.modelId
+        : typeof row.id === 'string'
+          ? row.id
+          : null
+    if (!id || id === 'openai/privacy-filter' || /reranker/i.test(id)) continue
+
+    const metadata =
+      row.metadata && typeof row.metadata === 'object'
+        ? (row.metadata as Record<string, unknown>)
+        : {}
+    const architecture =
+      metadata.architecture && typeof metadata.architecture === 'object'
+        ? (metadata.architecture as Record<string, unknown>)
+        : {}
+    const inputModalities = asStringArray(architecture.inputModalities)
+    const outputModalities = asStringArray(architecture.outputModalities)
+
+    if (inputModalities.length === 0 && outputModalities.length === 0) continue
+    if (!outputModalities.includes('text')) continue
+    if (!inputModalities.includes('text') && !inputModalities.includes('image')) continue
+
+    const capabilities = ['completion', 'tools']
+    if (inputModalities.includes('image')) capabilities.push('vision')
+    const score =
+      metadata.attestationSupported === true
+        ? 2
+        : metadata.verifiable === true
+          ? 1
+          : 0
+
+    parsed.push({ id, capabilities, createdMs: 0, score })
+  }
+
+  parsed.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+  return parsed.slice(0, TOP_N).map((model) => ({
+    id: model.id,
+    capabilities: model.capabilities,
+    createdMs: model.createdMs,
+  }))
 }
 
 function parseCreated(created: unknown, createdAt: unknown): number {

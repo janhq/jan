@@ -166,7 +166,9 @@ export class TauriProvidersService extends DefaultProvidersService {
           })
         }
 
-        const response = await fetchTauri(`${provider.base_url}/models`, {
+        const baseUrl = provider.base_url.replace(/\/+$/, '')
+        const modelsPath = provider.provider === 'nearai' ? 'model/list' : 'models'
+        const response = await fetchTauri(`${baseUrl}/${modelsPath}`, {
           method: 'GET',
           headers,
         })
@@ -218,10 +220,10 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
         if (data.models && Array.isArray(data.models)) {
           return data.models
-            .map((model: string | { id: string }) =>
-              typeof model === 'string' ? model : model.id
+            .map((model: string | { id?: string; modelId?: string }) =>
+              typeof model === 'string' ? model : model.modelId || model.id
             )
-            .filter(Boolean)
+            .filter((id): id is string => Boolean(id))
         }
         console.warn('Unexpected response format from provider API:', data)
         return []

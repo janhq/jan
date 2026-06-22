@@ -232,6 +232,27 @@ describe('TauriProvidersService', () => {
       expect(result).toEqual(['m1', 'm2'])
     })
 
+    it('fetches NEAR AI models from model/list and maps modelId values', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          models: [{ modelId: 'zai-org/GLM-5.1-FP8' }, { modelId: 'Qwen/Qwen3.6-35B-A3B-FP8' }],
+        }),
+      } as any)
+
+      const result = await svc.fetchModelsFromProvider({
+        ...baseProvider,
+        provider: 'nearai',
+        base_url: 'https://cloud-api.near.ai/v1/',
+      })
+      expect(result).toEqual(['zai-org/GLM-5.1-FP8', 'Qwen/Qwen3.6-35B-A3B-FP8'])
+      expect(fetchTauri).toHaveBeenCalledWith(
+        'https://cloud-api.near.ai/v1/model/list',
+        expect.objectContaining({ method: 'GET' })
+      )
+    })
+
     it('returns empty for unexpected format', async () => {
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,

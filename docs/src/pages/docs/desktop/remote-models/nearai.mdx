@@ -1,0 +1,69 @@
+---
+title: NEAR AI Cloud
+description: A step-by-step guide on integrating Jan with NEAR AI Cloud.
+keywords:
+  [
+    Jan,
+    local AI,
+    privacy focus,
+    conversational AI,
+    large language models,
+    NEAR AI,
+    NEAR AI Cloud,
+    TEE inference,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# NEAR AI Cloud
+
+Jan supports [NEAR AI Cloud](https://cloud.near.ai) through its OpenAI-compatible API, allowing you to use NEAR-hosted models with TEE-backed private inference from Jan.
+
+## Integrate NEAR AI Cloud with Jan
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit [NEAR AI Cloud](https://cloud.near.ai) and sign in
+2. Create or copy an API key for your account
+
+<Callout type='info'>
+NEAR AI Cloud model availability and TEE attestation support can vary by model. Check the public model catalog before selecting a model ID.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **NEAR AI**
+3. Insert your **API Key**
+4. Keep the default base URL: `https://cloud-api.near.ai/v1`
+
+### Step 3: Start Using NEAR AI Cloud Models
+
+1. Open any existing **Chat** or create a new one
+2. Select a NEAR AI Cloud model from the **model selector**
+3. Start chatting
+</Steps>
+
+## Available Models Through NEAR AI Cloud
+
+Jan refreshes NEAR AI Cloud models from the public catalog at `https://cloud-api.near.ai/v1/model/list`. Use the `modelId` value from that catalog when adding a model manually.
+
+## Troubleshooting
+
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Confirm your account has access to the model you selected
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify the base URL is `https://cloud-api.near.ai/v1`
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm the model appears in the [NEAR AI Cloud model catalog](https://cloud-api.near.ai/v1/model/list)
+- Check whether the model supports chat-style text output
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH).
