@@ -341,5 +341,10 @@
     "updateError": "Failed to update Llamacpp"
   },
   "backendInstallSuccess": "Backend installed successfully!",
-  "backendInstallError": "Failed to install backend"
+  "backendInstallError": "Failed to install backend",
+  "installBackendFromFile": "Install Backend from File",
+  "installingBackend": "Installing Backend...",
+  "installCudaRuntime": "Install CUDA Runtime",
+  "installingCudaRuntime": "Installing CUDA Runtime...",
+  "cudaRuntimeInstalled": "CUDA runtime installed"
 }
