@@ -43,12 +43,14 @@ import { switchToModel } from '@/utils/switchModel'
 
 type SearchParams = {
   repo: string
+  q?: string
 }
 
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetailContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
+    q: typeof search.q === 'string' ? search.q : undefined,
   }),
 })
 
@@ -341,7 +343,12 @@ function HubModelDetailContent() {
       <div className="flex flex-col h-svh w-full">
         <HeaderPage>
           <Button
-            onClick={() => navigate({ to: route.hub.index })}
+            onClick={() =>
+              navigate({
+                to: route.hub.index,
+                search: search.q ? { q: search.q } : {},
+              })
+            }
             aria-label="Go back"
             variant="ghost"
             size="sm"
@@ -362,7 +369,12 @@ function HubModelDetailContent() {
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <Button
-            onClick={() => navigate({ to: route.hub.index })}
+            onClick={() =>
+              navigate({
+                to: route.hub.index,
+                search: search.q ? { q: search.q } : {},
+              })
+            }
             aria-label="Go back"
             variant="ghost"
             size="sm"
