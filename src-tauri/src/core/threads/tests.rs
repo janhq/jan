@@ -660,6 +660,75 @@ fn test_write_messages_jsonl_format_one_per_line() {
 }
 
 #[test]
+fn test_write_messages_leaves_no_tmp_file_on_success() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path();
+    ensure_thread_dir_exists(base, "no-tmp").unwrap();
+    let path = get_messages_path(base, "no-tmp");
+
+    write_messages_to_file(&[json!({"id": "a"}), json!({"id": "b"})], &path).unwrap();
+
+    let dir = path.parent().unwrap();
+    let stray_tmp: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .filter(|n| n.to_string_lossy().ends_with(".tmp"))
+        .collect();
+    assert!(
+        stray_tmp.is_empty(),
+        "no .tmp file should remain after a successful atomic write, found: {stray_tmp:?}"
+    );
+}
+
+#[test]
+fn test_write_messages_overwrites_stale_tmp_from_prior_crash() {
+    // Regression test for janhq/jan#8019: a stale `.tmp` file left behind from
+    // a previous crashed write must not break the next write.
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path();
+    ensure_thread_dir_exists(base, "stale-tmp").unwrap();
+    let path = get_messages_path(base, "stale-tmp");
+    let tmp_path = path.with_file_name(format!(
+        "{}.tmp",
+        path.file_name().unwrap().to_string_lossy()
+    ));
+
+    fs::write(&tmp_path, "garbage that is not JSONL\n{{{").unwrap();
+
+    write_messages_to_file(&[json!({"id": "fresh"})], &path).unwrap();
+
+    let read = read_messages_from_file(base, "stale-tmp").unwrap();
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0]["id"], "fresh");
+    assert!(
+        !tmp_path.exists(),
+        "stale .tmp should have been renamed over the target"
+    );
+}
+
+#[test]
+fn test_write_messages_preserves_existing_on_write_failure() {
+    // Regression test for janhq/jan#8019: when the write path fails, the
+    // previously-persisted messages.jsonl must remain intact (truncate-first
+    // semantics would leave it empty).
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path();
+    ensure_thread_dir_exists(base, "preserve").unwrap();
+    let path = get_messages_path(base, "preserve");
+
+    write_messages_to_file(&[json!({"id": "original"})], &path).unwrap();
+
+    // Pointing at a path whose parent doesn't exist forces File::create to fail.
+    let unwritable = base.join("missing-parent").join("messages.jsonl");
+    assert!(write_messages_to_file(&[json!({"id": "never"})], &unwritable).is_err());
+
+    // Original file for the unrelated thread must be untouched.
+    let read = read_messages_from_file(base, "preserve").unwrap();
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0]["id"], "original");
+}
+
+#[test]
 fn test_read_messages_invalid_json_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();

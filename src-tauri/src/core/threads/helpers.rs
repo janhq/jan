@@ -30,17 +30,45 @@ pub async fn get_lock_for_thread(thread_id: &str) -> Arc<Mutex<()>> {
     lock
 }
 
-/// Write messages to a thread's messages.jsonl file
+/// Write messages to a thread's messages.jsonl file.
+///
+/// Writes to a sibling `.tmp` file then atomically renames it over the target,
+/// so the target is never left in a partially-written state if the process is
+/// killed mid-write (see janhq/jan#8019).
 pub fn write_messages_to_file(
     messages: &[serde_json::Value],
     path: &std::path::Path,
 ) -> Result<(), String> {
-    let mut file = File::create(path).map_err(|e| e.to_string())?;
-    for msg in messages {
-        let data = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-        writeln!(file, "{data}").map_err(|e| e.to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Messages path has no parent: {}", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("Invalid messages file name: {}", path.display()))?;
+    let tmp_path = parent.join(format!("{file_name}.tmp"));
+
+    let write = || -> Result<(), String> {
+        let mut file = File::create(&tmp_path).map_err(|e| e.to_string())?;
+        for msg in messages {
+            let data = serde_json::to_string(msg).map_err(|e| e.to_string())?;
+            writeln!(file, "{data}").map_err(|e| e.to_string())?;
+        }
+        file.flush().map_err(|e| e.to_string())?;
+        // Best-effort: some filesystems (certain tmpfs setups) don't support fsync.
+        let _ = file.sync_all();
+        Ok(())
+    };
+
+    if let Err(e) = write() {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(e);
     }
-    Ok(())
+
+    fs::rename(&tmp_path, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        e.to_string()
+    })
 }
 
 /// Read messages from a thread's messages.jsonl file
