@@ -1012,7 +1012,7 @@ mod server_tests {
             "http://localhost:3000",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(h.contains_key("access-control-allow-headers"));
@@ -1034,7 +1034,7 @@ mod server_tests {
             "http://evil.example.com",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(!h.contains_key("access-control-allow-origin"));
@@ -1051,7 +1051,7 @@ mod server_tests {
             "",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));
     }
