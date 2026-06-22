@@ -319,10 +319,22 @@
           "markdownDescription": "Denies the get_system_usage command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the hardware plugin\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-system-usage`",
+          "description": "Enables the refresh_system_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-refresh-system-info",
+          "markdownDescription": "Enables the refresh_system_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the refresh_system_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-refresh-system-info",
+          "markdownDescription": "Denies the refresh_system_info command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the hardware plugin\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-system-usage`\n- `allow-refresh-system-info`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the hardware plugin\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-system-usage`"
+          "markdownDescription": "Default permissions for the hardware plugin\n#### This default permission set includes:\n\n- `allow-get-system-info`\n- `allow-get-system-usage`\n- `allow-refresh-system-info`"
         }
       ]
     }

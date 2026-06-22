@@ -63,17 +63,19 @@ export interface MarkdownSegment {
 }
 
 // Standalone artifact, any of:
-//   1. ```html fenced block        → groups 1 (lead \n) 2 (ticks) 3 (lang) 4 (body)
-//   2. ```svg  fenced block        → same groups, lang === 'svg'
-//   3. raw <svg>…</svg> in prose   → group 5
-// \b stops langs like "html5"/"htmlbar" from matching. Raw SVG is matched
-// non-greedily so adjacent diagrams stay separate.
+//   1. fenced block of any language → groups 1 (lead \n) 2 (ticks) 3 (info) 4 (body)
+//   2. raw <svg>…</svg> in prose    → group 5
+// The fence body is promoted to an artifact only when it's an html/svg fence,
+// or when its body is a lone <svg> (e.g. a model wrapping its SVG in a ```xml or
+// bare ``` fence). A fence with SVG mixed into other code stays as code. Raw SVG
+// is matched non-greedily so adjacent diagrams stay separate.
 const ARTIFACT_RE =
-  /(^|\n)(`{3,})[ \t]*(html|svg)\b[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)|(<svg\b[\s\S]*?<\/svg>)/gi
+  /(^|\n)(`{3,})[ \t]*([^\n]*)\n([\s\S]*?)\n\2[ \t]*(?=\n|$)|(<svg\b[\s\S]*?<\/svg>)/gi
 
-// Any fenced code block, regardless of language, so a raw <svg> living inside
-// e.g. a ```xml fence isn't mistaken for a standalone artifact.
-const FENCE_RE = /(^|\n)(`{3,})[^\n]*\n[\s\S]*?\n\2[ \t]*(?=\n|$)/g
+const bodyIsLoneSvg = (body: string) => {
+  const t = body.trim()
+  return /^<svg\b/i.test(t) && /<\/svg>$/i.test(t)
+}
 
 /**
  * Split markdown into alternating prose and standalone artifact segments
@@ -82,35 +84,35 @@ const FENCE_RE = /(^|\n)(`{3,})[^\n]*\n[\s\S]*?\n\2[ \t]*(?=\n|$)/g
  * overriding its `code` component would replace all of it.
  */
 export function splitHtmlArtifacts(content: string): MarkdownSegment[] {
-  const fences: Array<[number, number]> = []
-  FENCE_RE.lastIndex = 0
-  for (
-    let f: RegExpExecArray | null;
-    (f = FENCE_RE.exec(content)) !== null;
-
-  ) {
-    fences.push([f.index, f.index + f[0].length])
-  }
-  const insideFence = (i: number) => fences.some(([s, e]) => i >= s && i < e)
-
   const segments: MarkdownSegment[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
   ARTIFACT_RE.lastIndex = 0
   while ((match = ARTIFACT_RE.exec(content)) !== null) {
     const isFence = match[2] !== undefined
-    // A raw <svg> nested in a non-html/svg fence is real code, not an artifact.
-    if (!isFence && insideFence(match.index)) continue
+    let type: MarkdownSegment['type']
+    let artifactBody: string
+    if (isFence) {
+      const lang = match[3].trim().split(/\s+/)[0].toLowerCase()
+      const body = match[4]
+      if (lang === 'svg' || lang === 'html') {
+        type = lang
+      } else if (bodyIsLoneSvg(body)) {
+        type = 'svg'
+      } else {
+        // Real code fence — leave it in the markdown stream untouched.
+        continue
+      }
+      artifactBody = body
+    } else {
+      type = 'svg'
+      artifactBody = match[5]
+    }
     // Fence keeps the leading newline as prose; raw SVG starts at match.index.
     const blockStart = isFence ? match.index + match[1].length : match.index
     const before = content.slice(lastIndex, blockStart)
     if (before.length) segments.push({ type: 'markdown', content: before })
-    if (isFence) {
-      const type = match[3].toLowerCase() === 'svg' ? 'svg' : 'html'
-      segments.push({ type, content: match[4] })
-    } else {
-      segments.push({ type: 'svg', content: match[5] })
-    }
+    segments.push({ type, content: artifactBody })
     lastIndex = ARTIFACT_RE.lastIndex
   }
   const rest = content.slice(lastIndex)
