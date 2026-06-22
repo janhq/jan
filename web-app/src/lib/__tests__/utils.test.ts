@@ -408,4 +408,17 @@ describe('splitHtmlArtifacts', () => {
     const segs = splitHtmlArtifacts(content)
     expect(segs.map((s) => s.type)).toEqual(['html', 'markdown', 'svg'])
   })
+
+  it('does not extract <svg> nested inside a non-svg fenced code block', () => {
+    const content = 'intro\n```xml\n<svg viewBox="0 0 1 1"><rect/></svg>\n```\noutro'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs).toEqual([{ type: 'markdown', content }])
+  })
+
+  it('still extracts a raw <svg> outside any code fence', () => {
+    const content = '```xml\n<note/>\n```\n<svg><circle/></svg>'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg'])
+    expect(segs[1].content).toBe('<svg><circle/></svg>')
+  })
 })

@@ -71,6 +71,10 @@ export interface MarkdownSegment {
 const ARTIFACT_RE =
   /(^|\n)(`{3,})[ \t]*(html|svg)\b[^\n]*\n([\s\S]*?)\n\2[ \t]*(?=\n|$)|(<svg\b[\s\S]*?<\/svg>)/gi
 
+// Any fenced code block, regardless of language, so a raw <svg> living inside
+// e.g. a ```xml fence isn't mistaken for a standalone artifact.
+const FENCE_RE = /(^|\n)(`{3,})[^\n]*\n[\s\S]*?\n\2[ \t]*(?=\n|$)/g
+
 /**
  * Split markdown into alternating prose and standalone artifact segments
  * (interactive HTML previews and static SVG). Splitting the string keeps
@@ -78,12 +82,25 @@ const ARTIFACT_RE =
  * overriding its `code` component would replace all of it.
  */
 export function splitHtmlArtifacts(content: string): MarkdownSegment[] {
+  const fences: Array<[number, number]> = []
+  FENCE_RE.lastIndex = 0
+  for (
+    let f: RegExpExecArray | null;
+    (f = FENCE_RE.exec(content)) !== null;
+
+  ) {
+    fences.push([f.index, f.index + f[0].length])
+  }
+  const insideFence = (i: number) => fences.some(([s, e]) => i >= s && i < e)
+
   const segments: MarkdownSegment[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
   ARTIFACT_RE.lastIndex = 0
   while ((match = ARTIFACT_RE.exec(content)) !== null) {
     const isFence = match[2] !== undefined
+    // A raw <svg> nested in a non-html/svg fence is real code, not an artifact.
+    if (!isFence && insideFence(match.index)) continue
     // Fence keeps the leading newline as prose; raw SVG starts at match.index.
     const blockStart = isFence ? match.index + match[1].length : match.index
     const before = content.slice(lastIndex, blockStart)
