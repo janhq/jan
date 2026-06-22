@@ -248,7 +248,7 @@ export function ModelSetting({
             <MtpPanel modelId={model.id} provider={provider} />
           )}
           {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
-            (model as { embedding?: boolean }).embedding !== true && (
+            model.embedding !== true && (
               <SamplerDefaults
                 model={model}
                 keys={samplerKeysForProvider(provider.provider)}

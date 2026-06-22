@@ -738,7 +738,7 @@ function ProviderDetail() {
       const selectedFile = await serviceHub.dialog().open({
         multiple: false,
         directory: false,
-        filters: [{ name: 'CUDA Runtime Archive', extensions: ['zip'] }],
+        filters: [{ name: 'CUDA Runtime Archive', extensions: ['zip', 'gz'] }],
       })
 
       if (selectedFile && typeof selectedFile === 'string') {
