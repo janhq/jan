@@ -1608,6 +1608,48 @@ export default class llamacpp_upstream_extension extends AIEngine {
     return true
   }
 
+  /**
+   * Ensure a concrete `<tag>/<backend>` string is present in the
+   * `version_backend` dropdown options, persisting directly to localStorage.
+   *
+   * `Extension.updateSettings()` (core) only copies `controllerProps.value`,
+   * never `controllerProps.options`, and the option list is otherwise rebuilt
+   * solely by `configureBackends()` (startup / "Install from file"). The
+   * "Find optimal backend" hot-swap goes download -> `applyBackendLive` ->
+   * `updateBackend` and never re-runs `configureBackends()`, so the freshly
+   * downloaded backend (e.g. a concrete CUDA tag) ended up active but missing
+   * from the picker (ATO-218). We append the option here, before the value is
+   * written, so it survives the subsequent `updateSettings` (which re-reads
+   * the full settings from storage and only overwrites `value`).
+   */
+  private async ensureBackendOption(backendString: string): Promise<void> {
+    if (!this.name || !backendString) return
+    const settings = await this.getSettings()
+    let changed = false
+    for (const item of settings) {
+      if (item.key !== 'version_backend') continue
+      const options = Array.isArray(item.controllerProps.options)
+        ? (item.controllerProps.options as Array<{
+            value: string
+            name: string
+          }>)
+        : ((item.controllerProps.options = []) as Array<{
+            value: string
+            name: string
+          }>)
+      if (!options.some((o) => o.value === backendString)) {
+        options.push({ value: backendString, name: backendString })
+        changed = true
+      }
+    }
+    if (changed) {
+      localStorage.setItem(this.name, JSON.stringify(settings))
+      logger.info(
+        `[ensureBackendOption] Added ${backendString} to version_backend options`
+      )
+    }
+  }
+
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
@@ -1666,6 +1708,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       // Persist settings and stored preference before mutating in-memory config,
       // so that if any of these steps fail, config remains consistent.
+
+      // ATO-218: make sure the freshly-downloaded backend appears as a
+      // dropdown option. `updateSettings` only persists `value`, never
+      // `options`, so write the appended option to storage first; the
+      // `updateSettings` below then sets the value while preserving the
+      // options array it re-reads from storage.
+      await this.ensureBackendOption(targetBackendString)
 
       // Update settings first — if this fails, we haven't mutated any state yet
       const settings = await this.getSettings()
