@@ -50,6 +50,10 @@ You can now attach video files to messages when using a vision-capable llama.cpp
 
 > **Requires ffmpeg:** llama.cpp decodes video into frames by shelling out to `ffmpeg`/`ffprobe`, which Jan does not bundle. Video input only works if both are installed and on your system `PATH`; without them, video requests will fail.
 
+> **macOS limitation:** The macOS llama.cpp binaries Jan ships are **not** built with `MTMD_VIDEO`, so video input is unavailable on macOS local models regardless of ffmpeg. Use image or audio input, or a remote provider, on macOS for now.
+
+> **Token cost:** A video is decoded into many frames, so it consumes **substantially more tokens than an image or an audio clip** of the same length. On local models this fills the context window quickly, increases prompt-processing time, and can trigger context-overflow or out-of-memory errors. Keep clips short, prefer a higher context size, and watch the token counter.
+
 **Per-Model Default Sampling Parameters for the Local API Server**
 
 External agents and tools that hit Jan's local API server at `localhost:1337` can now benefit from sampling defaults set in the GUI. From the Model Settings sheet, set temperature, top-k, top-p, min-p, repeat penalty, presence penalty, or frequency penalty as per-model server-side defaults. For llama.cpp, these are emitted into the router preset so every request (chat and API) inherits them; a per-request field still overrides. MLX honors temperature, top-p, and repeat penalty via proxy injection.
