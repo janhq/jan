@@ -920,7 +920,9 @@ function ThreadDetail() {
       }
       addMessage(userMessage)
 
-      // Build parts for AI SDK (only images are sent as file parts)
+      // Build parts for AI SDK. Derive media file parts from the resolved
+      // attachments (not the raw `files` arg) so the first-message flow — where
+      // media lives in the store and `files` is empty — still renders live.
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string }
@@ -931,15 +933,15 @@ function ThreadDetail() {
         },
       ]
 
-      if (files) {
-        files.forEach((file) => {
+      mediaAttachments.forEach((a) => {
+        if (a.dataUrl && a.mimeType) {
           parts.push({
             type: 'file',
-            mediaType: file.mediaType,
-            url: file.url,
+            mediaType: a.mimeType,
+            url: a.dataUrl,
           })
-        })
-      }
+        }
+      })
 
       sendMessage({
         parts,
