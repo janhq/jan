@@ -96,15 +96,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       rm -rf ~/Library/Application\ Support/Jan
       ```
 
-      3. If you are using a version before `0.4.2`, you need to run the following commands:
-
-      ```zsh
-      ps aux | grep nitro
-      # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
-      kill -9 <PID>
-      ```
-
-      4. **Download** the [latest version of Jan](/download)
+      3. **Download** the [latest version of Jan](/download)
   </Tabs.Tab>
 
   <Tabs.Tab>
@@ -117,16 +109,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       rmdir /S Jan
       ```
 
-      3. If you are using a version before `0.4.2`, you need to run the following commands:
-
-      ```bash
-      # Find the process ID (PID) of the nitro process by filtering the list by process name
-      tasklist | findstr "nitro"
-      # Once you have the PID of the process you want to terminate, run the `taskkill`
-      taskkill /F /PID <PID>
-      ```
-
-      4. **Download** the [latest version of Jan](/download)
+      3. **Download** the [latest version of Jan](/download)
   </Tabs.Tab>
 
   <Tabs.Tab>
@@ -149,15 +132,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       ~/.config/Jan
       ```
 
-      3. If you are using a version before `0.4.2`, you need to run the following commands:
-
-      ```zsh
-      ps aux | grep nitro
-      # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
-      kill -9 <PID>
-      ```
-
-      4. **Download** the [latest version of Jan](/download)
+      3. **Download** the [latest version of Jan](/download)
   </Tabs.Tab>
 
 </Tabs>
@@ -360,7 +335,7 @@ common causes:
 
 **Model load timed out**
 - *Symptom:* "Router took too long to start and timed out."
-- *Cause:* A large model on a slow disk didn't finish loading within the timeout (default 60s).
+- *Cause:* A large model on a slow disk didn't finish loading within the timeout (default 600s).
 - *Fix:* Wait and retry, use a smaller model, or store models on faster storage.
 
 **Backend / driver error**
@@ -413,7 +388,7 @@ See the [Custom Endpoints](/docs/desktop/remote-models/custom-endpoint#troublesh
 When running Jan, you might encounter the following error message:
 
 ```
-Uncaught (in promise) Error: Error invoking layout-480796bff433a3a3.js:538 remote method 'installExtension':
+Uncaught (in promise) Error: Error invoking remote method 'installExtension':
 Error Package /Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-assistant-extension-1.0.0.tgz does not contain a valid manifest:
 Error EACCES: permission denied, mkdtemp '/Users/username/.npm/_cacache/tmp/ueCMn4'
 ```
