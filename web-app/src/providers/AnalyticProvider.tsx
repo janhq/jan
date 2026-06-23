@@ -8,7 +8,7 @@ import {
   type ApiServerRequestEvent,
 } from '@/types/analytics'
 import type { ServiceHub } from '@/services'
-import { cpuAvxLevel, mapGpuVendor } from '@/lib/telemetry'
+import { cpuAvxLevel, getAnalyticsPlatform, mapGpuVendor } from '@/lib/telemetry'
 import {
   setSentryConsent,
   setSentryTags,
@@ -204,6 +204,8 @@ export function AnalyticProvider() {
     let unlistenApiServer: (() => void) | undefined
     let cancelled = false
 
+    const osPlatform = getAnalyticsPlatform()
+
     if (productAnalytic) {
       posthog.init(POSTHOG_KEY, {
         api_host: POSTHOG_HOST,
@@ -235,6 +237,9 @@ export function AnalyticProvider() {
           return properties
         },
       })
+      // Register platform/version immediately so they attach to every event,
+      // including any that fire before the async chain below resolves.
+      posthog.register({ app_version: VERSION, platform: osPlatform })
       serviceHub
         .analytic()
         .getAppDistinctId()
@@ -242,18 +247,6 @@ export function AnalyticProvider() {
           if (id) posthog.identify(id)
         })
         .finally(async () => {
-          const osPlatform = IS_MACOS
-            ? 'macos'
-            : IS_WINDOWS
-              ? 'windows'
-              : IS_LINUX
-                ? 'linux'
-                : IS_IOS
-                  ? 'ios'
-                  : IS_ANDROID
-                    ? 'android'
-                    : 'unknown'
-
           posthog.opt_in_capturing()
           posthog.register({ app_version: VERSION, platform: osPlatform })
           serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
@@ -278,7 +271,12 @@ export function AnalyticProvider() {
 
           if (cancelled) return
 
-          posthog.capture('app_opened')
+          // Pass platform/version explicitly too, so the funnel's first event
+          // carries them even if super-prop merging races on this capture.
+          posthog.capture('app_opened', {
+            platform: osPlatform,
+            app_version: VERSION,
+          })
 
           // Detached: the device-list probe spawns the backend and can be slow,
           // so it must never delay app_opened. It attaches to later events.

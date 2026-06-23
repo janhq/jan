@@ -29,6 +29,8 @@ import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
 import { RecommendedModelChip } from '@/components/RecommendedModelChip'
 import { chipVariantForRecommendedDescriptionKey } from '@/constants/recommendedModelChip'
 import { modelFamilyLogoSrc } from '@/lib/model-logo'
+import posthog from 'posthog-js'
+import { getAnalyticsPlatform } from '@/lib/telemetry'
 
 //* Вариант загрузки: приоритет квантов как в Hub
 function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
@@ -44,6 +46,20 @@ function pickPreferredVariant(model: CatalogModel): ModelQuant | null {
 //* ГБ для строки прогресса (как в DownloadManagement)
 function formatDownloadGb(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(2)
+}
+
+//* Числовой размер в ГБ из строки каталога ("4.5 GB" / "850 MB") для аналитики.
+function sizeStringToGb(size?: string): number | undefined {
+  if (!size) return undefined
+
+  const match = size.trim().match(/^([\d.]+)\s*(MB|GB)$/i)
+  if (!match) return undefined
+
+  const value = Number(match[1])
+  if (!Number.isFinite(value)) return undefined
+  
+  const gb = match[2].toUpperCase() === 'GB' ? value : value / 1024
+  return Math.round(gb * 100) / 100
 }
 
 //* Иконка бренда по id репозитория HF (см. modelFamilyLogoSrc)
@@ -74,7 +90,7 @@ function getInitialStep(): OnboardingStep {
 function SetupScreen({ onSkipped }: SetupScreenProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { getProviderByName, selectModelProvider, setProviders } =
+  const { providers, getProviderByName, selectModelProvider, setProviders } =
     useModelProvider()
 
   const [step, setStep] = useState<OnboardingStep>(getInitialStep)
@@ -136,6 +152,48 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   }, [fetchSources])
 
   const recommendedItems = useResolvedRecommendedModels(sources)
+
+  //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
+  //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
+  const setupShownFiredRef = useRef(false)
+  useEffect(() => {
+    if (step !== 'model' || setupShownFiredRef.current) return
+    if (recommendedItems.length === 0 && sourcesLoading) return
+    setupShownFiredRef.current = true
+    try {
+      posthog.capture('setup_screen_shown', {
+        recommended_count: recommendedItems.length,
+        platform: getAnalyticsPlatform(),
+        app_version: VERSION,
+      })
+    } catch (err) {
+      console.debug('setup_screen_shown telemetry failed:', err)
+    }
+  }, [step, recommendedItems.length, sourcesLoading])
+
+  //* P0: клик «Download» на рекомендованной карточке (до старта загрузки).
+  const captureRecommendedClick = useCallback(
+    (params: {
+      modelId: string
+      format: 'GGUF' | 'MLX'
+      sizeGb?: number
+      position: number
+    }) => {
+      try {
+        posthog.capture('recommended_model_clicked', {
+          model_id: params.modelId,
+          size_gb: params.sizeGb ?? null,
+          format: params.format,
+          position: params.position,
+          platform: getAnalyticsPlatform(),
+          app_version: VERSION,
+        })
+      } catch (err) {
+        console.debug('recommended_model_clicked telemetry failed:', err)
+      }
+    },
+    []
+  )
 
   const downloadProcesses = useMemo(
     () =>
@@ -374,6 +432,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   )
 
   const handleSkip = useCallback(() => {
+    try {
+      const hadAnyModel = providers.some(
+        (p) => (p.models?.length ?? 0) > 0 || !!p.api_key
+      )
+      posthog.capture('setup_skipped', {
+        had_any_model: hadAnyModel,
+        platform: getAnalyticsPlatform(),
+        app_version: VERSION,
+      })
+    } catch (err) {
+      console.debug('setup_skipped telemetry failed:', err)
+    }
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
     // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
     window.dispatchEvent(new Event('app:setup-completed'))
@@ -384,7 +454,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       replace: true,
       search: {},
     })
-  }, [navigate, onSkipped])
+  }, [navigate, onSkipped, providers])
 
   // Windows: dedicated llama.cpp backend step runs first. Once the user
   // either downloads or skips it the flag is persisted so subsequent
@@ -435,7 +505,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   )}
                 >
                   <div className="flex flex-col divide-y divide-border/60">
-                    {recommendedItems.map(({ rec, model }) => {
+                    {recommendedItems.map(({ rec, model }, index) => {
                       const isMlx = !!model?.is_mlx
                       const variant =
                         model && !isMlx ? pickPreferredVariant(model) : null
@@ -545,12 +615,24 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                               onClick={() => {
                                 if (!model) return
                                 if (isMlx) {
+                                  captureRecommendedClick({
+                                    modelId: getMlxModelId(model),
+                                    format: 'MLX',
+                                    sizeGb: sizeStringToGb(downloadSize),
+                                    position: index,
+                                  })
                                   void startMlxDownload(model)
                                   enterChatForDownload(
                                     getMlxModelId(model),
                                     'mlx'
                                   )
                                 } else if (variant) {
+                                  captureRecommendedClick({
+                                    modelId: variant.model_id,
+                                    format: 'GGUF',
+                                    sizeGb: sizeStringToGb(downloadSize),
+                                    position: index,
+                                  })
                                   startDownload(model, variant)
                                   enterChatForDownload(
                                     variant.model_id,
