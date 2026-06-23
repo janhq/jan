@@ -459,7 +459,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
+        <div
+          className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full"
+          // Prevent the mousedown event from bubbling up to the HeaderPage's
+          // data-tauri-drag-region so that clicking or hovering on the model
+          // selector pill does not accidentally start a window-drag on macOS.
+          // The Popover uses pointerdown / click events internally so this does
+          // not affect its open/close behaviour.
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
