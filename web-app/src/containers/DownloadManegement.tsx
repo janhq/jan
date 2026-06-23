@@ -26,6 +26,7 @@ import {
   classifyDownloadFailure,
   downloadKind,
   finalizeDownloadOnce,
+  markModelDownloaded,
   parseHttpStatus,
   quantFromModelId,
   scrubPii,
@@ -54,10 +55,16 @@ function captureDownloadTerminal(
   opts: { downloadType?: string; error?: string; totalBytes?: number } = {}
 ): void {
   if (!finalizeDownloadOnce(id)) return
+
+  const kind = downloadKind(id, opts.downloadType)
+  if (status === 'completed' && kind === 'model') {
+    markModelDownloaded(id)
+  }
+
   try {
     posthog.capture('model_download', {
       status,
-      download_kind: downloadKind(id, opts.downloadType),
+      download_kind: kind,
       model_id: id,
       quant: quantFromModelId(id),
       size_bucket: sizeBucket(opts.totalBytes),
