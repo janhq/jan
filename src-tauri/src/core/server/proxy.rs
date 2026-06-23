@@ -1,7 +1,12 @@
 use futures_util::StreamExt;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Empty, Full, StreamBody};
 use hyper::body::Bytes;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::body::{Frame, Incoming};
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
 use reqwest::Client;
 use serde_json;
@@ -18,6 +23,33 @@ use crate::core::{
     mcp::models::McpSettings,
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
 };
+
+type ResBody = BoxBody<Bytes, Infallible>;
+
+fn full<B: Into<Bytes>>(chunk: B) -> ResBody {
+    Full::new(chunk.into()).boxed()
+}
+
+fn empty() -> ResBody {
+    Empty::<Bytes>::new().boxed()
+}
+
+/// hyper 1.0 dropped `Body::channel`; this mpsc-backed `StreamBody` restores a
+/// sender handle for the streaming/passthrough paths. `send_data` returns
+/// `Result<(), ()>` so existing `.is_err()` disconnect checks compile unchanged.
+struct BodySender(tokio::sync::mpsc::Sender<Result<Frame<Bytes>, Infallible>>);
+
+impl BodySender {
+    async fn send_data(&mut self, data: Bytes) -> Result<(), ()> {
+        self.0.send(Ok(Frame::data(data))).await.map_err(|_| ())
+    }
+}
+
+fn body_channel() -> (BodySender, ResBody) {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(32);
+    let body = BodyExt::boxed(StreamBody::new(tokio_stream::wrappers::ReceiverStream::new(rx)));
+    (BodySender(tx), body)
+}
 
 const SCHEMA_PRIMITIVE_TYPES: &[&str] = &[
     "string", "number", "integer", "boolean", "null", "array", "object",
@@ -1251,7 +1283,7 @@ async fn run_server_side_openai_orchestration(
 /// Handles the proxy request logic
 #[allow(clippy::too_many_arguments)]
 async fn proxy_request(
-    req: Request<Body>,
+    req: Request<Incoming>,
     client: Client,
     config: ProxyConfig,
     llama_state: Arc<LlamacppState>,
@@ -1261,7 +1293,7 @@ async fn proxy_request(
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
-) -> Result<Response<Body>, hyper::Error> {
+) -> Result<Response<ResBody>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
         log::debug!(
             "Handling CORS preflight request from {:?} {:?}",
@@ -1298,7 +1330,7 @@ async fn proxy_request(
             log::warn!("CORS preflight: Method '{requested_method}' not allowed");
             return Ok(Response::builder()
                 .status(StatusCode::METHOD_NOT_ALLOWED)
-                .body(Body::from("Method not allowed"))
+                .body(full("Method not allowed"))
                 .unwrap());
         }
 
@@ -1326,7 +1358,7 @@ async fn proxy_request(
             log::warn!("CORS preflight: Host '{host}' not trusted for path '{request_path}'");
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
-                .body(Body::from("Host not allowed"))
+                .body(full("Host not allowed"))
                 .unwrap());
         }
 
@@ -1382,7 +1414,7 @@ async fn proxy_request(
             log::warn!("CORS preflight: Some requested headers not allowed: {requested_headers}");
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
-                .body(Body::from("Headers not allowed"))
+                .body(full("Headers not allowed"))
                 .unwrap());
         }
 
@@ -1408,7 +1440,7 @@ async fn proxy_request(
         }
 
         log::debug!("CORS preflight response: host_trusted={is_trusted}, origin='{origin}'");
-        return Ok(response.body(Body::empty()).unwrap());
+        return Ok(response.body(empty()).unwrap());
     }
 
     let (parts, body) = req.into_parts();
@@ -1454,7 +1486,7 @@ async fn proxy_request(
                     &config.trusted_hosts,
                 );
                 return Ok(error_response
-                    .body(Body::from("Invalid host header"))
+                    .body(full("Invalid host header"))
                     .unwrap());
             }
         } else {
@@ -1466,7 +1498,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Missing host header"))
+                .body(full("Missing host header"))
                 .unwrap());
         }
     } else {
@@ -1500,7 +1532,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Invalid or missing authorization token"))
+                .body(full("Invalid or missing authorization token"))
                 .unwrap());
         }
     } else if is_whitelisted_path {
@@ -1515,7 +1547,7 @@ async fn proxy_request(
             &origin_header,
             &config.trusted_hosts,
         );
-        return Ok(error_response.body(Body::from("Not Found")).unwrap());
+        return Ok(error_response.body(full("Not Found")).unwrap());
     }
 
     let original_path = parts.uri.path();
@@ -1538,8 +1570,8 @@ async fn proxy_request(
             log::info!(
                 "Handling POST request to /messages with chat/completions fallback on error",
             );
-            let body_bytes = match hyper::body::to_bytes(body).await {
-                Ok(bytes) => bytes,
+            let body_bytes = match body.collect().await {
+                Ok(c) => c.to_bytes(),
                 Err(_) => {
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -1550,7 +1582,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     return Ok(error_response
-                        .body(Body::from("Failed to read request body"))
+                        .body(full("Failed to read request body"))
                         .unwrap());
                 }
             };
@@ -1585,7 +1617,7 @@ async fn proxy_request(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response
-                                    .body(Body::from(
+                                    .body(full(
                                         "Invalid /messages payload for orchestration mode",
                                     ))
                                     .unwrap());
@@ -1618,7 +1650,7 @@ async fn proxy_request(
                                     &origin_header,
                                     &config.trusted_hosts,
                                 );
-                                return Ok(response_builder.body(Body::from(body_str)).unwrap());
+                                return Ok(response_builder.body(full(body_str)).unwrap());
                             }
                             Err(e) => {
                                 let mut error_response =
@@ -1629,7 +1661,7 @@ async fn proxy_request(
                                     &origin_header,
                                     &config.trusted_hosts,
                                 );
-                                return Ok(error_response.body(Body::from(e)).unwrap());
+                                return Ok(error_response.body(full(e)).unwrap());
                             }
                         }
                     }
@@ -1697,7 +1729,7 @@ async fn proxy_request(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response
-                                    .body(Body::from(format!(
+                                    .body(full(format!(
                                         "No running session found for model '{model_id}'"
                                     )))
                                     .unwrap());
@@ -1714,7 +1746,7 @@ async fn proxy_request(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response.body(Body::from(error_msg)).unwrap());
+                        return Ok(error_response.body(full(error_msg)).unwrap());
                     }
                 }
                 Err(e) => {
@@ -1727,7 +1759,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     let error_msg = format!("Invalid JSON body: {}", e);
-                    return Ok(error_response.body(Body::from(error_msg)).unwrap());
+                    return Ok(error_response.body(full(error_msg)).unwrap());
                 }
             }
         }
@@ -1739,8 +1771,8 @@ async fn proxy_request(
             // - Feed tool results back and continue until completion
             log::info!("Handling POST request to {destination_path} for assistant tool orchestration");
 
-            let body_bytes = match hyper::body::to_bytes(body).await {
-                Ok(bytes) => bytes,
+            let body_bytes = match body.collect().await {
+                Ok(c) => c.to_bytes(),
                 Err(_) => {
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -1750,7 +1782,7 @@ async fn proxy_request(
                         &origin_header,
                         &config.trusted_hosts,
                     );
-                    return Ok(error_response.body(Body::from("Failed to read request body")).unwrap());
+                    return Ok(error_response.body(full("Failed to read request body")).unwrap());
                 }
             };
 
@@ -1766,7 +1798,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     return Ok(error_response
-                        .body(Body::from(format!("Invalid JSON body: {e}")))
+                        .body(full(format!("Invalid JSON body: {e}")))
                         .unwrap());
                 }
             };
@@ -1788,7 +1820,7 @@ async fn proxy_request(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from("stream=true is not supported for /orchestrations")).unwrap());
+                return Ok(error_response.body(full("stream=true is not supported for /orchestrations")).unwrap());
             }
 
             let messages_value = match json_body.get("messages") {
@@ -1803,7 +1835,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     return Ok(error_response
-                        .body(Body::from("Missing required field 'messages'"))
+                        .body(full("Missing required field 'messages'"))
                         .unwrap());
                 }
             };
@@ -1819,7 +1851,7 @@ async fn proxy_request(
                         &origin_header,
                         &config.trusted_hosts,
                     );
-                    return Ok(error_response.body(Body::from(e)).unwrap());
+                    return Ok(error_response.body(full(e)).unwrap());
                 }
             };
 
@@ -1836,7 +1868,7 @@ async fn proxy_request(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response.body(Body::from(e)).unwrap());
+                        return Ok(error_response.body(full(e)).unwrap());
                     }
                 }
             } else {
@@ -1884,7 +1916,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     return Ok(error_response
-                        .body(Body::from("No running model sessions available"))
+                        .body(full("No running model sessions available"))
                         .unwrap());
                 }
             };
@@ -1902,7 +1934,7 @@ async fn proxy_request(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response.body(Body::from(e)).unwrap());
+                        return Ok(error_response.body(full(e)).unwrap());
                     }
                 };
 
@@ -1924,7 +1956,7 @@ async fn proxy_request(
                         &origin_header,
                         &config.trusted_hosts,
                     );
-                    return Ok(error_response.body(Body::from(e)).unwrap());
+                    return Ok(error_response.body(full(e)).unwrap());
                 }
             };
 
@@ -1973,7 +2005,7 @@ async fn proxy_request(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response.body(Body::from(e)).unwrap());
+                        return Ok(error_response.body(full(e)).unwrap());
                     }
                 };
 
@@ -1991,7 +2023,7 @@ async fn proxy_request(
                         &origin_header,
                         &config.trusted_hosts,
                     );
-                    return Ok(response_builder.body(Body::from(body_str)).unwrap());
+                    return Ok(response_builder.body(full(body_str)).unwrap());
                 }
 
                 // Append assistant tool call message, then execute tool calls.
@@ -2031,7 +2063,7 @@ async fn proxy_request(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response.body(Body::from(e)).unwrap());
+                        return Ok(error_response.body(full(e)).unwrap());
                     }
                 };
 
@@ -2057,7 +2089,7 @@ async fn proxy_request(
             let payload = format!(
                 "{{\"error\":\"max_turns reached while resolving tool calls\",\"last_response\":{body_str}}}"
             );
-            let response = error_response.body(Body::from(payload)).unwrap();
+            let response = error_response.body(full(payload)).unwrap();
             return Ok(response);
         }
         (hyper::Method::POST, "/chat/completions")
@@ -2067,8 +2099,8 @@ async fn proxy_request(
             log::info!(
                 "Handling POST request to {destination_path} requiring model lookup in body",
             );
-            let body_bytes = match hyper::body::to_bytes(body).await {
-                Ok(bytes) => bytes,
+            let body_bytes = match body.collect().await {
+                Ok(c) => c.to_bytes(),
                 Err(_) => {
                     let mut error_response =
                         Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -2079,7 +2111,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     return Ok(error_response
-                        .body(Body::from("Failed to read request body"))
+                        .body(full("Failed to read request body"))
                         .unwrap());
                 }
             };
@@ -2131,7 +2163,7 @@ async fn proxy_request(
                                     &origin_header,
                                     &config.trusted_hosts,
                                 );
-                                return Ok(response_builder.body(Body::from(body_str)).unwrap());
+                                return Ok(response_builder.body(full(body_str)).unwrap());
                             }
                             Err(e) => {
                                 let mut error_response =
@@ -2142,7 +2174,7 @@ async fn proxy_request(
                                     &origin_header,
                                     &config.trusted_hosts,
                                 );
-                                return Ok(error_response.body(Body::from(e)).unwrap());
+                                return Ok(error_response.body(full(e)).unwrap());
                             }
                         }
                     }
@@ -2228,7 +2260,7 @@ async fn proxy_request(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response
-                                    .body(Body::from("No models are available"))
+                                    .body(full("No models are available"))
                                     .unwrap());
                             }
 
@@ -2255,7 +2287,7 @@ async fn proxy_request(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response
-                                    .body(Body::from(format!(
+                                    .body(full(format!(
                                         "No running session found for model '{model_id}'"
                                     )))
                                     .unwrap());
@@ -2274,7 +2306,7 @@ async fn proxy_request(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response.body(Body::from(error_msg)).unwrap());
+                        return Ok(error_response.body(full(error_msg)).unwrap());
                     }
                 }
                 Err(e) => {
@@ -2287,7 +2319,7 @@ async fn proxy_request(
                         &config.trusted_hosts,
                     );
                     let error_msg = format!("Invalid JSON body: {}", e);
-                    return Ok(error_response.body(Body::from(error_msg)).unwrap());
+                    return Ok(error_response.body(full(error_msg)).unwrap());
                 }
             }
         }
@@ -2376,7 +2408,7 @@ async fn proxy_request(
                 remote_count
             );
 
-            return Ok(response_builder.body(Body::from(body_str)).unwrap());
+            return Ok(response_builder.body(full(body_str)).unwrap());
         }
 
         (hyper::Method::GET, "/openapi.json") => {
@@ -2406,7 +2438,7 @@ async fn proxy_request(
                     return Ok(Response::builder()
                         .status(StatusCode::OK)
                         .header(hyper::header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(body))
+                        .body(full(body))
                         .unwrap());
                 }
                 Err(_) => {
@@ -2414,7 +2446,7 @@ async fn proxy_request(
                     return Ok(Response::builder()
                         .status(StatusCode::OK)
                         .header(hyper::header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(static_body))
+                        .body(full(static_body))
                         .unwrap());
                 }
             }
@@ -2456,7 +2488,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
 
-            return Ok(response_builder.body(Body::from(html)).unwrap());
+            return Ok(response_builder.body(full(html)).unwrap());
         }
 
         (hyper::Method::GET, "/docs/swagger-ui.css") => {
@@ -2464,7 +2496,7 @@ async fn proxy_request(
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, "text/css")
-                .body(Body::from(css))
+                .body(full(css))
                 .unwrap());
         }
 
@@ -2473,7 +2505,7 @@ async fn proxy_request(
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, "application/javascript")
-                .body(Body::from(js))
+                .body(full(js))
                 .unwrap());
         }
 
@@ -2482,7 +2514,7 @@ async fn proxy_request(
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, "image/x-icon")
-                .body(Body::from(icon.as_ref()))
+                .body(full(icon.as_ref()))
                 .unwrap());
         }
 
@@ -2498,7 +2530,7 @@ async fn proxy_request(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from("Not Found")).unwrap());
+                return Ok(error_response.body(full("Not Found")).unwrap());
             } else {
                 log::warn!(
                     "Unhandled method/path for dynamic routing: {method} {destination_path}"
@@ -2510,7 +2542,7 @@ async fn proxy_request(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from("Not Found")).unwrap());
+                return Ok(error_response.body(full("Not Found")).unwrap());
             }
         }
     }
@@ -2529,7 +2561,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Internal routing error"))
+                .body(full("Internal routing error"))
                 .unwrap());
         }
     };
@@ -2549,7 +2581,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Internal server error: unhandled request path"))
+                .body(full("Internal server error: unhandled request path"))
                 .unwrap());
         }
     };
@@ -2697,7 +2729,7 @@ async fn proxy_request(
                                 &config.trusted_hosts,
                             );
                             return Ok(error_response
-                                .body(Body::from(fallback_error))
+                                .body(full(fallback_error))
                                 .unwrap());
                         }
 
@@ -2719,7 +2751,7 @@ async fn proxy_request(
                             .and_then(|s| s.as_bool())
                             .unwrap_or(false);
 
-                        let (sender, body) = hyper::Body::channel();
+                        let (sender, body) = body_channel();
                         let dest_path = destination_path.clone();
 
                         tokio::spawn(async move {
@@ -2751,7 +2783,7 @@ async fn proxy_request(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from(error_body)).unwrap());
+                return Ok(error_response.body(full(error_body)).unwrap());
             } else if is_error {
                 // Non-/messages error - return error response with body
                 let error_body = response
@@ -2766,7 +2798,7 @@ async fn proxy_request(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from(error_body)).unwrap());
+                return Ok(error_response.body(full(error_body)).unwrap());
             }
 
             // Success case - stream the response
@@ -2786,7 +2818,7 @@ async fn proxy_request(
             );
 
             let mut stream = response.bytes_stream();
-            let (mut sender, body) = hyper::Body::channel();
+            let (mut sender, body) = body_channel();
 
             tokio::spawn(async move {
                 // Regular passthrough - when /messages succeeds directly,
@@ -2820,7 +2852,7 @@ async fn proxy_request(
                 &origin_header,
                 &config.trusted_hosts,
             );
-            return Ok(error_response.body(Body::from(error_msg)).unwrap());
+            return Ok(error_response.body(full(error_msg)).unwrap());
         }
     }
     }
@@ -2834,7 +2866,7 @@ async fn proxy_request(
         &config.trusted_hosts,
     );
     Ok(error_response
-        .body(Body::from("Internal proxy error"))
+        .body(full("Internal proxy error"))
         .unwrap())
 }
 
@@ -2963,19 +2995,37 @@ async fn start_server_internal(
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;
 
-    let make_svc = make_service_fn(move |_conn| {
-        let client = client.clone();
-        let config = config.clone();
-        let llama_state = llama_state.clone();
-        let mlx_sessions = mlx_sessions.clone();
-        let provider_configs = provider_configs.clone();
-        let model_param_defaults = model_param_defaults.clone();
-        let mcp_servers = mcp_servers.clone();
-        let mcp_settings = mcp_settings.clone();
-        let jan_data_folder = jan_data_folder.clone();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            log::error!("Failed to bind to {addr}: {e}");
+            return Err(Box::new(e));
+        }
+    };
+    log::info!("Jan API server started on http://{addr}");
 
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
+    let server_task = tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("Accept error: {e}");
+                    continue;
+                }
+            };
+            let io = TokioIo::new(stream);
+
+            let client = client.clone();
+            let config = config.clone();
+            let llama_state = llama_state.clone();
+            let mlx_sessions = mlx_sessions.clone();
+            let provider_configs = provider_configs.clone();
+            let model_param_defaults = model_param_defaults.clone();
+            let mcp_servers = mcp_servers.clone();
+            let mcp_settings = mcp_settings.clone();
+            let jan_data_folder = jan_data_folder.clone();
+
+            let svc = service_fn(move |req| {
                 proxy_request(
                     req,
                     client.clone(),
@@ -2988,25 +3038,16 @@ async fn start_server_internal(
                     mcp_settings.clone(),
                     jan_data_folder.clone(),
                 )
-            }))
-        }
-    });
+            });
 
-    let server = match Server::try_bind(&addr) {
-        Ok(builder) => builder.serve(make_svc),
-        Err(e) => {
-            log::error!("Failed to bind to {addr}: {e}");
-            return Err(Box::new(e));
+            tokio::spawn(async move {
+                if let Err(e) = http1::Builder::new().serve_connection(io, svc).await {
+                    log::debug!("Error serving connection: {e}");
+                }
+            });
         }
-    };
-    log::info!("Jan API server started on http://{addr}");
-
-    let server_task = tokio::spawn(async move {
-        if let Err(e) = server.await {
-            log::error!("Server error: {e}");
-            return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
-        }
-        Ok(())
+        #[allow(unreachable_code)]
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     });
 
     *handle_guard = Some(server_task);
@@ -3044,7 +3085,7 @@ pub(crate) fn sse_event(data: &serde_json::Value) -> Bytes {
 /// Handles both text content and tool_calls streaming.
 async fn transform_and_forward_stream<S>(
     mut stream: S,
-    mut sender: hyper::body::Sender,
+    mut sender: BodySender,
     _destination_path: &str,
 ) where
     S: futures_util::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
@@ -3334,7 +3375,7 @@ async fn transform_and_forward_stream<S>(
 /// Forward non-streaming OpenAI response as Anthropic /messages response
 async fn forward_non_streaming(
     response_body: Result<Bytes, reqwest::Error>,
-    mut sender: hyper::body::Sender,
+    mut sender: BodySender,
     destination_path: &str,
 ) {
     let bytes = match response_body {

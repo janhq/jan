@@ -408,4 +408,29 @@ describe('splitHtmlArtifacts', () => {
     const segs = splitHtmlArtifacts(content)
     expect(segs.map((s) => s.type)).toEqual(['html', 'markdown', 'svg'])
   })
+
+  it('promotes a lone <svg> wrapped in a non-svg fence to an svg artifact', () => {
+    const content = 'intro\n```xml\n<svg viewBox="0 0 1 1"><rect/></svg>\n```\noutro'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg', 'markdown'])
+    expect(segs[1].content).toBe('<svg viewBox="0 0 1 1"><rect/></svg>')
+  })
+
+  it('promotes a lone <svg> in a bare ``` fence to an svg artifact', () => {
+    const segs = splitHtmlArtifacts('```\n<svg><circle/></svg>\n```')
+    expect(segs).toEqual([{ type: 'svg', content: '<svg><circle/></svg>' }])
+  })
+
+  it('leaves <svg> mixed into other code inside a fence as code', () => {
+    const content = '```xml\n<note>see</note>\n<svg><rect/></svg>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs).toEqual([{ type: 'markdown', content }])
+  })
+
+  it('still extracts a raw <svg> outside any code fence', () => {
+    const content = '```xml\n<note/>\n```\n<svg><circle/></svg>'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg'])
+    expect(segs[1].content).toBe('<svg><circle/></svg>')
+  })
 })

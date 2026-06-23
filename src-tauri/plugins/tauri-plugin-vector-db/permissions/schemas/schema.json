@@ -415,6 +415,54 @@
           "markdownDescription": "Denies the list_attachments command without any pre-configured scope."
         },
         {
+          "description": "Enables the memory_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-memory-clear",
+          "markdownDescription": "Enables the memory_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the memory_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-memory-clear",
+          "markdownDescription": "Denies the memory_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the memory_delete_message command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-memory-delete-message",
+          "markdownDescription": "Enables the memory_delete_message command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the memory_delete_message command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-memory-delete-message",
+          "markdownDescription": "Denies the memory_delete_message command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the memory_index command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-memory-index",
+          "markdownDescription": "Enables the memory_index command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the memory_index command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-memory-index",
+          "markdownDescription": "Denies the memory_index command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the memory_search command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-memory-search",
+          "markdownDescription": "Enables the memory_search command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the memory_search command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-memory-search",
+          "markdownDescription": "Denies the memory_search command without any pre-configured scope."
+        },
+        {
           "description": "Enables the search_collection command without any pre-configured scope.",
           "type": "string",
           "const": "allow-search-collection",
