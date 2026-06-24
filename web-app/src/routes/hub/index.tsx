@@ -15,6 +15,7 @@ import {
   useRef,
   useTransition,
 } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import {
@@ -30,6 +31,10 @@ import {
   IconEye,
   IconSearch,
   IconTool,
+  IconBrain,
+  IconCode,
+  IconPencil,
+  IconStar,
 } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -93,6 +98,84 @@ function getQuantTier(modelId: string): QuantTier | null {
   return null
 }
 
+// ---------------------------------------------------------------------------
+// Category definitions
+// Matching is done purely on model_name + description since CatalogModel has
+// no category field. Regexes are written to cover the naming conventions used
+// in Jan's catalog (DeepSeek, Qwen, Mistral, etc.).
+// ---------------------------------------------------------------------------
+
+type Category = {
+  id: string
+  label: string
+  icon: React.ReactNode
+  match: (model: CatalogModel) => boolean
+}
+
+const CATEGORIES: Category[] = [
+  {
+    id: 'all',
+    label: 'All',
+    icon: null,
+    match: () => true,
+  },
+  {
+    id: 'coding',
+    label: 'Coding',
+    icon: <IconCode size={13} />,
+    match: (m) => {
+      const text = `${m.model_name} ${m.description ?? ''}`.toLowerCase()
+      return /cod(e|ing|er)|starcoder|deepseek.?coder|devstral|granite.?code|qwen.?coder/.test(
+        text
+      )
+    },
+  },
+  {
+    id: 'reasoning',
+    label: 'Reasoning',
+    icon: <IconBrain size={13} />,
+    match: (m) => {
+      const text = `${m.model_name} ${m.description ?? ''}`.toLowerCase()
+      return /reason|think(ing)?|r1|qwq|deepseek.?r\d|o[13]-|skywork/.test(text)
+    },
+  },
+  {
+    id: 'creative',
+    label: 'Creative',
+    icon: <IconPencil size={13} />,
+    match: (m) => {
+      const text = `${m.model_name} ${m.description ?? ''}`.toLowerCase()
+      return /creat|writ(e|ing)|story|novel|roleplay|rp|chat|llama|mistral/.test(
+        text
+      )
+    },
+  },
+  {
+    id: 'vision',
+    label: 'Vision',
+    icon: <IconEye size={13} />,
+    match: (m) => (m.num_mmproj ?? 0) > 0,
+  },
+  {
+    id: 'agentic',
+    label: 'Agentic',
+    icon: <IconTool size={13} />,
+    match: (m) => !!m.tools,
+  },
+  {
+    id: 'small',
+    label: 'Small (≤4B)',
+    icon: <IconStar size={13} />,
+    match: (m) => {
+      const text = m.model_name.toLowerCase()
+      // Match common small-param naming: 1b, 2b, 3b, 4b, nano, mini, small
+      return /[-_. ]([1234]b)([-_. ]|$)|nano|mini(?!mal)|[^a-z]small[^a-z]/.test(
+        text
+      )
+    },
+  },
+]
+
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -142,6 +225,7 @@ function HubContent() {
 
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
+  const [activeCategory, setActiveCategory] = useState('all')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
   )
@@ -154,7 +238,6 @@ function HubContent() {
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
-
   const toggleModelExpansion = useCallback((modelId: string) => {
     setExpandedModels((prev) => ({
       ...prev,
@@ -243,6 +326,11 @@ function HubContent() {
         }))
         .filter((model) => (model.quants?.length ?? 0) > 0)
     }
+    // Apply category filter
+    if (activeCategory !== 'all') {
+      const cat = CATEGORIES.find((c) => c.id === activeCategory)
+      if (cat) filtered = filtered.filter(cat.match)
+    }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
       filtered = [huggingFaceRepo, ...filtered]
@@ -252,6 +340,7 @@ function HubContent() {
     sortedModels,
     debouncedSearchValue,
     showOnlyDownloaded,
+    activeCategory,
     huggingFaceRepo,
     searchOptions,
   ])
@@ -285,6 +374,11 @@ function HubContent() {
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
 
+    // Scroll to top when the active category changes
+  useEffect(() => {
+    rowVirtualizer.scrollToOffset(0, { align: 'start' });
+  } , [activeCategory, rowVirtualizer]);
+  
   useEffect(() => {
     // Use startTransition to keep UI responsive during data fetch
     startTransition(() => {
@@ -346,6 +440,8 @@ function HubContent() {
     setIsSearching(false)
     setSearchValue(e.target.value)
     setHuggingFaceRepo(null) // Clear previous repo info
+    // Reset category when user starts typing so results aren't silently filtered
+    setActiveCategory('all')
 
     if (!showOnlyDownloaded) {
       fetchHuggingFaceModel(e.target.value)
@@ -431,9 +527,9 @@ function HubContent() {
 
   return (
     <div className="flex flex-col h-svh w-full">
-      <div className="flex flex-col h-full w-full ">
+      <div className="flex flex-col h-full w-full">
         <HeaderPage>
-          <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
+          <div className={cn("pr-3 py-3 h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
             <div className="flex items-center gap-2 w-full">
               {isSearching ? (
                 <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
@@ -455,10 +551,46 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
-          <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Show skeleton immediately on navigation, then show actual content when loaded */}
-            {(isInitialLoad || (loading && !filteredModels.length)) ? (
+
+        {/* Category filter bar */}
+        <div className="shrink-0 border-b border-border bg-background/90 backdrop-blur-sm">
+          <div className="flex items-center gap-2 px-4 py-3 overflow-x-auto scrollbar-none w-full md:w-4/5 xl:w-4/6 mx-auto">
+            {CATEGORIES.map((cat) => (
+              <motion.button
+                key={cat.id}
+                layout
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+                onClick={() => {
+                  setActiveCategory(cat.id)
+                }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0',
+                  activeCategory === cat.id
+                    ? 'bg-primary text-primary-foreground shadow-md shadow-primary/10'
+                    : 'bg-secondary/80 text-muted-foreground hover:text-foreground hover:bg-secondary'
+                )}
+              >
+                {cat.icon}
+                {cat.label}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+
+        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px-41px)] overflow-y-auto! first-step-setup-local-provider">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeCategory}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto"
+            >
+              {/* Show skeleton immediately on navigation, then show actual content when loaded */}
+              {(isInitialLoad || (loading && !filteredModels.length)) ? (
               // Skeleton loading state for better perceived performance
               <div className="flex flex-col gap-3 animate-pulse">
                 {[...Array(5)].map((_, i) => (
@@ -794,7 +926,8 @@ function HubContent() {
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>

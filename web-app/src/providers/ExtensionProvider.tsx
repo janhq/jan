@@ -82,19 +82,25 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     }
   }, [status, t])
 
-  // Dismiss the loader only once the gated UI is ready, not on a fixed timer.
+  // Emit app-ready immediately after first paint so backend can start MCP servers.
+  // Extensions continue loading in the background without blocking the backend.
   useEffect(() => {
-    if (!finishedSetup) return
-    if (isMainWindow()) emit('app-ready').catch(() => {})
-    let removeTimer: ReturnType<typeof setTimeout>
     const raf = requestAnimationFrame(() => {
+      if (isMainWindow()) emit('app-ready').catch(() => {})
       document.body.classList.add('loaded')
-      removeTimer = setTimeout(() => {
-        document.getElementById('initial-loader')?.remove()
-      }, 300)
     })
     return () => {
       cancelAnimationFrame(raf)
+    }
+  }, [])
+
+  // Dismiss the loader once extensions have finished loading.
+  useEffect(() => {
+    if (!finishedSetup) return
+    const removeTimer = setTimeout(() => {
+      document.getElementById('initial-loader')?.remove()
+    }, 300)
+    return () => {
       clearTimeout(removeTimer)
     }
   }, [finishedSetup])
