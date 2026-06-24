@@ -555,6 +555,51 @@ jobs:
           fi
           echo "CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
 
+      - name: Download TurboQuant llamacpp backend (manifest resolver)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # TurboQuant ships on Windows as the SECOND provider alongside
+          # llamacpp-upstream. Bundle the offline-fallback `windows-x64-cpu`
+          # build into the turboquant resource dir; the app auto-downloads the
+          # optimal CUDA/Vulkan backend at runtime via the llamacpp-extension.
+          # Backend INDEX is resolved from the static turboquant manifest in
+          # atomic-chat-conf (raw.githubusercontent.com, no api.github.com rate
+          # limit); each entry carries its own tag (the releases are scattered).
+          # The archive itself comes from the AtomicBot-ai releases CDN. Inline
+          # bash (not `make ...-win-cpu`) because that make target is a
+          # PowerShell one-liner whose `$(...)` is mangled by make's /usr/bin/sh.
+          DIR="src-tauri/resources/llamacpp-backend"
+          BACKEND="windows-x64-cpu"
+          MANIFEST_URL="https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json"
+          rm -rf "$DIR"
+          mkdir -p "$DIR"
+          echo "Resolving TurboQuant backend index from atomic-chat-conf manifest..."
+          TMP="$(mktemp)"
+          curl -fsSL --retry 5 --retry-delay 3 "$MANIFEST_URL" -o "$TMP"
+          TAG="$(jq -r --arg id "$BACKEND" '.backends[]? | select(.id == $id) | .tag' "$TMP")"
+          ASSET="$(jq -r --arg id "$BACKEND" '.backends[]? | select(.id == $id) | .asset' "$TMP")"
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ] || [ -z "$ASSET" ] || [ "$ASSET" = "null" ]; then
+            echo "Error: turboquant manifest does not list the ${BACKEND} backend; update atomic-chat-conf backends/turboquant-manifest.json"
+            head -c 500 "$TMP" 2>/dev/null || true; echo
+            rm -f "$TMP"; exit 1
+          fi
+          rm -f "$TMP"
+          URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/${TAG}/${ASSET}"
+          echo "$TAG" > "$DIR/version.txt"
+          echo "$BACKEND" > "$DIR/backend.txt"
+          echo "Release: $TAG  Backend: $BACKEND"
+          echo "Downloading: $URL"
+          curl -fSL --retry 5 --retry-delay 3 "$URL" -o /tmp/llamacpp-turboquant-backend.zip
+          unzip -o /tmp/llamacpp-turboquant-backend.zip -d "$DIR"
+          rm -f /tmp/llamacpp-turboquant-backend.zip
+          if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then
+            echo "Relocating flat-extracted binaries into build/bin/..."
+            mkdir -p "$DIR/build/bin"
+            mv "$DIR"/*.exe "$DIR/build/bin/" 2>/dev/null || true
+          fi
+          echo "TurboQuant CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
+
       - name: Build web app and generate icons
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
@@ -873,6 +918,16 @@ jobs:
         # "Find optimal backend" when `tauri-plugin-hardware` reports a
         # working Vulkan loader.
         run: make download-llamacpp-upstream-backend
+
+      - name: Download TurboQuant llamacpp backend (linux-x64-vulkan)
+        # TurboQuant ships on Linux as the SECOND provider alongside
+        # llamacpp-upstream. The single linux-x64-vulkan build serves both CPU
+        # and GPU via GGML_BACKEND_DL, so it is the offline-fallback bundle.
+        # The make target resolves the backend index from the static turboquant
+        # manifest in atomic-chat-conf (raw.githubusercontent.com — no
+        # api.github.com rate limit); the archive comes from the AtomicBot-ai
+        # releases CDN.
+        run: make download-llamacpp-backend
 
       - name: Build web app and generate icons
         env:

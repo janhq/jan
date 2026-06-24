@@ -65,6 +65,7 @@ Atomic Chat is built by a small team and a handful of community contributors. Pu
 - Auto context-window expansion with overflow notifications
 - EAGLE-3 speculative decoding for Gemma 4 on Apple Silicon (MLX)
 - MTP on MLX for Qwen 3.5 / 3.6 and DeepSeek V4
+- TurboQuant KV cache (`turbo3` / `turbo4`) on llama.cpp — now on **Windows & Linux** too, not just macOS: up to ~4.3× smaller KV cache footprint, CPU and GPU (CUDA / Vulkan)
 - TurboQuant KV cache on MLX-VLM — smaller memory footprint via RHT-correct fast paths
 
 **Cloud models**
@@ -98,8 +99,8 @@ Atomic Chat is built by a small team and a handful of community contributors. Pu
 
 Three engines under the hood, all exposed through one OpenAI-compatible API at `http://localhost:1337/v1`:
 
-- **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our `llama.cpp` fork with TurboQuant optimizations for faster quantized inference. Cross-platform (macOS, Windows, Linux), CPU and GPU.
-- **Upstream [llama.cpp](https://github.com/ggml-org/llama.cpp)** — official `ggml-org` build, used on Windows by default for the widest hardware coverage and MTP support.
+- **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our `llama.cpp` fork with TurboQuant KV-cache optimizations (`turbo3` / `turbo4`) for faster, lower-memory quantized inference. Now a selectable second provider ("Atomic Llama.cpp Turboquant") on **all three desktops** — macOS, Windows, and Linux — CPU and GPU (CUDA / Vulkan).
+- **Upstream [llama.cpp](https://github.com/ggml-org/llama.cpp)** — official `ggml-org` build, the default engine on Windows and Linux for the widest hardware coverage and MTP support.
 - **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)** — Apple Silicon-native engine for vision-language models, running on the Neural Engine and unified memory. Faster than llama.cpp on M-series chips for supported models.
 
 Speculative-decoding features available across backends:

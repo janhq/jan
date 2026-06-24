@@ -14,17 +14,18 @@ import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 const LEGACY_LLAMACPP_PROVIDER = 'llamacpp'
 
 /**
- * Returns the canonical local llama.cpp provider id for THIS platform.
- * On Windows this collapses both `'llamacpp'` and `'llamacpp-upstream'`
- * to `'llamacpp-upstream'`; on macOS/Linux it returns the input
- * unchanged. Keeps call sites that took `'llamacpp'` from persisted
- * state, thread history, `lastUsedModel`, etc. transparently working
- * after the upstream-only consolidation.
+ * Identity mapping for a local llama.cpp provider id.
+ *
+ * Historically (ADR 2026-05-22) Windows shipped only `llamacpp-upstream`, so
+ * this collapsed the turboquant `'llamacpp'` id → `'llamacpp-upstream'` on
+ * Windows. As of the 2026-06-23 side-by-side decision the turboquant provider
+ * ships on Windows AND Linux too, making `'llamacpp'` a real, registered
+ * provider id on every platform — aliasing it away would make it
+ * unselectable. The alias is therefore now a pass-through on all platforms;
+ * it is kept as a single seam in case a future platform needs id remapping.
  */
 const aliasLocalLlamacppProvider = (providerName: string): string =>
-  IS_WINDOWS && providerName === LEGACY_LLAMACPP_PROVIDER
-    ? LOCAL_LLAMACPP_PROVIDER
-    : providerName
+  providerName
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -64,26 +65,17 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
-          // On Windows the turboquant `llamacpp` provider was excised from
-          // the build (ADR 2026-05-22). The zustand `migrate` block below
-          // purges any persisted instance once, but `setProviders` is also
-          // called every time the engine list is refreshed — so guard the
-          // merge path here too, otherwise a single stale entry in
-          // localStorage would resurrect the "Atomic Llama.cpp Turboquant"
-          // row in Settings → Model Providers every time the user
-          // navigated there.
-          const incoming = IS_WINDOWS
-            ? providers.filter((p) => p.provider !== LEGACY_LLAMACPP_PROVIDER)
-            : providers
+          // The turboquant `llamacpp` provider ships side-by-side with
+          // `llamacpp-upstream` on every platform (Windows + Linux added
+          // 2026-06-23; macOS already shipped both), so it is no longer
+          // filtered out of the merge here. `llamacpp-upstream` stays the
+          // default selection; the user picks turboquant explicitly in
+          // Settings → Model Providers.
+          const incoming = providers
           const existingProviders = state.providers
-            // Filter out legacy llama.cpp provider for migration
+            // Filter out legacy cortex `llama.cpp` provider for migration
             // Can remove after a couple of releases
             .filter((e) => e.provider !== 'llama.cpp')
-            // Filter out the (now Windows-excluded) turboquant provider —
-            // see the comment on `incoming` above. No-op on macOS/Linux.
-            .filter(
-              (e) => !IS_WINDOWS || e.provider !== LEGACY_LLAMACPP_PROVIDER
-            )
             .map((provider) => {
               return {
                 ...provider,

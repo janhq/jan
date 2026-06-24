@@ -532,6 +532,99 @@ if ($skipDownload) {
     }
 }
 
+# ── Download TurboQuant llamacpp backend (second provider) ────
+# TurboQuant ships on Windows as the SECOND provider alongside
+# llamacpp-upstream (which stays the default). Bundle the offline-fallback
+# `windows-x64-cpu` build into the turboquant resource dir; the
+# llamacpp-extension auto-downloads the optimal CUDA/Vulkan variant at runtime.
+# Index resolved from the static turboquant manifest in atomic-chat-conf
+# (raw.githubusercontent.com — no api.github.com rate limit); each entry
+# carries its OWN tag because the variants live in scattered releases. The
+# archive itself comes from the AtomicBot-ai releases CDN. This step is
+# NON-FATAL: a failure here only skips the offline fallback (the runtime
+# download path still serves the provider), so it must never abort `make dev`.
+Write-Step 'Download TurboQuant llamacpp backend: windows-x64-cpu'
+$tqDir = 'src-tauri/resources/llamacpp-backend'
+$tqServerExe = "$tqDir/build/bin/llama-server.exe"
+$tqBackend = 'windows-x64-cpu'
+
+# A bundle counts as a real TurboQuant backend only when its version.txt starts
+# with "turboquant-". A stale/legacy llama-server.exe (e.g. an old janhq "b8892"
+# build left over in this dir) must NOT satisfy the skip-guard, or the app will
+# run a non-TurboQuant binary that silently downgrades turbo3 KV -> q8_0.
+$tqVersionFile = "$tqDir/version.txt"
+$tqIsTurboquant = (Test-Path $tqServerExe) -and (Test-Path $tqVersionFile) -and `
+    ((Get-Content -Path $tqVersionFile -Raw -ErrorAction SilentlyContinue).Trim().StartsWith('turboquant-'))
+
+if ($SkipBackendDownload -and $tqIsTurboquant) {
+    Write-Host "  -SkipBackendDownload: reusing existing TurboQuant backend ($tqBackend), no fetch." -ForegroundColor Yellow
+} elseif ($tqIsTurboquant) {
+    Write-Host "  TurboQuant backend ($tqBackend) already present, skipping download."
+} else {
+    if (Test-Path $tqServerExe) {
+        Write-Host "  Existing backend in $tqDir is not a TurboQuant build (version.txt missing or != 'turboquant-*'); replacing it." -ForegroundColor Yellow
+        Remove-Item -Path $tqDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $tqManifestUrl = 'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
+    $tqHeaders = @{ 'User-Agent' = 'atomic-chat-dev' }
+
+    Write-Host '  Fetching TurboQuant backend manifest...'
+    $tqManifest = Invoke-BackendManifest -Uri $tqManifestUrl -Headers $tqHeaders
+    $tqEntry = $null
+    if ($tqManifest -and $tqManifest.backends) {
+        $tqEntry = $tqManifest.backends | Where-Object { $_.id -eq $tqBackend } | Select-Object -First 1
+    }
+
+    if ($tqEntry -and $tqEntry.tag -and $tqEntry.asset) {
+        $tqTag = $tqEntry.tag
+        $tqAsset = $tqEntry.asset
+        if (-not (Test-Path $tqDir)) {
+            New-Item -ItemType Directory -Path $tqDir -Force | Out-Null
+        }
+        $tqUrl = "https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/$tqTag/$tqAsset"
+        $tqArchive = Join-Path $env:TEMP 'llamacpp-turboquant-backend.zip'
+
+        Write-Host "  Release: $tqTag  Backend: $tqBackend"
+        Write-Host "  Downloading: $tqUrl"
+
+        $tqDownloaded = $false
+        for ($i = 1; $i -le 5; $i++) {
+            try {
+                Invoke-WebRequest -Uri $tqUrl -OutFile $tqArchive -UseBasicParsing
+                $tqDownloaded = $true
+                break
+            } catch {
+                Write-Host "  Download attempt $i/5 failed: $($_.Exception.Message); retrying..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 3
+            }
+        }
+        if ($tqDownloaded) {
+            Set-Content -Path "$tqDir/version.txt" -Value $tqTag -NoNewline
+            Set-Content -Path "$tqDir/backend.txt" -Value $tqBackend -NoNewline
+            Write-Host '  Extracting...'
+            Expand-Archive -Path $tqArchive -DestinationPath $tqDir -Force
+            Remove-Item $tqArchive -Force -ErrorAction SilentlyContinue
+
+            # Relocate flat-extracted binaries into build/bin/ (matches CI logic)
+            if (-not (Test-Path "$tqDir/build/bin/llama-server.exe")) {
+                if (Test-Path "$tqDir/llama-server.exe") {
+                    Write-Host '  Relocating flat-extracted binaries into build/bin/...'
+                    New-Item -ItemType Directory -Path "$tqDir/build/bin" -Force | Out-Null
+                    Get-ChildItem -Path $tqDir -Filter '*.exe' -File |
+                        Move-Item -Destination "$tqDir/build/bin/" -Force
+                    Get-ChildItem -Path $tqDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
+                        Move-Item -Destination "$tqDir/build/bin/" -Force
+                }
+            }
+            Write-Host "  TurboQuant backend ($tqBackend) downloaded successfully. App auto-downloads GPU variant at runtime." -ForegroundColor Green
+        } else {
+            Write-Host '  WARN: failed to download TurboQuant backend after 5 attempts; skipping offline fallback (runtime download still works).' -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host '  WARN: TurboQuant manifest unreachable or missing windows-x64-cpu; skipping offline fallback (runtime download still works).' -ForegroundColor Yellow
+    }
+}
+
 # ── Build CLI (debug) ─────────────────────────────────────────
 Write-Step 'Build jan-cli (debug)'
 $cliBin = 'src-tauri/resources/bin/jan-cli.exe'

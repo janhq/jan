@@ -35,7 +35,8 @@
       "resources/LICENSE",
       "resources/bin/jan-cli",
       "resources/bin/sqlite-vec.so",
-      "resources/llamacpp-backend-upstream/**/*"
+      "resources/llamacpp-backend-upstream/**/*",
+      "resources/llamacpp-backend/**/*"
     ],
     "externalBin": ["resources/bin/uv"],
     "linux": {

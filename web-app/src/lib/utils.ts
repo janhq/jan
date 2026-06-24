@@ -154,15 +154,11 @@ export const getProviderTitle = (provider: string) => {
     case 'jan':
       return 'Atomic Chat'
     case 'llamacpp':
-      // Per ADRs 2026-05-22 (Windows) and 2026-05-28 (Linux), the
-      // `llamacpp` (turboquant) provider is excluded from both Windows
-      // and Linux builds. Lingering references in zustand-persisted
-      // state from a pre-update install would otherwise render as
-      // "Atomic Llama.cpp Turboquant" until the one-time migration in
-      // `useModelProvider` purges them — fall back to the upstream
-      // display name here so the UI never flashes the Turboquant
-      // branding on platforms that don't ship it.
-      return IS_WINDOWS || IS_LINUX ? 'Llama.cpp' : 'Atomic Llama.cpp Turboquant'
+      // TurboQuant now ships on Windows and Linux as a second provider
+      // side-by-side with `llamacpp-upstream` (which stays the default),
+      // so the `llamacpp` provider carries its real Turboquant name on
+      // every platform.
+      return 'Atomic Llama.cpp Turboquant'
     case 'llamacpp-upstream':
       return 'Llama.cpp'
     case 'mlx':

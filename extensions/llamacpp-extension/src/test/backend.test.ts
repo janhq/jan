@@ -3,6 +3,7 @@ import {
   getBackendDir,
   getBackendExePath,
   isBackendInstalled,
+  getBackendDownloadUrl,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
 import { fs, getJanDataFolderPath } from '@janhq/core'
@@ -122,6 +123,46 @@ describe('Backend functions', () => {
       // Check that it was called with the final exe path
       expect(fs.existsSync).toHaveBeenCalledWith(
         `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+      )
+    })
+  })
+
+  describe('getBackendDownloadUrl (TurboQuant manifest)', () => {
+    afterEach(() => {
+      vi.stubGlobal('IS_WINDOWS', false)
+    })
+
+    it('resolves to the AtomicBot-ai releases CDN, never api.github.com', () => {
+      vi.stubGlobal('IS_WINDOWS', true)
+      const url = getBackendDownloadUrl(
+        'turboquant-windows-x64-cuda-12.4-d86eb0b',
+        'windows-x64-cuda-12.4'
+      )
+      expect(url).not.toContain('api.github.com')
+      expect(url).toContain(
+        'github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
+      )
+    })
+
+    it('uses the per-backend manifest tag verbatim + .zip on Windows', () => {
+      vi.stubGlobal('IS_WINDOWS', true)
+      const url = getBackendDownloadUrl(
+        'turboquant-windows-x64-cpu-d86eb0b',
+        'windows-x64-cpu'
+      )
+      expect(url).toBe(
+        'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/turboquant-windows-x64-cpu-d86eb0b/llama-turboquant-windows-x64-cpu.zip'
+      )
+    })
+
+    it('uses .tar.gz on Linux with the per-backend tag', () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      const url = getBackendDownloadUrl(
+        'turboquant-linux-x64-vulkan-d86eb0b',
+        'linux-x64-vulkan'
+      )
+      expect(url).toBe(
+        'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/turboquant-linux-x64-vulkan-d86eb0b/llama-turboquant-linux-x64-vulkan.tar.gz'
       )
     })
   })

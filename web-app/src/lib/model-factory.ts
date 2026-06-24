@@ -571,6 +571,7 @@ export class ModelFactory {
     if (cached && cached.expiresAt > now) {
       // #region agent log
       ttftPreBegin('resolveLocalSession-cacheHit', { key })
+      fetch('http://127.0.0.1:7748/ingest/a227fd71-6a26-46ed-a55a-2ce72555a8ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'31e596'},body:JSON.stringify({sessionId:'31e596',hypothesisId:'C',location:'model-factory.ts:571',message:'resolveLocalSession CACHE HIT - returning cached port',data:{engineName:providerName,modelId,key,port:cached.sessionInfo?.port},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
       return cached.sessionInfo
     }
@@ -607,6 +608,9 @@ export class ModelFactory {
             ? 'plugin:llamacpp-upstream|find_session_by_model'
             : 'plugin:mlx|find_mlx_session_by_model'
       const sessionInfo = await invoke<SessionInfo | null>(ipcName, { modelId })
+      // #region agent log
+      fetch('http://127.0.0.1:7748/ingest/a227fd71-6a26-46ed-a55a-2ce72555a8ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'31e596'},body:JSON.stringify({sessionId:'31e596',hypothesisId:'B',location:'model-factory.ts:609',message:'resolveLocalSession RESOLVED: engine + actual port the chat connects to',data:{engineName:providerName,ipcName,modelId,port:sessionInfo?.port,found:!!sessionInfo},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!sessionInfo) {
         throw new Error(
           `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
@@ -702,6 +706,9 @@ export class ModelFactory {
     audioParts?: AudioInputPart[]
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
+    // #region agent log
+    fetch('http://127.0.0.1:7748/ingest/a227fd71-6a26-46ed-a55a-2ce72555a8ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'31e596'},body:JSON.stringify({sessionId:'31e596',hypothesisId:'A',location:'model-factory.ts:704',message:'createModel entry: which provider is the chat bound to',data:{providerName,providerObj:provider?.provider,modelId},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const override = reasoningOverride ?? {}
     // Local providers accept the full inference-parameter bag (top_k,
     // repeat_penalty, stop_sequences, …) as body injection. Cloud providers

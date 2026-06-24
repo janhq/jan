@@ -4,72 +4,63 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{Manager, Runtime};
 
+/// Maps any persisted backend id (legacy janhq-style or already-clean
+/// TurboQuant id) onto the **clean** TurboQuant id scheme used on
+/// Windows/Linux/macOS:
+///   `windows-x64-cpu`, `windows-x64-cuda-12.4`, `windows-x64-cuda-13.3`,
+///   `windows-x64-vulkan`, `linux-x64-vulkan`, `macos-arm64`, `macos-x64`.
+///
+/// The TurboQuant releases are scattered (each variant is its own release on
+/// the same SHA), so the manifest in `atomic-chat-conf` is the single source
+/// of "which tag"; here we only normalize the *backend id*. Idempotent: a
+/// clean id maps to itself.
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
-    let is_windows = old_backend.starts_with("win-");
-    let is_linux = old_backend.starts_with("linux-");
-    let os_prefix = if is_windows {
-        "win-"
-    } else if is_linux {
-        "linux-"
-    } else {
-        ""
-    };
+    let b = old_backend.replace('\u{FEFF}', "").trim().to_string();
 
-    // Determine architecture suffix, defaulting to x64
-    let arch_suffix = if old_backend.contains("-arm64") {
-        "arm64"
-    } else {
-        "x64"
-    };
-    let is_x64 = arch_suffix == "x64";
+    // Already-clean TurboQuant ids pass through unchanged (idempotent).
+    match b.as_str() {
+        "windows-x64-cpu"
+        | "windows-x64-cuda-12.4"
+        | "windows-x64-cuda-13.3"
+        | "windows-x64-vulkan"
+        | "linux-x64-vulkan"
+        | "macos-arm64"
+        | "macos-x64" => return b,
+        _ => {}
+    }
 
-    // Handle GPU backends
-    if old_backend.contains("cuda-cu12.0") {
-        // Migration from e.g., 'linux-avx2-cuda-cu12.0-x64' to 'linux-cuda-12-common_cpus-x64'
-        return format!(
-            "{}cuda-12-common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
-    } else if old_backend.contains("cuda-cu11.7") {
-        // Migration from e.g., 'win-noavx-cuda-cu11.7-x64' to 'win-cuda-11-common_cpus-x64'
-        return format!(
-            "{}cuda-11-common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
-    } else if old_backend.contains("vulkan") {
-        // If it's already the new name, return it
-        if old_backend.contains("vulkan-common_cpus") {
-            return old_backend;
+    // Legacy / clean Windows ids → clean Windows ids.
+    if b.starts_with("win-") || b.starts_with("windows-") {
+        if b.contains("cuda-13") || b.contains("cu13.0") {
+            return "windows-x64-cuda-13.3".to_string();
         }
-
-        // Migration from e.g., 'linux-vulkan-x64' to 'linux-vulkan-common_cpus-x64'
-        return format!(
-            "{}vulkan-common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
+        if b.contains("cuda-12") || b.contains("cu12.0") {
+            return "windows-x64-cuda-12.4".to_string();
+        }
+        // No TurboQuant Windows CUDA-11 build — fall back to CPU.
+        if b.contains("cuda-11") || b.contains("cu11.7") {
+            return "windows-x64-cpu".to_string();
+        }
+        if b.contains("vulkan") {
+            return "windows-x64-vulkan".to_string();
+        }
+        // CPU / avx* variants.
+        return "windows-x64-cpu".to_string();
     }
 
-    // Handle CPU-only backends (avx, avx2, avx512, noavx)
-    let is_old_cpu_backend = old_backend.contains("avx512")
-        || old_backend.contains("avx2")
-        || old_backend.contains("avx-x64") // Check for 'avx' but not as part of 'avx2' or 'avx512'
-        || old_backend.contains("noavx-x64");
-
-    if is_old_cpu_backend {
-        // Migration from e.g., 'win-avx512-x64' to 'win-common_cpus-x64'
-        return format!(
-            "{}common_cpus-{}",
-            os_prefix,
-            if is_x64 { "x64" } else { arch_suffix }
-        );
+    // Legacy / clean Linux ids → the single `linux-x64-vulkan` build
+    // (serves CPU+GPU via GGML_BACKEND_DL; no TurboQuant CUDA-on-Linux build).
+    if b.starts_with("linux-") {
+        // No TurboQuant Linux arm64 build; leave unrecognized arm64 ids as-is.
+        if b.contains("arm64") || b.contains("aarch64") {
+            return b;
+        }
+        return "linux-x64-vulkan".to_string();
     }
 
-    // Return original if it doesn't match a pattern that needs migration
-    old_backend
+    // macOS / unknown ids: unchanged.
+    b
 }
 
 #[tauri::command]
@@ -196,42 +187,34 @@ pub fn determine_supported_backends(
     let sys_type = format!("{}-{}", os_type, arch);
     let mut supported_backends: Vec<String> = Vec::new();
 
-    // Determine supported backends based on system type and features
+    // Determine supported backends based on system type and features, using
+    // the clean TurboQuant id scheme. Windows ships discrete CPU/CUDA/Vulkan
+    // variants; Linux ships a single `linux-x64-vulkan` build that serves
+    // CPU+GPU (GGML_BACKEND_DL); macOS is arm64-only (bundled).
     match sys_type.as_str() {
         "windows-x86_64" => {
-            supported_backends.push("win-common_cpus-x64".to_string());
-            if features.cuda11 {
-                supported_backends.push("win-cuda-11-common_cpus-x64".to_string());
-            }
+            supported_backends.push("windows-x64-cpu".to_string());
+            // No TurboQuant Windows CUDA-11 build (features.cuda11 ignored here).
             if features.cuda12 {
-                supported_backends.push("win-cuda-12-common_cpus-x64".to_string());
+                supported_backends.push("windows-x64-cuda-12.4".to_string());
             }
             if features.cuda13 {
-                supported_backends.push("win-cuda-13-common_cpus-x64".to_string());
+                supported_backends.push("windows-x64-cuda-13.3".to_string());
             }
             if features.vulkan {
-                supported_backends.push("win-vulkan-common_cpus-x64".to_string());
+                supported_backends.push("windows-x64-vulkan".to_string());
             }
         }
         "windows-aarch64" | "windows-arm64" => {
-            supported_backends.push("win-arm64".to_string());
+            // No TurboQuant Windows arm64 build.
+            supported_backends.push("windows-arm64".to_string());
         }
         "linux-x86_64" | "linux-x86" => {
-            supported_backends.push("linux-common_cpus-x64".to_string());
-            if features.cuda11 {
-                supported_backends.push("linux-cuda-11-common_cpus-x64".to_string());
-            }
-            if features.cuda12 {
-                supported_backends.push("linux-cuda-12-common_cpus-x64".to_string());
-            }
-            if features.cuda13 {
-                supported_backends.push("linux-cuda-13-common_cpus-x64".to_string());
-            }
-            if features.vulkan {
-                supported_backends.push("linux-vulkan-common_cpus-x64".to_string());
-            }
+            // Single build serves CPU + GPU; no TurboQuant CUDA-on-Linux build.
+            supported_backends.push("linux-x64-vulkan".to_string());
         }
         "linux-aarch64" | "linux-arm64" => {
+            // No TurboQuant Linux arm64 build.
             supported_backends.push("linux-arm64".to_string());
         }
         "macos-x86_64" | "macos-x86" => {
@@ -249,10 +232,14 @@ pub fn determine_supported_backends(
 }
 
 fn is_windows_backend(backend: &str) -> bool {
-    backend.starts_with("win-")
+    backend.starts_with("win-") || backend.starts_with("windows-")
 }
 
 fn compare_backend_versions_for_sort(left: &BackendInfo, right: &BackendInfo) -> std::cmp::Ordering {
+    // TurboQuant release tags (`turboquant-<id>-<sha>`) are NOT monotonic
+    // numbers, so numeric version comparison yields 0 for both and we fall
+    // through to install `order`. The numeric short-circuit below is kept for
+    // legacy janhq-style Windows ids (`win-*` with `bXXXX` numeric tags).
     if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
         let left_version = parse_backend_version(left.version.clone());
         let right_version = parse_backend_version(right.version.clone());
@@ -432,63 +419,34 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // Define library name lookup table
-    let mut libname_lookup: HashMap<String, &str> = HashMap::new();
-    libname_lookup.insert("windows-11.7".to_string(), "cudart64_110.dll");
-    libname_lookup.insert("windows-12.0".to_string(), "cudart64_12.dll");
-    libname_lookup.insert("windows-13.0".to_string(), "cudart64_13.dll");
-    libname_lookup.insert("linux-11.7".to_string(), "libcudart.so.11.0");
-    libname_lookup.insert("linux-12.0".to_string(), "libcudart.so.12");
-    libname_lookup.insert("linux-13.0".to_string(), "libcudart.so.13");
+    // TurboQuant CUDA archives bundle the cudart/cublas DLLs inside the
+    // backend's own `build/bin` (no separate cudart download, no legacy
+    // janhq migration path). We only need to confirm the runtime lib is
+    // present in that dir. `jan_data_folder_path` is unused now but kept in
+    // the command signature for IPC compatibility.
+    let _ = jan_data_folder_path;
 
-    let key = format!("{}-{}", os_type, version);
-
-    // Check if the OS-version combination is supported
-    let libname = match libname_lookup.get(&key) {
-        Some(name) => *name,
-        None => return Ok(false),
+    // Resolve the cudart runtime lib name by CUDA major version. The `version`
+    // is the toolkit minor (e.g. "12.4" / "13.3") for clean TurboQuant ids, or
+    // the legacy "11.7" / "12.0" / "13.0" for older janhq-style ids.
+    let major = version.split('.').next().unwrap_or("");
+    let libname: &str = match (os_type.as_str(), major) {
+        ("windows", "11") => "cudart64_110.dll",
+        ("windows", "12") => "cudart64_12.dll",
+        ("windows", "13") => "cudart64_13.dll",
+        ("linux", "11") => "libcudart.so.11.0",
+        ("linux", "12") => "libcudart.so.12",
+        ("linux", "13") => "libcudart.so.13",
+        _ => return Ok(false),
     };
 
-    // Expected new location: backend_dir/build/bin/libname
+    // Expected location: backend_dir/build/bin/libname
     let new_path = std::path::PathBuf::from(&backend_dir)
         .join("build")
         .join("bin")
         .join(libname);
 
-    if new_path.exists() {
-        return Ok(true);
-    }
-
-    // Old location (used by older builds): jan_data_folder_path/llamacpp/lib/libname
-    let old_path = std::path::PathBuf::from(&jan_data_folder_path)
-        .join("llamacpp")
-        .join("lib")
-        .join(libname);
-
-    if old_path.exists() {
-        // Ensure target directory exists
-        let target_dir = PathBuf::from(&backend_dir).join("build").join("bin");
-
-        if !target_dir.exists() {
-            fs::create_dir_all(&target_dir)
-                .map_err(|e| format!("Failed to create target directory: {}", e))?;
-        }
-
-        // Move old lib to the correct new location
-        match fs::rename(&old_path, &new_path) {
-            Ok(_) => {
-                log::info!("[CUDA] Migrated {} from old path to new location.", libname);
-                return Ok(true);
-            }
-            Err(err) => {
-                log::warn!("[CUDA] Failed to move old library: {}", err);
-                // Return false since the migration failed
-                return Ok(false);
-            }
-        }
-    }
-
-    Ok(false)
+    Ok(new_path.exists())
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -617,19 +575,22 @@ pub async fn prioritize_backends(
 }
 
 fn get_backend_category(backend_string: &str) -> Option<String> {
-    if backend_string.contains("cuda-13-common_cpus") {
+    // Matches both legacy ids (`*-cuda-13-common_cpus-*`) and clean TurboQuant
+    // ids (`windows-x64-cuda-13.3`).
+    if backend_string.contains("cuda-13") || backend_string.contains("cu13.0") {
         return Some("cuda-cu13.0".to_string());
     }
-    if backend_string.contains("cuda-12-common_cpus") || backend_string.contains("cu12.0") {
+    if backend_string.contains("cuda-12") || backend_string.contains("cu12.0") {
         return Some("cuda-cu12.0".to_string());
     }
-    if backend_string.contains("cuda-11-common_cpus") || backend_string.contains("cu11.7") {
+    if backend_string.contains("cuda-11") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
     }
-    if backend_string.contains("common_cpus") {
+    // Legacy `*-common_cpus-*` and clean `windows-x64-cpu`.
+    if backend_string.contains("common_cpus") || backend_string.contains("-cpu") {
         return Some("common_cpus".to_string());
     }
     if backend_string.contains("avx512") {
@@ -1073,52 +1034,95 @@ mod tests {
 
     #[test]
     fn test_map_old_backend_to_new_cuda() {
-        // Linux CUDA 12
+        // Legacy Linux CUDA → single linux-x64-vulkan build (no TurboQuant CUDA-on-Linux).
         assert_eq!(
             map_old_backend_to_new("linux-avx2-cuda-cu12.0-x64".to_string()),
-            "linux-cuda-12-common_cpus-x64"
+            "linux-x64-vulkan"
         );
-        // Windows CUDA 11 (noavx)
+        // Legacy Windows CUDA 11 → CPU (no TurboQuant Windows CUDA-11 build).
         assert_eq!(
             map_old_backend_to_new("win-noavx-cuda-cu11.7-x64".to_string()),
-            "win-cuda-11-common_cpus-x64"
+            "windows-x64-cpu"
+        );
+        // Legacy Windows CUDA 12 → clean windows-x64-cuda-12.4.
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-12-common_cpus-x64".to_string()),
+            "windows-x64-cuda-12.4"
+        );
+        // Legacy Windows CUDA 13 → clean windows-x64-cuda-13.3.
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-13-common_cpus-x64".to_string()),
+            "windows-x64-cuda-13.3"
+        );
+        // Clean ids are idempotent.
+        assert_eq!(
+            map_old_backend_to_new("windows-x64-cuda-12.4".to_string()),
+            "windows-x64-cuda-12.4"
+        );
+        assert_eq!(
+            map_old_backend_to_new("windows-x64-cuda-13.3".to_string()),
+            "windows-x64-cuda-13.3"
         );
     }
 
     #[test]
     fn test_map_old_backend_to_new_vulkan() {
-        // Linux Vulkan
+        // Legacy Linux Vulkan → clean linux-x64-vulkan.
         assert_eq!(
             map_old_backend_to_new("linux-vulkan-x64".to_string()),
-            "linux-vulkan-common_cpus-x64"
+            "linux-x64-vulkan"
         );
-        // Already new format
+        // Legacy Windows Vulkan → clean windows-x64-vulkan.
         assert_eq!(
             map_old_backend_to_new("win-vulkan-common_cpus-x64".to_string()),
-            "win-vulkan-common_cpus-x64"
+            "windows-x64-vulkan"
+        );
+        // Clean ids are idempotent.
+        assert_eq!(
+            map_old_backend_to_new("linux-x64-vulkan".to_string()),
+            "linux-x64-vulkan"
+        );
+        assert_eq!(
+            map_old_backend_to_new("windows-x64-vulkan".to_string()),
+            "windows-x64-vulkan"
         );
     }
 
     #[test]
     fn test_map_old_backend_to_new_cpu() {
-        // AVX512 migration
+        // Legacy Windows AVX512 → clean windows-x64-cpu.
         assert_eq!(
             map_old_backend_to_new("win-avx512-x64".to_string()),
-            "win-common_cpus-x64"
+            "windows-x64-cpu"
         );
-        // AVX2 migration
+        // Legacy Windows common_cpus → clean windows-x64-cpu.
+        assert_eq!(
+            map_old_backend_to_new("win-common_cpus-x64".to_string()),
+            "windows-x64-cpu"
+        );
+        // Legacy Linux AVX2 → single linux-x64-vulkan build.
         assert_eq!(
             map_old_backend_to_new("linux-avx2-x64".to_string()),
-            "linux-common_cpus-x64"
+            "linux-x64-vulkan"
+        );
+        // Clean windows-x64-cpu is idempotent.
+        assert_eq!(
+            map_old_backend_to_new("windows-x64-cpu".to_string()),
+            "windows-x64-cpu"
         );
     }
 
     #[test]
     fn test_map_old_backend_to_new_arch() {
-        // ARM64 detection
+        // ARM64 ids have no TurboQuant build and are returned unchanged.
         assert_eq!(
             map_old_backend_to_new("linux-arm64".to_string()),
-            "linux-arm64" // Does not match specific migration patterns, returns original
+            "linux-arm64"
+        );
+        // macOS ids pass through.
+        assert_eq!(
+            map_old_backend_to_new("macos-arm64".to_string()),
+            "macos-arm64"
         );
     }
 
@@ -1200,11 +1204,29 @@ mod tests {
             determine_supported_backends("windows".to_string(), "x86_64".to_string(), features)
                 .unwrap();
 
-        assert!(result.contains(&"win-common_cpus-x64".to_string()));
-        assert!(result.contains(&"win-cuda-11-common_cpus-x64".to_string()));
-        assert!(result.contains(&"win-cuda-12-common_cpus-x64".to_string()));
-        assert!(result.contains(&"win-vulkan-common_cpus-x64".to_string()));
-        assert!(!result.contains(&"win-cuda-13-common_cpus-x64".to_string()));
+        assert!(result.contains(&"windows-x64-cpu".to_string()));
+        assert!(result.contains(&"windows-x64-cuda-12.4".to_string()));
+        assert!(result.contains(&"windows-x64-vulkan".to_string()));
+        // No TurboQuant Windows CUDA-11 build, and cuda13 was not requested.
+        assert!(!result.contains(&"windows-x64-cuda-13.3".to_string()));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_single_vulkan() {
+        let features = SystemFeatures {
+            cuda11: true,
+            cuda12: true,
+            cuda13: true,
+            vulkan: true,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        // Linux ships a single build that serves CPU+GPU; no CUDA-on-Linux build.
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "linux-x64-vulkan");
     }
 
     #[test]
@@ -1365,24 +1387,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_is_cuda_installed_migration() {
+    async fn test_is_cuda_installed_no_legacy_migration() {
         let backend_dir = tempfile::tempdir().unwrap();
         let jan_data_dir = tempfile::tempdir().unwrap();
 
         let version = "12.0";
         let os_type = "linux"; // Maps to libcudart.so.12
 
-        // Setup Old Path: jan_data/llamacpp/lib/libcudart.so.12
+        // A lib ONLY in the old janhq path must NOT be picked up anymore —
+        // TurboQuant bundles cudart in the backend's own build/bin.
         let old_lib_dir = jan_data_dir.path().join("llamacpp").join("lib");
         fs::create_dir_all(&old_lib_dir).unwrap();
         let lib_name = "libcudart.so.12";
-        let old_file_path = old_lib_dir.join(lib_name);
         {
-            let mut f = File::create(&old_file_path).unwrap();
+            let mut f = File::create(old_lib_dir.join(lib_name)).unwrap();
             f.write_all(b"dummy content").unwrap();
         }
 
-        // Run Check (should trigger migration)
         let installed = is_cuda_installed(
             backend_dir.path().to_string_lossy().to_string(),
             version.to_string(),
@@ -1392,15 +1413,12 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(installed, "Should return true after migration");
-
-        // Verify Migration
-        let new_path = backend_dir.path().join("build").join("bin").join(lib_name);
-        assert!(new_path.exists(), "File should exist in new location");
         assert!(
-            !old_file_path.exists(),
-            "File should be removed from old location"
+            !installed,
+            "Legacy janhq cudart path must not be migrated/used"
         );
+        let new_path = backend_dir.path().join("build").join("bin").join(lib_name);
+        assert!(!new_path.exists(), "Nothing should be created in build/bin");
     }
 
     #[tokio::test]
@@ -1429,69 +1447,103 @@ mod tests {
         assert!(installed);
     }
 
+    #[tokio::test]
+    async fn test_is_cuda_installed_clean_minor_version() {
+        let backend_dir = tempfile::tempdir().unwrap();
+        let jan_data_dir = tempfile::tempdir().unwrap(); // Empty
+
+        // Clean TurboQuant id carries the toolkit minor; major drives the lib.
+        let target_dir = backend_dir.path().join("build").join("bin");
+        fs::create_dir_all(&target_dir).unwrap();
+        File::create(target_dir.join("cudart64_12.dll")).unwrap();
+
+        let installed = is_cuda_installed(
+            backend_dir.path().to_string_lossy().to_string(),
+            "12.4".to_string(),
+            "windows".to_string(),
+            jan_data_dir.path().to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert!(installed, "12.4 should resolve cudart64_12.dll");
+    }
+
     // --- Tests for find_latest_version_for_backend ---
 
     #[test]
     fn test_find_latest_version_for_backend() {
+        // Clean Linux id: TurboQuant tags are not numeric, so install `order`
+        // (descending) decides — highest order wins.
         let backends = vec![
             BackendInfo {
-                version: "b7523".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-linux-x64-vulkan-aaaa".into(),
+                backend: "linux-x64-vulkan".into(),
                 order: 2,
             },
             BackendInfo {
-                version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-linux-x64-vulkan-bbbb".into(),
+                backend: "linux-x64-vulkan".into(),
                 order: 3,
             },
             BackendInfo {
-                version: "b7522".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-linux-x64-vulkan-cccc".into(),
+                backend: "linux-x64-vulkan".into(),
                 order: 1,
             },
         ];
 
-        let result = find_latest_version_for_backend(backends, "linux-common_cpus-x64".to_string());
-        assert_eq!(result, Some("b7524/linux-common_cpus-x64".to_string()));
+        let result = find_latest_version_for_backend(backends, "linux-x64-vulkan".to_string());
+        assert_eq!(
+            result,
+            Some("turboquant-linux-x64-vulkan-bbbb/linux-x64-vulkan".to_string())
+        );
     }
 
     #[test]
     fn test_find_latest_version_for_windows_backend_uses_version_not_order() {
+        // Legacy janhq-style Windows ids carry numeric bXXXX tags → numeric sort
+        // still wins over install order (back-compat).
         let backends = vec![
             BackendInfo {
                 version: "b7524".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "windows-x64-cuda-12.4".into(),
                 order: 1_800_000_000,
             },
             BackendInfo {
                 version: "b7525".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "windows-x64-cuda-12.4".into(),
                 order: 0,
             },
         ];
 
         let result =
-            find_latest_version_for_backend(backends, "win-cuda-12-common_cpus-x64".to_string());
-        assert_eq!(result, Some("b7525/win-cuda-12-common_cpus-x64".to_string()));
+            find_latest_version_for_backend(backends, "windows-x64-cuda-12.4".to_string());
+        assert_eq!(result, Some("b7525/windows-x64-cuda-12.4".to_string()));
     }
 
     #[test]
     fn test_find_latest_version_for_backend_with_migration() {
+        // A legacy Linux id and a clean one both map to `linux-x64-vulkan`, so a
+        // query for the clean type matches both; highest order wins.
         let backends = vec![
             BackendInfo {
-                version: "b7523".into(),
+                version: "turboquant-linux-x64-vulkan-aaaa".into(),
                 backend: "linux-avx2-x64".into(),
                 order: 1,
             },
             BackendInfo {
-                version: "b7524".into(),
-                backend: "linux-common_cpus-x64".into(),
+                version: "turboquant-linux-x64-vulkan-bbbb".into(),
+                backend: "linux-x64-vulkan".into(),
                 order: 2,
             },
         ];
 
-        let result = find_latest_version_for_backend(backends, "linux-common_cpus-x64".to_string());
-        assert_eq!(result, Some("b7524/linux-common_cpus-x64".to_string()));
+        let result = find_latest_version_for_backend(backends, "linux-x64-vulkan".to_string());
+        assert_eq!(
+            result,
+            Some("turboquant-linux-x64-vulkan-bbbb/linux-x64-vulkan".to_string())
+        );
     }
 
     // --- Tests for check_backend_for_updates ---
@@ -1547,16 +1599,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_backend_for_updates_windows_uses_version_not_order() {
-        let current = "b7524/win-cuda-12-common_cpus-x64".to_string();
+        let current = "b7524/windows-x64-cuda-12.4".to_string();
         let available = vec![
             BackendInfo {
                 version: "b7524".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "windows-x64-cuda-12.4".into(),
                 order: 1_800_000_000,
             },
             BackendInfo {
                 version: "b7525".into(),
-                backend: "win-cuda-12-common_cpus-x64".into(),
+                backend: "windows-x64-cuda-12.4".into(),
                 order: 0,
             },
         ];
@@ -1567,7 +1619,7 @@ mod tests {
         assert_eq!(result.new_version, "b7525");
         assert_eq!(
             result.target_backend,
-            Some("b7525/win-cuda-12-common_cpus-x64".to_string())
+            Some("b7525/windows-x64-cuda-12.4".to_string())
         );
     }
 
@@ -1590,23 +1642,26 @@ mod tests {
 
     #[test]
     fn test_should_migrate_backend_needs_migration() {
+        // Legacy Linux id maps to the clean `linux-x64-vulkan`; the clean type is
+        // available, so migration is required.
         let old_backend = "linux-avx2-x64".to_string();
         let available = vec![BackendInfo {
-            version: "b7524".into(),
-            backend: "linux-common_cpus-x64".into(),
+            version: "turboquant-linux-x64-vulkan-aaaa".into(),
+            backend: "linux-x64-vulkan".into(),
             order: 1,
         }];
 
         let result = should_migrate_backend(old_backend, available).unwrap();
-        assert_eq!(result, Some("linux-common_cpus-x64".to_string()));
+        assert_eq!(result, Some("linux-x64-vulkan".to_string()));
     }
 
     #[test]
     fn test_should_migrate_backend_no_migration_needed() {
-        let new_backend = "linux-common_cpus-x64".to_string();
+        // Clean id maps to itself → nothing to migrate.
+        let new_backend = "linux-x64-vulkan".to_string();
         let available = vec![BackendInfo {
-            version: "b7524".into(),
-            backend: "linux-common_cpus-x64".into(),
+            version: "turboquant-linux-x64-vulkan-aaaa".into(),
+            backend: "linux-x64-vulkan".into(),
             order: 1,
         }];
 
