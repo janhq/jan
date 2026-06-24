@@ -208,7 +208,6 @@ These engine-wide settings control how the router and every loaded model use sys
 | **Context Shift** | Allow trimming the start of the prompt when context fills | Disabled | Enable for very long chats or multiple tool calls |
 | **KV Cache K Type** | KV-cache precision for keys | f16 | Switch to q8_0 / q4_0 to save VRAM |
 | **KV Cache V Type** | KV-cache precision for values | f16 | Switch to q8_0 / q4_0 to save VRAM |
-| **KV Cache Defragmentation Threshold** | Threshold that triggers cache defrag (< 0 disables) | 0.1 | Lower defragments more often; note this flag is marked deprecated upstream |
 
 <Callout type="info">
 **Per-model settings** (configured on each model's page, not here): Context Size (`ctx_size`), GPU Layers (`n_gpu_layers`), Batch Size (`batch_size`), **Disable KV Offload** (`no_kv_offload` — enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Chat Template, and sampling parameters. The router applies engine-wide settings as the `[*]` defaults in `router.preset.ini` and lets per-model entries override them.
@@ -225,14 +224,18 @@ The default KV cache type was temporarily set to `q8_0` in a prior release and h
 
 ## Advanced Settings
 
-These settings are for fine-tuning model behavior and advanced use cases:
+These settings are for fine-tuning model behavior and advanced use cases.
+
+<Callout type="info">
+**Custom Jinja Chat Template**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
+</Callout>
 
 ### Text Generation Control
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
 | **Max Tokens to Predict** | Maximum tokens to generate | -1 (infinite) | Set a limit to prevent runaway generation |
-| **Custom Jinja Chat Template** | Override model's chat format | Empty | Only if model needs special formatting |
+| **Custom Jinja Chat Template** (per-model) | Override model's chat format | Empty | Only if model needs special formatting |
 
 ### RoPE (Rotary Position Embedding) Settings
 
@@ -252,7 +255,7 @@ These settings are for fine-tuning model behavior and advanced use cases:
 | **Full SWA Cache** | Use full-size SWA cache (`--swa-full`) | Disabled | Enable for Gemma / Mistral-family SWA models when you need full-context recall (costs memory) |
 | **Keep First N Tokens** | Tokens from the initial prompt to keep on context shift (`--keep`, -1 = keep all) | 0 | Increase to preserve more of the system prompt when context fills |
 
-### Mirostat Sampling
+### Mirostat Sampling (per-model)
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
@@ -260,7 +263,7 @@ These settings are for fine-tuning model behavior and advanced use cases:
 | **Mirostat Learning Rate** | How fast it adapts | 0.1 | Lower for more stable output |
 | **Mirostat Target Entropy** | Target perplexity | 5 | Higher for more variety |
 
-### Output Constraints
+### Output Constraints (per-model)
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
