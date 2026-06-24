@@ -130,10 +130,10 @@ endif
 	yarn build:icon
 	yarn build:mlx-server
 	make build-cli
-	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-	cargo test --manifest-path src-tauri/utils/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:

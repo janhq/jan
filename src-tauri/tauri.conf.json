@@ -26,6 +26,7 @@
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data: https:",
+        "media-src": "'self' asset: http://asset.localhost blob: data: https:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
         "script-src": "'self' 'unsafe-eval' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
       },
