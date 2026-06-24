@@ -27,6 +27,15 @@ vi.mock('@/hooks/useThreads', () => ({
   useThreads: { getState: () => ({ threads: mockState.threads }) },
 }))
 
+vi.mock('@/hooks/useOpenUISettings', () => ({
+  useOpenUISettings: {
+    getState: () => ({
+      componentLibrary: 'chat',
+      isEnabled: () => false,
+    }),
+  },
+}))
+
 vi.mock('@/hooks/useAttachments', () => ({
   useAttachments: { getState: () => ({ enabled: false }) },
 }))

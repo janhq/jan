@@ -278,5 +278,19 @@
     "updateError": "更新 Llamacpp 失败"
   },
   "backendInstallSuccess": "后端安装成功",
-  "backendInstallError": "后端安装失败"
+  "backendInstallError": "后端安装失败",
+  "openui": {
+    "description": "使用 OpenUI Lang 生成交互式助手回复。",
+    "enableTitle": "启用 OpenUI 渲染",
+    "enableDescription": "向聊天请求添加 OpenUI 提示指导，并将 OpenUI Lang 回复渲染为交互式 UI。Chat 模式每次请求约增加 1,600 个提示词 token；Standard 模式约增加 5,000 个。 在聊天输入框的工具菜单中为每个聊天开启 OpenUI。",
+    "componentLibraryTitle": "组件库",
+    "componentLibraryDescription": "Chat 使用紧凑的 Jan 原生组件集。Standard 会加载完整的 OpenUI 组件和样式表包。",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "系统提示词",
+    "systemPromptDescription": "如果想在助手或其他客户端中使用，请复制生成的 OpenUI 提示词。",
+    "promptCopied": "OpenUI 提示词已复制",
+    "aboutTitle": "关于 OpenUI",
+    "aboutDescription": "OpenUI 允许模型用 OpenUI Lang 描述界面元素，让 Jan 可以将回复渲染为交互式组件，而不是普通 Markdown。启用后，Jan 会把 OpenUI 指导添加到聊天请求中，并将生成控件的操作路由回对话。"
+  }
 }

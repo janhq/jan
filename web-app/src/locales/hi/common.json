@@ -105,7 +105,6 @@
   "reasoning": "तर्क",
   "proactive": "सक्रिय",
   "selectAModel": "एक मॉडल चुनें",
-  "noToolsAvailable": "कोई उपकरण उपलब्ध नहीं है",
   "noModelsFoundFor": "\"{{searchValue}}\" के लिए कोई मॉडल नहीं मिला",
   "failedToLoadModels": "मॉडल लोड करने में विफल",
   "noModels": "कोई मॉडल नहीं मिला",
@@ -475,5 +474,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }

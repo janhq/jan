@@ -106,7 +106,6 @@
   "reasoning": "Ragionamento",
   "proactive": "Proattivo",
   "selectAModel": "Seleziona un modello",
-  "noToolsAvailable": "Nessun strumento disponibile",
   "noModelsFoundFor": "Nessun modello trovato per \"{{searchValue}}\"",
   "failedToLoadModels": "Impossibile caricare i modelli",
   "noModels": "Nessun modello trovato",
@@ -230,7 +229,7 @@
     "title": "Elimina fornitore",
     "description": "Elimina questo fornitore e tutti i suoi modelli. Questa azione non può essere annullata.",
     "success": "Il fornitore {{provider}} è stato eliminato definitivamente.",
-      "confirmTitle": "Elimina fornitore: {{provider}}",
+    "confirmTitle": "Elimina fornitore: {{provider}}",
     "confirmDescription": "Sei sicuro di voler eliminare questo fornitore? Questa azione non può essere annullata.",
     "cancel": "Annulla",
     "delete": "Elimina"
@@ -500,5 +499,6 @@
     "forceQuit": "Uscita forzata",
     "forcing": "Chiusura forzata in corso…",
     "shuttingDown": "Arresto in corso…"
-  }
+  },
+  "openui": "OpenUI"
 }

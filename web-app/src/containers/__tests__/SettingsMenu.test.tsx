@@ -114,6 +114,7 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
     expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
     expect(screen.getByText('common:claude_code')).toBeInTheDocument()
+    expect(screen.getByText('common:openui')).toBeInTheDocument()
   })
 
   it('shows provider expansion chevron when providers are active', () => {

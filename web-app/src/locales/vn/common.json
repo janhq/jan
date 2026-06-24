@@ -93,7 +93,6 @@
   "reasoning": "Lý luận",
   "proactive": "Chủ động",
   "selectAModel": "Chọn một mô hình",
-  "noToolsAvailable": "Không có công cụ nào",
   "noModelsFoundFor": "Không tìm thấy mô hình nào cho \"{{searchValue}}\"",
   "failedToLoadModels": "Không thể tải mô hình",
   "noModels": "Không tìm thấy mô hình nào",
@@ -405,5 +404,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }

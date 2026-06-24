@@ -278,5 +278,19 @@
     "updateError": "Không thể cập nhật Llamacpp"
   },
   "backendInstallSuccess": "Backend đã được cài đặt thành công",
-  "backendInstallError": "Không thể cài đặt backend"
+  "backendInstallError": "Không thể cài đặt backend",
+  "openui": {
+    "description": "Tao phan hoi tro ly tuong tac bang OpenUI Lang.",
+    "enableTitle": "Bat hien thi OpenUI",
+    "enableDescription": "Them huong dan prompt OpenUI vao yeu cau chat va hien thi phan hoi OpenUI Lang duoi dang UI tuong tac. Che do Chat them khoang 1.600 token prompt moi yeu cau; che do Standard them khoang 5.000. Bat OpenUI cho tung cuoc tro chuyen tu menu Công cụ trong o nhap chat.",
+    "componentLibraryTitle": "Thu vien thanh phan",
+    "componentLibraryDescription": "Chat dung bo thanh phan Jan-native gon nhe. Standard tai toan bo goi thanh phan va stylesheet cua OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Prompt he thong",
+    "systemPromptDescription": "Sao chep prompt OpenUI da tao neu ban muon dung no trong assistant hoac client khac.",
+    "promptCopied": "Da sao chep prompt OpenUI",
+    "aboutTitle": "Gioi thieu OpenUI",
+    "aboutDescription": "OpenUI cho phep model mo ta cac phan tu giao dien bang OpenUI Lang de Jan hien thi phan hoi thanh cac component tuong tac thay vi Markdown thuong. Khi bat, Jan them huong dan OpenUI vao yeu cau chat va dua cac hanh dong tu control duoc tao quay lai cuoc tro chuyen."
+  }
 }

@@ -278,5 +278,19 @@
     "updateError": "Fehler beim Aktualisieren von Llamacpp"
   },
   "backendInstallSuccess": "Backend erfolgreich installiert",
-  "backendInstallError": "Backend-Installation fehlgeschlagen"
+  "backendInstallError": "Backend-Installation fehlgeschlagen",
+  "openui": {
+    "description": "Erzeuge interaktive Assistentenantworten mit OpenUI Lang.",
+    "enableTitle": "OpenUI-Rendering aktivieren",
+    "enableDescription": "Fugt Chat-Anfragen OpenUI-Prompt-Anweisungen hinzu und rendert OpenUI-Lang-Antworten als interaktive UI. Der Chat-Modus fugt pro Anfrage etwa 1.600 Prompt-Token hinzu; der Standard-Modus etwa 5.000. Aktivieren Sie OpenUI pro Chat uber das Menu Werkzeuge im Chat-Eingabefeld.",
+    "componentLibraryTitle": "Komponentenbibliothek",
+    "componentLibraryDescription": "Chat verwendet ein kompaktes, Jan-natives Komponentenset. Standard ladt das vollstandige OpenUI-Komponenten- und Stylesheet-Bundle.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "System-Prompt",
+    "systemPromptDescription": "Kopiere den generierten OpenUI-Prompt, wenn du ihn in einem Assistenten oder einem anderen Client verwenden mochtest.",
+    "promptCopied": "OpenUI-Prompt kopiert",
+    "aboutTitle": "Uber OpenUI",
+    "aboutDescription": "OpenUI lasst das Modell Oberflachenelemente in OpenUI Lang beschreiben, damit Jan Antworten als interaktive Komponenten statt als einfachen Markdown rendern kann. Wenn aktiviert, fugt Jan die OpenUI-Anweisungen zu Chat-Anfragen hinzu und leitet Aktionen aus generierten Steuerelementen zuruck in die Unterhaltung."
+  }
 }

@@ -93,7 +93,6 @@
   "reasoning": "Penalaran",
   "proactive": "Proaktif",
   "selectAModel": "Pilih model",
-  "noToolsAvailable": "Tidak ada alat yang tersedia",
   "noModelsFoundFor": "Tidak ada model yang ditemukan untuk \"{{searchValue}}\"",
   "failedToLoadModels": "Gagal memuat model",
   "noModels": "Tidak ada model yang ditemukan",
@@ -405,5 +404,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }

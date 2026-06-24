@@ -278,5 +278,19 @@
     "updateError": "Gagal memperbarui Llamacpp"
   },
   "backendInstallSuccess": "Backend berhasil diinstal",
-  "backendInstallError": "Gagal menginstal backend"
+  "backendInstallError": "Gagal menginstal backend",
+  "openui": {
+    "description": "Buat respons asisten interaktif dari OpenUI Lang.",
+    "enableTitle": "Aktifkan rendering OpenUI",
+    "enableDescription": "Tambahkan panduan prompt OpenUI ke permintaan chat dan render respons OpenUI Lang sebagai UI interaktif. Mode Chat menambahkan sekitar 1.600 token prompt per permintaan; mode Standard menambahkan sekitar 5.000. Aktifkan OpenUI untuk setiap obrolan dari menu Alat di kolom input chat.",
+    "componentLibraryTitle": "Pustaka komponen",
+    "componentLibraryDescription": "Chat menggunakan set komponen Jan-native yang ringkas. Standard memuat paket lengkap komponen dan stylesheet OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Prompt sistem",
+    "systemPromptDescription": "Salin prompt OpenUI yang dibuat jika Anda ingin menggunakannya di asisten atau klien lain.",
+    "promptCopied": "Prompt OpenUI disalin",
+    "aboutTitle": "Tentang OpenUI",
+    "aboutDescription": "OpenUI memungkinkan model mendeskripsikan elemen antarmuka dalam OpenUI Lang sehingga Jan dapat merender respons sebagai komponen interaktif, bukan Markdown biasa. Saat diaktifkan, Jan menambahkan panduan OpenUI ke permintaan chat dan mengarahkan aksi dari kontrol yang dibuat kembali ke percakapan."
+  }
 }

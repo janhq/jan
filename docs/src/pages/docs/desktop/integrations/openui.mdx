@@ -1,0 +1,59 @@
+---
+title: OpenUI
+description: Render interactive OpenUI responses in Jan chats
+keywords: [Jan, OpenUI, OpenUI Lang, generative UI, interactive chat]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# OpenUI
+
+[OpenUI](https://www.openui.com/docs) is a generative UI framework that lets a model respond with structured, interactive UI instead of plain Markdown. Jan can add OpenUI prompt guidance to chat requests, detect OpenUI Lang in assistant responses, and render the result as interactive chat components.
+
+You can learn more from the [OpenUI Lang overview](https://www.openui.com/docs/openui-lang/overview), the [`@openuidev/react-lang` API reference](https://www.openui.com/docs/api-reference/react-lang), and the [OpenUI GitHub repository](https://github.com/thesysdev/openui).
+
+<Callout type="info">
+OpenUI is enabled separately for each chat. In an enabled chat, Jan adds extra prompt instructions to each model request, so it increases prompt token usage only for that conversation.
+</Callout>
+
+## Setup
+
+<Steps>
+
+### Choose a component library
+
+Go to **Settings** -> **OpenUI**, then choose the library mode that fits your use case:
+
+- **Chat** uses Jan's compact, chat-focused component set. It is the lighter default and adds about 1,600 prompt tokens per request.
+- **Standard** uses OpenUI's full upstream component library and styles. It supports richer UI, but loads the full bundle and adds about 5,000 prompt tokens per request.
+
+### Enable OpenUI for a chat
+
+Open the **Tools** menu in the chat composer and turn on the **OpenUI** switch. OpenUI guidance and rendering now apply only to that chat. Turn the switch off to disable OpenUI without affecting other conversations.
+
+### Copy the prompt if needed
+
+Use **Copy** under **System prompt** if you want to reuse Jan's generated OpenUI prompt in an assistant configuration or another client.
+
+</Steps>
+
+## How Responses Render
+
+When OpenUI is enabled, Jan looks for valid OpenUI Lang responses. Explicit `openui`, `openui-lang`, `openuilang`, `genui`, or `ui` code fences are supported, and bare OpenUI responses must start with `root =`.
+
+If Jan cannot parse the response as OpenUI, it falls back to Markdown rendering.
+
+## Safety
+
+Jan does not execute raw HTML from OpenUI Lang: the parser can only instantiate components registered in the selected library, and text is rendered as React content. Jan does not add its own sanitization layer, so this guarantee depends on the internal sanitization of the upstream `@openuidev/react-lang` renderer. The Standard library is supplied by the upstream `@openuidev/react-ui` package, so its component implementations remain part of Jan's dependency trust boundary. Treat model-generated UI as untrusted and review actions before interacting with it.
+
+OpenUI actions can send follow-up messages back into the active chat input. Model-generated `OpenUrl` actions are restricted to `https:` and `http:` URLs before Jan opens them in a new tab.
+
+## Custom Libraries
+
+OpenUI libraries are defined with `defineComponent` and `createLibrary` from [`@openuidev/react-lang`](https://www.openui.com/docs/api-reference/react-lang). Jan currently ships two OpenUI modes:
+
+- **Chat**, a compact Jan-native library for chat responses.
+- **Standard**, OpenUI's full upstream component library.
+
+To add another library to Jan, define your components, create a library, add matching prompt options, and route it through Jan's OpenUI settings and renderer. This currently requires a code contribution; Jan does not yet provide a runtime UI for installing custom OpenUI libraries.

@@ -93,7 +93,6 @@
   "reasoning": "Uvažování",
   "proactive": "Proaktivní",
   "selectAModel": "Vyberte model",
-  "noToolsAvailable": "Nejsou k dispozici žádné nástroje",
   "noModelsFoundFor": "Nebyly nalezeny žádné modely pro \"{{searchValue}}\"",
   "failedToLoadModels": "Načítání modelů se nezdařilo",
   "noModels": "Nebyly nalezeny žádné modely",
@@ -405,5 +404,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }

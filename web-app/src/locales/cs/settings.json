@@ -308,5 +308,19 @@
     "updateError": "Nepodařilo se aktualizovat Llamacpp"
   },
   "backendInstallSuccess": "Backend úspěšně nainstalován",
-  "backendInstallError": "Nepodařilo se nainstalovat backend"
+  "backendInstallError": "Nepodařilo se nainstalovat backend",
+  "openui": {
+    "description": "Generujte interaktivni odpovedi asistenta pomoci OpenUI Lang.",
+    "enableTitle": "Zapnout vykreslovani OpenUI",
+    "enableDescription": "Prida pokyny OpenUI do pozadavku chatu a vykresli odpovedi OpenUI Lang jako interaktivni UI. Rezim Chat prida priblizne 1 600 tokenu promptu na pozadavek; rezim Standard prida priblizne 5 000. OpenUI zapnete pro kazdy chat v nabidce Nástroje v poli zadavani chatu.",
+    "componentLibraryTitle": "Knihovna komponent",
+    "componentLibraryDescription": "Chat pouziva kompaktn? sadu nativnich komponent Jan. Standard nacita uplny balik komponent a stylu OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Systemovy prompt",
+    "systemPromptDescription": "Zkopirujte vygenerovany prompt OpenUI, pokud ho chcete pouzit v asistentovi nebo jinem klientovi.",
+    "promptCopied": "Prompt OpenUI zkopirovan",
+    "aboutTitle": "O OpenUI",
+    "aboutDescription": "OpenUI umoznuje modelu popsat prvky rozhrani v OpenUI Lang, aby je Jan mohl vykreslit jako interaktivni komponenty misto obycejneho Markdownu. Pri zapnuti Jan pridava pokyny OpenUI do pozadavku chatu a smeruje akce z vygenerovanych ovladacich prvku zpet do konverzace."
+  }
 }

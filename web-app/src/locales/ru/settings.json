@@ -316,5 +316,19 @@
     "updateError": "Не удалось обновить Llamacpp"
   },
   "backendInstallSuccess": "Компонент успешно установлен",
-  "backendInstallError": "Не удалось установить компонент"
+  "backendInstallError": "Не удалось установить компонент",
+  "openui": {
+    "description": "Создавайте интерактивные ответы ассистента с помощью OpenUI Lang.",
+    "enableTitle": "Включить рендеринг OpenUI",
+    "enableDescription": "Добавляет инструкции OpenUI к запросам чата и отображает ответы OpenUI Lang как интерактивный интерфейс. Режим Chat добавляет примерно 1 600 токенов промпта на запрос; режим Standard добавляет примерно 5 000. Включайте OpenUI для каждого чата в меню Инструменты в поле ввода чата.",
+    "componentLibraryTitle": "Библиотека компонентов",
+    "componentLibraryDescription": "Chat использует компактный набор нативных компонентов Jan. Standard загружает полный пакет компонентов и стилей OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Системный промпт",
+    "systemPromptDescription": "Скопируйте сгенерированный промпт OpenUI, если хотите использовать его в ассистенте или другом клиенте.",
+    "promptCopied": "Промпт OpenUI скопирован",
+    "aboutTitle": "Об OpenUI",
+    "aboutDescription": "OpenUI позволяет модели описывать элементы интерфейса на OpenUI Lang, чтобы Jan мог отображать ответы как интерактивные компоненты вместо обычного Markdown. Когда функция включена, Jan добавляет инструкции OpenUI к запросам чата и возвращает действия из сгенерированных элементов управления обратно в беседу."
+  }
 }

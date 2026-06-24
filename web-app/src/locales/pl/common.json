@@ -93,7 +93,6 @@
   "reasoning": "Rozumowanie",
   "proactive": "Proaktywny",
   "selectAModel": "Wybierz Model",
-  "noToolsAvailable": "Brak narzędzi",
   "noModelsFoundFor": "Brak modeli dla \"{{searchValue}}\"",
   "customAvatar": "Własny awatar",
   "editAssistant": "Edytuj Asystenta",
@@ -405,5 +404,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }

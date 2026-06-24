@@ -496,5 +496,19 @@
       "startSetup": "सेटअप शुरू करें",
       "connecting": "कनेक्ट हो रहा है..."
     }
+  },
+  "openui": {
+    "description": "OpenUI Lang se interactive assistant responses banayein.",
+    "enableTitle": "OpenUI rendering chalu karein",
+    "enableDescription": "Chat requests me OpenUI prompt guidance jodein aur OpenUI Lang responses ko interactive UI ke roop me render karein. Chat mode har request me lagbhag 1,600 prompt tokens jodta hai; Standard mode lagbhag 5,000 jodta hai. Har chat ke liye OpenUI ko chat input ke उपकरण menu se chalu karein.",
+    "componentLibraryTitle": "Component library",
+    "componentLibraryDescription": "Chat ek compact Jan-native component set ka upyog karta hai. Standard poora OpenUI component aur stylesheet bundle load karta hai.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "System prompt",
+    "systemPromptDescription": "Agar aap ise kisi assistant ya dusre client me use karna chahte hain to generated OpenUI prompt copy karein.",
+    "promptCopied": "OpenUI prompt copy ho gaya",
+    "aboutTitle": "OpenUI ke baare me",
+    "aboutDescription": "OpenUI model ko OpenUI Lang me interface elements describe karne deta hai, taki Jan plain Markdown ke bajay responses ko interactive components ke roop me render kar sake. Enabled hone par Jan chat requests me OpenUI guidance jodta hai aur generated controls ki actions ko wapas conversation me route karta hai."
   }
 }

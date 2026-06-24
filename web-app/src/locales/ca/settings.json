@@ -318,5 +318,19 @@
     "updateError": "No s’ha pogut actualitzar Llamacpp"
   },
   "backendInstallSuccess": "El backend s’ha instal·lat correctament",
-  "backendInstallError": "No s’ha pogut instal·lar el backend"
+  "backendInstallError": "No s’ha pogut instal·lar el backend",
+  "openui": {
+    "description": "Genera respostes interactives de l'assistent amb OpenUI Lang.",
+    "enableTitle": "Activa la renderitzacio d'OpenUI",
+    "enableDescription": "Afegeix guiatge de prompt d'OpenUI a les sol.licituds de xat i renderitza les respostes OpenUI Lang com a UI interactiva. El mode Chat afegeix aproximadament 1.600 tokens de prompt per sol.licitud; el mode Standard n'afegeix aproximadament 5.000. Activa OpenUI per a cada xat des del menu Eines de l'entrada del xat.",
+    "componentLibraryTitle": "Biblioteca de components",
+    "componentLibraryDescription": "Chat utilitza un conjunt compacte de components natius de Jan. Standard carrega el paquet complet de components i fulls d'estil d'OpenUI.",
+    "libraryChat": "Chat",
+    "libraryStandard": "Standard",
+    "systemPromptTitle": "Prompt del sistema",
+    "systemPromptDescription": "Copia el prompt generat d'OpenUI si el vols utilitzar en un assistent o en un altre client.",
+    "promptCopied": "Prompt d'OpenUI copiat",
+    "aboutTitle": "Quant a OpenUI",
+    "aboutDescription": "OpenUI permet que el model descrigui elements d'interficie en OpenUI Lang perque Jan pugui renderitzar respostes com a components interactius en lloc de Markdown pla. Quan esta activat, Jan afegeix el guiatge d'OpenUI a les sol.licituds de xat i envia les accions dels controls generats de nou a la conversa."
+  }
 }

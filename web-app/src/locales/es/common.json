@@ -105,7 +105,6 @@
   "reasoning": "Razonamiento",
   "proactive": "Proactivo",
   "selectAModel": "Selecciona un modelo",
-  "noToolsAvailable": "No hay herramientas disponibles",
   "noModelsFoundFor": "No se encontraron modelos para \"{{searchValue}}\"",
   "failedToLoadModels": "Error al cargar modelos",
   "noModels": "No se encontraron modelos",
@@ -475,5 +474,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }

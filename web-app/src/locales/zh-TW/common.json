@@ -93,7 +93,6 @@
   "reasoning": "推理",
   "proactive": "主動模式",
   "selectAModel": "選擇一個模型",
-  "noToolsAvailable": "沒有可用的工具",
   "noModelsFoundFor": "找不到符合「{{searchValue}}」的模型",
   "failedToLoadModels": "載入模型失敗",
   "noModels": "找不到模型",
@@ -405,5 +404,6 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "openui": "OpenUI"
 }
