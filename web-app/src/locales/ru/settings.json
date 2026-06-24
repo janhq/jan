@@ -337,6 +337,12 @@
     "downloadFailed": "Не удалось загрузить GPU-бэкенд",
     "detectionUnavailable": "Не удалось обратиться к серверу релизов бэкендов (GitHub). Текущий бэкенд оставлен без изменений — проверьте соединение или прокси и попробуйте снова."
   },
+  "turboquantOptimalPrompt": {
+    "title": "Оптимизировать бэкенд Turboquant?",
+    "description": "Atomic Llama.cpp Turboquant поставляется с CPU-бэкендом, поэтому работает сразу. Мы можем определить и загрузить самый быстрый бэкенд для вашего оборудования (CUDA / Vulkan).",
+    "find": "Найти оптимальный бэкенд",
+    "skip": "Пропустить"
+  },
   "backendInstallSuccess": "Компонент успешно установлен",
   "backendInstallError": "Не удалось установить компонент",
   "dflashUnsupportedTitle": "DFlash недоступен для этой модели",

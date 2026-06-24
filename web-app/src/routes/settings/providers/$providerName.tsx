@@ -63,7 +63,10 @@ import { getModelCapabilities } from '@/lib/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { switchToModel } from '@/utils/switchModel'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
-import { useBackendUpdater } from '@/hooks/useBackendUpdater'
+import {
+  useBackendUpdater,
+  type UseBackendUpdaterConfig,
+} from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
@@ -186,14 +189,32 @@ function ProviderDetail() {
   const [isTogglingLlamacppMtp, setIsTogglingLlamacppMtp] = useState(false)
   const [llamacppMtpUnsupportedModel, setLlamacppMtpUnsupportedModel] =
     useState<string | null>(null)
+  const { providerName } = useParams({ from: Route.id })
+  /// The turboquant provider (`llamacpp`) ships alongside upstream on
+  /// Windows/Linux. Each owns its own backend tree + localStorage keys, so
+  /// the updater must be configured per-provider to avoid cross-contamination
+  /// (see the 2026-06-23 turboquant-on-Win/Linux ADR). macOS turboquant has a
+  /// single backend and never reaches the optimal-backend UI.
+  const isTurboquantProvider = providerName === 'llamacpp'
+  const backendUpdaterConfig = useMemo<UseBackendUpdaterConfig>(
+    () =>
+      isTurboquantProvider
+        ? {
+            extensionName: '@janhq/llamacpp-extension',
+            providerId: 'llamacpp',
+            recommendationKey: 'turboquant_better_backend_recommendation',
+            postUpgradeRecheckEnabled: false,
+          }
+        : {},
+    [isTurboquantProvider]
+  )
   const {
     installBackend,
     recheckOptimalBackend,
     downloadRecommendedBackend,
     recommendationPhase,
     selectManualBackend,
-  } = useBackendUpdater()
-  const { providerName } = useParams({ from: Route.id })
+  } = useBackendUpdater(backendUpdaterConfig)
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -1504,11 +1525,15 @@ function ProviderDetail() {
   /// the macOS turboquant pipeline doesn't expose alternate backend
   /// types here.
   const handleFindOptimalBackend = useCallback(async () => {
-    // The optimal-backend matrix exists for the local llama.cpp engine
-    // only — on Windows that's `llamacpp-upstream`, on macOS/Linux it's
-    // `llamacpp`. Anything else is a remote provider with no per-host
+    // The optimal-backend matrix exists for the local llama.cpp engines:
+    // the upstream provider (`LOCAL_LLAMACPP_PROVIDER`) on every desktop OS,
+    // plus the turboquant provider (`llamacpp`) which ships its own catalog
+    // on Windows/Linux. Anything else is a remote provider with no per-host
     // backend variants.
-    if (provider?.provider !== LOCAL_LLAMACPP_PROVIDER) return
+    const isOptimalCapable =
+      provider?.provider === LOCAL_LLAMACPP_PROVIDER ||
+      (provider?.provider === 'llamacpp' && (IS_WINDOWS || IS_LINUX))
+    if (!isOptimalCapable) return
     setIsRecheckingBackend(true)
     try {
       const result = await recheckOptimalBackend()
@@ -2027,18 +2052,21 @@ function ProviderDetail() {
                                     uses the separate turboquant
                                     pipeline with no alternate backend
                                     matrix. */}
-                                {/* Both Windows and Linux ship the
-                                    upstream `ggml-org/llama.cpp` provider
-                                    (`llamacpp-upstream`) as the only
-                                    local llama.cpp option — see ADRs
-                                    2026-05-22 (Windows) and 2026-05-28
-                                    (Linux). `LOCAL_LLAMACPP_PROVIDER`
-                                    is the single source of truth for
-                                    "which provider id is local on this
-                                    OS"; reuse it instead of hard-coding
-                                    the id per branch. */}
+                                {/* Windows and Linux ship two local
+                                    llama.cpp providers side-by-side: the
+                                    default upstream `ggml-org/llama.cpp`
+                                    (`LOCAL_LLAMACPP_PROVIDER`) and the
+                                    turboquant fork (`llamacpp`) — see the
+                                    2026-06-23 ADR. Both resolve their own
+                                    backend catalog, so the button is shown
+                                    for either. The `useBackendUpdater`
+                                    instance was configured per-provider
+                                    above so the recommendation routes to
+                                    the right extension. */}
                                 {(IS_WINDOWS || IS_LINUX) &&
-                                  provider?.provider === LOCAL_LLAMACPP_PROVIDER && (
+                                  (provider?.provider ===
+                                    LOCAL_LLAMACPP_PROVIDER ||
+                                    provider?.provider === 'llamacpp') && (
                                     <Button
                                       variant="outline"
                                       size="sm"
@@ -2108,6 +2136,18 @@ function ProviderDetail() {
                         </>
                       }
                       actions={actionComponent}
+                      // The version_backend dropdown can carry a very long
+                      // value (turboquant ids like
+                      // `turboquant-windows-x64-cuda-12.4-d86eb0b/windows-x64-cuda-12.4`).
+                      // CardItem's action wrapper is `shrink-0` by default, so
+                      // such a value blows the column past the panel's right
+                      // edge. Let this one row's action shrink (the dropdown
+                      // truncates) instead of overflowing.
+                      classNameWrapperAction={
+                        setting.key === 'version_backend'
+                          ? 'shrink min-w-0'
+                          : undefined
+                      }
                     />
                   )
                 })}

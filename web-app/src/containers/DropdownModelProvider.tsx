@@ -163,7 +163,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       } else {
         const localProvider = providers.find(
           (p) =>
-            (p.provider === 'llamacpp' || p.provider === 'mlx') &&
+            (p.provider === 'llamacpp-upstream' ||
+              p.provider === 'llamacpp' ||
+              p.provider === 'mlx') &&
             p.active &&
             p.models.length > 0
         )

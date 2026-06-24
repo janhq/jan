@@ -2,7 +2,10 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { localStorageKey } from '@/constants/localStorage'
-import { LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
+import {
+  LOCAL_LLAMACPP_EXTENSION_NAME,
+  LOCAL_LLAMACPP_PROVIDER,
+} from '@/lib/utils'
 import { WINDOWS_RECHECK_PENDING_KEY } from '@/lib/windowsProviderMigration'
 
 /// Maximum time we wait for a `app:backend-hotswapped` window event after the
@@ -18,6 +21,32 @@ const HOTSWAP_TIMEOUT_MS = 8000
 const HOTSWAP_COMPLETED_DISMISS_MS = 1500
 
 const BACKEND_HOTSWAPPED_EVENT = 'app:backend-hotswapped'
+
+/// Default localStorage key the upstream extension persists its
+/// recommendation under (read on mount, before any Tauri event arrives).
+/// A turboquant-configured instance overrides this with its own key so the
+/// two providers never clobber each other on Windows/Linux where both ship.
+const DEFAULT_RECOMMENDATION_KEY = 'llama_cpp_better_backend_recommendation'
+
+/// Per-provider configuration for {@link useBackendUpdater}. Omitting it
+/// (the default) targets the upstream llama.cpp provider exactly as before,
+/// so every existing call site is unchanged.
+export interface UseBackendUpdaterConfig {
+  /// `@janhq/...` package id of the extension that owns this provider's
+  /// backends. Defaults to the upstream extension.
+  extensionName?: string
+  /// Provider id used to route `onBetterBackendDetected` events. Untagged
+  /// payloads are attributed to the default upstream provider. Defaults to
+  /// `LOCAL_LLAMACPP_PROVIDER`.
+  providerId?: string
+  /// localStorage key the owning extension persists its recommendation under.
+  /// Defaults to the upstream key.
+  recommendationKey?: string
+  /// Whether this instance runs the post-upgrade Windows auto-recheck. Only
+  /// the default upstream instance should — a secondary turboquant instance
+  /// passes `false` to avoid double-firing detection. Defaults to `true`.
+  postUpgradeRecheckEnabled?: boolean
+}
 
 export interface BackendUpdateInfo {
   updateNeeded: boolean
@@ -100,6 +129,10 @@ export interface BetterBackendRecommendation {
   currentBackend: string
   recommendedBackend: string
   recommendedCategory: string
+  /// Provider id the recommendation belongs to. Set by the turboquant
+  /// extension (`'llamacpp'`); absent on legacy upstream payloads, which are
+  /// then attributed to the default upstream provider for routing.
+  provider?: string
 }
 
 export type RecommendationPhase =
@@ -110,7 +143,12 @@ export type RecommendationPhase =
   | 'completed'
   | 'restart-required'
 
-export const useBackendUpdater = () => {
+export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
+  const extensionName = config.extensionName ?? LOCAL_LLAMACPP_EXTENSION_NAME
+  const providerId = config.providerId ?? LOCAL_LLAMACPP_PROVIDER
+  const recommendationKey = config.recommendationKey ?? DEFAULT_RECOMMENDATION_KEY
+  const postUpgradeRecheckEnabled = config.postUpgradeRecheckEnabled ?? true
+
   const [updateState, setUpdateState] = useState<BackendUpdateState>({
     isUpdateAvailable: false,
     updateInfo: null,
@@ -174,7 +212,7 @@ export const useBackendUpdater = () => {
       ) {
         return
       }
-      const stored = localStorage.getItem('llama_cpp_better_backend_recommendation')
+      const stored = localStorage.getItem(recommendationKey)
       if (stored) {
         const payload: BetterBackendRecommendation = JSON.parse(stored)
         if (payload.recommendedBackend && payload.recommendedCategory) {
@@ -186,11 +224,19 @@ export const useBackendUpdater = () => {
     } catch {
       // Corrupted data — ignore
     }
-  }, [])
+  }, [recommendationKey])
 
   // Listen for the better-backend detection event from the extension
   useEffect(() => {
     const handleBetterBackendDetected = (payload: BetterBackendRecommendation) => {
+      // Provider routing: an untagged payload is attributed to the default
+      // upstream provider (legacy upstream emitters never set `provider`). A
+      // turboquant instance (providerId === 'llamacpp') only accepts its own
+      // tagged events, so the always-mounted upstream `<BackendUpdater />`
+      // never surfaces a turboquant recommendation and vice-versa — both
+      // providers ship side-by-side on Windows/Linux.
+      const payloadProvider = payload.provider ?? LOCAL_LLAMACPP_PROVIDER
+      if (payloadProvider !== providerId) return
       console.log('Better backend detected (event):', payload)
       setRecommendation(payload)
       setRecommendationPhase((prev) => {
@@ -204,7 +250,7 @@ export const useBackendUpdater = () => {
     return () => {
       events.off(AppEvent.onBetterBackendDetected, handleBetterBackendDetected)
     }
-  }, [])
+  }, [providerId])
 
   // Listen for backend download events from the extension.
   //
@@ -376,7 +422,7 @@ export const useBackendUpdater = () => {
 
       try {
         const llamacppExtension =
-          ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
+          ExtensionManager.getInstance().getByName(extensionName)
         let extensionToUse = llamacppExtension
 
         if (!llamacppExtension) {
@@ -410,7 +456,7 @@ export const useBackendUpdater = () => {
         throw error
       }
     },
-    [recommendation]
+    [recommendation, extensionName]
   )
 
   /// Manual counterpart to the "Find optimal backend" button: routes a
@@ -426,7 +472,7 @@ export const useBackendUpdater = () => {
   const selectManualBackend = useCallback(async (selection: string) => {
     const allExtensions = ExtensionManager.getInstance().listExtensions()
     const primary = ExtensionManager.getInstance().getByName(
-      LOCAL_LLAMACPP_EXTENSION_NAME
+      extensionName
     )
 
     let extensionToUse = primary
@@ -450,7 +496,7 @@ export const useBackendUpdater = () => {
 
     const extension = extensionToUse as LlamacppExtension
     await extension.downloadManualBackend?.(selection)
-  }, [])
+  }, [extensionName])
 
   /// Tracks whether the post-upgrade auto-recheck has been attempted this
   /// session. Used as a process-local guard on top of the
@@ -471,7 +517,7 @@ export const useBackendUpdater = () => {
     // bundled-from-tarball flow where extensions are registered under
     // their JS class name instead of the npm package id.
     const primary = ExtensionManager.getInstance().getByName(
-      LOCAL_LLAMACPP_EXTENSION_NAME
+      extensionName
     )
 
     let extensionToUse = primary
@@ -505,7 +551,7 @@ export const useBackendUpdater = () => {
       )
     }
     return result ?? null
-  }, [])
+  }, [extensionName])
 
   // Post-upgrade Windows auto-recheck.
   //
@@ -525,6 +571,10 @@ export const useBackendUpdater = () => {
   // No-op outside Windows. The flag is cleared even on detection
   // failure to avoid re-prompting on every launch.
   useEffect(() => {
+    // Only the default upstream instance runs the post-upgrade auto-recheck;
+    // a secondary turboquant instance passes `postUpgradeRecheckEnabled:false`
+    // so detection never double-fires on Windows where both providers ship.
+    if (!postUpgradeRecheckEnabled) return
     if (!IS_WINDOWS) return
     if (postUpgradeRecheckAttemptedRef.current) return
     let cancelled = false
@@ -549,7 +599,7 @@ export const useBackendUpdater = () => {
         const start = Date.now()
         while (!cancelled && Date.now() - start < 10_000) {
           const ext = ExtensionManager.getInstance().getByName(
-            LOCAL_LLAMACPP_EXTENSION_NAME
+            extensionName
           )
           if (ext && 'recheckOptimalBackend' in ext) break
           await new Promise((resolve) => setTimeout(resolve, 500))
@@ -577,7 +627,7 @@ export const useBackendUpdater = () => {
     return () => {
       cancelled = true
     }
-  }, [recheckOptimalBackend])
+  }, [recheckOptimalBackend, postUpgradeRecheckEnabled, extensionName])
 
   const checkForUpdate = useCallback(
     async (resetRemindMeLater = false) => {
@@ -596,7 +646,7 @@ export const useBackendUpdater = () => {
         const allExtensions = ExtensionManager.getInstance().listExtensions()
 
         const llamacppExtension =
-          ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
+          ExtensionManager.getInstance().getByName(extensionName)
 
         let extensionToUse = llamacppExtension
 
@@ -665,7 +715,7 @@ export const useBackendUpdater = () => {
         return null
       }
     },
-    [syncStateToOtherInstances]
+    [syncStateToOtherInstances, extensionName]
   )
 
   const setRemindMeLater = useCallback(
@@ -697,7 +747,7 @@ export const useBackendUpdater = () => {
 
       const allExtensions = ExtensionManager.getInstance().listExtensions()
       const llamacppExtension =
-        ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
+        ExtensionManager.getInstance().getByName(extensionName)
 
       let extensionToUse = llamacppExtension
 
@@ -790,13 +840,14 @@ export const useBackendUpdater = () => {
     updateState.updateInfo,
     updateState.isUpdating,
     syncStateToOtherInstances,
+    extensionName,
   ])
 
   const installBackend = useCallback(async (filePath: string) => {
     try {
       const allExtensions = ExtensionManager.getInstance().listExtensions()
       const llamacppExtension =
-        ExtensionManager.getInstance().getByName(LOCAL_LLAMACPP_EXTENSION_NAME)
+        ExtensionManager.getInstance().getByName(extensionName)
 
       let extensionToUse = llamacppExtension
 
@@ -827,7 +878,7 @@ export const useBackendUpdater = () => {
       console.error('Error installing backend:', error)
       throw error
     }
-  }, [])
+  }, [extensionName])
 
   return {
     updateState,

@@ -28,8 +28,12 @@ export function DropdownControl({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-between">
-          {isSelected}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full min-w-0 justify-between"
+        >
+          <span className="truncate">{isSelected}</span>
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
         </Button>
       </DropdownMenuTrigger>

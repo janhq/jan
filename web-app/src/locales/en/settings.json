@@ -370,6 +370,12 @@
     "hotSwapSuccess": "Backend switched",
     "hotSwapSuccessDesc": "{{backend}} is now active. No restart needed."
   },
+  "turboquantOptimalPrompt": {
+    "title": "Optimize the Turboquant backend?",
+    "description": "Atomic Llama.cpp Turboquant ships a CPU-ready backend so it works out of the box. We can detect and download the fastest backend for your hardware (CUDA / Vulkan) instead.",
+    "find": "Find optimal backend",
+    "skip": "Skip"
+  },
   "backendInstallSuccess": "Backend installed successfully!",
   "backendInstallError": "Failed to install backend",
   "dflashUnsupportedTitle": "DFlash isn't available for this model",

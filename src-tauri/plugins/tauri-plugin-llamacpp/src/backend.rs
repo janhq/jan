@@ -352,9 +352,11 @@ pub fn get_supported_features(
     };
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
+    // Windows CUDA 13 floor is the NVIDIA-documented CUDA Toolkit 13.1 minimum
+    // driver (581.15), matching the llamacpp-upstream plugin.
     let (min_cuda11_driver, min_cuda12_driver, min_cuda13_driver) = match os_type.as_str() {
         "linux" => ("450.80.02", "525.60.13", "580"),
-        "windows" => ("452.39", "527.41", "580"),
+        "windows" => ("452.39", "527.41", "581.15"),
         _ => return Ok(features), // Other OS types don't support CUDA
     };
 

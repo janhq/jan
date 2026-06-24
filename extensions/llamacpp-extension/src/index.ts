@@ -248,13 +248,18 @@ function backendCategoryToLabel(category: string): string {
 }
 
 function get_backend_category(backend: string): string {
-  if (backend.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
-  if (backend.includes('cuda-12-common_cpus') || backend.includes('cu12.0'))
+  // Clean turboquant ids first (windows-x64-cuda-13.3, windows-x64-cuda-12.4,
+  // windows-x64-vulkan, windows-x64-cpu, linux-x64-vulkan, macos-arm64), then
+  // fall back to the legacy janhq tokens for any persisted pre-clean value.
+  if (backend.includes('cuda-13') || backend.includes('cu13.0'))
+    return 'cuda-cu13.0'
+  if (backend.includes('cuda-12') || backend.includes('cu12.0'))
     return 'cuda-cu12.0'
-  if (backend.includes('cuda-11-common_cpus') || backend.includes('cu11.7'))
+  if (backend.includes('cuda-11') || backend.includes('cu11.7'))
     return 'cuda-cu11.7'
   if (backend.includes('vulkan')) return 'vulkan'
   if (backend.includes('common_cpus')) return 'common_cpus'
+  if (backend.endsWith('-cpu') || backend.includes('-cpu-')) return 'cpu'
   if (backend.includes('avx512')) return 'avx512'
   if (backend.includes('avx2')) return 'avx2'
   if (
@@ -266,6 +271,32 @@ function get_backend_category(backend: string): string {
   if (backend.includes('noavx')) return 'noavx'
   return 'unknown'
 }
+
+/**
+ * Discriminated outcome of `detectIdealBackendType` — mirrors the
+ * `llamacpp-upstream` extension contract so the web-app can tell "CPU is
+ * genuinely optimal for this hardware" apart from "couldn't resolve a GPU
+ * backend because the turboquant manifest was unreachable". On the latter,
+ * `recheckOptimalBackend` throws `BACKEND_DETECTION_FAILED` rather than
+ * silently degrading the user to CPU.
+ */
+type IdealBackendResult =
+  | { kind: 'gpu'; backend: string }
+  | { kind: 'cpu-optimal' }
+  | { kind: 'detection-failed' }
+
+/// Sentinel thrown by `recheckOptimalBackend()` when backend detection could
+/// not complete (manifest/release stream unreachable, slow, or rate-limited)
+/// on a GPU-capable host. The web-app surfaces a calm "couldn't reach the
+/// release stream" message instead of a misleading "already optimal".
+export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
+
+/// Provider-specific localStorage keys for the turboquant "Find optimal
+/// backend" flow. Kept distinct from the upstream provider's `llama_cpp_*`
+/// keys so both providers can ship side-by-side on Windows/Linux without
+/// clobbering each other's recommendation / pending-backend state.
+const TURBOQUANT_RECOMMENDATION_KEY = 'turboquant_better_backend_recommendation'
+const TURBOQUANT_PENDING_KEY = 'turboquant_pending_backend'
 
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
@@ -564,14 +595,14 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async activatePendingBackend(): Promise<void> {
-    const pending = localStorage.getItem('llama_cpp_pending_backend')
+    const pending = localStorage.getItem(TURBOQUANT_PENDING_KEY)
     if (!pending) return
 
     const cleaned = stripBom(pending)
     const parts = cleaned.split('/')
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       logger.warn(`Invalid pending backend string "${cleaned}", clearing`)
-      localStorage.removeItem('llama_cpp_pending_backend')
+      localStorage.removeItem(TURBOQUANT_PENDING_KEY)
       return
     }
 
@@ -583,7 +614,7 @@ export default class llamacpp_extension extends AIEngine {
         logger.warn(
           `Pending backend ${cleaned} not found on disk, clearing`
         )
-        localStorage.removeItem('llama_cpp_pending_backend')
+        localStorage.removeItem(TURBOQUANT_PENDING_KEY)
         return
       }
 
@@ -599,7 +630,7 @@ export default class llamacpp_extension extends AIEngine {
     } catch (err) {
       logger.error('Error activating pending backend:', err)
     } finally {
-      localStorage.removeItem('llama_cpp_pending_backend')
+      localStorage.removeItem(TURBOQUANT_PENDING_KEY)
     }
   }
 
@@ -1149,11 +1180,54 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Uses hardware detection (CUDA/Vulkan driver info) to determine the ideal
-   * backend type for this machine. Returns the backend name string
-   * (e.g. "win-cuda-13-common_cpus-x64") or null if CPU is already optimal.
+   * Races a promise against a timeout, resolving to `fallback` if it doesn't
+   * settle in time. Keeps backend detection / catalog lookups from hanging the
+   * "Find optimal backend" button under slow / rate-limited networks.
    */
-  private async detectIdealBackendType(): Promise<string | null> {
+  private withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    fallback: T
+  ): Promise<T> {
+    return new Promise<T>((resolve) => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          resolve(fallback)
+        }
+      }, timeoutMs)
+      promise
+        .then((value) => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            resolve(value)
+          }
+        })
+        .catch(() => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            resolve(fallback)
+          }
+        })
+    })
+  }
+
+  /**
+   * Uses hardware detection (CUDA/Vulkan driver info) plus the manifest-filtered
+   * catalog (`listSupportedBackends`) to determine the ideal turboquant backend
+   * for this machine. Returns a discriminated `IdealBackendResult`:
+   *   - `gpu`             : a concrete, manifest-present clean id
+   *                         (e.g. windows-x64-cuda-13.3 / linux-x64-vulkan)
+   *   - `cpu-optimal`     : the host has no usable GPU tier
+   *   - `detection-failed`: GPU-capable host but no GPU backend resolvable from
+   *                         the catalog (turboquant manifest likely unreachable)
+   * macOS is never reached here (the single macos-arm64 build has nothing to
+   * optimize); callers gate on `IS_MAC`.
+   */
+  private async detectIdealBackendType(): Promise<IdealBackendResult> {
     try {
       const sysInfo = await getSystemInfo()
       const rawFeatures = await getSupportedFeaturesFromRust(
@@ -1174,18 +1248,69 @@ export default class llamacpp_extension extends AIEngine {
       const arch = sysInfo.cpu.arch
       const archSuffix =
         arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
-      const prefix = sysInfo.os_type === 'windows' ? 'win' : 'linux'
 
-      if (features.cuda13) return `${prefix}-cuda-13-common_cpus-${archSuffix}`
-      if (features.cuda12) return `${prefix}-cuda-12-common_cpus-${archSuffix}`
-      if (features.cuda11) return `${prefix}-cuda-11-common_cpus-${archSuffix}`
-      if (features.vulkan && hasEnoughVram)
-        return `${prefix}-vulkan-common_cpus-${archSuffix}`
+      if (sysInfo.os_type !== 'windows' && sysInfo.os_type !== 'linux') {
+        // macOS / unknown: single bundled build, nothing to optimize.
+        return { kind: 'cpu-optimal' }
+      }
 
-      return null
+      // Pick from the manifest-filtered catalog so we never emit an id that is
+      // absent from the turboquant manifest. Each catalog entry also carries
+      // its own release tag (variants live in separate releases).
+      const catalog = await listSupportedBackends()
+      const pick = (pattern: RegExp): string | null => {
+        const hit = catalog.find((b) => pattern.test(stripBom(b.backend)))
+        return hit ? stripBom(hit.backend) : null
+      }
+      const anyGpuBackendAvailable = catalog.some((b) =>
+        /(cuda-\d|vulkan)/.test(stripBom(b.backend))
+      )
+
+      if (sysInfo.os_type === 'windows') {
+        // Clean turboquant Windows ids, matched by family regex so a future
+        // minor bump (cuda-13.x / cuda-12.x) still resolves. There is no
+        // turboquant Windows CUDA-11 build.
+        const cuda13 = pick(
+          new RegExp(`^windows-${archSuffix}-cuda-13(\\.\\d+)?$`)
+        )
+        const cuda12 = pick(
+          new RegExp(`^windows-${archSuffix}-cuda-12(\\.\\d+)?$`)
+        )
+        const vulkan = pick(new RegExp(`^windows-${archSuffix}-vulkan$`))
+
+        if (features.cuda13 && cuda13) return { kind: 'gpu', backend: cuda13 }
+        if (features.cuda12 && cuda12) return { kind: 'gpu', backend: cuda12 }
+        if (features.vulkan && hasEnoughVram && vulkan)
+          return { kind: 'gpu', backend: vulkan }
+
+        const gpuCapable =
+          features.cuda13 ||
+          features.cuda12 ||
+          (features.vulkan && hasEnoughVram)
+        if (gpuCapable && !anyGpuBackendAvailable) {
+          logger.warn(
+            'detectIdealBackendType: GPU-capable Windows host but no turboquant GPU backend in catalog — treating as detection failure (manifest likely unreachable)'
+          )
+          return { kind: 'detection-failed' }
+        }
+        return { kind: 'cpu-optimal' }
+      }
+
+      // Linux: the single linux-x64-vulkan build serves both CPU and GPU.
+      if (features.vulkan && hasEnoughVram && archSuffix === 'x64') {
+        const vulkan = pick(/^linux-x64-vulkan$/)
+        if (vulkan) return { kind: 'gpu', backend: vulkan }
+        if (!anyGpuBackendAvailable) {
+          logger.warn(
+            'detectIdealBackendType: Linux Vulkan-capable host but linux-x64-vulkan not in catalog — treating as detection failure (manifest likely unreachable)'
+          )
+          return { kind: 'detection-failed' }
+        }
+      }
+      return { kind: 'cpu-optimal' }
     } catch (err) {
       logger.warn('detectIdealBackendType failed:', err)
-      return null
+      return { kind: 'detection-failed' }
     }
   }
 
@@ -1317,7 +1442,7 @@ export default class llamacpp_extension extends AIEngine {
    * confirms the better-backend popup.
    *
    * Sequencing rationale:
-   *   1. Persist `llama_cpp_pending_backend` BEFORE the download so that any
+   *   1. Persist the turboquant pending-backend key BEFORE the download so any
    *      observer reacting to `AppEvent.onBackendDownloadFinished` sees the
    *      pending key already on disk (the download-finished event is emitted
    *      from inside `downloadAndInstallBackend` and previously beat the
@@ -1333,16 +1458,16 @@ export default class llamacpp_extension extends AIEngine {
   async downloadRecommendedBackend(backendString: string): Promise<void> {
     backendString = stripBom(backendString)
     logger.info(`downloadRecommendedBackend: downloading ${backendString}`)
-    localStorage.setItem('llama_cpp_pending_backend', backendString)
+    localStorage.setItem(TURBOQUANT_PENDING_KEY, backendString)
     try {
       await this.downloadAndInstallBackend(backendString)
     } catch (err) {
       // Download failed — drop the pending marker so the next app launch
       // doesn't try to "activate" a backend that was never installed.
-      localStorage.removeItem('llama_cpp_pending_backend')
+      localStorage.removeItem(TURBOQUANT_PENDING_KEY)
       throw err
     }
-    localStorage.removeItem('llama_cpp_better_backend_recommendation')
+    localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
 
     try {
       await this.applyBackendLive(backendString)
@@ -1395,7 +1520,7 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
-    localStorage.removeItem('llama_cpp_pending_backend')
+    localStorage.removeItem(TURBOQUANT_PENDING_KEY)
 
     // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
     // a pure UI concern (the dialog/pill in the web app) and does not
@@ -1420,8 +1545,8 @@ export default class llamacpp_extension extends AIEngine {
    *   - the manual "Find optimal backend" button in provider settings.
    *
    * Side effects (kept consistent with `configureBackends()` early-phase):
-   *   - Writes `llama_cpp_better_backend_recommendation` to localStorage so
-   *     the existing `useBackendUpdater` mount path picks it up too.
+   *   - Writes the turboquant recommendation key to localStorage so the
+   *     turboquant-configured `useBackendUpdater` mount path picks it up too.
    *   - Emits `AppEvent.onBetterBackendDetected` so the dialog/component
    *     listening through the hook reflects the latest state.
    *
@@ -1432,22 +1557,38 @@ export default class llamacpp_extension extends AIEngine {
     currentBackend: string
     recommendedBackend: string
     recommendedCategory: string
+    provider: string
   } | null> {
     if (IS_MAC) {
       return null
     }
     try {
       logger.info('recheckOptimalBackend: detecting ideal backend type')
-      const idealType = await this.detectIdealBackendType()
-      if (!idealType) {
-        // CPU is already the best the hardware can do, or detection failed.
-        logger.info(
-          'recheckOptimalBackend: no GPU backend recommended (CPU is optimal or detection failed)'
+      const detection = await this.withTimeout(
+        this.detectIdealBackendType(),
+        20_000,
+        { kind: 'detection-failed' } as IdealBackendResult
+      )
+
+      if (detection.kind === 'detection-failed') {
+        // Distinguish "couldn't reach the manifest/release stream" from "CPU
+        // is genuinely best". Throw the sentinel so the caller surfaces an
+        // actionable message and leaves the current backend untouched.
+        logger.warn(
+          'recheckOptimalBackend: backend detection failed — keeping current backend (no silent CPU fallback)'
         )
-        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        throw new Error(BACKEND_DETECTION_FAILED)
+      }
+
+      if (detection.kind === 'cpu-optimal') {
+        logger.info(
+          'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
+        )
+        localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         return null
       }
 
+      const idealType = detection.backend
       const idealCat = get_backend_category(idealType)
       const currentBackend = stripBom(this.config.version_backend || '')
       const currentType = currentBackend.split('/')[1] || ''
@@ -1457,37 +1598,56 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(
           `recheckOptimalBackend: already on optimal category ${currentCat} (${currentBackend})`
         )
-        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         return null
       }
 
-      // Build the recommendation from the currently-installed backend
-      // version. We deliberately do NOT call `listSupportedBackends()`
-      // here — that round-trips to api.github.com and was observed to
-      // hang the manual "Find optimal backend" button under slow
-      // networks / rate-limited responses.
-      //
-      // Using the current version is safe because:
-      //   - Atomic Chat ships with a known bundled `version_backend`,
-      //     so `currentBackend.split('/')[0]` is always a real GitHub
-      //     release tag (e.g. `b8770`) with all per-platform variants.
-      //   - `configureBackends()` on the next launch resolves the
-      //     installed family to its latest version via
-      //     `findLatestVersionForBackend()` — version drift is
-      //     handled by the existing version-update toast, not here.
-      const fallbackVersion = currentBackend.split('/')[0] || 'latest'
-      const recommendedBackend = `${fallbackVersion}/${idealType}`
+      // Resolve the concrete `${tag}/${id}` from the manifest-filtered
+      // catalog. Each turboquant backend variant ships in its OWN release with
+      // its OWN tag, so we must NOT reuse the current backend's tag — we read
+      // the matching entry's tag straight from the catalog.
+      let recommendedBackend: string | null = null
+      try {
+        const catalog = await this.withTimeout(
+          listSupportedBackends(),
+          20_000,
+          [] as Awaited<ReturnType<typeof listSupportedBackends>>
+        )
+        const match = catalog.find((b) => stripBom(b.backend) === idealType)
+        if (match) {
+          recommendedBackend = `${stripBom(match.version)}/${stripBom(match.backend)}`
+        }
+      } catch (err) {
+        logger.warn(
+          'recheckOptimalBackend: failed to resolve concrete tag from catalog:',
+          err
+        )
+      }
+
+      if (!recommendedBackend) {
+        logger.warn(
+          `recheckOptimalBackend: could not resolve a concrete tag for ${idealType} — skipping recommendation`
+        )
+        localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
+        return null
+      }
+
+      if (recommendedBackend === currentBackend) {
+        localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
+        return null
+      }
 
       const payload = {
         currentBackend,
         recommendedBackend,
         recommendedCategory: backendCategoryToLabel(idealCat),
+        provider: this.providerId,
       }
       logger.info(
         `recheckOptimalBackend: surfacing recommendation ${recommendedBackend} (${payload.recommendedCategory})`
       )
       localStorage.setItem(
-        'llama_cpp_better_backend_recommendation',
+        TURBOQUANT_RECOMMENDATION_KEY,
         JSON.stringify(payload)
       )
       if (events && typeof events.emit === 'function') {
@@ -1495,6 +1655,9 @@ export default class llamacpp_extension extends AIEngine {
       }
       return payload
     } catch (err) {
+      if (err instanceof Error && err.message === BACKEND_DETECTION_FAILED) {
+        throw err
+      }
       logger.warn('recheckOptimalBackend failed:', err)
       return null
     }
@@ -2978,6 +3141,23 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+   * Sanitize a taskId so the downstream `download-extension` (which wraps
+   * it in `download-${taskId}` and feeds it to Tauri's `listen()`) does
+   * not get rejected by Tauri's event-name validator. Tauri restricts
+   * event names to `[A-Za-z0-9_/:-]`. TurboQuant backend ids and tags
+   * contain `.` (`windows-x64-cuda-12.4`,
+   * `turboquant-windows-x64-cuda-12.4-d86eb0b`), so we must strip dots out
+   * of the backend / version portion before constructing a taskId.
+   *
+   * The taskId is opaque to downstream consumers — nothing parses it back
+   * into `version` / `backend`, so collapsing `.` to `_` is safe. Other
+   * forbidden characters get the same treatment for defense in depth.
+   */
+  private sanitizeForTauriEvent(value: string): string {
+    return value.replace(/[^A-Za-z0-9_-]/g, '_')
+  }
+
+  /**
    * Downloads a backend archive from janhq/llama.cpp GitHub releases and
    * extracts it into the local backends directory.
    */
@@ -3004,7 +3184,13 @@ export default class llamacpp_extension extends AIEngine {
     if (!(await fs.existsSync(tempDir))) {
       await fs.mkdir(tempDir)
     }
-    const archiveName = `llama-${version}-bin-${backend}.tar.gz`
+    // The local temp file MUST carry the real archive extension: the Rust
+    // `decompress` command picks its decoder strictly by suffix (.tar.gz vs
+    // .zip). TurboQuant Windows assets are .zip, Linux/macOS are .tar.gz —
+    // mirror the same choice `getBackendDownloadUrl` makes, or the zip is
+    // fed to the tar reader and fails with "failed to iterate over archive".
+    const archiveExt = IS_WINDOWS ? 'zip' : 'tar.gz'
+    const archiveName = `llama-${version}-bin-${backend}.${archiveExt}`
     const archivePath = await joinPath([tempDir, archiveName])
     const targetDir = await getBackendDir(backend, version)
 
@@ -3017,20 +3203,32 @@ export default class llamacpp_extension extends AIEngine {
       })
     }
 
+    // Route the file transfer through `download-extension` so the
+    // standard top-left download manager picks it up via the same
+    // `DownloadEvent.onFileDownloadUpdate` channel that model
+    // downloads use. The legacy `AppEvent.onBackendDownload*`
+    // events are still emitted because the BackendUpdater dialog
+    // listens to them for the recommend → downloading →
+    // restart-required state machine.
+    //
+    // Prefix the taskId with `llamacpp-backend-` so the cancel
+    // button in the standard UI takes the
+    // `download.id.startsWith('llamacpp')` branch and can call
+    // `cancelDownload(taskId)` instead of the model-abort path.
+    //
+    // Sanitize `version`/`backend` separately because both carry dots
+    // (e.g. `windows-x64-cuda-12.4` /
+    // `turboquant-windows-x64-cuda-12.4-d86eb0b`), and Tauri's
+    // `listen()` — invoked under the hood by `download-extension` with
+    // `download-${taskId}` — rejects dots.
+    //
+    // Declared OUTSIDE the try block so the catch can emit the cleanup
+    // event with the SAME sanitized id the progress events used.
+    const taskId = `llamacpp-backend-${this.sanitizeForTauriEvent(
+      version
+    )}/${this.sanitizeForTauriEvent(backend)}`
+
     try {
-      // Route the file transfer through `download-extension` so the
-      // standard top-left download manager picks it up via the same
-      // `DownloadEvent.onFileDownloadUpdate` channel that model
-      // downloads use. The legacy `AppEvent.onBackendDownload*`
-      // events are still emitted because the BackendUpdater dialog
-      // listens to them for the recommend → downloading →
-      // restart-required state machine.
-      //
-      // Prefix the taskId with `llamacpp-backend-` so the cancel
-      // button in the standard UI takes the
-      // `download.id.startsWith('llamacpp')` branch and can call
-      // `cancelDownload(taskId)` instead of the model-abort path.
-      const taskId = `llamacpp-backend-${version}/${backend}`
       const downloadManager = window.core?.extensionManager?.getByName(
         '@janhq/download-extension'
       ) as
@@ -3089,15 +3287,32 @@ export default class llamacpp_extension extends AIEngine {
       if (!(await fs.existsSync(expectedBin))) {
         const flatBin = await joinPath([targetDir, exeName])
         if (await fs.existsSync(flatBin)) {
+          // TurboQuant Windows zips extract with a flat layout
+          // (llama-server.exe + DLLs at the archive root), while the
+          // Linux/macOS tarballs already contain `build/bin/`. Move (not
+          // copy) each top-level entry into `build/bin/` so layouts
+          // converge. `fs.mv` is the only file-relocation primitive the
+          // Tauri shell exposes — there is no `copy_file` Rust command, so
+          // `fs.copyFile` throws "Command copy_file not found" on Windows.
+          //
+          // CAREFUL: the Tauri `readdir_sync` command returns FULL absolute
+          // paths (Rust's `entry.path().to_string_lossy()`), not basenames.
+          // Treating them as basenames produces a silent no-op loop
+          // (`joinPath([targetDir, absPath])` resolves to `absPath` itself
+          // because `Path::join` replaces the base when the second arg is
+          // absolute → `mv(x, x)`), so the relocation never happens and the
+          // final `isBackendInstalled` check fails. Strip to the basename
+          // before joining and before the `build` skip check.
           logger.info('Relocating flat-extracted binaries into build/bin/')
           const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
           await fs.mkdir(buildBinDir)
-          const entries = await fs.readdirSync(targetDir)
-          for (const entry of entries) {
-            if (entry === 'build') continue
-            const src = await joinPath([targetDir, entry])
-            const dst = await joinPath([buildBinDir, entry])
-            await fs.copyFile(src, dst)
+          const entries = (await fs.readdirSync(targetDir)) as string[]
+          for (const rawEntry of entries) {
+            const baseName = rawEntry.split(/[/\\]/).filter(Boolean).pop()
+            if (!baseName || baseName === 'build') continue
+            const src = await joinPath([targetDir, baseName])
+            const dst = await joinPath([buildBinDir, baseName])
+            await fs.mv(src, dst)
           }
         }
       }
@@ -3115,9 +3330,11 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(`Backend ${backendString} installed successfully`)
 
       if (events && typeof events.emit === 'function') {
-        // Clear from the standard download manager UI.
+        // Clear from the standard download manager UI. Use the same
+        // sanitized taskId the progress events were emitted under so the
+        // row actually matches and clears.
         events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
-          modelId: `llamacpp-backend-${backendString}`,
+          modelId: taskId,
           downloadType: 'Backend',
         })
         events.emit(AppEvent.onBackendDownloadFinished, {
@@ -3131,9 +3348,10 @@ export default class llamacpp_extension extends AIEngine {
           ? downloadErr.message
           : String(downloadErr)
       if (events && typeof events.emit === 'function') {
-        // Clear the standard download manager row on failure too.
+        // Clear the standard download manager row on failure too, keyed
+        // by the same sanitized taskId used for progress.
         events.emit(DownloadEvent.onFileDownloadError, {
-          modelId: `llamacpp-backend-${backendString}`,
+          modelId: taskId,
           error: errorMessage,
           downloadType: 'Backend',
         })

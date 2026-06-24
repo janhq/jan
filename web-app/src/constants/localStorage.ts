@@ -52,6 +52,12 @@ export const localStorageKey = {
   // user fix a wrong "Not installed" status for agents installed in a
   // non-standard location that PATH/WSL detection misses.
   launchCustomPaths: 'launch-custom-paths',
+  // Windows/Linux only: marks that the once-ever "find optimal backend" prompt
+  // for the turboquant (`llamacpp`) provider has been shown after the first
+  // model launch on that backend. Set on Skip OR Find so the popup never
+  // reappears; the optimal-backend recommendation stays reachable via the
+  // manual button in provider settings.
+  turboquantOptimalPromptShown: 'turboquant-optimal-prompt-shown',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24
