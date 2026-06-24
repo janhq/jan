@@ -20,6 +20,14 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
         (IS_MACOS && !open) ? 'pl-24' : ' pl-4',
         children === undefined && 'border-none'
       )}
+      // On macOS the element-based drag region approach is used: this div sits
+      // inside the SidebarInset which is in normal document flow, so it is
+      // always at its natural z-level and can receive mousedown events.
+      // Tauri's drag handler excludes clicks on <button>, <input>, <a>,
+      // <select>, and <textarea> elements automatically, so interactive
+      // children remain clickable. For div-based triggers (like the model
+      // selector) we suppress mousedown propagation on those elements directly.
+      {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
     >
       <div
         className={cn(

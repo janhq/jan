@@ -8,12 +8,24 @@ import {
   IconRocket,
 } from '@tabler/icons-react'
 
+import posthog from 'posthog-js'
+
 import { Button } from '@/components/ui/button'
 import { ExtensionManager } from '@/lib/extension'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { cn, LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
+import { getAnalyticsPlatform } from '@/lib/telemetry'
+
+/// Outcome of the Windows-only GPU-backend onboarding step, reported to
+/// PostHog so the onboarding funnel covers this fork too.
+type BackendStepStatus =
+  | 'downloaded'
+  | 'cpu'
+  | 'skipped'
+  | 'no_recommendation'
+  | 'detection_failed'
 
 /// Mirrors the public `recheckOptimalBackend()` method on
 /// `extensions/llamacpp-extension/src/index.ts`. We only depend on the public
@@ -91,9 +103,21 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   const downloadAttemptedRef = useRef(false)
 
   const finish = useCallback(
-    (status: 'downloaded' | 'skipped') => {
+    (status: 'downloaded' | 'skipped', resolved?: BackendStepStatus) => {
       if (finishedRef.current) return
       finishedRef.current = true
+      try {
+        posthog.capture('backend_step_resolved', {
+          status:
+            resolved ?? (status === 'downloaded' ? 'downloaded' : 'skipped'),
+          recommended_backend: recommendation?.recommendedBackend ?? null,
+          recommended_category: recommendation?.recommendedCategory ?? null,
+          platform: getAnalyticsPlatform(),
+          app_version: VERSION,
+        })
+      } catch (err) {
+        console.debug('backend_step_resolved telemetry failed:', err)
+      }
       // Drop any persisted recommendation so the post-onboarding
       // BackendUpdater (mounted only after setupCompleted) does not
       // restore a stale dialog on the next mount. The Download path
@@ -110,7 +134,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
       }
       onDone(status)
     },
-    [onDone]
+    [onDone, recommendation]
   )
 
   // Trigger detection on mount. We rely on `recheckOptimalBackend()` to:
@@ -179,7 +203,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
     } else if (recommendationPhase === 'completed') {
       // Hot-swap succeeded — leave onboarding without a restart.
       // `finish` is idempotent via `finishedRef`.
-      finish('downloaded')
+      finish('downloaded', 'downloaded')
     } else if (recommendationPhase === 'restart-required') {
       setUiPhase('restart-required')
     } else if (recommendationPhase === 'recommend') {
@@ -192,8 +216,10 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   // Auto-advance when the device has nothing to gain — keeps onboarding
   // short for users on CPU-only machines.
   useEffect(() => {
-    if (uiPhase === 'no-recommendation' || uiPhase === 'detection-failed') {
-      finish('skipped')
+    if (uiPhase === 'no-recommendation') {
+      finish('skipped', 'no_recommendation')
+    } else if (uiPhase === 'detection-failed') {
+      finish('skipped', 'detection_failed')
     }
   }, [uiPhase, finish])
 
@@ -214,11 +240,17 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   }, [downloadRecommendedBackend, recommendation])
 
   const handleRestartLater = useCallback(() => {
-    finish('downloaded')
+    finish('downloaded', 'downloaded')
   }, [finish])
 
+  // Explicit "Stay on CPU" choice (declined a real recommendation).
+  const handleStayOnCpu = useCallback(() => {
+    finish('skipped', 'cpu')
+  }, [finish])
+
+  // Bottom "Skip" link.
   const handleSkip = useCallback(() => {
-    finish('skipped')
+    finish('skipped', 'skipped')
   }, [finish])
 
   const handleRestartNow = useCallback(async () => {
@@ -228,7 +260,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
       console.error('[SetupBackendStep] relaunch failed', err)
       // If the relaunch IPC blew up there's not much we can do — just
       // continue to the model step so the user isn't trapped here.
-      finish('downloaded')
+      finish('downloaded', 'downloaded')
     }
   }, [finish])
 
@@ -299,7 +331,7 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Button
                       variant="outline"
-                      onClick={handleSkip}
+                      onClick={handleStayOnCpu}
                       className="order-2 w-full sm:order-1"
                     >
                       <IconCpu size={16} className="mr-1" />

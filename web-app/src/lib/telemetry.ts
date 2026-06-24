@@ -6,6 +6,15 @@
  * paths, no usernames, no HF/API tokens, no GPU serials/UUIDs.
  */
 
+export function getAnalyticsPlatform(): string {
+  if (IS_MACOS) return 'macos'
+  if (IS_WINDOWS) return 'windows'
+  if (IS_LINUX) return 'linux'
+  if (IS_IOS) return 'ios'
+  if (IS_ANDROID) return 'android'
+  return 'unknown'
+}
+
 export type DownloadStatus = 'started' | 'completed' | 'failed' | 'cancelled'
 
 export type DownloadKind = 'model' | 'gpu_backend' | 'companion_artifact'
@@ -255,6 +264,28 @@ export function finalizeDownloadOnce(id: string): boolean {
   finalizedDownloads.add(id)
   if (finalizedDownloads.size > 500) finalizedDownloads.clear()
   return true
+}
+
+const downloadedModelKeys = new Set<string>()
+
+function normalizeModelKey(modelId?: string | null): string {
+  if (!modelId) return ''
+  const tail = modelId.split(/[\\/]/).pop() ?? modelId
+  return tail.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** Mark a model as freshly downloaded this session (call on download success). */
+export function markModelDownloaded(modelId?: string | null): void {
+  const key = normalizeModelKey(modelId)
+  if (!key) return
+  downloadedModelKeys.add(key)
+  if (downloadedModelKeys.size > 500) downloadedModelKeys.clear()
+}
+
+export function modelLoadSource(modelId?: string | null): 'download' | 'local_disk' {
+  return downloadedModelKeys.has(normalizeModelKey(modelId))
+    ? 'download'
+    : 'local_disk'
 }
 
 const modelLoadFailureThrottle = new Map<string, number>()
