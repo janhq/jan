@@ -8,5 +8,9 @@
   },
   "sendMessage": "メッセージを送信",
   "newConversation": "新しい会話",
-  "clearHistory": "履歴を消去"
+  "clearHistory": "履歴を消去",
+  "embeddings": {
+    "title": "ドキュメントを準備しています",
+    "description": "添付ファイルを検索・引用できるようにインデックスを作成しています。大きなドキュメントの場合は少し時間がかかることがあります。"
+  }
 }
