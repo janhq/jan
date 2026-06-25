@@ -119,9 +119,6 @@ export class DefaultModelsService implements ModelsService {
         models: (await this.getEngine(provider)?.getLoadedModels()) ?? [],
       }))
     )
-    // #region agent log
-    fetch('http://127.0.0.1:7748/ingest/a227fd71-6a26-46ed-a55a-2ce72555a8ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'31e596'},body:JSON.stringify({sessionId:'31e596',hypothesisId:'H2',location:'default.ts:getLocalActiveModelsByProvider',message:'per-engine getLoadedModels result (which engine truly holds the session)',data:{perEngine:results,sameInstance:this.getEngine('llamacpp')===this.getEngine('llamacpp-upstream')},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 
     return results.filter(({ models }) => Array.isArray(models) && models.length > 0)
   }
@@ -565,17 +562,11 @@ export class DefaultModelsService implements ModelsService {
   async getActiveModels(provider?: string): Promise<string[]> {
     if (provider) {
       const scoped = (await this.getEngine(provider)?.getLoadedModels()) ?? []
-      // #region agent log
-      fetch('http://127.0.0.1:7748/ingest/a227fd71-6a26-46ed-a55a-2ce72555a8ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'31e596'},body:JSON.stringify({sessionId:'31e596',hypothesisId:'H1',location:'default.ts:getActiveModels',message:'getActiveModels WITH provider arg (scoped)',data:{provider,scoped},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       return scoped
     }
 
     const activeByProvider = await this.getLocalActiveModelsByProvider()
     const union = [...new Set(activeByProvider.flatMap(({ models }) => models))]
-    // #region agent log
-    fetch('http://127.0.0.1:7748/ingest/a227fd71-6a26-46ed-a55a-2ce72555a8ae',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'31e596'},body:JSON.stringify({sessionId:'31e596',hypothesisId:'H1',location:'default.ts:getActiveModels',message:'getActiveModels WITHOUT provider arg (UNION across engines - engine-agnostic ids)',data:{union,activeByProvider},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     return union
   }
 
