@@ -232,7 +232,8 @@ export class DefaultModelsService implements ModelsService {
     modelSize?: number,
     mmprojPath?: string,
     mmprojSha256?: string,
-    mmprojSize?: number
+    mmprojSize?: number,
+    mtpPath?: string
   ): Promise<void> {
     return this.getEngine()?.import(id, {
       modelPath,
@@ -241,6 +242,7 @@ export class DefaultModelsService implements ModelsService {
       modelSize,
       mmprojSha256,
       mmprojSize,
+      mtpPath,
     })
   }
 
@@ -249,7 +251,8 @@ export class DefaultModelsService implements ModelsService {
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification: boolean = true
+    skipVerification: boolean = true,
+    mtpPath?: string
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -314,7 +317,8 @@ export class DefaultModelsService implements ModelsService {
         modelSize,
         mmprojPath,
         mmprojSha256,
-        mmprojSize
+        mmprojSize,
+        mtpPath
       )
     } catch (error) {
       // Emit download error event so the UI can clean up the stale downloading state

@@ -1,0 +1,160 @@
+---
+title: "Jan v0.8.3: Message Branching, Linux Custom Titlebar & HTML/SVG Artifacts"
+version: 0.8.3
+description: "Jan v0.8.3 brings navigable message version branching, a fully custom Linux titlebar that follows your DE's button layout, a unified reasoning/tool chain-of-thought timeline, interactive HTML and static SVG artifact previews, video input for local vision models, and a sweeping batch of streaming performance, citation, sampler, and error-surfacing fixes."
+date: 2026-06-24
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.3: Message Branching, Linux Custom Titlebar & HTML/SVG Artifacts"
+  date="2026-06-24"
+/>
+
+# Highlights
+
+**Message Version Branching**
+
+Editing a user message, editing an assistant reply, or regenerating no longer destroys the original. Each operation creates a new version, and a `< n/m >` control beneath the affected message lets you navigate all versions. Switching a version re-threads the entire downstream conversation to match. Branches persist across restarts - they are modeled as a parent-pointer tree in message metadata, so no core type or backend change was required.
+
+**Linux: Custom Titlebar Following Your DE's Button Layout**
+
+Jan now draws its own borderless titlebar on Linux instead of relying on GTK3's CSD. GTK3 cannot negotiate server-side decorations on Wayland, so KDE never produced a slim native bar and the old headerbar couldn't be shrunk below the theme floor. The new self-drawn bar:
+
+- Reads your desktop environment's window-button placement (KDE `kwinrc`, GNOME `gsettings`) and puts the controls on the correct side - including when that is the left.
+- Refetches the layout on window focus, so a change made while Jan is unfocused takes effect the next time you switch back.
+- Restores resize grips at window edges and corners (a borderless Wayland window loses them otherwise).
+- Guards against a malformed layout payload that previously crashed the render with `undefined is not an object`.
+
+An infinite render loop that caused the renderer to consume 3-4 GB/min and OOM on idle is also fixed (the root cause was `getCurrentWebviewWindow()` returning a fresh instance on every render, causing the focus-listener effect to re-run continuously).
+
+**Unified Reasoning + Tool Chain-of-Thought Timeline**
+
+Consecutive reasoning, tool calls, and interstitial narration now fold into a single collapsible chain-of-thought block instead of stacking separate "Thought for a few seconds" headers between loose prose. The block header tracks the current step while streaming ("Reasoning..." / "Using tools...") and summarizes after ("Thought for N seconds" / "Worked for N seconds"). The trace stays expanded while a tool awaits your approval so the approval controls are never hidden.
+
+Streaming performance for long reasoning was also substantially improved: reasoning content now renders as plain pre-wrapped text rather than going through the full markdown/Shiki pipeline on every token, and the broader markdown renderer defers updates with `useDeferredValue` and skips the `normalizeLatex` scan mid-stream - together eliminating the main sources of per-token re-render cost.
+
+**HTML & SVG Artifact Previews (Experimental)**
+
+Model-generated HTML and SVG can now be rendered inline rather than displayed as code:
+
+- ` ```html ` blocks render as interactive sandboxed previews (opaque origin, `allow-scripts`, no `allow-same-origin`, network blocked by CSP) with a Code/Preview toggle. Defaults to Preview.
+- ` ```svg ` fences and bare `<svg>` blocks render as static previews (scripts disabled).
+- Both are gated behind a new **Settings -> Interface** toggle (`renderHtmlArtifacts`, default off, marked Experimental).
+- The injected CSP is guaranteed to precede all model markup by always wrapping the document, and SVG extraction correctly skips `<svg>` that appears inside a non-SVG code fence.
+
+**Video Input for Local llama.cpp Vision Models**
+
+You can now attach video files to messages when using a vision-capable llama.cpp model in router mode. Video capability is reconciled from `/props.modalities.video` after the model loads (the only reliable signal for whether the backend was built with `MTMD_VIDEO`), so the attach button only appears for models that genuinely support it. Glibc heap-corruption aborts in the video decode path now surface as a backend-error banner rather than silently reloading the model forever.
+
+> **Requires ffmpeg:** llama.cpp decodes video into frames by shelling out to `ffmpeg`/`ffprobe`, which Jan does not bundle. Video input only works if both are installed and on your system `PATH`; without them, video requests will fail.
+
+> **macOS limitation:** The macOS llama.cpp binaries Jan ships are **not** built with `MTMD_VIDEO`, so video input is unavailable on macOS local models regardless of ffmpeg. Use image or audio input, or a remote provider, on macOS for now.
+
+> **Token cost:** A video is decoded into many frames, so it consumes **substantially more tokens than an image or an audio clip** of the same length. On local models this fills the context window quickly, increases prompt-processing time, and can trigger context-overflow or out-of-memory errors. Keep clips short, prefer a higher context size, and watch the token counter.
+
+**Per-Model Default Sampling Parameters for the Local API Server**
+
+External agents and tools that hit Jan's local API server at `localhost:1337` can now benefit from sampling defaults set in the GUI. From the Model Settings sheet, set temperature, top-k, top-p, min-p, repeat penalty, presence penalty, or frequency penalty as per-model server-side defaults. For llama.cpp, these are emitted into the router preset so every request (chat and API) inherits them; a per-request field still overrides. MLX honors temperature, top-p, and repeat penalty via proxy injection.
+
+**Multi-Token Prediction (MTP) Draft Models**
+
+Models that ship a companion `mtp-*.gguf` (e.g. Gemma 4) now auto-download the best-matching draft alongside the chosen quant and wire it to `llama-server` as a speculative draft. MTP companion variants are hidden from the Hub's variant list so they don't appear as standalone downloads.
+
+**Assistant Switcher + Cmd/Ctrl+J**
+
+A dedicated assistant-switcher button now appears in the chat input area when more than one assistant is available, and pressing **Cmd/Ctrl+J** cycles to the next one. The shortcut is listed in the Settings help screen. Two silent switching bugs were fixed: `setCurrentAssistant` previously no-op'd once a default assistant was set, and `updateCurrentThreadAssistant` dropped the model in local state.
+
+**Corrected Sampler Defaults**
+
+Sampler sliders were pinned to their minimum because model settings seeded each key with an empty string and the `stored ?? default` guard doesn't catch it. The fix resolves empty/null/undefined to the parameter default. Two defaults are also corrected to match llama.cpp upstream: temperature `0.7 -> 0.8`, repeat\_penalty `1.1 -> 1.0`. Embedding models now hide sampler controls entirely, and MLX is restricted to the three keys its server forwards (temperature, top-p, repeat\_penalty).
+
+**Token Counts & ETA on the Prompt-Reading Progress Indicator**
+
+The "Reading..." indicator now shows processed/total tokens and an extrapolated time-to-completion estimate, wrapped in a themed progress bar card.
+
+**Other Highlights**
+
+- **Sidebar thread highlight** - the currently open thread now has a persistent highlight, not just a hover state.
+- **Colored user bubble toggle** - a new **Settings -> Interface** option (default on, backward compatible) lets you switch the user message bubble from the accent fill to a neutral style matching assistant messages.
+- **Azure base URL** - the Azure provider settings now expose an editable endpoint URL field so you can substitute your resource name without workarounds.
+- **RAG attachment limit raised to 100 MB** - the default maximum attachment size for document indexing is raised from 20 MB to 100 MB. Previously set values are preserved.
+- **Explicit first-model download** - the setup screen no longer auto-starts a download on mount; you must click Download to begin, giving you a moment to review the selection.
+
+---
+
+# Bug Fixes
+
+**Factory Reset Returns to True First-Run State**
+
+Factory reset now clears webview localStorage across all platforms. Previously the data folder was wiped but localStorage was left intact, keeping a deleted model selected and `hasValidProviders` true - so the setup screen was skipped and stale API key errors appeared on next launch. A cross-platform sentinel approach was adopted: Rust drops a sentinel file before restart; on next boot the renderer prunes the matching localStorage keys before Zustand stores hydrate. A separate file-level webview profile delete handles macOS's `WKWebView`, which stores localStorage outside the app data folder.
+
+**Browser MCP Port Leak Fixed**
+
+The Jan Browser MCP bridge forked a grandchild process that outlived a single-PID kill, keeping the port occupied so re-enabling the MCP server immediately failed. MCP children are now spawned as process-group leaders, teardown signals the whole group (SIGTERM -> poll -> SIGKILL), and a bounded port-free poll replaces fixed settle sleeps. A config key typo (`envs` -> `env`) that silently skipped all cleanup on deactivation is also fixed. An explanatory toast now appears when browser MCP is auto-disabled because you switched to a non-vision model.
+
+**ROCm / HIP Backend Startup on Linux**
+
+ROCm installs into versioned roots (e.g. `/opt/rocm-7.2.0/`) that were not on the default loader path. Jan's dependency scan false-flagged `rocblas`/`hipblas`/`amdhip64` as missing and `LD_LIBRARY_PATH` at launch omitted the ROCm libs, so `--list-devices` found no GPU and the HIP backend couldn't start. Jan now resolves ROCm paths from `$ROCM_PATH`, `$ROCM_HOME`, `$HIP_PATH`, `/opt/rocm`, and globbed `/opt/rocm-*`.
+
+**Citations: Correct Superscripts After Multi-Tool RAG Turns**
+
+Two citation bugs are fixed. First, when a model called `retrieve`/`get_chunks` more than once, `isStreaming` briefly flickered false between calls, triggering a stale grounding computation that then won over the final answer - leaving only a few sentences with superscript markers. The fix uses a monotonic run token so stale in-flight computations are discarded. Second, each `<Citations>` card previously numbered from 1, producing duplicate DOM anchor IDs and broken scroll targets for inline `[n]` markers. A per-part `citationOffset` threads the global index through to each card so every citation continues the sequence correctly.
+
+**Local API Server: Anthropic Prompt Caching & Hung Requests**
+
+Two proxy regressions are fixed:
+
+- Claude Code prepends an `x-anthropic-billing-header` to system prompts that busted Anthropic prompt caching and leaked CLI metadata to the model. The streaming request path bypassed the earlier strip logic; it is now removed at the buffered-body chokepoint in both POST arms.
+- The `/chat/completions` proxy re-serializes the request body (normalizing/minifying it) but was forwarding the original `Content-Length` verbatim. Pretty-printed JSON from the OpenAI SDK is longer than the minified form, so `llama-server` blocked waiting for bytes that never arrived. `Content-Length` and `Transfer-Encoding` are now stripped from forwarded headers and re-derived from the attached body. This was a regression since 0.8.0.
+
+**LaTeX: No More Subscript Corruption or KaTeX Warnings**
+
+`normalizeLatex` previously rewrote the whole message string with regex, and the emphasis-flanking fix injected a zero-width space (U+200B) that landed inside LaTeX subscripts (`$x_{i}$`), causing KaTeX to warn about unrecognized Unicode character 8203. The fix adopts a placeholder-protection pipeline: math spans (`$$...$$`, `\[...\]`, `\(...\)`, inline `$...$`) are lifted out as opaque tokens before any prose transforms run, then restored - so no transform can corrupt math content. Bold/italic delimiters sitting between a word character and punctuation (e.g. `home**,**`) also now render correctly.
+
+**Error & Loading State Fixes**
+
+- Failed assistant turns are now hidden behind the active error banner (OOM / backend / context-limit); the banner's action buttons own the recovery flow.
+- Backend errors (ggml/native crashes) that occur during an ordinary token stream now surface as a banner. Previously `hasActiveLlamacppRequest` didn't recognize mid-stream as active, so crashes were dropped silently.
+- On Reload/regenerate, the old request's terminal callbacks no longer clear the loading state that the new request just set, eliminating the "Loading model..." indicator flash.
+- Router OOM/backend-error events fired at launch or idle no longer banner when a different provider (e.g. MLX) is selected.
+- The context-overflow error banner now shows the real server message (`request (N tokens) exceeds context (M tokens)`) and the token-count popup is reconciled to the failing request, so you no longer see a comfortable percentage next to an out-of-context error.
+- A send-time guard in the transport now throws a clear "no user message to respond to" error when the message window has no genuine user query (e.g. after deleting the only user message or after token eviction drops it), replacing the cryptic Jinja "No user query found in messages" exception from Qwen3.5+ models.
+
+**MLX Fixes**
+
+- Tool-call turns with `content: null` no longer crash MLX's strict JSON decoder with a "couldn't be read" error after any tool use.
+- The STDIO MCP server handshake now retries with system `npx`/`uvx` when Jan's bundled `bun x`/`uv tool run` override causes an EPIPE on the initialize round-trip. MLX error bodies are now routed through the shared `createCustomFetch` path so they are decoded correctly rather than surfacing as generic WebKit stream errors.
+
+**Other Bug Fixes**
+
+- The embeddings indicator is rewritten as a higher-contrast info-toned banner with a plain-language explanation; it now survives thread navigation (flag moved to per-thread state in `useAppState`).
+- Downloads popover no longer clips at the window edge when the sidebar is collapsed.
+- Hub search threshold tightened (0.6 -> 0.3) for more precise results; HuggingFace `author/model` namespaced IDs are correctly routed to the detail page.
+- Pre-install extensions are now bundled in the base `tauri.conf.json` resource list so builds that bypass the platform overlay don't ship without extensions (previously caused model downloads to hang with no activity).
+- Manually renamed thread titles are no longer overwritten by the LLM's auto-title generation.
+- The Linux system theme is re-queried from the XDG portal when switching back to Auto, fixing a bug where System -> Light -> System could strand the app on the light theme.
+- Invalid `<p>`-in-`<p>` nesting in the delete-project dialog is fixed.
+- The thread busy indicator now activates during tool-call approval and execution; the prompt-reading progress bar no longer renders underneath "Loading model...".
+- Leaked event subscriptions in `DataProvider` and `useInterfaceSettings` are cleaned up so HMR reloads and effect re-runs don't stack handlers.
+
+---
+
+# Localization
+
+Translations updated.
+
+---
+
+# Engineering
+
+- Workspace-wide `reqwest` bump from 0.11 to 0.12, migrating the local API server proxy to `hyper` 1.0. This clears the `rustls-webpki` advisories RUSTSEC-2026-0098, RUSTSEC-2026-0099, and RUSTSEC-2026-0104 (rustls-webpki 0.101.7, inherited from reqwest 0.11).
+- Sub-crate `Cargo.lock` files are now committed and `--locked` is enforced in CI tests, so dependency resolution is deterministic and a broken upstream release can't silently pass CI.
+- App and plugin versions bumped to 0.8.3.
+
+---
+
+Update your Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.3)

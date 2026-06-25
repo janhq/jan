@@ -24,6 +24,7 @@ const h = vi.hoisted(() => {
     providerHasRemoteApiKeys: vi.fn().mockReturnValue(true),
     providerRemoteApiKeyChain: vi.fn().mockReturnValue(['key-1']),
     eventsOn: vi.fn(),
+    eventsOff: vi.fn(),
     localApi: {
       enableOnStartup: false,
       serverHost: '127.0.0.1',
@@ -99,7 +100,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('@janhq/core', () => ({
   AppEvent: { onModelImported: 'onModelImported' },
-  events: { on: (...a: unknown[]) => h.eventsOn(...a) },
+  events: {
+    on: (...a: unknown[]) => h.eventsOn(...a),
+    off: (...a: unknown[]) => h.eventsOff(...a),
+  },
 }))
 
 vi.mock('@/types/events', () => ({
@@ -114,7 +118,7 @@ vi.mock('@/constants/routes', () => ({
 const hubState = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
   deeplinkGetCurrent: vi.fn().mockResolvedValue(null),
-  deeplinkOnOpenUrl: vi.fn().mockResolvedValue(undefined),
+  deeplinkOnOpenUrl: vi.fn().mockResolvedValue(vi.fn()),
   eventsListen: vi.fn(),
   getProviders: vi.fn().mockResolvedValue([]),
   getMCPConfig: vi.fn().mockResolvedValue({ mcpServers: { a: 1 }, mcpSettings: { s: 1 } }),
@@ -169,12 +173,14 @@ const resetHubState = () => {
   hubState.startServer.mockResolvedValue(1337)
   hubState.startModel.mockResolvedValue(undefined)
   hubState.deeplinkGetCurrent.mockResolvedValue(null)
+  hubState.deeplinkOnOpenUrl.mockResolvedValue(vi.fn())
 }
 
 describe('DataProvider', () => {
   const originalWindowCore = (window as unknown as { core?: unknown }).core
 
   beforeEach(() => {
+    vi.clearAllMocks()
     resetHubState()
     h.providers = []
     h.isDev.mockReturnValue(false)

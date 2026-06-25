@@ -44,6 +44,7 @@ const mockWindow = {
   },
   localStorage: {
     clear: vi.fn(),
+    removeItem: vi.fn(),
   },
 }
 

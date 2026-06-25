@@ -90,6 +90,39 @@ const syncRemoteProviders = () => {
   registeredProviderNames = currentActive
 }
 
+// MLX honors only these samplers; map Jan's setting keys to MLX request-body
+// keys (note repeat_penalty → repetition_penalty). llamacpp uses the router
+// preset and remote providers are intentionally excluded.
+const MLX_SAMPLING_KEY_MAP: Record<string, string> = {
+  temperature: 'temperature',
+  top_p: 'top_p',
+  repeat_penalty: 'repetition_penalty',
+}
+
+// Push per-model MLX sampling defaults to the API server so external clients
+// that omit these params inherit the GUI-configured values (overridable
+// per-request). Replaces the whole map, so an empty push clears stale entries.
+const syncModelParamDefaults = () => {
+  const providers = useModelProvider.getState().providers
+  const defaults: Record<string, Record<string, number>> = {}
+
+  for (const provider of providers) {
+    if (provider.provider !== 'mlx' || !provider.active) continue
+    for (const model of provider.models) {
+      const out: Record<string, number> = {}
+      for (const [janKey, mlxKey] of Object.entries(MLX_SAMPLING_KEY_MAP)) {
+        const v = model.settings?.[janKey]?.controller_props?.value
+        if (typeof v === 'number' && Number.isFinite(v)) out[mlxKey] = v
+      }
+      if (Object.keys(out).length > 0) defaults[model.id] = out
+    }
+  }
+
+  invoke('set_model_param_defaults', { defaults }).catch((e) =>
+    console.error('Failed to sync model param defaults:', e)
+  )
+}
+
 export function DataProvider() {
   const { setProviders, getProviderByName } =
     useModelProvider()
@@ -154,7 +187,14 @@ export function DataProvider() {
         console.warn('Failed to load assistants, keeping default:', error)
       })
     serviceHub.deeplink().getCurrent().then(handleDeepLink)
-    serviceHub.deeplink().onOpenUrl(handleDeepLink)
+
+    let unsubscribeOpenUrl = () => {}
+    serviceHub
+      .deeplink()
+      .onOpenUrl(handleDeepLink)
+      .then((unsub) => {
+        unsubscribeOpenUrl = unsub
+      })
 
     // Listen for deep link events
     let unsubscribe = () => {}
@@ -168,6 +208,7 @@ export function DataProvider() {
         unsubscribe = unsub
       })
     return () => {
+      unsubscribeOpenUrl()
       unsubscribe()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,6 +227,7 @@ export function DataProvider() {
   const providers = useModelProvider((s) => s.providers)
   useEffect(() => {
     syncRemoteProviders()
+    syncModelParamDefaults()
   }, [providers])
 
   // Check for app updates - initial check and periodic interval
@@ -220,12 +262,17 @@ export function DataProvider() {
   }, [checkForUpdate, autoUpdateCheck])
 
   useEffect(() => {
-    events.on(AppEvent.onModelImported, () => {
+    const handler = () => {
       serviceHub.providers().getProviders().then((providers) => {
         setProviders(providers)
         syncRemoteProviders()
+        syncModelParamDefaults()
       })
-    })
+    }
+    events.on(AppEvent.onModelImported, handler)
+    return () => {
+      events.off(AppEvent.onModelImported, handler)
+    }
   }, [serviceHub, setProviders])
 
   // Auto-start Local API Server on app startup if enabled

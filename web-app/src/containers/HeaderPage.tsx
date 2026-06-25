@@ -6,12 +6,18 @@ import {
 import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
 import { DownloadManagement } from '@/containers/DownloadManegement'
+import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
 
 type HeaderPageProps = {
   children?: ReactNode
 }
 const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
   const { open, setLeftPanel } = useLeftPanel()
+  // Collapsed, this header owns the top-left strip — indent past left-anchored Linux
+  // window controls (size-8 each at left-4); macOS uses the pl-24 class below.
+  const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
+  const linuxControlsPad =
+    !IS_MACOS && !open && leftButtons > 0 ? leftButtons * 32 + 24 : undefined
 
   return (
     <div
@@ -20,6 +26,7 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
         (IS_MACOS && !open) ? 'pl-24' : ' pl-4',
         children === undefined && 'border-none'
       )}
+      style={linuxControlsPad ? { paddingLeft: linuxControlsPad } : undefined}
     >
       <div
         className={cn(

@@ -1,4 +1,9 @@
 {
+  "htmlArtifact": {
+    "code": "Code",
+    "preview": "Preview",
+    "previewStreaming": "Available when generation finishes"
+  },
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
@@ -109,6 +114,7 @@
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
   "failedToLoadModels": "Failed to load models",
   "noModels": "No models found",
+  "noAssistant": "No assistant",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
   "jan": "Jan",
@@ -240,6 +246,10 @@
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
     "description": "Configure model settings to optimize performance and behavior.",
+    "samplingDefaults": {
+      "title": "Default sampling parameters",
+      "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
+    },
     "mtp": {
       "section": "Multi-Token Prediction (MTP)",
       "enable": "Enable MTP",

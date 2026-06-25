@@ -970,7 +970,17 @@ fn verify_backend_dependencies(
 
     let _ = exe_path;
 
-    let analysis = crate::deps_analyzer::analyze_out_of_process(bin_dir, &paths);
+    // HIP/ROCm runtime libs (rocblas/hipblas/amdhip) live outside the backend
+    // dir in versioned roots like /opt/rocm-7.2.0/lib; add them so the scan
+    // doesn't false-flag them as missing.
+    let mut lib_dirs: Vec<PathBuf> = vec![bin_dir.to_path_buf()];
+    if gpu_backend_keyword(backend) == Some("hip") {
+        for p in jan_utils::find_rocm_paths().lib_paths {
+            lib_dirs.push(PathBuf::from(p));
+        }
+    }
+
+    let analysis = crate::deps_analyzer::analyze_out_of_process(&lib_dirs, &paths);
 
     let resolved: std::collections::HashSet<String> = analysis.resolved.into_iter().collect();
     for name in analysis.missing {

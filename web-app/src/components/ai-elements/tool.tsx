@@ -316,10 +316,20 @@ export type ToolOutputProps = ComponentProps<'div'> & {
   output: ToolUIPart['output']
   errorText: ToolUIPart['errorText']
   resolver: (input: string) => Promise<string>
+  // Running count of citations from earlier tool calls in this turn, so each
+  // card's numbering/anchors continue the global sequence the markers use.
+  citationOffset?: number
 }
 
 export const ToolOutput = memo(
-  ({ className, output, errorText, resolver, ...props }: ToolOutputProps) => {
+  ({
+    className,
+    output,
+    errorText,
+    resolver,
+    citationOffset = 0,
+    ...props
+  }: ToolOutputProps) => {
     const { messageId } = useTool()
     const citationPayload = useMemo(
       () => (output ? parseCitationsFromToolOutput(output) : null),
@@ -336,6 +346,7 @@ export const ToolOutput = memo(
           <Citations
             payload={citationPayload}
             anchorPrefix={messageId ? `cite-${messageId}` : undefined}
+            indexOffset={citationOffset}
           />
         )
       }
@@ -455,7 +466,7 @@ export const ToolOutput = memo(
       }
 
       return <div>{output as ReactNode}</div>
-    }, [output, errorText, resolver, citationPayload, messageId])
+    }, [output, errorText, resolver, citationPayload, messageId, citationOffset])
 
     if (!(output || errorText)) {
       return null

@@ -454,7 +454,7 @@ describe('ProviderDetail route', () => {
       renderComponent()
       expect(screen.getByTestId('import-vision')).toBeInTheDocument()
       expect(screen.getByText('settings:checkForBackendUpdates')).toBeInTheDocument()
-      expect(screen.getByText('Install Backend from File')).toBeInTheDocument()
+      expect(screen.getByText('settings:installBackendFromFile')).toBeInTheDocument()
     })
   })
 
@@ -721,7 +721,7 @@ describe('ProviderDetail route', () => {
     it('install-from-file no-ops cleanly when dialog returns null', async () => {
       renderComponent()
       await act(async () => {
-        fireEvent.click(screen.getByText('Install Backend from File'))
+        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
       })
       // no toast fired because file selection was cancelled
       expect(h.toastSuccess).not.toHaveBeenCalled()
@@ -732,7 +732,7 @@ describe('ProviderDetail route', () => {
       h.dialogSvc.open = vi.fn().mockResolvedValue('/some/path/My Backend.tar.gz')
       renderComponent()
       await act(async () => {
-        fireEvent.click(screen.getByText('Install Backend from File'))
+        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
       })
       await waitFor(() => {
         expect(h.backendUpdater.installBackend).toHaveBeenCalledWith(
@@ -747,7 +747,7 @@ describe('ProviderDetail route', () => {
       h.backendUpdater.installBackend = vi.fn().mockRejectedValue(new Error('install fail'))
       renderComponent()
       await act(async () => {
-        fireEvent.click(screen.getByText('Install Backend from File'))
+        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
       })
       await waitFor(() => {
         expect(h.toastError).toHaveBeenCalled()

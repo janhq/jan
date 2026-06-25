@@ -245,12 +245,11 @@ fn test_proxy_config_with_socks_and_ssl_settings() {
 
     assert!(validate_proxy_config(&config).is_ok());
 
-    // SOCKS proxies are not supported by reqwest::Proxy::all()
-    // This test should expect an error for SOCKS proxies
+    // reqwest 0.12 accepts socks5:// schemes in Proxy::all() (0.11 rejected them).
     let result = create_proxy_from_config(&config);
-    assert!(result.is_err());
+    assert!(result.is_ok());
 
-    // Test with HTTP proxy instead which is supported
+    // HTTP proxy is likewise supported
     let mut http_config = create_test_proxy_config("http://proxy.example.com:8080");
     http_config.ignore_ssl = Some(false);
     assert!(validate_proxy_config(&http_config).is_ok());

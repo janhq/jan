@@ -182,8 +182,6 @@ export const useAssistant = create<AssistantState>((set, get) => ({
   },
   setCurrentAssistant: (assistant, saveToStorage = true) => {
     const currentAssistant = get().currentAssistant
-    const defaultAssistantId = get().defaultAssistantId
-    if (defaultAssistantId && currentAssistant?.id === defaultAssistantId) return
     if (currentAssistant !== assistant) {
       set({ currentAssistant: assistant })
       if (saveToStorage) {

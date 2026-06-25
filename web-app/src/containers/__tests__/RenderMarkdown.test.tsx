@@ -1,6 +1,7 @@
-import { render } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { render, waitFor, act, cleanup } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RenderMarkdown } from '../RenderMarkdown'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 
 vi.mock('@i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -144,6 +145,20 @@ describe('RenderMarkdown', () => {
       // Display math should be rendered
       expect(katexContainer).toBeTruthy()
       expect(katexError).toBeNull()
+    })
+
+    it('does not inject a ZWSP into subscripts (emphasis fix must skip math)', () => {
+      // '_' is a LaTeX subscript; the emphasis-flanking fix must not touch it,
+      // else KaTeX warns "Unrecognized Unicode character 8203" (U+200B).
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const content = 'The term $x_{i}$ and $a_1 + b_2$ are indexed'
+      render(<RenderMarkdown content={content} />)
+      expect(document.querySelector('.katex')).toBeTruthy()
+      const warnedAboutZwsp = warn.mock.calls
+        .flat()
+        .some((arg) => typeof arg === 'string' && arg.includes('8203'))
+      expect(warnedAboutZwsp).toBe(false)
+      warn.mockRestore()
     })
   })
 
@@ -335,6 +350,13 @@ describe('RenderMarkdown', () => {
       // Inline math should be rendered
       expect(katexContainer).toBeTruthy()
     })
+
+    it('converts \\[...\\] mid-sentence (no surrounding newlines)', () => {
+      const content = 'Inline display \\[a^2 + b^2\\] right here'
+      render(<RenderMarkdown content={content} />)
+      expect(document.querySelector('.katex')).toBeTruthy()
+      expect(document.querySelector('.katex-error')).toBeNull()
+    })
   })
 
   describe('LaTeX normalization - code block preservation', () => {
@@ -355,6 +377,49 @@ describe('RenderMarkdown', () => {
       const text = markdownContainer?.textContent || ''
       expect(text).toContain('$100')
     })
+
+    it('does not convert bracket math inside inline code', () => {
+      // Code is masked first, so \(x\) stays literal instead of becoming $x$.
+      const content = 'Type `\\(x\\)` to write inline math'
+      render(<RenderMarkdown content={content} />)
+      const text = document.querySelector('.markdown')?.textContent || ''
+      expect(text).toContain('\\(x\\)')
+      expect(document.querySelector('.katex')).toBeNull()
+    })
+  })
+
+  describe('emphasis glued to punctuation (CommonMark flanking)', () => {
+    const strong = () =>
+      document.querySelector('.markdown [data-streamdown="strong"]')
+
+    it('renders bold punctuation glued to a word as strong', async () => {
+      render(
+        <RenderMarkdown content={'I went home**,** and slept'} isAnimating={false} />
+      )
+      await waitFor(() => expect(strong()).toBeTruthy())
+      expect(strong()?.textContent?.replace(/​/g, '')).toBe(',')
+      expect(document.querySelector('.markdown')?.textContent).not.toContain('**')
+    })
+
+    it('handles glued bold around CJK punctuation', async () => {
+      render(<RenderMarkdown content={'中文**，**测试'} isAnimating={false} />)
+      await waitFor(() => expect(strong()).toBeTruthy())
+      expect(strong()?.textContent?.replace(/​/g, '')).toBe('，')
+    })
+
+    it('leaves stray asterisks alone (no false emphasis)', async () => {
+      render(<RenderMarkdown content={'use 2 ** 3 maybe'} isAnimating={false} />)
+      await waitFor(() =>
+        expect(document.querySelector('.markdown p')).toBeTruthy()
+      )
+      expect(strong()).toBeNull()
+    })
+
+    it('does not touch normal bold spans', async () => {
+      render(<RenderMarkdown content={'a **bold** word'} isAnimating={false} />)
+      await waitFor(() => expect(strong()).toBeTruthy())
+      expect(strong()?.textContent).toBe('bold')
+    })
   })
 
   describe('LaTeX normalization - HTML tag recognition', () => {
@@ -364,6 +429,63 @@ describe('RenderMarkdown', () => {
       const katexContainer = document.querySelector('.katex')
       // Should not treat < $2, So choose the $1 one.\n\n> as HTML tag
       expect(katexContainer).toBeNull()
+    })
+  })
+
+  describe('interactive HTML artifacts', () => {
+    const HTML_MSG = 'Here:\n\n```html\n<h1>hi</h1>\n```\n'
+
+    // CodeBlock highlights via async Shiki; await the resulting <pre> so the
+    // post-render state update settles inside the test rather than leaking.
+    const flush = (container: HTMLElement) =>
+      waitFor(() => expect(container.querySelector('pre')).toBeTruthy())
+
+    afterEach(() => {
+      // Unmount before resetting so the store update doesn't re-render a live,
+      // subscribed RenderMarkdown outside act.
+      cleanup()
+      act(() => {
+        useInterfaceSettings.getState().setRenderHtmlArtifacts(false)
+      })
+    })
+
+    it('renders the Streamdown code block (not an artifact) when the setting is off', async () => {
+      const { container } = render(<RenderMarkdown content={HTML_MSG} />)
+      expect(container.querySelector('[data-testid="html-artifact"]')).toBeNull()
+      expect(
+        container.querySelector('[data-streamdown="code-block"]')
+      ).toBeTruthy()
+      await flush(container)
+    })
+
+    it('renders an HtmlArtifact when the setting is on and not streaming', async () => {
+      useInterfaceSettings.getState().setRenderHtmlArtifacts(true)
+      const { container } = render(<RenderMarkdown content={HTML_MSG} />)
+      expect(
+        container.querySelector('[data-testid="html-artifact"]')
+      ).toBeTruthy()
+      // Defaults to the Preview iframe (no async Shiki highlight to flush).
+      expect(
+        container.querySelector('[data-testid="html-artifact-iframe"]')
+      ).toBeTruthy()
+    })
+
+    it('falls through to the code block while streaming even when the setting is on', async () => {
+      useInterfaceSettings.getState().setRenderHtmlArtifacts(true)
+      const { container } = render(
+        <RenderMarkdown content={HTML_MSG} isStreaming />
+      )
+      expect(container.querySelector('[data-testid="html-artifact"]')).toBeNull()
+      await flush(container)
+    })
+
+    it('does not create an artifact for non-html code when the setting is on', async () => {
+      useInterfaceSettings.getState().setRenderHtmlArtifacts(true)
+      const { container } = render(
+        <RenderMarkdown content={'```js\nconst x = 1\n```'} />
+      )
+      expect(container.querySelector('[data-testid="html-artifact"]')).toBeNull()
+      await flush(container)
     })
   })
 })

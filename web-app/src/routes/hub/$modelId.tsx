@@ -20,6 +20,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
+import { isMtpQuant, pickMtpSibling } from '@/lib/mtp'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -87,6 +88,13 @@ function HubModelDetailContent() {
     return sources.find((model) => model.model_name === modelId) ?? repoData
   }, [sources, modelId, repoData])
 
+  // MTP companion ggufs are draft models paired with a real quant at download
+  // time, not standalone models — keep them out of the selectable variant list.
+  const displayQuants = useMemo(
+    () => modelData?.quants?.filter((q) => !isMtpQuant(q)) ?? [],
+    [modelData]
+  )
+
   // Download processes
   const downloadProcesses = useMemo(
     () =>
@@ -140,12 +148,12 @@ function HubModelDetailContent() {
 
   // Extract tags from quants (model variants)
   const tags = useMemo(() => {
-    if (!modelData?.quants) return []
+    if (!displayQuants.length) return []
     // Extract unique size indicators from quant names
     const sizePattern = /(\d+b)/i
     const uniqueSizes = new Set<string>()
 
-    modelData.quants.forEach((quant) => {
+    displayQuants.forEach((quant) => {
       const match = quant.model_id.match(sizePattern)
       if (match) {
         uniqueSizes.add(match[1].toLowerCase())
@@ -157,7 +165,7 @@ function HubModelDetailContent() {
       const numB = parseInt(b)
       return numA - numB
     })
-  }, [modelData])
+  }, [displayQuants])
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {
@@ -300,12 +308,12 @@ function HubModelDetailContent() {
             </div>
 
             {/* Variants Section */}
-            {modelData.quants && modelData.quants.length > 0 && (
+            {displayQuants.length > 0 && (
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-4">
                   <IconFileCode size={20} className="text-muted-foreground" />
                   <h2 className="text-lg font-semibold text-foreground">
-                    Variants ({modelData.quants.length})
+                    Variants ({displayQuants.length})
                   </h2>
                 </div>
 
@@ -329,7 +337,7 @@ function HubModelDetailContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {modelData.quants.map((variant) => {
+                      {displayQuants.map((variant) => {
                         const isDownloading =
                           localDownloadingModels.has(variant.model_id) ||
                           downloadProcesses.some(
@@ -430,6 +438,10 @@ function HubModelDetailContent() {
                                             'mmproj-f16'
                                         ) || modelData.mmproj_models?.[0]
                                       )?.path
+                                      const mtpPath = pickMtpSibling(
+                                        modelData.quants,
+                                        variant
+                                      )?.path
                                       setResumeParams(variant.model_id, {
                                         modelPath: variant.path,
                                         mmprojPath,
@@ -441,7 +453,9 @@ function HubModelDetailContent() {
                                           variant.model_id,
                                           variant.path,
                                           mmprojPath,
-                                          huggingfaceToken
+                                          huggingfaceToken,
+                                          undefined,
+                                          mtpPath
                                         )
                                     }}
                                     className={cn(isDownloading && 'hidden')}

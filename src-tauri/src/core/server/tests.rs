@@ -1012,7 +1012,7 @@ mod server_tests {
             "http://localhost:3000",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(h.contains_key("access-control-allow-headers"));
@@ -1034,7 +1034,7 @@ mod server_tests {
             "http://evil.example.com",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(!h.contains_key("access-control-allow-origin"));
@@ -1051,7 +1051,7 @@ mod server_tests {
             "",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));
     }
@@ -1108,5 +1108,80 @@ mod server_tests {
         assert_eq!(schema["anyOf"][1]["type"], json!("string"));
         assert_eq!(schema["oneOf"][0]["properties"], json!({}));
         assert_eq!(schema["allOf"][0]["type"], json!("string"));
+    }
+
+    const PROMPT: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+    #[test]
+    fn strip_billing_header_inline_form() {
+        let text = format!(
+            "x-anthropic-billing-header: cc_version=2.1.150.d66; cc_entrypoint=cli; cch=b378b;\n{PROMPT}"
+        );
+        assert_eq!(proxy::strip_anthropic_billing_header(&text), PROMPT);
+    }
+
+    #[test]
+    fn strip_billing_header_wrapped_form() {
+        let text = format!(
+            "x-anthropic-billing-header:\n   cc_version=2.1.150.d66; cc_entrypoint=cli; cch=934c8;\n{PROMPT}"
+        );
+        assert_eq!(proxy::strip_anthropic_billing_header(&text), PROMPT);
+    }
+
+    #[test]
+    fn strip_billing_header_leaves_regular_content() {
+        assert_eq!(proxy::strip_anthropic_billing_header(PROMPT), PROMPT);
+        // A header-like word that isn't the billing prefix is untouched.
+        let other = "x-anthropic-version: 2023-06-01\nhello";
+        assert_eq!(proxy::strip_anthropic_billing_header(other), other);
+    }
+
+    #[test]
+    fn strip_billing_header_in_body_covers_system_and_first_message() {
+        let header = "x-anthropic-billing-header: cc_version=1; cch=z;\n";
+        let mut body = json!({
+            "system": format!("{header}{PROMPT}"),
+            "messages": [
+                { "role": "user", "content": format!("{header}first") },
+                { "role": "user", "content": format!("{header}second") }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(body["system"], json!(PROMPT));
+        assert_eq!(body["messages"][0]["content"], json!("first"));
+        // Only the first message is touched.
+        assert_eq!(body["messages"][1]["content"], json!(format!("{header}second")));
+    }
+
+    #[test]
+    fn inject_sampling_defaults_fills_only_missing_keys() {
+        let mut body = json!({
+            "model": "m",
+            "messages": [],
+            "temperature": 0.2
+        });
+        let defaults = json!({
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "repetition_penalty": 1.1
+        });
+        proxy::inject_sampling_defaults(&mut body, &defaults);
+        // Caller-provided value wins.
+        assert_eq!(body["temperature"], json!(0.2));
+        // Omitted defaults are added.
+        assert_eq!(body["top_p"], json!(0.9));
+        assert_eq!(body["repetition_penalty"], json!(1.1));
+    }
+
+    #[test]
+    fn strip_billing_header_in_body_handles_block_content() {
+        let header = "x-anthropic-billing-header: cc_version=1;\n";
+        let mut body = json!({
+            "messages": [
+                { "role": "user", "content": [ { "type": "text", "text": format!("{header}{PROMPT}") } ] }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(body["messages"][0]["content"][0]["text"], json!(PROMPT));
     }
 }

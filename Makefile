@@ -130,10 +130,10 @@ endif
 	yarn build:icon
 	yarn build:mlx-server
 	make build-cli
-	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-	cargo test --manifest-path src-tauri/utils/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
@@ -220,7 +220,7 @@ ifeq ($(DETECTED_OS),Darwin)
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(DETECTED_OS),Windows)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	copy src-tauri\target\release\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
+	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
 else
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli

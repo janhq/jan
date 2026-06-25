@@ -288,6 +288,110 @@ Denies the list_attachments command without any pre-configured scope.
 <tr>
 <td>
 
+`vector-db:allow-memory-clear`
+
+</td>
+<td>
+
+Enables the memory_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-clear`
+
+</td>
+<td>
+
+Denies the memory_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-memory-delete-message`
+
+</td>
+<td>
+
+Enables the memory_delete_message command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-delete-message`
+
+</td>
+<td>
+
+Denies the memory_delete_message command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-memory-index`
+
+</td>
+<td>
+
+Enables the memory_index command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-index`
+
+</td>
+<td>
+
+Denies the memory_index command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-memory-search`
+
+</td>
+<td>
+
+Enables the memory_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-search`
+
+</td>
+<td>
+
+Denies the memory_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `vector-db:allow-search-collection`
 
 </td>
