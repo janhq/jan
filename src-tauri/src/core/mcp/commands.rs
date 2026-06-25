@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
-    helpers::{restart_active_mcp_servers, start_mcp_server},
+    helpers::{restart_active_mcp_servers, start_mcp_server, terminate_browser_mcp},
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
@@ -156,7 +156,7 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         let active_servers = state.mcp_active_servers.lock().await;
         active_servers.get(&name).and_then(|config| {
             config
-                .get("envs")
+                .get("env")
                 .and_then(|envs| envs.get("BRIDGE_PORT"))
                 .and_then(|port| port.as_str())
                 .and_then(|port_str| port_str.parse::<u16>().ok())
@@ -195,14 +195,16 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         }
     }
 
-    {
+    let child_pid = {
         let mut pids = state.mcp_server_pids.lock().await;
-        pids.remove(&name);
-    }
-    // Delete lock file if this is Jan Browser MCP and we have a port
+        pids.remove(&name)
+    };
+    // Reap the process group and confirm the port is released, then drop the lock.
     if name == "Jan Browser MCP" {
         if let Some(port) = bridge_port {
             use crate::core::mcp::lockfile::delete_lock_file;
+
+            terminate_browser_mcp(child_pid, port).await;
 
             if let Err(e) = delete_lock_file(&app, port) {
                 log::warn!("Failed to delete lock file for port {}: {}", port, e);
@@ -297,7 +299,7 @@ pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ToolWithServer>, String> {
-    collect_mcp_tools(&app, &*state, None).await
+    collect_mcp_tools(&app, &state, None).await
 }
 
 /// Retrieves tools from a specific subset of MCP servers by name.
@@ -391,7 +393,7 @@ pub async fn call_tool(
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&*state).await;
+    let timeout_duration = tool_call_timeout(&state).await;
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 

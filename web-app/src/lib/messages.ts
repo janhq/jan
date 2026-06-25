@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ThreadMessage, ContentType, MessageStatus } from '@janhq/core'
+import {
+  ThreadMessage,
+  ContentType,
+  MessageStatus,
+  ChatCompletionRole,
+} from '@janhq/core'
 import type { UIMessage } from '@ai-sdk/react'
 // Attachments are now handled upstream in newUserThreadContent
 
@@ -43,7 +48,6 @@ export function convertUIMessageToThreadMessage(
         })
       }
     } else if (part.type === 'file' && part.mediaType) {
-      // Handle file parts (images)
       const mediaType = part.mediaType as string
       if (mediaType?.startsWith('image/')) {
         content.push({
@@ -52,6 +56,27 @@ export function convertUIMessageToThreadMessage(
             url: part.url,
             detail: 'auto',
           },
+        })
+      } else if (mediaType === 'audio/wav' || mediaType === 'audio/mpeg') {
+        const format = mediaType === 'audio/wav' ? 'wav' : 'mp3'
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: ContentType.InputAudio,
+          input_audio: { data, format },
+        })
+      } else if (mediaType?.startsWith('video/')) {
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: ContentType.InputVideo,
+          input_video: { data, format: mediaType },
         })
       }
     }
@@ -239,6 +264,21 @@ export function convertThreadMessageToUIMessage(
         mediaType: 'image/jpeg',
         url: content.image_url.url,
       })
+    } else if (content.type === 'input_audio' && content.input_audio?.data) {
+      const fmt = content.input_audio.format
+      const mediaType = fmt === 'mp3' ? 'audio/mpeg' : 'audio/wav'
+      parts.push({
+        type: 'file',
+        mediaType,
+        url: `data:${mediaType};base64,${content.input_audio.data}`,
+      })
+    } else if (content.type === 'input_video' && content.input_video?.data) {
+      const mediaType = content.input_video.format || 'video/mp4'
+      parts.push({
+        type: 'file',
+        mediaType,
+        url: `data:${mediaType};base64,${content.input_video.data}`,
+      })
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
       // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
@@ -280,10 +320,17 @@ export function convertThreadMessageToUIMessage(
       }
 
       const toolName = tc.tool?.function?.name || tc.name
-      const toolInput =
-        typeof tc.tool?.function?.arguments === 'string'
-          ? JSON.parse(tc.tool.function.arguments)
-          : tc.tool?.function?.arguments || tc.args
+      let toolInput: unknown
+      if (typeof tc.tool?.function?.arguments === 'string') {
+        try {
+          toolInput = JSON.parse(tc.tool.function.arguments)
+        } catch (error) {
+          console.warn('Failed to parse tool call arguments; using raw string:', error)
+          toolInput = tc.tool.function.arguments
+        }
+      } else {
+        toolInput = tc.tool?.function?.arguments || tc.args
+      }
       const toolCallId = tc.tool?.id || tc.id
 
       // Use AI SDK v5 UIToolInvocation format
@@ -323,6 +370,52 @@ export function convertThreadMessageToUIMessage(
       createdAt: new Date(threadMessage.created_at || Date.now()),
     },
   } as UIMessage
+}
+
+export function uiMessageHasMeaningfulContent(message: {
+  parts?: any[]
+}): boolean {
+  if (!message.parts?.length) return false
+  for (const part of message.parts) {
+    if (!part || typeof part !== 'object') continue
+    if (part.type === 'text' && typeof part.text === 'string' && part.text.trim())
+      return true
+    if (
+      part.type === 'reasoning' &&
+      ((typeof part.text === 'string' && part.text.trim()) ||
+        (typeof part.reasoning === 'string' && part.reasoning.trim()))
+    )
+      return true
+    if (part.type === 'file' && part.url) return true
+    if (
+      typeof part.type === 'string' &&
+      part.type.startsWith('tool-') &&
+      (part.input !== undefined || part.args !== undefined ||
+        part.output !== undefined || part.result !== undefined)
+    )
+      return true
+  }
+  return false
+}
+
+export function threadMessageIsEmpty(message: ThreadMessage): boolean {
+  if (message.role !== ChatCompletionRole.Assistant) return false
+  const content = message.content || []
+  if (content.length === 0) return true
+  for (const c of content) {
+    if (c.type === ContentType.Text || c.type === ContentType.Reasoning) {
+      if (c.text?.value && c.text.value.trim()) return false
+    } else if (c.type === ContentType.Image && c.image_url?.url) {
+      return false
+    } else if (c.type === ContentType.InputAudio && c.input_audio?.data) {
+      return false
+    } else if (c.type === ContentType.InputVideo && c.input_video?.data) {
+      return false
+    } else if (c.type === ContentType.ToolCall) {
+      return false
+    }
+  }
+  return true
 }
 
 /**
@@ -375,7 +468,6 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
         })
       }
     } else if (part.type === 'file' && part.mediaType) {
-      // Handle file parts (images)
       const mediaType = part.mediaType as string
       if (mediaType?.startsWith('image/')) {
         content.push({
@@ -384,6 +476,27 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
             url: part.url,
             detail: 'auto',
           },
+        })
+      } else if (mediaType === 'audio/wav' || mediaType === 'audio/mpeg') {
+        const format = mediaType === 'audio/wav' ? 'wav' : 'mp3'
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: 'input_audio' as ContentType.InputAudio,
+          input_audio: { data, format },
+        })
+      } else if (mediaType?.startsWith('video/')) {
+        const url = part.url as string | undefined
+        const data =
+          typeof url === 'string' && url.startsWith('data:')
+            ? url.slice(url.indexOf(',') + 1)
+            : (url ?? '')
+        content.push({
+          type: 'input_video' as ContentType.InputVideo,
+          input_video: { data, format: mediaType },
         })
       }
     } else if (part.type.startsWith('tool-')) {

@@ -643,21 +643,43 @@ export default class mlx_extension extends AIEngine {
         }
       }
 
-      await downloadManager.downloadFiles(
-        downloadItems,
-        this.createDownloadTaskId(modelId),
-        (transferred: number, total: number) => {
-          events.emit(DownloadEvent.onFileDownloadUpdate, {
+      try {
+        await downloadManager.downloadFiles(
+          downloadItems,
+          this.createDownloadTaskId(modelId),
+          (transferred: number, total: number) => {
+            events.emit(DownloadEvent.onFileDownloadUpdate, {
+              modelId,
+              percent: transferred / total,
+              size: { transferred, total },
+              downloadType: 'Model',
+            })
+          }
+        )
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+        // Pause and cancel both surface here as a cancellation; treat as a
+        // stop (emit stopped, return) so it never becomes an error toast.
+        if (
+          errorMessage.includes('cancelled') ||
+          errorMessage.includes('aborted')
+        ) {
+          logger.info('Download stopped for model:', modelId)
+          events.emit(DownloadEvent.onFileDownloadStopped, {
             modelId,
-            percent: transferred / total,
-            size: { transferred, total },
             downloadType: 'Model',
           })
+          return
         }
-      )
-
-      // Emit download success event so DownloadManagement clears the download state
-      events.emit('onFileDownloadSuccess', { modelId, downloadType: 'Model' })
+        logger.error('Error downloading model:', modelId, error)
+        events.emit(DownloadEvent.onFileDownloadError, {
+          modelId,
+          downloadType: 'Model',
+          error: errorMessage,
+        })
+        throw error
+      }
 
       // Detect capabilities after download
       const isVision = await this.isVisionSupported(localPath)
@@ -695,6 +717,11 @@ export default class mlx_extension extends AIEngine {
         modelPath: modelConfig.model_path,
         size_bytes: modelConfig.size_bytes,
         capabilities: capabilities,
+      })
+
+      events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+        modelId,
+        downloadType: 'Model',
       })
     } else {
       // Local folder - use absolute folder path directly
@@ -777,6 +804,15 @@ export default class mlx_extension extends AIEngine {
 
     // Delete the entire model folder if it exists (for validation failures)
     await this.deleteModelFolder(modelId)
+  }
+
+  override async pauseImport(modelId: string): Promise<void> {
+    const taskId = this.createDownloadTaskId(modelId)
+    const downloadManager = window.core.extensionManager.getByName(
+      '@janhq/download-extension'
+    )
+    // Pause keeps the partial .tmp for resume; the model folder is preserved.
+    await downloadManager.pauseDownload(taskId)
   }
 
   /**

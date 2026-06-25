@@ -8,13 +8,13 @@ jobs:
   build-and-publish-plugins:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: '0'
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
 
       - name: Extract tag name without v prefix
         id: get_version
@@ -38,7 +38,7 @@ jobs:
           cat core/package.json
 
       # Setup .npmrc file to publish to npm
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'

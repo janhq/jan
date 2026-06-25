@@ -43,4 +43,10 @@ export abstract class RAGExtension extends BaseExtension {
    * Parse a document into plain text for inline ingestion or preprocessing.
    */
   abstract parseDocument(path: string, type?: string): Promise<string>
+
+  /**
+   * Embed a batch of texts using the configured embedding model.
+   * Returns one vector per input in input order.
+   */
+  abstract embed(texts: string[]): Promise<number[][]>
 }

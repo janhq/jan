@@ -34,17 +34,21 @@ on:
       - 'web-app/**'
       - '!README.md'
 
+concurrency:
+  group: linter-test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   base_branch_cov:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.base_ref }}
       - name: Use Node.js 20.x
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -70,7 +74,7 @@ jobs:
           yarn test:coverage
 
       - name: Upload code coverage for ref branch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ref-lcov.info
           path: coverage/lcov.info
@@ -80,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.base_ref }}
 
@@ -90,7 +94,7 @@ jobs:
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
 
       - name: Create Tauri resource stubs for CI
         run: |
@@ -117,7 +121,7 @@ jobs:
           cargo llvm-cov report --lcov --output-path rust-lcov.info --manifest-path src-tauri/Cargo.toml
 
       - name: Upload Rust code coverage for ref branch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ref-rust-lcov.info
           path: rust-lcov.info
@@ -127,12 +131,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -167,12 +171,12 @@ jobs:
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -206,7 +210,7 @@ jobs:
     runs-on: 'windows-latest'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
@@ -215,7 +219,7 @@ jobs:
           choco install --yes --no-progress make
 
       - name: Installing node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -256,12 +260,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           android: true
@@ -272,7 +276,7 @@ jobs:
           swap-storage: true
 
       - name: Installing node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -300,7 +304,7 @@ jobs:
           echo -e "Display ID: $DISPLAY"
           make test
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: playwright-report
@@ -314,12 +318,12 @@ jobs:
     continue-on-error: true
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
       - name: 'Cleanup cache'
@@ -349,7 +353,7 @@ jobs:
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
 
       - name: Run Rust test coverage
         run: ./scripts/rust-coverage.sh
@@ -359,14 +363,14 @@ jobs:
           cat ./coverage/lcov.info rust-lcov.info > merged-lcov.info
 
       - name: Download code coverage report from base branch
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ref-lcov.info
 
       - name: Download Rust code coverage report from base branch
         id: download-rust-cov
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ref-rust-lcov.info
           path: base-rust-cov
@@ -382,7 +386,7 @@ jobs:
 
       - name: Generate Code Coverage report
         id: code-coverage
-        uses: barecheck/code-coverage-action@v1
+        uses: barecheck/code-coverage-action@d92cdaec187f89f0886ccec37acf11e2a6a85f70 # v1.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           lcov-file: './merged-lcov.info'

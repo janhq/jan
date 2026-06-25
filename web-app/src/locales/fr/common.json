@@ -2,7 +2,6 @@
   "assistants": "Assistants",
   "hardware": "Matériel",
   "mcp-servers": "Serveurs MCP",
-  "connectors": "Serveurs MCP",
   "local_api_server": "Serveur Local API",
   "https_proxy": "Mandataire Proxy HTTPS",
   "extensions": "Extensions",
@@ -11,6 +10,8 @@
   "general": "Général",
   "settings": "Configurations",
   "modelProviders": "Fournisseurs de Modèles",
+  "localProviders": "Local",
+  "remoteProviders": "Distant",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Interface",
@@ -300,7 +301,8 @@
     "searchProjects": "Rechercher des projets...",
     "noProjectsFound": "Aucun projet trouvé",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
-    "uploadingFiles": "Téléversement des fichiers…"
+    "uploadingFiles": "Traitement des fichiers…",
+    "processButton": "Ajouter"
   },
   "errorDialog": {
     "titleFallback": "Une erreur s'est produite",
@@ -399,5 +401,12 @@
   "attachmentInjectedIndicator": "Injecté dans la discussion",
   "attachmentEmbeddedIndicator": "Intégré pour RAG",
   "viewInjectedContent": "Voir le contenu injecté",
-  "injectedContentTitle": "Contenu du fichier injecté"
+  "injectedContentTitle": "Contenu du fichier injecté",
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
+  }
 }

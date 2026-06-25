@@ -11,8 +11,9 @@ let package = Package(
         .executable(name: "mlx-server", targets: ["MLXServer"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.30.6")),
+        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.31.3")),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.7.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird", from: "2.19.0"),
     ],
@@ -25,6 +26,7 @@ let package = Package(
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXVLM", package: "mlx-swift-lm"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Hummingbird", package: "hummingbird"),
             ],

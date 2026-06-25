@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use thiserror;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

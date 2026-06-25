@@ -34,6 +34,9 @@ export interface CatalogModel {
   downloads: number
   num_quants?: number
   quants?: ModelQuant[]
+  // MTP draft companions split out of `quants` for display; resolved against
+  // the chosen quant at download time (see lib/mtp.ts).
+  mtpQuants?: ModelQuant[]
   mmproj_models?: MMProjModel[]
   num_mmproj?: number
   safetensors_files?: SafetensorsFile[]
@@ -120,16 +123,19 @@ export interface ModelsService {
     modelSize?: number,
     mmprojPath?: string,
     mmprojSha256?: string,
-    mmprojSize?: number
+    mmprojSize?: number,
+    mtpPath?: string
   ): Promise<void>
   pullModelWithMetadata(
     id: string,
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification?: boolean
+    skipVerification?: boolean,
+    mtpPath?: string
   ): Promise<void>
   abortDownload(id: string): Promise<void>
+  pauseDownload(id: string): Promise<void>
   deleteModel(id: string, provider?: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
@@ -138,6 +144,10 @@ export interface ModelsService {
     provider: ProviderObject,
     model: string,
     bypassAutoUnload?: boolean
+  ): Promise<SessionInfo | undefined>
+  reloadModel(
+    provider: ProviderObject,
+    model: string
   ): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(
@@ -149,6 +159,26 @@ export interface ModelsService {
     getProviderByName?: (providerName: string) => ModelProvider | undefined
   ): Promise<{ exists: boolean; settingsUpdated: boolean }>
   checkMmprojExists(modelId: string): Promise<boolean>
+  getMtpInfo(modelId: string): Promise<{
+    mtp_layers: number
+    mtp: boolean
+    spec_draft_n_max?: number
+    spec_draft_n_min?: number
+    spec_draft_p_min?: number
+  }>
+  updateMtpSettings(
+    modelId: string,
+    patch: {
+      mtp?: boolean
+      spec_draft_n_max?: number | null
+      spec_draft_n_min?: number | null
+      spec_draft_p_min?: number | null
+    }
+  ): Promise<void>
+  updateModelSettings(
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ): Promise<void>
   isModelSupported(
     modelPath: string,
     ctxSize?: number

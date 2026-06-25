@@ -14,9 +14,21 @@ export function GlobalEventHandler() {
   const serviceHub = useServiceHub()
   const setHardwareData = useHardware((state) => state.setHardwareData)
 
-  // Re-detect GPU when app becomes visible again (e.g. after system sleep on Linux - #6447)
+  // Probe hardware on mount so Hub fit-status renders before the user
+  // visits Settings → Hardware. Re-detect on visibility return (post-sleep, #6447).
   useEffect(() => {
     if (!isPlatformTauri()) return
+
+    const probe = async () => {
+      try {
+        const data = await serviceHub.hardware().getHardwareInfo()
+        if (data) setHardwareData(data)
+      } catch (e) {
+        console.error('Failed to fetch hardware info:', e)
+      }
+    }
+
+    void probe()
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return
@@ -41,13 +53,13 @@ export function GlobalEventHandler() {
     }) => {
       console.log('Global settingsChanged event:', event)
 
-      // Handle version_backend changes specifically
-      if (event.key === 'version_backend') {
+      if (
+        event.key === 'llamacpp_version' ||
+        event.key === 'llamacpp_backend'
+      ) {
         try {
-          // Refresh providers to get updated settings from the extension
           const updatedProviders = await serviceHub.providers().getProviders()
           setProviders(updatedProviders)
-          console.log('Providers refreshed after version_backend change')
         } catch (error) {
           console.error(
             'Failed to refresh providers after settingsChanged:',

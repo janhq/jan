@@ -27,15 +27,18 @@ export const useTheme = create<ThemeState>()(
         activeTheme: 'auto' as AppTheme,
         isDark: checkOSDarkMode(),
         setTheme: async (activeTheme: AppTheme) => {
+          // Commit first so the theme-changed listener (which gates on
+          // activeTheme) ignores any portal/WindowEvent fired by the native
+          // setTheme call below. Otherwise events arriving while activeTheme
+          // is still stale ('auto') overwrite isDark with the system value.
           if (activeTheme === 'auto') {
-            const isDarkMode = checkOSDarkMode()
+            set(() => ({ activeTheme, isDark: checkOSDarkMode() }))
             await getServiceHub().theme().setTheme(null)
-            set(() => ({ activeTheme, isDark: isDarkMode }))
           } else {
+            set(() => ({ activeTheme, isDark: activeTheme === 'dark' }))
             await getServiceHub()
               .theme()
               .setTheme(activeTheme as ThemeMode)
-            set(() => ({ activeTheme, isDark: activeTheme === 'dark' }))
           }
         },
         setIsDark: (isDark: boolean) => set(() => ({ isDark })),
@@ -53,6 +56,15 @@ export const useTheme = create<ThemeState>()(
     {
       name: localStorageKey.theme,
       storage: createJSONStorage(() => localStorage),
+      // Persisted isDark from the previous session can be stale (user changed
+      // OS theme while the app was closed). Re-derive on hydration so the
+      // initial render matches reality; the Tauri portal listener corrects
+      // Linux where matchMedia is unreliable.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        if (state.activeTheme === 'auto') state.isDark = checkOSDarkMode()
+        else state.isDark = state.activeTheme === 'dark'
+      },
     }
   )
 )

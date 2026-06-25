@@ -19,7 +19,8 @@ import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { CatalogModel, ModelQuant } from '@/services/models/types'
+import type { CatalogModel } from '@/services/models/types'
+import { isMtpQuant, pickMtpSibling } from '@/lib/mtp'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -49,8 +50,12 @@ function HubModelDetailContent() {
   const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    setResumeParams,
+  } = useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
 
@@ -58,10 +63,6 @@ function HubModelDetailContent() {
   const [readmeContent, setReadmeContent] = useState<string>('')
   const [isLoadingReadme, setIsLoadingReadme] = useState(false)
 
-  // State for model support status
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | 'GREY'>
-  >({})
 
   useEffect(() => {
     fetchSources()
@@ -86,6 +87,13 @@ function HubModelDetailContent() {
   const modelData = useMemo(() => {
     return sources.find((model) => model.model_name === modelId) ?? repoData
   }, [sources, modelId, repoData])
+
+  // MTP companion ggufs are draft models paired with a real quant at download
+  // time, not standalone models — keep them out of the selectable variant list.
+  const displayQuants = useMemo(
+    () => modelData?.quants?.filter((q) => !isMtpQuant(q)) ?? [],
+    [modelData]
+  )
 
   // Download processes
   const downloadProcesses = useMemo(
@@ -138,51 +146,14 @@ function HubModelDetailContent() {
     }
   }
 
-  // Check model support function
-  const checkModelSupport = useCallback(
-    async (variant: ModelQuant) => {
-      const modelKey = variant.model_id
-
-      // Don't check again if already checking or checked
-      if (modelSupportStatus[modelKey]) {
-        return
-      }
-
-      // Set loading state
-      setModelSupportStatus((prev) => ({
-        ...prev,
-        [modelKey]: 'LOADING',
-      }))
-
-      try {
-        // Use the HuggingFace path for the model
-        const modelPath = variant.path
-        const supported = await serviceHub
-          .models()
-          .isModelSupported(modelPath, 8192)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: supported,
-        }))
-      } catch (error) {
-        console.error('Error checking model support:', error)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: 'RED',
-        }))
-      }
-    },
-    [modelSupportStatus, serviceHub]
-  )
-
   // Extract tags from quants (model variants)
   const tags = useMemo(() => {
-    if (!modelData?.quants) return []
+    if (!displayQuants.length) return []
     // Extract unique size indicators from quant names
     const sizePattern = /(\d+b)/i
     const uniqueSizes = new Set<string>()
 
-    modelData.quants.forEach((quant) => {
+    displayQuants.forEach((quant) => {
       const match = quant.model_id.match(sizePattern)
       if (match) {
         uniqueSizes.add(match[1].toLowerCase())
@@ -194,7 +165,7 @@ function HubModelDetailContent() {
       const numB = parseInt(b)
       return numA - numB
     })
-  }, [modelData])
+  }, [displayQuants])
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {
@@ -337,12 +308,12 @@ function HubModelDetailContent() {
             </div>
 
             {/* Variants Section */}
-            {modelData.quants && modelData.quants.length > 0 && (
+            {displayQuants.length > 0 && (
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-4">
                   <IconFileCode size={20} className="text-muted-foreground" />
                   <h2 className="text-lg font-semibold text-foreground">
-                    Variants ({modelData.quants.length})
+                    Variants ({displayQuants.length})
                   </h2>
                 </div>
 
@@ -366,7 +337,7 @@ function HubModelDetailContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {modelData.quants.map((variant) => {
+                      {displayQuants.map((variant) => {
                         const isDownloading =
                           localDownloadingModels.has(variant.model_id) ||
                           downloadProcesses.some(
@@ -421,8 +392,6 @@ function HubModelDetailContent() {
                                 defaultModelQuantizations={
                                   DEFAULT_MODEL_QUANTIZATIONS
                                 }
-                                modelSupportStatus={modelSupportStatus}
-                                onCheckModelSupport={checkModelSupport}
                               />
                             </td>
                             <td className="py-3 px-2 text-right ml-auto">
@@ -462,19 +431,31 @@ function HubModelDetailContent() {
                                       addLocalDownloadingModel(
                                         variant.model_id
                                       )
+                                      const mmprojPath = (
+                                        modelData.mmproj_models?.find(
+                                          (e) =>
+                                            e.model_id.toLowerCase() ===
+                                            'mmproj-f16'
+                                        ) || modelData.mmproj_models?.[0]
+                                      )?.path
+                                      const mtpPath = pickMtpSibling(
+                                        modelData.quants,
+                                        variant
+                                      )?.path
+                                      setResumeParams(variant.model_id, {
+                                        modelPath: variant.path,
+                                        mmprojPath,
+                                        hfToken: huggingfaceToken,
+                                      })
                                       serviceHub
                                         .models()
                                         .pullModelWithMetadata(
                                           variant.model_id,
                                           variant.path,
-                                          (
-                                            modelData.mmproj_models?.find(
-                                              (e) =>
-                                                e.model_id.toLowerCase() ===
-                                                'mmproj-f16'
-                                            ) || modelData.mmproj_models?.[0]
-                                          )?.path,
-                                          huggingfaceToken
+                                          mmprojPath,
+                                          huggingfaceToken,
+                                          undefined,
+                                          mtpPath
                                         )
                                     }}
                                     className={cn(isDownloading && 'hidden')}

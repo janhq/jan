@@ -3,10 +3,8 @@ export interface SessionInfo {
   pid: number
   port: number
   model_id: string
-  model_path: string
   is_embedding: boolean
   api_key: string
-  mmproj_path?: string
 }
 
 export interface UnloadResult {
@@ -20,6 +18,13 @@ export interface DeviceInfo {
   memory: number
 }
 
+export interface ModelProps {
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  isSleeping?: boolean
+}
+
 export interface GgufMetadata {
   version: number
   tensor_count: number
@@ -28,10 +33,15 @@ export interface GgufMetadata {
 
 // llama.cpp settings
 export type LlamacppConfig = {
+  llamacpp_version: string
+  llamacpp_backend: string
+  /** Composed from llamacpp_version + llamacpp_backend as `${version}/${backend}`. Not user-settable. */
   version_backend: string
   auto_update_engine: boolean
+  check_for_updates: boolean
+  verify_backend_deps: boolean
   auto_unload: boolean
-  auto_restart_on_crash: boolean
+  models_max: string | number
   timeout: number
   llamacpp_env: string
   fit: boolean
@@ -59,7 +69,6 @@ export type LlamacppConfig = {
   no_kv_offload: boolean
   cache_type_k: string
   cache_type_v: string
-  defrag_thold: number
   rope_scaling: string
   rope_scale: number
   rope_freq_base: number
@@ -140,6 +149,7 @@ export type BackendFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  hip: boolean
 }
 
 export type SupportedFeatures = {

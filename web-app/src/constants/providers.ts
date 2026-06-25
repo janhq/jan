@@ -1,3 +1,30 @@
+export const anthropicProviderSettings = [
+  {
+    key: 'api-key',
+    title: 'API Key',
+    description:
+      "The Anthropic API uses API keys for authentication. Visit your [API Keys](https://console.anthropic.com/settings/keys) page to retrieve the API key you'll use in your requests.",
+    controller_type: 'input',
+    controller_props: {
+      placeholder: 'Insert API Key',
+      value: '',
+      type: 'password',
+      input_actions: ['unobscure', 'copy'],
+    },
+  },
+  {
+    key: 'base-url',
+    title: 'Base URL',
+    description:
+      'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/getting-started) for more information.',
+    controller_type: 'input',
+    controller_props: {
+      placeholder: 'https://api.anthropic.com/v1',
+      value: 'https://api.anthropic.com/v1',
+    },
+  },
+]
+
 export const openAIProviderSettings = [
   {
     key: 'api-key',
@@ -45,17 +72,6 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [OpenAI API documentation](https://platform.openai.com/docs/api-reference/chat/create) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.openai.com/v1',
-          value: 'https://api.openai.com/v1',
-        },
-      },
     ],
     models: [],
   },
@@ -79,17 +95,6 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'Your Azure OpenAI resource endpoint. See the [Azure OpenAI documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/latest) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
-          value: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
-        },
-      },
     ],
     models: [],
   },
@@ -98,6 +103,7 @@ export const predefinedProviders = [
     api_key: '',
     base_url: 'https://api.anthropic.com/v1',
     provider: 'anthropic',
+    api_type: 'anthropic',
     explore_models_url:
       'https://docs.anthropic.com/en/docs/about-claude/models',
     settings: [
@@ -112,17 +118,6 @@ export const predefinedProviders = [
           value: '',
           type: 'password',
           input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.anthropic.com',
-          value: 'https://api.anthropic.com',
         },
       },
     ],
@@ -156,17 +151,6 @@ export const predefinedProviders = [
           value: '',
           type: 'password',
           input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [OpenRouter API documentation](https://openrouter.ai/docs/api-reference/overview) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://openrouter.ai/api/v1',
-          value: 'https://openrouter.ai/api/v1',
         },
       },
     ],
@@ -208,17 +192,6 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [Mistral documentation](https://docs.mistral.ai/getting-started/models/models_overview/) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.mistral.ai/v1',
-          value: 'https://api.mistral.ai/v1',
-        },
-      },
     ],
     models: [],
   },
@@ -240,17 +213,6 @@ export const predefinedProviders = [
           value: '',
           type: 'password',
           input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base OpenAI-compatible endpoint to use. See the [Groq documentation](https://console.groq.com/docs) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.groq.com/openai/v1',
-          value: 'https://api.groq.com/openai/v1',
         },
       },
     ],
@@ -276,17 +238,6 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [xAI API documentation](https://docs.x.ai/overview) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.x.ai/v1',
-          value: 'https://api.x.ai/v1',
-        },
-      },
     ],
     models: [],
   },
@@ -310,18 +261,6 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base OpenAI-compatible endpoint to use. See the [Gemini documentation](https://ai.google.dev/gemini-api/docs/openai) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder:
-            'https://generativelanguage.googleapis.com/v1beta/openai',
-          value: 'https://generativelanguage.googleapis.com/v1beta/openai',
-        },
-      },
     ],
     models: [],
   },
@@ -343,17 +282,6 @@ export const predefinedProviders = [
           value: '',
           type: 'password',
           input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. Use `https://api.minimax.io/v1` for global access or `https://api.minimaxi.com/v1` for users in China. See the [MiniMax API documentation](https://platform.minimax.io/docs/api-reference/text-openai-api) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.minimax.io/v1',
-          value: 'https://api.minimax.io/v1',
         },
       },
     ],
@@ -409,17 +337,6 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [Hugging Face Inference Providers documentation](https://huggingface.co/docs/inference-providers) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://router.huggingface.co/v1',
-          value: 'https://router.huggingface.co/v1',
-        },
-      },
     ],
     models: [
       {
@@ -466,17 +383,6 @@ export const predefinedProviders = [
           value: '',
           type: 'password',
           input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The NVIDIA NIM OpenAI-compatible endpoint to use. See the [NVIDIA NIM API documentation](https://docs.api.nvidia.com/nim/reference/llm-apis) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://integrate.api.nvidia.com/v1',
-          value: 'https://integrate.api.nvidia.com/v1',
         },
       },
     ],

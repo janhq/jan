@@ -104,6 +104,7 @@ pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
     use super::*;
 
     #[cfg(windows)]

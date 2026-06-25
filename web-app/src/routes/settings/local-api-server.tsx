@@ -77,11 +77,11 @@ function LocalAPIServerContent() {
   } = useLocalApiServer()
 
   const providers = useModelProvider((state) => state.providers)
-  const localModelIds = useMemo(
+  const localModels = useMemo(
     () =>
       providers
-        .filter((p) => p.provider === 'llamacpp')
-        .flatMap((p) => p.models.map((m) => m.id)),
+        .filter((p) => p.provider === 'llamacpp' || p.provider === 'mlx')
+        .flatMap((p) => p.models.map((m) => ({ id: m.id, provider: p.provider }))),
     [providers]
   )
 
@@ -475,18 +475,20 @@ function LocalAPIServerContent() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-64 max-h-60 overflow-y-auto">
-                        {localModelIds.map((modelId) => (
+                        {localModels.map(({ id: modelId, provider }) => (
                           <DropdownMenuItem
-                            key={modelId}
+                            key={`${provider}/${modelId}`}
                             className={cn(
                               'cursor-pointer my-0.5',
                               defaultModelLocalApiServer?.model === modelId &&
+                                defaultModelLocalApiServer?.provider ===
+                                  provider &&
                                 'bg-secondary-foreground/8'
                             )}
                             onClick={() =>
                               setDefaultModelLocalApiServer({
                                 model: modelId,
-                                provider: 'llamacpp',
+                                provider,
                               })
                             }
                           >

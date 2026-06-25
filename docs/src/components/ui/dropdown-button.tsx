@@ -30,6 +30,13 @@ const downloadOptionsTemplate: DownloadOption[] = [
     href: '#',
   },
   {
+    id: 'linux-flatpak',
+    name: 'Download for Linux (Flatpak)',
+    icon: <FaLinux className="size-5" />,
+    size: '',
+    href: 'https://flathub.org/apps/ai.jan.Jan',
+  },
+  {
     id: 'linux-appimage',
     name: 'Download for Linux (AppImage)',
     icon: <FaLinux className="size-5" />,
@@ -51,6 +58,8 @@ const fileFormatMap: { [key: string]: string } = {
   'linux-appimage': 'Jan_{tag}_amd64.AppImage',
   'linux-deb': 'Jan_{tag}_amd64.deb',
 }
+
+const FLATHUB_URL = 'https://flathub.org/apps/ai.jan.Jan'
 
 interface DropdownButtonProps {
   size?: 'default' | 'sm' | 'lg' | 'xl' | 'icon' | 'xxl'
@@ -88,8 +97,8 @@ export function DropdownButton({
       const windowsOption = systems.find((opt) => opt.id === 'windows')
       if (windowsOption) setCurrentOption(windowsOption)
     } else if (userAgent.includes('Linux')) {
-      // linux user - prefer deb package
-      const linuxOption = systems.find((opt) => opt.id === 'linux-deb')
+      // linux user - prefer Flatpak (Flathub)
+      const linuxOption = systems.find((opt) => opt.id === 'linux-flatpak')
       if (linuxOption) setCurrentOption(linuxOption)
     } else if (userAgent.includes('Mac OS')) {
       // mac user - always use universal build
@@ -111,6 +120,9 @@ export function DropdownButton({
 
         const updatedOptions = downloadOptionsTemplate.map((option) => {
           const fileFormat = fileFormatMap[option.id]
+          if (!fileFormat) {
+            return { ...option, href: FLATHUB_URL, size: '' }
+          }
           const fileName = fileFormat.replace('{tag}', tag)
 
           // Find the corresponding asset to get the file size

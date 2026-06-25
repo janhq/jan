@@ -104,6 +104,26 @@
   </keywords>
 
   <releases>
+    <release version="0.8.3" date="2026-06-24">
+      <description>
+        <p>A visible assistant switcher with a Cmd/Ctrl+J cycle shortcut, a unified reasoning and tool-call trace timeline, per-model sampling defaults for the local API server, a larger 100MB attachment limit, plus a batch of chat, citation, markdown/LaTeX rendering, factory-reset, and Linux fixes</p>
+      </description>
+    </release>
+    <release version="0.8.2" date="2026-06-01">
+      <description>
+        <p>Experimental AMD ROCm/HIP backend on Linux, a branded phased-startup loader with faster first paint, pause/resume model downloads, a safer default context size, and a batch of chat, provider, and toast fixes</p>
+      </description>
+    </release>
+    <release version="0.8.1" date="2026-05-29">
+      <description>
+        <p>Anthropic-compatible custom providers, provider-aware sampling controls, media-only messages, an overhauled llama.cpp settings UX, and many stability and error-handling fixes</p>
+      </description>
+    </release>
+    <release version="0.8.0" date="2026-05-22">
+      <description>
+        <p>Multi-Token Prediction, a unified llama.cpp router process, inline MCP tool approval with citation cards, model fit labels, and audio attachments</p>
+      </description>
+    </release>
     <release version="0.7.9" date="2026-03-23">
       <description>
         <p>Smarter context management, fixed CLI on Windows, and safer data location handling</p>

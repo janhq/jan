@@ -36,23 +36,13 @@ async function getCurrentBackendTypeFromSettings(
   extension: ExtensionWithSettings
 ): Promise<string> {
   const settings = await extension.getSettings?.()
-  const currentBackendSetting = settings?.find(
-    (s) => s.key === 'version_backend'
-  )
-  const currentBackend = currentBackendSetting?.controllerProps?.value as string
+  const backendSetting = settings?.find((s) => s.key === 'llamacpp_backend')
+  const currentBackendType = (
+    backendSetting?.controllerProps?.value as string | undefined
+  )?.trim()
 
-  if (!currentBackend) {
+  if (!currentBackendType) {
     throw new Error('Current backend not found')
-  }
-
-  const parts = currentBackend.split('/')
-  const currentVersionPart = parts[0]?.trim()
-  const currentBackendType = parts[1]?.trim()
-
-  if (parts.length !== 2 || !currentVersionPart || !currentBackendType) {
-    throw new Error(
-      `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
-    )
   }
 
   return currentBackendType
@@ -65,7 +55,9 @@ interface LlamacppExtension {
     targetBackend: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }>
   installBackend?(filePath: string): Promise<void>
+  installCudaRuntime?(filePath: string): Promise<void>
   configureBackends?(): Promise<void>
+  refreshBackendOptions?(): Promise<void>
 }
 
 export interface BackendUpdateState {
@@ -441,12 +433,28 @@ export const useBackendUpdater = () => {
       const extension = extensionToUse as LlamacppExtension
       await extension.installBackend?.(filePath)
 
-      // Refresh backend list to update UI
-      await extension.configureBackends?.()
+      // Refresh backend list to update UI. Prefer the narrow
+      // refreshBackendOptions (just rewrites the dropdown options); fall
+      // back to the heavy configureBackends path for older extensions.
+      if (extension.refreshBackendOptions) {
+        await extension.refreshBackendOptions()
+      } else {
+        await extension.configureBackends?.()
+      }
     } catch (error) {
       console.error('Error installing backend:', error)
       throw error
     }
+  }, [])
+
+  const installCudaRuntime = useCallback(async (filePath: string) => {
+    const extension = ExtensionManager.getInstance().getByName(
+      'llamacpp-extension'
+    ) as LlamacppExtension | undefined
+    if (!extension || !('installCudaRuntime' in extension)) {
+      throw new Error('Extension does not support CUDA runtime installation')
+    }
+    await extension.installCudaRuntime?.(filePath)
   }, [])
 
   return {
@@ -455,5 +463,6 @@ export const useBackendUpdater = () => {
     updateBackend,
     setRemindMeLater,
     installBackend,
+    installCudaRuntime,
   }
 }

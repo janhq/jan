@@ -33,7 +33,7 @@ import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-rea
 
 llama.cpp is the engine that runs AI models locally on your computer. Think of it as the software that takes an AI model file and makes it actually work on your hardware - whether that's your CPU, graphics card, or Apple's M-series chips.
 
-Originally created by Georgi Gerganov, llama.cpp is designed to run large language models efficiently on consumer hardware without requiring specialized AI accelerators or cloud connections.
+Originally created by Georgi Gerganov and now maintained by the [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) community, llama.cpp is designed to run large language models efficiently on consumer hardware without requiring specialized AI accelerators or cloud connections.
 
 ## Why This Matters
 
@@ -78,7 +78,11 @@ These are advanced settings. You typically only need to adjust them if models ar
 | **Check Updates** | Downloads newer engine versions | When new models require updated engine |
 | **Backend Selection** | Choose the version optimized for your hardware | After installing new graphics cards or when performance is poor |
 | **Auto Update Engine** | Automatically updates llama.cpp to latest version | Enable for automatic compatibility with new models |
-| **Auto-Unload Old Models** | Unloads unused models to free memory | Enable when running multiple models or low on memory |
+| **Max Concurrent Models** | Maximum models the router keeps loaded at once | Set to 1 if you want strict single-model operation; 0 means unlimited |
+
+<Callout type="info">
+Jan v0.8.0 switched llama.cpp from launching a separate server for each model to a single **router process** (`llama-server --models-preset <router.preset.ini> --models-max <N> --no-webui`) that loads and unloads models on demand via the upstream `POST /models/load` and `POST /models/unload` endpoints. You no longer need to manually start or stop individual models — the router handles scheduling automatically. After installing a backend, Jan checks for required system libraries (CUDA, Vulkan, cuDNN) and shows you what to install if anything is missing.
+</Callout>
 
 ## Hardware Backends
 
@@ -177,34 +181,41 @@ Apple Silicon Macs automatically use the GPU through Metal - no additional setup
 
 </Tabs>
 
-## Performance Settings
+## Performance Settings (Engine-wide)
 
-These control how efficiently models run:
+These engine-wide settings are applied to every model the router loads. Per-model overrides (Context Size, GPU Layers, Batch Size, Disable KV Offload, etc.) live on the model's own settings page.
 
-| Setting | What It Does | Recommended Value | Impact |
-|---------|-------------|------------------|---------|
-| **Continuous Batching** | Process multiple requests at once | Enabled | Faster when using multiple tools or having multiple conversations |
-| **Threads** | Number of threads for generation | -1 (auto) | -1 uses all logical cores, adjust for specific needs |
-| **Threads (Batch)** | Threads for batch and prompt processing | -1 (auto) | Usually same as Threads setting |
-| **Batch Size** | Logical maximum batch size | 2048 | Higher allows more parallel processing |
+| Setting | What It Does | Default | Impact |
+|---------|-------------|---------|---------|
+| **Continuous Batching** | Process multiple requests at once | Disabled | Enable for faster multi-tool or multi-conversation workloads |
+| **Parallel Sequences** | Number of parallel sequences to decode | 1 | 1 enables `-kvu` single-request optimization; raise for concurrent serving |
+| **Threads** | Number of threads to use during generation | -1 (auto) | -1 uses all logical cores |
+| **Threads (Batch)** | Threads for batch and prompt processing | -1 (same as Threads) | Tune separately for prompt-heavy workloads |
 | **uBatch Size** | Physical maximum batch size | 512 | Controls memory usage during batching |
-| **GPU Split Mode** | How to distribute model across GPUs | Layer | Layer mode is most common for multi-GPU setups |
-| **Main GPU Index** | Primary GPU for processing | 0 | Change if you want to use a different GPU |
+| **Devices for Offload** | Comma-separated device list (e.g. `CUDA0,CUDA1`) | empty (auto) | Restrict which GPUs the model can use |
+| **GPU Split Mode** | How to distribute the model across GPUs | Layer | Layer is the common multi-GPU choice |
+| **Main GPU Index** | Primary GPU for processing | 0 | Change to target a specific GPU |
 
-## Memory Settings
+## Memory Settings (Engine-wide)
 
-These control how models use your computer's memory:
+These engine-wide settings control how the router and every loaded model use system and GPU memory.
 
-| Setting | What It Does | Recommended Value | When to Change |
-|---------|-------------|------------------|----------------|
-| **Flash Attention** | More efficient memory usage | Enabled | Leave enabled unless you have problems |
+| Setting | What It Does | Default | When to Change |
+|---------|-------------|---------|----------------|
+| **Flash Attention** | Enable Flash Attention kernel | Auto | Force On or Off only if you hit kernel issues |
 | **Disable mmap** | Don't memory-map model files | Disabled | Enable if experiencing crashes or pageouts |
 | **MLock** | Keep model in RAM, prevent swapping | Disabled | Enable if you have enough RAM and want consistent performance |
-| **Context Shift** | Handle very long conversations | Disabled | Enable for very long chats or multiple tool calls |
-| **Disable KV Offload** | Keep KV cache on CPU | Disabled | Enable if GPU memory is limited |
-| **KV Cache K Type** | Memory precision for keys | f16 | Change to q8_0 or q4_0 if running out of memory |
-| **KV Cache V Type** | Memory precision for values | f16 | Change to q8_0 or q4_0 if running out of memory |
-| **KV Cache Defragmentation** | Threshold for cache cleanup | 0.1 | Lower values defragment more often |
+| **Context Shift** | Allow trimming the start of the prompt when context fills | Disabled | Enable for very long chats or multiple tool calls |
+| **KV Cache K Type** | KV-cache precision for keys | f16 | Switch to q8_0 / q4_0 to save VRAM |
+| **KV Cache V Type** | KV-cache precision for values | f16 | Switch to q8_0 / q4_0 to save VRAM |
+
+<Callout type="info">
+**Per-model settings** (configured on each model's page, not here): Context Size (`ctx_size`), GPU Layers (`n_gpu_layers`), Batch Size (`batch_size`), **Disable KV Offload** (`no_kv_offload` — enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Chat Template, and sampling parameters. The router applies engine-wide settings as the `[*]` defaults in `router.preset.ini` and lets per-model entries override them.
+</Callout>
+
+<Callout type="warning">
+The default KV cache type was temporarily set to `q8_0` in a prior release and has been reverted to `f16`. This is **not automatically migrated** — if your models fail to load after updating to v0.8.0, set **KV Cache K Type** and **KV Cache V Type** back to `f16` manually.
+</Callout>
 
 ### KV Cache Types Explained
 - **f16**: Full 16-bit precision, uses more memory but highest quality
@@ -213,14 +224,18 @@ These control how models use your computer's memory:
 
 ## Advanced Settings
 
-These settings are for fine-tuning model behavior and advanced use cases:
+These settings are for fine-tuning model behavior and advanced use cases.
+
+<Callout type="info">
+**Custom Jinja Chat Template**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
+</Callout>
 
 ### Text Generation Control
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
 | **Max Tokens to Predict** | Maximum tokens to generate | -1 (infinite) | Set a limit to prevent runaway generation |
-| **Custom Jinja Chat Template** | Override model's chat format | Empty | Only if model needs special formatting |
+| **Custom Jinja Chat Template** (per-model) | Override model's chat format | Empty | Only if model needs special formatting |
 
 ### RoPE (Rotary Position Embedding) Settings
 
@@ -231,7 +246,16 @@ These settings are for fine-tuning model behavior and advanced use cases:
 | **RoPE Frequency Base** | Base frequency for RoPE | 0 (auto) | Usually loaded from model |
 | **RoPE Frequency Scale Factor** | Frequency scaling factor | 1 | Advanced tuning only |
 
-### Mirostat Sampling
+### Cache & Memory Tuning
+
+| Setting | What It Does | Default Value | When to Change |
+|---------|-------------|---------------|----------------|
+| **Prompt Cache RAM (MiB)** | Maximum prompt cache size in MiB (`--cache-ram`). -1 = unlimited, 0 = disabled | -1 | Set a positive value to cap RAM used for prompt caching |
+| **Cache Reuse** | Min chunk size of matching prefix tokens to reuse from cache (`--cache-reuse`) | 0 (disabled) | Set a positive value to speed up repeated prompts with a shared prefix |
+| **Full SWA Cache** | Use full-size SWA cache (`--swa-full`) | Disabled | Enable for Gemma / Mistral-family SWA models when you need full-context recall (costs memory) |
+| **Keep First N Tokens** | Tokens from the initial prompt to keep on context shift (`--keep`, -1 = keep all) | 0 | Increase to preserve more of the system prompt when context fills |
+
+### Mirostat Sampling (per-model)
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
@@ -239,7 +263,7 @@ These settings are for fine-tuning model behavior and advanced use cases:
 | **Mirostat Learning Rate** | How fast it adapts | 0.1 | Lower for more stable output |
 | **Mirostat Target Entropy** | Target perplexity | 5 | Higher for more variety |
 
-### Output Constraints
+### Output Constraints (per-model)
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
@@ -285,11 +309,11 @@ These settings are for fine-tuning model behavior and advanced use cases:
 **If models are too slow:**
 1. Check you're using GPU acceleration (CUDA/Metal/Vulkan backend)
 2. Enable Continuous Batching
-3. Increase Batch Size and uBatch Size
+3. Increase Batch Size (per-model) and uBatch Size (engine)
 4. Close other applications using memory
 
 **If running out of memory:**
-1. Enable Auto-Unload Old Models
+1. Set **Max Concurrent Models** to 1 so the router unloads the previous model before loading a new one
 2. Change KV Cache K/V Type to q8_0 or q4_0
 3. Reduce Context Size in model settings
 4. Enable MLock if you have sufficient RAM

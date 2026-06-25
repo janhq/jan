@@ -13,6 +13,7 @@ vi.mock('../backend', () => ({
   downloadBackend: vi.fn(),
   listSupportedBackends: vi.fn(),
   getBackendDir: vi.fn(),
+  getLocalInstalledBackends: vi.fn(),
 }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
@@ -25,6 +26,13 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
     ...actual,
     mapOldBackendToNew: vi.fn(),
     removeOldBackendVersions: vi.fn(),
+    readGgufMetadata: vi.fn().mockResolvedValue({
+      version: 3,
+      tensor_count: 1,
+      metadata: { 'general.architecture': 'llama' },
+    }),
+    loadLlamaModel: vi.fn(),
+    unloadLlamaModel: vi.fn(),
   }
 })
 describe('llamacpp_extension', () => {
@@ -43,7 +51,9 @@ describe('llamacpp_extension', () => {
     it('should initialize with correct default values', () => {
       expect(extension.provider).toBe('llamacpp')
       expect(extension.providerId).toBe('llamacpp')
-      expect(extension.autoUnload).toBe(true)
+      // autoUnload was removed in Phase 2 — replaced by `models_max` setting
+      // applied at router start time.
+      expect(extension.timeout).toBe(600)
     })
   })
 
@@ -116,12 +126,15 @@ describe('llamacpp_extension', () => {
       // instead of the full path, causing the model ID to be empty
       expect(result).toEqual([
         {
-          id: '', // This should be 'test-model' but the original code has a bug
+          id: '',
           name: 'Test Model',
           quant_type: undefined,
           providerId: 'llamacpp',
           port: 0,
-          sizeBytes: 1000000
+          sizeBytes: 1000000,
+          embedding: false,
+          imported: false,
+          capabilities: undefined,
         }
       ])
     })
@@ -147,6 +160,12 @@ describe('llamacpp_extension', () => {
     it('should import model from URL', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
+      const apiModule = await import('@janhq/tauri-plugin-llamacpp-api')
+      vi.mocked(apiModule.readGgufMetadata).mockResolvedValue({
+        version: 3,
+        tensor_count: 1,
+        metadata: { 'general.architecture': 'llama' },
+      } as any)
       
       const mockDownloadManager = {
         downloadFiles: vi.fn().mockResolvedValue(undefined)
@@ -173,12 +192,17 @@ describe('llamacpp_extension', () => {
 
   describe('load', () => {
     it('should throw error if model is already loaded', async () => {
-      // Mock that model is already loaded
-      extension['activeSessions'].set(123, {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key'
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|find_session_by_model') {
+          return {
+            model_id: 'test-model',
+            pid: 123,
+            port: 3000,
+            api_key: 'test-key',
+          }
+        }
+        return undefined
       })
 
       await expect(extension.load('test-model')).rejects.toThrow('Model already loaded!!')
@@ -187,21 +211,13 @@ describe('llamacpp_extension', () => {
     it('should load model successfully', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
-      
-      // Mock system info for getBackendExePath
-      const getSystemInfo = vi.fn().mockResolvedValue({
-        os_type: 'linux'
-      })
-      
-      // Mock backend functions to avoid download
+
       const backendModule = await import('../backend')
       vi.mocked(backendModule.isBackendInstalled).mockResolvedValue(true)
       vi.mocked(backendModule.getBackendExePath).mockResolvedValue('/path/to/backend/executable')
-      
-      // Mock fs for backend check
+
       vi.mocked(fs.existsSync).mockResolvedValue(true)
-      
-      // Mock configuration
+
       extension['config'] = {
         version_backend: 'v1.0.0/win-avx2-x64',
         ctx_size: 2048,
@@ -237,80 +253,92 @@ describe('llamacpp_extension', () => {
       
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
-      
-      // Mock model config
-      vi.mocked(invoke)
-        .mockResolvedValueOnce({ // read_yaml
-          model_path: 'test-model/model.gguf',
-          name: 'Test Model',
-          size_bytes: 1000000
-        })
-        .mockResolvedValueOnce('test-api-key') // generate_api_key
-        .mockResolvedValueOnce({ // load_llama_model
-          model_id: 'test-model',
-          pid: 123,
-          port: 3000,
-          api_key: 'test-api-key'
-        })
 
-      // Mock successful health check
+      const expectedSession = {
+        model_id: 'test-model',
+        pid: 123,
+        port: 3000,
+        api_key: 'test-api-key',
+      }
+
+      const apiModule = await import('@janhq/tauri-plugin-llamacpp-api')
+      vi.mocked(apiModule.loadLlamaModel).mockResolvedValue(expectedSession as any)
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        switch (cmd) {
+          case 'plugin:llamacpp|find_session_by_model':
+            return null
+          case 'plugin:llamacpp|get_router_info':
+            return { port: 4000, api_key: 'router-key', pid: 999 }
+          case 'plugin:llamacpp|load_llama_model':
+            return expectedSession
+          default:
+            return undefined
+        }
+      })
+
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: vi.fn().mockResolvedValue({ status: 'ok' })
+        json: vi.fn().mockResolvedValue({ status: 'ok' }),
       })
 
       const result = await extension.load('test-model')
-      
-      expect(result).toEqual({
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-api-key'
-      })
-      
-      expect(extension['activeSessions'].get(123)).toEqual({
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-api-key'
-      })
+
+      expect(result).toEqual(expectedSession)
     })
   })
 
   describe('unload', () => {
     it('should throw error if no active session found', async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|find_session_by_model') {
+          throw new Error('No active session found')
+        }
+        return undefined
+      })
       await expect(extension.unload('nonexistent-model')).rejects.toThrow('No active session found')
     })
 
     it('should unload model successfully', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
-      
-      // Set up active session
-      extension['activeSessions'].set(123, {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key'
-      })
+      const apiModule = await import('@janhq/tauri-plugin-llamacpp-api')
 
-      vi.mocked(invoke).mockResolvedValue({
-        success: true,
-        error: null
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|find_session_by_model') {
+          return {
+            model_id: 'test-model',
+            pid: 123,
+            port: 3000,
+            api_key: 'test-key',
+          }
+        }
+        return undefined
       })
+      vi.mocked(apiModule.unloadLlamaModel).mockResolvedValue({
+        success: true,
+        error: null,
+      } as any)
 
       const result = await extension.unload('test-model')
-      
+
       expect(result).toEqual({
         success: true,
-        error: null
+        error: null,
       })
-      
-      expect(extension['activeSessions'].has(123)).toBe(false)
     })
   })
 
   describe('chat', () => {
     it('should throw error if no active session found', async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|ensure_session_ready') {
+          throw new Error('No active session found')
+        }
+        return undefined
+      })
+
       const request = {
         model: 'nonexistent-model',
         messages: [{ role: 'user', content: 'Hello' }]
@@ -321,16 +349,18 @@ describe('llamacpp_extension', () => {
 
     it('should handle non-streaming chat request', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
-      
-      // Set up active session
-      extension['activeSessions'].set(123, {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key'
-      })
 
-      vi.mocked(invoke).mockResolvedValue(true) // is_process_running
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|ensure_session_ready') {
+          return {
+            model_id: 'test-model',
+            pid: 123,
+            port: 3000,
+            api_key: 'test-key',
+          }
+        }
+        return true
+      })
 
       const mockResponse = {
         id: 'test-id',
@@ -396,96 +426,7 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('migrateKvCacheDefaults', () => {
-    beforeEach(() => {
-      vi.mocked(localStorage.getItem).mockReturnValue(null)
-    })
-
-    it('should skip migration if already migrated', async () => {
-      vi.mocked(localStorage.getItem).mockReturnValue('1')
-      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'f16' } as any
-      extension['getSettings'] = vi.fn()
-
-      await extension['migrateKvCacheDefaults']()
-
-      expect(extension['getSettings']).not.toHaveBeenCalled()
-    })
-
-    it('should set migration key without calling updateSettings when no f16 values', async () => {
-      extension['config'] = { cache_type_k: 'q8_0', cache_type_v: 'q8_0' } as any
-      extension['getSettings'] = vi.fn()
-      extension['updateSettings'] = vi.fn()
-
-      await extension['migrateKvCacheDefaults']()
-
-      expect(extension['getSettings']).not.toHaveBeenCalled()
-      expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_kv_cache_migrated_v1', '1')
-    })
-
-    it('should migrate cache_type_k from f16 to q8_0', async () => {
-      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'q8_0' } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
-        { key: 'cache_type_v', controllerProps: { value: 'q8_0' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateKvCacheDefaults']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'cache_type_k').controllerProps.value).toBe('q8_0')
-      expect(updatedSettings.find((s: any) => s.key === 'cache_type_v').controllerProps.value).toBe('q8_0')
-      expect(extension['config'].cache_type_k).toBe('q8_0')
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_kv_cache_migrated_v1', '1')
-    })
-
-    it('should migrate cache_type_v from f16 to q8_0', async () => {
-      extension['config'] = { cache_type_k: 'q8_0', cache_type_v: 'f16' } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'cache_type_k', controllerProps: { value: 'q8_0' } },
-        { key: 'cache_type_v', controllerProps: { value: 'f16' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateKvCacheDefaults']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'cache_type_v').controllerProps.value).toBe('q8_0')
-      expect(extension['config'].cache_type_v).toBe('q8_0')
-    })
-
-    it('should migrate both cache types when both are f16', async () => {
-      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'f16' } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
-        { key: 'cache_type_v', controllerProps: { value: 'f16' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateKvCacheDefaults']()
-
-      expect(extension['config'].cache_type_k).toBe('q8_0')
-      expect(extension['config'].cache_type_v).toBe('q8_0')
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_kv_cache_migrated_v1', '1')
-    })
-
-    it('should not overwrite non-f16 values in settings during migration', async () => {
-      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'q4_0' } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
-        { key: 'cache_type_v', controllerProps: { value: 'q4_0' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateKvCacheDefaults']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'cache_type_v').controllerProps.value).toBe('q4_0')
-    })
-  })
-
-  describe('migrateFitDefault', () => {
+  describe('migrateFitOff', () => {
     beforeEach(() => {
       vi.mocked(localStorage.getItem).mockReturnValue(null)
     })
@@ -495,7 +436,7 @@ describe('llamacpp_extension', () => {
       extension['config'] = { fit: true } as any
       extension['getSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
     })
@@ -505,11 +446,11 @@ describe('llamacpp_extension', () => {
       extension['getSettings'] = vi.fn()
       extension['updateSettings'] = vi.fn()
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
       expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
 
     it('should disable fit when it is true', async () => {
@@ -520,13 +461,13 @@ describe('llamacpp_extension', () => {
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
       expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
       expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
       expect(extension['config'].fit).toBe(false)
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
 
     it('should not modify other settings during fit migration', async () => {
@@ -538,7 +479,7 @@ describe('llamacpp_extension', () => {
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitDefault']()
+      await extension['migrateFitOff']()
 
       const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
       expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
@@ -548,22 +489,16 @@ describe('llamacpp_extension', () => {
 
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
-      extension['activeSessions'].set(123, {
-        model_id: 'model1',
-        pid: 123,
-        port: 3000,
-        api_key: 'key1'
-      })
-      
-      extension['activeSessions'].set(456, {
-        model_id: 'model2',
-        pid: 456,
-        port: 3001,
-        api_key: 'key2'
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|get_loaded_models') {
+          return ['model1', 'model2']
+        }
+        return undefined
       })
 
       const result = await extension.getLoadedModels()
-      
+
       expect(result).toEqual(['model1', 'model2'])
     })
   })
@@ -682,7 +617,7 @@ describe('llamacpp_extension', () => {
         extension['isUpdatingBackend'] = true
 
         // Call onSettingUpdate while updateBackend is "running"
-        extension.onSettingUpdate('version_backend', 'v2.0.0/linux-avx2-x64')
+        extension.onSettingUpdate('llamacpp_backend', 'linux-avx2-x64')
 
         // ensureBackendReady should NOT have been called from onSettingUpdate
         expect(extension['ensureBackendReady']).not.toHaveBeenCalled()
@@ -736,6 +671,124 @@ describe('llamacpp_extension', () => {
           'linux-avx2-x64',
           'v2.0.0'
         )
+      })
+    })
+  })
+
+  describe('installCudaRuntime', () => {
+    it('should reject a path that does not exist', async () => {
+      const { fs } = await import('@janhq/core')
+      vi.mocked(fs.existsSync).mockResolvedValue(false)
+
+      await expect(
+        extension.installCudaRuntime('/tmp/cudart-llama-bin-win-cuda.zip')
+      ).rejects.toThrow('Invalid path or file')
+    })
+
+    it('should reject a file with an unsupported extension', async () => {
+      const { fs } = await import('@janhq/core')
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
+
+      await expect(
+        extension.installCudaRuntime('/tmp/cudart-llama-bin-win-cuda.rar')
+      ).rejects.toThrow('Invalid path or file')
+    })
+
+    it('should reject an archive that is not a CUDA runtime archive', async () => {
+      const { fs } = await import('@janhq/core')
+      const { basename } = await import('@tauri-apps/api/path')
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
+      vi.mocked(basename).mockResolvedValue('llama-b9193-bin-win-cuda.zip')
+
+      await expect(
+        extension.installCudaRuntime('/tmp/llama-b9193-bin-win-cuda.zip')
+      ).rejects.toThrow('Not a CUDA runtime archive')
+    })
+
+    it('should throw when no matching backend is installed', async () => {
+      const { fs } = await import('@janhq/core')
+      const { basename } = await import('@tauri-apps/api/path')
+      const backendModule = await import('../backend')
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
+      vi.mocked(basename).mockResolvedValue('cudart-llama-bin-win-cuda-12.4.zip')
+      vi.mocked(backendModule.getLocalInstalledBackends).mockResolvedValue([
+        { backend: 'win-cpu-x64', version: 'v1.0.0' },
+      ])
+
+      await expect(
+        extension.installCudaRuntime('/tmp/cudart-llama-bin-win-cuda-12.4.zip')
+      ).rejects.toThrow('No installed "win-cuda-12.4" backend found')
+    })
+
+    it('should throw when matching backends lack a build/bin directory', async () => {
+      const { fs, joinPath } = await import('@janhq/core')
+      const { basename } = await import('@tauri-apps/api/path')
+      const { invoke } = await import('@tauri-apps/api/core')
+      const backendModule = await import('../backend')
+
+      vi.mocked(basename).mockResolvedValue('cudart-llama-bin-win-cuda-12.4.zip')
+      vi.mocked(backendModule.getLocalInstalledBackends).mockResolvedValue([
+        { backend: 'win-cuda-12.4', version: 'v1.0.0' },
+      ])
+      vi.mocked(backendModule.getBackendDir).mockResolvedValue(
+        '/path/to/jan/llamacpp/backends/v1.0.0/win-cuda-12.4'
+      )
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      // archive path exists, build/bin dir does not
+      vi.mocked(fs.existsSync)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValue(false)
+
+      await expect(
+        extension.installCudaRuntime('/tmp/cudart-llama-bin-win-cuda-12.4.zip')
+      ).rejects.toThrow('none had a build/bin directory')
+      expect(invoke).not.toHaveBeenCalledWith('decompress', expect.anything())
+    })
+
+    it('should decompress into every matching backend build/bin', async () => {
+      const { fs, joinPath } = await import('@janhq/core')
+      const { basename } = await import('@tauri-apps/api/path')
+      const { invoke } = await import('@tauri-apps/api/core')
+      const backendModule = await import('../backend')
+
+      vi.mocked(basename).mockResolvedValue('cudart-llama-bin-win-cuda-12.4.zip')
+      vi.mocked(backendModule.getLocalInstalledBackends).mockResolvedValue([
+        { backend: 'win-cuda-12.4', version: 'v1.0.0' },
+        { backend: 'win-cuda-12.4', version: 'v2.0.0' },
+        { backend: 'win-cpu-x64', version: 'v1.0.0' },
+      ])
+      vi.mocked(backendModule.getBackendDir).mockImplementation(
+        (backend, version) =>
+          Promise.resolve(
+            `/path/to/jan/llamacpp/backends/${version}/${backend}`
+          )
+      )
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
+      vi.mocked(invoke).mockResolvedValue(undefined)
+
+      await extension.installCudaRuntime(
+        '/tmp/cudart-llama-bin-win-cuda-12.4.zip'
+      )
+
+      // Only the two win-cuda-12.4 backends, not the cpu one.
+      const decompressCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([cmd]) => cmd === 'decompress')
+      expect(decompressCalls).toHaveLength(2)
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: '/tmp/cudart-llama-bin-win-cuda-12.4.zip',
+        outputDir:
+          '/path/to/jan/llamacpp/backends/v1.0.0/win-cuda-12.4/build/bin',
+      })
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: '/tmp/cudart-llama-bin-win-cuda-12.4.zip',
+        outputDir:
+          '/path/to/jan/llamacpp/backends/v2.0.0/win-cuda-12.4/build/bin',
       })
     })
   })

@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod server_tests {
     use crate::core::server::proxy;
     use serde_json::json;
 
@@ -387,6 +387,73 @@ mod tests {
     }
 
     #[test]
+    fn expands_bare_string_shorthand_in_properties() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "name": "string",
+                "count": "integer",
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["name"], json!({"type": "string"}));
+        assert_eq!(schema["properties"]["count"], json!({"type": "integer"}));
+    }
+
+    #[test]
+    fn expands_bare_string_shorthand_in_array_items() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "tags": { "type": "array", "items": "string" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["tags"]["items"],
+            json!({"type": "string"})
+        );
+    }
+
+    #[test]
+    fn expands_bare_string_shorthand_in_any_of() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "value": { "anyOf": ["string", "number"] }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["value"]["anyOf"],
+            json!([{"type": "string"}, {"type": "number"}])
+        );
+    }
+
+    #[test]
+    fn does_not_coerce_enum_literal_strings() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string", "enum": ["string", "number", "fast"] }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["mode"]["enum"],
+            json!(["string", "number", "fast"])
+        );
+    }
+
+    #[test]
     fn leaves_existing_valid_object_schema_unchanged() {
         let mut schema = json!({
             "type": "object",
@@ -433,6 +500,74 @@ mod tests {
         assert_eq!(schema["properties"]["title"]["type"], json!("string"));
         assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
+    }
+
+    #[test]
+    fn strips_broken_string_formats_for_llamacpp_grammar() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "start": { "type": "string", "format": "date-time" },
+                "stop":  { "type": "string", "format": "date" },
+                "at":    { "type": "string", "format": "time" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert!(schema["properties"]["start"].get("format").is_none());
+        assert!(schema["properties"]["stop"].get("format").is_none());
+        assert!(schema["properties"]["at"].get("format").is_none());
+        assert_eq!(schema["properties"]["start"]["type"], json!("string"));
+    }
+
+    #[test]
+    fn preserves_harmless_string_formats() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "id":  { "type": "string", "format": "uuid" },
+                "url": { "type": "string", "format": "uri" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["id"]["format"], json!("uuid"));
+        assert_eq!(schema["properties"]["url"]["format"], json!("uri"));
+    }
+
+    #[test]
+    fn strips_pcre_shorthand_patterns() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "when":  { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+                "alpha": { "type": "string", "pattern": "^[A-Z]+$" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert!(schema["properties"]["when"].get("pattern").is_none());
+        assert_eq!(schema["properties"]["alpha"]["pattern"], json!("^[A-Z]+$"));
+    }
+
+    #[test]
+    fn strips_broken_format_when_type_missing_or_non_string() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "until":    { "format": "date-time", "description": "iso end" },
+                "nullable": { "type": ["string", "null"], "format": "date" }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert!(schema["properties"]["until"].get("format").is_none());
+        assert_eq!(schema["properties"]["until"]["type"], json!("string"));
+        assert!(schema["properties"]["nullable"].get("format").is_none());
     }
 
     // ── Pure helper coverage ───────────────────────────────────────────────
@@ -877,7 +1012,7 @@ mod tests {
             "http://localhost:3000",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(h.contains_key("access-control-allow-headers"));
@@ -899,7 +1034,7 @@ mod tests {
             "http://evil.example.com",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(h.contains_key("access-control-allow-methods"));
         assert!(!h.contains_key("access-control-allow-origin"));
@@ -916,7 +1051,7 @@ mod tests {
             "",
             &trusted,
         );
-        let resp = builder.body(hyper::Body::empty()).unwrap();
+        let resp = builder.body(http_body_util::Empty::<hyper::body::Bytes>::new()).unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));
     }
@@ -925,7 +1060,7 @@ mod tests {
     fn get_destination_path_trailing_slash() {
         let result = proxy::get_destination_path("/v1/", "/v1");
         // remove_prefix should leave "/" or "" — either way no panic, deterministic.
-        assert!(result == "/" || result == "");
+        assert!(result == "/" || result.is_empty());
     }
 
     #[test]
@@ -973,5 +1108,80 @@ mod tests {
         assert_eq!(schema["anyOf"][1]["type"], json!("string"));
         assert_eq!(schema["oneOf"][0]["properties"], json!({}));
         assert_eq!(schema["allOf"][0]["type"], json!("string"));
+    }
+
+    const PROMPT: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+    #[test]
+    fn strip_billing_header_inline_form() {
+        let text = format!(
+            "x-anthropic-billing-header: cc_version=2.1.150.d66; cc_entrypoint=cli; cch=b378b;\n{PROMPT}"
+        );
+        assert_eq!(proxy::strip_anthropic_billing_header(&text), PROMPT);
+    }
+
+    #[test]
+    fn strip_billing_header_wrapped_form() {
+        let text = format!(
+            "x-anthropic-billing-header:\n   cc_version=2.1.150.d66; cc_entrypoint=cli; cch=934c8;\n{PROMPT}"
+        );
+        assert_eq!(proxy::strip_anthropic_billing_header(&text), PROMPT);
+    }
+
+    #[test]
+    fn strip_billing_header_leaves_regular_content() {
+        assert_eq!(proxy::strip_anthropic_billing_header(PROMPT), PROMPT);
+        // A header-like word that isn't the billing prefix is untouched.
+        let other = "x-anthropic-version: 2023-06-01\nhello";
+        assert_eq!(proxy::strip_anthropic_billing_header(other), other);
+    }
+
+    #[test]
+    fn strip_billing_header_in_body_covers_system_and_first_message() {
+        let header = "x-anthropic-billing-header: cc_version=1; cch=z;\n";
+        let mut body = json!({
+            "system": format!("{header}{PROMPT}"),
+            "messages": [
+                { "role": "user", "content": format!("{header}first") },
+                { "role": "user", "content": format!("{header}second") }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(body["system"], json!(PROMPT));
+        assert_eq!(body["messages"][0]["content"], json!("first"));
+        // Only the first message is touched.
+        assert_eq!(body["messages"][1]["content"], json!(format!("{header}second")));
+    }
+
+    #[test]
+    fn inject_sampling_defaults_fills_only_missing_keys() {
+        let mut body = json!({
+            "model": "m",
+            "messages": [],
+            "temperature": 0.2
+        });
+        let defaults = json!({
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "repetition_penalty": 1.1
+        });
+        proxy::inject_sampling_defaults(&mut body, &defaults);
+        // Caller-provided value wins.
+        assert_eq!(body["temperature"], json!(0.2));
+        // Omitted defaults are added.
+        assert_eq!(body["top_p"], json!(0.9));
+        assert_eq!(body["repetition_penalty"], json!(1.1));
+    }
+
+    #[test]
+    fn strip_billing_header_in_body_handles_block_content() {
+        let header = "x-anthropic-billing-header: cc_version=1;\n";
+        let mut body = json!({
+            "messages": [
+                { "role": "user", "content": [ { "type": "text", "text": format!("{header}{PROMPT}") } ] }
+            ]
+        });
+        proxy::strip_billing_header_in_body(&mut body);
+        assert_eq!(body["messages"][0]["content"][0]["text"], json!(PROMPT));
     }
 }

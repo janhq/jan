@@ -58,6 +58,8 @@ vi.mock('@/containers/dialogs', () => ({
 vi.mock('@/lib/utils', () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
   getProviderTitle: (provider: string) => provider,
+  isLocalProvider: (provider: string) =>
+    provider === 'llama.cpp' || provider === 'mlx',
 }))
 
 vi.mock('@/containers/ProvidersAvatar', () => ({
@@ -110,7 +112,7 @@ describe('SettingsMenu', () => {
 
   it('renders integrations links', () => {
     render(<SettingsMenu />)
-    expect(screen.getByText('common:connectors')).toBeInTheDocument()
+    expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()
     expect(screen.getByText('common:claude_code')).toBeInTheDocument()
   })
 

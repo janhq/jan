@@ -1,5 +1,7 @@
-import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useIsThreadActive } from '@/hooks/useAppState'
+import { useChatSessions } from '@/stores/chat-session-store'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -23,7 +25,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { memo, useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useParams } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -73,7 +75,10 @@ const ThreadItem = memo(
           .messages()
           .fetchMessages(thread.id)
           .then((fetchedMessages) => {
-            if (fetchedMessages) {
+            // Only overwrite if the disk actually has content. A brand-new
+            // thread starts empty on disk, and racing this against the
+            // optimistic addMessage write was wiping the user message.
+            if (fetchedMessages && fetchedMessages.length > 0) {
               setMessages(thread.id, fetchedMessages)
               setLocalMessages(fetchedMessages)
               messagesLengthRef.current = fetchedMessages.length
@@ -134,11 +139,28 @@ const ThreadItem = memo(
       }
     }
 
+    const isAppStateActive = useIsThreadActive(thread.id)
+    const isSessionStreaming = useChatSessions(
+      (state) => state.sessions[thread.id]?.isStreaming ?? false
+    )
+    const isActive = isAppStateActive || isSessionStreaming
+
+    const currentThreadId = useParams({
+      strict: false,
+      select: (params) => params.threadId,
+    })
+    const isSelected = currentThreadId === thread.id
+
     return (
       <SidebarMenuItem>
         {currentProjectId ?
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block max-w-full overflow-hidden">
-              <span className="block truncate" title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
+          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className={cn("bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block max-w-full overflow-hidden", isSelected && "border-primary")}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {isActive && (
+                  <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+                )}
+                <span className={cn("block truncate", isSelected && "font-medium text-primary")} title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
+              </div>
               {currentProjectId && lastUserMessageText && (
                 <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
                   {lastUserMessageText}
@@ -146,9 +168,12 @@ const ThreadItem = memo(
               )}
           </Link>
           :
-          <SidebarMenuButton asChild>
+          <SidebarMenuButton asChild isActive={isSelected}>
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
-              <span className="block truncate" title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
+              {isActive && (
+                <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+              )}
+              <span className={cn("block truncate", isSelected && "font-medium")} title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
             </Link>
           </SidebarMenuButton>
         }

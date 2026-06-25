@@ -1,6 +1,6 @@
 {
   "name": "@janhq/tauri-plugin-hardware-api",
-  "version": "0.6.6",
+  "version": "0.8.3",
   "private": true,
   "description": "Hardware monitoring plugin API for Tauri",
   "type": "module",

@@ -1,9 +1,14 @@
 /**
- * Unified attachment type for both images and documents
+ * Unified attachment type for images, documents, and audio
  */
 export type Attachment = {
   name: string
-  type: 'image' | 'document'
+  type: 'image' | 'document' | 'audio' | 'video'
+
+  /** For audio attachments: 'wav' or 'mp3' per llama.cpp mtmd support. */
+  audioFormat?: 'wav' | 'mp3'
+  /** Audio/video duration in seconds (decoded client-side for the chip preview). */
+  durationSec?: number
 
   // Common fields
   size?: number
@@ -42,6 +47,41 @@ export function createImageAttachment(data: {
   return {
     ...data,
     type: 'image',
+  }
+}
+
+/**
+ * Helper to create audio attachment
+ */
+export function createAudioAttachment(data: {
+  name: string
+  base64: string
+  dataUrl: string
+  mimeType: string
+  audioFormat: 'wav' | 'mp3'
+  size: number
+  durationSec?: number
+}): Attachment {
+  return {
+    ...data,
+    type: 'audio',
+  }
+}
+
+/**
+ * Helper to create video attachment
+ */
+export function createVideoAttachment(data: {
+  name: string
+  base64: string
+  dataUrl: string
+  mimeType: string
+  size: number
+  durationSec?: number
+}): Attachment {
+  return {
+    ...data,
+    type: 'video',
   }
 }
 

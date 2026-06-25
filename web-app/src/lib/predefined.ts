@@ -1,23 +1,13 @@
 export const modelSettings = {
-  auto_increase_ctx_len: {
-    key: 'auto_increase_ctx_len',
-    title: 'Auto Increase Context Size',
-    description:
-      'Automatically increase context size when the model runs out of context mid-conversation.',
-    controller_type: 'checkbox',
-    controller_props: {
-      value: true,
-    },
-  },
   ctx_len: {
     key: 'ctx_len',
     title: 'Context Size',
     description:
-      'Size of the prompt context. Leave empty to auto-fit when --fit is on, or fall back to 4096 when off.',
+      'Size of the prompt context. Leave empty to auto-fit when --fit is on.',
     controller_type: 'input',
     controller_props: {
-      value: '',
-      placeholder: 'auto',
+      value: 8192,
+      placeholder: '8192',
       type: 'number',
     },
   },

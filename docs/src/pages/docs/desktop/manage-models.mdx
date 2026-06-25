@@ -46,12 +46,12 @@ The easiest way to get started is using Jan's built-in model hub (which is conne
 4. Click **Download** on your chosen model
 
 <Callout type="info">
-Jan will indicate if a model might be **Slow on your device** or **Not enough RAM** based on your system specifications.
+Each model shows a colored fit pill — **Fits**, **May be slow**, or **Won't fit** — based on your hardware. Quantization tiers are grouped as **Small**, **Balanced**, or **Large**, with a **Recommended** tag on the default download. No data is downloaded to determine fit status.
 </Callout>
 
 ![Hub](./_assets/hub.png)
 
-Once you click **Download**, you can track the progress from the download indicator in the top bar. The model name and download percentage are shown in real time — you can cancel at any time by clicking the **×** button.
+Once you click **Download**, you can track the progress from the download indicator in the top bar. The model name and download percentage are shown in real time — you can cancel at any time by clicking the **×** button. If a download fails, it is cleared from the queue and a toast is shown. To retry, click **Download** again from the Hub or provider list.
 
 ![Hub Downloading](./_assets/hub-downloading.png)
 
@@ -85,6 +85,10 @@ You can also open any model directly in Jan from the Hugging Face model page:
 <div className="img-rounded-shadow">
 ![Use this model in Jan from HuggingFace](./_assets/hf-use-this-model.png)
 </div>
+
+#### Bulk Delete Downloaded Models
+
+To free disk space quickly, open **Settings > Llama.cpp** (or **MLX**) and click **Delete All** in the Models section. Jan shows the total space to be freed and removes every managed download at once. Models you imported yourself are left untouched.
 
 #### 4. Import Local Files
 

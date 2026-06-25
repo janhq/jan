@@ -20,7 +20,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.ref }}
 
@@ -31,12 +31,12 @@ jobs:
           cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
 
       - name: Install ctoml
         run: |
@@ -112,7 +112,7 @@ jobs:
           APP_PATH: '.'
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |

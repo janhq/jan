@@ -1,4 +1,4 @@
-import { generateObject, type LanguageModel, type LanguageModelUsage } from 'ai'
+import { generateText, Output, type LanguageModel, type LanguageModelUsage } from 'ai'
 import { z } from 'zod'
 import type { ServerSummary } from '@/services/mcp/types'
 import { MAX_ROUTED_SERVERS } from './intent-classifier'
@@ -17,7 +17,7 @@ export type LlmRouterResult = {
   errorKind: LlmRouterErrorKind
   /** Model returned server names that were all absent from the allow-list. */
   emptyValidatedSelection: boolean
-  /** Present when generateObject completed (including empty selection). */
+  /** Present when the router call completed (including empty selection). */
   usage?: LanguageModelUsage
 }
 
@@ -61,17 +61,19 @@ export async function selectServersWithLlm(
   }, MCP_ROUTER_TIMEOUT_MS)
 
   try {
-    const gen = await generateObject({
+    const gen = await generateText({
       model,
-      schema: routerSchema,
-      schemaName: 'MCPRouterSelection',
+      output: Output.object({
+        schema: routerSchema,
+        name: 'MCPRouterSelection',
+      }),
       system,
       prompt: `Servers:\n${lines.join('\n')}\n\nUser message:\n${userMessage}`,
       temperature: 0,
       maxOutputTokens: 256,
       abortSignal: routerAbort.signal,
     })
-    const raw = gen.object.selectedServers
+    const raw = gen.output.selectedServers
     const names = [...new Set(raw.filter((n) => allowed.has(n)))].slice(
       0,
       MAX_ROUTED_SERVERS

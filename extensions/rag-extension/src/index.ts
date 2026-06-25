@@ -21,14 +21,18 @@ export default class RagExtension extends RAGExtension {
     chunkSizeChars: 512,
     overlapChars: 64,
     searchMode: 'auto' as 'auto' | 'ann' | 'linear',
-    maxFileSizeMB: 20,
+    maxFileSizeMB: 100,
     parseMode: 'auto' as 'auto' | 'inline' | 'embeddings' | 'prompt',
     autoInlineContextRatio: 0.75,
   }
 
   async onLoad(): Promise<void> {
-    this.configure()
-    // Check ANN availability on load
+    try {
+      await this.configure()
+    } catch (e) {
+      console.error('[RAG] configure() failed during onLoad:', e)
+    }
+    // Check ANN availability on load (already self-contained try/catch)
     this.checkANNAvailability()
   }
 
@@ -516,6 +520,11 @@ export default class RagExtension extends RAGExtension {
 
   async parseDocument(path: string, type?: string): Promise<string> {
     return await ragApi.parseDocument(path, type || 'application/octet-stream')
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (!texts || texts.length === 0) return []
+    return this.embedTexts(texts)
   }
 
   // Locally implement embedding logic (previously in embeddings-extension)

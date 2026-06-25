@@ -5,6 +5,7 @@ import {
   isBackendInstalled,
   downloadBackend,
   verifyBackendInstallation,
+  fetchRemoteBackends,
 } from '../backend'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
@@ -48,6 +49,11 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
 
   return {
     ...actual,
+    getSupportedFeaturesFromRust: vi.fn().mockResolvedValue({}),
+    normalizeFeatures: vi.fn().mockReturnValue({}),
+    determineSupportedBackends: vi
+      .fn()
+      .mockResolvedValue(['linux-vulkan-x64']),
   }
 })
 
@@ -550,6 +556,33 @@ describe('Backend functions', () => {
         'plugin:llamacpp|build_backend_download_items',
         expect.objectContaining({ source: 'cdn' })
       )
+    })
+  })
+
+  describe('fetchRemoteBackends', () => {
+    it('returns the upstream-released backends from the plugin invoke', async () => {
+      const remote = [
+        { version: 'b9300', backend: 'linux-vulkan-common_cpus-x64' },
+        { version: 'b9222', backend: 'linux-vulkan-common_cpus-x64' },
+      ]
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|fetch_remote_supported_backends')
+          return remote as any
+        return undefined as any
+      })
+
+      const result = await fetchRemoteBackends()
+      expect(result).toEqual(remote)
+    })
+
+    it('returns [] when the remote fetch fails (offline)', async () => {
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin:llamacpp|fetch_remote_supported_backends')
+          throw new Error('offline')
+        return undefined as any
+      })
+      const result = await fetchRemoteBackends()
+      expect(result).toEqual([])
     })
   })
 })

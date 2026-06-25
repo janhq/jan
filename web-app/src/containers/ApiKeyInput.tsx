@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useState, useEffect, useCallback } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, Copy, CopyCheck } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +19,7 @@ export function ApiKeyInput({
   const { apiKey, setApiKey } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(apiKey.toString())
   const [showPassword, setShowPassword] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const { t } = useTranslation()
 
@@ -61,6 +62,13 @@ export function ApiKeyInput({
     }
   }
 
+  const handleCopy = () => {
+    if (!inputValue) return
+    navigator.clipboard.writeText(inputValue)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   const hasError = error && showError
 
   return (
@@ -71,7 +79,7 @@ export function ApiKeyInput({
         onChange={handleChange}
         onBlur={handleBlur}
         className={cn(
-          'w-full text-sm pr-10',
+          'w-full text-sm pr-16',
           hasError &&
             'border border-destructive focus:border-destructive focus:ring-destructive',
           isServerRunning && 'opacity-50 pointer-events-none'
@@ -85,6 +93,18 @@ export function ApiKeyInput({
           type="button"
         >
           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+        <button
+          onClick={handleCopy}
+          disabled={!inputValue}
+          className="p-1 rounded hover:bg-secondary/50 text-muted-foreground disabled:opacity-40 disabled:pointer-events-none"
+          type="button"
+        >
+          {copied ? (
+            <CopyCheck size={16} className="text-primary" />
+          ) : (
+            <Copy size={16} />
+          )}
         </button>
       </div>
       {hasError && (

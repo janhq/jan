@@ -7,6 +7,13 @@ import MLXVLM
 /// Manages loading and running inference with MLX models
 actor ModelRunner {
     private var model: ModelContext?
+    /// True when the loaded model's chat template injects `<think>` into the
+    /// assistant turn opening (Qwen3-family, etc.). In that case the streamed
+    /// output begins inside the reasoning block — only `</think>` is emitted —
+    /// and the streaming splitter must start in reasoning mode.
+    private(set) var injectsThinkingOpener: Bool = false
+
+    func currentInjectsThinkingOpener() -> Bool { injectsThinkingOpener }
 
     /// Load a model from the given path
     /// Supports both local directories and HuggingFace model IDs
@@ -42,8 +49,61 @@ actor ModelRunner {
         }
 
         if let dir = modelDir {
-            self.model = try await loadModel(directory: dir)
+            self.model = try await loadModel(
+                from: dir,
+                using: SwiftTransformersTokenizerLoader()
+            )
+            self.injectsThinkingOpener = Self.detectInjectsThinkingOpener(in: dir)
+            log("[mlx] injectsThinkingOpener=\(injectsThinkingOpener)")
         }
+    }
+
+    /// Inspect the model folder to see if the chat template injects a `<think>`
+    /// opener into the assistant turn. Heuristic — looks for the literal
+    /// `<think>` substring across the conventional template locations:
+    ///   - `chat_template.jinja` (newer split-file convention, Qwen3-VL etc.)
+    ///   - `chat_template.json`  ({ "chat_template": ... } wrapper)
+    ///   - `tokenizer_config.json` → `chat_template` (older inline convention)
+    private nonisolated static func detectInjectsThinkingOpener(in modelDir: URL) -> Bool {
+        // 1. Standalone Jinja file.
+        let jinjaURL = modelDir.appendingPathComponent("chat_template.jinja")
+        if let body = try? String(contentsOf: jinjaURL, encoding: .utf8),
+           body.contains("<think>") {
+            return true
+        }
+
+        // 2. JSON-wrapped template file.
+        let jsonURL = modelDir.appendingPathComponent("chat_template.json")
+        if let data = try? Data(contentsOf: jsonURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           templateValueContainsThink(json["chat_template"]) {
+            return true
+        }
+
+        // 3. Inline in tokenizer_config.json.
+        let configURL = modelDir.appendingPathComponent("tokenizer_config.json")
+        if let data = try? Data(contentsOf: configURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           templateValueContainsThink(json["chat_template"]) {
+            return true
+        }
+
+        return false
+    }
+
+    /// `chat_template` can be a string or an array of { name, template } entries.
+    private nonisolated static func templateValueContainsThink(_ value: Any?) -> Bool {
+        if let body = value as? String {
+            return body.contains("<think>")
+        }
+        if let entries = value as? [[String: Any]] {
+            for entry in entries {
+                if let body = entry["template"] as? String, body.contains("<think>") {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Parse ChatMessages into system instructions, conversation history, and the current user message

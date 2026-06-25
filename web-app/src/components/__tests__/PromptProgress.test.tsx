@@ -8,6 +8,10 @@ vi.mock('@/hooks/useAppState', () => ({
   useAppState: vi.fn(),
 }))
 
+vi.mock('@tanstack/react-router', () => ({
+  useParams: () => undefined,
+}))
+
 const mockUseAppState = useAppState as ReturnType<typeof vi.fn>
 
 describe('PromptProgress', () => {
@@ -23,11 +27,34 @@ describe('PromptProgress', () => {
       total: 150,
     }
 
-    mockUseAppState.mockReturnValue(mockProgress)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
 
     render(<PromptProgress />)
 
     expect(screen.getByText('Reading: 50%')).toBeInTheDocument()
+  })
+
+  it('should show token counts and ETA while reading', () => {
+    const mockProgress = {
+      cache: 0,
+      processed: 1200,
+      time_ms: 3000,
+      total: 2600,
+    }
+
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
+
+    render(<PromptProgress />)
+
+    expect(screen.getByText('Reading: 46%')).toBeInTheDocument()
+    // 1200/2600 tokens, ETA = (3000/1200)*1400 = 3500ms -> 4s
+    expect(
+      screen.getByText('1.2k / 2.6k tokens · ~4s left')
+    ).toBeInTheDocument()
   })
 
   it('should handle zero total gracefully', () => {
@@ -38,7 +65,9 @@ describe('PromptProgress', () => {
       total: 0,
     }
 
-    mockUseAppState.mockReturnValue(mockProgress)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
 
     const { container } = render(<PromptProgress />)
 

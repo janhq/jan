@@ -1,18 +1,29 @@
 {
+  "htmlArtifact": {
+    "code": "コード",
+    "preview": "プレビュー",
+    "previewStreaming": "生成が完了すると利用できます"
+  },
   "assistants": "アシスタント",
   "hardware": "ハードウェア",
   "mcp-servers": "MCPサーバー",
-  "connectors": "MCPサーバー",
   "local_api_server": "ローカルAPIサーバー",
+  "remote_access": "リモートアクセス",
+  "integrations": "連携",
+  "experimental": "実験的",
+  "claude_code": "Claude Code",
   "https_proxy": "HTTPSプロキシ",
   "extensions": "拡張機能",
   "attachments": "添付ファイル",
-  "experimental": "実験的",
   "general": "全般",
   "settings": "設定",
   "modelProviders": "モデルプロバイダー",
-  "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} disabled",
+  "localProviders": "ローカル",
+  "remoteProviders": "リモート",
+  "manageProviders": "プロバイダーを管理",
+  "hiddenProviders": "{{count}}件を無効化中",
+  "hideProvider": "プロバイダーを非表示",
+  "showProvider": "プロバイダーを表示",
   "interface": "外観",
   "appearance": "外観",
   "privacy": "プライバシー",
@@ -45,8 +56,14 @@
   "profile": "プロフィール",
   "reset": "リセット",
   "search": "検索",
+  "searchThreads": "スレッドを検索...",
+  "toNavigate": "で移動",
+  "toSelect": "で選択",
+  "toClose": "で閉じる",
+  "clearRecent": "クリア",
   "name": "名前",
   "cancel": "キャンセル",
+  "dismiss": "閉じる",
   "create": "作成",
   "save": "保存",
   "edit": "編集",
@@ -86,15 +103,18 @@
   "completed": "完了",
   "image": "画像",
   "vision": "画像認識",
+  "multimodal": "マルチモーダル",
   "embeddings": "埋め込み",
   "tools": "ツール",
   "webSearch": "ウェブ検索",
   "reasoning": "推論",
+  "proactive": "プロアクティブ",
   "selectAModel": "モデルを選択",
   "noToolsAvailable": "利用可能なツールはありません",
   "noModelsFoundFor": "\"{{searchValue}}\"に一致するモデルが見つかりません",
   "failedToLoadModels": "モデルの読み込みに失敗しました",
   "noModels": "モデルが見つかりません",
+  "noAssistant": "アシスタントなし",
   "customAvatar": "カスタムアバター",
   "editAssistant": "アシスタントを編集",
   "jan": "Jan",
@@ -131,6 +151,9 @@
   "confirm": "確認",
   "continue": "続ける",
   "loading": "読み込み中...",
+  "settingUpJan": "Janを起動しています…",
+  "registeringExtensions": "拡張機能を登録しています…",
+  "loadingExtensions": "拡張機能を読み込んでいます… ({{done}}/{{total}})",
   "error": "エラー",
   "success": "成功",
   "warning": "警告",
@@ -145,6 +168,7 @@
   "enterApiKey": "APIキーを入力",
   "scrollToBottom": "一番下までスクロール",
   "generateAiResponse": "AIの応答を生成",
+  "continueAiResponse": "AIの応答を続ける",
   "addModel": {
     "title": "モデルを追加",
     "modelId": "モデルID",
@@ -221,7 +245,23 @@
   },
   "modelSettings": {
     "title": "モデル設定 - {{modelId}}",
-    "description": "パフォーマンスと動作を最適化するためにモデル設定を構成します。"
+    "description": "パフォーマンスと動作を最適化するためにモデル設定を構成します。",
+    "samplingDefaults": {
+      "title": "デフォルトのサンプリングパラメータ",
+      "description": "このモデルのデフォルトのサンプラー設定です。アシスタントごとまたはリクエストごとの値で上書きされない限り使用されます。"
+    },
+    "mtp": {
+      "section": "マルチトークン予測 (MTP)",
+      "enable": "MTPを有効にする",
+      "enableDescription": "モデルに内蔵されたMTPヘッドを使用して、ステップごとに複数のトークンを下書きします。モデルにMTPの重みがある場合（DeepSeek-V3、GLM-4.5/4.6、MiMo v2.5 など）、生成が高速化されます。",
+      "needsUpgrade": "MTPを有効にするには、llama.cppバックエンドをビルドb9193以降に更新してください。",
+      "nMax": "最大下書きトークン数",
+      "nMaxDescription": "ステップごとに下書きするトークンの最大数。デフォルトは16です。",
+      "nMin": "最小下書きトークン数",
+      "nMinDescription": "ステップごとに下書きするトークンの最小数。デフォルトは0です。",
+      "pMin": "最小下書き確率",
+      "pMinDescription": "貪欲な下書きの最小確率（0〜1）。デフォルトは0.75です。"
+    }
   },
   "dialogs": {
     "changeDataFolder": {
@@ -236,6 +276,10 @@
       "title": "すべてのスレッドを削除",
       "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
     },
+    "deleteAllThreadsInProject": {
+      "title": "すべての会話を削除",
+      "description": "「{{projectName}}」内の{{count}}件の会話が削除されます。この操作は元に戻せません。"
+    },
     "deleteThread": {
       "description": "本当にこのスレッドを削除しますか？この操作は元に戻せません。"
     },
@@ -245,6 +289,19 @@
     "messageMetadata": {
       "title": "メッセージメタデータ"
     }
+  },
+  "errorDialog": {
+    "titleFallback": "問題が発生しました",
+    "details": "詳細"
+  },
+  "missingDependenciesDialog": {
+    "title": "システムライブラリが見つかりません",
+    "description": "{{backend}}はインストールされましたが、必要なシステムライブラリの一部が見つかりませんでした。CPUにフォールバックするか、正しく動作しない可能性があります。",
+    "installLabel": "これを修正するには、次をインストールしてください:",
+    "download": "ダウンロード",
+    "additionalLibraries": "その他の不足しているライブラリ:",
+    "missingLibraries": "不足しているライブラリ:",
+    "showRawLibraries": "不足している{{count}}件のライブラリ名を表示"
   },
   "projects": {
     "title": "プロジェクト",
@@ -262,9 +319,19 @@
     "noProjectsYetDesc": "「プロジェクトを追加」ボタンをクリックして、新しいプロジェクトを開始してください。",
     "projectNotFound": "プロジェクトが見つかりません",
     "projectNotFoundDesc": "お探しのプロジェクトは存在しないか、削除されています。",
+    "selectAssistant": "アシスタントを選択",
+    "noAssistantAssigned": "このプロジェクトにはアシスタントが割り当てられていません",
+    "files": "ファイル",
+    "filesDescription": "このプロジェクトで参照するPDF、ドキュメント、その他のテキストを追加します。",
+    "uploadingFiles": "ファイルを処理しています…",
+    "processButton": "追加",
     "deleteProjectDialog": {
       "title": "プロジェクトを削除",
-      "description": "本当にこのプロジェクトを削除しますか？この操作は元に戻せません。",
+      "permanentDelete": "これにより、すべてのスレッドが完全に削除されます。",
+      "permanentDeleteWarning": "この操作は、プロジェクト内のすべてのスレッドを完全に削除します！",
+      "deleteEmptyProject": "この操作は、プロジェクト「{{projectName}}」を削除します。",
+      "saveThreadsAdvice": "スレッドを残すには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
+      "starredWarning": "プロジェクト内にスター付きのスレッドが残っています。",
       "deleteButton": "削除",
       "successWithName": "プロジェクト「{{projectName}}」を正常に削除しました",
       "successWithoutName": "プロジェクトを正常に削除しました",
@@ -276,28 +343,45 @@
       "editTitle": "プロジェクトを編集",
       "nameLabel": "プロジェクト名",
       "namePlaceholder": "プロジェクト名を入力...",
+      "assistant": "アシスタント",
+      "selectAssistant": "アシスタントを選択（任意）",
+      "noAssistant": "アシスタントなし",
+      "addAssistant": "アシスタントを追加",
       "createButton": "作成",
       "updateButton": "更新",
       "alreadyExists": "プロジェクト「{{projectName}}」はすでに存在します",
       "createSuccess": "プロジェクト「{{projectName}}」を正常に作成しました",
-      "renameSuccess": "プロジェクト名を「{{oldName}}」から「{{newName}}」に正常に変更しました"
+      "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
     "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
     "conversationsIn": "{{projectName}}での会話",
     "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
+    "conversation": "会話",
+    "instructions": "指示",
+    "setup": "セットアップ",
+    "instructionsDescription": "応答のトーンとスタイルをカスタマイズします",
+    "manageInstructions": "指示を管理",
     "thread": "スレッド",
     "threads": "スレッド",
     "updated": "更新日時:",
-    "collapseThreads": "スレッドを折りたたむ",
-    "expandThreads": "スレッドを展開する",
+    "collapseProject": "プロジェクトを折りたたむ",
+    "expandProject": "プロジェクトを展開する",
     "update": "更新",
-    "uploadingFiles": "ファイルをアップロードしています…"
+    "searchProjects": "プロジェクトを検索...",
+    "noProjectsFound": "プロジェクトが見つかりません",
+    "tryDifferentSearch": "別の検索語をお試しください"
   },
-  "errorDialog": {
-    "titleFallback": "問題が発生しました",
-    "details": "詳細"
+  "attachmentsIngestion": {
+    "title": "添付ファイルの取り込み方法を選択",
+    "description": "これらのファイルをチャットに直接含めるか、代わりに埋め込みとしてインデックス化するかを選択します。",
+    "inline": "チャットに挿入",
+    "embeddings": "埋め込みを使用"
   },
+  "attachmentInjectedIndicator": "チャットに挿入済み",
+  "attachmentEmbeddedIndicator": "RAG用に埋め込み済み",
+  "viewInjectedContent": "挿入された内容を表示",
+  "injectedContentTitle": "挿入されたファイルの内容",
   "toast": {
     "allThreadsUnfavorited": {
       "title": "すべてのスレッドのお気に入りを解除しました",
@@ -386,6 +470,58 @@
     "threadRemovedFromProject": {
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
+    },
+    "fileUploaded": {
+      "title": "ファイルを処理しました",
+      "description": "ファイルは正常に処理され、インデックス化されました"
+    },
+    "uploadFailed": {
+      "title": "処理に失敗しました",
+      "description": "ファイルの処理に失敗しました",
+      "subjectThisFile": "このファイル",
+      "pdfMalformedXref": "{{subject}}のPDF相互参照テーブルが不正なため、解析できませんでした。PDFビューアで開いて保存し直し（ファイル → 印刷 → PDFとして保存）、もう一度アップロードしてください。",
+      "pdfScanned": "{{subject}}はスキャンまたは画像ベースのPDFのようです。OCRはまだサポートされていません。テキストベースのPDFをアップロードしてください。",
+      "pdfEncrypted": "{{subject}}はパスワードで保護されています。パスワードを解除してもう一度お試しください。",
+      "pdfGeneric": "{{subject}}をPDFとして解析できませんでした。ファイルが破損しているか、サポートされていないPDF機能を使用している可能性があります。",
+      "fileTooLarge": "{{subject}}は大きすぎます。{{message}}。",
+      "unsupportedType": "ファイル形式「{{type}}」はサポートされていません。",
+      "ioError": "{{subject}}を読み取れませんでした: {{message}}",
+      "parseGeneric": "{{subject}}を解析できませんでした: {{message}}",
+      "fallback": "{{subject}}の処理に失敗しました。"
+    },
+    "fileDeleted": {
+      "title": "ファイルを削除しました",
+      "description": "ファイルはプロジェクトから削除されました"
+    },
+    "deleteFailed": {
+      "title": "削除に失敗しました",
+      "description": "ファイルの削除に失敗しました"
+    },
+    "fileAlreadyExists": {
+      "title": "ファイルはすでに存在します",
+      "description": "ファイルはすでにこのプロジェクトに添付されています"
+    },
+    "unsupportedFileType": {
+      "title": "サポートされていないファイル形式",
+      "description": "ファイル拡張子「.{{extension}}」はプロジェクト参照ではサポートされていません。"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "添付ファイルが無効です",
+      "description": "添付ファイルは設定で無効になっています"
     }
+  },
+  "errors": {
+    "fileTooLarge": "ファイルが大きすぎます",
+    "fileTooLargeDescription": "{{fileName}}は{{maxFileSizeMB}}MBの上限を超えています"
+  },
+  "files": {
+    "chunksCount": "{{count}}個のチャンク"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cppはまだビジー状態です",
+    "description": "1つ以上のモデルが時間内にアンロードされませんでした。強制終了するとllama.cppが終了し、実行中の応答が中断される可能性があります。",
+    "forceQuit": "強制終了",
+    "forcing": "強制終了しています…",
+    "shuttingDown": "シャットダウンしています…"
   }
 }

@@ -6,6 +6,7 @@
     "allowOnce": "Izinkan Sekali",
     "alwaysAllow": "Izinkan di thread",
     "description": "Asisten ingin menggunakan <strong>{{toolName}}</strong>",
+    "needsApproval": "Alat ini memerlukan persetujuan Anda sebelum dijalankan.",
     "parameters": "Parameter Alat",
     "permissionScope": "Izin yang diberikan hanya berlaku untuk percakapan ini."
   }

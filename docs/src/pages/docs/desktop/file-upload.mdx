@@ -15,26 +15,40 @@ keywords:
 
 # File Upload
 
-Jan lets you upload images and documents directly in the chat. Click the **+** button in the message input to add files.
+Jan supports two ways to work with files — attaching them to a single message in chat, or uploading them to a Project so they are available as context across all conversations in that project.
+
+## Project Files
+
+Upload documents to a Project and Jan will chunk and index them for retrieval across every conversation in that project.
 
 ![File Upload](./_assets/file-upload.png)
 
-## Supported File Types
+1. Open a Project from the left sidebar
+2. Click **Add** in the **Files** panel on the right
+3. Select your file — a progress bar shows chunking progress (e.g. 1/5 pages processed)
+4. Once complete, the file appears with its size and chunk count and is available as context in all project conversations
 
-- **Images** — Share screenshots, photos, or diagrams for the model to analyze
-- **Documents & Files** — Upload PDFs or other files for the model to read and reason about
+Supported formats include PDFs, Markdown, Office documents (DOCX, XLSX, PPTX), code files, and more.
 
-## How to Upload
+## Chat Attachments
+
+Attach images, audio, or documents directly to a single message in any chat.
 
 1. Click the **+** button at the bottom left of the chat input
-2. Choose **Add Images** or **Add documents or files**
-3. Select your file — it will be attached to your next message
+2. Choose **Add Images**, **Add Audio**, or **Add documents or files**
+3. Select your file — a progress bar will appear while it uploads
 4. Type your question and send
+
+You can also drag and drop files onto the chat input or paste images from your clipboard.
 
 ### Vision Model Required for Images
 
-If your current model does not support vision, Jan will automatically prompt you to download **Jan V2 VL** — the recommended vision model (~5GB). Click **Download** to install it, then you'll be ready to chat with images.
+The **Add Images** option only appears when the active model has the `vision` capability. If your current model isn't vision-capable, the option is hidden — switch to a vision model (for example **Jan-v2-VL**, available in the Hub) to enable image attachments.
 
-![Vision Model Prompt](./_assets/file-upload-vision-prompt.png)
+### Audio Requires an Audio-Capable Model
 
-All files are processed locally on your machine. When using a local model such as Jan's built-in models, your files never leave your device — inference happens entirely on your own hardware with full privacy. If you use a cloud model provider (e.g. OpenAI, Anthropic), files are sent to that provider's API as part of the request.
+The **Add Audio** option only appears when the active model supports audio input. Supported formats are **WAV** and **MP3**. Audio files show a preview chip with the filename and duration before sending.
+
+## Privacy
+
+All files are processed locally on your machine. When using a local model, your files never leave your device. If you use a cloud provider (e.g. OpenAI, Anthropic), files are sent to that provider's API as part of the request.

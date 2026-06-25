@@ -46,12 +46,9 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
       }).filter(Boolean)
 
-      // TODO: Re-enable foundation-models once migrated to apple-foundation-models crate
-      const hiddenProviders = new Set(['foundation-models'])
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
-        if (hiddenProviders.has(providerName)) continue
-        const models = await value.list() ?? [] 
+        const models = await value.list() ?? []
         const provider: ModelProvider = {
           active: false,
           persist: true,
@@ -104,18 +101,14 @@ export class TauriProvidersService extends DefaultProvidersService {
                 description: model.description,
                 capabilities,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
+                imported: (model as { imported?: boolean }).imported,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
-                    let value = setting.controller_props.value
-                    if (setting.key === 'ctx_len') {
-                      value = 8192 // Default context length for Llama.cpp models
-                    }
                     acc[setting.key] = {
                       ...setting,
                       controller_props: {
                         ...setting.controller_props,
-                        value: value,
                       },
                     }
                     return acc

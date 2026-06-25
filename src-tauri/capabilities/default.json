@@ -10,6 +10,7 @@
     "core:default",
     "core:webview:allow-set-webview-zoom",
     "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
     "core:window:allow-set-theme",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
@@ -29,7 +30,6 @@
     "hardware:default",
     "deep-link:default",
     "llamacpp:default",
-    "mlx:default",
     "updater:default",
     "updater:allow-check",
     {

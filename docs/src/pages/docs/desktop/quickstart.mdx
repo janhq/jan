@@ -50,10 +50,47 @@ Try asking:
 - "What are the pros and cons of electric vehicles?"
 
 <Callout type="tip">
-Jan enables access to current web information by default. You can ask it to search about latest news. Thanks to [Exa](https://exa.ai) for enabling free tier access.
+Jan comes pre-configured with [Exa](https://exa.ai) for web search. To enable it, add your Exa API key under **Settings > MCP Servers** and toggle the Exa server on. Once active, you can ask about the latest news and current events.
 </Callout>
 
+### Download More Models
+
+The **Hub** is where you browse and download local models. Each model shows whether it fits your
+hardware, so you can pick one your machine can run comfortably.
+
+1. Open the **Hub** from the left sidebar
+2. Browse or search for a model, then click **Download**
+3. Once downloaded, select it from the model selector in any chat
+
+![Hub](./_assets/hub.png)
+
+Want help choosing? See [Manage Models](/docs/desktop/manage-models) and the
+[local engine guide](/docs/desktop/local-engine/llama-cpp).
+
 </Steps>
+
+## Local or Cloud
+
+Jan runs models two ways, and you can mix both in the same app:
+
+- **Local models** run entirely on your machine — private, offline, no API key. This is the default.
+- **Cloud models** run on a provider's servers (OpenAI, Anthropic, Google, and more). They need an
+  API key but let you use the largest frontier models without local hardware.
+
+### Connect a Cloud Provider
+
+1. Navigate to **Settings** > **Model Providers**
+2. Select a provider (e.g. **OpenAI** or **Anthropic**) and paste your API key
+3. Select one of its models from the model selector and start chatting
+
+![Connect a provider](./_assets/provider-openai.png)
+
+<Callout type="info">
+Running your own server or using a provider Jan doesn't list? Connect any OpenAI- or
+Anthropic-compatible endpoint — see [Custom Endpoints](/docs/desktop/remote-models/custom-endpoint).
+</Callout>
+
+See all [Cloud Providers](/docs/desktop/remote-models/openai) for per-provider setup.
 
 ## App Features
 
@@ -63,7 +100,7 @@ Jan is more than a chat interface. Organize your work with Projects, build custo
   <DocCard title="Projects" href="/docs/desktop/projects" icon={<FolderOpen size={20} />}>Organize conversations with shared instructions and files.</DocCard>
   <DocCard title="Assistants" href="/docs/desktop/assistants" icon={<Bot size={20} />}>Set up a personal AI assistant tailored to how you work.</DocCard>
   <DocCard title="Agents" href="/docs/desktop/agents" icon={<Cpu size={20} />}>Autonomous AI that reads files, manages calendars, and takes actions.</DocCard>
-  <DocCard title="Connectors (MCP)" href="/docs/desktop/mcp-examples" icon={<Plug size={20} />}>Extend your AI with web search, code execution, databases, and more.</DocCard>
+  <DocCard title="Connectors (MCP)" href="/docs/desktop/mcp" icon={<Plug size={20} />}>Extend your AI with web search, code execution, databases, and more.</DocCard>
 </DocCards>
 
 ## Models

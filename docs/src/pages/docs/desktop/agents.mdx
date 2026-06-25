@@ -6,65 +6,53 @@ keywords:
     Jan,
     Jan AI,
     agents,
-    OpenClaw,
     autonomous agent,
     local AI agent,
-    personal assistant,
     AI automation,
+    Claude Code,
   ]
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Callout } from 'nextra/components'
 
 # Agents
 
+You can run autonomous coding agents against a model served locally by Jan — keeping inference on
+your own hardware while using the agent tooling you already know.
+
 <Callout type="info">
-Available since **Jan 0.7.8** (March 2026).
+The **in-app** OpenClaw integration was removed in **Jan v0.7.9** due to resource usage and security
+concerns. Jan no longer runs agents inside the desktop app. Instead, agents run as **external
+programs** that you point at a local Jan model via the CLI, as described below.
 </Callout>
 
-Jan supports autonomous AI agents that run entirely on your own hardware — no cloud required.
+## How It Works
 
-## OpenClaw Agent
+The `jan launch` command starts a local model server and then launches an agent CLI with everything
+pre-wired:
 
-OpenClaw is Jan's first default agent. Unlike a chatbot that only answers questions, OpenClaw acts as a personal assistant that can take real actions on your behalf.
+1. Jan starts the model and serves it on a local OpenAI- and Anthropic-compatible endpoint.
+2. Jan sets the agent's connection details automatically — environment variables like
+   `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`, the API key, and the model name (for OpenClaw, Jan
+   writes a provider entry to `~/.openclaw/openclaw.json` instead).
+3. The agent runs in your terminal, sending its requests to your local model.
 
-**What it can do:**
-- Read and manage local files on your computer
-- Manage your calendar
-- Send and receive messages via WhatsApp, Discord, or Slack
-- Execute commands and automate tasks
+The agent itself (Claude Code, OpenClaw) is a **separate tool you install yourself** — Jan only
+supplies the model backend and the wiring.
 
-**Skills:**
-Extend OpenClaw with skills to add new capabilities and integrations.
+## Launch an Agent
 
-<Steps>
+```bash
+jan launch claude                                       # pick a model, then run Claude Code against it
+jan launch claude --model janhq/Jan-code-4b-gguf        # use a specific model with Claude Code
+jan launch openclaw --model janhq/Jan-code-4b-gguf      # wire OpenClaw to a local model
+```
 
-### Enable OpenClaw
+Run `jan launch` with no agent to pick one interactively. See the [Jan CLI](/docs/desktop/cli)
+documentation for full options (port, context size, GPU layers, and more).
 
-Go to **Settings > Integrations > OpenClaw** and click **Start** next to **Enable OpenClaw**. Jan will automatically walk you through the required installation steps — just wait for the process to complete.
-
-![OpenClaw Channels](./_assets/openclaw-integration.png)
-
-A **Setting Up Remote Access** dialog will appear, automatically checking Node.js, installing OpenClaw, configuring it, and starting the gateway. Wait until all steps complete before moving on.
-
-![OpenClaw Gateway Setup](./_assets/openclaw-gateway-setup.png)
-
-### Add Channels
-
-Once setup is complete, connect your messaging channels under the **Channels** section. Click the **Settings** icon on the channel you want to add — for example, WhatsApp — and a setup dialog will appear.
-
-![WhatsApp Setup](./_assets/openclaw-whatsapp-setup.png)
-
-Click **Start Setup** and Jan will configure everything automatically, then display a QR code. Scan it with your WhatsApp app to pair your account. Once connected, you can chat with Jan directly from your phone.
-
-### Start Chatting
-
-Click **New Agent Chat** from the left sidebar (or press `⌘M`) to open a new agent session and start interacting with OpenClaw.
-
-![New Agent Chat](./_assets/agents-new-agent-chat.png)
-
-</Steps>
-
-## What's Next
-
-You're all set — start from here and explore what OpenClaw can do for you. We'll be adding a lot of useful real-world use cases and guides to the docs soon.
+<Callout type="warning">
+Install the agent CLI first. For example, install [Claude Code](https://docs.claude.com/en/docs/claude-code)
+or OpenClaw per their own instructions — `jan launch` runs them, but doesn't install them. (If
+OpenClaw isn't installed, Jan falls back to running it via `npx`.)
+</Callout>

@@ -31,18 +31,11 @@ export const defaultAssistant: Assistant = {
   id: 'jan',
   name: 'Jan',
   created_at: 1747029866.542,
-  parameters: {
-    temperature: 0.7,
-    top_k: 20,
-    top_p: 0.8,
-    repeat_penalty: 1.12,
-  },
+  parameters: {},
   avatar: '👋',
   description:
     "Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
-  instructions: `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
-
-You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
+  instructions: `You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
 When handling user queries:
 
@@ -189,8 +182,6 @@ export const useAssistant = create<AssistantState>((set, get) => ({
   },
   setCurrentAssistant: (assistant, saveToStorage = true) => {
     const currentAssistant = get().currentAssistant
-    const defaultAssistantId = get().defaultAssistantId
-    if (defaultAssistantId && currentAssistant?.id === defaultAssistantId) return
     if (currentAssistant !== assistant) {
       set({ currentAssistant: assistant })
       if (saveToStorage) {

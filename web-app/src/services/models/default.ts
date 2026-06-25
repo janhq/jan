@@ -232,7 +232,8 @@ export class DefaultModelsService implements ModelsService {
     modelSize?: number,
     mmprojPath?: string,
     mmprojSha256?: string,
-    mmprojSize?: number
+    mmprojSize?: number,
+    mtpPath?: string
   ): Promise<void> {
     return this.getEngine()?.import(id, {
       modelPath,
@@ -241,6 +242,7 @@ export class DefaultModelsService implements ModelsService {
       modelSize,
       mmprojSha256,
       mmprojSize,
+      mtpPath,
     })
   }
 
@@ -249,7 +251,8 @@ export class DefaultModelsService implements ModelsService {
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification: boolean = true
+    skipVerification: boolean = true,
+    mtpPath?: string
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -314,7 +317,8 @@ export class DefaultModelsService implements ModelsService {
         modelSize,
         mmprojPath,
         mmprojSha256,
-        mmprojSize
+        mmprojSize,
+        mtpPath
       )
     } catch (error) {
       // Emit download error event so the UI can clean up the stale downloading state
@@ -341,6 +345,18 @@ export class DefaultModelsService implements ModelsService {
         downloadType: 'Model',
       })
     }
+  }
+
+  async pauseDownload(id: string): Promise<void> {
+    const llamacppEngine = this.getEngine('llamacpp')
+    const mlxEngine = this.getEngine('mlx')
+    // No stopped event here: the backend cancel surfaces via the import path,
+    // and the UI keeps the entry visible as paused for resume.
+    await Promise.allSettled(
+      [llamacppEngine?.pauseImport(id), mlxEngine?.pauseImport(id)].filter(
+        Boolean
+      )
+    )
   }
 
   async deleteModel(id: string, provider?: string): Promise<void> {
@@ -410,6 +426,27 @@ export class DefaultModelsService implements ModelsService {
         )
         throw error
       })
+  }
+
+  private reloadingModels = new Map<
+    string,
+    Promise<SessionInfo | undefined>
+  >()
+
+  // Force unload first: a crashed model still reports "loaded", so load() alone no-ops.
+  async reloadModel(
+    provider: ProviderObject,
+    model: string
+  ): Promise<SessionInfo | undefined> {
+    const key = `${provider.provider}:${model}`
+    const inflight = this.reloadingModels.get(key)
+    if (inflight) return inflight
+    const p = (async () => {
+      await this.stopModel(model, provider.provider).catch(() => {})
+      return this.startModel(provider, model)
+    })().finally(() => this.reloadingModels.delete(key))
+    this.reloadingModels.set(key, p)
+    return p
   }
 
   async isToolSupported(modelId: string): Promise<boolean> {
@@ -540,6 +577,72 @@ export class DefaultModelsService implements ModelsService {
       console.error(`Error checking mmproj for model ${modelId}:`, error)
     }
     return false
+  }
+
+  async getMtpInfo(modelId: string): Promise<{
+    mtp_layers: number
+    mtp: boolean
+    spec_draft_n_max?: number
+    spec_draft_n_min?: number
+    spec_draft_p_min?: number
+  }> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        getMtpInfo?: (id: string) => Promise<{
+          mtp_layers: number
+          mtp: boolean
+          spec_draft_n_max?: number
+          spec_draft_n_min?: number
+          spec_draft_p_min?: number
+        }>
+      }
+      if (engine && typeof engine.getMtpInfo === 'function') {
+        return await engine.getMtpInfo(modelId)
+      }
+    } catch (error) {
+      console.error(`Error reading MTP info for ${modelId}:`, error)
+    }
+    return { mtp_layers: 0, mtp: false }
+  }
+
+  async updateMtpSettings(
+    modelId: string,
+    patch: {
+      mtp?: boolean
+      spec_draft_n_max?: number | null
+      spec_draft_n_min?: number | null
+      spec_draft_p_min?: number | null
+    }
+  ): Promise<void> {
+    const engine = this.getEngine('llamacpp') as AIEngine & {
+      updateMtpSettings?: (
+        id: string,
+        patch: {
+          mtp?: boolean
+          spec_draft_n_max?: number | null
+          spec_draft_n_min?: number | null
+          spec_draft_p_min?: number | null
+        }
+      ) => Promise<void>
+    }
+    if (engine && typeof engine.updateMtpSettings === 'function') {
+      await engine.updateMtpSettings(modelId, patch)
+    }
+  }
+
+  async updateModelSettings(
+    modelId: string,
+    patch: Record<string, string | number | boolean | null | undefined>
+  ): Promise<void> {
+    const engine = this.getEngine('llamacpp') as AIEngine & {
+      updateModelSettings?: (
+        id: string,
+        patch: Record<string, string | number | boolean | null | undefined>
+      ) => Promise<void>
+    }
+    if (engine && typeof engine.updateModelSettings === 'function') {
+      await engine.updateModelSettings(modelId, patch)
+    }
   }
 
   async isModelSupported(

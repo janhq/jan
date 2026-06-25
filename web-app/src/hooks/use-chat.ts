@@ -1,7 +1,6 @@
 import {
   CustomChatTransport,
 } from '@/lib/custom-chat-transport'
-// import { useCapabilities } from "@/stores/capabilities-store";
 import {
   Chat,
   type UIMessage,
@@ -67,9 +66,6 @@ export function useChat(
     }
   }, [systemMessage])
 
-  // Set up streaming token speed callback to update global state
-  const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed)
-
   // Update the token usage callback when it changes
   useEffect(() => {
     if (transportRef.current) {
@@ -109,13 +105,6 @@ export function useChat(
       updateStatus(sessionId, chatResult.status)
     }
   }, [sessionId, chatResult.status, updateStatus])
-
-  // Reset token speed when streaming stops
-  useEffect(() => {
-    if (chatResult.status !== 'streaming') {
-      resetTokenSpeed()
-    }
-  }, [chatResult.status, resetTokenSpeed])
 
   // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
   useEffect(() => {

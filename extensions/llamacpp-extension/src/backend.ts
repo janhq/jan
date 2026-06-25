@@ -32,7 +32,12 @@ export async function getLocalInstalledBackends(): Promise<
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
 // what should be available to the user for selection?
-export async function listSupportedBackends(): Promise<BackendVersion[]> {
+/**
+ * Hardware-supported backends published by upstream. Excludes
+ * locally-installed-only entries, so the "recommended backend" calculation
+ * isn't biased by user side-loads.
+ */
+export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
   const rawFeatures = await getSupportedFeaturesFromRust(
     sysInfo.os_type,
@@ -40,18 +45,14 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
     sysInfo.gpus
   )
   const features = normalizeFeatures(rawFeatures)
-
-  // Get supported backend names from Rust
   const supportedBackends = await determineSupportedBackends(
     sysInfo.os_type,
     sysInfo.cpu.arch,
     features
   )
 
-  // Get remote backends via Rust (handles GitHub + CDN fallback)
-  let remoteBackendVersions: BackendVersion[] = []
   try {
-    remoteBackendVersions = await invoke(
+    return await invoke<BackendVersion[]>(
       'plugin:llamacpp|fetch_remote_supported_backends',
       { supportedBackends, proxy: getProxyConfig() }
     )
@@ -59,12 +60,15 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
     console.debug(
       `Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`
     )
+    return []
   }
+}
 
-  // Get locally installed versions
+export async function listSupportedBackends(
+  checkRemote: boolean = true
+): Promise<BackendVersion[]> {
+  const remoteBackendVersions = checkRemote ? await fetchRemoteBackends() : []
   const localBackendVersions = await getLocalInstalledBackends()
-
-  // Merge & sort via Rust
   return listSupportedBackendsFromRust(remoteBackendVersions, localBackendVersions)
 }
 
@@ -185,7 +189,8 @@ export async function downloadBackend(
     }
 
     for (const { save_path } of itemsWithProxy) {
-      if (save_path.endsWith('.tar.gz')) {
+      // Official Windows HIP assets ship as .zip; everything else is .tar.gz.
+      if (save_path.endsWith('.tar.gz') || save_path.endsWith('.zip')) {
         const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })
         await fs.rm(save_path)

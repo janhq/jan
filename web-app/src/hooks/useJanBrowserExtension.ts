@@ -105,6 +105,40 @@ export function useJanBrowserExtension() {
   }, [janBrowserConfig, serviceHub, editServer, syncServers])
 
   /**
+   * Deactivate the Jan Browser MCP because the selected model lacks required capabilities.
+   * Shows a descriptive toast instead of the generic "disabled" message.
+   */
+  const disableDueToIncompatibleModel = useCallback(async () => {
+    if (operationInProgressRef.current) return
+    operationInProgressRef.current = true
+
+    try {
+      if (!janBrowserConfig || !isActive) return
+
+      if (cancelDeactivationPromiseRef.current) {
+        await cancelDeactivationPromiseRef.current
+      }
+
+      cancelledRef.current = false
+      setIsLoading(true)
+
+      await serviceHub.mcp().deactivateMCPServer(JAN_BROWSER_MCP_NAME)
+      toast.warning('Jan Browser MCP disabled — model doesn\'t support vision.')
+
+      editServer(JAN_BROWSER_MCP_NAME, {
+        ...janBrowserConfig,
+        active: false,
+      })
+      await syncServers()
+    } catch (error) {
+      console.error('Error auto-disabling Jan Browser MCP:', error)
+    } finally {
+      setIsLoading(false)
+      operationInProgressRef.current = false
+    }
+  }, [janBrowserConfig, isActive, serviceHub, editServer, syncServers])
+
+  /**
    * Toggle the Jan Browser MCP (called when clicking the browser icon)
    */
   const toggleBrowser = useCallback(async () => {
@@ -206,6 +240,7 @@ export function useJanBrowserExtension() {
 
     // Actions
     toggleBrowser,
+    disableDueToIncompatibleModel,
     handleCancel,
     setDialogOpen,
   }

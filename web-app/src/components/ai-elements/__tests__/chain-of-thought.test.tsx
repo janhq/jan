@@ -129,7 +129,7 @@ describe('ChainOfThoughtHeader', () => {
       </ChainOfThought>
     )
     expect(
-      screen.getByText('Reasoned through the problem')
+      screen.getByText('Thought for a few seconds')
     ).toBeInTheDocument()
   })
 
@@ -143,7 +143,7 @@ describe('ChainOfThoughtHeader', () => {
     )
     expect(screen.getByText('Custom header')).toBeInTheDocument()
     expect(
-      screen.queryByText('Reasoned through the problem')
+      screen.queryByText(/Thought for/)
     ).not.toBeInTheDocument()
   })
 })

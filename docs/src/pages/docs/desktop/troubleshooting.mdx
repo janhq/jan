@@ -42,18 +42,44 @@ Error logs are essential for troubleshooting issues and getting help from Jan te
 <br/>
 
 #### Through Terminal
-**Application Logs**
+**Application Logs (macOS)**
 ```bash
 tail -n 50 ~/Library/Application\ Support/Jan/data/logs/app.log
 ```
-**Server Logs**
-```bash
-tail -n 50 ~/Library/Application\ Support/Jan/data/logs/cortex.log
-```
+
+App, server, and engine messages are all written to the same `logs/app.log` file (look for the `[APP]` / `[SERVER]` / `[SPECS]` tags). Local model output from llama.cpp appears prefixed with `[llamacpp-router]` and `[llamacpp-router stdout]` — these lines are the best source when a model fails to load or crashes.
+
+The `logs/app.log` file lives inside your Jan data folder:
+
+- **macOS:** `~/Library/Application Support/Jan/data/logs/app.log`
+- **Windows:** `%APPDATA%\Jan\data\logs\app.log`
+- **Linux:** `~/.local/share/Jan/data/logs/app.log`
 
 <Callout type="warning">
 Ensure to redact any private or sensitive information when sharing logs or error details. We retain your logs for only 24 hours.
 </Callout>
+
+## Jan Won't Start or Crashes on Launch
+
+If Jan fails to open, closes immediately, or hangs on a blank window:
+
+**1. Corrupt settings/store file**
+
+A damaged `store.json` in the data folder can prevent Jan from starting. Fully quit Jan, then rename or delete `store.json` (Jan regenerates it on next launch):
+
+- **macOS:** `~/Library/Application Support/Jan/data/store.json`
+- **Windows:** `%APPDATA%\Jan\data\store.json`
+- **Linux:** `~/.local/share/Jan/data/store.json`
+
+This resets app preferences but keeps your models and chat history. If it still won't start, try a [clean reinstall](#broken-build).
+
+**2. Another Jan instance is already running**
+
+Jan is single-instance — launching it again just focuses the existing window. If you see no window at all, check for a stale process (system tray icon, or `ps aux | grep -i jan` / Task Manager) and quit it before relaunching.
+
+**3. Port 1337 already in use**
+
+Jan's Local API Server binds to `127.0.0.1:1337` and does **not** fall back to another port automatically. If that port is taken (often by a previous Jan process that didn't exit cleanly), the server fails to bind. See [Port Conflicts](#failed-to-fetch-or-somethings-amiss-errors) below to find and free the port, or change it in **Settings** > **Local API Server**.
 
 
 ## Broken Build
@@ -70,15 +96,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       rm -rf ~/Library/Application\ Support/Jan
       ```
 
-      3. If you are using a version before `0.4.2`, you need to run the following commands:
-
-      ```zsh
-      ps aux | grep nitro
-      # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
-      kill -9 <PID>
-      ```
-
-      4. **Download** the [latest version of Jan](/download)
+      3. **Download** the [latest version of Jan](/download)
   </Tabs.Tab>
 
   <Tabs.Tab>
@@ -91,16 +109,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       rmdir /S Jan
       ```
 
-      3. If you are using a version before `0.4.2`, you need to run the following commands:
-
-      ```bash
-      # Find the process ID (PID) of the nitro process by filtering the list by process name
-      tasklist | findstr "nitro"
-      # Once you have the PID of the process you want to terminate, run the `taskkill`
-      taskkill /F /PID <PID>
-      ```
-
-      4. **Download** the [latest version of Jan](/download)
+      3. **Download** the [latest version of Jan](/download)
   </Tabs.Tab>
 
   <Tabs.Tab>
@@ -117,21 +126,13 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       2. Delete Application Data, Cache, and User Data:
 
       ```bash
-      # Default dir
+      # Default data folder (XDG_DATA_HOME)
+      ~/.local/share/Jan
+      # Per-user app config (data folder location, etc.)
       ~/.config/Jan
-      # Custom installation directory
-      $XDG_CONFIG_HOME = /home/username/custom_config/Jan
       ```
 
-      3. If you are using a version before `0.4.2`, you need to run the following commands:
-
-      ```zsh
-      ps aux | grep nitro
-      # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
-      kill -9 <PID>
-      ```
-
-      4. **Download** the [latest version of Jan](/download)
+      3. **Download** the [latest version of Jan](/download)
   </Tabs.Tab>
 
 </Tabs>
@@ -284,12 +285,110 @@ Ubuntu on Proxmox VM
 - Some laptop GPUs may have reduced performance
 - Hybrid graphics (Optimus) may need additional configuration
 
+## AMD and Apple GPUs
+
+Jan isn't limited to NVIDIA. It detects your hardware and picks a backend automatically, but a GPU
+backend is only preferred when a GPU reports **at least 6 GB of VRAM** — below that, Jan runs on CPU.
+
+**AMD / Intel (Vulkan):**
+- Requires up-to-date GPU drivers with Vulkan support.
+- If you see a `ggml_vulkan ... error` in the logs, update your drivers and confirm Vulkan is
+  installed (`vulkaninfo` on Linux).
+- Select the Vulkan backend under **Settings** > **Model Providers** > **Llama.cpp** > **Backend**.
+
+**Apple Silicon (Metal):**
+- Metal acceleration is used automatically on M-series Macs; no setup needed.
+- A `ggml_metal ... error` usually means the model is too large for available unified memory — use a
+  smaller or more heavily quantized model.
+
+**CPU requirement (all platforms):**
+- llama.cpp builds require **AVX2**. On very old CPUs without AVX2, pick a `noavx`/CPU-compatible
+  backend build; otherwise the model process will fail to start.
+
+**GPU not detected after sleep (Linux):**
+- After suspend/resume the driver state can go stale and Jan may report "No GPU detected." Restart
+  Jan to re-probe the hardware.
+
+## Model Won't Load or Crashes (llama.cpp)
+
+When a local model fails to load or crashes mid-generation, Jan surfaces the error in the chat (as a
+model error banner) and writes the underlying cause to [the logs](#how-to-get-error-logs). The most
+common causes:
+
+**Out of memory (RAM or VRAM)**
+- *Symptom:* The model fails to load, or generation stops with an out-of-memory error.
+- *Cause:* The model + context needs more memory than is available.
+- *Fix:* Use a smaller or more quantized model; reduce the **context size**; offload fewer layers to
+  the GPU (lower `ngl`); or switch to the CPU backend.
+
+**Out of context size**
+- *Symptom:* A banner says the model ran out of context size.
+- *Cause:* The conversation (prompt) is longer than the model's configured context window.
+- *Fix:* Click **Increase Context Size** in the banner, or raise **Context Size** in the model
+  settings (default `8192`, up to `131072`). Larger context uses more memory.
+
+**Model architecture not supported**
+- *Symptom:* "The model's architecture is not supported by this version of the backend."
+- *Cause:* The backend build is older than the model, or the file isn't a supported text model.
+- *Fix:* Update the llama.cpp backend (**Settings** > **Model Providers** > **Llama.cpp** >
+  **Backend**), or use a different model.
+
+**Model load timed out**
+- *Symptom:* "Router took too long to start and timed out."
+- *Cause:* A large model on a slow disk didn't finish loading within the timeout (default 600s).
+- *Fix:* Wait and retry, use a smaller model, or store models on faster storage.
+
+**Backend / driver error**
+- *Symptom:* "The model process encountered an unexpected error," or a `cuda error:` /
+  `ggml_vulkan`/`ggml_metal` line in the logs.
+- *Cause:* GPU driver/runtime problem or an unsupported operation on the selected backend.
+- *Fix:* Update drivers, or switch backends (CPU / Vulkan / CUDA). Check the logs for the exact line.
+
+### Common llama.cpp error messages
+
+These strings appear in `logs/app.log` (prefixed `[llamacpp-router]`) when a model fails:
+
+| Log message | Likely cause | Resolution |
+| --- | --- | --- |
+| `unknown model architecture: '<arch>'` | Backend too old, or not a supported text model | Update the backend; confirm the model is supported |
+| `error loading model` / `failed to load model` | Corrupt or truncated GGUF, or partial download | Re-download the model |
+| `missing tensor` / `wrong number of tensors` | Incomplete or mismatched GGUF | Re-download from a known-good source, or try another quantization |
+| `failed to allocate ... buffer` / `out of memory` / `cudaMalloc` | Not enough RAM/VRAM for the model or KV cache | Smaller model, lower context, fewer GPU layers |
+| `request (N tokens) exceeds the available context size (M)` | Prompt longer than the context window | Increase context size or shorten the conversation |
+| `GGML_ASSERT(...)` | Backend bug or unsupported op on this backend | Try a different backend; report upstream if it persists |
+
+<Callout type="info">
+For multi-shard (split) GGUF models, point the model file at **shard 1** (the standard llama.cpp
+convention) so the rest are picked up automatically.
+</Callout>
+
+## Cloud Provider and Network Errors
+
+Errors from cloud providers and custom endpoints surface as a chat error with the HTTP status:
+
+| Status | Meaning | Fix |
+| --- | --- | --- |
+| `401` Unauthorized | API key is missing, wrong, or revoked | Re-check the key; confirm the right provider is selected |
+| `403` Forbidden | Key lacks access to that model/endpoint | Verify the key's permissions and the model ID |
+| `429` Rate limited | Too many requests, or out of quota/credits | Wait and retry; add fallback keys; check your billing |
+
+If you've configured [API key fallbacks](/docs/desktop/remote-models/custom-endpoint#api-key-fallbacks)
+and see "key rotation exhausted," **every** configured key failed with 401/403 — they're all
+invalid or unauthorized.
+
+**Custom endpoint won't connect:**
+- Wrong **API type** (OpenAI- vs Anthropic-Compatible) makes requests fail even with a valid key.
+- A `404` on every request usually means the **base URL is missing `/v1`** (or the wrong path).
+- "Connection refused" / network errors mean the server isn't running or isn't reachable.
+
+See the [Custom Endpoints](/docs/desktop/remote-models/custom-endpoint#troubleshooting) guide for details.
+
 ## Permission Denied
 
 When running Jan, you might encounter the following error message:
 
 ```
-Uncaught (in promise) Error: Error invoking layout-480796bff433a3a3.js:538 remote method 'installExtension':
+Uncaught (in promise) Error: Error invoking remote method 'installExtension':
 Error Package /Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-assistant-extension-1.0.0.tgz does not contain a valid manifest:
 Error EACCES: permission denied, mkdtemp '/Users/username/.npm/_cacache/tmp/ueCMn4'
 ```
@@ -324,30 +423,32 @@ When you start a chat with a model and encounter a **Failed to Fetch** or **Some
 
 **3. Port Conflicts**
 
-If you check your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs) & see "Bind address failed at 127.0.0.1:39291", check port availability:
+If you check your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs) & see "Address already in use" or a bind failure on `127.0.0.1:1337` (Jan's default Local API Server port), check port availability:
 ```
 # Mac
-netstat -an | grep 39291
+netstat -an | grep 1337
 
 # Windows
-netstat -ano | find "39291"
-tasklist /fi "PID eq 39291"
+netstat -ano | find "1337"
+tasklist /fi "PID eq 1337"
 
 # Linux
-netstat -anpe | grep "39291"
+netstat -anpe | grep "1337"
 ```
+
+If port `1337` is occupied, change it under **Settings** > **Local API Server** > **Configuration** > **Server Port**.
 <Callout type="info">
   `Netstat` displays the contents of various network-related data structures for active connections.
 </Callout>
 
 Default Jan ports:
-- Jan and Cortex API Server: `1337`
+- Jan Local API Server: `1337`
 - Jan Documentation: `3001`
 
 **4. Factory Reset**
 
 A factory reset can resolve persistent issues by returning Jan to its original state. This will remove all custom settings, downloaded models, and chat history.
-1. Go to **Settings** > **Advanced Settings**
+1. Go to **Settings** > **General**
 2. At **Reset To Factory Settings**, click **Reset**
 
 <Callout type="warning">
@@ -408,7 +509,7 @@ To fix this, add the CLI binary directory to your `Path` environment variable:
    C:\Users\<username>\AppData\Local\Programs\Jan\resources\bin
    ```
    Replace `<username>` with your Windows username.
-4. Click **OK** to save, then open a new terminal window and try `jan-cli` instead.
+4. Click **OK** to save, then open a new terminal window and try `jan` again. The CLI binary is installed as `jan.exe` inside that directory.
 
 ## Need Further Support?
 

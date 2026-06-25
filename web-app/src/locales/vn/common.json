@@ -2,7 +2,6 @@
   "assistants": "Trợ lý",
   "hardware": "Phần cứng",
   "mcp-servers": "Máy chủ MCP",
-  "connectors": "Máy chủ MCP",
   "local_api_server": "Máy chủ API cục bộ",
   "https_proxy": "Proxy HTTPS",
   "extensions": "Tiện ích mở rộng",
@@ -11,6 +10,8 @@
   "general": "Chung",
   "settings": "Cài đặt",
   "modelProviders": "Nhà cung cấp Mô hình",
+  "localProviders": "Cục bộ",
+  "remoteProviders": "Từ xa",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Giao diện",
@@ -254,7 +255,8 @@
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
-    "uploadingFiles": "Đang tải lên tệp…",
+    "uploadingFiles": "Đang xử lý tệp…",
+    "processButton": "Thêm",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
       "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
@@ -396,5 +398,12 @@
       "title": "Chủ đề đã được xóa",
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
     }
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

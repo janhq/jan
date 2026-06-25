@@ -44,8 +44,45 @@ A panel will slide open on the right with all available model settings:
 | **Min P** | Minimum chance a word needs to be chosen | Prevents very unlikely words. Usually fine at default. |
 | **Repeat Last N** | How far back to check for repetition | Helps prevent the model from repeating itself. Default values usually work well. |
 | **Repeat Penalty** | How much to avoid repeating words | Higher values (1.1-1.3) reduce repetition. Too high makes responses awkward. |
-| **Presence Penalty** | Encourages talking about new topics | Higher values make the model explore new subjects instead of staying on one topic. |
-| **Frequency Penalty** | Reduces word repetition | Similar to repeat penalty but focuses on how often words are used. |
+| **Presence Penalty** | Encourages talking about new topics | Higher values make the model explore new subjects instead of staying on one topic. Remote providers only — has no effect on local llama.cpp models. |
+| **Frequency Penalty** | Reduces word repetition | Similar to repeat penalty but focuses on how often words are used. Remote providers only — has no effect on local llama.cpp models. |
+
+## Reasoning Mode
+
+When using the **llama.cpp** provider, a brain icon appears in the chat input toolbar for models that support extended thinking (e.g. DeepSeek-R1, QwQ). Use it to set the reasoning mode for that model:
+
+| Mode | Behavior |
+|------|----------|
+| **Auto** | Model decides when to reason internally |
+| **On** | Always reason before responding |
+| **Off** | Skip reasoning, reply directly |
+
+This setting persists per model and does not require reloading. The toggle is only shown for the llama.cpp provider — it is not available for remote cloud providers.
+
+## Advanced Sampling (llama.cpp only)
+
+<Callout type="info">
+The following settings are only applied when using a local llama.cpp model. They have no effect on remote cloud providers.
+</Callout>
+
+### Mirostat
+
+An alternative sampling algorithm that targets a specific perplexity level, producing more consistent output length and coherence compared to top-p/top-k.
+
+| Setting | What It Does | Simple Explanation |
+|---------|-------------|-------------------|
+| **Mirostat Mode** | Sampling algorithm to use | Off = standard top-p/k. V1 or V2 = Mirostat (V2 is more stable) |
+| **Mirostat Learning Rate** | How quickly the algorithm adapts | Lower (0.05) = more stable, higher (0.2) = adapts faster |
+| **Mirostat Target Entropy** | Desired output complexity | Higher values allow more variety; lower values produce tighter focus |
+
+### Output Constraints
+
+Force the model to produce output that matches a specific format.
+
+| Setting | What It Does | Simple Explanation |
+|---------|-------------|-------------------|
+| **Grammar File** | Path to a GBNF grammar file | Constrains every token to match the grammar, useful for code, lists, or custom formats |
+| **JSON Schema File** | Path to a JSON Schema file | Enforces a specific JSON structure in every response |
 
 ## Hardware Settings
 
@@ -66,7 +103,7 @@ This is like the model's short-term memory - how much of your conversation it ca
 - **Shorter context** = Uses less memory, runs faster, but might "forget" earlier parts of long conversations
 
 <Callout type="info">
-Jan defaults to 8192 tokens (roughly 6000 words) or your model's maximum, whichever is smaller. This handles most conversations well.
+When **Fit to Hardware** is enabled, Jan automatically caps context size based on your model and available memory. This is on by default for Windows and Linux with a discrete GPU, and off by default for integrated GPUs and macOS (Apple Silicon uses unified memory, so the cap is less critical). If fit is disabled, you can set context size freely — but values beyond what your hardware can handle will cause slowdowns or out-of-memory errors.
 </Callout>
 
 ## Quick Setup Guide

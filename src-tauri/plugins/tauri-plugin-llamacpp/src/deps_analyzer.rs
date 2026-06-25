@@ -3,8 +3,10 @@
 //! a crash from taking down the app.
 
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_os = "macos"))]
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(not(target_os = "macos"))]
 use std::process::{Command, Stdio};
 
 pub const ANALYZE_FLAG: &str = "--internal-analyze-deps";
@@ -15,23 +17,30 @@ pub struct AnalyzeOutput {
     pub resolved: Vec<String>,
 }
 
+// On macOS we never spawn the analyzer subprocess, so this is a no-op.
+#[cfg(target_os = "macos")]
+pub fn run_deps_analyzer_if_requested() {}
+
+#[cfg(not(target_os = "macos"))]
 pub fn run_deps_analyzer_if_requested() {
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() != Some(ANALYZE_FLAG) {
         return;
     }
 
-    let lib_dir = match args.next() {
-        Some(d) => PathBuf::from(d),
+    // First arg is the platform-joined list of library search dirs (the
+    // backend's own dir plus any GPU runtime dirs, e.g. ROCm under /opt).
+    let lib_dirs: Vec<PathBuf> = match args.next() {
+        Some(d) => std::env::split_paths(&d).collect(),
         None => {
-            eprintln!("{}: missing <lib_dir> argument", ANALYZE_FLAG);
+            eprintln!("{}: missing <lib_dirs> argument", ANALYZE_FLAG);
             std::process::exit(2);
         }
     };
     let targets: Vec<PathBuf> = args.map(PathBuf::from).collect();
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        analyze(&lib_dir, &targets)
+        analyze(&lib_dirs, &targets)
     }));
 
     match result {
@@ -57,9 +66,12 @@ pub fn run_deps_analyzer_if_requested() {
     }
 }
 
-fn analyze(lib_dir: &Path, targets: &[PathBuf]) -> AnalyzeOutput {
-    let analyzer =
-        lddtree::DependencyAnalyzer::default().add_library_path(lib_dir.to_path_buf());
+#[cfg(not(target_os = "macos"))]
+fn analyze(lib_dirs: &[PathBuf], targets: &[PathBuf]) -> AnalyzeOutput {
+    let mut analyzer = lddtree::DependencyAnalyzer::default();
+    for dir in lib_dirs {
+        analyzer = analyzer.add_library_path(dir.to_path_buf());
+    }
 
     let mut missing: HashSet<String> = HashSet::new();
     let mut resolved: HashSet<String> = HashSet::new();
@@ -92,7 +104,15 @@ pub(crate) fn is_virtual_windows_dll(name: &str) -> bool {
     lower.starts_with("api-ms-win-") || lower.starts_with("ext-ms-win-")
 }
 
-pub fn analyze_out_of_process(lib_dir: &Path, targets: &[PathBuf]) -> AnalyzeOutput {
+// macOS resolves dynamic libraries via dyld at load time; lddtree's Mach-O
+// handling is unreliable and has crashed in the field, so skip the analyzer.
+#[cfg(target_os = "macos")]
+pub fn analyze_out_of_process(_lib_dirs: &[PathBuf], _targets: &[PathBuf]) -> AnalyzeOutput {
+    AnalyzeOutput::default()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn analyze_out_of_process(lib_dirs: &[PathBuf], targets: &[PathBuf]) -> AnalyzeOutput {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -101,8 +121,16 @@ pub fn analyze_out_of_process(lib_dir: &Path, targets: &[PathBuf]) -> AnalyzeOut
         }
     };
 
+    let joined = match std::env::join_paths(lib_dirs) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("deps_analyzer: failed to join lib dirs: {}", e);
+            return AnalyzeOutput::default();
+        }
+    };
+
     let mut cmd = Command::new(&exe);
-    cmd.arg(ANALYZE_FLAG).arg(lib_dir);
+    cmd.arg(ANALYZE_FLAG).arg(joined);
     for t in targets {
         cmd.arg(t);
     }

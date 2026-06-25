@@ -7,7 +7,9 @@ describe('useDownloadStore', () => {
     useDownloadStore.setState({
       downloads: {},
       localDownloadingModels: new Set(),
+      resumeParams: {},
     })
+    localStorage.clear()
   })
 
   describe('initial state', () => {
@@ -257,6 +259,77 @@ describe('useDownloadStore', () => {
       
       expect(result.current.downloads['download-1']).toBeUndefined()
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+    })
+  })
+
+  describe('pause / resume params', () => {
+    it('setPaused marks an existing download paused', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('m1', 0.4, 'm1', 400, 1000)
+        result.current.setPaused('m1', true)
+      })
+
+      expect(result.current.downloads['m1'].paused).toBe(true)
+      expect(result.current.downloads['m1'].progress).toBe(0.4)
+    })
+
+    it('setPaused creates a minimal entry when none exists', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.setPaused('m1', true)
+      })
+
+      expect(result.current.downloads['m1']).toEqual({
+        id: 'm1',
+        name: 'm1',
+        progress: 0,
+        current: 0,
+        total: 0,
+        paused: true,
+      })
+    })
+
+    it('setResumeParams stores params and removeDownload clears them', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('m1', 0.4, 'm1', 400, 1000)
+        result.current.setResumeParams('m1', { modelPath: 'url' })
+      })
+      expect(result.current.resumeParams['m1']).toEqual({ modelPath: 'url' })
+
+      act(() => {
+        result.current.removeDownload('m1')
+      })
+      expect(result.current.resumeParams['m1']).toBeUndefined()
+      expect(result.current.downloads['m1']).toBeUndefined()
+    })
+  })
+
+  describe('persistence', () => {
+    it('persists only paused downloads and their resume params', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        // active download — must NOT be persisted
+        result.current.updateProgress('active', 0.2, 'active', 200, 1000)
+        result.current.setResumeParams('active', { modelPath: 'a' })
+        // paused download — must be persisted
+        result.current.updateProgress('paused', 0.6, 'paused', 600, 1000)
+        result.current.setResumeParams('paused', { modelPath: 'p' })
+        result.current.setPaused('paused', true)
+      })
+
+      const persisted = JSON.parse(
+        localStorage.getItem('paused-downloads') as string
+      )
+      expect(persisted.state.downloads['paused']?.paused).toBe(true)
+      expect(persisted.state.resumeParams['paused']).toEqual({ modelPath: 'p' })
+      expect(persisted.state.downloads['active']).toBeUndefined()
+      expect(persisted.state.resumeParams['active']).toBeUndefined()
     })
   })
 })

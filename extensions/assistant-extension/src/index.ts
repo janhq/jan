@@ -1,10 +1,14 @@
 import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
+
+const V2_IDENTITY_LINE =
+  'You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).'
+
 /**
  * JanAssistantExtension is an AssistantExtension implementation that provides
  * functionality for managing assistants.
  */
 export default class JanAssistantExtension extends AssistantExtension {
-  private readonly CURRENT_MIGRATION_VERSION = 2
+  private readonly CURRENT_MIGRATION_VERSION = 3
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
 
   /**
@@ -79,6 +83,12 @@ export default class JanAssistantExtension extends AssistantExtension {
       await this.saveMigrationVersion(2)
     }
 
+    if (currentVersion < 3) {
+      console.log('Running migration v3: Strip identity preamble from default assistant')
+      await this.migrateStripIdentityPreamble()
+      await this.saveMigrationVersion(3)
+    }
+
     console.log(
       `Migrations complete. Current version: ${this.CURRENT_MIGRATION_VERSION}`
     )
@@ -131,7 +141,7 @@ export default class JanAssistantExtension extends AssistantExtension {
    */
   private async migrateToMenloInstructions(): Promise<void> {
     const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
-    const NEW_INSTRUCTION = `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
+    const NEW_INSTRUCTION = `${V2_IDENTITY_LINE}
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
@@ -199,6 +209,38 @@ Current date: {{current_date}}`
   }
 
   /**
+   * Migration v3: Strip the identity preamble from assistants whose instructions
+   * are still the verbatim v2 default. Leaves user-customized prompts untouched.
+   */
+  private async migrateStripIdentityPreamble(): Promise<void> {
+    if (!(await fs.existsSync('file://assistants'))) {
+      return
+    }
+
+    const expectedOldInstructions = `${V2_IDENTITY_LINE}\n\n${this.defaultAssistant.instructions}`
+    const assistants = await this.getAssistants()
+
+    for (const assistant of assistants) {
+      if (assistant.instructions !== expectedOldInstructions) continue
+
+      assistant.instructions = this.defaultAssistant.instructions
+
+      const assistantPath = await joinPath([
+        'file://assistants',
+        assistant.id,
+        'assistant.json',
+      ])
+
+      try {
+        await fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
+        console.log(`Stripped identity preamble for assistant: ${assistant.id}`)
+      } catch (error) {
+        console.error(`Failed to migrate assistant ${assistant.id}:`, error)
+      }
+    }
+  }
+
+  /**
    * Called when the extension is unloaded.
    */
   onUnload(): void {}
@@ -261,9 +303,7 @@ Current date: {{current_date}}`
     description:
       'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions: `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
-
-You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
+    instructions: `You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
 When handling user queries:
 

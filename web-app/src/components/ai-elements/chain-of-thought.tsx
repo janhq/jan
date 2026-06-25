@@ -22,6 +22,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
 import { Shimmer } from './shimmer'
@@ -36,7 +37,10 @@ type ChainOfThoughtContextValue = {
   isOpen: boolean
   setIsOpen: (open: boolean) => void
   isStreaming: boolean
+  duration: number | undefined
 }
+
+const MS_IN_S = 1000
 
 const ChainOfThoughtContext = createContext<ChainOfThoughtContextValue | null>(
   null
@@ -58,6 +62,8 @@ export type ChainOfThoughtProps = ComponentProps<typeof Collapsible> & {
   isStreaming?: boolean
   /** When true the collapsible auto-collapses (e.g. text content appeared after this CoT group). */
   shouldCollapse?: boolean
+  /** When true the collapsible is forced open and overrides auto-collapse (e.g. a tool is awaiting approval). */
+  forceOpen?: boolean
   open?: boolean
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
@@ -68,6 +74,7 @@ export const ChainOfThought = memo(
     className,
     isStreaming = false,
     shouldCollapse = false,
+    forceOpen = false,
     open,
     defaultOpen = true,
     onOpenChange,
@@ -80,26 +87,43 @@ export const ChainOfThought = memo(
       onChange: onOpenChange,
     })
 
-    // Auto-collapse once text content appears after this CoT group
+    // Auto-collapse once text content appears after this CoT group, unless
+    // something inside still needs the user's attention (forceOpen).
     useEffect(() => {
-      if (shouldCollapse) {
+      if (forceOpen) {
+        setIsOpen(true)
+      } else if (shouldCollapse) {
         setIsOpen(false)
       }
-    }, [shouldCollapse, setIsOpen])
+    }, [forceOpen, shouldCollapse, setIsOpen])
 
     const handleOpenChange = (newOpen: boolean) => {
       setIsOpen(newOpen)
     }
 
+    const [startTime, setStartTime] = useState<number | null>(null)
+    const [duration, setDuration] = useState<number | undefined>(undefined)
+
+    useEffect(() => {
+      if (isStreaming) {
+        if (startTime === null) {
+          setStartTime(Date.now())
+        }
+      } else if (startTime !== null) {
+        setDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
+        setStartTime(null)
+      }
+    }, [isStreaming, startTime])
+
     const contextValue = useMemo(
-      () => ({ isStreaming, isOpen, setIsOpen }),
-      [isStreaming, isOpen, setIsOpen]
+      () => ({ isStreaming, isOpen, setIsOpen, duration }),
+      [isStreaming, isOpen, setIsOpen, duration]
     )
 
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
         <Collapsible
-          className={cn('not-prose mb-4', className)}
+          className={cn('not-prose', className)}
           onOpenChange={handleOpenChange}
           open={isOpen}
           {...props}
@@ -117,11 +141,22 @@ export type ChainOfThoughtHeaderProps = ComponentProps<
   typeof CollapsibleTrigger
 > & {
   title?: string
+  /** Label shown while streaming, e.g. "Working...". Defaults to "Reasoning...". */
+  streamingLabel?: string
+  /** Past-tense verb for the completed state, e.g. "Worked". Defaults to "Thought". */
+  completedVerb?: string
 }
 
 export const ChainOfThoughtHeader = memo(
-  ({ className, title, children, ...props }: ChainOfThoughtHeaderProps) => {
-    const { isStreaming, isOpen } = useChainOfThought()
+  ({
+    className,
+    title,
+    streamingLabel = 'Reasoning...',
+    completedVerb = 'Thought',
+    children,
+    ...props
+  }: ChainOfThoughtHeaderProps) => {
+    const { isStreaming, isOpen, duration } = useChainOfThought()
 
     return (
       <CollapsibleTrigger
@@ -134,10 +169,16 @@ export const ChainOfThoughtHeader = memo(
         {children ?? (
           <>
             <SparklesIcon className="size-4" />
-            {isStreaming ? (
-              <Shimmer duration={1}>Reasoning...</Shimmer>
+            {isStreaming || duration === 0 ? (
+              <Shimmer duration={1}>{streamingLabel}</Shimmer>
+            ) : title ? (
+              <p>{title}</p>
+            ) : duration === undefined ? (
+              <p>{completedVerb} for a few seconds</p>
             ) : (
-              <p>{title ?? 'Reasoned through the problem'}</p>
+              <p>
+                {completedVerb} for {duration} seconds
+              </p>
             )}
             <ChevronDownIcon
               className={cn(

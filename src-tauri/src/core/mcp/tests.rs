@@ -506,7 +506,7 @@ fn test_default_constants_values() {
     assert_eq!(DEFAULT_MCP_BASE_RESTART_DELAY_MS, 1000);
     assert_eq!(DEFAULT_MCP_MAX_RESTART_DELAY_MS, 30000);
     assert!((DEFAULT_MCP_BACKOFF_MULTIPLIER - 2.0).abs() < f64::EPSILON);
-    assert!(DEFAULT_MCP_BASE_RESTART_DELAY_MS < DEFAULT_MCP_MAX_RESTART_DELAY_MS);
+    const _: () = assert!(DEFAULT_MCP_BASE_RESTART_DELAY_MS < DEFAULT_MCP_MAX_RESTART_DELAY_MS);
 }
 
 #[test]
@@ -572,8 +572,10 @@ fn test_mcp_settings_default_matches_constants() {
 #[test]
 fn test_mcp_settings_tool_call_timeout_duration_enforces_minimum() {
     use super::models::McpSettings;
-    let mut s = McpSettings::default();
-    s.tool_call_timeout_seconds = 0;
+    let mut s = McpSettings {
+        tool_call_timeout_seconds: 0,
+        ..McpSettings::default()
+    };
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(1));
     s.tool_call_timeout_seconds = 5;
     assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(5));
@@ -612,11 +614,13 @@ impl PartialEq for super::models::McpSettings {
 #[test]
 fn test_mcp_settings_round_trip_camel_case() {
     use super::models::McpSettings;
-    let mut s = McpSettings::default();
-    s.tool_call_timeout_seconds = 42;
-    s.router_model_provider = "openai".into();
-    s.router_model_id = "gpt-4".into();
-    s.use_lightweight_router_model = true;
+    let s = McpSettings {
+        tool_call_timeout_seconds: 42,
+        router_model_provider: "openai".into(),
+        router_model_id: "gpt-4".into(),
+        use_lightweight_router_model: true,
+        ..McpSettings::default()
+    };
     let json = serde_json::to_string(&s).unwrap();
     assert!(json.contains("\"toolCallTimeoutSeconds\":42"));
     assert!(json.contains("\"routerModelProvider\":\"openai\""));
@@ -786,6 +790,7 @@ fn test_mcp_lock_file_serde_round_trip() {
     use super::lockfile::McpLockFile;
     let lock = McpLockFile {
         pid: 4242,
+        jan_pid: std::process::id(),
         port: 17389,
         server_name: "Jan Browser MCP".to_string(),
         created_at: "2026-01-01T00:00:00+00:00".to_string(),
@@ -822,7 +827,7 @@ fn test_is_process_alive_for_almost_certainly_dead_pid() {
     // PID 0 is the scheduler / not a real signalable process on Linux/macOS
     // and PID 999999 is extremely unlikely to exist
     // (i32::MAX as u32) exceeds Linux pid_max → kernel returns ESRCH/EINVAL
-    assert!(!is_process_alive((i32::MAX as u32)));
+    assert!(!is_process_alive(i32::MAX as u32));
 }
 
 #[test]
@@ -834,11 +839,13 @@ fn test_create_read_delete_lock_file_round_trip() {
     // Ensure clean slate
     let _ = delete_lock_file(app.handle(), port);
 
-    create_lock_file(app.handle(), port, "test-server").expect("create_lock_file");
+    let fake_child_pid = std::process::id().wrapping_add(1);
+    create_lock_file(app.handle(), port, "test-server", fake_child_pid).expect("create_lock_file");
     let lock = read_lock_file(app.handle(), port).expect("read_lock_file");
     assert_eq!(lock.port, port);
     assert_eq!(lock.server_name, "test-server");
-    assert_eq!(lock.pid, std::process::id());
+    assert_eq!(lock.pid, fake_child_pid);
+    assert_eq!(lock.jan_pid, std::process::id());
     assert!(!lock.created_at.is_empty());
     assert!(!lock.hostname.is_empty());
 
@@ -882,8 +889,8 @@ async fn test_check_and_cleanup_stale_lock_keeps_live_lock() {
     let app = mock_app();
     let port: u16 = 53_115;
     let _ = delete_lock_file(app.handle(), port);
-    create_lock_file(app.handle(), port, "live").unwrap();
-    // Lock points at the current PID, which is alive → must NOT be removed
+    create_lock_file(app.handle(), port, "live", std::process::id()).unwrap();
+    // Lock pid is the current process (alive) → must NOT be removed
     let cleaned = check_and_cleanup_stale_lock(app.handle(), port).await.unwrap();
     assert!(!cleaned);
     assert!(read_lock_file(app.handle(), port).is_some());
@@ -903,9 +910,10 @@ async fn test_check_and_cleanup_stale_lock_removes_dead_pid_lock() {
     let lock_path = app_data_dir.join(format!("mcp_lock_{}.json", port));
 
     // PID above pid_max guarantees ESRCH/EINVAL on Unix → reported as not alive
-    let dead_pid: u32 = (i32::MAX as u32);
+    let dead_pid: u32 = i32::MAX as u32;
     let lock = McpLockFile {
         pid: dead_pid,
+        jan_pid: std::process::id(),
         port,
         server_name: "ghost".to_string(),
         created_at: "2020-01-01T00:00:00+00:00".to_string(),
@@ -933,17 +941,18 @@ fn test_cleanup_own_locks_removes_only_current_pid_locks() {
     let _ = delete_lock_file(app.handle(), own_port);
     let _ = delete_lock_file(app.handle(), other_port);
 
-    // Lock owned by us
-    create_lock_file(app.handle(), own_port, "ours").unwrap();
+    // Lock owned by us (jan_pid matches current process)
+    let fake_child_pid = std::process::id().wrapping_add(1);
+    create_lock_file(app.handle(), own_port, "ours", fake_child_pid).unwrap();
 
-    // Lock owned by some other PID — write directly into the SAME dir lockfile uses
+    // Lock owned by a different Jan instance — write directly into the SAME dir lockfile uses
     let app_data_dir = app.handle().path().app_data_dir().expect("app data dir");
     std::fs::create_dir_all(&app_data_dir).ok();
     let other_path = app_data_dir.join(format!("mcp_lock_{}.json", other_port));
-    // Pick a PID that is definitely not us (and survives wrap)
-    let foreign_pid = if std::process::id() == 1 { 2 } else { 1 };
+    let foreign_jan_pid = if std::process::id() == 1 { 2 } else { 1 };
     let foreign = McpLockFile {
-        pid: foreign_pid,
+        pid: foreign_jan_pid,
+        jan_pid: foreign_jan_pid,
         port: other_port,
         server_name: "theirs".into(),
         created_at: "2020-01-01T00:00:00+00:00".into(),
@@ -963,4 +972,40 @@ fn test_cleanup_own_locks_removes_only_current_pid_locks() {
 
     // Cleanup
     let _ = std::fs::remove_file(&other_path);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn terminate_browser_mcp_reaps_process_group() {
+    use super::helpers::terminate_browser_mcp;
+    use std::os::unix::process::CommandExt;
+    use std::process::Command;
+
+    // Group leader (pgid == pid) that keeps a backgrounded grandchild alive.
+    // killpg must reap the whole group, not just the leader.
+    let mut child = {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 30 & wait");
+        cmd.process_group(0);
+        cmd.spawn().expect("spawn group leader")
+    };
+    let pid = child.id();
+
+    // A port nothing binds → terminate kills the group, finds the port already
+    // free, and returns. (We're the leader's parent, so after the kill it sits as
+    // a zombie until we wait() below.)
+    let free_port = {
+        let l = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let p = l.local_addr().unwrap().port();
+        drop(l);
+        p
+    };
+
+    terminate_browser_mcp(Some(pid), free_port).await;
+
+    let status = child.wait().expect("reap leader");
+    assert!(
+        !status.success(),
+        "group leader should have been signalled, got {status:?}"
+    );
 }

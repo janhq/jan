@@ -31,5 +31,11 @@
   "personality": "個性",
   "capabilities": "機能",
   "instructionsDateHint": "ヒント: {{current_date}} を使用して今日の日付を挿入します。",
-  "maxToolSteps": "最大ツールステップ数"
+  "maxToolSteps": "最大ツールステップ数",
+  "setAsDefault": "デフォルトのアシスタントに設定",
+  "isDefault": "デフォルト",
+  "defaultAssistantSection": "デフォルトのアシスタント",
+  "defaultAssistantDesc": "新しいチャットを開始するときに使用されます",
+  "allAssistants": "すべてのアシスタント",
+  "lastUsed": "最終使用"
 }

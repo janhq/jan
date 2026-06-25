@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
@@ -219,35 +219,7 @@ describe('__root route', () => {
     expect(screen.queryByTestId('left-sidebar')).not.toBeInTheDocument()
   })
 
-  it('adds "loaded" class to body after mount timer fires', () => {
-    vi.useFakeTimers()
-    renderComponent()
-    expect(document.body.classList.contains('loaded')).toBe(false)
-    act(() => {
-      vi.advanceTimersByTime(210)
-    })
-    // requestAnimationFrame runs synchronously in jsdom via mock or schedules; run both
-    act(() => {
-      vi.advanceTimersByTime(400)
-    })
-    expect(document.body.classList.contains('loaded')).toBe(true)
-  })
-
-  it('removes #initial-loader element after mount', () => {
-    vi.useFakeTimers()
-    const loader = document.createElement('div')
-    loader.id = 'initial-loader'
-    document.body.appendChild(loader)
-    renderComponent()
-    expect(document.getElementById('initial-loader')).not.toBeNull()
-    act(() => {
-      vi.advanceTimersByTime(210)
-    })
-    act(() => {
-      vi.advanceTimersByTime(400)
-    })
-    expect(document.getElementById('initial-loader')).toBeNull()
-  })
+  // Loader dismissal moved to ExtensionProvider — see ExtensionProvider.test.tsx.
 
   it('errorComponent renders GlobalError with provided error', () => {
     const ErrComp = (Route as any).errorComponent as React.ComponentType<{ error: Error }>

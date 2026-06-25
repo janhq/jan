@@ -3,6 +3,7 @@
   "sortMostDownloaded": "Most downloaded",
   "newChat": "New chat",
   "download": "Download",
+  "downloadFailed": "Failed to start download",
   "downloaded": "Downloaded",
   "loadingModels": "Loading models...",
   "noModels": "No models found",

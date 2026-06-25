@@ -108,9 +108,15 @@ interface InterfaceSettingsState {
   fontSize: FontSize
   accentColor: AccentColorValue
   notificationPosition: NotificationPosition
+  showTokenSpeed: boolean
+  coloredUserBubble: boolean
+  renderHtmlArtifacts: boolean
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
   setNotificationPosition: (position: NotificationPosition) => void
+  setShowTokenSpeed: (show: boolean) => void
+  setColoredUserBubble: (colored: boolean) => void
+  setRenderHtmlArtifacts: (render: boolean) => void
   resetInterface: () => void
 }
 
@@ -120,6 +126,9 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setFontSize'
   | 'setAccentColor'
   | 'setNotificationPosition'
+  | 'setShowTokenSpeed'
+  | 'setColoredUserBubble'
+  | 'setRenderHtmlArtifacts'
 >
 
 export const fontSizeOptions = [
@@ -137,6 +146,9 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     fontSize: defaultFontSize,
     accentColor: DEFAULT_ACCENT_COLOR,
     notificationPosition: getDefaultNotificationPosition(),
+    showTokenSpeed: true,
+    coloredUserBubble: true,
+    renderHtmlArtifacts: false,
   }
 }
 
@@ -172,6 +184,9 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             fontSize: defaultFontSize,
             accentColor: DEFAULT_ACCENT_COLOR,
             notificationPosition: getDefaultNotificationPosition(),
+            showTokenSpeed: true,
+            coloredUserBubble: true,
+            renderHtmlArtifacts: false,
           })
         },
 
@@ -195,6 +210,18 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           if (!isNotificationPosition(position)) return
           set({ notificationPosition: position })
         },
+
+        setShowTokenSpeed: (show) => {
+          set({ showTokenSpeed: show })
+        },
+
+        setColoredUserBubble: (colored) => {
+          set({ coloredUserBubble: colored })
+        },
+
+        setRenderHtmlArtifacts: (render) => {
+          set({ renderHtmlArtifacts: render })
+        },
       }
     },
     {
@@ -204,6 +231,9 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         fontSize: state.fontSize,
         accentColor: state.accentColor,
         notificationPosition: state.notificationPosition,
+        showTokenSpeed: state.showTokenSpeed,
+        coloredUserBubble: state.coloredUserBubble,
+        renderHtmlArtifacts: state.renderHtmlArtifacts,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
@@ -232,6 +262,18 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           ) {
             state.notificationPosition = getDefaultNotificationPosition()
           }
+
+          if (typeof state.showTokenSpeed !== 'boolean') {
+            state.showTokenSpeed = true
+          }
+
+          if (typeof state.coloredUserBubble !== 'boolean') {
+            state.coloredUserBubble = true
+          }
+
+          if (typeof state.renderHtmlArtifacts !== 'boolean') {
+            state.renderHtmlArtifacts = false
+          }
         }
 
         // Return the state to be used for hydration
@@ -243,10 +285,15 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
 // Subscribe to theme changes to update accent color sidebar variant
 let prevIsDark = useTheme.getState().isDark
-useTheme.subscribe((state) => {
+const unsubscribeTheme = useTheme.subscribe((state) => {
   if (state.isDark !== prevIsDark) {
     prevIsDark = state.isDark
     const { accentColor } = useInterfaceSettings.getState()
     applyAccentColorToDOM(accentColor, state.isDark)
   }
 })
+
+// Detach the module-level subscription on HMR so reloads don't stack listeners.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => unsubscribeTheme())
+}

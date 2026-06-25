@@ -2,7 +2,6 @@
   "assistants": "助理",
   "hardware": "硬體",
   "mcp-servers": "MCP 伺服器",
-  "connectors": "MCP 伺服器",
   "local_api_server": "本地 API 伺服器",
   "https_proxy": "HTTPS 代理",
   "extensions": "擴充功能",
@@ -11,6 +10,8 @@
   "general": "一般",
   "settings": "設定",
   "modelProviders": "模型提供者",
+  "localProviders": "本機",
+  "remoteProviders": "遠端",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "外觀",
@@ -253,7 +254,8 @@
     "searchProjects": "搜尋專案...",
     "noProjectsFound": "找不到專案",
     "tryDifferentSearch": "嘗試不同的搜尋詞",
-    "uploadingFiles": "正在上傳檔案…",
+    "uploadingFiles": "正在處理檔案…",
+    "processButton": "新增",
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
@@ -396,5 +398,12 @@
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
     }
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

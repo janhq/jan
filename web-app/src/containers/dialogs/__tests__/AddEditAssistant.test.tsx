@@ -1,6 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
+
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+beforeAll(() => {
+  ;(global as any).ResizeObserver = MockResizeObserver
+})
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -43,14 +52,32 @@ vi.mock('@/lib/predefinedParams', () => ({
       value: 0.7,
       title: 'Temperature',
       description: 'temp',
+      capability: 'core',
+      controllerType: 'slider',
+      controllerProps: { min: 0, max: 2, step: 0.1 },
     },
     stream: {
       key: 'stream',
       value: true,
       title: 'Stream',
       description: 'stream',
+      capability: 'client_only',
+      controllerType: 'checkbox',
+      controllerProps: {},
     },
   },
+  paramCategories: [
+    {
+      id: 'common',
+      title: 'Common',
+      paramKeys: ['temperature', 'stream'],
+      groupIds: [],
+    },
+  ],
+  paramGroups: [],
+  LLAMACPP_ONLY_PARAM_KEYS: new Set<string>(),
+  evaluateDisabled: () => ({ disabled: false }),
+  isGroupedParamKey: () => false,
 }))
 
 import AddEditAssistant from '../AddEditAssistant'
@@ -133,56 +160,6 @@ describe('AddEditAssistant', () => {
     expect(
       screen.queryByText('assistants:nameRequired')
     ).not.toBeInTheDocument()
-  })
-
-  it('adds a new empty parameter row on Add click', () => {
-    const props = baseProps()
-    render(<AddEditAssistant {...props} />)
-    const keyInputs = () =>
-      screen.getAllByPlaceholderText('assistants:key') as HTMLInputElement[]
-    expect(keyInputs()).toHaveLength(1)
-    // Plus icon button — first button with empty accessible name in params row; pick via closest
-    const addButtons = screen.getAllByRole('button')
-    // Click the "+" adjacent to predefined params heading — it's the first svg+button with no text
-    const plusBtn = addButtons.find(
-      (b) => b.querySelector('svg') && b.textContent === ''
-    )
-    expect(plusBtn).toBeTruthy()
-    fireEvent.click(plusBtn!)
-    expect(keyInputs().length).toBeGreaterThanOrEqual(2)
-  })
-
-  it('adds a predefined parameter via chip click and saves numeric conversion', () => {
-    const props = baseProps()
-    render(<AddEditAssistant {...props} />)
-    fireEvent.change(screen.getByPlaceholderText('assistants:enterName'), {
-      target: { value: 'n' },
-    })
-    fireEvent.click(screen.getByText('Temperature'))
-    // The first empty param row is replaced; key input now contains "temperature"
-    expect(screen.getByDisplayValue('temperature')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('assistants:save'))
-    const saved = props.onSave.mock.calls[0][0]
-    expect(saved.parameters.temperature).toBe(0.7)
-  })
-
-  it('converts number strings via Number() on save, defaulting NaN to 0', () => {
-    const props = baseProps()
-    props.editingKey = 'a'
-    props.initialData = {
-      id: 'a',
-      name: 'A',
-      instructions: '',
-      parameters: { topk: 5 },
-      created_at: 1,
-    }
-    render(<AddEditAssistant {...props} />)
-    // Edit the number input to a non-numeric string
-    const valueInput = screen.getByDisplayValue('5') as HTMLInputElement
-    fireEvent.change(valueInput, { target: { value: 'abc' } })
-    fireEvent.click(screen.getByText('assistants:save'))
-    const saved = props.onSave.mock.calls[0][0]
-    expect(saved.parameters.topk).toBe(0)
   })
 
   it('preserves an existing id and created_at when editing', () => {

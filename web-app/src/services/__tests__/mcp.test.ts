@@ -173,7 +173,12 @@ describe('TauriMCPService', () => {
       const invalidJson = '{"invalid": json}'
       mockCore.api.getMcpConfigs.mockResolvedValue(invalidJson)
 
-      await expect(mcpService.getMCPConfig()).rejects.toThrow()
+      const result = await mcpService.getMCPConfig()
+
+      expect(result).toEqual({
+        mcpServers: {},
+        mcpSettings: { ...DEFAULT_MCP_SETTINGS },
+      })
     })
 
     it('should handle API rejection', async () => {

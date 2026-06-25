@@ -32,6 +32,36 @@ interface ProxyState {
   noProxy: string
 }
 
+export function getDefaultEmbeddingModelId(
+  provider: string = 'llamacpp'
+): string | undefined {
+  try {
+    const raw = localStorage.getItem('default-embedding-model')
+    if (!raw) return undefined
+    const parsed = JSON.parse(raw)
+    const map = parsed?.state?.defaultByProvider
+    const id = map && map[provider]
+    return typeof id === 'string' && id.length > 0 ? id : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function setDefaultEmbeddingModelId(provider: string, modelId: string) {
+  try {
+    const raw = localStorage.getItem('default-embedding-model')
+    const parsed = raw ? JSON.parse(raw) : { state: {}, version: 0 }
+    const state = parsed.state ?? {}
+    const map = state.defaultByProvider ?? {}
+    map[provider] = modelId
+    parsed.state = { ...state, defaultByProvider: map }
+    if (parsed.version === undefined) parsed.version = 0
+    localStorage.setItem('default-embedding-model', JSON.stringify(parsed))
+  } catch {
+    /* localStorage write failed; non-fatal */
+  }
+}
+
 export function getProxyConfig(): Record<
   string,
   string | string[] | boolean
@@ -122,8 +152,79 @@ export type EmbedBatchResult = {
 const DEFAULT_CHARS_PER_TOKEN = 3
 const UBATCH_SAFETY_MARGIN = 0.5
 
+export const EMBEDDING_GGUF_ARCHS = new Set([
+  'bert',
+  'nomic-bert',
+  'nomic-bert-moe',
+  'jina-bert-v2',
+  'jina-bert-v3',
+  'xlm-roberta',
+  'mpnet',
+  't5encoder',
+])
+
+export function isEmbeddingArchitecture(arch: unknown): boolean {
+  return typeof arch === 'string' && EMBEDDING_GGUF_ARCHS.has(arch)
+}
+
+export function detectEmbeddingFromGgufMeta(
+  meta: Record<string, unknown> | undefined
+): boolean {
+  if (!meta) return false
+  const arch = meta['general.architecture']
+  if (typeof arch !== 'string') return false
+  if (EMBEDDING_GGUF_ARCHS.has(arch)) return true
+  if (arch.toLowerCase().includes('embed')) return true
+  const raw = meta[`${arch}.pooling_type`]
+  const n =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.length > 0
+        ? Number(raw)
+        : NaN
+  return Number.isFinite(n) && n > 0
+}
+
+export function detectMtpLayersFromGgufMeta(
+  meta: Record<string, unknown> | undefined
+): number {
+  if (!meta) return 0
+  const tryParse = (raw: unknown): number => {
+    const n =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && raw.length > 0
+          ? Number(raw)
+          : NaN
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+  }
+  const arch = meta['general.architecture']
+  if (typeof arch === 'string' && arch.length > 0) {
+    const n = tryParse(meta[`${arch}.nextn_predict_layers`])
+    if (n > 0) return n
+  }
+  for (const [key, value] of Object.entries(meta)) {
+    if (key.endsWith('.nextn_predict_layers')) {
+      const n = tryParse(value)
+      if (n > 0) return n
+    }
+  }
+  return 0
+}
+
 export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {
   return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
+}
+
+export function truncateToTokenBudget(
+  text: string,
+  maxTokens: number,
+  charsPerToken = DEFAULT_CHARS_PER_TOKEN
+): string {
+  const cpt = Math.max(charsPerToken, 1)
+  const maxChars = Math.max(1, maxTokens) * cpt
+  if (text.length <= maxChars) return text
+  return text.slice(0, maxChars)
 }
 
 export function buildEmbedBatches(
@@ -131,7 +232,6 @@ export function buildEmbedBatches(
   ubatchSize: number,
   charsPerToken = DEFAULT_CHARS_PER_TOKEN
 ): EmbedBatch[] {
-  // Ensure ubatch_size is large enough for at least 1 token with safety margin
   const minUbatchSize = Math.ceil(1 / UBATCH_SAFETY_MARGIN)
   if (ubatchSize < minUbatchSize) {
     throw new Error(
@@ -155,17 +255,12 @@ export function buildEmbedBatches(
     }
   }
 
-  for (const text of inputs) {
+  for (const raw of inputs) {
+    const text =
+      estimateTokensFromText(raw, charsPerToken) > safeLimit
+        ? truncateToTokenBudget(raw, safeLimit, charsPerToken)
+        : raw
     const estTokens = estimateTokensFromText(text, charsPerToken)
-
-    // If single text exceeds safe limit, still allow it as single batch
-    // (ensure at least one text per batch)
-    if (estTokens > safeLimit) {
-      if (current.length) push()
-      batches.push({ batch: [text], offset })
-      offset += 1
-      continue
-    }
 
     if (currentTokens + estTokens > safeLimit && current.length) {
       push()
@@ -177,7 +272,6 @@ export function buildEmbedBatches(
 
   push()
 
-  // Validate that no batch is empty
   if (batches.some(b => b.batch.length === 0)) {
     throw new Error('Internal error: empty batch detected')
   }

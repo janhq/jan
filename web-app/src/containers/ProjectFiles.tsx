@@ -16,10 +16,84 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { useProjectUploads } from '@/stores/project-uploads-store'
 
 type ProjectFilesProps = {
   projectId: string
   lng: string
+}
+
+function extractRagErrorMessage(error: unknown): {
+  kind: 'parse' | 'unsupported' | 'io' | 'unknown'
+  message: string
+} {
+  if (error && typeof error === 'object') {
+    const obj = error as Record<string, unknown>
+    if (typeof obj.ParseError === 'string')
+      return { kind: 'parse', message: obj.ParseError }
+    if (typeof obj.UnsupportedFileType === 'string')
+      return { kind: 'unsupported', message: obj.UnsupportedFileType }
+    if (typeof obj.IoError === 'string')
+      return { kind: 'io', message: obj.IoError }
+    if (error instanceof Error)
+      return { kind: 'unknown', message: error.message }
+  }
+  if (typeof error === 'string') return { kind: 'unknown', message: error }
+  return { kind: 'unknown', message: '' }
+}
+
+type TFn = (key: string, opts?: Record<string, unknown>) => string
+
+function humanizeUploadError(
+  t: TFn,
+  error: unknown,
+  fileName?: string
+): string {
+  const { kind, message } = extractRagErrorMessage(error)
+  const subject = fileName
+    ? `"${fileName}"`
+    : (t('common:toast.uploadFailed.subjectThisFile') ?? 'This file')
+  const lower = message.toLowerCase()
+
+  if (kind === 'parse' && lower.includes('pdf')) {
+    if (
+      lower.includes('cross-reference') ||
+      lower.includes('xref') ||
+      lower.includes('invalid start value')
+    ) {
+      return t('common:toast.uploadFailed.pdfMalformedXref', { subject })
+    }
+    if (lower.includes('image-based') || lower.includes('scanned')) {
+      return t('common:toast.uploadFailed.pdfScanned', { subject })
+    }
+    if (lower.includes('file too large')) {
+      return t('common:toast.uploadFailed.fileTooLarge', { subject, message })
+    }
+    if (lower.includes('encrypted') || lower.includes('password')) {
+      return t('common:toast.uploadFailed.pdfEncrypted', { subject })
+    }
+    return t('common:toast.uploadFailed.pdfGeneric', { subject })
+  }
+
+  if (kind === 'parse' && lower.includes('file too large')) {
+    return t('common:toast.uploadFailed.fileTooLarge', { subject, message })
+  }
+
+  if (kind === 'unsupported') {
+    return t('common:toast.uploadFailed.unsupportedType', { type: message })
+  }
+
+  if (kind === 'io') {
+    return t('common:toast.uploadFailed.ioError', { subject, message })
+  }
+
+  if (kind === 'parse') {
+    return t('common:toast.uploadFailed.parseGeneric', { subject, message })
+  }
+
+  return (
+    message || t('common:toast.uploadFailed.fallback', { subject })
+  )
 }
 
 type ProjectFile = {
@@ -225,12 +299,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<{
-    current: number
-    total: number
-  } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  const uploadProgress = useProjectUploads((s) => s.progress[projectId])
+  const completedTick = useProjectUploads(
+    (s) => s.completedTick[projectId] ?? 0,
+  )
+  const ingestFiles = useProjectUploads((s) => s.ingest)
+  const uploading = !!uploadProgress
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
@@ -253,7 +329,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   useEffect(() => {
     loadProjectFiles()
-  }, [loadProjectFiles])
+  }, [loadProjectFiles, completedTick])
 
   const processFilePaths = useCallback(
     async (paths: string[]) => {
@@ -337,39 +413,31 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
-      const total = newAttachments.length
-      setUploading(true)
-      setUploadProgress({ current: 0, total })
-      try {
-        for (let i = 0; i < newAttachments.length; i++) {
-          const att = newAttachments[i]
-          const result = await serviceHub
-            .uploads()
-            .ingestFileAttachmentForProject(projectId, att)
-          if (!result.id) {
-            throw new Error('Failed to ingest file')
-          }
-          setUploadProgress({ current: i + 1, total })
-        }
-        toast.success(
-          t('common:toast.fileUploaded.title') ?? 'File uploaded successfully'
-        )
-        await loadProjectFiles()
-      } catch (error) {
-        console.error('Failed to upload file:', error)
-        toast.error(
-          t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
-          {
-            description:
-              error instanceof Error ? error.message : JSON.stringify(error),
-          }
-        )
-      } finally {
-        setUploadProgress(null)
-        setUploading(false)
-      }
+      await ingestFiles(
+        projectId,
+        newAttachments,
+        (pid, att) =>
+          serviceHub.uploads().ingestFileAttachmentForProject(pid, att),
+        {
+          onSuccess: () => {
+            toast.success(
+              t('common:toast.fileUploaded.title') ??
+                'File processed successfully',
+            )
+          },
+          onError: (error, fileName) => {
+            console.error('Failed to process file:', error)
+            toast.error(
+              t('common:toast.uploadFailed.title') ?? 'Failed to process file',
+              {
+                description: humanizeUploadError(t, error, fileName),
+              },
+            )
+          },
+        },
+      )
     },
-    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
+    [files, ingestFiles, maxFileSizeMB, projectId, serviceHub, t]
   )
 
   const handleUpload = async () => {
@@ -401,12 +469,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       await processFilePaths(paths)
     } catch (error) {
       console.error('Failed to open file dialog:', error)
-      const desc =
-        error instanceof Error ? error.message : JSON.stringify(error)
       toast.error(
-        t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
+        t('common:toast.uploadFailed.title') ?? 'Failed to process file',
         {
-          description: desc,
+          description: humanizeUploadError(t, error),
         }
       )
     }
@@ -509,7 +575,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ) : (
             <UploadIcon className="size-4" />
           )}
-          <span>Upload</span>
+          <span>{t('common:projects.processButton')}</span>
         </Button>
       </div>
 

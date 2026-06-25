@@ -8,6 +8,7 @@ import {
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
+  splitHtmlArtifacts,
 } from '../utils'
 
 describe('getProviderLogo', () => {
@@ -21,9 +22,6 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('openai')).toBe('/images/model-provider/openai.svg')
     expect(getProviderLogo('gemini')).toBe('/images/model-provider/gemini.svg')
     expect(getProviderLogo('nvidia')).toBe('/images/model-provider/nvidia.svg')
-    expect(getProviderLogo('foundation-models')).toBe(
-      '/images/model-provider/apple-intelligence.svg'
-    )
   })
 
   it('returns undefined for unknown providers', () => {
@@ -39,7 +37,6 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('openrouter')).toBe('OpenRouter')
     expect(getProviderTitle('gemini')).toBe('Gemini')
     expect(getProviderTitle('nvidia')).toBe('NVIDIA NIM')
-    expect(getProviderTitle('foundation-models')).toBe('Apple Intelligence')
   })
 
   it('capitalizes first letter for unknown providers', () => {
@@ -329,5 +326,111 @@ describe('getModelDisplayName', () => {
       displayName: 'Model (Version 2.0) - Fine-tuned',
     } as Model
     expect(getModelDisplayName(model)).toBe('Model (Version 2.0) - Fine-tuned')
+  })
+})
+
+describe('splitHtmlArtifacts', () => {
+  it('returns a single markdown segment when there is no html block', () => {
+    const segs = splitHtmlArtifacts('hello **world**')
+    expect(segs).toEqual([{ type: 'markdown', content: 'hello **world**' }])
+  })
+
+  it('extracts a standalone html block with surrounding prose', () => {
+    const content = 'before\n\n```html\n<h1>hi</h1>\n```\n\nafter'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'html', 'markdown'])
+    expect(segs[1].content).toBe('<h1>hi</h1>')
+    expect(segs[0].content).toContain('before')
+    expect(segs[2].content).toContain('after')
+  })
+
+  it('handles an html block as the entire content (no trailing newline)', () => {
+    const segs = splitHtmlArtifacts('```html\n<p>x</p>\n```')
+    expect(segs).toEqual([{ type: 'html', content: '<p>x</p>' }])
+  })
+
+  it('extracts multiple html blocks', () => {
+    const content = '```html\n<a>1</a>\n```\nmid\n```html\n<b>2</b>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual([
+      'html',
+      'markdown',
+      'html',
+    ])
+    expect(segs[0].content).toBe('<a>1</a>')
+    expect(segs[2].content).toBe('<b>2</b>')
+  })
+
+  it('is case-insensitive on the language tag', () => {
+    const segs = splitHtmlArtifacts('```HTML\n<i>y</i>\n```')
+    expect(segs).toEqual([{ type: 'html', content: '<i>y</i>' }])
+  })
+
+  it('does not match languages that merely start with html', () => {
+    const content = '```html5\n<x/>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown'])
+  })
+
+  it('does not match non-html code fences', () => {
+    const content = '```js\nconst x = 1\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs).toEqual([{ type: 'markdown', content }])
+  })
+
+  it('matches a fence with more than three backticks via the closing backref', () => {
+    const segs = splitHtmlArtifacts('````html\n<p>z</p>\n````')
+    expect(segs).toEqual([{ type: 'html', content: '<p>z</p>' }])
+  })
+
+  it('extracts a ```svg fenced block as an svg segment', () => {
+    const segs = splitHtmlArtifacts('```svg\n<svg><rect/></svg>\n```')
+    expect(segs).toEqual([{ type: 'svg', content: '<svg><rect/></svg>' }])
+  })
+
+  it('extracts a raw <svg> block from prose', () => {
+    const content = 'before\n<svg width="10"><circle/></svg>\nafter'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg', 'markdown'])
+    expect(segs[1].content).toBe('<svg width="10"><circle/></svg>')
+    expect(segs[0].content).toContain('before')
+    expect(segs[2].content).toContain('after')
+  })
+
+  it('keeps adjacent raw <svg> blocks separate (non-greedy)', () => {
+    const segs = splitHtmlArtifacts('<svg>a</svg>\n<svg>b</svg>')
+    const svgs = segs.filter((s) => s.type === 'svg')
+    expect(svgs.map((s) => s.content)).toEqual(['<svg>a</svg>', '<svg>b</svg>'])
+  })
+
+  it('extracts html and svg artifacts side by side', () => {
+    const content = '```html\n<p>x</p>\n```\nmid\n```svg\n<svg/>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['html', 'markdown', 'svg'])
+  })
+
+  it('promotes a lone <svg> wrapped in a non-svg fence to an svg artifact', () => {
+    const content = 'intro\n```xml\n<svg viewBox="0 0 1 1"><rect/></svg>\n```\noutro'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg', 'markdown'])
+    expect(segs[1].content).toBe('<svg viewBox="0 0 1 1"><rect/></svg>')
+  })
+
+  it('promotes a lone <svg> in a bare ``` fence to an svg artifact', () => {
+    const segs = splitHtmlArtifacts('```\n<svg><circle/></svg>\n```')
+    expect(segs).toEqual([{ type: 'svg', content: '<svg><circle/></svg>' }])
+  })
+
+  it('leaves <svg> mixed into other code inside a fence as code', () => {
+    const content = '```xml\n<note>see</note>\n<svg><rect/></svg>\n```'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs).toEqual([{ type: 'markdown', content }])
+  })
+
+  it('still extracts a raw <svg> outside any code fence', () => {
+    const content = '```xml\n<note/>\n```\n<svg><circle/></svg>'
+    const segs = splitHtmlArtifacts(content)
+    expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg'])
+    expect(segs[1].content).toBe('<svg><circle/></svg>')
   })
 })

@@ -123,8 +123,23 @@ export class ExtensionManager {
   /**
    * Loads all registered extension.
    */
-  async load() {
-    await Promise.all(this.listExtensions().map((ext) => ext.onLoad()))
+  async load(onProgress?: (done: number, total: number) => void) {
+    const exts = this.listExtensions()
+    let done = 0
+    onProgress?.(0, exts.length)
+    const results = await Promise.allSettled(
+      exts.map((ext) =>
+        Promise.resolve(ext.onLoad()).finally(() =>
+          onProgress?.(++done, exts.length)
+        )
+      )
+    )
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        const name = exts[i]?.name ?? `index ${i}`
+        console.error(`Extension onLoad failed (${name}):`, r.reason)
+      }
+    })
   }
 
   /**

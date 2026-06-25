@@ -2,6 +2,7 @@
   "toolApproval": {
     "title": "Approbation d'outil requise",
     "description": "L'assistant veut utiliser",
+    "needsApproval": "Cet outil nécessite votre approbation avant de s'exécuter.",
     "securityNotice": "Des outils malveillants ou du contenu de conversation pourraient potentiellement tromper l'assistant pour qu'il tente des actions nuisibles. Examinez attentivement chaque appel d'outil avant de l'approuver.",
     "deny": "Refuser",
     "allowOnce": "Autoriser une fois",

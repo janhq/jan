@@ -9,6 +9,8 @@
   "general": "General",
   "settings": "Configuració",
   "modelProviders": "Proveïdors de models",
+  "localProviders": "Local",
+  "remoteProviders": "Remot",
   "interface": "Interfície",
   "privacy": "Privadesa",
   "keyboardShortcuts": "Dreceres",
@@ -292,7 +294,8 @@
     "searchProjects": "Cerca projectes...",
     "noProjectsFound": "No s’han trobat projectes",
     "tryDifferentSearch": "Prova amb un terme de cerca diferent",
-    "uploadingFiles": "S’estan pujant els fitxers…"
+    "uploadingFiles": "S’estan processant els fitxers…",
+    "processButton": "Afegeix"
   },
   "attachmentsIngestion": {
     "title": "Tria com ingerir els adjunts",
@@ -397,5 +400,12 @@
       "title": "Fil eliminat del projecte",
       "description": "El fil s’ha eliminat de \"{{projectName}}\" correctament"
     }
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

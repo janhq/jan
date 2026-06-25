@@ -3,5 +3,8 @@
   "description": "このチャットはAIのメモリ制限に近づいています。ホワイトボードがいっぱいになるようなものです。メモリウィンドウ（コンテキストサイズ）を拡張して記憶容量を増やすことができますが、コンピュータのメモリ使用量が増える可能性があります。また、入力を切り詰めることもできます。これは、新しいメッセージのためのスペースを確保するために、チャット履歴の一部を忘れることを意味します。",
   "increaseContextSizeDescription": "コンテキストサイズを増やしますか？",
   "truncateInput": "入力を切り詰める",
-  "increaseContextSize": "コンテキストサイズを増やす"
+  "increaseContextSize": "コンテキストサイズを増やす",
+  "lastRequestOverflowed": "前回のリクエストがコンテキストウィンドウを超過しました。",
+  "contextOverflowDetail": "このリクエストには {{request}} token が必要でしたが、モデルのコンテキストウィンドウは {{context}} token しか保持できません。",
+  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。"
 }

@@ -4,7 +4,8 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
-    default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
+    default_data_folder_path, get_configuration_file_path, get_jan_data_folder_path,
+    update_app_configuration,
 };
 use crate::core::app::constants::{
     JAN_DATA_DIRS_COMMON, JAN_DATA_DIRS_CONVERSATIONS, JAN_DATA_DIRS_MODELS,
@@ -76,6 +77,100 @@ fn delete_settings(data_folder: &std::path::Path) {
     }
 }
 
+/// Clear the WebKit/WRY webview profile (localStorage, cookies, IndexedDB,
+/// updater state) stored in the bundle-id app-data dir (e.g. `jan.ai.app/`).
+/// Distinct from the product-name data folder; only removed on explicit opt-in.
+fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_folder: &std::path::Path) {
+    let webview_dir = match app_handle.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::warn!("Cannot resolve webview profile dir: {e}");
+            return;
+        }
+    };
+
+    // Never touch the dir if it is the user's data folder or contains it.
+    if webview_dir == data_folder || data_folder.starts_with(&webview_dir) {
+        log::warn!(
+            "Skipping webview clear: data folder lives inside {}",
+            webview_dir.display()
+        );
+        return;
+    }
+
+    if !webview_dir.is_dir() || !is_safe_to_delete(&webview_dir) {
+        return;
+    }
+
+    log::info!("Clearing webview profile: {}", webview_dir.display());
+    if let Err(e) = fs::remove_dir_all(&webview_dir) {
+        log::warn!("Failed to clear webview profile {}: {e}", webview_dir.display());
+    }
+}
+
+const WEBDATA_RESET_SENTINEL: &str = ".pending-webdata-reset";
+
+/// Flags describing what a pending reset should prune from webview localStorage.
+/// Consumed by the frontend on next startup before stores hydrate.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct WebdataResetFlags {
+    pub keep_app_data: bool,
+    pub keep_models_and_configs: bool,
+    pub clear_web_data: bool,
+}
+
+/// Sentinel lives in the app config dir (alongside settings.json), which
+/// survives the data-folder wipe.
+fn webdata_reset_sentinel_path<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    get_configuration_file_path(app_handle.clone())
+        .parent()
+        .map(|dir| dir.join(WEBDATA_RESET_SENTINEL))
+}
+
+fn write_webdata_reset_sentinel<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    keep_app_data: bool,
+    keep_models_and_configs: bool,
+    clear_web_data: bool,
+) {
+    let Some(path) = webdata_reset_sentinel_path(app_handle) else {
+        return;
+    };
+    let flags = WebdataResetFlags {
+        keep_app_data,
+        keep_models_and_configs,
+        clear_web_data,
+    };
+    match serde_json::to_string(&flags) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&path, json) {
+                log::warn!("Failed to write webdata reset sentinel: {e}");
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize webdata reset flags: {e}"),
+    }
+}
+
+/// Read and remove the pending-reset sentinel. Returns the flags if one existed
+/// so the frontend can prune the matching localStorage keys before hydration.
+#[tauri::command]
+pub fn take_pending_webdata_reset<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Option<WebdataResetFlags> {
+    let path = webdata_reset_sentinel_path(&app_handle)?;
+    if !path.is_file() {
+        return None;
+    }
+    let flags = fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<WebdataResetFlags>(&content).ok());
+    if let Err(e) = fs::remove_file(&path) {
+        log::warn!("Failed to remove webdata reset sentinel: {e}");
+    }
+    flags
+}
+
 /// Detect the user's default shell and return the appropriate env file path.
 /// Returns (shell_name, env_file_path).
 fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
@@ -127,9 +222,11 @@ pub fn factory_reset<R: Runtime>(
     state: State<'_, AppState>,
     keep_app_data: Option<bool>,
     keep_models_and_configs: Option<bool>,
+    clear_web_data: Option<bool>,
 ) {
     let keep_app_data = keep_app_data.unwrap_or(false);
     let keep_models_and_configs = keep_models_and_configs.unwrap_or(false);
+    let clear_web_data = clear_web_data.unwrap_or(false);
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
@@ -142,9 +239,10 @@ pub fn factory_reset<R: Runtime>(
     }
     let data_folder = get_jan_data_folder_path(app_handle.clone());
     log::info!(
-        "Factory reset (keep_app_data={}, keep_models_and_configs={}), data folder: {:?}",
+        "Factory reset (keep_app_data={}, keep_models_and_configs={}, clear_web_data={}), data folder: {:?}",
         keep_app_data,
         keep_models_and_configs,
+        clear_web_data,
         data_folder
     );
 
@@ -193,9 +291,30 @@ pub fn factory_reset<R: Runtime>(
 
         // Reset app configuration to defaults unless user chose to keep configs
         if !keep_models_and_configs {
-            let mut default_config = AppConfiguration::default();
-            default_config.data_folder = default_data_folder_path(app_handle.clone());
+            let default_config = AppConfiguration {
+                data_folder: default_data_folder_path(app_handle.clone()),
+            };
             let _ = update_app_configuration(app_handle.clone(), default_config);
+        }
+
+        // Persisted UI state (model-provider, setup flag) lives in webview
+        // localStorage, not the data folder. Renderer-side removal races the
+        // restart flush, and the on-disk localStorage location is
+        // platform-specific (esp. macOS WKWebView), so instead drop a sentinel
+        // that the frontend consumes on next startup to clear localStorage via
+        // the webview API before stores hydrate. File-level profile deletion
+        // (Linux cookies/cache) stays as a best-effort supplement.
+        let full_wipe = !keep_app_data && !keep_models_and_configs;
+        if !keep_app_data || !keep_models_and_configs || clear_web_data {
+            write_webdata_reset_sentinel(
+                &app_handle,
+                keep_app_data,
+                keep_models_and_configs,
+                clear_web_data,
+            );
+        }
+        if clear_web_data || full_wipe {
+            clear_webview_profile(&app_handle, &data_folder);
         }
 
         app_handle.restart();
@@ -208,30 +327,26 @@ pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
 }
 
 #[tauri::command]
-pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) {
-    let app_path = app.path().app_data_dir().unwrap();
-    if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
+pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let app_path = get_jan_data_folder_path(app.clone());
+    let program = if cfg!(target_os = "windows") {
+        "explorer"
     } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
+        "open"
     } else {
-        std::process::Command::new("xdg-open")
-            .arg(app_path)
-            .status()
-            .expect("Failed to open app directory");
-    }
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(app_path)
+        .status()
+        .map_err(|e| format!("Failed to open app directory: {e}"))?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn open_file_explorer(path: String) {
+pub fn open_file_explorer(path: String) -> Result<(), String> {
     let path = PathBuf::from(path);
-    if cfg!(target_os = "windows") {
+    let (program, arg): (&str, std::ffi::OsString) = if cfg!(target_os = "windows") {
         // Normalize extended-length paths (\\?\...) for explorer compatibility.
         let mut path_str = path.to_string_lossy().into_owned();
         if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
@@ -239,21 +354,17 @@ pub fn open_file_explorer(path: String) {
         } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
             path_str = stripped.to_string();
         }
-        std::process::Command::new("explorer")
-            .arg(path_str)
-            .status()
-            .expect("Failed to open file explorer");
+        ("explorer", path_str.into())
     } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
+        ("open", path.into())
     } else {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .status()
-            .expect("Failed to open file explorer");
-    }
+        ("xdg-open", path.into())
+    };
+    std::process::Command::new(program)
+        .arg(arg)
+        .status()
+        .map_err(|e| format!("Failed to open file explorer: {e}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -349,11 +460,12 @@ pub fn launch_claude_code_with_config(
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {
                 write_env_to_shell(&env_file_path, &env_vars)?;
-                return Ok(());
+                Ok(())
             }
             Err(_) => {
                 // Use admin privileges to write
@@ -397,7 +509,7 @@ pub fn launch_claude_code_with_config(
                     "Env vars written to {} with admin privileges",
                     env_file_path
                 );
-                return Ok(());
+                Ok(())
             }
         }
     } else if cfg!(target_os = "linux") {
@@ -412,17 +524,18 @@ pub fn launch_claude_code_with_config(
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {
                 write_env_to_shell(&env_file_path, &env_vars)?;
-                return Ok(());
+                Ok(())
             }
             Err(_) => {
                 let jan_config_dir = format!("{}/.config/jan", home_dir);
                 let ext = if shell_name == "bash" { "bash" } else { "zsh" };
                 let env_file = format!("{}/claude-code-env.{}", jan_config_dir, ext);
-                return Err(format!("NEED_PERMISSION:{}", env_file));
+                Err(format!("NEED_PERMISSION:{}", env_file))
             }
         }
     } else {
@@ -441,7 +554,7 @@ pub fn launch_claude_code_with_config(
         }
 
         log::info!("Environment variables set permanently in Windows registry.");
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -451,7 +564,14 @@ pub struct CliInstallStatus {
     pub path: Option<String>,
 }
 
-/// Check if the `jan` CLI binary is accessible on PATH.
+/// Check if the `jan` CLI binary is accessible on PATH, or — failing that —
+/// at one of the known install destinations.
+///
+/// `which`/`where` only sees what the Tauri process's PATH sees. Linux GUI
+/// launches typically inherit a minimal PATH (no `~/.local/bin`), and on
+/// Windows the registry PATH update from `add_to_path_windows` doesn't apply
+/// to the already-running process. Without the fallback probe, a successful
+/// install reports `installed: false` after the next remount of Settings.
 #[tauri::command]
 pub async fn check_jan_cli_installed() -> CliInstallStatus {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
@@ -464,19 +584,16 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    match tokio::task::spawn_blocking(move || cmd.output()).await {
+    let path_from_which = match tokio::task::spawn_blocking(move || cmd.output()).await {
         Ok(Ok(out)) if out.status.success() => {
             let raw = String::from_utf8_lossy(&out.stdout);
             #[cfg(windows)]
             let path = {
-                // `where` returns one path per line; pick the first that isn't a
-                // dev-build artifact (i.e. skip paths containing \target\)
                 raw.lines()
                     .map(str::trim)
                     .filter(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
                     .next()
                     .map(str::to_string)
-                    // fall back to the raw first line if every path looks like a build dir
                     .or_else(|| {
                         raw.lines()
                             .map(str::trim)
@@ -485,17 +602,61 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
                     })
             };
             #[cfg(not(windows))]
-            let path = Some(raw.trim().to_string());
-            CliInstallStatus {
-                installed: path.is_some(),
-                path,
-            }
+            let path = {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            };
+            path
         }
-        _ => CliInstallStatus {
-            installed: false,
-            path: None,
-        },
+        _ => None,
+    };
+
+    if let Some(p) = path_from_which {
+        return CliInstallStatus {
+            installed: true,
+            path: Some(p),
+        };
     }
+
+    // Fall back to probing the destinations `install_jan_cli_sync` writes to.
+    for candidate in jan_cli_install_candidates() {
+        if candidate.exists() {
+            return CliInstallStatus {
+                installed: true,
+                path: Some(candidate.to_string_lossy().into_owned()),
+            };
+        }
+    }
+
+    CliInstallStatus {
+        installed: false,
+        path: None,
+    }
+}
+
+/// Paths where `install_jan_cli_sync` may have placed the `jan` binary.
+fn jan_cli_install_candidates() -> Vec<PathBuf> {
+    let bin = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let mut out: Vec<PathBuf> = Vec::new();
+
+    #[cfg(unix)]
+    {
+        out.push(PathBuf::from("/usr/local/bin").join(bin));
+        if let Ok(home) = std::env::var("HOME") {
+            out.push(PathBuf::from(home).join(".local").join("bin").join(bin));
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(dir) = jan_cli_bin_dir_windows() {
+            out.push(dir.join(bin));
+        }
+    }
+    out
 }
 
 /// Core install logic — synchronous, no Tauri command overhead.
@@ -616,11 +777,12 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {
                 std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
-                return Ok(());
+                Ok(())
             }
             Err(_) => {
                 // Write cleaned content to a temp file, then use osascript to move it
@@ -642,7 +804,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                     "CC env cleared from {} with admin privileges",
                     env_file_path
                 );
-                return Ok(());
+                Ok(())
             }
         }
     } else if cfg!(target_os = "linux") {
@@ -659,6 +821,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&env_file_path)
         {
             Ok(_) => {

@@ -172,6 +172,9 @@ export interface modelInfo {
   path?: string // Absolute path to the model file, if applicable
   // Additional provider-specific metadata can be added here
   embedding?: boolean
+  // True if the model was imported from a user-supplied local file
+  // (path lives outside the provider's managed models directory).
+  imported?: boolean
   [key: string]: any
 }
 
@@ -182,10 +185,8 @@ export interface SessionInfo {
   pid: number // opaque handle for unload/chat
   port: number // llama-server output port (corrected from portid)
   model_id: string //name of the model
-  model_path: string // path of the loaded model
   is_embedding: boolean
   api_key: string
-  mmproj_path?: string
 }
 
 export interface UnloadResult {
@@ -211,6 +212,8 @@ export interface ImportOptions {
   modelSize?: number
   mmprojSha256?: string
   mmprojSize?: number
+  // Optional MTP draft gguf (speculative decoding companion) downloaded with the model.
+  mtpPath?: string
   // Additional files to download for MLX models
   files?: Array<{
     url: string
@@ -300,6 +303,10 @@ export abstract class AIEngine extends BaseExtension {
    * Aborts an ongoing model import
    */
   abstract abortImport(modelId: string): Promise<void>
+
+  // Stops an import but keeps the partial download so it can be resumed.
+  // Default no-op for engines without resumable downloads.
+  async pauseImport(_modelId: string): Promise<void> {}
 
   /**
    * Get currently loaded models

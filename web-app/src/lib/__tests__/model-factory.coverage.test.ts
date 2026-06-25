@@ -40,11 +40,19 @@ vi.mock('@ai-sdk/google', () => ({
 }))
 
 vi.mock('@ai-sdk/openai', () => ({
-  createOpenAI: vi.fn(() => vi.fn(() => ({ type: 'openai' }))),
+  createOpenAI: vi.fn(() => {
+    const fn: any = vi.fn(() => ({ type: 'openai' }))
+    fn.chat = vi.fn(() => ({ type: 'openai' }))
+    return fn
+  }),
 }))
 
 vi.mock('@ai-sdk/xai', () => ({
   createXai: vi.fn(() => vi.fn(() => ({ type: 'xai' }))),
+}))
+
+vi.mock('@ai-sdk/mistral', () => ({
+  createMistral: vi.fn(() => vi.fn(() => ({ type: 'mistral' }))),
 }))
 
 vi.mock('ai', () => ({
@@ -125,7 +133,7 @@ describe('ModelFactory - coverage', () => {
   })
 
   it('creates openai-compatible model for known providers', async () => {
-    for (const p of ['azure', 'groq', 'together', 'fireworks', 'deepseek', 'mistral', 'cohere', 'perplexity', 'moonshot', 'minimax']) {
+    for (const p of ['azure', 'groq', 'together', 'fireworks', 'deepseek', 'cohere', 'perplexity', 'moonshot', 'minimax']) {
       const model = await ModelFactory.createModel('model-1', mkProvider(p), {})
       expect(model).toBeDefined()
     }
@@ -234,45 +242,4 @@ describe('ModelFactory - coverage', () => {
     ).rejects.toThrow('No running MLX session found')
   })
 
-  it('creates foundation-models model', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    vi.mocked(invoke)
-      .mockResolvedValueOnce('available')  // availability check
-      .mockResolvedValueOnce(true)          // is_loaded check
-    const model = await ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-    expect(model).toBeDefined()
-  })
-
-  it('throws when foundation-models not available', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    vi.mocked(invoke).mockResolvedValueOnce('notEligible')
-    await expect(
-      ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-    ).rejects.toThrow('Apple Intelligence is not supported')
-  })
-
-  it('throws when foundation-models not loaded', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    vi.mocked(invoke)
-      .mockResolvedValueOnce('available')
-      .mockResolvedValueOnce(false)
-    await expect(
-      ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-    ).rejects.toThrow('No running Foundation Models session')
-  })
-
-  it('throws specific messages for each unavailability reason', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-
-    for (const [reason, snippet] of [
-      ['appleIntelligenceNotEnabled', 'not enabled'],
-      ['modelNotReady', 'still preparing'],
-      ['unavailable', 'currently unavailable'],
-    ] as const) {
-      vi.mocked(invoke).mockResolvedValueOnce(reason)
-      await expect(
-        ModelFactory.createModel('apple/on-device', mkProvider('foundation-models'), {})
-      ).rejects.toThrow(snippet)
-    }
-  })
 })

@@ -15,11 +15,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_data_folder, cli_get_thread,
     cli_list_messages, cli_list_threads, discover_llamacpp_binary,
-    discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
-    init_mlx_state, list_models, load_llama_model_impl, load_mlx_model_impl,
-    looks_like_hf_repo, resolve_model_by_id, resolve_model_engine, HfFileInfo,
-    LlamacppConfig, MlxConfig,
+    download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
+    list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
 };
+// MLX is macOS-only; these CLI symbols don't exist on other platforms.
+#[cfg(target_os = "macos")]
+use app_lib::core::cli::{
+    discover_mlx_binary, init_mlx_state, load_mlx_model_impl, resolve_model_by_id, MlxConfig,
+};
+use tauri_plugin_llamacpp::router as llamacpp_router;
+use tauri_plugin_llamacpp::state::LlamacppState;
 use std::path::PathBuf;
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
@@ -199,6 +204,7 @@ enum ModelsCommands {
         args: ServeArgs,
     },
     /// Load an MLX model directly (macOS / Apple Silicon only)
+    #[cfg(target_os = "macos")]
     LoadMlx {
         /// Model ID as shown by `jan models list --engine mlx`
         #[arg(long)]
@@ -362,6 +368,7 @@ async fn handle_models(cmd: ModelsCommands) {
 
         ModelsCommands::Load { args } => handle_serve(args).await,
 
+        #[cfg(target_os = "macos")]
         ModelsCommands::LoadMlx {
             model_id,
             model_path,
@@ -758,11 +765,13 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
             cmd.pre_exec(|| {
                 nix::unistd::setsid()
                     .map(|_| ())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                    .map_err(|e| std::io::Error::other(e.to_string()))
             });
         }
     }
 
+    // child is intentionally detached via setsid; reaping is the OS's job
+    #[allow(clippy::zombie_processes)]
     let child = cmd.spawn().unwrap_or_else(|e| {
         eprintln!("Failed to spawn detached process: {e}");
         std::process::exit(1);
@@ -863,6 +872,14 @@ async fn handle_serve(args: ServeArgs) {
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
     if engine == "mlx" {
+        #[cfg(not(target_os = "macos"))]
+        {
+            finish_progress(pb, "✗ MLX is only supported on macOS");
+            eprintln!("MLX models require macOS / Apple Silicon. Use a llama.cpp (GGUF) model instead.");
+            std::process::exit(1);
+        }
+        #[cfg(target_os = "macos")]
+        {
         use std::path::Path;
 
         let bin_path = match bin {
@@ -914,6 +931,7 @@ async fn handle_serve(args: ServeArgs) {
                 std::process::exit(1);
             }
         }
+        }
     } else {
         // LlamaCPP path
         let bin_path = match bin {
@@ -928,24 +946,21 @@ async fn handle_serve(args: ServeArgs) {
             },
         };
 
+        let _ = (n_gpu_layers, ctx_size, fit, threads, resolved_model_path, resolved_mmproj);
         let llama_state = Arc::new(init_llamacpp_state());
         let mut envs: HashMap<String, String> = HashMap::new();
         if !api_key.is_empty() {
-            envs.insert("LLAMA_API_KEY".to_string(), api_key);
+            envs.insert("LLAMA_API_KEY".to_string(), api_key.clone());
         }
 
-        let config = build_llamacpp_config(n_gpu_layers, ctx_size, timeout as i32, fit, threads);
-
-        match load_llama_model_impl(
-            llama_state.llama_server_process.clone(),
+        match ensure_router_and_load(
+            &llama_state,
             &bin_path,
-            model_id.clone(),
-            resolved_model_path,
+            &model_id,
             port,
-            config,
-            envs,
-            resolved_mmproj,
+            api_key,
             embedding,
+            envs,
             timeout,
         )
         .await
@@ -960,15 +975,105 @@ async fn handle_serve(args: ServeArgs) {
                 wait_for_shutdown(info.pid).await;
             }
             Err(e) => {
-                finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!(
-                    "\n{}",
-                    serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
-                );
+                finish_progress(pb, format!("✗ Failed to load {model_id}: {e}"));
                 std::process::exit(1);
             }
         }
     }
+}
+
+struct RouterServeInfo {
+    pid: i32,
+    port: u16,
+    #[allow(dead_code)]
+    api_key: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn ensure_router_and_load(
+    llama_state: &std::sync::Arc<LlamacppState>,
+    bin_path: &str,
+    model_id: &str,
+    port: u16,
+    api_key: String,
+    is_embedding: bool,
+    envs: HashMap<String, String>,
+    timeout: u64,
+) -> Result<RouterServeInfo, String> {
+    if is_embedding {
+        return Err(
+            "--embedding on the llamacpp engine requires router preset support; \
+             use the desktop UI to load embedding models for now."
+                .to_string(),
+        );
+    }
+
+    let preset_path = cli_get_data_folder()
+        .join("llamacpp")
+        .join("router.preset.ini");
+    if !preset_path.exists() {
+        return Err(format!(
+            "Router preset not found at {}; run the desktop app once to generate it, \
+             or implement a Rust preset generator.",
+            preset_path.display()
+        ));
+    }
+
+    let already_running = { llama_state.router.lock().await.is_some() };
+    if !already_running {
+        let router_api_key = if api_key.is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            api_key.clone()
+        };
+        let mut router_envs = envs.clone();
+        router_envs
+            .entry("LLAMA_ARG_TIMEOUT".to_string())
+            .or_insert_with(|| timeout.to_string());
+
+        let handle = llamacpp_router::start_router(
+            std::path::PathBuf::from(bin_path),
+            preset_path,
+            port,
+            router_api_key,
+            0,
+            Vec::new(),
+            router_envs,
+            None,
+        )
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+        let mut guard = llama_state.router.lock().await;
+        *guard = Some(handle);
+    }
+
+    let (router_port, router_key, router_pid) = {
+        let guard = llama_state.router.lock().await;
+        let h = guard
+            .as_ref()
+            .ok_or_else(|| "Router unexpectedly missing after start".to_string())?;
+        (h.port, h.api_key.clone(), h.pid)
+    };
+
+    let url = format!("http://127.0.0.1:{router_port}/models/load");
+    let resp = reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", format!("Bearer {router_key}"))
+        .json(&serde_json::json!({ "model": model_id }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to POST {url}: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Router /models/load returned {status}: {body}"));
+    }
+
+    Ok(RouterServeInfo {
+        pid: router_pid as i32,
+        port: router_port,
+        api_key: router_key,
+    })
 }
 
 /// Block until Ctrl+C, then terminate the child process.
@@ -1196,6 +1301,7 @@ fn configure_openclaw(v1_url: &str, api_key: &str, model_id: &str) {
 
 /// Start the model server and return `(pid, actual_port)`.
 /// Resolves the engine automatically (LlamaCPP or MLX).
+#[allow(clippy::too_many_arguments)]
 async fn start_model_server(
     model_id: &str,
     bin: Option<String>,
@@ -1222,6 +1328,14 @@ async fn start_model_server(
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
     if engine == "mlx" {
+        #[cfg(not(target_os = "macos"))]
+        {
+            finish_progress(pb, "✗ MLX is only supported on macOS");
+            eprintln!("MLX models require macOS / Apple Silicon. Use a llama.cpp (GGUF) model instead.");
+            std::process::exit(1)
+        }
+        #[cfg(target_os = "macos")]
+        {
         use std::path::Path;
         let bin_path = match bin.or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned())) {
             Some(p) => p,
@@ -1256,6 +1370,7 @@ async fn start_model_server(
         let url = format!("http://127.0.0.1:{}", info.port);
         finish_progress(pb, format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
+        }
     } else {
         let bin_path = match bin.or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned())) {
             Some(p) => p,
@@ -1265,85 +1380,29 @@ async fn start_model_server(
                 std::process::exit(1);
             }
         };
+        let _ = (n_gpu_layers, ctx_size, fit, model_path, mmproj);
         let llama_state = Arc::new(init_llamacpp_state());
         let mut envs: HashMap<String, String> = HashMap::new();
         if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".to_string(), api_key.clone()); }
-        // When fit is on, let llama.cpp decide the context size automatically.
-        let effective_ctx_size = if fit { 0 } else { ctx_size };
-        let config = build_llamacpp_config(n_gpu_layers, effective_ctx_size, 120, fit, 0);
-        let info = match load_llama_model_impl(
-            llama_state.llama_server_process.clone(),
+        let info = match ensure_router_and_load(
+            &llama_state,
             &bin_path,
-            model_id.to_string(),
-            model_path,
+            model_id,
             port,
-            config,
-            envs,
-            mmproj.map(|p| p.to_string_lossy().into_owned()),
+            api_key,
             false,
+            envs,
             120,
         ).await {
             Ok(info) => info,
             Err(e) => {
-                finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
+                finish_progress(pb, format!("✗ Failed to load {model_id}: {e}"));
                 std::process::exit(1);
             }
         };
         let url = format!("http://127.0.0.1:{}", info.port);
         finish_progress(pb, format!("✓ {model_id} ready · {url}"));
-        (info.pid, info.port as u16)
+        (info.pid, info.port)
     }
 }
 
-// ── LlamaCPP config builder ────────────────────────────────────────────────
-
-/// Build a `LlamacppConfig` with the values the CLI controls; everything else
-/// stays at a sensible default.
-fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bool, threads: i32) -> LlamacppConfig {
-    LlamacppConfig {
-        version_backend: "cli/llama-server".to_string(),
-        auto_update_engine: false,
-        auto_unload: false,
-        auto_restart_on_crash: false,
-        timeout,
-        llamacpp_env: String::new(),
-        fit,
-        fit_target: String::new(),
-        fit_ctx: String::new(),
-        chat_template: String::new(),
-        n_gpu_layers,
-        offload_mmproj: true,
-        cpu_moe: false,
-        n_cpu_moe: 0,
-        override_tensor_buffer_t: String::new(),
-        ctx_size,
-        threads,
-        threads_batch: 0,
-        n_predict: -1,
-        batch_size: 512,
-        ubatch_size: 512,
-        device: String::new(),
-        split_mode: String::new(),
-        main_gpu: 0,
-        flash_attn: "auto".to_string(),
-        cont_batching: true,
-        no_mmap: false,
-        mlock: false,
-        no_kv_offload: false,
-        cache_type_k: "q8_0".to_string(),
-        cache_type_v: "q8_0".to_string(),
-        defrag_thold: -1.0,
-        rope_scaling: String::new(),
-        rope_scale: 0.0,
-        rope_freq_base: 0.0,
-        rope_freq_scale: 0.0,
-        ctx_shift: false,
-        parallel: 1,
-        reasoning: "auto".to_string(),
-        cache_ram: -1,
-        cache_reuse: 0,
-        swa_full: false,
-        keep: 0,
-    }
-}

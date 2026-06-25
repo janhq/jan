@@ -3,6 +3,15 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
+import { predefinedProviders } from '@/constants/providers'
+import { isLocalProvider } from '@/lib/utils'
+import {
+  API_KEY_FALLBACKS_SETTING_KEY,
+  parseApiKeyFallbacks,
+  serializeApiKeyFallbacks,
+} from '@/lib/provider-api-keys'
+
+const API_KEY_FALLBACKS_MIGRATION_FLAG = 'api_key_fallbacks_migrated_to_settings'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -20,6 +29,7 @@ type ModelProviderState = {
   addProvider: (provider: ModelProvider) => void
   deleteProvider: (providerName: string) => void
   deleteModel: (modelId: string) => void
+  addDeletedModels: (modelIds: string[]) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -38,7 +48,13 @@ export const useModelProvider = create<ModelProviderState>()(
       },
       setProviders: (providers) =>
         set((state) => {
+          // MLX is Apple-Silicon only; drop it on every other platform so it
+          // can't be reactivated, queried, or shown anywhere in the UI.
+          providers = IS_MACOS
+            ? providers
+            : providers.filter((e) => e.provider !== 'mlx')
           const existingProviders = state.providers
+            .filter((e) => IS_MACOS || e.provider !== 'mlx')
             // Filter out legacy llama.cpp provider for migration
             // Can remove after a couple of releases
             .filter((e) => e.provider !== 'llama.cpp')
@@ -68,6 +84,24 @@ export const useModelProvider = create<ModelProviderState>()(
             ? state.deletedModels
             : []
 
+          // For local providers (llamacpp, mlx) the engine's list() is the
+          // source of truth: a model only appears here if it is on disk. If
+          // an id was previously soft-deleted but reappears in a fresh local
+          // listing, the user has re-downloaded/re-imported it and the
+          // tombstone must be cleared — otherwise the merge below filters it
+          // out forever.
+          const locallyPresentIds = new Set<string>()
+          for (const p of providers) {
+            if (!isLocalProvider(p.provider)) continue
+            for (const m of p.models ?? []) {
+              if (m?.id) locallyPresentIds.add(m.id)
+            }
+          }
+          const effectiveDeletedModels =
+            locallyPresentIds.size === 0
+              ? currentDeletedModels
+              : currentDeletedModels.filter((id) => !locallyPresentIds.has(id))
+
           const updatedProviders = providers.map((provider) => {
             const existingProvider = existingProviders.find(
               (x) => x.provider === provider.provider
@@ -83,7 +117,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   ('id' in e || 'model' in e) &&
                   typeof (e.id ?? e.model) === 'string' &&
                   !models.some((m) => m.id === e.id) &&
-                  !currentDeletedModels.includes(e.id)
+                  !effectiveDeletedModels.includes(e.id)
               ),
               ...models,
             ]
@@ -107,15 +141,17 @@ export const useModelProvider = create<ModelProviderState>()(
                   }
                 )?._userConfiguredCapabilities === true
 
-              // When the user set tools/vision in Edit Model, honor that list on every
-              // refresh from the engine; otherwise fresh engine data would re-add defaults.
+              const engineOwnedCaps = new Set(['vision', 'audio', 'embeddings'])
+              const engineCaps = model.capabilities || []
+              const existingCaps = existingModel?.capabilities || []
               const mergedCapabilities = userConfiguredCapabilities
-                ? [...(existingModel?.capabilities || [])]
+                ? [
+                    ...existingCaps.filter((c) => !engineOwnedCaps.has(c)),
+                    ...engineCaps.filter((c) => engineOwnedCaps.has(c)),
+                  ]
                 : [
-                    ...(model.capabilities || []),
-                    ...(existingModel?.capabilities || []).filter(
-                      (cap) => !(model.capabilities || []).includes(cap)
-                    ),
+                    ...engineCaps,
+                    ...existingCaps.filter((c) => !engineCaps.includes(c)),
                   ]
               return {
                 ...model,
@@ -129,43 +165,148 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             })
 
+            const mergedSettings = provider.settings.map((setting) => {
+              const existingSetting = provider.persist
+                ? undefined
+                : existingProvider?.settings?.find(
+                    (x) => x.key === setting.key
+                  )
+              // Only the user's `value` is carried over from existing state;
+              // metadata like `recommended` / `options` must always reflect
+              // the fresh extension fetch (otherwise stale recommendations
+              // and stale option lists outlive the underlying setting).
+              const existingValue = (
+                existingSetting?.controller_props as
+                  | { value?: string | number | boolean }
+                  | undefined
+              )?.value
+              return {
+                ...setting,
+                controller_props: {
+                  ...setting.controller_props,
+                  ...(existingSetting && existingValue !== undefined
+                    ? { value: existingValue }
+                    : {}),
+                },
+              }
+            })
+
+            // Preserve a zustand-only api-key-fallbacks setting when the
+            // backend doesn't return it, so disk-persisted fallbacks survive
+            // localStorage clears once they round-trip through updateSettings.
+            if (
+              !provider.persist &&
+              !mergedSettings.some((s) => s.key === API_KEY_FALLBACKS_SETTING_KEY)
+            ) {
+              const existingFallbacksSetting = existingProvider?.settings?.find(
+                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+              )
+              if (existingFallbacksSetting) {
+                mergedSettings.push(existingFallbacksSetting)
+              }
+            }
+
+            const fallbacksSetting = mergedSettings.find(
+              (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+            )
+            const fallbacksFromSetting = fallbacksSetting
+              ? parseApiKeyFallbacks(
+                  (
+                    fallbacksSetting.controller_props as {
+                      value?: unknown
+                    }
+                  )?.value
+                )
+              : undefined
+
             return {
               ...provider,
               models: provider.persist ? updatedModels : mergedModels,
-              settings: provider.settings.map((setting) => {
-                const existingSetting = provider.persist
-                  ? undefined
-                  : existingProvider?.settings?.find(
-                      (x) => x.key === setting.key
-                    )
-                return {
-                  ...setting,
-                  controller_props: {
-                    ...setting.controller_props,
-                    ...(existingSetting?.controller_props || {}),
-                  },
-                }
-              }),
+              settings: mergedSettings,
               api_key: existingProvider?.api_key || provider.api_key,
               api_key_fallbacks:
                 existingProvider?.api_key_fallbacks ??
+                fallbacksFromSetting ??
                 provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,
             }
           })
-          return {
-            providers: [
-              ...updatedProviders,
-              ...existingProviders.filter(
-                (e) => !updatedProviders.some((p) => p.provider === e.provider)
-              ),
-            ],
+          const nextProviders = [
+            ...updatedProviders,
+            ...existingProviders.filter(
+              (e) => !updatedProviders.some((p) => p.provider === e.provider)
+            ),
+          ]
+
+          // One-shot migration: persist zustand-only fallback keys to disk
+          // via the providers extension so they survive localStorage clears.
+          if (
+            typeof localStorage !== 'undefined' &&
+            localStorage.getItem(API_KEY_FALLBACKS_MIGRATION_FLAG) !== 'true'
+          ) {
+            const toMigrate = nextProviders.filter((p) => {
+              const fallbacks = p.api_key_fallbacks ?? []
+              if (fallbacks.length === 0) return false
+              const setting = p.settings?.find(
+                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+              )
+              const persistedValue = setting
+                ? (setting.controller_props as { value?: unknown })?.value
+                : undefined
+              return (
+                typeof persistedValue !== 'string' || persistedValue.length === 0
+              )
+            })
+            localStorage.setItem(API_KEY_FALLBACKS_MIGRATION_FLAG, 'true')
+            if (toMigrate.length > 0) {
+              queueMicrotask(() => {
+                const svc = getServiceHub().providers()
+                for (const p of toMigrate) {
+                  const value = serializeApiKeyFallbacks(p.api_key_fallbacks ?? [])
+                  const settings = [...(p.settings ?? [])]
+                  const idx = settings.findIndex(
+                    (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
+                  )
+                  if (idx !== -1) {
+                    const props = settings[idx].controller_props as {
+                      value: string | boolean | number
+                    }
+                    props.value = value
+                  } else {
+                    settings.push({
+                      key: API_KEY_FALLBACKS_SETTING_KEY,
+                      title: 'API Key Fallbacks',
+                      description: '',
+                      controller_type: 'input',
+                      controller_props: {
+                        value,
+                        type: 'password',
+                        placeholder: '',
+                      },
+                    } as (typeof settings)[number])
+                  }
+                  svc.updateSettings(p.provider, settings).catch((err) => {
+                    console.warn(
+                      `[api-key-fallbacks] migration failed for ${p.provider}:`,
+                      err
+                    )
+                  })
+                }
+              })
+            }
           }
+
+          return effectiveDeletedModels === currentDeletedModels
+            ? { providers: nextProviders }
+            : {
+                providers: nextProviders,
+                deletedModels: effectiveDeletedModels,
+              }
         }),
       updateProvider: (providerName, data) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
+        set((state) => {
+          const providers = state.providers.map((provider) => {
             if (provider.provider === providerName) {
               return {
                 ...provider,
@@ -173,8 +314,23 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             }
             return provider
-          }),
-        }))
+          })
+
+          let selectedModel = state.selectedModel
+          if (
+            selectedModel &&
+            state.selectedProvider === providerName &&
+            Array.isArray(data.models)
+          ) {
+            selectedModel =
+              data.models.find((model) => model.id === selectedModel?.id) ?? null
+          }
+
+          return {
+            providers,
+            selectedModel,
+          }
+        })
       },
       getProviderByName: (providerName: string) => {
         const provider = get().providers.find(
@@ -222,6 +378,18 @@ export const useModelProvider = create<ModelProviderState>()(
             }),
             deletedModels: [...currentDeletedModels, modelId],
           }
+        })
+      },
+      addDeletedModels: (modelIds: string[]) => {
+        if (modelIds.length === 0) return
+        set((state) => {
+          const current = Array.isArray(state.deletedModels)
+            ? state.deletedModels
+            : []
+          const next = new Set(current)
+          modelIds.forEach((id) => next.add(id))
+          if (next.size === current.length) return state
+          return { deletedModels: Array.from(next) }
         })
       },
       addProvider: (provider: ModelProvider) => {
@@ -520,24 +688,9 @@ export const useModelProvider = create<ModelProviderState>()(
           )
         }
 
-        if (version <= 10 && state?.providers) {
-          state.providers.forEach((provider) => {
-            if (provider.models && provider.provider === 'llamacpp') {
-              provider.models.forEach((model) => {
-                if (!model.settings) model.settings = {}
-
-                if (!model.settings.auto_increase_ctx_len) {
-                  model.settings.auto_increase_ctx_len = {
-                    ...modelSettings.auto_increase_ctx_len,
-                    controller_props: {
-                      ...modelSettings.auto_increase_ctx_len.controller_props,
-                    },
-                  }
-                }
-              })
-            }
-          })
-        }
+        // Migration v10 historically inserted `auto_increase_ctx_len`. The
+        // setting was removed in v15, so v10 is now a no-op for any user
+        // still passing through this point.
 
         if (version <= 11 && state?.providers) {
           state.providers.forEach((provider) => {
@@ -568,6 +721,25 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 13 && state?.providers) {
+          // Predefined providers no longer carry a user-editable base-url
+          // setting. Force their base_url back to the canonical constant and
+          // strip any leftover base-url entry from persisted settings[].
+          const canonicalByName = new Map(
+            predefinedProviders.map((p) => [p.provider, p.base_url])
+          )
+          state.providers.forEach((provider) => {
+            const canonical = canonicalByName.get(provider.provider)
+            if (!canonical) return
+            provider.base_url = canonical
+            if (provider.settings) {
+              provider.settings = provider.settings.filter(
+                (s) => s.key !== 'base-url'
+              )
+            }
+          })
+        }
+
         if (version <= 12 && state?.providers) {
           // Reset ctx_len from the prior 8192 default to '' so llama.cpp picks
           // (auto-fit when enabled, model default otherwise). Preserve any
@@ -578,15 +750,78 @@ export const useModelProvider = create<ModelProviderState>()(
               const ctx = model.settings?.ctx_len as
                 | { controller_props?: { value?: unknown } }
                 | undefined
-              if (ctx?.controller_props?.value === 8192) {
-                ctx.controller_props.value = ''
+              const controllerProps = ctx?.controller_props
+              const ctxValue =
+                typeof controllerProps?.value === 'string'
+                  ? Number(controllerProps.value)
+                  : controllerProps?.value
+              if (ctxValue === 8192 && controllerProps) {
+                controllerProps.value = ''
               }
             })
           })
         }
+
+        if (version <= 13 && state?.providers) {
+          // `defrag-thold` was deprecated upstream and the control was deleted
+          // from settings.json. Strip the orphan entry from the persisted
+          // provider settings array so localStorage doesn't carry it forever.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.settings) return
+            provider.settings = provider.settings.filter(
+              (s) => s.key !== 'defrag_thold'
+            )
+          })
+        }
+
+        if (version <= 14 && state?.providers) {
+          // Auto-increase context was removed — the manual "Increase Context
+          // Size" button in the error banner now owns this. Strip the per-model
+          // setting entry from llamacpp models so the sidebar doesn't render a
+          // dead control.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              if (model.settings?.auto_increase_ctx_len) {
+                delete (model.settings as Record<string, unknown>)
+                  .auto_increase_ctx_len
+              }
+            })
+          })
+        }
+        if (version <= 15 && state?.providers) {
+          // Introduce `api_type` discriminant. Backfill on the built-in
+          // Anthropic provider; everything else stays undefined (defaults to
+          // 'openai' at dispatch time).
+          state.providers.forEach((provider) => {
+            if (provider.provider === 'anthropic' && !provider.api_type) {
+              provider.api_type = 'anthropic'
+            }
+          })
+        }
+
+        if (version <= 16 && state?.providers) {
+          // Auto-fit is now disabled by default, so seed empty/auto ctx_len
+          // with the new 8192 default. Preserve any user-customised value.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              const ctx = model.settings?.ctx_len as
+                | { controller_props?: { value?: unknown } }
+                | undefined
+              const controllerProps = ctx?.controller_props
+              if (!controllerProps) return
+              const value = controllerProps.value
+              if (value === '' || value == null) {
+                controllerProps.value = 8192
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 13,
+      version: 17,
     }
   )
 )

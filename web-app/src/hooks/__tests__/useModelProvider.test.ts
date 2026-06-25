@@ -129,7 +129,7 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('My Custom Model')
   })
 
-  it('should preserve user-configured capabilities when merging setProviders refresh', () => {
+  it('should preserve user-controlled capabilities but always pick up engine-owned ones (vision/audio/embeddings) on refresh', () => {
     const { result } = renderHook(() => useModelProvider())
 
     act(() => {
@@ -174,7 +174,7 @@ describe('useModelProvider - displayName functionality', () => {
     })
 
     const provider = result.current.getProviderByName('llamacpp')
-    expect(provider?.models[0].capabilities).toEqual(['completion'])
+    expect(provider?.models[0].capabilities).toEqual(['completion', 'vision'])
     expect(
       (provider?.models[0] as { _userConfiguredCapabilities?: boolean })
         ._userConfiguredCapabilities
@@ -282,7 +282,7 @@ describe('useModelProvider migrations', () => {
     ])
   })
 
-  it('migrates Mistral provider base URL to add /v1 suffix', () => {
+  it('overwrites stale base_url and strips base-url setting for predefined providers', () => {
     const persistApi = (useModelProvider as any).persist
     const migrate = persistApi?.getOptions().migrate as
       | ((state: unknown, version: number) => any)
@@ -292,6 +292,21 @@ describe('useModelProvider migrations', () => {
 
     const persistedState = {
       providers: [
+        {
+          provider: 'anthropic',
+          models: [],
+          base_url: 'https://api.anthropic.com',
+          settings: [
+            { key: 'api-key', controller_props: { value: 'sk-x' } },
+            {
+              key: 'base-url',
+              controller_props: {
+                value: 'https://api.anthropic.com',
+                placeholder: 'https://api.anthropic.com',
+              },
+            },
+          ],
+        },
         {
           provider: 'mistral',
           models: [],
@@ -299,69 +314,48 @@ describe('useModelProvider migrations', () => {
           settings: [
             {
               key: 'base-url',
-              controller_props: {
-                value: 'https://api.mistral.ai',
-                placeholder: 'https://api.mistral.ai',
-              },
+              controller_props: { value: 'https://api.mistral.ai' },
             },
           ],
         },
-      ],
-      selectedProvider: 'mistral',
-      selectedModel: null,
-      deletedModels: [],
-    }
-
-    const migratedState = migrate!(persistedState, 8)
-    const mistralProvider = migratedState.providers[0]
-    const baseUrlSetting = mistralProvider.settings.find(
-      (setting: any) => setting.key === 'base-url'
-    )
-
-    expect(mistralProvider.base_url).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.value).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.placeholder).toBe('https://api.mistral.ai/v1')
-  })
-
-  it('does not migrate Mistral provider base URL if already has /v1', () => {
-    const persistApi = (useModelProvider as any).persist
-    const migrate = persistApi?.getOptions().migrate as
-      | ((state: unknown, version: number) => any)
-      | undefined
-
-    expect(migrate).toBeDefined()
-
-    const persistedState = {
-      providers: [
         {
-          provider: 'mistral',
+          provider: 'my-custom',
           models: [],
-          base_url: 'https://api.mistral.ai/v1',
+          base_url: 'https://example.com/v1',
           settings: [
             {
               key: 'base-url',
-              controller_props: {
-                value: 'https://api.mistral.ai/v1',
-                placeholder: 'https://api.mistral.ai/v1',
-              },
+              controller_props: { value: 'https://example.com/v1' },
             },
           ],
         },
       ],
-      selectedProvider: 'mistral',
+      selectedProvider: 'anthropic',
       selectedModel: null,
       deletedModels: [],
     }
 
-    const migratedState = migrate!(persistedState, 8)
-    const mistralProvider = migratedState.providers[0]
-    const baseUrlSetting = mistralProvider.settings.find(
-      (setting: any) => setting.key === 'base-url'
-    )
+    const migratedState = migrate!(persistedState, 13)
+    const [anthropic, mistral, custom] = migratedState.providers
 
-    expect(mistralProvider.base_url).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.value).toBe('https://api.mistral.ai/v1')
-    expect(baseUrlSetting.controller_props.placeholder).toBe('https://api.mistral.ai/v1')
+    expect(anthropic.base_url).toBe('https://api.anthropic.com/v1')
+    expect(
+      anthropic.settings.find((s: any) => s.key === 'base-url')
+    ).toBeUndefined()
+    expect(
+      anthropic.settings.find((s: any) => s.key === 'api-key')
+    ).toBeDefined()
+
+    expect(mistral.base_url).toBe('https://api.mistral.ai/v1')
+    expect(
+      mistral.settings.find((s: any) => s.key === 'base-url')
+    ).toBeUndefined()
+
+    // Custom providers (not in predefinedProviders) are left alone.
+    expect(custom.base_url).toBe('https://example.com/v1')
+    expect(
+      custom.settings.find((s: any) => s.key === 'base-url')
+    ).toBeDefined()
   })
 
   it('does not affect other providers during Mistral migration', () => {
@@ -396,5 +390,49 @@ describe('useModelProvider migrations', () => {
 
     expect(migratedState.providers[0].base_url).toBe('https://api.mistral.ai/v1')
     expect(migratedState.providers[1].base_url).toBe('https://api.openai.com/v1')
+  })
+
+  it('backfills api_type on the built-in anthropic provider (v15 → v16)', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'anthropic',
+          models: [],
+          base_url: 'https://api.anthropic.com/v1',
+          settings: [],
+        },
+        {
+          provider: 'openai',
+          models: [],
+          base_url: 'https://api.openai.com/v1',
+          settings: [],
+        },
+        {
+          provider: 'my-anthropic-proxy',
+          models: [],
+          api_type: 'anthropic',
+          base_url: 'https://proxy.example.com/v1',
+          settings: [],
+        },
+      ],
+      selectedProvider: 'anthropic',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 15)
+    const [anthropic, openai, customAnthropic] = migratedState.providers
+
+    expect(anthropic.api_type).toBe('anthropic')
+    expect(openai.api_type).toBeUndefined()
+    // Pre-set api_type must round-trip untouched.
+    expect(customAnthropic.api_type).toBe('anthropic')
   })
 })

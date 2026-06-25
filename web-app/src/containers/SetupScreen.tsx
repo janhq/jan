@@ -291,15 +291,6 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Auto-start download when screen is shown
-  const hasAutoStarted = useRef(false)
-  useEffect(() => {
-    if (hasAutoStarted.current || isDownloaded) return
-    hasAutoStarted.current = true
-    handleQuickStart()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Use ref to track if we've already navigated
   const hasNavigatedRef = useRef(false)
 
@@ -480,7 +471,7 @@ function SetupScreen() {
                         </span>
                         {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
                           <IconEye size={12} />
-                          Vision
+                          Multimodal
                         </span>}
                       </div>
                     </div>

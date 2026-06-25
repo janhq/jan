@@ -5,6 +5,7 @@ import * as SheetPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useTitlebarLayout } from "@/stores/titlebar-layout-store"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -54,6 +55,12 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  // On Windows/Linux the native window controls are an in-app overlay pinned to
+  // the top-right (z-[60]); a right-side sheet only collides when the DE places
+  // any control on the right (GNOME's left-side layout needs no offset).
+  const controlsOnRight = useTitlebarLayout((s) => s.layout.right.length > 0)
+  const offsetForTitlebar =
+    side === "right" && (IS_WINDOWS || IS_LINUX) && controlsOnRight
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -69,13 +76,17 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b",
           side === "bottom" &&
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
+          offsetForTitlebar && "pt-15",
           className
         )}
         {...props}
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+          <SheetPrimitive.Close className={cn(
+            "ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none",
+            offsetForTitlebar && "top-15"
+          )}>
             <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </SheetPrimitive.Close>

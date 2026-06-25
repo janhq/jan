@@ -6,6 +6,7 @@ import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 export function KeyboardShortcutsProvider() {
@@ -20,6 +21,8 @@ export function KeyboardShortcutsProvider() {
   const newProjectShortcut = PlatformShortcuts[ShortcutAction.NEW_PROJECT]
   const settingsShortcut = PlatformShortcuts[ShortcutAction.GO_TO_SETTINGS]
   const searchShortcut = PlatformShortcuts[ShortcutAction.SEARCH]
+  const switchAssistantShortcut =
+    PlatformShortcuts[ShortcutAction.SWITCH_ASSISTANT]
 
   // Toggle Sidebar
   useKeyboardShortcut({
@@ -68,6 +71,14 @@ export function KeyboardShortcutsProvider() {
     ...searchShortcut,
     callback: () => {
       setSearchOpen(true)
+    },
+  })
+
+  // Switch Assistant — advance to the next assistant on each press
+  useKeyboardShortcut({
+    ...switchAssistantShortcut,
+    callback: () => {
+      useAssistantSwitcher.getState().cycleHandler?.()
     },
   })
 

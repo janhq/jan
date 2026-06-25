@@ -7,7 +7,10 @@ use tokio::time::timeout;
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
 use crate::path::validate_binary_path;
-use jan_utils::{binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags};
+use jan_utils::{
+    binary_requires_cuda, binary_requires_rocm, find_cuda_paths, find_rocm_paths,
+    setup_library_path, setup_windows_process_flags,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -40,7 +43,13 @@ pub async fn get_devices_from_backend(
             "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
         );
     }
-    setup_library_path(bin_path.parent(), &cuda, &mut command);
+    let rocm = find_rocm_paths();
+    if rocm.lib_paths.is_empty() && rocm.bin_paths.is_empty() && binary_requires_rocm(&bin_path) {
+        log::warn!(
+            "llama.cpp backend appears to require ROCm/HIP, but ROCm not found. Process may fail to start. Please install the ROCm runtime and try again!"
+        );
+    }
+    setup_library_path(bin_path.parent(), &cuda.merged(rocm), &mut command);
 
     // Execute the command and wait for completion
     let output = timeout(Duration::from_secs(30), command.output())
@@ -166,9 +175,9 @@ fn parse_device_line(line: &str) -> ServerResult<Option<DeviceInfo>> {
 fn find_memory_pattern(text: &str) -> Option<(usize, &str)> {
     // Find the last parenthesis that contains the memory pattern
     let mut last_match = None;
-    let mut chars = text.char_indices().peekable();
+    let chars = text.char_indices();
 
-    while let Some((start_idx, ch)) = chars.next() {
+    for (start_idx, ch) in chars {
         if ch == '(' {
             // Find the closing parenthesis
             let remaining = &text[start_idx + 1..];
@@ -203,7 +212,7 @@ fn is_memory_pattern(content: &str) -> bool {
         // Each part should start with a number and contain "MiB"
         part.split_whitespace()
             .next()
-            .map_or(false, |first_word| first_word.parse::<i32>().is_ok())
+            .is_some_and(|first_word| first_word.parse::<i32>().is_ok())
             && part.contains("MiB")
     })
 }

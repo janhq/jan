@@ -3,14 +3,14 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 const MAX_TITLE_WORDS = 10
-const MAX_PROMPT_LENGTH = 500
+const MAX_PROMPT_LENGTH = 1500
 
-function buildSummarizePrompt(message: string): string {
+function buildSummarizePrompt(transcript: string): string {
   const truncated =
-    message.length > MAX_PROMPT_LENGTH
-      ? message.slice(0, MAX_PROMPT_LENGTH) + '...'
-      : message
-  return `Summarize in a ${MAX_TITLE_WORDS}-word Title. Give the title only. Here is the message: "${truncated}"`
+    transcript.length > MAX_PROMPT_LENGTH
+      ? transcript.slice(0, MAX_PROMPT_LENGTH) + '...'
+      : transcript
+  return `Summarize the following conversation into a concise title of at most ${MAX_TITLE_WORDS} words. Capture the overall topic, not just the latest turn. Output the title only, no quotes, no explanation.\n\nConversation:\n${truncated}`
 }
 
 /**
@@ -20,10 +20,16 @@ function buildSummarizePrompt(message: string): string {
 export function cleanTitle(raw: string): string | null {
   let text = raw.trim()
 
-  // Strip reasoning blocks like <think>...</think>
-  const thinkMatch = text.match(/<\/think>\s*(.*)$/s)
-  if (thinkMatch) {
-    text = thinkMatch[1].trim()
+  // Strip complete reasoning blocks like <think>...</think> (any tag name)
+  text = text.replace(/<(think|thinking|reasoning|analysis)[^>]*>[\s\S]*?<\/\1>/gi, '').trim()
+
+  // If a reasoning opener remains without a close, the output is all reasoning — unusable
+  if (/<(think|thinking|reasoning|analysis)[^>]*>/i.test(text)) return null
+
+  // If only a closing tag is present, take what's after the last one
+  const lastClose = text.match(/<\/(?:think|thinking|reasoning|analysis)>\s*([\s\S]*)$/i)
+  if (lastClose) {
+    text = lastClose[1].trim()
   }
 
   // Remove leftover XML-like tags
@@ -53,7 +59,7 @@ export function cleanTitle(raw: string): string | null {
  * Returns null on failure or if the signal is aborted.
  */
 export async function generateThreadTitle(
-  firstMessage: string,
+  transcript: string,
   abortSignal: AbortSignal
 ): Promise<string | null> {
   try {
@@ -64,6 +70,9 @@ export async function generateThreadTitle(
       return null
     }
 
+    // MLX models often emit reasoning that can't be reliably suppressed; fall back to default title.
+    if (selectedProvider === 'mlx') return null
+
     const provider = getProviderByName(selectedProvider)
     if (!provider) {
       console.warn('[ThreadTitle] Provider not found:', selectedProvider)
@@ -71,12 +80,21 @@ export async function generateThreadTitle(
     }
 
     console.log('[ThreadTitle] Creating model:', selectedModel.id, 'provider:', selectedProvider)
-    const model = await ModelFactory.createModel(selectedModel.id, provider, {})
+    const params: Record<string, unknown> =
+      selectedProvider === 'llamacpp'
+        ? { chat_template_kwargs: { enable_thinking: false } }
+        : {}
+    const model = await ModelFactory.createModel(
+      selectedModel.id,
+      provider,
+      params
+    )
 
     console.log('[ThreadTitle] Calling generateText...')
     const { text } = await generateText({
       model,
-      messages: [{ role: 'user', content: buildSummarizePrompt(firstMessage) }],
+      messages: [{ role: 'user', content: buildSummarizePrompt(transcript) }],
+      maxOutputTokens: 128,
       abortSignal,
     })
 

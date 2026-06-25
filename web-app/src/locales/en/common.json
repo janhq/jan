@@ -1,8 +1,12 @@
 {
+  "htmlArtifact": {
+    "code": "Code",
+    "preview": "Preview",
+    "previewStreaming": "Available when generation finishes"
+  },
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
-  "connectors": "Connectors",
   "local_api_server": "Local API Server",
   "remote_access": "Remote Access",
   "integrations": "Integrations",
@@ -14,6 +18,8 @@
   "general": "General",
   "settings": "Settings",
   "modelProviders": "Model Providers",
+  "localProviders": "Local",
+  "remoteProviders": "Remote",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "hideProvider": "Hide provider",
@@ -97,6 +103,7 @@
   "completed": "Completed",
   "image": "Image",
   "vision": "Vision",
+  "multimodal": "Multimodal",
   "embeddings": "Embeddings",
   "tools": "Tools",
   "webSearch": "Web Search",
@@ -107,6 +114,7 @@
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
   "failedToLoadModels": "Failed to load models",
   "noModels": "No models found",
+  "noAssistant": "No assistant",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
   "jan": "Jan",
@@ -143,6 +151,9 @@
   "confirm": "Confirm",
   "continue": "Continue",
   "loading": "Loading...",
+  "settingUpJan": "Booting up Jan…",
+  "registeringExtensions": "Registering extensions…",
+  "loadingExtensions": "Loading extensions… ({{done}}/{{total}})",
   "error": "Error",
   "success": "Success",
   "warning": "Warning",
@@ -234,7 +245,23 @@
   },
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
-    "description": "Configure model settings to optimize performance and behavior."
+    "description": "Configure model settings to optimize performance and behavior.",
+    "samplingDefaults": {
+      "title": "Default sampling parameters",
+      "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
+    },
+    "mtp": {
+      "section": "Multi-Token Prediction (MTP)",
+      "enable": "Enable MTP",
+      "enableDescription": "Use the model's built-in MTP heads to draft multiple tokens per step. Speeds up generation when the model has MTP weights (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
+      "needsUpgrade": "Update the llama.cpp backend to build b9193 or newer to enable MTP.",
+      "nMax": "Max draft tokens",
+      "nMaxDescription": "Maximum number of tokens to draft per step. Default 16.",
+      "nMin": "Min draft tokens",
+      "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
+      "pMin": "Min draft probability",
+      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+    }
   },
   "dialogs": {
     "changeDataFolder": {
@@ -296,7 +323,8 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
-    "uploadingFiles": "Uploading files…",
+    "uploadingFiles": "Processing files…",
+    "processButton": "Add",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -444,12 +472,22 @@
       "description": "Thread removed from \"{{projectName}}\" successfully"
     },
     "fileUploaded": {
-      "title": "File Uploaded",
-      "description": "File has been uploaded and indexed successfully"
+      "title": "File Processed",
+      "description": "File has been processed and indexed successfully"
     },
     "uploadFailed": {
-      "title": "Upload Failed",
-      "description": "Failed to upload file"
+      "title": "Processing Failed",
+      "description": "Failed to process file",
+      "subjectThisFile": "This file",
+      "pdfMalformedXref": "{{subject}} has a malformed PDF cross-reference table and could not be parsed. Try opening it in a PDF viewer and re-saving it (File → Print → Save as PDF), then upload again.",
+      "pdfScanned": "{{subject}} appears to be a scanned or image-based PDF. OCR isn't supported yet — please upload a text-based PDF.",
+      "pdfEncrypted": "{{subject}} is password-protected. Remove the password and try again.",
+      "pdfGeneric": "{{subject}} could not be parsed as a PDF. The file may be corrupted or uses an unsupported PDF feature.",
+      "fileTooLarge": "{{subject}} is too large. {{message}}.",
+      "unsupportedType": "File type \"{{type}}\" is not supported.",
+      "ioError": "Could not read {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} could not be parsed: {{message}}",
+      "fallback": "Failed to process {{subject}}."
     },
     "fileDeleted": {
       "title": "File Deleted",
@@ -478,5 +516,12 @@
   },
   "files": {
     "chunksCount": "{{count}} chunks"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

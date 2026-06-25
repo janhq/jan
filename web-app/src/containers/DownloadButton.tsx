@@ -5,8 +5,14 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
-import { extractModelName } from '@/lib/models'
+import {
+  extractModelName,
+  extractQuantLabel,
+  selectDefaultQuant,
+} from '@/lib/models'
+import { toast } from 'sonner'
 import { cn, sanitizeModelId } from '@/lib/utils'
+import { pickMtpSibling } from '@/lib/mtp'
 import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -22,14 +28,21 @@ export function DownloadButtonPlaceholder({
   model,
   handleUseModel,
 }: ModelProps) {
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore(
-      useShallow((state) => ({
-        downloads: state.downloads,
-        localDownloadingModels: state.localDownloadingModels,
-        addLocalDownloadingModel: state.addLocalDownloadingModel,
-      }))
-    )
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+    setResumeParams,
+  } = useDownloadStore(
+    useShallow((state) => ({
+      downloads: state.downloads,
+      localDownloadingModels: state.localDownloadingModels,
+      addLocalDownloadingModel: state.addLocalDownloadingModel,
+      removeLocalDownloadingModel: state.removeLocalDownloadingModel,
+      setResumeParams: state.setResumeParams,
+    }))
+  )
   const { t } = useTranslation()
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const llamaProvider = getProviderByName('llamacpp')
@@ -38,12 +51,7 @@ export function DownloadButtonPlaceholder({
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const [isDownloaded, setDownloaded] = useState<boolean>(false)
 
-  const quant =
-    model.quants?.find((e) =>
-      DEFAULT_MODEL_QUANTIZATIONS.some((m) =>
-        e.model_id.toLowerCase().includes(m)
-      )
-    ) ?? model.quants?.[0]
+  const quant = selectDefaultQuant(model.quants, DEFAULT_MODEL_QUANTIZATIONS)
 
   const modelId = quant?.model_id || model.model_name
 
@@ -79,12 +87,13 @@ export function DownloadButtonPlaceholder({
   }, [llamaProvider, modelId, model.developer])
 
   useEffect(() => {
-    events.on(
-      DownloadEvent.onFileDownloadAndVerificationSuccess,
-      (state: DownloadState) => {
-        if (state.modelId === modelId) setDownloaded(true)
-      }
-    )
+    const handler = (state: DownloadState) => {
+      if (state.modelId === modelId) setDownloaded(true)
+    }
+    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, handler)
+    return () => {
+      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, handler)
+    }
   }, [modelId])
 
   const isRecommendedModel = useCallback((modelId: string) => {
@@ -117,16 +126,39 @@ export function DownloadButtonPlaceholder({
   const isRecommended = isRecommendedModel(model.model_name)
 
   const handleDownload = async () => {
-    // Immediately set local downloading state and start download
     addLocalDownloadingModel(modelId)
     const mmprojPath = (
       model.mmproj_models?.find(
         (e) => e.model_id.toLowerCase() === 'mmproj-f16'
       ) || model.mmproj_models?.[0]
     )?.path
-    serviceHub
-      .models()
-      .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
+    const mtpPath = quant
+      ? pickMtpSibling(model.mtpQuants, quant)?.path
+      : undefined
+    setResumeParams(modelId, {
+      modelPath: modelUrl,
+      mmprojPath,
+      hfToken: huggingfaceToken,
+    })
+    try {
+      await serviceHub
+        .models()
+        .pullModelWithMetadata(
+          modelId,
+          modelUrl,
+          mmprojPath,
+          huggingfaceToken,
+          undefined,
+          mtpPath
+        )
+    } catch (err) {
+      removeLocalDownloadingModel(modelId)
+      console.error('Failed to start download:', err)
+      toast.error(
+        t('hub:downloadFailed', { defaultValue: 'Failed to start download' }),
+        { description: err instanceof Error ? err.message : String(err) }
+      )
+    }
   }
 
   return (
@@ -161,7 +193,12 @@ export function DownloadButtonPlaceholder({
           onClick={handleDownload}
           className={cn(isDownloading && 'hidden')}
         >
-          {t('hub:download')}
+          {(() => {
+            const label = extractQuantLabel(quant?.model_id)
+            return label
+              ? `${t('hub:download')} · ${label}`
+              : t('hub:download')
+          })()}
         </Button>
       )}
     </div>

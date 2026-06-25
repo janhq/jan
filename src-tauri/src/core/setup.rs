@@ -4,9 +4,10 @@ use std::{
     io::Read,
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
+use tauri::{App, AppHandle, Emitter, Listener, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(feature = "desktop")]
 use tauri::{
@@ -32,10 +33,11 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
     }
 
     let extensions_path = get_jan_extensions_path(app.clone());
+    let extensions_json_path = extensions_path.join("extensions.json");
     let pre_install_path = app
         .path()
         .resource_dir()
-        .unwrap()
+        .map_err(|e| format!("Could not resolve resource dir: {e}"))?
         .join("resources")
         .join("pre-install");
 
@@ -46,23 +48,33 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
         clean_up = true;
     }
     log::info!("Installing extensions. Clean up: {clean_up}");
-    if !clean_up && extensions_path.exists() {
+    // A bare directory is not proof of a completed install; gate on the manifest
+    // so a previously-aborted run self-heals on the next launch.
+    if !clean_up && extensions_json_path.exists() {
         return Ok(());
     }
 
-    // Attempt to remove extensions folder
+    // Validate the install source before mutating anything. A missing/unreadable
+    // pre-install dir must not wipe a working install or leave a half-built one.
+    let pre_install_entries = match fs::read_dir(&pre_install_path) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::warn!(
+                "Skipping extension install; pre-install dir unavailable at {pre_install_path:?}: {e}"
+            );
+            return Ok(());
+        }
+    };
+
+    // Source is good — now it's safe to clear and recreate the target.
     if extensions_path.exists() {
         fs::remove_dir_all(&extensions_path).unwrap_or_else(|_| {
             log::info!("Failed to remove existing extensions folder, it may not exist.");
         });
     }
-
-    // Attempt to create it again
     if !extensions_path.exists() {
         fs::create_dir_all(&extensions_path).map_err(|e| e.to_string())?;
     }
-
-    let extensions_json_path = extensions_path.join("extensions.json");
     let mut extensions_list = if extensions_json_path.exists() {
         let existing_data =
             fs::read_to_string(&extensions_json_path).unwrap_or_else(|_| "[]".to_string());
@@ -71,7 +83,7 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
         vec![]
     };
 
-    for entry in fs::read_dir(&pre_install_path).map_err(|e| e.to_string())? {
+    for entry in pre_install_entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
@@ -317,12 +329,28 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
     });
 }
 
+/// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window
+/// that never signals still proceeds).
+async fn wait_for_app_ready<R: Runtime>(app: &AppHandle<R>, timeout: Duration) {
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let handler = app.once_any("app-ready", move |_| {
+        let _ = tx.send(());
+    });
+    if tokio::time::timeout(timeout, rx).await.is_err() {
+        log::info!("app-ready not received within {timeout:?}; starting MCP servers anyway");
+        app.unlisten(handler);
+    }
+}
+
 pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         use crate::core::mcp::lockfile::cleanup_all_stale_locks;
+
+        // Defer past first paint so npx/uvx spawns don't starve cold start.
+        wait_for_app_ready(&app_handle, Duration::from_secs(30)).await;
 
         // Create default mcp_config.json if it doesn't exist
         let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
@@ -340,9 +368,9 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {e}");
         }
-        app_handle
-            .emit("mcp-update", "MCP servers updated")
-            .unwrap();
+        if let Err(e) = app_handle.emit("mcp-update", "MCP servers updated") {
+            log::warn!("Failed to emit mcp-update event: {e}");
+        }
     });
 }
 
@@ -414,6 +442,198 @@ pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Read the current XDG Desktop Portal `org.freedesktop.appearance/color-scheme`
+/// setting. Returns "dark", "light", or `None` if the portal reports no preference
+/// or is unavailable.
+#[cfg(target_os = "linux")]
+async fn read_xdg_portal_color_scheme() -> Result<Option<&'static str>, Box<dyn std::error::Error>>
+{
+    use zbus::Connection;
+
+    let connection = Connection::session().await?;
+    let proxy: zbus::Proxy<'_> = zbus::proxy::Builder::new(&connection)
+        .destination("org.freedesktop.portal.Desktop")?
+        .path("/org/freedesktop/portal/desktop")?
+        .interface("org.freedesktop.portal.Settings")?
+        .build()
+        .await?;
+
+    let reply: zbus::zvariant::OwnedValue = proxy
+        .call("Read", &("org.freedesktop.appearance", "color-scheme"))
+        .await?;
+
+    let inner: zbus::zvariant::OwnedValue = match reply.downcast_ref::<zbus::zvariant::Value>() {
+        Ok(v) => v.try_to_owned()?,
+        Err(_) => reply,
+    };
+    let color_scheme = u32::try_from(inner).unwrap_or(0);
+    // GNOME emits 0 ("no preference") for light, 1 for dark, 2 for explicit
+    // light (rare). Treat 0 and 2 as light so light↔dark toggles work on both
+    // GNOME and KDE/freedesktop-compliant DEs.
+    Ok(match color_scheme {
+        1 => Some("dark"),
+        _ => Some("light"),
+    })
+}
+
+/// Window-control placement split by side. Values are `"minimize"`,
+/// `"maximize"`, `"close"`; the borderless frontend renders its own buttons in
+/// this order so they match the desktop's configured layout.
+#[derive(serde::Serialize)]
+pub struct TitlebarLayout {
+    pub left: Vec<String>,
+    pub right: Vec<String>,
+}
+
+impl Default for TitlebarLayout {
+    fn default() -> Self {
+        TitlebarLayout {
+            left: vec![],
+            right: vec![
+                "minimize".to_string(),
+                "maximize".to_string(),
+                "close".to_string(),
+            ],
+        }
+    }
+}
+
+/// Read the desktop's window-button layout so the borderless titlebar can place
+/// min/max/close on the side the user configured (KDE `kwinrc`, GNOME gsettings).
+/// Falls back to all-on-the-right on non-Linux or when the config is unreadable.
+#[tauri::command]
+pub fn get_titlebar_layout() -> TitlebarLayout {
+    #[cfg(target_os = "linux")]
+    {
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+        let is_kde = desktop.split(':').any(|d| d.eq_ignore_ascii_case("KDE"));
+        let layout = if is_kde {
+            read_kde_button_layout()
+        } else {
+            read_gnome_button_layout()
+        };
+        if let Some(layout) = layout {
+            return layout;
+        }
+    }
+    TitlebarLayout::default()
+}
+
+/// Parse `~/.config/kwinrc` `[org.kde.kdecoration2]` button codes
+/// (`I`=minimize, `A`=maximize, `X`=close; others ignored). Defaults match
+/// KDE's own (`MS` left / `IAX` right) when the keys are absent.
+#[cfg(target_os = "linux")]
+fn read_kde_button_layout() -> Option<TitlebarLayout> {
+    let home = std::env::var("HOME").ok()?;
+    let content =
+        fs::read_to_string(PathBuf::from(home).join(".config/kwinrc")).unwrap_or_default();
+
+    let mut left = "MS".to_string();
+    let mut right = "IAX".to_string();
+    let mut in_section = false;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_section = line == "[org.kde.kdecoration2]";
+        } else if in_section {
+            if let Some(v) = line.strip_prefix("ButtonsOnLeft=") {
+                left = v.trim().to_string();
+            } else if let Some(v) = line.strip_prefix("ButtonsOnRight=") {
+                right = v.trim().to_string();
+            }
+        }
+    }
+
+    let codes = |s: &str| -> Vec<String> {
+        s.chars()
+            .filter_map(|c| match c {
+                'I' => Some("minimize".to_string()),
+                'A' => Some("maximize".to_string()),
+                'X' => Some("close".to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    Some(TitlebarLayout {
+        left: codes(&left),
+        right: codes(&right),
+    })
+}
+
+/// Read GNOME's `button-layout` (`"appmenu:minimize,maximize,close"`); the side
+/// before `:` is the left cluster. Unknown tokens (appmenu/icon/spacer) ignored.
+#[cfg(target_os = "linux")]
+fn read_gnome_button_layout() -> Option<TitlebarLayout> {
+    let output = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let raw = raw.trim().trim_matches('\'');
+    let (left, right) = raw.split_once(':').unwrap_or(("", raw));
+
+    let tokens = |s: &str| -> Vec<String> {
+        s.split(',')
+            .filter_map(|t| match t.trim() {
+                "minimize" => Some("minimize".to_string()),
+                "maximize" => Some("maximize".to_string()),
+                "close" => Some("close".to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    Some(TitlebarLayout {
+        left: tokens(left),
+        right: tokens(right),
+    })
+}
+
+/// Flip GTK's `gtk-application-prefer-dark-theme` so the native Wayland
+/// HeaderBar follows the app's effective theme (user override or system).
+/// No-op on non-Linux.
+#[tauri::command]
+pub fn set_gtk_prefer_dark(dark: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        // GTK objects are not Send; bounce onto the GTK main thread.
+        gtk::glib::MainContext::default().invoke(move || {
+            if let Some(settings) = gtk::Settings::default() {
+                settings.set_gtk_application_prefer_dark_theme(dark);
+            }
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = dark;
+    }
+}
+
+#[tauri::command]
+pub async fn get_system_theme<R: Runtime>(app: tauri::AppHandle<R>) -> Result<String, String> {
+    #[cfg(target_os = "linux")]
+    {
+        match read_xdg_portal_color_scheme().await {
+            Ok(Some(theme)) => return Ok(theme.to_string()),
+            Ok(None) => {}
+            Err(e) => log::warn!("get_system_theme: portal read failed: {e}"),
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(theme) = window.theme() {
+            return Ok(match theme {
+                tauri::Theme::Dark => "dark".to_string(),
+                _ => "light".to_string(),
+            });
+        }
+    }
+    Ok("light".to_string())
+}
+
 /// Listen to the XDG Desktop Portal `org.freedesktop.appearance` `color-scheme`
 /// setting via D-Bus. This fires reliably on KDE Plasma, GNOME, and other
 /// freedesktop-compliant desktop environments.
@@ -439,6 +659,17 @@ async fn setup_xdg_portal_theme_listener<R: Runtime>(
 
     log::info!("XDG Desktop Portal theme listener active");
 
+    // Emit the current value so the frontend doesn't have to wait for the first
+    // SettingChanged signal to learn the system color-scheme on startup.
+    match read_xdg_portal_color_scheme().await {
+        Ok(Some(theme_str)) => {
+            log::info!("XDG Portal: initial system color-scheme: {theme_str}");
+            let _ = app_handle.emit("theme-changed", theme_str);
+        }
+        Ok(None) => log::info!("XDG Portal: initial color-scheme is 'no preference'"),
+        Err(e) => log::warn!("XDG Portal: initial Read failed: {e}"),
+    }
+
     while let Some(signal) = signal_stream.next().await {
         let body = signal.body();
         if let Ok((namespace, key, value)) =
@@ -449,8 +680,7 @@ async fn setup_xdg_portal_theme_listener<R: Runtime>(
                 let color_scheme = u32::try_from(value).unwrap_or(0);
                 let theme_str = match color_scheme {
                     1 => "dark",
-                    2 => "light",
-                    _ => "light", // default to light for "no preference"
+                    _ => "light",
                 };
                 log::info!(
                     "XDG Portal: system color-scheme changed to: {theme_str} (raw value: {color_scheme})"

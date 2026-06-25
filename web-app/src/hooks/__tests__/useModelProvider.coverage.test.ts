@@ -90,6 +90,46 @@ describe('useModelProvider - coverage', () => {
       expect(result.current.getProviderByName('openai')?.api_key).toBe('sk-123')
       expect(result.current.getProviderByName('anthropic')?.active).toBe(true)
     })
+
+    it('keeps selectedModel in sync when replacing provider models', () => {
+      const { result } = renderHook(() => useModelProvider())
+
+      act(() => {
+        useModelProvider.setState({
+          providers: [
+            makeProvider('llamacpp', [
+              {
+                id: 'model-1',
+                capabilities: [],
+                settings: { ctx_len: { controller_props: { value: 4096 } } },
+              },
+            ]),
+          ],
+          selectedProvider: 'llamacpp',
+          selectedModel: {
+            id: 'model-1',
+            capabilities: [],
+            settings: { ctx_len: { controller_props: { value: 4096 } } },
+          } as any,
+        })
+      })
+
+      act(() => {
+        result.current.updateProvider('llamacpp', {
+          models: [
+            {
+              id: 'model-1',
+              capabilities: [],
+              settings: { ctx_len: { controller_props: { value: 32768 } } },
+            },
+          ],
+        } as any)
+      })
+
+      expect(
+        result.current.selectedModel?.settings?.ctx_len?.controller_props?.value
+      ).toBe(32768)
+    })
   })
 
   describe('deleteModel', () => {
@@ -256,11 +296,57 @@ describe('useModelProvider - coverage', () => {
         expect(migrated.providers.find((p: any) => p.provider === 'cohere')).toBeUndefined()
         expect(migrated.providers.find((p: any) => p.provider === 'openai')).toBeDefined()
       }],
-      [10, 'adding auto_increase_ctx_len', {
+      [10, 'v10 is now a no-op (auto_increase_ctx_len removed in v15)', {
         providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {}, capabilities: [] }], settings: [] }],
         deletedModels: [],
       }, (migrated: any) => {
-        expect(migrated.providers[0].models[0].settings.auto_increase_ctx_len).toBeDefined()
+        expect(migrated.providers[0].models[0].settings.auto_increase_ctx_len).toBeUndefined()
+      }],
+      [12, 'v12 resets legacy 8192 to auto, v16 re-seeds 8192 default', {
+        providers: [{
+          provider: 'llamacpp',
+          models: [{
+            id: 'm1',
+            settings: { ctx_len: { controller_props: { value: '8192' } } },
+            capabilities: [],
+          }],
+          settings: [],
+        }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        expect(
+          migrated.providers[0].models[0].settings.ctx_len.controller_props.value
+        ).toBe(8192)
+      }],
+      [16, 'v16 seeds empty ctx_len with 8192 default', {
+        providers: [{
+          provider: 'llamacpp',
+          models: [{
+            id: 'm1',
+            settings: { ctx_len: { controller_props: { value: '' } } },
+            capabilities: [],
+          }],
+          settings: [],
+        }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        expect(
+          migrated.providers[0].models[0].settings.ctx_len.controller_props.value
+        ).toBe(8192)
+      }],
+      [14, 'v14 → v15 strips orphan auto_increase_ctx_len', {
+        providers: [{
+          provider: 'llamacpp',
+          models: [{
+            id: 'm1',
+            settings: { auto_increase_ctx_len: { controller_props: { value: true } } },
+            capabilities: [],
+          }],
+          settings: [],
+        }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        expect(migrated.providers[0].models[0].settings.auto_increase_ctx_len).toBeUndefined()
       }],
       [3, 'Anthropic provider migration', {
         providers: [{

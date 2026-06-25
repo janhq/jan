@@ -128,10 +128,8 @@ export class DefaultThreadsService implements ThreadsService {
       ?.modifyThread({
         ...thread,
         assistants: thread.assistants?.map((e) => ({
+          ...e,
           model: toModelPayload(thread.model),
-          id: e.id,
-          name: e.name,
-          instructions: e.instructions,
         })) ?? [
           { model: toModelPayload(thread.model), id: 'jan', name: 'Jan' },
         ],

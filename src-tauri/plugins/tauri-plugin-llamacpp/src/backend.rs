@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
     let is_windows = old_backend.starts_with("win-");
-    let is_linux = old_backend.starts_with("linux-");
+    // Official llama.cpp Linux assets use the `ubuntu-` prefix (e.g.
+    // `ubuntu-rocm-7.2-x64`); normalize them onto Jan's `linux-` scheme.
+    let is_linux = old_backend.starts_with("linux-") || old_backend.starts_with("ubuntu-");
     let os_prefix = if is_windows {
         "win-"
     } else if is_linux {
@@ -47,6 +49,15 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
         // Migration from e.g., 'linux-vulkan-x64' to 'linux-vulkan-common_cpus-x64'
         return format!(
             "{}vulkan-common_cpus-{}",
+            os_prefix,
+            if is_x64 { "x64" } else { arch_suffix }
+        );
+    } else if old_backend.contains("hip") || old_backend.contains("rocm") {
+        // Canonicalize every HIP variant — Jan's own `*-hip-common_cpus-x64`
+        // and the official `ubuntu-rocm-*` / `win-hip-*` names — onto one id so
+        // listing, update checks and migration treat them as a single backend.
+        return format!(
+            "{}hip-common_cpus-{}",
             os_prefix,
             if is_x64 { "x64" } else { arch_suffix }
         );
@@ -144,7 +155,7 @@ pub async fn get_local_installed_backends(
 
 /// Helper function to check if a backend is properly installed
 /// Checks for the existence of llama-server executable in the expected locations
-fn is_backend_installed(backend_dir: &PathBuf) -> bool {
+fn is_backend_installed(backend_dir: &Path) -> bool {
     if !backend_dir.exists() || !backend_dir.is_dir() {
         return false;
     }
@@ -179,6 +190,8 @@ pub struct SystemFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    #[serde(default)]
+    hip: bool,
 }
 
 #[derive(Serialize)]
@@ -213,6 +226,9 @@ pub fn determine_supported_backends(
             if features.vulkan {
                 supported_backends.push("win-vulkan-common_cpus-x64".to_string());
             }
+            if features.hip {
+                supported_backends.push("win-hip-common_cpus-x64".to_string());
+            }
         }
         "windows-aarch64" | "windows-arm64" => {
             supported_backends.push("win-arm64".to_string());
@@ -230,6 +246,9 @@ pub fn determine_supported_backends(
             }
             if features.vulkan {
                 supported_backends.push("linux-vulkan-common_cpus-x64".to_string());
+            }
+            if features.hip {
+                supported_backends.push("linux-hip-common_cpus-x64".to_string());
             }
         }
         "linux-aarch64" | "linux-arm64" => {
@@ -292,11 +311,14 @@ pub struct SupportedFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    hip: bool,
 }
 
 #[derive(Deserialize)]
 pub struct GpuInfo {
     driver_version: String,
+    #[serde(default)]
+    vendor: Option<String>,
     nvidia_info: Option<NvidiaInfo>,
     vulkan_info: Option<VulkanInfo>,
 }
@@ -327,18 +349,25 @@ pub fn get_supported_features(
         cuda12: false,
         cuda13: false,
         vulkan: false,
+        hip: false,
     };
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
     let (min_cuda11_driver, min_cuda12_driver, min_cuda13_driver) = match os_type.as_str() {
         "linux" => ("450.80.02", "525.60.13", "580"),
         "windows" => ("452.39", "527.41", "580"),
-        _ => return Ok(features), // Other OS types don't support CUDA
+        _ => return Ok(features), // Other OS types support neither CUDA nor HIP
     };
 
     // Check GPU features
     for gpu_info in gpus {
         let driver_version = &gpu_info.driver_version;
+
+        // HIP (ROCm) is offered whenever an AMD GPU is present; missing ROCm
+        // runtime surfaces later at install/verify/launch.
+        if gpu_info.vendor.as_deref() == Some("AMD") {
+            features.hip = true;
+        }
 
         // Check CUDA support
         if gpu_info.nvidia_info.is_some() {
@@ -518,6 +547,7 @@ pub async fn prioritize_backends(
             "cuda-cu13.0",
             "cuda-cu12.0",
             "cuda-cu11.7",
+            "hip",
             "vulkan",
             "common_cpus",
             "avx512",
@@ -536,6 +566,7 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
+            "hip",
             "vulkan",
         ]
     };
@@ -587,6 +618,12 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("cuda-11-common_cpus") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
+    }
+    // HIP must precede the common_cpus/x64 checks: both Jan's own
+    // `*-hip-common_cpus-x64` and the official `ubuntu-rocm-*`/`win-hip-*` names
+    // would otherwise fall through to a CPU category.
+    if backend_string.contains("hip") || backend_string.contains("rocm") {
+        return Some("hip".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
@@ -860,21 +897,55 @@ pub struct BackendVerificationResult {
     pub resolved_libraries: Vec<String>,
 }
 
-fn expected_gpu_lib_name(backend: &str) -> Option<&'static str> {
+fn gpu_backend_keyword(backend: &str) -> Option<&'static str> {
     let b = backend.to_lowercase();
-    let is_windows = cfg!(target_os = "windows");
     if b.contains("cuda") {
-        Some(if is_windows { "ggml-cuda.dll" } else { "libggml-cuda.so" })
+        Some("cuda")
     } else if b.contains("vulkan") {
-        Some(if is_windows { "ggml-vulkan.dll" } else { "libggml-vulkan.so" })
+        Some("vulkan")
+    } else if b.contains("hip") || b.contains("rocm") {
+        // Seeds the dep scan with libggml-hip.*, which pulls in hipblas/rocblas.
+        Some("hip")
     } else {
         None
     }
 }
 
+fn is_shared_lib_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if cfg!(target_os = "windows") {
+        lower.ends_with(".dll")
+    } else {
+        lower.ends_with(".so") || lower.contains(".so.")
+    }
+}
+
+fn find_gpu_libs(bin_dir: &Path, keyword: &str) -> Vec<PathBuf> {
+    let entries = match std::fs::read_dir(bin_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_lowercase(),
+            None => continue,
+        };
+        if name.contains(keyword) && is_shared_lib_name(&name) {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
 fn verify_backend_dependencies(
-    bin_dir: &PathBuf,
-    exe_path: &PathBuf,
+    bin_dir: &Path,
+    exe_path: &Path,
     backend: &str,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
     if !bin_dir.exists() {
@@ -888,30 +959,28 @@ fn verify_backend_dependencies(
     let start = std::time::Instant::now();
     let mut missing: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Existence check runs before parsing so a deleted lib is caught without
-    // handing a bad path to goblin.
-    let gpu_lib_path: Option<PathBuf> = if cfg!(target_os = "macos") {
-        None
+    let paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
+        Vec::new()
     } else {
-        expected_gpu_lib_name(backend).and_then(|name| {
-            let path = bin_dir.join(name);
-            if path.exists() {
-                Some(path)
-            } else {
-                missing.insert(name.to_string());
-                None
-            }
-        })
+        match gpu_backend_keyword(backend) {
+            Some(kw) => find_gpu_libs(bin_dir, kw),
+            None => Vec::new(),
+        }
     };
 
-    // Skip CPU variants (ggml-cpu-haswell, etc.) — they're loaded only when
-    // the host's detected features match, so parsing them false-flags deps.
-    let mut paths: Vec<PathBuf> = vec![exe_path.clone()];
-    if let Some(p) = gpu_lib_path {
-        paths.push(p);
+    let _ = exe_path;
+
+    // HIP/ROCm runtime libs (rocblas/hipblas/amdhip) live outside the backend
+    // dir in versioned roots like /opt/rocm-7.2.0/lib; add them so the scan
+    // doesn't false-flag them as missing.
+    let mut lib_dirs: Vec<PathBuf> = vec![bin_dir.to_path_buf()];
+    if gpu_backend_keyword(backend) == Some("hip") {
+        for p in jan_utils::find_rocm_paths().lib_paths {
+            lib_dirs.push(PathBuf::from(p));
+        }
     }
 
-    let analysis = crate::deps_analyzer::analyze_out_of_process(bin_dir, &paths);
+    let analysis = crate::deps_analyzer::analyze_out_of_process(&lib_dirs, &paths);
 
     let resolved: std::collections::HashSet<String> = analysis.resolved.into_iter().collect();
     for name in analysis.missing {
@@ -957,6 +1026,15 @@ pub async fn verify_backend_installation(
             "Backend executable not found".into(),
             Some(exe_path.to_string_lossy().to_string()),
         ));
+    }
+
+    #[cfg(target_os = "linux")]
+    if jan_utils::system::is_flatpak() {
+        return Ok(BackendVerificationResult {
+            verified: true,
+            missing_libraries: Vec::new(),
+            resolved_libraries: Vec::new(),
+        });
     }
     // Libs sit next to the exe (build/bin/ when present); backend_dir is too high.
     let bin_dir = exe_path
@@ -1127,19 +1205,30 @@ pub fn build_backend_download_items(
     let task_id = format!("llamacpp-{}-{}", version, backend).replace('.', "-");
     let platform_name = if os_type == "windows" { "win" } else { "linux" };
 
+    // Official Windows HIP assets ship as .zip (e.g. win-hip-radeon-x64.zip);
+    // Jan's own win-hip-common_cpus-x64 and all other backends are .tar.gz.
+    let archive_ext = if os_type == "windows"
+        && backend.contains("hip")
+        && !backend.contains("common_cpus")
+    {
+        "zip"
+    } else {
+        "tar.gz"
+    };
+
     // Base URL for the main backend archive
     let backend_url = match source.as_str() {
         "github" => format!(
-            "https://github.com/janhq/llama.cpp/releases/download/{}/llama-{}-bin-{}.tar.gz",
-            version, version, backend
+            "https://github.com/janhq/llama.cpp/releases/download/{}/llama-{}-bin-{}.{}",
+            version, version, backend, archive_ext
         ),
         _ => format!(
-            "https://catalog.jan.ai/llama.cpp/releases/{}/llama-{}-bin-{}.tar.gz",
-            version, version, backend
+            "https://catalog.jan.ai/llama.cpp/releases/{}/llama-{}-bin-{}.{}",
+            version, version, backend, archive_ext
         ),
     };
 
-    let save_path = format!("{}/backend.tar.gz", backend_dir);
+    let save_path = format!("{}/backend.{}", backend_dir, archive_ext);
 
     let mut items = vec![BackendDownloadItem {
         url: backend_url,
@@ -1334,6 +1423,41 @@ mod tests {
     }
 
     #[test]
+    fn test_map_old_backend_to_new_hip() {
+        // Official Linux ROCm asset → canonical Jan id
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-rocm-7.2-x64".to_string()),
+            "linux-hip-common_cpus-x64"
+        );
+        // Official Windows HIP asset → canonical Jan id
+        assert_eq!(
+            map_old_backend_to_new("win-hip-radeon-x64".to_string()),
+            "win-hip-common_cpus-x64"
+        );
+        // Jan's own format is already canonical (idempotent)
+        assert_eq!(
+            map_old_backend_to_new("linux-hip-common_cpus-x64".to_string()),
+            "linux-hip-common_cpus-x64"
+        );
+    }
+
+    #[test]
+    fn test_get_backend_category_hip() {
+        assert_eq!(
+            get_backend_category("linux-hip-common_cpus-x64").as_deref(),
+            Some("hip")
+        );
+        assert_eq!(
+            get_backend_category("ubuntu-rocm-7.2-x64").as_deref(),
+            Some("hip")
+        );
+        assert_eq!(
+            get_backend_category("win-hip-radeon-x64").as_deref(),
+            Some("hip")
+        );
+    }
+
+    #[test]
     fn test_map_old_backend_to_new_arch() {
         // ARM64 detection
         assert_eq!(
@@ -1376,6 +1500,7 @@ mod tests {
         // Driver 525.60.13 supports CUDA 12 on Linux
         let gpus = vec![GpuInfo {
             driver_version: "530.00".to_string(),
+            vendor: Some("NVIDIA".to_string()),
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.0".to_string(),
             }),
@@ -1387,12 +1512,14 @@ mod tests {
         assert!(result.cuda11); // 530 > 450
         assert!(result.cuda12); // 530 > 525
         assert!(!result.cuda13); // 530 < 580
+        assert!(!result.hip); // NVIDIA GPU, no HIP
     }
 
     #[test]
     fn test_get_supported_features_vulkan() {
         let gpus = vec![GpuInfo {
             driver_version: "0.0".to_string(),
+            vendor: Some("Intel".to_string()),
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 api_version: "1.3".to_string(),
@@ -1403,6 +1530,35 @@ mod tests {
 
         assert!(result.vulkan);
         assert!(!result.cuda11);
+        assert!(!result.hip); // Intel GPU, no HIP
+    }
+
+    #[test]
+    fn test_get_supported_features_amd_hip() {
+        // AMD GPU exposes Vulkan but no CUDA; HIP should be offered alongside.
+        let gpus = vec![GpuInfo {
+            driver_version: "0.0".to_string(),
+            vendor: Some("AMD".to_string()),
+            nvidia_info: None,
+            vulkan_info: Some(VulkanInfo {
+                api_version: "1.3".to_string(),
+            }),
+        }];
+
+        let linux = get_supported_features("linux".to_string(), vec![], gpus).unwrap();
+        assert!(linux.hip);
+        assert!(linux.vulkan);
+        assert!(!linux.cuda11);
+
+        // macOS never offers HIP even with an AMD GPU.
+        let mac_gpus = vec![GpuInfo {
+            driver_version: "0.0".to_string(),
+            vendor: Some("AMD".to_string()),
+            nvidia_info: None,
+            vulkan_info: None,
+        }];
+        let mac = get_supported_features("macos".to_string(), vec![], mac_gpus).unwrap();
+        assert!(!mac.hip);
     }
 
     // --- Tests for determine_supported_backends ---
@@ -1414,6 +1570,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            hip: true,
         };
 
         let result =
@@ -1424,6 +1581,7 @@ mod tests {
         assert!(result.contains(&"win-cuda-11-common_cpus-x64".to_string()));
         assert!(result.contains(&"win-cuda-12-common_cpus-x64".to_string()));
         assert!(result.contains(&"win-vulkan-common_cpus-x64".to_string()));
+        assert!(result.contains(&"win-hip-common_cpus-x64".to_string()));
         assert!(!result.contains(&"win-cuda-13-common_cpus-x64".to_string()));
     }
 
@@ -1434,6 +1592,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            hip: false,
         };
 
         let result =
@@ -1517,7 +1676,7 @@ mod tests {
         let backend_a = v1_path.join("backend-a");
         let backend_empty = v1_path.join("backend-empty");
 
-        fs::create_dir_all(&backend_a.join("build").join("bin")).unwrap();
+        fs::create_dir_all(backend_a.join("build").join("bin")).unwrap();
         fs::create_dir_all(&backend_empty).unwrap();
 
         // Create mock executable

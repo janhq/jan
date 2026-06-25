@@ -47,11 +47,18 @@ const h = vi.hoisted(() => {
     ],
     settings: [
       {
-        key: 'version_backend',
-        title: 'Backend',
-        description: 'Backend version',
+        key: 'llamacpp_version',
+        title: 'Version',
+        description: 'llama.cpp release version',
         controller_type: 'input',
-        controller_props: { value: 'v1', recommended: 'cuda/v1' },
+        controller_props: { value: 'v1', recommended: 'v1' },
+      },
+      {
+        key: 'llamacpp_backend',
+        title: 'Backend',
+        description: 'Hardware backend',
+        controller_type: 'input',
+        controller_props: { value: 'cuda', recommended: 'cuda' },
       },
       {
         key: 'device',
@@ -70,12 +77,14 @@ const h = vi.hoisted(() => {
 
   const updateProvider = vi.fn()
   const setProviders = vi.fn()
+  const addDeletedModels = vi.fn()
   const getProviderByName = vi.fn((name: string) => providerMap[name])
 
   const modelProviderStore: any = {
     getProviderByName,
     setProviders,
     updateProvider,
+    addDeletedModels,
   }
 
   const appState = {
@@ -213,8 +222,8 @@ vi.mock('@/containers/dialogs/EditModel', () => ({
   DialogEditModel: ({ modelId }: any) => <div data-testid={`edit-${modelId}`} />,
 }))
 
-vi.mock('@/containers/dialogs/ImportVisionModelDialog', () => ({
-  ImportVisionModelDialog: ({ trigger }: any) => (
+vi.mock('@/containers/dialogs/ImportLlamacppModelDialog', () => ({
+  ImportLlamacppModelDialog: ({ trigger }: any) => (
     <div data-testid="import-vision">{trigger}</div>
   ),
 }))
@@ -272,9 +281,17 @@ vi.mock('@/components/ui/switch', () => ({
 
 vi.mock('@tabler/icons-react', () => ({
   IconFolderPlus: () => <span />,
+  IconInfoCircle: () => <span />,
   IconLoader: () => <span />,
   IconRefresh: () => <span />,
   IconUpload: () => <span />,
+  IconTrash: () => <span />,
+  IconCircle: () => <span />,
+  IconCircleCheck: () => <span />,
+  IconEye: () => <span />,
+  IconEyeOff: () => <span />,
+  IconCopy: () => <span />,
+  IconCopyCheck: () => <span />,
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -282,6 +299,7 @@ vi.mock('@/lib/utils', () => ({
   getProviderTitle: (name: string) => `Title:${name}`,
   getModelDisplayName: (m: any) => m.name ?? m.id,
   basenameNoExt: (p: string) => p.split('/').pop() ?? p,
+  isLocalProvider: (p: string) => p === 'llamacpp' || p === 'mlx',
 }))
 
 vi.mock('@/constants/providers', () => ({
@@ -393,11 +411,11 @@ describe('ProviderDetail route', () => {
   })
 
   describe('Rendering', () => {
-    it('renders the openai provider title, settings card, delete provider, and models', () => {
+    it('renders the openai provider title and models (settings card is hidden for predefined)', () => {
       renderComponent()
       expect(screen.getByTestId('header-page')).toBeInTheDocument()
       expect(screen.getByText('Title:openai')).toBeInTheDocument()
-      expect(screen.getByTestId('delete-provider')).toHaveTextContent('openai')
+      expect(screen.queryByTestId('delete-provider')).not.toBeInTheDocument()
       expect(screen.getByTestId('edit-gpt-4')).toBeInTheDocument()
       expect(screen.getByTestId('del-gpt-4')).toBeInTheDocument()
       expect(screen.getByTestId('add-model')).toBeInTheDocument()
@@ -436,7 +454,7 @@ describe('ProviderDetail route', () => {
       renderComponent()
       expect(screen.getByTestId('import-vision')).toBeInTheDocument()
       expect(screen.getByText('settings:checkForBackendUpdates')).toBeInTheDocument()
-      expect(screen.getByText('Install Backend from File')).toBeInTheDocument()
+      expect(screen.getByText('settings:installBackendFromFile')).toBeInTheDocument()
     })
   })
 
@@ -557,13 +575,20 @@ describe('ProviderDetail route', () => {
 
   describe('Refresh models', () => {
     it('refreshing adds newly fetched models and toasts success', async () => {
+      h.providersSvc.fetch = vi.fn(() =>
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              data: [
+                { id: 'gpt-4', created: 1 },
+                { id: 'gpt-5', created: 2 },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      )
       renderComponent()
-      // The refresh icon button is the first secondary icon-xs button inside the models card header
-      // It's rendered alongside DialogAddModel. We locate it by being the button before add-model.
-      const buttons = screen.getAllByRole('button')
-      // Find one that has no text children (icon-only) and is not the provider switch
-      // Simpler: click every button and find side-effect; instead, pick the one whose aria isn't set — use first button in the models card.
-      // Use a more targeted approach: the first button inside the element that contains add-model.
       const addModel = screen.getByTestId('add-model')
       const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
       expect(refreshBtn).toBeTruthy()
@@ -581,8 +606,6 @@ describe('ProviderDetail route', () => {
           ]),
         })
       )
-      // Unused var to keep linter happy
-      void buttons
     })
 
     it('refresh errors out when provider lacks api keys', async () => {
@@ -614,14 +637,16 @@ describe('ProviderDetail route', () => {
     })
 
     it('refresh toasts error on fetch failure', async () => {
-      h.providersSvc.fetchModelsFromProvider = vi.fn().mockRejectedValue(new Error('nope'))
+      h.providersSvc.fetch = vi.fn(() => vi.fn().mockRejectedValue(new Error('nope')))
       renderComponent()
       const addModel = screen.getByTestId('add-model')
       const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
       await act(async () => {
         fireEvent.click(refreshBtn)
       })
-      expect(h.toastError).toHaveBeenCalled()
+      await waitFor(() => {
+        expect(h.toastError).toHaveBeenCalled()
+      })
     })
   })
 
@@ -696,7 +721,7 @@ describe('ProviderDetail route', () => {
     it('install-from-file no-ops cleanly when dialog returns null', async () => {
       renderComponent()
       await act(async () => {
-        fireEvent.click(screen.getByText('Install Backend from File'))
+        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
       })
       // no toast fired because file selection was cancelled
       expect(h.toastSuccess).not.toHaveBeenCalled()
@@ -707,7 +732,7 @@ describe('ProviderDetail route', () => {
       h.dialogSvc.open = vi.fn().mockResolvedValue('/some/path/My Backend.tar.gz')
       renderComponent()
       await act(async () => {
-        fireEvent.click(screen.getByText('Install Backend from File'))
+        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
       })
       await waitFor(() => {
         expect(h.backendUpdater.installBackend).toHaveBeenCalledWith(
@@ -722,7 +747,7 @@ describe('ProviderDetail route', () => {
       h.backendUpdater.installBackend = vi.fn().mockRejectedValue(new Error('install fail'))
       renderComponent()
       await act(async () => {
-        fireEvent.click(screen.getByText('Install Backend from File'))
+        fireEvent.click(screen.getByText('settings:installBackendFromFile'))
       })
       await waitFor(() => {
         expect(h.toastError).toHaveBeenCalled()
@@ -732,30 +757,58 @@ describe('ProviderDetail route', () => {
   })
 
   describe('Dynamic setting changes', () => {
-    it('for openai, only the base-url dynamic control renders (api-key input is hidden)', () => {
+    const setupCustomProvider = () => {
+      const custom: any = {
+        provider: 'custom-llm',
+        active: true,
+        api_key: 'sk-x',
+        base_url: 'https://example.com/v1',
+        models: [],
+        settings: [
+          {
+            key: 'api-key',
+            title: 'API Key',
+            description: 'd',
+            controller_type: 'input',
+            controller_props: { value: 'sk-x', type: 'password' },
+          },
+          {
+            key: 'base-url',
+            title: 'Base URL',
+            description: 'd',
+            controller_type: 'input',
+            controller_props: { value: 'https://example.com/v1' },
+          },
+        ],
+      }
+      h.providerMap['custom-llm'] = custom
+      h.params.providerName = 'custom-llm'
+    }
+
+    it('for a non-predefined provider, only the base-url dynamic control renders (api-key input is hidden)', () => {
+      setupCustomProvider()
       renderComponent()
-      // Only one dynamic control (base-url) — the api-key setting is routed through
-      // the dedicated api-keys Card for non-llamacpp/non-mlx providers.
       expect(screen.getAllByTestId('dynamic-ctrl')).toHaveLength(1)
     })
 
     it('changing the base-url setting propagates to base_url and calls updateSettings', () => {
+      setupCustomProvider()
       renderComponent()
       const dyn = screen.getByTestId('dynamic-ctrl')
       fireEvent.click(dyn)
       expect(h.providersSvc.updateSettings).toHaveBeenCalled()
       expect(h.updateProvider).toHaveBeenCalledWith(
-        'openai',
+        'custom-llm',
         expect.objectContaining({ base_url: 'new-value' })
       )
     })
 
-    it('for llamacpp, the version_backend control also stops all running models on change', async () => {
+    it('for llamacpp, the llamacpp_version control also stops all running models on change', async () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       const dyns = screen.getAllByTestId('dynamic-ctrl')
       await act(async () => {
-        fireEvent.click(dyns[0]) // version_backend
+        fireEvent.click(dyns[0]) // llamacpp_version
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
     })

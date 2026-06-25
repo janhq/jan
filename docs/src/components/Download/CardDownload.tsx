@@ -32,6 +32,13 @@ const systemsTemplate: SystemType[] = [
     fileFormat: 'Jan_{tag}_x64-setup.exe',
   },
   {
+    name: 'Linux (Flatpak)',
+    label: 'Flatpak',
+    logo: FaLinux,
+    fileFormat: '',
+    href: 'https://flathub.org/apps/ai.jan.Jan',
+  },
+  {
     name: 'Linux (AppImage)',
     label: 'AppImage',
     logo: FaLinux,
@@ -63,6 +70,9 @@ export default function CardDownload({ lastRelease }: Props) {
           : lastRelease.tag_name
 
         const updatedSystems = systems.map((system) => {
+          if (!system.fileFormat) {
+            return system
+          }
           const downloadUrl = system.fileFormat.replace('{tag}', tag)
 
           // Find the corresponding asset to get the file size

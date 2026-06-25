@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
+import { useMessageErrors } from '@/stores/message-errors'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
@@ -21,21 +22,37 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
+import { invoke } from '@tauri-apps/api/core'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
+  uiMessageHasMeaningfulContent,
+  threadMessageIsEmpty,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
+import {
+  computeActivePath,
+  backfillParentIds,
+  makeSibling,
+  withActiveChild,
+  getParentId,
+  getSiblings,
+  getVersionInfo,
+  hasBranching,
+} from '@/lib/message-branching'
 import {
   ThreadMessage,
   MessageStatus,
   ChatCompletionRole,
-  ContentType,
 } from '@janhq/core'
-import { createImageAttachment } from '@/types/attachment'
+import {
+  createImageAttachment,
+  createAudioAttachment,
+  createVideoAttachment,
+} from '@/types/attachment'
 import {
   useChatAttachments,
   NEW_THREAD_ATTACHMENT_KEY,
@@ -44,15 +61,19 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import {
+  OUT_OF_CONTEXT_SIZE,
+  isContextOverflowMessage,
+  parseContextOverflow,
+} from '@/utils/error'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
+import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
-import { useAgentMode } from '@/hooks/useAgentMode'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
@@ -62,9 +83,27 @@ const CHAT_STATUS = {
   SUBMITTED: 'submitted',
 } as const
 
-// Title summarization constants
-const MAX_TITLE_SUMMARIZATION_ATTEMPTS = 3
-const TITLE_SUMMARIZATION_MIN_LENGTH = 50
+const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
+
+// Persist the out-of-context error onto the latest user message so the banner
+// survives thread switches, mirroring how LlamacppOomListener stamps oom/backend.
+function stampContextErrorOnThread(
+  threadId: string,
+  message: string = OUT_OF_CONTEXT_SIZE
+) {
+  const messages = useMessages.getState().getMessages(threadId)
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'user') continue
+    const meta = (m.metadata as Record<string, unknown> | undefined) ?? {}
+    if (typeof meta.contextError === 'string') return
+    useMessages.getState().updateMessage({
+      ...m,
+      metadata: { ...meta, contextError: message },
+    })
+    return
+  }
+}
 
 type ThreadModel = {
   id: string
@@ -113,9 +152,7 @@ function ThreadDetail() {
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
 
-  // Title auto-summarization state
   const titleAbortRef = useRef<AbortController | null>(null)
-  const titleAttemptsRef = useRef(0)
 
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
@@ -156,19 +193,56 @@ function ThreadDetail() {
   // context-limit hit, so the user sees it instead of a blank gap.
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
-  const [autoIncreaseAttempts, setAutoIncreaseAttempts] = useState(0)
-  const MAX_AUTO_INCREASE_ATTEMPTS = 3
-  const isAutoIncreasingContext =
-    autoIncreaseAttempts > 0 &&
-    autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
-  const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
+  // Per-thread so the shimmer survives navigating away and back while the
+  // embedding run is still in flight.
+  const processingEmbeddings = useAppState(
+    (s) => !!s.embeddingThreads[threadId]
+  )
+  const { t } = useTranslation()
+
+  // llama-server's overflow string is raw English; localize it, interpolating
+  // the parsed request/context token counts when available.
+  const contextBannerMessage = useMemo(() => {
+    const raw = contextLimitError?.message
+    if (!raw) return undefined
+    const info = parseContextOverflow(raw)
+    if (info)
+      return t('model-errors:contextOverflowDetail', {
+        request: info.requestTokens.toLocaleString(),
+        context: info.contextTokens.toLocaleString(),
+      })
+    return t('model-errors:contextOverflowGeneric')
+  }, [contextLimitError, t])
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
+  const oomErrorRaw = useAppState((s) => s.oomError)
+  const setOomError = useAppState((s) => s.setOomError)
+  const backendErrorRaw = useAppState((s) => s.backendError)
+  const setBackendError = useAppState((s) => s.setBackendError)
+
+  // These signals come from the llamacpp router via global Tauri events.
+  // Mask them when the active provider isn't llamacpp so a router crash
+  // doesn't decorate chats running against MLX / OpenAI / Anthropic / etc.
+  const isLlamacppActive = selectedProvider === 'llamacpp'
+  const oomError = isLlamacppActive ? oomErrorRaw : undefined
+  const backendError = isLlamacppActive ? backendErrorRaw : undefined
+
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
     null
   )
+  // Holds the partial assistant output captured when the model stops with
+  // `finishReason === 'length'`. Consumed by `handleContextSizeIncrease` so
+  // the manual "Increase Context Size" button resumes from where the stream
+  // stopped rather than regenerating from scratch.
+  const pendingContinuationRef = useRef<{
+    message: UIMessage
+    text: string
+  } | null>(null)
+  // Set before a generation when the resulting assistant message should be
+  // linked to a specific parent (versioning). Consumed once in onFinish.
+  const pendingAssistantParentId = useRef<string | null>(null)
 
   // Use the AI SDK chat hook
   const {
@@ -207,23 +281,18 @@ function ThreadDetail() {
         const isContextLimit = totalTokens >= ctxLen * 0.9
 
         if (isContextLimit) {
-          const autoIncrease =
-            selectedModelState?.settings?.auto_increase_ctx_len
-              ?.controller_props?.value ?? true
-          if (autoIncrease) {
-            const partialText = message.parts
-              .filter((p) => p.type === 'text')
-              .map((p) => (p as { type: 'text'; text: string }).text)
-              .join('')
-            if (partialText) {
-              setContinueFromContentRef.current?.(partialText)
-              // Keep the partial message visible while the model reloads
-              setPendingContinueMessage(message)
-            }
-            handleContextSizeIncreaseRef.current?.()
-          } else {
-            setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+          // Stash the partial so the manual "Increase Context Size" button can
+          // resume from here. Surface the standard banner with the manual
+          // button — auto-increase was removed; the user explicitly opts in.
+          const partialText = message.parts
+            .filter((p) => p.type === 'text')
+            .map((p) => (p as { type: 'text'; text: string }).text)
+            .join('')
+          if (partialText) {
+            pendingContinuationRef.current = { message, text: partialText }
           }
+          stampContextErrorOnThread(threadId)
+          setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
         }
         return
       }
@@ -233,39 +302,75 @@ function ThreadDetail() {
       // Persist assistant message to backend (skip if aborted).
       // For continuations, message.parts already contains partial + new content
       // because the stream wrapper prepended the partial text as the first delta.
-      if (!isAbort && message.role === 'assistant') {
+      if (
+        !isAbort &&
+        message.role === 'assistant' &&
+        uiMessageHasMeaningfulContent(message)
+      ) {
         const contentParts = extractContentPartsFromUIMessage(message)
+        const messageMetadata = (message.metadata || {}) as Record<
+          string,
+          unknown
+        >
 
-        if (contentParts.length > 0) {
-          const messageMetadata = (message.metadata || {}) as Record<
-            string,
-            unknown
-          >
+        const parentForAssistant = pendingAssistantParentId.current
+        pendingAssistantParentId.current = null
 
-          const assistantMessage: ThreadMessage = {
-            type: 'text',
-            role: ChatCompletionRole.Assistant,
-            content: contentParts,
-            id: message.id,
-            object: 'thread.message',
-            thread_id: threadId,
-            status: MessageStatus.Ready,
-            created_at: Date.now(),
-            completed_at: Date.now(),
-            metadata: messageMetadata,
-          }
+        const assistantMessage: ThreadMessage = {
+          type: 'text',
+          role: ChatCompletionRole.Assistant,
+          content: contentParts,
+          id: message.id,
+          object: 'thread.message',
+          thread_id: threadId,
+          status: MessageStatus.Ready,
+          created_at: Date.now(),
+          completed_at: Date.now(),
+          metadata:
+            parentForAssistant != null
+              ? { ...messageMetadata, parentId: parentForAssistant }
+              : messageMetadata,
+        }
 
-          // Check if message with this ID already exists (onFinish can be called multiple times)
-          const existingMessages = useMessages.getState().getMessages(threadId)
-          const existingMessage = existingMessages.find(
-            (m) => m.id === message.id
+        const existingMessages = useMessages.getState().getMessages(threadId)
+        const existingMessage = existingMessages.find(
+          (m) => m.id === message.id
+        )
+
+        if (existingMessage) {
+          // Preserve the existing branch link on re-runs of onFinish.
+          const existingParent = getParentId(existingMessage)
+          updateMessage(
+            existingParent != null
+              ? {
+                  ...assistantMessage,
+                  metadata: {
+                    ...assistantMessage.metadata,
+                    parentId: existingParent,
+                  },
+                }
+              : assistantMessage
           )
-
-          if (existingMessage) {
-            updateMessage(assistantMessage)
-          } else {
-            addMessage(assistantMessage)
+        } else {
+          addMessage(assistantMessage)
+          // New generation becomes the active branch under its parent so
+          // version navigation lands on the latest reply by default.
+          if (parentForAssistant) {
+            const parent = existingMessages.find(
+              (m) => m.id === parentForAssistant
+            )
+            if (parent) updateMessage(withActiveChild(parent, assistantMessage.id))
           }
+        }
+
+        for (const m of existingMessages) {
+          const meta = m.metadata as Record<string, unknown> | undefined
+          if (meta?.error) {
+            const rest = { ...meta }
+            delete rest.error
+            updateMessage({ ...m, metadata: rest })
+          }
+          useMessageErrors.getState().clearError(m.id)
         }
       }
 
@@ -276,6 +381,10 @@ function ThreadDetail() {
       // Get cached tool names from store (initialized in useTools hook)
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
+
+      // Keep the thread marked busy while awaiting approval and executing tools,
+      // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
+      useAppState.getState().setThreadBusy(threadId, true)
 
       // Process tool calls sequentially, requesting approval for each if needed
       ;(async () => {
@@ -293,7 +402,7 @@ function ThreadDetail() {
               ? true
               : await useToolApproval
                   .getState()
-                  .showApprovalModal(toolName, threadId, toolCall.input)
+                  .requestApproval(toolCall.toolCallId, toolName, threadId)
 
             if (!approved) {
               // User denied the tool call
@@ -360,6 +469,7 @@ function ThreadDetail() {
         // Clear tools after processing all
         sessionData.tools = []
         toolCallAbortController.current = null
+        useAppState.getState().setThreadBusy(threadId, false)
       })().catch((error) => {
         // Ignore abort errors
         if (error.name !== 'AbortError') {
@@ -367,54 +477,68 @@ function ThreadDetail() {
         }
         sessionData.tools = []
         toolCallAbortController.current = null
+        useAppState.getState().setThreadBusy(threadId, false)
       })
 
-      // Auto-summarize thread title after the first assistant response.
-      // The thread title is the user's first message (set in ChatInput on creation),
-      // so we use it directly as the summarization input.
-      // Skipped if already summarized, manually renamed, or max attempts reached.
-      console.log('[ThreadTitle] onFinish fired, isAbort:', isAbort)
       if (!isAbort) {
+        const localMessages = useMessages.getState().getMessages(threadId)
+        const assistantCount = localMessages.filter(
+          (m) => m.role === 'assistant'
+        ).length
+        const isRefreshTick =
+          assistantCount === 1 ||
+          (assistantCount > 0 &&
+            assistantCount % TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES === 0)
         const currentThread = useThreads.getState().threads[threadId]
-        console.log('[ThreadTitle] thread:', !!currentThread, 'titleSummarized:', currentThread?.metadata?.titleSummarized, 'attempts:', titleAttemptsRef.current)
-        if (
-          currentThread &&
-          !currentThread.metadata?.titleSummarized &&
-          titleAttemptsRef.current < MAX_TITLE_SUMMARIZATION_ATTEMPTS
-        ) {
-          const titleText = currentThread.title
-          console.log('[ThreadTitle] titleText length:', titleText?.length, 'threshold:', TITLE_SUMMARIZATION_MIN_LENGTH)
-
-          if (titleText && titleText.length >= TITLE_SUMMARIZATION_MIN_LENGTH) {
-            // Cancel any previous in-flight summarization
-            titleAbortRef.current?.abort()
-            const controller = new AbortController()
-            titleAbortRef.current = controller
-            titleAttemptsRef.current++
-            const originalTitle = titleText
-
-            console.log('[ThreadTitle] calling generateThreadTitle...')
-            generateThreadTitle(titleText, controller.signal).then((title) => {
-              console.log('[ThreadTitle] result:', title, 'aborted:', controller.signal.aborted)
-              if (!title || controller.signal.aborted) return
-              // Don't overwrite if the user manually renamed while we were generating
-              const thread = useThreads.getState().threads[threadId]
-              if (!thread || thread.title !== originalTitle) return
-
-              useThreads.getState().updateThread(threadId, {
-                title,
-                metadata: { ...thread.metadata, titleSummarized: true },
+        if (isRefreshTick && !currentThread?.metadata?.titleSetManually) {
+          const TITLE_TRANSCRIPT_MAX_TURNS = 8
+          const recent = localMessages.slice(-TITLE_TRANSCRIPT_MAX_TURNS)
+          const inputText =
+            recent
+              .map((m) => {
+                const text = m.content
+                  ?.map((c) => c?.text?.value ?? '')
+                  .join('')
+                  .trim()
+                if (!text) return ''
+                const role = m.role === 'assistant' ? 'Assistant' : 'User'
+                return `${role}: ${text}`
               })
+              .filter(Boolean)
+              .join('\n\n') ||
+            useThreads.getState().threads[threadId]?.title
+          if (inputText) {
+            const provider = useModelProvider.getState().selectedProvider
+            const modelId = useModelProvider.getState().selectedModel?.id
+            ;(async () => {
+              if (provider === 'llamacpp' && modelId) {
+                let idle = false
+                for (let attempt = 0; attempt < 6; attempt++) {
+                  try {
+                    idle = await invoke<boolean>(
+                      'plugin:llamacpp|router_slots_idle',
+                      { modelId }
+                    )
+                  } catch {
+                    idle = true
+                    break
+                  }
+                  if (idle) break
+                  await new Promise((r) => setTimeout(r, 150))
+                }
+                if (!idle) return
+              }
+              titleAbortRef.current?.abort()
+              const controller = new AbortController()
+              titleAbortRef.current = controller
+              const title = await generateThreadTitle(
+                inputText,
+                controller.signal
+              )
+              if (!title || controller.signal.aborted) return
+              useThreads.getState().updateThread(threadId, { title })
               titleAbortRef.current = null
-            })
-          } else if (titleText) {
-            // Short messages are already good titles — mark as done
-            useThreads.getState().updateThread(threadId, {
-              metadata: {
-                ...currentThread.metadata,
-                titleSummarized: true,
-              },
-            })
+            })()
           }
         }
       }
@@ -424,6 +548,13 @@ function ThreadDetail() {
     },
     sendAutomaticallyWhen: followUpMessage,
   })
+
+  // Our error banners (oom/backend/context) can arrive out-of-band for the
+  // router path, leaving the SDK stream stuck at 'submitted' so the
+  // "Using tools…" indicator shimmers forever. Force a terminal status when a
+  // banner is up — regenerate/reload restarts the turn anyway.
+  const hasBannerError = !!(oomError || backendError || contextLimitError)
+  const effectiveStatus = hasBannerError ? 'ready' : status
 
   // Get disabled tools for this thread to trigger re-render when they change
   const disabledTools = useToolAvailable((state) =>
@@ -483,6 +614,11 @@ function ThreadDetail() {
     reset: resetReasoningScroll,
   } = useAutoScroll()
 
+  const lastIsAssistant = useMemo(() => {
+    const last = chatMessages[chatMessages.length - 1]
+    return !!last && last.role === 'assistant'
+  }, [chatMessages])
+
   useEffect(() => {
     if (status === 'streaming') {
       resetReasoningScroll()
@@ -497,10 +633,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    // Reset title summarization state for the new thread
     titleAbortRef.current?.abort()
     titleAbortRef.current = null
-    titleAttemptsRef.current = 0
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
@@ -541,15 +675,48 @@ function ThreadDetail() {
             }
           }
 
-          // Update the legacy store
+          // Drop and delete any persisted empty assistant rows produced by
+          // the old bug where errored generations were written as empty-text
+          // messages. Lossless cleanup — these carry no information.
+          const emptyAssistantIds = messagesToSet
+            .filter(threadMessageIsEmpty)
+            .map((m) => m.id)
+          if (emptyAssistantIds.length > 0) {
+            messagesToSet = messagesToSet.filter(
+              (m) => !emptyAssistantIds.includes(m.id)
+            )
+            for (const id of emptyAssistantIds) {
+              deleteMessage(threadId, id)
+            }
+          }
+
           setMessages(threadId, messagesToSet)
 
-          // Convert and set messages for AI SDK chat
-          const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
+          const hydrated: Record<string, string> = {}
+          for (const m of messagesToSet) {
+            const err = (m.metadata as Record<string, unknown> | undefined)
+              ?.error
+            if (typeof err === 'string' && err.length > 0) {
+              hydrated[m.id] = err
+            }
+          }
+          useMessageErrors.getState().hydrate(hydrated)
+
+          const activeRootId = (
+            useThreads.getState().threads[threadId]?.metadata as
+              | Record<string, unknown>
+              | undefined
+          )?.activeRootId as string | undefined
+          const uiMessages = convertThreadMessagesToUIMessages(
+            computeActivePath(messagesToSet, activeRootId)
+          )
           setChatMessages(uiMessages)
           currentThread.current = threadId
         }
       })
+      .catch((error) =>
+        console.error('Failed to fetch messages for thread:', threadId, error)
+      )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, serviceHub])
 
@@ -561,6 +728,28 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Resync the OOM/backend banner from message metadata on every thread switch.
+  // Persisted by LlamacppOomListener at error time; unset state when this
+  // thread carries no such metadata so the banner doesn't leak across threads.
+  const threadMessagesForBanner = useMessages((s) => s.messages?.[threadId])
+  useEffect(() => {
+    let oom: string | undefined
+    let be: string | undefined
+    let ctx: string | undefined
+    for (const m of threadMessagesForBanner ?? []) {
+      const meta = m.metadata as Record<string, unknown> | undefined
+      const o = meta?.oomError
+      if (typeof o === 'string' && o.length > 0) oom = o
+      const b = meta?.backendError
+      if (typeof b === 'string' && b.length > 0) be = b
+      const c = meta?.contextError
+      if (typeof c === 'string' && c.length > 0) ctx = c
+    }
+    useAppState.getState().setOomError(oom)
+    useAppState.getState().setBackendError(be)
+    setContextLimitError(ctx ? new Error(ctx) : null)
+  }, [threadId, threadMessagesForBanner])
+
   // Consolidated function to process and send a message
   const processAndSendMessage = useCallback(
     async (
@@ -571,24 +760,54 @@ function ThreadDetail() {
       titleAbortRef.current?.abort()
       titleAbortRef.current = null
 
-      // Get all attachments from the store (includes both images and documents)
+      // Get all attachments from the store (media transferred from the
+      // new-thread key, plus documents).
       const allAttachments = getAttachments(attachmentsKey)
 
-      // Convert image files to attachments for persistence
-      const imageAttachments = files?.map((file) => {
+      // In-thread sends pass media inline via `files`; reconstruct typed by
+      // mediaType (image/audio/video — not all images). New-thread sends pass
+      // no media in `files` (quota), so fall back to media already in the store.
+      const fileMediaAttachments = (files ?? []).map((file) => {
         const base64 = file.url.split(',')[1] || ''
+        const size = Math.ceil((base64.length * 3) / 4) // Estimate from base64
+        if (file.mediaType.startsWith('audio/')) {
+          return createAudioAttachment({
+            name: `audio-${Date.now()}`,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            audioFormat: file.mediaType === 'audio/mpeg' ? 'mp3' : 'wav',
+            size,
+          })
+        }
+        if (file.mediaType.startsWith('video/')) {
+          return createVideoAttachment({
+            name: `video-${Date.now()}`,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size,
+          })
+        }
         return createImageAttachment({
           name: `image-${Date.now()}`,
           mimeType: file.mediaType,
           dataUrl: file.url,
           base64,
-          size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
+          size,
         })
       })
 
-      // Combine image attachments with document attachments from the store
+      const storeMediaAttachments = allAttachments.filter(
+        (a) => a.type === 'image' || a.type === 'audio' || a.type === 'video'
+      )
+      const mediaAttachments = fileMediaAttachments.length
+        ? fileMediaAttachments
+        : storeMediaAttachments
+
+      // Combine media attachments with document attachments from the store
       const combinedAttachments = [
-        ...(imageAttachments || []),
+        ...mediaAttachments,
         ...allAttachments.filter((a) => a.type === 'document'),
       ]
 
@@ -626,7 +845,10 @@ function ThreadDetail() {
       let processedAttachments = combinedAttachments
       const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
-        if (hasEmbeddingDocuments) setProcessingEmbeddings(true)
+        if (hasEmbeddingDocuments) {
+          useAppState.getState().setThreadEmbedding(threadId, true)
+          useAppState.getState().setThreadBusy(threadId, true)
+        }
         try {
           const parsePreference = useAttachments.getState().parseMode
           const result = await processAttachmentsForSend({
@@ -660,7 +882,8 @@ function ThreadDetail() {
           }
           return
         } finally {
-          setProcessingEmbeddings(false)
+          useAppState.getState().setThreadEmbedding(threadId, false)
+          useAppState.getState().setThreadBusy(threadId, false)
         }
       }
 
@@ -671,15 +894,35 @@ function ThreadDetail() {
       }
 
       // Persist the final message to backend
-      const userMessage = newUserThreadContent(
+      const baseUserMessage = newUserThreadContent(
         threadId,
         text,
         processedAttachments,
         messageId
       )
+      // Once a thread has branches, link new turns into the active path so the
+      // assistant reply attaches to this message. Legacy threads stay linear.
+      const branchedMessages = useMessages.getState().getMessages(threadId)
+      let userMessage = baseUserMessage
+      if (hasBranching(branchedMessages)) {
+        const activeRootId = (
+          useThreads.getState().threads[threadId]?.metadata as
+            | Record<string, unknown>
+            | undefined
+        )?.activeRootId as string | undefined
+        const path = computeActivePath(branchedMessages, activeRootId)
+        const parentId = path.length ? path[path.length - 1].id : null
+        userMessage = {
+          ...baseUserMessage,
+          metadata: { ...(baseUserMessage.metadata ?? {}), parentId },
+        }
+        pendingAssistantParentId.current = messageId
+      }
       addMessage(userMessage)
 
-      // Build parts for AI SDK (only images are sent as file parts)
+      // Build parts for AI SDK. Derive media file parts from the resolved
+      // attachments (not the raw `files` arg) so the first-message flow — where
+      // media lives in the store and `files` is empty — still renders live.
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string }
@@ -690,15 +933,15 @@ function ThreadDetail() {
         },
       ]
 
-      if (files) {
-        files.forEach((file) => {
+      mediaAttachments.forEach((a) => {
+        if (a.dataUrl && a.mimeType) {
           parts.push({
             type: 'file',
-            mediaType: file.mediaType,
-            url: file.url,
+            mediaType: a.mimeType,
+            url: a.dataUrl,
           })
-        })
-      }
+        }
+      })
 
       sendMessage({
         parts,
@@ -769,120 +1012,206 @@ function ThreadDetail() {
     }
   }, [threadId, processAndSendMessage])
 
+  const stripBannerMetadata = useCallback(() => {
+    const tmsgs = useMessages.getState().getMessages(threadId)
+    for (const m of tmsgs) {
+      const meta = m.metadata as Record<string, unknown> | undefined
+      if (!meta) continue
+      if (
+        meta.oomError == null &&
+        meta.backendError == null &&
+        meta.contextError == null
+      )
+        continue
+      const nextMeta = { ...meta }
+      delete nextMeta.oomError
+      delete nextMeta.backendError
+      delete nextMeta.contextError
+      updateMessage({ ...m, metadata: nextMeta })
+    }
+  }, [threadId, updateMessage])
+
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
     async (
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
+      if (oomError) setOomError(undefined)
+      if (backendError) setBackendError(undefined)
+      if (contextLimitError) setContextLimitError(null)
+      if (oomError || backendError || contextLimitError) stripBannerMetadata()
       await processAndSendMessage(text, files)
     },
-    [processAndSendMessage]
+    [
+      processAndSendMessage,
+      oomError,
+      setOomError,
+      backendError,
+      setBackendError,
+      contextLimitError,
+      stripBannerMetadata,
+    ]
   )
 
-  // Handle regenerate from any message (user or assistant)
-  // - For user messages: keeps the user message, deletes all after, regenerates assistant response
-  // - For assistant messages: finds the closest preceding user message, deletes from there
-  const handleRegenerate = useCallback((messageId?: string) => {
-    // Cancel any in-flight title summarization before regenerating
-    titleAbortRef.current?.abort()
-    titleAbortRef.current = null
+  // Versioning helpers --------------------------------------------------------
 
-    const currentLocalMessages = useMessages.getState().getMessages(threadId)
+  // Assign parentId along the current linear path the first time a thread forks,
+  // so siblings and subtrees are well-defined. Idempotent. Returns the store.
+  const ensureBranched = useCallback(() => {
+    const msgs = useMessages.getState().getMessages(threadId)
+    if (hasBranching(msgs)) return msgs
+    const filled = backfillParentIds(msgs)
+    filled.forEach((m) => updateMessage(m))
+    return useMessages.getState().getMessages(threadId)
+  }, [threadId, updateMessage])
 
-    // If regenerating from a specific message, delete all messages after it
-    if (messageId) {
-      // Find the message in the current chat messages
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
-
-      if (messageIndex !== -1) {
-        const selectedMessage = currentLocalMessages[messageIndex]
-
-        // If it's an assistant message, find the closest preceding user message
-        let deleteFromIndex = messageIndex
-        if (selectedMessage.role === 'assistant') {
-          // Look backwards to find the closest user message
-          for (let i = messageIndex - 1; i >= 0; i--) {
-            if (currentLocalMessages[i].role === 'user') {
-              deleteFromIndex = i
-              break
-            }
-          }
-        }
-
-        // Get all messages after the delete point
-        const messagesToDelete = currentLocalMessages.slice(deleteFromIndex + 1)
-
-        // Delete from backend storage
-        if (messagesToDelete.length > 0) {
-          messagesToDelete.forEach((msg) => {
-            deleteMessage(threadId, msg.id)
-          })
-        }
-      }
-    }
-
-    // Call the AI SDK regenerate function - it will handle truncating the UI messages
-    // and generating a new response from the selected message
-    regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate])
-
-  // Handle edit message - updates the message and regenerates from it
-  const handleEditMessage = useCallback(
-    (messageId: string, newText: string) => {
-      const currentLocalMessages = useMessages.getState().getMessages(threadId)
-      const messageIndex = currentLocalMessages.findIndex(
-        (m) => m.id === messageId
-      )
-
-      if (messageIndex === -1) return
-
-      const originalMessage = currentLocalMessages[messageIndex]
-
-      // Update the message content
-      const updatedMessage = {
-        ...originalMessage,
-        content: [
-          {
-            type: ContentType.Text,
-            text: { value: newText, annotations: [] },
+  // Make `node` the active branch under its parent (or active root).
+  const setActiveBranch = useCallback(
+    (node: ThreadMessage) => {
+      const parentId = getParentId(node)
+      if (!parentId) {
+        const t = useThreads.getState().threads[threadId]
+        useThreads.getState().updateThread(threadId, {
+          metadata: {
+            ...((t?.metadata as Record<string, unknown> | undefined) ?? {}),
+            activeRootId: node.id,
           },
-        ],
+        })
+        return
       }
-      updateMessage(updatedMessage)
+      const parent = useMessages
+        .getState()
+        .getMessages(threadId)
+        .find((m) => m.id === parentId)
+      if (parent) updateMessage(withActiveChild(parent, node.id))
+    },
+    [threadId, updateMessage]
+  )
 
-      // Update chat messages for UI
-      const updatedChatMessages = chatMessages.map((msg) => {
-        if (msg.id === messageId) {
-          return {
-            ...msg,
-            parts: [{ type: 'text' as const, text: newText }],
-          }
-        }
-        return msg
-      })
-      setChatMessages(updatedChatMessages)
+  // Rebuild the rendered conversation from the active path in the store.
+  const syncActivePath = useCallback(() => {
+    const msgs = useMessages.getState().getMessages(threadId)
+    const activeRootId = (
+      useThreads.getState().threads[threadId]?.metadata as
+        | Record<string, unknown>
+        | undefined
+    )?.activeRootId as string | undefined
+    setChatMessages(
+      convertThreadMessagesToUIMessages(computeActivePath(msgs, activeRootId))
+    )
+  }, [threadId, setChatMessages])
 
-      // Only regenerate if the edited message is from the user
-      if (updatedMessage.role === 'assistant') return
+  // Switch the visible version of a message (the `< n/m >` control).
+  const handleSwitchVersion = useCallback(
+    (messageId: string, dir: -1 | 1) => {
+      const msgs = useMessages.getState().getMessages(threadId)
+      const target = msgs.find((m) => m.id === messageId)
+      if (!target) return
+      const siblings = getSiblings(msgs, target)
+      const idx = siblings.findIndex((m) => m.id === messageId)
+      const next = siblings[idx + dir]
+      if (!next) return
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+      setActiveBranch(next)
+      syncActivePath()
+    },
+    [threadId, setActiveBranch, syncActivePath]
+  )
 
-      // Delete all messages after this one and regenerate
-      const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
-      messagesToDelete.forEach((msg) => {
-        deleteMessage(threadId, msg.id)
-      })
+  // Resolve the user message that an assistant reply hangs off of.
+  const resolveAssistantParent = useCallback(
+    (messageId: string | undefined): string | null => {
+      const msgs = useMessages.getState().getMessages(threadId)
+      const activeRootId = (
+        useThreads.getState().threads[threadId]?.metadata as
+          | Record<string, unknown>
+          | undefined
+      )?.activeRootId as string | undefined
+      const path = computeActivePath(msgs, activeRootId)
+      const idx =
+        messageId == null
+          ? path.length - 1
+          : path.findIndex((m) => m.id === messageId)
+      if (idx === -1) return null
+      const sel = path[idx]
+      if (sel.role === 'user') return sel.id
+      for (let i = idx; i >= 0; i--) {
+        if (path[i].role === 'user') return path[i].id
+      }
+      return null
+    },
+    [threadId]
+  )
 
-      // Regenerate from the edited message
-      regenerate({ messageId })
+  // Regenerate keeps the previous reply as a prior version (no deletion); the
+  // new reply arrives in onFinish as a sibling and becomes the active branch.
+  const handleRegenerate = useCallback(
+    (messageId?: string) => {
+      const hadBannerError =
+        useAppState.getState().oomError != null ||
+        useAppState.getState().backendError != null ||
+        contextLimitError != null
+      if (useAppState.getState().oomError) {
+        useAppState.getState().setOomError(undefined)
+      }
+      if (useAppState.getState().backendError) {
+        useAppState.getState().setBackendError(undefined)
+      }
+      if (contextLimitError) setContextLimitError(null)
+      if (hadBannerError) stripBannerMetadata()
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+
+      ensureBranched()
+      pendingAssistantParentId.current = resolveAssistantParent(messageId)
+
+      regenerate(messageId ? { messageId } : undefined)
     },
     [
-      threadId,
-      updateMessage,
-      deleteMessage,
-      chatMessages,
-      setChatMessages,
+      regenerate,
+      stripBannerMetadata,
+      contextLimitError,
+      ensureBranched,
+      resolveAssistantParent,
+    ]
+  )
+
+  // Editing forks a new sibling version (the original + its subtree are kept).
+  // User edits regenerate a reply for the new branch; assistant edits don't.
+  const handleEditMessage = useCallback(
+    (messageId: string, newText: string) => {
+      const msgs = ensureBranched()
+      const target = msgs.find((m) => m.id === messageId)
+      if (!target) return
+
+      useMessageErrors.getState().clearError(messageId)
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+
+      const newId = generateId()
+      const sibling = makeSibling(target, {
+        id: newId,
+        createdAt: Date.now(),
+        text: newText,
+      })
+      addMessage(sibling)
+      setActiveBranch(sibling)
+
+      if (target.role === 'user') {
+        pendingAssistantParentId.current = newId
+        syncActivePath()
+        regenerate({ messageId: newId })
+      } else {
+        syncActivePath()
+      }
+    },
+    [
+      ensureBranched,
+      addMessage,
+      setActiveBranch,
+      syncActivePath,
       regenerate,
     ]
   )
@@ -891,6 +1220,7 @@ function ThreadDetail() {
   const handleDeleteMessage = useCallback(
     (messageId: string) => {
       deleteMessage(threadId, messageId)
+      useMessageErrors.getState().clearError(messageId)
 
       // Update chat messages for UI
       const updatedChatMessages = chatMessages.filter(
@@ -933,6 +1263,7 @@ function ThreadDetail() {
 
     newCtxLen = Math.min(newCtxLen, maxCtxLen)
     if (newCtxLen <= currentCtxLen) {
+      stampContextErrorOnThread(threadId)
       setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
       return
     }
@@ -958,7 +1289,37 @@ function ThreadDetail() {
       models: updatedModels,
     })
 
-    await serviceHub.models().stopModel(selectedModel.id)
+    // For llamacpp the router reads ctx-size from the preset, not from any
+    // request param — so we must write model.yml and bounce the router before
+    // the regenerate, otherwise the next load picks up the OLD context size.
+    // Other providers consume the new Zustand value directly on next load.
+    if (provider.provider === 'llamacpp') {
+      try {
+        await serviceHub
+          .models()
+          .updateModelSettings(selectedModel.id, { ctx_len: newCtxLen })
+      } catch (e) {
+        updateProvider(provider.provider, {
+          models: provider.models,
+        })
+        console.error('Failed to persist increased ctx_len', e)
+        stampContextErrorOnThread(threadId)
+        setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+        return
+      }
+    } else {
+      await serviceHub.models().stopModel(selectedModel.id)
+    }
+
+    // Consume any pending partial captured at the `finishReason === 'length'`
+    // event so the regenerate resumes from where the stream stopped, and the
+    // "Growing the Mind…" shimmer renders while the model reloads.
+    const pending = pendingContinuationRef.current
+    pendingContinuationRef.current = null
+    if (pending) {
+      setContinueFromContentRef.current?.(pending.text)
+      setPendingContinueMessage(pending.message)
+    }
 
     setTimeout(() => {
       handleRegenerate()
@@ -969,39 +1330,31 @@ function ThreadDetail() {
     getProviderByName,
     serviceHub,
     handleRegenerate,
+    threadId,
   ])
 
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
   setContinueFromContentRef.current = setContinueFromContent
 
-  // Skip auto-context-increase in agent mode
-  const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
   useEffect(() => {
-    if (!error || agentModeActive) return
-    if (autoIncreaseAttempts >= MAX_AUTO_INCREASE_ATTEMPTS) return
-    const autoIncrease =
-      selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
-      true
-    if (!autoIncrease) return
-    const isContextError =
-      (error.message?.toLowerCase().includes('context') &&
-        (error.message?.toLowerCase().includes('size') ||
-          error.message?.toLowerCase().includes('length') ||
-          error.message?.toLowerCase().includes('limit'))) ||
-      error.message === OUT_OF_CONTEXT_SIZE
-    if (isContextError) {
-      setAutoIncreaseAttempts((prev) => prev + 1)
-      handleContextSizeIncrease()
+    if (
+      (oomError || backendError || contextLimitError) &&
+      (status === 'streaming' || status === 'submitted')
+    ) {
+      try {
+        stop()
+      } catch (e) {
+        console.warn('router error stop() threw:', e)
+      }
     }
-  }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [oomError, backendError, contextLimitError, status, stop])
 
   useEffect(() => {
-    if (status === 'streaming' || status === 'submitted') {
-      setContextLimitError(null)
-    }
-    if (status === 'streaming' && autoIncreaseAttempts > 0) {
-      setAutoIncreaseAttempts(0)
+    if (status === 'streaming' && pendingContinuationRef.current) {
+      // The new turn is now flowing; drop the saved partial so it can't be
+      // consumed by a later, unrelated "Increase Context Size" click.
+      pendingContinuationRef.current = null
     }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
@@ -1037,6 +1390,75 @@ function ThreadDetail() {
     }
   }, [status, threadId])
 
+  // Attach the error to the assistant turn it belongs to so the banner renders
+  // alongside any tool-call parts the model already produced. Falls back to the
+  // last user message if no assistant message exists yet (e.g. provider 4xx
+  // before streaming starts).
+  useEffect(() => {
+    if (!error) return
+    let targetId: string | undefined
+    let lastUserIdx = -1
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    for (let i = chatMessages.length - 1; i > lastUserIdx; i--) {
+      if (chatMessages[i].role === 'assistant') {
+        targetId = chatMessages[i].id
+        break
+      }
+    }
+    if (!targetId && lastUserIdx >= 0) {
+      targetId = chatMessages[lastUserIdx].id
+    }
+    if (!targetId) return
+    const errMessage =
+      error instanceof Error ? error.message : String(error || 'Error')
+    // Context overflow is owned by the global "Increase Context Size" banner;
+    // a per-message Regenerate would just re-overflow the same prompt.
+    if (isContextOverflowMessage(errMessage)) {
+      stampContextErrorOnThread(threadId, errMessage)
+      setContextLimitError(new Error(errMessage))
+      useMessageErrors.getState().clearError(targetId)
+      return
+    }
+    useMessageErrors.getState().setError(targetId, errMessage)
+    const tm = useMessages.getState().getMessages(threadId).find(
+      (m) => m.id === targetId
+    )
+    if (tm) {
+      const existingError = (tm.metadata as Record<string, unknown> | undefined)
+        ?.error
+      if (existingError !== errMessage) {
+        updateMessage({
+          ...tm,
+          metadata: { ...(tm.metadata || {}), error: errMessage },
+        })
+      }
+    }
+  }, [status, error, threadId, chatMessages, updateMessage])
+
+  // Persist whenever the user message lands in useMessages — covers the race
+  // where the stamping effect ran before addMessage's commit was observable.
+  const localThreadMessages = useMessages((s) => s.messages?.[threadId])
+  const errorEntries = useMessageErrors((s) => s.errors)
+  useEffect(() => {
+    if (!localThreadMessages) return
+    for (const m of localThreadMessages) {
+      const err = errorEntries[m.id]
+      if (typeof err !== 'string' || !err) continue
+      const existing = (m.metadata as Record<string, unknown> | undefined)
+        ?.error
+      if (existing === err) continue
+      updateMessage({
+        ...m,
+        metadata: { ...(m.metadata || {}), error: err },
+      })
+    }
+  }, [localThreadMessages, errorEntries, updateMessage])
+
   // Clear the queue when navigating away from this thread
   useEffect(() => {
     return () => {
@@ -1048,6 +1470,17 @@ function ThreadDetail() {
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
+
+  // Per-message version counts for the `< n/m >` navigation control.
+  const versionInfoById = useMemo(() => {
+    const map: Record<string, { index: number; count: number }> = {}
+    if (!localThreadMessages || !hasBranching(localThreadMessages)) return map
+    for (const m of localThreadMessages) {
+      const info = getVersionInfo(localThreadMessages, m)
+      if (info.count > 1) map[m.id] = info
+    }
+    return map
+  }, [localThreadMessages])
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
@@ -1066,13 +1499,22 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
+                // A banner error stands in for the failed assistant turn:
+                // regenerate/reload restarts it from scratch, so hide the
+                // partial (tool calls, "Worked for Ns") and show only the banner.
+                if (
+                  isLastMessage &&
+                  hasBannerError &&
+                  message.role === 'assistant'
+                )
+                  return null
                 return (
                   <MessageItem
                     key={message.id}
                     message={message}
                     isFirstMessage={isFirstMessage}
                     isLastMessage={isLastMessage}
-                    status={status}
+                    status={effectiveStatus}
                     reasoningContainerRef={reasoningContainerRef}
                     isReasoningAtBottom={isReasoningAtBottom}
                     onReasoningScroll={handleReasoningScroll}
@@ -1080,6 +1522,8 @@ function ThreadDetail() {
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
+                    versionInfo={versionInfoById[message.id]}
+                    onSwitchVersion={handleSwitchVersion}
                     isAnimating={!pendingContinueMessage}
                     hideActions={!!pendingContinueMessage}
                   />
@@ -1091,7 +1535,7 @@ function ThreadDetail() {
                   message={pendingContinueMessage}
                   isFirstMessage={false}
                   isLastMessage={true}
-                  status={status}
+                  status={effectiveStatus}
                   reasoningContainerRef={reasoningContainerRef}
                   isReasoningAtBottom={isReasoningAtBottom}
                   onReasoningScroll={handleReasoningScroll}
@@ -1104,35 +1548,64 @@ function ThreadDetail() {
                 />
               )}
               {processingEmbeddings && (
-                <div className="flex flex-row items-center gap-2">
-                  <Shimmer duration={1}>Processing embeddings...</Shimmer>
+                <div className="flex items-start gap-3 px-4 py-3 mx-4 my-2 rounded-lg border border-primary/20 bg-primary/5">
+                  <IconLoader2 className="size-5 text-primary shrink-0 mt-0.5 animate-spin" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-main-view-fg mb-0.5">
+                      {t('chat:embeddings.title')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('chat:embeddings.description')}
+                    </p>
+                  </div>
                 </div>
               )}
-              {(status === CHAT_STATUS.SUBMITTED ||
-                isAutoIncreasingContext) && (
+              {!oomError &&
+                !backendError &&
+                !contextLimitError &&
+                status === CHAT_STATUS.SUBMITTED && (
                 <div className="flex flex-row items-center gap-2">
-                  {(pendingContinueMessage || isAutoIncreasingContext) && (
+                  {pendingContinueMessage && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
                   )}
-                  {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+                  {!pendingContinueMessage && !lastIsAssistant && (
+                    <PromptProgress />
+                  )}
                 </div>
               )}
-              {(error || contextLimitError) && !isAutoIncreasingContext && (
+              {(contextLimitError || oomError || backendError) && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-destructive mb-1">
-                        Error generating response
+                        {oomError
+                          ? 'llama.cpp ran out of memory'
+                          : backendError
+                            ? 'GGML backend encountered an error'
+                            : 'Model ran out of context size'}
                       </p>
                       <div className="table table-fixed w-full">
                         <span
-                          className="text-sm text-muted-foreground table-cell align-middle"
+                          className={
+                            (oomError || backendError
+                              ? 'text-xs font-mono'
+                              : 'text-sm') +
+                            ' text-muted-foreground table-cell align-middle'
+                          }
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {(error ?? contextLimitError)?.message}
+                          {oomError ?? backendError ?? contextBannerMessage}
                         </span>
                       </div>
+                      {oomError && (
+                        <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-0.5">
+                          <li>Reduce context size (ctx-size)</li>
+                          <li>Disable MTP (Multi-Token Prediction)</li>
+                          <li>Lower n-gpu-layers or switch to a CPU backend</li>
+                          <li>Use a smaller / more quantized model</li>
+                        </ul>
+                      )}
                       {((error ?? contextLimitError)?.message
                         ?.toLowerCase()
                         .includes('context') &&
@@ -1164,7 +1637,7 @@ function ThreadDetail() {
                           onClick={() => handleRegenerate()}
                         >
                           <IconRefresh className="size-4 mr-2" />
-                          Regenerate
+                          {oomError || backendError ? 'Reload' : 'Regenerate'}
                         </Button>
                       )}
                     </div>
@@ -1182,7 +1655,7 @@ function ThreadDetail() {
             model={threadModel}
             onSubmit={handleSubmit}
             onStop={stop}
-            chatStatus={status}
+            chatStatus={effectiveStatus}
           />
         </div>
       </div>

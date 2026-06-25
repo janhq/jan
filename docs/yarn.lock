@@ -7936,10 +7936,10 @@ react-style-singleton@^2.2.2, react-style-singleton@^2.2.3:
     get-nonce "^1.0.0"
     tslib "^2.0.0"
 
-react-tweet@^3.2.2:
-  version "3.2.2"
-  resolved "https://registry.yarnpkg.com/react-tweet/-/react-tweet-3.2.2.tgz#b9a8fccbab469a02d87b26f3728275024f4e9574"
-  integrity sha512-hIkxAVPpN2RqWoDEbo3TTnN/pDcp9/Jb6pTgiA4EbXa9S+m2vHIvvZKHR+eS0PDIsYqe+zTmANRa5k6+/iwGog==
+react-tweet@^3.3.0:
+  version "3.3.0"
+  resolved "https://registry.yarnpkg.com/react-tweet/-/react-tweet-3.3.0.tgz#e1bfabe65f5860f1fa67918fe44b6c006799b4c3"
+  integrity sha512-gSIG2169ZK7UH6rBzuU+j1xnQbH3IlOTLEkuGrRiJJTMgETik+h+26yHyyVKrLkzwrOaYPk4K3OtEKycqKgNLw==
   dependencies:
     "@swc/helpers" "^0.5.3"
     clsx "^2.0.0"

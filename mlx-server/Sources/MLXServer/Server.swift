@@ -317,6 +317,8 @@ struct MLXHTTPServer {
             tools: tools
         )
 
+        let startInReasoning = await modelRunner.currentInjectsThinkingOpener()
+
         // Use makeStream so we can create the task externally and register it for cancellation
         let (responseStream, continuation) = AsyncStream<ByteBuffer>.makeStream()
         let activeGenerations = self.activeGenerations
@@ -347,6 +349,32 @@ struct MLXHTTPServer {
                 log("[mlx] Warning: Failed to encode initial chunk")
             }
 
+            var splitter = ReasoningSplitter(startInReasoning: startInReasoning)
+
+            func emitDelta(content: String?, reasoning: String?) {
+                if content == nil && reasoning == nil { return }
+                let chunk = ChatCompletionChunk(
+                    id: responseId,
+                    object: "chat.completion.chunk",
+                    created: created,
+                    model: model,
+                    choices: [
+                        ChatChunkChoice(
+                            index: 0,
+                            delta: ChatDelta(
+                                role: nil,
+                                content: content,
+                                reasoning_content: reasoning
+                            ),
+                            finish_reason: nil
+                        )
+                    ]
+                )
+                if let data = try? encodeJSONData(chunk) {
+                    continuation.yield(buildSSEFrame(data))
+                }
+            }
+
             do {
                 for try await event in stream {
                     // Stop sending if client disconnected or cancelled
@@ -357,22 +385,8 @@ struct MLXHTTPServer {
 
                     switch event {
                     case .chunk(let token):
-                        let chunk = ChatCompletionChunk(
-                            id: responseId,
-                            object: "chat.completion.chunk",
-                            created: created,
-                            model: model,
-                            choices: [
-                                ChatChunkChoice(
-                                    index: 0,
-                                    delta: ChatDelta(role: nil, content: token),
-                                    finish_reason: nil
-                                )
-                            ]
-                        )
-                        if let data = try? encodeJSONData(chunk) {
-                            continuation.yield(buildSSEFrame(data))
-                        }
+                        let parts = splitter.feed(token)
+                        emitDelta(content: parts.content, reasoning: parts.reasoning)
 
                     case .toolCall(let toolCallInfo):
                         let chunk = ChatCompletionChunk(
@@ -407,6 +421,10 @@ struct MLXHTTPServer {
                         }
 
                     case .done(let usage, let timings, let hasToolCalls):
+
+                        // Flush anything still buffered in the reasoning splitter
+                        let tail = splitter.finish()
+                        emitDelta(content: tail.content, reasoning: tail.reasoning)
 
                         let finishReason = hasToolCalls ? "tool_calls" : "stop"
                         // Final chunk with finish_reason

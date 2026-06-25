@@ -2,7 +2,6 @@
   "assistants": "Asystenci",
   "hardware": "Sprzęt",
   "mcp-servers": "Serwery MCP",
-  "connectors": "Serwery MCP",
   "local_api_server": "Lokalny Serwer API",
   "https_proxy": "Pośrednik HTTPS",
   "extensions": "Rozszerzenia",
@@ -11,6 +10,8 @@
   "general": "Ogólne",
   "settings": "Ustawienia",
   "modelProviders": "Dostawcy Modeli",
+  "localProviders": "Lokalne",
+  "remoteProviders": "Zdalne",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Wygląd",
@@ -295,7 +296,8 @@
     "searchProjects": "Szukaj projektów...",
     "noProjectsFound": "Nie znaleziono projektów",
     "tryDifferentSearch": "Spróbuj innego wyszukiwania",
-    "uploadingFiles": "Przesyłanie plików…"
+    "uploadingFiles": "Przetwarzanie plików…",
+    "processButton": "Dodaj"
   },
   "errorDialog": {
     "titleFallback": "Coś poszło nie tak",
@@ -396,5 +398,12 @@
   "conversationNotAvailable": "Rozmowa niedostępna",
   "conversationNotAvailableDescription": "Rozmowa, do której próbujesz uzyskać dostęp, nie jest dostępna lub została usunięta.",
   "temporaryChat": "Tymczasowy Czat",
-  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii"
+  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii",
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
+  }
 }

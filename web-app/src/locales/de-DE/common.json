@@ -1,8 +1,7 @@
 {
   "assistants": "Assistenten",
   "hardware": "Hardware",
-  "mcp-servers": "Mcp Server",
-  "connectors": "Mcp Server",
+  "mcp-servers": "MCP-Server",
   "local_api_server": "Lokaler API Server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Erweiterungen",
@@ -11,6 +10,8 @@
   "general": "Allgemein",
   "settings": "Einstellungen",
   "modelProviders": "Modell Anbieter",
+  "localProviders": "Lokal",
+  "remoteProviders": "Remote",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
   "interface": "Erscheinung",
@@ -301,7 +302,8 @@
     "searchProjects": "Projekte durchsuchen...",
     "noProjectsFound": "Keine Projekte gefunden",
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
-    "uploadingFiles": "Dateien werden hochgeladen…"
+    "uploadingFiles": "Dateien werden verarbeitet…",
+    "processButton": "Hinzufügen"
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
@@ -396,5 +398,12 @@
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp is still busy",
+    "description": "One or more models did not unload in time. Force-quitting will terminate llama.cpp and may interrupt active responses.",
+    "forceQuit": "Force quit",
+    "forcing": "Force quitting…",
+    "shuttingDown": "Shutting down…"
   }
 }

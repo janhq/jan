@@ -14,6 +14,7 @@ const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' },
   { value: 'fr', label: 'Français' },
+  { value: 'it', label: 'Italiano' },
   { value: 'hi', label: 'हिंदी' },
   { value: 'id', label: 'Bahasa' },
   { value: 'pl', label: 'Polski' },
@@ -26,7 +27,7 @@ const LANGUAGES = [
   { value: 'ko', label: '한국어' },
   { value: 'ja', label: '日本語' },
   { value: 'ru', label: 'Русский' },
-  { value: 'ct', label: 'Català' },
+  { value: 'ca', label: 'Català' },
 ]
 
 export default function LanguageSwitcher() {

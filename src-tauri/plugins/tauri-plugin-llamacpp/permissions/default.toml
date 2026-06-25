@@ -7,6 +7,13 @@ permissions = [
     # LlamaCpp server commands
     "allow-load-llama-model",
     "allow-unload-llama-model",
+    "allow-start-router",
+    "allow-stop-router",
+    "allow-try-graceful-stop-router",
+    "allow-force-kill-router-tree",
+    "allow-force-stop-model",
+    "allow-get-router-info",
+    "allow-router-slots-idle",
     "allow-get-devices",
     "allow-generate-api-key",
     "allow-is-process-running",
@@ -22,7 +29,6 @@ permissions = [
     "allow-estimate-kv-cache-size",
     "allow-get-model-size",
     "allow-is-model-supported",
-    "allow-plan-model-load",
 
     # Backend management commands
     "allow-map-old-backend-to-new",

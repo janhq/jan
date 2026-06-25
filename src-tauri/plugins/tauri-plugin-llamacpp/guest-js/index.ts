@@ -42,11 +42,31 @@ function asString(v: any, defaultValue = ''): string {
 }
 
 export function normalizeLlamacppConfig(config: any): LlamacppConfig {
+  const llamacpp_version = asString(config.llamacpp_version)
+  const llamacpp_backend = asString(config.llamacpp_backend)
+  const composedVersionBackend =
+    llamacpp_version && llamacpp_backend
+      ? `${llamacpp_version}/${llamacpp_backend}`
+      : asString(config.version_backend)
   return {
-    version_backend: asString(config.version_backend),
+    llamacpp_version,
+    llamacpp_backend,
+    version_backend: composedVersionBackend,
     auto_update_engine: asBool(config.auto_update_engine),
+    check_for_updates:
+      config.check_for_updates === undefined ||
+      config.check_for_updates === null
+        ? true
+        : asBool(config.check_for_updates),
+    verify_backend_deps:
+      config.verify_backend_deps === undefined || config.verify_backend_deps === null
+        ? true
+        : asBool(config.verify_backend_deps),
     auto_unload: asBool(config.auto_unload),
-    auto_restart_on_crash: asBool(config.auto_restart_on_crash),
+    models_max:
+      typeof config.models_max === 'number'
+        ? config.models_max
+        : asI32(config.models_max, 1),
     timeout: asI32(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
@@ -83,8 +103,6 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     cache_type_k: asString(config.cache_type_k),
     cache_type_v: asString(config.cache_type_v),
 
-    defrag_thold: asNumber(config.defrag_thold, 0.0),
-
     rope_scaling: asString(config.rope_scaling),
     rope_scale: asNumber(config.rope_scale, 1.0),
     rope_freq_base: asNumber(config.rope_freq_base, 0.0),
@@ -101,34 +119,28 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
   }
 }
 
-// LlamaCpp server commands
 export async function loadLlamaModel(
-  backendPath: string,
   modelId: string,
-  modelPath: string,
-  port: number,
-  cfg: LlamacppConfig,
-  envs: Record<string, string>,
-  mmprojPath?: string,
-  isEmbedding: boolean = false,
-  timeout: number = 600
+  isEmbedding: boolean = false
 ): Promise<SessionInfo> {
-  const config = normalizeLlamacppConfig(cfg)
   return await invoke('plugin:llamacpp|load_llama_model', {
-    backendPath,
     modelId,
-    modelPath,
-    port,
-    config,
-    envs,
-    mmprojPath,
     isEmbedding,
-    timeout,
   })
 }
 
-export async function unloadLlamaModel(pid: number): Promise<UnloadResult> {
-  return await invoke('plugin:llamacpp|unload_llama_model', { pid })
+export async function unloadLlamaModel(modelId: string): Promise<UnloadResult> {
+  return await invoke('plugin:llamacpp|unload_llama_model', { modelId })
+}
+
+export async function ensureSessionReady(
+  modelId: string,
+  isEmbedding: boolean = false
+): Promise<SessionInfo> {
+  return await invoke('plugin:llamacpp|ensure_session_ready', {
+    modelId,
+    isEmbedding,
+  })
 }
 
 export async function getDevices(
@@ -151,14 +163,6 @@ export async function generateApiKey(
   })
 }
 
-export async function isProcessRunning(pid: number): Promise<boolean> {
-  return await invoke('plugin:llamacpp|is_process_running', { pid })
-}
-
-export async function getRandomPort(): Promise<number> {
-  return await invoke('plugin:llamacpp|get_random_port')
-}
-
 export async function findSessionByModel(
   modelId: string
 ): Promise<SessionInfo | null> {
@@ -169,14 +173,8 @@ export async function getLoadedModels(): Promise<string[]> {
   return await invoke('plugin:llamacpp|get_loaded_models')
 }
 
-export async function getAllSessions(): Promise<SessionInfo[]> {
-  return await invoke('plugin:llamacpp|get_all_sessions')
-}
-
-export async function getSessionByModel(
-  modelId: string
-): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp|get_session_by_model', { modelId })
+export async function routerSlotsIdle(modelId?: string): Promise<boolean> {
+  return await invoke('plugin:llamacpp|router_slots_idle', { modelId })
 }
 
 // GGUF commands
@@ -240,6 +238,7 @@ export function normalizeFeatures(features: any): BackendFeatures {
     cuda12: features.cuda12 || false,
     cuda13: features.cuda13 || false,
     vulkan: features.vulkan || false,
+    hip: features.hip || false,
   }
 }
 

@@ -82,6 +82,28 @@ describe('convertUIMessageToThreadMessage', () => {
     expect(result.content[0].type).toBe(ContentType.Text)
   })
 
+  it('converts wav audio file parts to input_audio', () => {
+    const msg = mkUI({
+      parts: [{ type: 'file', mediaType: 'audio/wav', url: 'data:audio/wav;base64,QUFB' } as any],
+    })
+    const result = convertUIMessageToThreadMessage(msg, 't1')
+    expect(result.content[0]).toMatchObject({
+      type: ContentType.InputAudio,
+      input_audio: { data: 'QUFB', format: 'wav' },
+    })
+  })
+
+  it('converts mp3 audio file parts to input_audio', () => {
+    const msg = mkUI({
+      parts: [{ type: 'file', mediaType: 'audio/mpeg', url: 'data:audio/mpeg;base64,WlpaWg==' } as any],
+    })
+    const result = convertUIMessageToThreadMessage(msg, 't1')
+    expect(result.content[0]).toMatchObject({
+      type: ContentType.InputAudio,
+      input_audio: { data: 'WlpaWg==', format: 'mp3' },
+    })
+  })
+
   it('creates empty text when no content extracted', () => {
     const result = convertUIMessageToThreadMessage(mkUI({ parts: [] }), 't1')
     expect(result.content[0].text!.value).toBe('')
@@ -157,6 +179,28 @@ describe('convertThreadMessageToUIMessage', () => {
       role: 'user', content: [{ type: 'image_url', image_url: { url: 'http://img.png' } }],
     }) as any)
     expect(result.parts).toContainEqual({ type: 'file', mediaType: 'image/jpeg', url: 'http://img.png' })
+  })
+
+  it('converts input_audio content to a file part with audio mediaType', () => {
+    const wav = convertThreadMessageToUIMessage(makeTm({
+      role: 'user',
+      content: [{ type: 'input_audio', input_audio: { data: 'QUFB', format: 'wav' } }],
+    }) as any)
+    expect(wav.parts).toContainEqual({
+      type: 'file',
+      mediaType: 'audio/wav',
+      url: 'data:audio/wav;base64,QUFB',
+    })
+
+    const mp3 = convertThreadMessageToUIMessage(makeTm({
+      role: 'user',
+      content: [{ type: 'input_audio', input_audio: { data: 'WlpaWg==', format: 'mp3' } }],
+    }) as any)
+    expect(mp3.parts).toContainEqual({
+      type: 'file',
+      mediaType: 'audio/mpeg',
+      url: 'data:audio/mpeg;base64,WlpaWg==',
+    })
   })
 
   it('converts tool_call content with and without output', () => {

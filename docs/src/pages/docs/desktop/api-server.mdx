@@ -70,14 +70,20 @@ The base path for all API endpoints.
 - You can change this or leave it empty if desired.
 
 ### API Key
-A mandatory secret key to authenticate requests.
-- You must set a key. It can be any string (e.g., `a-secure-password`).
-- All API requests must include this key in the `Authorization: Bearer YOUR_API_KEY` header.
+A secret key used to authenticate requests.
+- Set any string (e.g., `a-secure-password`). If a key is configured, requests must include it in the `Authorization: Bearer YOUR_API_KEY` header.
+- Leave the field empty to disable authentication (not recommended when binding to `0.0.0.0`).
 
 ### Trusted Hosts
 A comma-separated list of hostnames allowed to access the server. This provides an additional layer of security when the server is exposed on your network.
 
+### Request Timeout
+How long (in seconds) the server waits for a response from the local model before giving up. Increase this if you are running large models on slow hardware and see request timeouts.
+
 ## Advanced Settings
+
+### Execute Tools on Server
+- **(Disabled by default)** When enabled, MCP tool calls triggered through the `/v1/chat/completions` endpoint are executed server-side rather than being returned to the client to dispatch. Leave this off if your client app handles tool execution itself.
 
 ### Cross-Origin Resource Sharing (CORS)
 - **(Enabled by default)** Allows web applications (like a custom web UI you are building) running on different domains to make requests to the API server.

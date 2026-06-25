@@ -31,7 +31,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: '0'
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
@@ -42,7 +42,7 @@ jobs:
           echo "VERSION=${{ inputs.new_version }}" >> $GITHUB_ENV
 
       - name: Notify Discord
-        uses: Ilshidur/action-discord@master
+        uses: Ilshidur/action-discord@d2594079a10f1d6739ee50a2471f0ca57418b554 # 0.4.0
         with:
           args: |
             Jan App ${{ inputs.build_reason }} build artifact version {{ VERSION }}:

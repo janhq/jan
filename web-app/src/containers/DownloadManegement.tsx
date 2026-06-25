@@ -8,7 +8,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
-import { IconX } from '@tabler/icons-react'
+import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -29,6 +29,8 @@ export function DownloadManagement() {
     localDownloadingModels,
     removeDownload,
     removeLocalDownloadingModel,
+    setPaused,
+    addLocalDownloadingModel,
   } = useDownloadStore()
   const { updateState } = useAppUpdater()
 
@@ -94,6 +96,7 @@ export function DownloadManagement() {
       progress: download.progress,
       current: download.current,
       total: download.total,
+      paused: download.paused ?? false,
     }))
 
     // Add local downloading models that don't have progress data yet
@@ -105,6 +108,7 @@ export function DownloadManagement() {
         progress: 0,
         current: 0,
         total: 0,
+        paused: false,
       }))
 
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
@@ -251,10 +255,80 @@ export function DownloadManagement() {
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadStopped', state)
+      // A pause stops the download via the same cancel path; keep the entry
+      // (with its partial progress) so it can be resumed.
+      if (useDownloadStore.getState().downloads[state.modelId]?.paused) return
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
     },
     [removeDownload, removeLocalDownloadingModel]
+  )
+
+  const handlePauseDownload = useCallback(
+    async (id: string) => {
+      setPaused(id, true)
+      try {
+        await serviceHub.models().pauseDownload(id)
+      } catch (e) {
+        setPaused(id, false)
+        console.error('Failed to pause download:', id, e)
+      }
+    },
+    [setPaused, serviceHub]
+  )
+
+  const handleResumeDownload = useCallback(
+    async (id: string) => {
+      const params = useDownloadStore.getState().resumeParams[id]
+      if (!params) {
+        toast.error(t('common:toast.downloadFailed.title'), {
+          description: t('hub:resumeUnavailable', {
+            defaultValue: 'Cannot resume this download. Please start it again.',
+          }),
+        })
+        return
+      }
+      setPaused(id, false)
+      addLocalDownloadingModel(id)
+      try {
+        await serviceHub
+          .models()
+          .pullModelWithMetadata(
+            id,
+            params.modelPath,
+            params.mmprojPath,
+            params.hfToken
+          )
+      } catch (e) {
+        console.error('Failed to resume download:', id, e)
+      }
+    },
+    [setPaused, addLocalDownloadingModel, serviceHub, t]
+  )
+
+  const handleCancelDownload = useCallback(
+    (id: string, name: string) => {
+      removeDownload(id)
+      removeLocalDownloadingModel(id)
+      if (id.startsWith('llamacpp') || id.startsWith('mlx')) {
+        const downloadManager = window.core.extensionManager.getByName(
+          '@janhq/download-extension'
+        )
+        downloadManager.cancelDownload(id)
+      } else {
+        serviceHub
+          .models()
+          .abortDownload(name)
+          .then(() => {
+            toast.info(t('common:toast.downloadCancelled.title'), {
+              id: 'cancel-download',
+              description: t('common:toast.downloadCancelled.description'),
+            })
+          })
+      }
+      setIsPopoverOpen(false)
+    },
+    [removeDownload, removeLocalDownloadingModel, serviceHub, t]
   )
 
   const onFileDownloadSuccess = useCallback(
@@ -385,9 +459,10 @@ export function DownloadManagement() {
         <PopoverContent
           side="bottom"
           align="start"
-          className="p-0 overflow-hidden text-sm select-none rounded-2xl -ml-8"
+          className="p-0 overflow-hidden text-sm select-none rounded-2xl"
           sideOffset={6}
-          onFocusOutside={(e) => e.preventDefault}
+          collisionPadding={8}
+          onFocusOutside={(e) => e.preventDefault()}
         >
           <div className="flex flex-col">
             {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (
@@ -441,35 +516,42 @@ export function DownloadManagement() {
                           {download.name}
                         </p>
                         <div className="shrink-0 flex items-center space-x-0.5">
-                          <Button variant="secondary" size="icon-xs" onClick={() => {
-                            // TODO: Consolidate cancellation logic
-                            if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
-                              const downloadManager =
-                                window.core.extensionManager.getByName(
-                                  '@janhq/download-extension'
-                                )
-                              downloadManager.cancelDownload(download.id)
-                            } else {
-                              serviceHub
-                                .models()
-                                .abortDownload(download.name)
-                                .then(() => {
-                                  toast.info(
-                                    t('common:toast.downloadCancelled.title'),
-                                    {
-                                      id: 'cancel-download',
-                                      description: t(
-                                        'common:toast.downloadCancelled.description'
-                                      ),
-                                    }
-                                  )
-                                  if (downloadProcesses.length === 0) {
-                                    setIsPopoverOpen(false)
-                                  }
-                                })
+                          {!download.id.startsWith('llamacpp') &&
+                            !download.id.startsWith('mlx') &&
+                            (download.paused ? (
+                              <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                onClick={() =>
+                                  handleResumeDownload(download.id)
+                                }
+                              >
+                                <IconPlayerPlay
+                                  size={16}
+                                  className="text-muted-foreground cursor-pointer"
+                                  title="Resume download"
+                                />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                onClick={() => handlePauseDownload(download.id)}
+                              >
+                                <IconPlayerPause
+                                  size={16}
+                                  className="text-muted-foreground cursor-pointer"
+                                  title="Pause download"
+                                />
+                              </Button>
+                            ))}
+                          <Button
+                            variant="secondary"
+                            size="icon-xs"
+                            onClick={() =>
+                              handleCancelDownload(download.id, download.name)
                             }
-                            setIsPopoverOpen(false)
-                          }} >
+                          >
                             <IconX
                               size={16}
                               className="text-muted-foreground cursor-pointer"
@@ -485,11 +567,15 @@ export function DownloadManagement() {
                         />
                         <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
                           <p className="text-xs">
-                            {download.total > 0
-                              ? `${Math.round(download.progress * 100)}%`
-                              : download.current > 0
-                                ? 'Downloading...'
-                                : 'Initializing download...'}
+                            {download.paused
+                              ? download.total > 0
+                                ? `Paused · ${Math.round(download.progress * 100)}%`
+                                : 'Paused'
+                              : download.total > 0
+                                ? `${Math.round(download.progress * 100)}%`
+                                : download.current > 0
+                                  ? 'Downloading...'
+                                  : 'Initializing download...'}
                           </p>
                           <p className="text-xs">
                             {download.total > 0

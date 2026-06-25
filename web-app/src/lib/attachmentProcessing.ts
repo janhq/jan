@@ -163,6 +163,24 @@ export const processAttachmentsForSend = async (
     }
   }
 
+  const audios = attachments.filter((a) => a.type === 'audio')
+  for (const aud of audios) {
+    processedAttachments.push({
+      ...aud,
+      processed: true,
+      processing: false,
+    })
+  }
+
+  const videos = attachments.filter((a) => a.type === 'video')
+  for (const vid of videos) {
+    processedAttachments.push({
+      ...vid,
+      processed: true,
+      processing: false,
+    })
+  }
+
   const documents = attachments.filter((a) => a.type === 'document')
   for (const doc of documents) {
     try {
