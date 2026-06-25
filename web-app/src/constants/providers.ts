@@ -287,10 +287,17 @@ export const predefinedProviders = [
     ],
     models: [
       {
+        id: 'MiniMax-M3',
+        name: 'MiniMax-M3',
+        version: '1.0',
+        description: 'Latest flagship model with enhanced reasoning and coding.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
         id: 'MiniMax-M2.7',
         name: 'MiniMax-M2.7',
         version: '1.0',
-        description: 'Latest flagship model with enhanced reasoning and coding.',
+        description: 'Previous flagship model with strong reasoning and coding.',
         capabilities: ['completion', 'tools'],
       },
       {
@@ -298,20 +305,6 @@ export const predefinedProviders = [
         name: 'MiniMax-M2.7-highspeed',
         version: '1.0',
         description: 'High-speed version of M2.7 for low-latency scenarios.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'MiniMax-M2.5',
-        name: 'MiniMax-M2.5',
-        version: '1.0',
-        description: 'Peak Performance. Ultimate Value. Master the Complex. 204K context window.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'MiniMax-M2.5-highspeed',
-        name: 'MiniMax-M2.5-highspeed',
-        version: '1.0',
-        description: 'Same performance, faster and more agile. 204K context window.',
         capabilities: ['completion', 'tools'],
       },
     ],
