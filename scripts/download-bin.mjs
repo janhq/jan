@@ -142,8 +142,8 @@ function getPlatformArch() {
         ? 'aarch64-unknown-linux-gnu'
         : 'x86_64-unknown-linux-gnu'
   } else if (platform === 'win32') {
-    bunPlatform = 'windows-x64' // Bun has limited Windows support
-    uvPlatform = 'x86_64-pc-windows-msvc'
+    bunPlatform = arch === 'arm64' ? 'windows-aarch64' : 'windows-x64'
+    uvPlatform = arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
   } else {
     throw new Error(`Unsupported platform: ${platform}`)
   }
@@ -248,7 +248,12 @@ async function main() {
     if (platform === 'win32') {
       copyFile(
         path.join(binDir, 'bun.exe'),
-        path.join(binDir, 'bun-x86_64-pc-windows-msvc.exe'),
+        path.join(
+          binDir,
+          bunPlatform === 'windows-aarch64'
+            ? 'bun-aarch64-pc-windows-msvc.exe'
+            : 'bun-x86_64-pc-windows-msvc.exe'
+        ),
         (err) => {
           if (err) {
             console.log('Error Found:', err)
@@ -322,7 +327,7 @@ async function main() {
     if (platform === 'win32') {
       copyFile(
         path.join(binDir, 'uv.exe'),
-        path.join(binDir, 'uv-x86_64-pc-windows-msvc.exe'),
+        path.join(binDir, `uv-${uvPlatform}.exe`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)
