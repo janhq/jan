@@ -75,11 +75,15 @@ export default class RagExtension extends RAGExtension {
     )
   }
 
+  private getVectorDBExtension(): VectorDBExtension | undefined {
+    return window.core?.extensionManager.get(
+      ExtensionTypeEnum.VectorDB
+    ) as VectorDBExtension | undefined
+  }
+
   async checkANNAvailability() {
     try {
-      const vec = window.core?.extensionManager.get(
-        ExtensionTypeEnum.VectorDB
-      ) as unknown as VectorDBExtension
+      const vec = this.getVectorDBExtension()
       if (vec?.getStatus) {
         const status = await vec.getStatus()
         console.log(
@@ -138,9 +142,7 @@ export default class RagExtension extends RAGExtension {
       }
     }
     try {
-      const vec = window.core?.extensionManager.get(
-        ExtensionTypeEnum.VectorDB
-      ) as unknown as VectorDBExtension
+      const vec = this.getVectorDBExtension()
       if (!vec?.listAttachments && !vec?.listAttachmentsForProject) {
         return {
           error: 'Vector DB extension missing listAttachments',
@@ -219,9 +221,7 @@ export default class RagExtension extends RAGExtension {
 
     try {
       // Resolve extensions
-      const vec = window.core?.extensionManager.get(
-        ExtensionTypeEnum.VectorDB
-      ) as unknown as VectorDBExtension
+      const vec = this.getVectorDBExtension()
       if (!vec?.searchCollection && !vec?.searchCollectionForProject) {
         return {
           error: 'RAG dependencies not available',
@@ -318,9 +318,7 @@ export default class RagExtension extends RAGExtension {
     }
 
     try {
-      const vec = window.core?.extensionManager.get(
-        ExtensionTypeEnum.VectorDB
-      ) as unknown as VectorDBExtension
+      const vec = this.getVectorDBExtension()
       if (!vec?.getChunks && !vec?.getChunksForProject) {
         return {
           error: 'Vector DB extension not available',
@@ -374,9 +372,7 @@ export default class RagExtension extends RAGExtension {
       return { filesProcessed: 0, chunksInserted: 0, files: [] }
     }
 
-    const vec = window.core?.extensionManager.get(
-      ExtensionTypeEnum.VectorDB
-    ) as unknown as VectorDBExtension
+    const vec = this.getVectorDBExtension()
     if (!vec?.ingestFileForProject) {
       throw new Error('Vector DB extension does not support project-level ingestion')
     }
@@ -399,7 +395,7 @@ export default class RagExtension extends RAGExtension {
       }
 
       const fileName = f.name || f.path.split(/[\\/]/).pop()
-      const info = await (vec as VectorDBExtension).ingestFileForProject(
+      const info = await vec!.ingestFileForProject(
         projectId,
         { path: f.path, name: fileName, type: f.type, size: f.size },
         { chunkSize: chunkSize ?? 512, chunkOverlap: chunkOverlap ?? 64 }
@@ -432,9 +428,7 @@ export default class RagExtension extends RAGExtension {
       return { filesProcessed: 0, chunksInserted: 0, files: [] }
     }
 
-    const vec = window.core?.extensionManager.get(
-      ExtensionTypeEnum.VectorDB
-    ) as unknown as VectorDBExtension
+    const vec = this.getVectorDBExtension()
     if (!vec?.createCollection || !vec?.insertChunks) {
       throw new Error('Vector DB extension not available')
     }
@@ -465,7 +459,7 @@ export default class RagExtension extends RAGExtension {
         )
         continue
       }
-      const info = await (vec as VectorDBExtension).ingestFile(
+      const info = await vec!.ingestFile(
         threadId,
         { path: f.path, name: fileName, type: f.type, size: f.size },
         { chunkSize: chunkSize ?? 512, chunkOverlap: chunkOverlap ?? 64 }
