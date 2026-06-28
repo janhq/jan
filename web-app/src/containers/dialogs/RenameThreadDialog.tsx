@@ -80,7 +80,10 @@ export function RenameThreadDialog({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation()
-    if (e.key === 'Enter' && title.trim()) {
+    // e.keyCode 229 / isComposing means an IME (e.g. Chinese/Japanese) is
+    // composing; the Enter that confirms a candidate must not rename.
+    const isComposing = e.nativeEvent.isComposing || e.keyCode === 229
+    if (e.key === 'Enter' && !isComposing && title.trim()) {
       handleRename()
     }
   }
