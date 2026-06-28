@@ -1,18 +1,29 @@
 {
+  "limitedSupport": "このプロバイダーは完全にはサポートされていない可能性があります。機能（ツール・画像認識・音声）は自動検出されません。モデルを手動で追加し、モデルごとに機能を設定してください。",
+  "mlxExperimental": "MLXのサポートは実験的です。埋め込みは利用できず、推論の切り替えはまだ接続されておらず、一部の新しいモデルアーキテクチャは読み込みに失敗する場合があります。優先順位を付けられるよう、問題はGitHubで報告してください。",
   "refreshModelsError": "モデルを取得するには、プロバイダーにベースURLとAPIキーが設定されている必要があります。",
   "refreshModelsSuccess": "{{provider}}から{{count}}個の新しいモデルを追加しました。",
   "noNewModels": "新しいモデルは見つかりませんでした。利用可能なすべてのモデルは既に追加されています。",
   "refreshModelsFailed": "{{provider}}からのモデルの取得に失敗しました。APIキーとベースURLを確認してください。",
   "models": "モデル",
+  "chatModels": "チャットモデル",
+  "embeddingModels": "埋め込みモデル",
+  "embeddingModelsDesc": "RAGとベクトル検索に使用されます。選択したモデルは、埋め込みを生成する際のデフォルトになります。",
+  "embeddingModelDefault": "デフォルト",
+  "embeddingModelSetDefault": "デフォルトの埋め込みモデルに設定",
+  "embeddingModelIsDefault": "デフォルトの埋め込みモデル",
   "refreshing": "更新中...",
   "refresh": "更新",
   "import": "インポート",
+  "imported": "インポート済み",
+  "importedTooltip": "ローカルファイルからインポートされています。Janから削除しても、ディスク上のファイルは削除されません。",
   "importModelSuccess": "モデル{{provider}}は正常にインポートされました。",
   "importModelError": "モデルのインポートに失敗しました:",
   "stop": "停止",
   "start": "開始",
   "noModelFound": "モデルが見つかりません",
   "noModelFoundDesc": "利用可能なモデルはここにリストされます。まだモデルがない場合は、ハブにアクセスしてダウンロードしてください。",
+  "noModelFoundRemoteDesc": "利用可能なモデルはここにリストされます。上の更新ボタンでプロバイダーからモデルを取得するか、+ボタンで手動で追加してください。",
   "configuration": "設定",
   "apiEndpoint": "APIエンドポイント",
   "testConnection": "接続をテスト",
@@ -29,9 +40,24 @@
   "deleteModel": {
     "title": "モデルを削除: {{modelId}}",
     "description": "本当にこのモデルを削除しますか？この操作は元に戻せません。",
+    "importedDescription": "このインポート済みモデルをJanから削除しますか？ディスク上のローカルファイルは削除されません。",
+    "removeFromJan": "Janから削除",
     "success": "モデル {{modelId}} は完全に削除されました。",
     "cancel": "キャンセル",
     "delete": "削除"
+  },
+  "deleteAllModels": {
+    "button": "すべて削除",
+    "title": "ダウンロードしたすべてのモデルを削除しますか？",
+    "description": "{{count}}個のモデルをディスクから完全に削除します。",
+    "sizeLabel": "解放されるディスク容量:",
+    "calculating": "計算中…",
+    "warning": "この操作は元に戻せません。",
+    "importedExcluded": "{{count}}個のインポート済みモデルは保持されます（これらのファイルはJanによってダウンロードされたものではありません）。",
+    "confirm": "{{count}}個のモデルを削除",
+    "deleting": "削除中…",
+    "success": "{{count}}個のモデルを削除しました。",
+    "partialFailure": "{{count}}個のモデルの削除に失敗しました。詳細はコンソールを確認してください。"
   },
   "deleteProvider": {
     "title": "プロバイダーを削除",
@@ -48,6 +74,9 @@
     "capabilities": "機能",
     "tools": "ツール",
     "vision": "画像認識",
+    "audio": "音声",
+    "video": "動画",
+    "proactive": "プロアクティブ（実験的）",
     "embeddings": "埋め込み",
     "notAvailable": "まだ利用できません",
     "warning": {
@@ -57,5 +86,25 @@
   },
   "addProvider": "プロバイダーを追加",
   "addOpenAIProvider": "OpenAIプロバイダーを追加",
-  "enterNameForProvider": "プロバイダーの名前を入力してください"
+  "enterNameForProvider": "プロバイダーの名前を入力してください",
+  "baseUrl": {
+    "title": "ベースURL",
+    "azureDescription": "あなたのAzure OpenAIエンドポイント。YOUR-RESOURCE-NAMEをAzureリソース名に置き換えてください。"
+  },
+  "apiKeys": {
+    "title": "APIキー",
+    "description": "APIキーを入力してください。詳細設定で追加のキーを登録でき、キーが失敗した場合はJanが自動的に次のキーを試します。",
+    "placeholder": "sk-…\nsk-…",
+    "primaryPlaceholder": "メインのAPIキーを入力",
+    "keyPlaceholder": "APIキーを入力",
+    "primaryBadge": "メイン",
+    "test": "キーをテスト",
+    "testing": "テスト中...",
+    "testHint": "各キーで/modelsを確認し、キーごとのステータスを表示します。",
+    "advanced": "詳細設定",
+    "hideAdvanced": "詳細設定を隠す",
+    "oneKeyHint": "任意のフォールバックキーは詳細設定で構成します。",
+    "addKey": "キーを追加",
+    "removeKey": "キーを削除"
+  }
 }
