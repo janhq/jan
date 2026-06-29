@@ -17,7 +17,7 @@ serde_json = "1.0"
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
-pdf-extract = "0.7"
+pdf-extract = "0.12"
 zip = "0.6"
 quick-xml = { version = "0.31", features = ["serialize"] }
 csv = "1.3"
