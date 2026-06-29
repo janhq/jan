@@ -187,4 +187,52 @@ describe('generatePreset ctx-size default', () => {
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('ctx-size = 8192')
   })
+
+  it('honors an explicit ctx_size = 0 as native instead of the 8192 fallback', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: false, ctx_size: 0 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('ctx-size = 0')
+    expect(ini).not.toContain('ctx-size = 8192')
+  })
+
+  it('honors a per-model ctx_size = 0 override as native', async () => {
+    setupModel('llama', { ctx_size: 0 })
+    await generatePreset('/p', '/jan', { fit: false, ctx_size: 16384 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    // [*] keeps the global, but the per-model section overrides to native.
+    expect(ini).toContain('ctx-size = 16384')
+    expect(ini).toContain('ctx-size = 0')
+  })
+})
+
+describe('generatePreset embedding ctx-size', () => {
+  it('pins embedders to native ctx-size = 0 so they do not inherit the global 8192', async () => {
+    setupModel('minilm', { embedding: true })
+    await generatePreset('/p', '/jan', { fit: false } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('embeddings = true')
+    // global [*] still emits 8192, but the embedder section overrides to native.
+    expect(ini).toContain('ctx-size = 8192')
+    expect(ini).toContain('ctx-size = 0')
+  })
+
+  it('keeps a positive per-model embedder ctx-size instead of forcing native', async () => {
+    setupModel('minilm', { embedding: true, ctx_size: 2048 })
+    await generatePreset('/p', '/jan', { fit: false } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('embeddings = true')
+    expect(ini).toContain('ctx-size = 2048')
+    // the embedder section must not additionally emit native 0.
+    const embedderSection = ini.slice(ini.indexOf('[minilm]'))
+    expect(embedderSection).not.toContain('ctx-size = 0')
+  })
 })
