@@ -28,6 +28,8 @@ function InterfaceSettings() {
     setColoredUserBubble,
     renderHtmlArtifacts,
     setRenderHtmlArtifacts,
+    foldInterstitialReasoning,
+    setFoldInterstitialReasoning,
   } = useInterfaceSettings()
 
   return (
@@ -98,6 +100,18 @@ function InterfaceSettings() {
                   <Switch
                     checked={renderHtmlArtifacts}
                     onCheckedChange={setRenderHtmlArtifacts}
+                  />
+                }
+              />
+              <CardItem
+                title={t('settings:interface.foldInterstitialReasoning')}
+                description={t(
+                  'settings:interface.foldInterstitialReasoningDesc'
+                )}
+                actions={
+                  <Switch
+                    checked={foldInterstitialReasoning}
+                    onCheckedChange={setFoldInterstitialReasoning}
                   />
                 }
               />

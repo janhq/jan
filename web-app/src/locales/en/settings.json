@@ -102,6 +102,8 @@
     "coloredUserBubbleDesc": "Use the accent color as the background of your messages. When off, they match assistant messages with plain text on a neutral background.",
     "renderHtmlArtifacts": "Render HTML & SVG artifacts",
     "renderHtmlArtifactsDesc": "Add a Preview tab to HTML and SVG code blocks. HTML runs the model-generated page in a sandboxed frame that executes its own scripts but cannot access Jan, your files, or the network; SVG renders statically with scripts disabled. Off by default.",
+    "foldInterstitialReasoning": "Fold interim text into reasoning",
+    "foldInterstitialReasoningDesc": "When on, any answer text a model emits between two reasoning steps is folded into the collapsible reasoning trace, and only the final answer shows in the message body. Turn off to show that interim text as a normal message.",
     "windowBackground": "Window Background",
     "windowBackgroundDesc": "Set the app window's background color.",
     "appMainView": "App Main View",
