@@ -13,6 +13,7 @@ Default permissions for the llamacpp plugin
 - `allow-force-kill-router-tree`
 - `allow-force-stop-model`
 - `allow-get-router-info`
+- `allow-reload-router-models`
 - `allow-router-slots-idle`
 - `allow-get-devices`
 - `allow-generate-api-key`
@@ -937,6 +938,32 @@ Enables the read_gguf_metadata command without any pre-configured scope.
 <td>
 
 Denies the read_gguf_metadata command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-reload-router-models`
+
+</td>
+<td>
+
+Enables the reload_router_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-reload-router-models`
+
+</td>
+<td>
+
+Denies the reload_router_models command without any pre-configured scope.
 
 </td>
 </tr>

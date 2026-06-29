@@ -177,6 +177,14 @@ export async function routerSlotsIdle(modelId?: string): Promise<boolean> {
   return await invoke('plugin:llamacpp|router_slots_idle', { modelId })
 }
 
+/**
+ * Live-reload the router preset without restarting the process. Backend must
+ * support the reload diff path (upstream b9023+); gate on build at the caller.
+ */
+export async function reloadRouterModels(): Promise<void> {
+  return await invoke('plugin:llamacpp|reload_router_models')
+}
+
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp|read_gguf_metadata', { path })

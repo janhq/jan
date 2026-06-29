@@ -13,6 +13,7 @@ permissions = [
     "allow-force-kill-router-tree",
     "allow-force-stop-model",
     "allow-get-router-info",
+    "allow-reload-router-models",
     "allow-router-slots-idle",
     "allow-get-devices",
     "allow-generate-api-key",
