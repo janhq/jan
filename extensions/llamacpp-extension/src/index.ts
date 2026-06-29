@@ -61,6 +61,7 @@ import {
   readGgufMetadata,
   isModelSupported,
   unloadLlamaModel,
+  reloadRouterModels,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -768,7 +769,7 @@ export default class llamacpp_extension extends AIEngine {
     })
 
     try {
-      await invoke('plugin:llamacpp|reload_router_models')
+      await reloadRouterModels()
       logger.info('Router preset hot-reloaded without restart')
     } catch (e) {
       logger.warn('Live router reload failed; falling back to restart:', e)
