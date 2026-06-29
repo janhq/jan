@@ -100,6 +100,7 @@ export const CodeBlock = ({
   return (
     <CodeBlockContext.Provider value={{ code }}>
       <div
+        dir="ltr"
         className={cn(
           "group relative w-full overflow-hidden bg-background text-foreground",
           className,
