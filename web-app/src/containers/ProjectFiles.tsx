@@ -72,6 +72,15 @@ function humanizeUploadError(
     if (lower.includes('encrypted') || lower.includes('password')) {
       return t('common:toast.uploadFailed.pdfEncrypted', { subject })
     }
+    // pdf-extract hard-fails on PDF features it doesn't implement (e.g. a
+    // PostScript "unhandled function type" used for color/shading).
+    if (
+      lower.includes('function type') ||
+      lower.includes('not implemented') ||
+      lower.includes('unsupported')
+    ) {
+      return t('common:toast.uploadFailed.pdfUnsupportedFeature', { subject })
+    }
     return t('common:toast.uploadFailed.pdfGeneric', { subject })
   }
 

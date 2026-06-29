@@ -10,21 +10,6 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use zip::read::ZipArchive;
 
-/// Maps a raw pdf-extract panic/error string to a user-facing message. The
-/// parser hard-fails on PDFs using features it doesn't implement (e.g. a
-/// PostScript "unhandled function type" used for color/shading); surface that
-/// as an actionable hint instead of the internal text.
-fn friendly_pdf_error(raw: &str) -> String {
-    let lower = raw.to_lowercase();
-    if lower.contains("unhandled function type")
-        || lower.contains("not implemented")
-        || lower.contains("unsupported")
-    {
-        return "This PDF uses a feature Jan can't parse yet (e.g. PostScript color/shading functions). Try re-exporting or \"printing to PDF\" to flatten it, then attach again.".to_string();
-    }
-    format!("Couldn't read this PDF ({raw}). It may be corrupted or use an unsupported feature.")
-}
-
 pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
@@ -34,7 +19,7 @@ pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
     // pdf-extract can panic on some malformed PDFs; guard to avoid crashing the app
     let text = match catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(&bytes))) {
         Ok(Ok(t)) => t,
-        Ok(Err(e)) => return Err(RagError::ParseError(friendly_pdf_error(&e.to_string()))),
+        Ok(Err(e)) => return Err(RagError::ParseError(format!("PDF parse error: {}", e))),
         Err(payload) => {
             let reason = if let Some(s) = payload.downcast_ref::<&str>() {
                 *s
@@ -43,7 +28,10 @@ pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
             } else {
                 "unknown parser panic"
             };
-            return Err(RagError::ParseError(friendly_pdf_error(reason)));
+            return Err(RagError::ParseError(format!(
+                "PDF parsing failed unexpectedly: {}",
+                reason
+            )));
         }
     };
 
@@ -359,26 +347,5 @@ fn read_text_auto(file_path: &str) -> Result<String, RagError> {
         Ok(String::from_utf8_lossy(&bytes).to_string())
     } else {
         Ok(decoded.to_string())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::friendly_pdf_error;
-
-    #[test]
-    fn unsupported_feature_panics_get_actionable_hint() {
-        for raw in ["unhandled function type 4", "Feature not implemented", "unsupported encoding"] {
-            let msg = friendly_pdf_error(raw);
-            assert!(msg.contains("can't parse yet"), "raw={raw} -> {msg}");
-            assert!(!msg.contains("function type"), "internal text leaked: {msg}");
-        }
-    }
-
-    #[test]
-    fn other_failures_fall_back_to_generic_message() {
-        let msg = friendly_pdf_error("xref table corrupted");
-        assert!(msg.contains("Couldn't read this PDF"));
-        assert!(msg.contains("xref table corrupted"));
     }
 }
