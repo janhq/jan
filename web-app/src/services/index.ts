@@ -31,6 +31,8 @@ import { DefaultRAGService } from './rag/default'
 import type { RAGService } from './rag/types'
 import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
+import { DefaultAgentService } from './agent/default'
+import type { AgentService } from './agent/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -76,6 +78,7 @@ export interface ServiceHub {
   projects(): ProjectsService
   rag(): RAGService
   uploads(): UploadsService
+  agent(): AgentService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -100,6 +103,7 @@ class PlatformServiceHub implements ServiceHub {
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
+  private agentService: AgentService = new DefaultAgentService()
   private initialized = false
 
   /**
@@ -132,6 +136,7 @@ class PlatformServiceHub implements ServiceHub {
           pathModule,
           coreModule,
           deepLinkModule,
+          agentModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -146,6 +151,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./path/tauri'),
           import('./core/tauri'),
           import('./deeplink/tauri'),
+          import('./agent/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -161,6 +167,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+        this.agentService = new agentModule.TauriAgentService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -322,6 +329,11 @@ class PlatformServiceHub implements ServiceHub {
   uploads(): UploadsService {
     this.ensureInitialized()
     return this.uploadsService
+  }
+
+  agent(): AgentService {
+    this.ensureInitialized()
+    return this.agentService
   }
 }
 
