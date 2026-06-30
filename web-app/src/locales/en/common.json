@@ -3,6 +3,8 @@
     "title": "Agent Debug",
     "modelLabel": "Model",
     "modelAuto": "Auto (first running model)",
+    "toolsLabel": "Tools",
+    "noTools": "No MCP tools available.",
     "promptLabel": "Prompt",
     "promptPlaceholder": "Type a message for the agent loop...",
     "run": "Run",

@@ -27,6 +27,9 @@ export interface AgentRunBody {
   messages: AgentRunMessage[]
   model?: string
   max_turns?: number
+  /** Per-run MCP tool allowlist (by tool name). Omit for all tools; empty
+   * array for none. */
+  allowed_tools?: string[]
   [key: string]: unknown
 }
 

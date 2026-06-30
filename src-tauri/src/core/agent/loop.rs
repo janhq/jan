@@ -89,6 +89,24 @@ pub(crate) async fn run_orchestration_streamed(
     result
 }
 
+/// Restrict the collected MCP tools to `allowed` (by tool name), pruning both
+/// the OpenAI tool array and the tool->server routing map in lockstep.
+fn apply_tool_allowlist(
+    openai_tools: &mut Vec<serde_json::Value>,
+    tool_to_server: &mut HashMap<String, String>,
+    allowed: &[String],
+) {
+    let allow: std::collections::HashSet<&str> = allowed.iter().map(String::as_str).collect();
+    openai_tools.retain(|t| {
+        t.get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+            .map(|n| allow.contains(n))
+            .unwrap_or(false)
+    });
+    tool_to_server.retain(|name, _| allow.contains(name.as_str()));
+}
+
 fn stop_reason_of(completion: &serde_json::Value) -> String {
     completion
         .get("choices")
@@ -157,8 +175,18 @@ async fn orchestrate_inner(
     }
     let model_id = model_id.ok_or("No running model sessions available")?;
 
-    let (openai_tools, tool_to_server) =
+    let (mut openai_tools, mut tool_to_server) =
         collect_mcp_openai_tools(mcp_servers, mcp_settings).await?;
+
+    // Optional per-run allowlist: when `allowed_tools` is present, expose only
+    // those MCP tools (an empty array means no tools). Absent = all tools.
+    if let Some(allowed) = json_body.get("allowed_tools").and_then(|v| v.as_array()) {
+        let names: Vec<String> = allowed
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+        apply_tool_allowlist(&mut openai_tools, &mut tool_to_server, &names);
+    }
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
         &model_id,
@@ -291,5 +319,34 @@ mod tests {
     fn stop_reason_defaults_when_absent() {
         assert_eq!(stop_reason_of(&json!({ "choices": [] })), "stop");
         assert_eq!(stop_reason_of(&json!({})), "stop");
+    }
+
+    #[test]
+    fn tool_allowlist_keeps_only_named_tools() {
+        let mut tools = vec![
+            json!({ "type": "function", "function": { "name": "search" } }),
+            json!({ "type": "function", "function": { "name": "write" } }),
+        ];
+        let mut map = HashMap::from([
+            ("search".to_string(), "srv".to_string()),
+            ("write".to_string(), "srv".to_string()),
+        ]);
+
+        apply_tool_allowlist(&mut tools, &mut map, &["search".to_string()]);
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["function"]["name"], "search");
+        assert_eq!(map.keys().collect::<Vec<_>>(), vec!["search"]);
+    }
+
+    #[test]
+    fn tool_allowlist_empty_removes_all() {
+        let mut tools = vec![json!({ "type": "function", "function": { "name": "search" } })];
+        let mut map = HashMap::from([("search".to_string(), "srv".to_string())]);
+
+        apply_tool_allowlist(&mut tools, &mut map, &[]);
+
+        assert!(tools.is_empty());
+        assert!(map.is_empty());
     }
 }
