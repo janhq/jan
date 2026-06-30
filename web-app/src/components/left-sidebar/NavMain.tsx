@@ -1,4 +1,5 @@
 import { LucideIcon } from 'lucide-react'
+import { IconRobot } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -132,6 +133,12 @@ const getNavMainItems = (
     title: 'common:settings',
     url: route.settings.general,
     animatedIcon: SettingsIcon,
+  },
+  // TEMP: smoke-test entry for the agent loop; remove before ship.
+  {
+    title: 'common:agentDebug.title',
+    url: route.agentDebug,
+    icon: IconRobot,
   },
 ]
 

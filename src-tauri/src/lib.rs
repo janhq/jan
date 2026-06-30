@@ -69,6 +69,9 @@ macro_rules! invoke_commands_with_extras {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Agent commands
+        core::agent::commands::agent_run,
+        core::agent::commands::agent_cancel,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -270,6 +273,7 @@ pub fn run() {
             model_param_defaults: Arc::new(Mutex::new(HashMap::new())),
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
+        .manage(core::agent::commands::AgentRuns::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
