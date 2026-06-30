@@ -87,16 +87,6 @@ macro_rules! invoke_commands_with_extras {
         // Agent commands
         core::agent::commands::agent_run,
         core::agent::commands::agent_cancel,
-        core::agent::commands::agent_permission_respond,
-        core::agent::commands::agent_skill_list,
-        core::agent::commands::agent_skill_read,
-        core::agent::commands::agent_skill_write,
-        core::agent::commands::agent_skill_delete,
-        core::agent::commands::agent_skill_hub_list,
-        core::agent::commands::agent_skill_hub_import,
-        core::agent::commands::agent_skill_enabled_get,
-        core::agent::commands::agent_skill_enabled_set,
-        core::agent::commands::agent_git_branch,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -316,7 +306,6 @@ pub fn run() {
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(core::agent::commands::AgentRuns::default())
-        .manage(core::agent::commands::AgentPermissions::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
