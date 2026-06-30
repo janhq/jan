@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod app;
 #[cfg(feature = "cli")]
 pub mod cli;
