@@ -53,6 +53,20 @@ vi.mock('@/hooks/useServiceHub', () => ({
   }),
 }))
 
+const uploadsHoisted = vi.hoisted(() => ({
+  ingestMock: vi.fn(),
+  progress: {} as Record<string, { current: number; total: number }>,
+}))
+const { ingestMock } = uploadsHoisted
+vi.mock('@/stores/project-uploads-store', () => ({
+  useProjectUploads: (selector: (s: unknown) => unknown) =>
+    selector({
+      progress: uploadsHoisted.progress,
+      completedTick: {},
+      ingest: uploadsHoisted.ingestMock,
+    }),
+}))
+
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: () => ({
@@ -61,12 +75,17 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
+const coreHoisted = vi.hoisted(() => ({
+  fileStatMock: vi.fn(),
+  readdirSyncMock: vi.fn(),
+}))
+const { fileStatMock, readdirSyncMock } = coreHoisted
 vi.mock('@janhq/core', () => ({
   ExtensionTypeEnum: { VectorDB: 'vectordb' },
   VectorDBExtension: class {},
   fs: {
-    fileStat: vi.fn().mockResolvedValue({ isDirectory: false, size: 100 }),
-    readdirSync: vi.fn().mockResolvedValue([]),
+    fileStat: coreHoisted.fileStatMock,
+    readdirSync: coreHoisted.readdirSyncMock,
   },
 }))
 
@@ -97,6 +116,10 @@ describe('ProjectFiles', () => {
     extMock.listAttachmentsForProject = listAttachmentsForProjectMock
     extMock.deleteFileForProject = deleteFileForProjectMock
     listAttachmentsForProjectMock.mockResolvedValue([])
+    fileStatMock.mockReset().mockResolvedValue({ isDirectory: false, size: 100 })
+    readdirSyncMock.mockReset().mockResolvedValue([])
+    ingestMock.mockReset()
+    uploadsHoisted.progress = {}
   })
 
   it('shows loader while files are loading', () => {
@@ -249,5 +272,150 @@ describe('ProjectFiles', () => {
     const dropzone = container.querySelector('.border-dashed') as HTMLElement
     fireEvent.drop(dropzone, { dataTransfer: { items: [], files: [] } })
     await waitFor(() => expect(toastMock.info).toHaveBeenCalled())
+  })
+
+  // ---------- Upload flow: processFilePaths + ingest + humanizeUploadError ----------
+
+  async function clickUpload() {
+    render(<ProjectFiles projectId="p1" lng="en" />)
+    await waitFor(() =>
+      expect(screen.getByText('common:projects.processButton')).toBeInTheDocument()
+    )
+    fireEvent.click(screen.getByText('common:projects.processButton'))
+  }
+
+  const lastErrorDescription = () =>
+    (toastMock.error.mock.calls.at(-1)?.[1] as { description?: string })
+      ?.description
+
+  it('ingests a selected file and toasts success', async () => {
+    dialogOpenMock.mockResolvedValue(['/docs/report.pdf'])
+    ingestMock.mockImplementation(async (_pid, atts, _fn, opts) => {
+      expect(atts).toHaveLength(1)
+      expect(atts[0]).toMatchObject({ path: '/docs/report.pdf', fileType: 'pdf' })
+      opts.onSuccess()
+    })
+    await clickUpload()
+    await waitFor(() => expect(ingestMock).toHaveBeenCalledWith(
+      'p1', expect.any(Array), expect.any(Function), expect.any(Object)
+    ))
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalled())
+  })
+
+  it.each([
+    [{ ParseError: 'PDF parsing failed unexpectedly: unhandled function type 4' }, 'pdfUnsupportedFeature'],
+    [{ ParseError: 'PDF parse error: invalid start value in xref table' }, 'pdfMalformedXref'],
+    [{ ParseError: 'PDF appears to be image-based or scanned' }, 'pdfScanned'],
+    [{ ParseError: 'PDF is encrypted, password required' }, 'pdfEncrypted'],
+    [{ UnsupportedFileType: 'odt' }, 'unsupportedType'],
+    [{ IoError: 'disk gone' }, 'ioError'],
+    [{ ParseError: 'totally weird failure' }, 'parseGeneric'],
+  ])(
+    'maps RagError %j to uploadFailed.%s',
+    async (ragError, key) => {
+      dialogOpenMock.mockResolvedValue(['/docs/report.pdf'])
+      ingestMock.mockImplementation(async (_pid, _atts, _fn, opts) => {
+        opts.onError(ragError, 'report.pdf')
+      })
+      await clickUpload()
+      await waitFor(() => expect(toastMock.error).toHaveBeenCalled())
+      expect(lastErrorDescription()).toBe(`common:toast.uploadFailed.${key}`)
+    }
+  )
+
+  it('warns and skips unsupported file extensions without ingesting', async () => {
+    dialogOpenMock.mockResolvedValue(['/docs/archive.zzz'])
+    await clickUpload()
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled())
+    expect(ingestMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects files exceeding the max size without ingesting', async () => {
+    fileStatMock.mockResolvedValue({ isDirectory: false, size: 50 * 1024 * 1024 })
+    dialogOpenMock.mockResolvedValue(['/docs/huge.pdf'])
+    await clickUpload()
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'common:errors.fileTooLarge',
+        expect.any(Object)
+      )
+    )
+    expect(ingestMock).not.toHaveBeenCalled()
+  })
+
+  it('skips duplicates already attached to the project', async () => {
+    listAttachmentsForProjectMock.mockResolvedValue([
+      { id: 'd1', name: 'report.pdf', path: '/docs/report.pdf', chunk_count: 1 },
+    ])
+    dialogOpenMock.mockResolvedValue(['/docs/report.pdf'])
+    render(<ProjectFiles projectId="p1" lng="en" />)
+    await waitFor(() =>
+      expect(screen.getAllByText('report.pdf').length).toBeGreaterThan(0)
+    )
+    fireEvent.click(screen.getByText('common:projects.processButton'))
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled())
+    expect(ingestMock).not.toHaveBeenCalled()
+  })
+
+  it('renders the upload progress bar while an ingest is in flight', async () => {
+    uploadsHoisted.progress = { p1: { current: 1, total: 3 } }
+    render(<ProjectFiles projectId="p1" lng="en" />)
+    await waitFor(() =>
+      expect(screen.getByText('common:projects.uploadingFiles')).toBeInTheDocument()
+    )
+    expect(screen.getByText('1 / 3')).toBeInTheDocument()
+    expect(screen.getByTestId('progress')).toHaveAttribute('data-value', String((1 / 3) * 100))
+  })
+
+  it('ingests files dropped with Tauri paths via dataTransfer.items', async () => {
+    ingestMock.mockImplementation(async (_pid, atts, _fn, opts) => {
+      expect(atts[0]).toMatchObject({ path: '/dropped/a.pdf', fileType: 'pdf' })
+      opts.onSuccess()
+    })
+    const { container } = render(<ProjectFiles projectId="p1" lng="en" />)
+    await waitFor(() =>
+      expect(screen.getByText('common:projects.filesDescription')).toBeInTheDocument()
+    )
+    const dropzone = container.querySelector('.border-dashed') as HTMLElement
+    const file = Object.assign(new File(['x'], 'a.pdf'), { path: '/dropped/a.pdf' })
+    fireEvent.drop(dropzone, {
+      dataTransfer: {
+        items: [{ kind: 'file', getAsFile: () => file }],
+        files: [],
+      },
+    })
+    await waitFor(() => expect(ingestMock).toHaveBeenCalled())
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalled())
+  })
+
+  it('falls back to dataTransfer.files when items are unavailable', async () => {
+    ingestMock.mockImplementation(async (_pid, atts, _fn, opts) => {
+      expect(atts[0]).toMatchObject({ path: '/web/b.pdf' })
+      opts.onSuccess()
+    })
+    const { container } = render(<ProjectFiles projectId="p1" lng="en" />)
+    await waitFor(() =>
+      expect(screen.getByText('common:projects.filesDescription')).toBeInTheDocument()
+    )
+    const dropzone = container.querySelector('.border-dashed') as HTMLElement
+    const file = Object.assign(new File(['x'], 'b.pdf'), { path: '/web/b.pdf' })
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } })
+    await waitFor(() => expect(ingestMock).toHaveBeenCalled())
+  })
+
+  it('recursively gathers supported files from a dropped directory', async () => {
+    fileStatMock.mockImplementation(async (p: string) => ({
+      isDirectory: p === '/dir',
+      size: 100,
+    }))
+    readdirSyncMock.mockResolvedValue(['/dir/a.pdf', '/dir/skip.bin'])
+    dialogOpenMock.mockResolvedValue(['/dir'])
+    ingestMock.mockImplementation(async (_pid, atts, _fn, opts) => {
+      // only the supported .pdf survives the SUPPORTED_EXTENSIONS filter
+      expect(atts.map((a: { path: string }) => a.path)).toEqual(['/dir/a.pdf'])
+      opts.onSuccess()
+    })
+    await clickUpload()
+    await waitFor(() => expect(ingestMock).toHaveBeenCalled())
   })
 })

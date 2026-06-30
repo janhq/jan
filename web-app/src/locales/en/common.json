@@ -482,6 +482,7 @@
       "pdfMalformedXref": "{{subject}} has a malformed PDF cross-reference table and could not be parsed. Try opening it in a PDF viewer and re-saving it (File → Print → Save as PDF), then upload again.",
       "pdfScanned": "{{subject}} appears to be a scanned or image-based PDF. OCR isn't supported yet — please upload a text-based PDF.",
       "pdfEncrypted": "{{subject}} is password-protected. Remove the password and try again.",
+      "pdfUnsupportedFeature": "{{subject}} uses a PDF feature Jan can't parse yet (e.g. PostScript color/shading functions). Try re-saving it (File → Print → Save as PDF) to flatten it, then upload again.",
       "pdfGeneric": "{{subject}} could not be parsed as a PDF. The file may be corrupted or uses an unsupported PDF feature.",
       "fileTooLarge": "{{subject}} is too large. {{message}}.",
       "unsupportedType": "File type \"{{type}}\" is not supported.",

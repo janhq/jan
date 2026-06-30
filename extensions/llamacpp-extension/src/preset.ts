@@ -144,13 +144,14 @@ export async function generatePreset(
     lines.push(`fit-ctx = ${fitCtxNum}`)
   }
   // ctx-size: llama.cpp's own default loads the model's full trained context,
-  // which can OOM on large-context models. Default to 8192 when the user hasn't
-  // set a positive value. Skip entirely when auto-fit is enabled — fit owns
-  // context sizing and an explicit ctx-size would override it.
+  // which can OOM on large-context models. Fall back to 8192 only when the
+  // value is unset; an explicit 0 is honored as "native" (load from model).
+  // Skip entirely when auto-fit is enabled — fit owns context sizing and an
+  // explicit ctx-size would override it.
   const fitEnabled = config.fit !== false
   if (!fitEnabled) {
     const ctxSize =
-      typeof config.ctx_size === 'number' && config.ctx_size > 0
+      typeof config.ctx_size === 'number' && Number.isFinite(config.ctx_size) && config.ctx_size >= 0
         ? config.ctx_size
         : DEFAULT_CTX_SIZE
     lines.push(`ctx-size = ${ctxSize}`)
@@ -345,12 +346,16 @@ export async function generatePreset(
 
     // Per-model overrides — same default-skipping rules as the [*] block.
     // ctx-size is skipped when auto-fit is on so fit can size the context.
+    // An explicit 0 overrides the global default with "native" (load from model).
+    let ctxEmitted = false
     if (
       !fitEnabled &&
       typeof mc.ctx_size === 'number' &&
-      mc.ctx_size > 0
+      Number.isFinite(mc.ctx_size) &&
+      mc.ctx_size >= 0
     ) {
       lines.push(`ctx-size = ${mc.ctx_size}`)
+      ctxEmitted = true
     }
     if (typeof mc.n_gpu_layers === 'number' && mc.n_gpu_layers >= 0) {
       lines.push(`n-gpu-layers = ${mc.n_gpu_layers}`)
@@ -471,6 +476,13 @@ export async function generatePreset(
     if (mc.embedding === true) {
       embeddingCount++
       lines.push('embeddings = true')
+      // Embedders have a small trained context (e.g. MiniLM = 512). Without an
+      // explicit override they inherit the global [*] ctx-size (8192), which
+      // exceeds n_ctx_train and fails to load. Pin to native (0 = load from
+      // model) unless model.yml already set a positive per-model ctx-size.
+      if (!ctxEmitted) {
+        lines.push('ctx-size = 0')
+      }
       const pooling =
         typeof mc.pooling === 'string' && mc.pooling.length > 0
           ? mc.pooling

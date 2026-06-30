@@ -61,6 +61,7 @@ import {
   readGgufMetadata,
   isModelSupported,
   unloadLlamaModel,
+  reloadRouterModels,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -79,6 +80,12 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+
+// Upstream build that added the `GET /models?reload=1` diff/reconcile path
+// (llama.cpp #21848). At/above this, a preset change can be hot-applied without
+// restarting the router (unchanged models stay loaded); below it we must do a
+// full process restart.
+const RELOAD_MIN_BUILD = 9023
 
 // Provider settings that end up in `router.preset.ini` (`[*]` global section
 // in preset.ts). Mutating any of these requires a router restart so the new
@@ -730,6 +737,44 @@ export default class llamacpp_extension extends AIEngine {
     logger.info(
       `Router started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax} [user=${userModelsMax}, +${embeddingSlotBonus} embedding, ${embeddingCount} installed], preset=${presetPath})`
     )
+  }
+
+  /**
+   * Apply a preset change (model added/removed/renamed or a per-model setting)
+   * to the router. On a backend with the reload diff path (b9023+), regenerate
+   * `router.preset.ini` and hot-reload via `GET /models?reload=1` — models whose
+   * preset is unchanged stay loaded, so an embedder import or a settings write no
+   * longer cold-reloads the user's chat model. Falls back to a full restart when
+   * the router isn't running yet, the backend is too old, or the reload fails.
+   */
+  private async refreshRouterPreset(): Promise<void> {
+    if (!(await this.getRouterInfo())) {
+      await this.startRouter() // cold start
+      return
+    }
+
+    const versionBackend = this.config?.version_backend
+    const version = versionBackend?.split('/')[0]
+    const build = version ? parseBuildNumber(version) : null
+    if (build === null || build < RELOAD_MIN_BUILD) {
+      await this.startRouter() // backend predates live reload
+      return
+    }
+
+    const providerPath = await this.getProviderPath()
+    const janDataFolderPath = await getJanDataFolderPath()
+    const supportsMtp = build >= MTP_MIN_BUILD
+    await generatePreset(providerPath, janDataFolderPath, this.config, {
+      supportsMtp,
+    })
+
+    try {
+      await reloadRouterModels()
+      logger.info('Router preset hot-reloaded without restart')
+    } catch (e) {
+      logger.warn('Live router reload failed; falling back to restart:', e)
+      await this.startRouter()
+    }
   }
 
   /**
@@ -2327,7 +2372,7 @@ export default class llamacpp_extension extends AIEngine {
     // The router's preset still references the old model id until we
     // regenerate; without this a `POST /models/load <new-id>` would 404.
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
     }
@@ -2598,7 +2643,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Router refresh after import(${modelId}) failed:`, e)
     }
@@ -3046,7 +3091,7 @@ export default class llamacpp_extension extends AIEngine {
     await fs.rm(modelDir)
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Router refresh after delete(${modelId}) failed:`, e)
     }
@@ -3175,7 +3220,7 @@ export default class llamacpp_extension extends AIEngine {
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
     }
@@ -3230,7 +3275,7 @@ export default class llamacpp_extension extends AIEngine {
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(
         `Failed to restart router after model settings update for ${modelId}`,

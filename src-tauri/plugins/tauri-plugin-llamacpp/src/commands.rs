@@ -530,6 +530,34 @@ pub async fn get_router_info<R: Runtime>(
     }))
 }
 
+/// Live-reload the router's preset (`GET /models?reload=1`) without restarting
+/// the process. The router diffs the regenerated `router.preset.ini` against the
+/// running set: models with unchanged presets stay loaded, only changed/removed
+/// ones are unloaded, and newly-added ones are registered. Requires a backend
+/// with the reload diff path (upstream b9023+); the TS caller gates on build.
+#[tauri::command]
+pub async fn reload_router_models<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<(), String> {
+    let (port, api_key, _pid) = router_endpoint(&app_handle).await?;
+    let client = http_client().await;
+    let url = format!("http://127.0.0.1:{}/models", port);
+    let resp = client
+        .get(&url)
+        .query(&[("reload", "1")])
+        .bearer_auth(&api_key)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "router reload returned HTTP {}",
+            resp.status().as_u16()
+        ));
+    }
+    Ok(())
+}
+
 /// Best-effort idle check; returns `Ok(true)` on any error so callers
 /// never block on a transient `/slots` failure.
 #[tauri::command]
