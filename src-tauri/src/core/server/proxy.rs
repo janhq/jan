@@ -30,11 +30,7 @@ pub(crate) use crate::core::agent::r#loop::run_server_side_openai_orchestration;
 pub(crate) use crate::core::agent::upstream::{
     call_openai_chat_completions, collect_mcp_openai_tools, copy_optional_chat_params,
     execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
-    parse_openai_messages, repair_dangling_tool_calls, resolve_upstream_for_model,
-    set_system_prompt,
-};
-use crate::core::openai_schema::{
-    http_status_indicates_api_key_retry, normalize_openai_tools_in_chat_body,
+    parse_openai_messages, resolve_upstream_for_model, set_system_prompt,
 };
 
 type ResBody = BoxBody<Bytes, Infallible>;
@@ -583,10 +579,7 @@ pub(crate) async fn router_upstream(
     })
 }
 
-pub(crate) async fn router_list_models(
-    llama_state: &LlamacppState,
-    client: &Client,
-) -> Vec<String> {
+pub(crate) async fn router_list_models(llama_state: &LlamacppState, client: &Client) -> Vec<String> {
     let (url, key) = {
         let guard = llama_state.router.lock().await;
         match guard.as_ref() {
