@@ -95,6 +95,9 @@ export const MessageItem = memo(
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
+    const foldInterstitialReasoning = useInterfaceSettings(
+      (s) => s.foldInterstitialReasoning
+    )
     const metadata = message.metadata as Record<string, unknown> | undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
@@ -590,15 +593,58 @@ export const MessageItem = memo(
     const renderedParts = useMemo(() => {
       const parts = message.parts as any[]
       const elements: React.ReactNode[] = []
+      const isCotPart = (t: string) =>
+        t === CONTENT_TYPE.REASONING || t.startsWith('tool-')
 
-      // Anchor the working trace at the last reasoning/tool part: everything up
-      // to it (reasoning, tools, step-start markers, interstitial narration)
-      // folds into a single collapsible CoT group; only the trailing answer
-      // text/files render in the main message body.
+      // Split mode: walk parts sequentially and flush the trace whenever a
+      // non-empty answer (text/file) interrupts it, so content emitted between
+      // two reasoning blocks renders as a normal message instead of folding in.
+      if (!foldInterstitialReasoning) {
+        let cotEntries: PartEntry[] = []
+        let groupSeq = 0
+        const flushCot = (hasFollowing: boolean) => {
+          if (cotEntries.length === 0) return
+          elements.push(
+            renderCotGroup(
+              cotEntries,
+              `${message.id}-cot-${groupSeq++}`,
+              hasFollowing
+            )
+          )
+          cotEntries = []
+        }
+
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i]
+          const t = part.type as string
+          if (isCotPart(t)) {
+            cotEntries.push({ part, index: i })
+            continue
+          }
+          if (t === CONTENT_TYPE.TEXT) {
+            if (!part.text || part.text.trim() === '') continue
+            flushCot(true)
+            elements.push(
+              renderTextPart(part as { type: 'text'; text: string }, i)
+            )
+            continue
+          }
+          if (t === CONTENT_TYPE.FILE) {
+            flushCot(true)
+            elements.push(renderFilePart(part as any, i))
+          }
+        }
+        flushCot(false)
+        return elements
+      }
+
+      // Fold mode (default): anchor the working trace at the last reasoning/tool
+      // part — everything up to it (reasoning, tools, step-start markers,
+      // interstitial narration) folds into a single collapsible CoT group; only
+      // the trailing answer text/files render in the main message body.
       let lastCotAnchor = -1
       for (let i = 0; i < parts.length; i++) {
-        const t = parts[i].type
-        if (t === CONTENT_TYPE.REASONING || t.startsWith('tool-')) {
+        if (isCotPart(parts[i].type)) {
           lastCotAnchor = i
         }
       }
@@ -635,7 +681,13 @@ export const MessageItem = memo(
 
       return elements
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [message.parts, isStreaming, isReasoningAtBottom, grounding])
+    }, [
+      message.parts,
+      isStreaming,
+      isReasoningAtBottom,
+      grounding,
+      foldInterstitialReasoning,
+    ])
 
     const versionNav =
       versionInfo && versionInfo.count > 1 && onSwitchVersion ? (
