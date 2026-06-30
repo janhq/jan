@@ -1,4 +1,18 @@
 {
+  "agentDebug": {
+    "title": "Agent Debug",
+    "modelLabel": "Model",
+    "modelAuto": "Auto (first running model)",
+    "promptLabel": "Prompt",
+    "promptPlaceholder": "Type a message for the agent loop...",
+    "run": "Run",
+    "running": "Running...",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "output": "Streamed output",
+    "eventLog": "Event log",
+    "empty": "No events yet."
+  },
   "htmlArtifact": {
     "code": "Code",
     "preview": "Preview",
