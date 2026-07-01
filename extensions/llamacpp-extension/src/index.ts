@@ -41,6 +41,7 @@ import {
   verifyBackendInstallation,
   getBackendExePath,
   getBackendDir,
+  getLocalInstalledBackends,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -60,6 +61,7 @@ import {
   readGgufMetadata,
   isModelSupported,
   unloadLlamaModel,
+  reloadRouterModels,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -78,6 +80,12 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+
+// Upstream build that added the `GET /models?reload=1` diff/reconcile path
+// (llama.cpp #21848). At/above this, a preset change can be hot-applied without
+// restarting the router (unchanged models stay loaded); below it we must do a
+// full process restart.
+const RELOAD_MIN_BUILD = 9023
 
 // Provider settings that end up in `router.preset.ini` (`[*]` global section
 // in preset.ts). Mutating any of these requires a router restart so the new
@@ -180,6 +188,20 @@ const MODEL_PROVIDER_LOCAL_STORAGE_KEY = 'model-provider'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
   'llamacpp_model_yaml_backfill_v1'
 
+// Sampling defaults are floats/ints where 0 is a meaningful value (e.g.
+// temperature=0), so unlike ctx_len these coercions keep 0 and only reject
+// blank/non-finite input.
+const coerceFloatSetting = (v: unknown): YamlSettingValue => {
+  if (v === '' || v == null) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+const coerceIntSetting = (v: unknown): YamlSettingValue => {
+  if (v === '' || v == null) return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? Math.floor(n) : null
+}
+
 const MODEL_SETTINGS_YAML_MAPPING: Record<
   string,
   {
@@ -187,6 +209,21 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
     coerce: (v: unknown) => YamlSettingValue
   }
 > = {
+  // Sampling defaults: persisted to model.yml and emitted into the router
+  // preset so they apply server-side to every request (chat and external API),
+  // overridable per-request. Keys mirror MODEL_SAMPLING_SETTING_KEYS in the
+  // web-app transport.
+  temperature: { yamlKey: 'temperature', coerce: coerceFloatSetting },
+  top_k: { yamlKey: 'top_k', coerce: coerceIntSetting },
+  top_p: { yamlKey: 'top_p', coerce: coerceFloatSetting },
+  min_p: { yamlKey: 'min_p', coerce: coerceFloatSetting },
+  repeat_last_n: { yamlKey: 'repeat_last_n', coerce: coerceIntSetting },
+  repeat_penalty: { yamlKey: 'repeat_penalty', coerce: coerceFloatSetting },
+  presence_penalty: { yamlKey: 'presence_penalty', coerce: coerceFloatSetting },
+  frequency_penalty: {
+    yamlKey: 'frequency_penalty',
+    coerce: coerceFloatSetting,
+  },
   ctx_len: {
     yamlKey: 'ctx_size',
     coerce: (v) => {
@@ -703,6 +740,44 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+   * Apply a preset change (model added/removed/renamed or a per-model setting)
+   * to the router. On a backend with the reload diff path (b9023+), regenerate
+   * `router.preset.ini` and hot-reload via `GET /models?reload=1` — models whose
+   * preset is unchanged stay loaded, so an embedder import or a settings write no
+   * longer cold-reloads the user's chat model. Falls back to a full restart when
+   * the router isn't running yet, the backend is too old, or the reload fails.
+   */
+  private async refreshRouterPreset(): Promise<void> {
+    if (!(await this.getRouterInfo())) {
+      await this.startRouter() // cold start
+      return
+    }
+
+    const versionBackend = this.config?.version_backend
+    const version = versionBackend?.split('/')[0]
+    const build = version ? parseBuildNumber(version) : null
+    if (build === null || build < RELOAD_MIN_BUILD) {
+      await this.startRouter() // backend predates live reload
+      return
+    }
+
+    const providerPath = await this.getProviderPath()
+    const janDataFolderPath = await getJanDataFolderPath()
+    const supportsMtp = build >= MTP_MIN_BUILD
+    await generatePreset(providerPath, janDataFolderPath, this.config, {
+      supportsMtp,
+    })
+
+    try {
+      await reloadRouterModels()
+      logger.info('Router preset hot-reloaded without restart')
+    } catch (e) {
+      logger.warn('Live router reload failed; falling back to restart:', e)
+      await this.startRouter()
+    }
+  }
+
+  /**
    * Public accessor for downstream consumers. Returns `null` if the router
    * hasn't been started successfully yet.
    */
@@ -732,7 +807,14 @@ export default class llamacpp_extension extends AIEngine {
    * the post-fit value — what `fit_ctx` settled on — so it's the right
    * denominator for the token-usage popup.
    */
-  async getModelProps(modelId: string): Promise<ModelProps | undefined> {
+  async getModelProps(
+    modelId: string
+  ): Promise<
+    | (ModelProps & {
+        modalities?: { vision: boolean; video: boolean; audio: boolean }
+      })
+    | undefined
+  > {
     const router = await this.getRouterInfo()
     if (!router || !modelId) return undefined
     // Router runs with models_autoload=true, so `/props?model=X` against an
@@ -754,15 +836,20 @@ export default class llamacpp_extension extends AIEngine {
         total_slots?: number
         model_alias?: string
         is_sleeping?: boolean
+        modalities?: { vision?: boolean; video?: boolean; audio?: boolean }
       }
       const n = json?.default_generation_settings?.n_ctx
       if (typeof n !== 'number' || n <= 0) return undefined
+      const m = json.modalities
       return {
         nCtx: n,
         totalSlots:
           typeof json.total_slots === 'number' ? json.total_slots : undefined,
         modelAlias: json.model_alias,
         isSleeping: !!json.is_sleeping,
+        modalities: m
+          ? { vision: !!m.vision, video: !!m.video, audio: !!m.audio }
+          : undefined,
       }
     } catch {
       return undefined
@@ -1939,6 +2026,10 @@ export default class llamacpp_extension extends AIEngine {
           )
           if (caps.vision) capabilities.push('vision')
           if (caps.audio) capabilities.push('audio')
+          // 'video' is intentionally NOT derived from the mmproj here — video
+          // support also depends on the backend being built with MTMD_VIDEO,
+          // which the GGUF can't reveal. It's reconciled from /props after the
+          // model loads (see useReconcileVideoCapability).
         }
 
         const mp = modelConfig.model_path ?? ''
@@ -2131,12 +2222,9 @@ export default class llamacpp_extension extends AIEngine {
     const expectedBinDir = await joinPath([backendDir, 'build', 'bin'])
     const expectedBinPath = await joinPath([expectedBinDir, serverName])
 
-    // Archive layouts vary: Jan-published tarballs expand to
-    // `<backendDir>/build/bin/llama-server`, while upstream llama.cpp
-    // GitHub release tarballs (e.g. `llama-b9193-bin-...`) expand to
-    // a flat `<backendDir>/llama-bXXXX/llama-server`. If the binary is
-    // not at the expected path, scan the extracted tree for it and
-    // relocate its containing directory into `build/bin/`.
+    // Normalize varying archive layouts to `build/bin/`: Jan tarballs already
+    // ship it; upstream Linux tarballs nest under `llama-bXXXX/`; upstream
+    // Windows zips are flat with the binary + DLLs at the root.
     if (!(await fs.existsSync(expectedBinPath))) {
       const foundDir = await findLlamaServerDir(backendDir, serverName)
       if (!foundDir) {
@@ -2146,19 +2234,23 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
       if (foundDir !== expectedBinDir) {
+        const staging = `${backendDir}.staging`
         try {
-          // Rename the whole directory in one shot — moving entries
-          // individually breaks relative symlinks (libggml.so →
-          // libggml.so.0 → libggml.so.0.10.0) as soon as the first
-          // target is renamed.
-          const buildDir = await joinPath([backendDir, 'build'])
-          await fs.mkdir(buildDir)
-          await fs.mv(foundDir, expectedBinDir)
+          // Move the binary's dir into build/bin in one rename to keep relative
+          // symlinks intact (libggml.so → .so.0 → .so.0.10.0). A flat-root
+          // archive can't rename into its own subtree, so stage to a sibling.
+          if (foundDir === backendDir) {
+            await fs.mv(backendDir, staging)
+            await fs.mkdir(await joinPath([backendDir, 'build']))
+            await fs.mv(staging, expectedBinDir)
+          } else {
+            await fs.mkdir(await joinPath([backendDir, 'build']))
+            await fs.mv(foundDir, expectedBinDir)
+          }
         } catch (e) {
-          await fs.rm(backendDir)
-          throw new Error(
-            `Failed to normalize backend layout: ${String(e)}`
-          )
+          if (await fs.existsSync(staging)) await fs.rm(staging)
+          if (await fs.existsSync(backendDir)) await fs.rm(backendDir)
+          throw new Error(`Failed to normalize backend layout: ${String(e)}`)
         }
       }
     }
@@ -2181,6 +2273,58 @@ export default class llamacpp_extension extends AIEngine {
         `Backend installed but failed to refresh UI: ${String(e)}`
       )
     }
+  }
+
+  /**
+   * Install the supplementary CUDA runtime DLLs that upstream ships separately
+   * (`cudart-llama-bin-<backend>.zip`) into every installed backend of that
+   * type, so llama-server can resolve cublas/cudart at launch.
+   */
+  async installCudaRuntime(path: string): Promise<void> {
+    if (
+      !(await fs.existsSync(path)) ||
+      (!path.endsWith('tar.gz') && !path.endsWith('zip'))
+    ) {
+      throw new Error(`Invalid path or file ${path}`)
+    }
+
+    const archiveName = await basename(path)
+    const match = /^cudart-llama-bin-(.+?)\.(?:tar\.gz|zip)$/.exec(archiveName)
+    if (!match || !match[1]) {
+      throw new Error(
+        `Not a CUDA runtime archive: ${archiveName}. Expected cudart-llama-bin-<backend>.(zip|tar.gz)`
+      )
+    }
+    const backendType = match[1]
+
+    const targets = (await getLocalInstalledBackends()).filter(
+      (b) => b.backend === backendType
+    )
+    if (targets.length === 0) {
+      throw new Error(
+        `No installed "${backendType}" backend found. Install that backend first, then add the CUDA runtime.`
+      )
+    }
+
+    let installed = 0
+    for (const t of targets) {
+      const binDir = await joinPath([
+        await getBackendDir(t.backend, t.version),
+        'build',
+        'bin',
+      ])
+      if (!(await fs.existsSync(binDir))) continue
+      await invoke('decompress', { path, outputDir: binDir })
+      installed++
+    }
+    if (installed === 0) {
+      throw new Error(
+        `Found ${backendType} backend(s) but none had a build/bin directory to install into.`
+      )
+    }
+    logger.info(
+      `CUDA runtime installed into ${installed} ${backendType} backend(s)`
+    )
   }
 
   /**
@@ -2228,7 +2372,7 @@ export default class llamacpp_extension extends AIEngine {
     // The router's preset still references the old model id until we
     // regenerate; without this a `POST /models/load <new-id>` would 404.
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
     }
@@ -2276,8 +2420,17 @@ export default class llamacpp_extension extends AIEngine {
           save_path: localPath,
           proxy: getProxyConfig(),
           sha256:
-            saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
-          size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
+            saveName === 'model.gguf'
+              ? opts.modelSha256
+              : saveName === 'mmproj.gguf'
+                ? opts.mmprojSha256
+                : undefined,
+          size:
+            saveName === 'model.gguf'
+              ? opts.modelSize
+              : saveName === 'mmproj.gguf'
+                ? opts.mmprojSize
+                : undefined,
           model_id: modelId,
         })
         return localPath
@@ -2293,6 +2446,10 @@ export default class llamacpp_extension extends AIEngine {
     let modelPath = await maybeDownload(opts.modelPath, 'model.gguf')
     let mmprojPath = opts.mmprojPath
       ? await maybeDownload(opts.mmprojPath, 'mmproj.gguf')
+      : undefined
+    // MTP draft companion (speculative decoding); paired with the main model.
+    let mtpModelPath = opts.mtpPath
+      ? await maybeDownload(opts.mtpPath, 'mtp.gguf')
       : undefined
 
     if (downloadItems.length > 0) {
@@ -2404,6 +2561,15 @@ export default class llamacpp_extension extends AIEngine {
           `Mmproj GGUF validation successful: version ${mmprojMetadata.version}, tensors: ${mmprojMetadata.tensor_count}`
         )
       }
+
+      // Validate MTP draft and read its head count (the main gguf usually
+      // lacks nextn_predict_layers when MTP ships as a separate file).
+      if (mtpModelPath) {
+        const fullMtpPath = await joinPath([janDataFolderPath, mtpModelPath])
+        const mtpMetadata = await readGgufMetadata(fullMtpPath)
+        const draftLayers = detectMtpLayersFromGgufMeta(mtpMetadata.metadata)
+        mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
+      }
     } catch (error) {
       logger.error('GGUF validation failed:', error)
       throw new Error(
@@ -2418,6 +2584,11 @@ export default class llamacpp_extension extends AIEngine {
     if (mmprojPath) {
       size_bytes += (
         await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))
+      ).size
+    }
+    if (mtpModelPath) {
+      size_bytes += (
+        await fs.fileStat(await joinPath([janDataFolderPath, mtpModelPath]))
       ).size
     }
 
@@ -2440,6 +2611,9 @@ export default class llamacpp_extension extends AIEngine {
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+      // A separate draft gguf is downloaded only to be used — enable MTP by
+      // default. Embedded-MTP models keep MTP opt-in (no flag written here).
+      ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),
@@ -2469,7 +2643,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Router refresh after import(${modelId}) failed:`, e)
     }
@@ -2917,7 +3091,7 @@ export default class llamacpp_extension extends AIEngine {
     await fs.rm(modelDir)
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Router refresh after delete(${modelId}) failed:`, e)
     }
@@ -3046,7 +3220,7 @@ export default class llamacpp_extension extends AIEngine {
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(`Failed to restart router after MTP update for ${modelId}`, e)
     }
@@ -3101,7 +3275,7 @@ export default class llamacpp_extension extends AIEngine {
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
     try {
-      await this.startRouter()
+      await this.refreshRouterPreset()
     } catch (e) {
       logger.warn(
         `Failed to restart router after model settings update for ${modelId}`,

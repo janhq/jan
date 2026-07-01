@@ -35,6 +35,7 @@ type AppState = {
   cancelToolCalls: Record<string, () => void>
   errorMessages: Record<string, AppErrorMessage>
   busyThreads: Record<string, boolean>
+  embeddingThreads: Record<string, boolean>
   currentStreamThreadId?: string
   oomError?: string
   backendError?: string
@@ -76,6 +77,7 @@ type AppState = {
   clearThreadState: (threadId: string) => void
   setCurrentStreamThreadId: (threadId: string | undefined) => void
   setThreadBusy: (threadId: string, busy: boolean) => void
+  setThreadEmbedding: (threadId: string, embedding: boolean) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -95,6 +97,7 @@ export const useAppState = create<AppState>()((set) => ({
   cancelToolCalls: {},
   errorMessages: {},
   busyThreads: {},
+  embeddingThreads: {},
   currentStreamThreadId: undefined,
   setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
   setOomError: (line) => set({ oomError: line }),
@@ -105,6 +108,13 @@ export const useAppState = create<AppState>()((set) => ({
       if (busy) next[threadId] = true
       else delete next[threadId]
       return { busyThreads: next }
+    }),
+  setThreadEmbedding: (threadId, embedding) =>
+    set((state) => {
+      const next = { ...state.embeddingThreads }
+      if (embedding) next[threadId] = true
+      else delete next[threadId]
+      return { embeddingThreads: next }
     }),
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     set(() => ({
@@ -220,12 +230,14 @@ export const useAppState = create<AppState>()((set) => ({
       const cancelToolCalls = { ...state.cancelToolCalls }
       const errorMessages = { ...state.errorMessages }
       const busyThreads = { ...state.busyThreads }
+      const embeddingThreads = { ...state.embeddingThreads }
       delete streamingContents[threadId]
       delete loadingModels[threadId]
       delete promptProgresses[threadId]
       delete cancelToolCalls[threadId]
       delete errorMessages[threadId]
       delete busyThreads[threadId]
+      delete embeddingThreads[threadId]
       return {
         streamingContents,
         loadingModels,
@@ -233,6 +245,7 @@ export const useAppState = create<AppState>()((set) => ({
         cancelToolCalls,
         errorMessages,
         busyThreads,
+        embeddingThreads,
       }
     }),
 }))

@@ -1,0 +1,29 @@
+name: Close stale issues
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639 # v9.1.0
+        with:
+          days-before-stale: 179
+          days-before-close: 1
+          stale-issue-label: stale
+          stale-issue-message: >
+            This issue has had no activity for 179 days and will be closed in 1
+            day if there is no further activity.
+          close-issue-message: >
+            This issue was closed because it has been inactive for over 180 days.
+            Please reopen if it is still relevant.
+          exempt-issue-labels: 'pinned,security,roadmap'
+          operations-per-run: 200
+          days-before-pr-stale: -1
+          days-before-pr-close: -1

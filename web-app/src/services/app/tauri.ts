@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
 import type { FactoryResetOptions, LogEntry } from './types'
 import { DefaultAppService } from './default'
+import { pruneLocalStorageByFlags } from './reset-localstorage'
 
 export class TauriAppService extends DefaultAppService {
   /**
@@ -16,6 +17,11 @@ export class TauriAppService extends DefaultAppService {
    * directories, config files, and `settings.json` based on the keep flags.
    * No frontend snapshot/restore is needed — the file store is preserved or
    * wiped on disk by the Rust side.
+   *
+   * Persisted UI state (selected model, provider list, threads) lives in the
+   * webview localStorage, not the data folder. The reliable clear happens on
+   * next startup via a Rust sentinel (see `main.tsx`) — renderer-side removal
+   * here is a best-effort supplement that races the restart flush.
    */
   async factoryReset(options?: FactoryResetOptions): Promise<void> {
     const { EngineManager } = await import('@janhq/core')
@@ -28,11 +34,18 @@ export class TauriAppService extends DefaultAppService {
 
     const keepAppData = options?.keepAppData ?? false
     const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
+    const clearWebData = options?.clearWebData ?? false
 
-    if (!keepAppData && !keepModelsAndConfigs) {
+    pruneLocalStorageByFlags({ keepAppData, keepModelsAndConfigs })
+
+    if (!keepAppData && !keepModelsAndConfigs && !clearWebData) {
       await invoke('factory_reset')
     } else {
-      await invoke('factory_reset', { keepAppData, keepModelsAndConfigs })
+      await invoke('factory_reset', {
+        keepAppData,
+        keepModelsAndConfigs,
+        clearWebData,
+      })
     }
   }
 

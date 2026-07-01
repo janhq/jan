@@ -32,6 +32,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::force_kill_router_tree,
             commands::force_stop_model,
             commands::get_router_info,
+            commands::reload_router_models,
             commands::router_slots_idle,
             commands::get_devices,
             commands::generate_api_key,

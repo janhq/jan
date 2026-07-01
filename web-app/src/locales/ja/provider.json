@@ -1,5 +1,14 @@
 {
   "addProvider": "プロバイダーを追加",
-  "addOpenAIProvider": "OpenAIプロバイダーを追加",
-  "enterNameForProvider": "プロバイダーの名前を入力してください"
+  "addOpenAIProvider": "カスタムプロバイダーを追加",
+  "enterNameForProvider": "プロバイダー名（例: my-llm-server）",
+  "apiTypeLabel": "API形式",
+  "apiTypeOpenAI": "OpenAI互換",
+  "apiTypeAnthropic": "Anthropic互換",
+  "baseUrlLabel": "ベースURL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "APIキー",
+  "apiKeyPlaceholder": "APIキーを貼り付け",
+  "invalidBaseUrl": "ベースURLは有効なhttp(s) URLである必要があります"
 }

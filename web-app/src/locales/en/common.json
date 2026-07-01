@@ -1,4 +1,9 @@
 {
+  "htmlArtifact": {
+    "code": "Code",
+    "preview": "Preview",
+    "previewStreaming": "Available when generation finishes"
+  },
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
@@ -115,6 +120,7 @@
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
   "failedToLoadModels": "Failed to load models",
   "noModels": "No models found",
+  "noAssistant": "No assistant",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
   "jan": "Jan",
@@ -246,6 +252,10 @@
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
     "description": "Configure model settings to optimize performance and behavior.",
+    "samplingDefaults": {
+      "title": "Default sampling parameters",
+      "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
+    },
     "mtp": {
       "section": "Multi-Token Prediction (MTP)",
       "enable": "Enable MTP",
@@ -478,6 +488,7 @@
       "pdfMalformedXref": "{{subject}} has a malformed PDF cross-reference table and could not be parsed. Try opening it in a PDF viewer and re-saving it (File → Print → Save as PDF), then upload again.",
       "pdfScanned": "{{subject}} appears to be a scanned or image-based PDF. OCR isn't supported yet — please upload a text-based PDF.",
       "pdfEncrypted": "{{subject}} is password-protected. Remove the password and try again.",
+      "pdfUnsupportedFeature": "{{subject}} uses a PDF feature Jan can't parse yet (e.g. PostScript color/shading functions). Try re-saving it (File → Print → Save as PDF) to flatten it, then upload again.",
       "pdfGeneric": "{{subject}} could not be parsed as a PDF. The file may be corrupted or uses an unsupported PDF feature.",
       "fileTooLarge": "{{subject}} is too large. {{message}}.",
       "unsupportedType": "File type \"{{type}}\" is not supported.",

@@ -13,6 +13,7 @@ Default permissions for the llamacpp plugin
 - `allow-force-kill-router-tree`
 - `allow-force-stop-model`
 - `allow-get-router-info`
+- `allow-reload-router-models`
 - `allow-router-slots-idle`
 - `allow-get-devices`
 - `allow-generate-api-key`
@@ -710,32 +711,6 @@ Denies the handle_setting_update command without any pre-configured scope.
 <tr>
 <td>
 
-`llamacpp:allow-init-native-backend`
-
-</td>
-<td>
-
-Enables the init_native_backend command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-init-native-backend`
-
-</td>
-<td>
-
-Denies the init_native_backend command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `llamacpp:allow-is-cuda-installed`
 
 </td>
@@ -892,188 +867,6 @@ Denies the map_old_backend_to_new command without any pre-configured scope.
 <tr>
 <td>
 
-`llamacpp:allow-native-chat-completion`
-
-</td>
-<td>
-
-Enables the native_chat_completion command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-chat-completion`
-
-</td>
-<td>
-
-Denies the native_chat_completion command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-native-chat-template`
-
-</td>
-<td>
-
-Enables the native_chat_template command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-chat-template`
-
-</td>
-<td>
-
-Denies the native_chat_template command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-native-detokenize`
-
-</td>
-<td>
-
-Enables the native_detokenize command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-detokenize`
-
-</td>
-<td>
-
-Denies the native_detokenize command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-native-embeddings`
-
-</td>
-<td>
-
-Enables the native_embeddings command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-embeddings`
-
-</td>
-<td>
-
-Denies the native_embeddings command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-native-model-metadata`
-
-</td>
-<td>
-
-Enables the native_model_metadata command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-model-metadata`
-
-</td>
-<td>
-
-Denies the native_model_metadata command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-native-system-info`
-
-</td>
-<td>
-
-Enables the native_system_info command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-system-info`
-
-</td>
-<td>
-
-Denies the native_system_info command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-native-tokenize`
-
-</td>
-<td>
-
-Enables the native_tokenize command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-native-tokenize`
-
-</td>
-<td>
-
-Denies the native_tokenize command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `llamacpp:allow-parse-backend-version`
 
 </td>
@@ -1145,6 +938,32 @@ Enables the read_gguf_metadata command without any pre-configured scope.
 <td>
 
 Denies the read_gguf_metadata command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-reload-router-models`
+
+</td>
+<td>
+
+Enables the reload_router_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-reload-router-models`
+
+</td>
+<td>
+
+Denies the reload_router_models command without any pre-configured scope.
 
 </td>
 </tr>

@@ -61,6 +61,10 @@ pub struct AppState {
     pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    /// Per-model sampling defaults the API server injects when the caller omits
+    /// them (MLX path; llamacpp uses the router preset instead). Keyed by model
+    /// id; values are objects already in the target's request-body key form.
+    pub model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     /// Wakes up MCP monitors to trigger an immediate health check + reconnect
     pub mcp_reconnect_notify: Arc<Notify>,
 }
@@ -80,6 +84,7 @@ impl Default for AppState {
             background_cleanup_handle: Default::default(),
             mcp_server_pids: Default::default(),
             provider_configs: Default::default(),
+            model_param_defaults: Default::default(),
             mcp_reconnect_notify: Arc::new(Notify::new()),
         }
     }

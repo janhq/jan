@@ -212,6 +212,8 @@ export interface ImportOptions {
   modelSize?: number
   mmprojSha256?: string
   mmprojSize?: number
+  // Optional MTP draft gguf (speculative decoding companion) downloaded with the model.
+  mtpPath?: string
   // Additional files to download for MLX models
   files?: Array<{
     url: string

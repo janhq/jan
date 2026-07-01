@@ -55,6 +55,7 @@ interface LlamacppExtension {
     targetBackend: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }>
   installBackend?(filePath: string): Promise<void>
+  installCudaRuntime?(filePath: string): Promise<void>
   configureBackends?(): Promise<void>
   refreshBackendOptions?(): Promise<void>
 }
@@ -446,11 +447,22 @@ export const useBackendUpdater = () => {
     }
   }, [])
 
+  const installCudaRuntime = useCallback(async (filePath: string) => {
+    const extension = ExtensionManager.getInstance().getByName(
+      'llamacpp-extension'
+    ) as LlamacppExtension | undefined
+    if (!extension || !('installCudaRuntime' in extension)) {
+      throw new Error('Extension does not support CUDA runtime installation')
+    }
+    await extension.installCudaRuntime?.(filePath)
+  }, [])
+
   return {
     updateState,
     checkForUpdate,
     updateBackend,
     setRemindMeLater,
     installBackend,
+    installCudaRuntime,
   }
 }

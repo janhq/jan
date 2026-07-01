@@ -76,6 +76,8 @@
     "newLine": "New Line",
     "newLineDesc": "Insert a new line.",
     "shiftEnter": "Shift + Enter",
+    "switchAssistant": "Switch Assistant",
+    "switchAssistantDesc": "Cycle to the next assistant in the chat.",
     "navigation": "Navigation",
     "search": "Search",
     "searchDesc": "Open the search dialog.",
@@ -98,6 +100,12 @@
     "notificationPositionBottomLeft": "Bottom left",
     "showTokenSpeed": "Show token speed",
     "showTokenSpeedDesc": "Display tokens/sec and token count inline below assistant messages. When off, a compact icon shows the details on click.",
+    "coloredUserBubble": "Colored user message bubble",
+    "coloredUserBubbleDesc": "Use the accent color as the background of your messages. When off, they match assistant messages with plain text on a neutral background.",
+    "renderHtmlArtifacts": "Render HTML & SVG artifacts",
+    "renderHtmlArtifactsDesc": "Add a Preview tab to HTML and SVG code blocks. HTML runs the model-generated page in a sandboxed frame that executes its own scripts but cannot access Jan, your files, or the network; SVG renders statically with scripts disabled. Off by default.",
+    "foldInterstitialReasoning": "Fold interim text into reasoning",
+    "foldInterstitialReasoningDesc": "When on, any answer text a model emits between two reasoning steps is folded into the collapsible reasoning trace, and only the final answer shows in the message body. Turn off to show that interim text as a normal message.",
     "windowBackground": "Window Background",
     "windowBackgroundDesc": "Set the app window's background color.",
     "appMainView": "App Main View",
@@ -267,6 +275,8 @@
     "keepAppDataDesc": "Your chat history and conversations will be preserved.",
     "keepModelsAndConfigs": "Keep all models and configurations",
     "keepModelsAndConfigsDesc": "Downloaded models, engine settings, and MCP configurations will be preserved.",
+    "clearWebData": "Clear cached interface data",
+    "clearWebDataDesc": "Removes cached local storage and UI preferences kept by the app window. The interface resets to its default state.",
     "cancel": "Cancel",
     "reset": "Reset",
     "huggingfaceToken": "HuggingFace Token",
@@ -346,5 +356,10 @@
     "updateError": "Failed to update Llamacpp"
   },
   "backendInstallSuccess": "Backend installed successfully!",
-  "backendInstallError": "Failed to install backend"
+  "backendInstallError": "Failed to install backend",
+  "installBackendFromFile": "Install Backend from File",
+  "installingBackend": "Installing Backend...",
+  "installCudaRuntime": "Install CUDA Runtime",
+  "installingCudaRuntime": "Installing CUDA Runtime...",
+  "cudaRuntimeInstalled": "CUDA runtime installed"
 }

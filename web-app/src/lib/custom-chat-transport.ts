@@ -35,6 +35,7 @@ import {
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
+import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
 import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
 import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
@@ -452,6 +453,26 @@ export function coalesceMessagesForAlternation(
   return out
 }
 
+const TOOL_RESPONSE_ONLY = /^<tool_response>[\s\S]*<\/tool_response>$/
+
+/**
+ * A "genuine" user query is a user-role message with non-empty text that isn't
+ * entirely a <tool_response> wrapper. Qwen3.5+ chat templates raise
+ * "No user query found in messages" when none survives — e.g. the user deletes
+ * the only real user turn (leaving orphaned assistant/tool turns) or token
+ * eviction drops it. Guard the send so we fail with a clear message instead.
+ */
+export function hasGenuineUserQuery(messages: UIMessage[]): boolean {
+  return messages.some((m) => {
+    if (m.role !== 'user') return false
+    const text = (m.parts ?? [])
+      .map((p) => (p.type === 'text' ? (p.text ?? '') : ''))
+      .join('')
+      .trim()
+    return text.length > 0 && !TOOL_RESPONSE_ONLY.test(text)
+  })
+}
+
 type ToolInputSchema = Record<string, unknown>
 
 // Keep this behavior aligned with `normalize_openai_tool_parameters_schema` in Rust.
@@ -550,6 +571,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private continueFromContent: string | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
+  /**
+   * Monotonic per-request token. The transport instance is reused across
+   * regenerate, so a superseded request's terminal onError/onFinish must not
+   * clear loading/stream state that the newer request has already set.
+   */
+  private streamGeneration = 0
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -831,6 +858,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = this.threadId ?? options.chatId
+    const myGeneration = ++this.streamGeneration
     useAppState.getState().setCurrentStreamThreadId(threadId)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
@@ -1036,15 +1064,26 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    // Many chat templates (Qwen3.5+) reject a window with no genuine user query
+    // and throw a cryptic Jinja error. Fail early with a clear message when
+    // deletion/eviction has left no real user turn to respond to.
+    if (!hasGenuineUserQuery(effectiveMessages)) {
+      throw new Error(
+        'This conversation has no user message to respond to. Add a message, or regenerate from a turn that includes your question.'
+      )
+    }
+
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
     const baseMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         resolveOrphanToolCalls(
-          this.encodeAudioAttachments(
-            stripUnsupportedImageParts(
-              this.mapUserInlineAttachments(effectiveMessages),
-              modelSupportsVision
+          this.encodeVideoAttachments(
+            this.encodeAudioAttachments(
+              stripUnsupportedImageParts(
+                this.mapUserInlineAttachments(effectiveMessages),
+                modelSupportsVision
+              )
             )
           )
         )
@@ -1145,12 +1184,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
-        useAppState.getState().updatePromptProgress(undefined)
-        useAppState.getState().updateLoadingModel(false)
-        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-        useAppState.getState().updateThreadLoadingModel(threadId, false)
-        if (useAppState.getState().currentStreamThreadId === threadId) {
-          useAppState.getState().setCurrentStreamThreadId(undefined)
+        // A superseded request (e.g. after Reload) must not clear loading/stream
+        // state the newer request already owns.
+        if (this.streamGeneration === myGeneration) {
+          useAppState.getState().updatePromptProgress(undefined)
+          useAppState.getState().updateLoadingModel(false)
+          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          if (useAppState.getState().currentStreamThreadId === threadId) {
+            useAppState.getState().setCurrentStreamThreadId(undefined)
+          }
         }
         const unwrapped = unwrapRetryError(error)
         const rawMessage = unwrapped == null
@@ -1169,12 +1212,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return baseMessage
       },
       onFinish: ({ responseMessage }) => {
-        useAppState.getState().updatePromptProgress(undefined)
-        useAppState.getState().updateLoadingModel(false)
-        useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-        useAppState.getState().updateThreadLoadingModel(threadId, false)
-        if (useAppState.getState().currentStreamThreadId === threadId) {
-          useAppState.getState().setCurrentStreamThreadId(undefined)
+        if (this.streamGeneration === myGeneration) {
+          useAppState.getState().updatePromptProgress(undefined)
+          useAppState.getState().updateLoadingModel(false)
+          useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          if (useAppState.getState().currentStreamThreadId === threadId) {
+            useAppState.getState().setCurrentStreamThreadId(undefined)
+          }
         }
         if (responseMessage) {
           const metadata = responseMessage.metadata as
@@ -1229,6 +1274,33 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (!parsed) return part
           touched = true
           return { type: 'text' as const, text: encodeAudioSentinel(parsed.format, parsed.data) }
+        }
+        return part
+      })
+      if (!touched) return message
+      return { ...message, parts: nextParts } as UIMessage
+    })
+  }
+
+  // Replace video `file` parts on user messages with sentinel-bearing `text`
+  // parts, same mechanism as encodeAudioAttachments. The fetch wrapper in
+  // model-factory.ts decodes these into llama-server `input_video` content
+  // parts (frames decoded via the vision encoder + ffmpeg on the server).
+  encodeVideoAttachments(messages: UIMessage[]): UIMessage[] {
+    return messages.map((message) => {
+      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
+      let touched = false
+      const nextParts = message.parts.map((part) => {
+        if (
+          part?.type === 'file' &&
+          typeof (part as { mediaType?: string }).mediaType === 'string' &&
+          (part as { mediaType: string }).mediaType.startsWith('video/') &&
+          typeof (part as { url?: string }).url === 'string'
+        ) {
+          const parsed = parseVideoDataUrl((part as { url: string }).url)
+          if (!parsed) return part
+          touched = true
+          return { type: 'text' as const, text: encodeVideoSentinel(parsed.data) }
         }
         return part
       })

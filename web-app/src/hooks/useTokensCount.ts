@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ThreadMessage } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { parseContextOverflow } from '@/utils/error'
 import { useModelProvider } from './useModelProvider'
 
 export interface ModelProps {
@@ -24,6 +25,7 @@ export interface TokenCountData {
   configuredCtxLen?: number
   modalities?: { vision: boolean; audio: boolean }
   error?: string
+  isOverflow?: boolean
 }
 
 interface UsageMeta {
@@ -34,6 +36,20 @@ interface UsageMeta {
 
 interface LlamacppExtensionLike {
   getModelProps?: (modelId: string) => Promise<ModelProps | undefined>
+}
+
+// The token-usage popup normally reflects the last *successful* turn. When a
+// request overflows, that turn is never recorded, so the popup would keep
+// showing a comfortable percentage next to an "out of context" error. Parse
+// the failing request's counts out of the stamped contextError so the popup
+// reflects the request that actually overflowed.
+const getActiveContextOverflow = (messages: ThreadMessage[]) => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const ctx = (messages[i].metadata as { contextError?: unknown } | undefined)
+      ?.contextError
+    if (typeof ctx === 'string' && ctx.length > 0) return parseContextOverflow(ctx)
+  }
+  return null
 }
 
 const getLatestServerUsage = (messages: ThreadMessage[]): UsageMeta => {
@@ -121,11 +137,12 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
         fitEnabled: false,
       }
     }
+    const overflow = getActiveContextOverflow(messages)
     const usage = getLatestServerUsage(messages)
-    const tokenCount = usage.totalTokens ?? 0
-    const maxTokens = modelProps?.nCtx
+    const tokenCount = overflow?.requestTokens ?? usage.totalTokens ?? 0
+    const maxTokens = overflow?.contextTokens ?? modelProps?.nCtx
     const percentage = maxTokens ? (tokenCount / maxTokens) * 100 : undefined
-    const isNearLimit = percentage ? percentage > 85 : false
+    const isNearLimit = overflow != null || (percentage ? percentage > 85 : false)
 
     const provider = getProviderByName('llamacpp')
     const fitEnabled =
@@ -144,8 +161,8 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
 
     return {
       tokenCount,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
+      inputTokens: overflow ? overflow.requestTokens : usage.inputTokens,
+      outputTokens: overflow ? 0 : usage.outputTokens,
       maxTokens,
       percentage,
       isNearLimit,
@@ -155,6 +172,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
       fitEnabled,
       configuredCtxLen,
       modalities,
+      isOverflow: overflow != null,
     }
   }, [
     messages,

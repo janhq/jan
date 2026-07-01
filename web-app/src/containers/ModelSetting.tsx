@@ -14,12 +14,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
+import { SamplerDefaults } from '@/containers/SamplerDefaults'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-import { paramsSettings } from '@/lib/predefinedParams'
+import { paramsSettings, samplerKeysForProvider } from '@/lib/predefinedParams'
 
 const MTP_MIN_BUILD = 9193
 
@@ -230,7 +231,7 @@ export function ModelSetting({
           <IconSettings size={18} className="text-muted-foreground" />
         </Button>
       </SheetTrigger>
-      <SheetContent className="overflow-y-auto">
+      <SheetContent>
         <SheetHeader>
           <SheetTitle>
             {t('common:modelSettings.title', {
@@ -242,10 +243,18 @@ export function ModelSetting({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="px-4 space-y-8 pb-4">
+        <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
           {provider.provider === 'llamacpp' && (
             <MtpPanel modelId={model.id} provider={provider} />
           )}
+          {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
+            model.embedding !== true && (
+              <SamplerDefaults
+                model={model}
+                keys={samplerKeysForProvider(provider.provider)}
+                onChange={handleSettingChange}
+              />
+            )}
           {fitEnabled && fitCtxSetting && (
             <div key="fit_ctx" className="space-y-2">
               <div className="flex items-start justify-between gap-8">

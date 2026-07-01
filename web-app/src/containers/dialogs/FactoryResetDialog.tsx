@@ -26,9 +26,10 @@ export function FactoryResetDialog({
   const resetButtonRef = useRef<HTMLButtonElement>(null)
   const [keepAppData, setKeepAppData] = useState(true)
   const [keepModelsAndConfigs, setKeepModelsAndConfigs] = useState(true)
+  const [clearWebData, setClearWebData] = useState(false)
 
   const handleReset = () => {
-    onReset({ keepAppData, keepModelsAndConfigs })
+    onReset({ keepAppData, keepModelsAndConfigs, clearWebData })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -82,6 +83,22 @@ export function FactoryResetDialog({
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {t('settings:general.keepModelsAndConfigsDesc')}
+                </span>
+              </div>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={clearWebData}
+                onChange={(e) => setClearWebData(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border accent-primary cursor-pointer"
+              />
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">
+                  {t('settings:general.clearWebData')}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t('settings:general.clearWebDataDesc')}
                 </span>
               </div>
             </label>

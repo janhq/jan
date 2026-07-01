@@ -51,6 +51,24 @@ pub struct CudaPaths {
     pub bin_paths: Vec<String>,
 }
 
+impl CudaPaths {
+    /// Folds another set of GPU runtime paths in, de-duplicating. Used to merge
+    /// CUDA + ROCm discovery into one `setup_library_path` call.
+    pub fn merged(mut self, other: CudaPaths) -> CudaPaths {
+        for p in other.lib_paths {
+            if !self.lib_paths.contains(&p) {
+                self.lib_paths.push(p);
+            }
+        }
+        for p in other.bin_paths {
+            if !self.bin_paths.contains(&p) {
+                self.bin_paths.push(p);
+            }
+        }
+        self
+    }
+}
+
 /// Merges binary lib dir + CUDA paths into a single `command.env()` call per variable.
 pub fn setup_library_path(
     library_path: Option<&Path>,
@@ -201,6 +219,139 @@ pub fn find_cuda_paths() -> CudaPaths {
         log::debug!("CUDA path detection not implemented for this OS");
         CudaPaths::default()
     }
+}
+
+/// Locates ROCm/HIP runtime directories. Mirrors `find_cuda_paths`: ROCm ships
+/// in versioned roots (e.g. `/opt/rocm-7.2.0/lib`) that aren't on the default
+/// loader path, so they must be discovered and added explicitly.
+pub fn find_rocm_paths() -> CudaPaths {
+    #[cfg(target_os = "linux")]
+    return find_rocm_paths_linux();
+
+    #[cfg(target_os = "windows")]
+    return find_rocm_paths_windows();
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    CudaPaths::default()
+}
+
+#[cfg(target_os = "linux")]
+fn add_rocm_root(
+    root: &std::path::Path,
+    lib_paths: &mut std::collections::HashSet<String>,
+    bin_paths: &mut std::collections::HashSet<String>,
+) {
+    for sub in ["lib", "lib64"] {
+        let p = root.join(sub);
+        if p.exists() {
+            lib_paths.insert(p.to_string_lossy().to_string());
+        }
+    }
+    let bin = root.join("bin");
+    if bin.exists() {
+        bin_paths.insert(bin.to_string_lossy().to_string());
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn find_rocm_paths_linux() -> CudaPaths {
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    let mut lib_paths: HashSet<String> = HashSet::new();
+    let mut bin_paths: HashSet<String> = HashSet::new();
+
+    for var in ["ROCM_PATH", "ROCM_HOME", "HIP_PATH"] {
+        if let Ok(root) = std::env::var(var) {
+            add_rocm_root(Path::new(&root), &mut lib_paths, &mut bin_paths);
+        }
+    }
+
+    // Canonical unversioned symlink.
+    add_rocm_root(Path::new("/opt/rocm"), &mut lib_paths, &mut bin_paths);
+
+    // Versioned installs: /opt/rocm-7.2.0, /opt/rocm-6.4.1, ...
+    if let Ok(entries) = std::fs::read_dir("/opt") {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.starts_with("rocm-") {
+                    add_rocm_root(&entry.path(), &mut lib_paths, &mut bin_paths);
+                }
+            }
+        }
+    }
+
+    let mut libs: Vec<_> = lib_paths.into_iter().collect();
+    libs.sort();
+    let mut bins: Vec<_> = bin_paths.into_iter().collect();
+    bins.sort();
+
+    #[cfg(feature = "logging")]
+    if libs.is_empty() && bins.is_empty() {
+        log::debug!("ROCm not found on Linux system");
+    } else if !libs.is_empty() {
+        log::info!("Found ROCm lib paths: {}", libs.join(", "));
+    }
+
+    CudaPaths {
+        lib_paths: libs,
+        bin_paths: bins,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn find_rocm_paths_windows() -> CudaPaths {
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    let mut bin_paths = HashSet::new();
+
+    if let Ok(hip_path) = std::env::var("HIP_PATH").or_else(|_| std::env::var("ROCM_PATH")) {
+        let bin = format!(r"{}\bin", hip_path);
+        if Path::new(&bin).exists() {
+            bin_paths.insert(bin);
+        }
+    }
+
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".to_string());
+    let rocm_base = format!(r"{}\AMD\ROCm", program_files);
+    if let Ok(entries) = std::fs::read_dir(&rocm_base) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let bin = entry.path().join("bin");
+                if bin.exists() {
+                    bin_paths.insert(bin.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    let mut bins: Vec<_> = bin_paths.into_iter().collect();
+    bins.sort();
+    CudaPaths {
+        lib_paths: Vec::new(),
+        bin_paths: bins,
+    }
+}
+
+/// True when the binary links the HIP/ROCm runtime (libamdhip64 / rocblas /
+/// hipblas). Used to warn when a HIP backend is run without ROCm present.
+pub fn binary_requires_rocm(_bin_path: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = std::process::Command::new("ldd").arg(_bin_path).output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                return stdout.contains("libamdhip64")
+                    || stdout.contains("librocblas")
+                    || stdout.contains("libhipblas");
+            }
+        }
+        false
+    }
+    #[cfg(not(target_os = "linux"))]
+    false
 }
 
 /// Backward-compat wrapper. Prefer `find_cuda_paths()` + `setup_library_path()`.
@@ -562,6 +713,34 @@ mod tests {
                 p
             );
         }
+    }
+
+    #[test]
+    fn find_rocm_paths_returns_existing_dirs() {
+        let rp = find_rocm_paths();
+        for p in rp.lib_paths.iter().chain(rp.bin_paths.iter()) {
+            assert!(Path::new(p).exists(), "Returned ROCm path should exist: {}", p);
+        }
+    }
+
+    #[test]
+    fn binary_requires_rocm_returns_false_for_nonexistent_file() {
+        assert!(!binary_requires_rocm(Path::new("/nonexistent/binary")));
+    }
+
+    #[test]
+    fn merged_dedups_and_unions_paths() {
+        let a = CudaPaths {
+            lib_paths: vec!["/x".into(), "/y".into()],
+            bin_paths: vec!["/b".into()],
+        };
+        let b = CudaPaths {
+            lib_paths: vec!["/y".into(), "/z".into()],
+            bin_paths: vec!["/b".into(), "/c".into()],
+        };
+        let m = a.merged(b);
+        assert_eq!(m.lib_paths, vec!["/x", "/y", "/z"]);
+        assert_eq!(m.bin_paths, vec!["/b", "/c"]);
     }
 
     #[tokio::test]

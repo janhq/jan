@@ -100,8 +100,19 @@ vi.mock('@/components/ui/button', () => ({
   ),
 }))
 
+vi.mock('@/components/PromptProgress', () => ({
+  PromptProgress: () => <div data-testid="prompt-progress" />,
+}))
+
+const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
+vi.mock('@/hooks/useToolApproval', () => ({
+  useToolApproval: (selector: any) =>
+    selector({ pending: pendingApprovalsRef.current }),
+}))
+
 // Import after mocks
 import { MessageItem } from '../MessageItem'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 
 const makeMsg = (overrides: any = {}) => ({
   id: 'msg-1',
@@ -115,6 +126,8 @@ describe('MessageItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
+    pendingApprovalsRef.current = {}
+    useInterfaceSettings.setState({ foldInterstitialReasoning: true })
   })
 
   it('renders assistant text via RenderMarkdown', () => {
@@ -300,10 +313,11 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.getByTestId('cot')).toBeInTheDocument()
-    expect(screen.getByTestId('streamdown')).toHaveTextContent('thinking...')
+    // Reasoning renders as plain text (not markdown) for performance.
+    expect(screen.getByText('thinking...')).toBeInTheDocument()
   })
 
-  it('renders inline tool part (no reasoning → no CoT wrapper)', () => {
+  it('folds a tool part into the CoT working trace', () => {
     render(
       <MessageItem
         message={
@@ -321,7 +335,83 @@ describe('MessageItem', () => {
     )
     expect(screen.getByTestId('tool')).toBeInTheDocument()
     expect(screen.getByTestId('tool-header')).toHaveTextContent('search')
-    expect(screen.queryByTestId('cot')).not.toBeInTheDocument()
+    expect(screen.getByTestId('cot')).toBeInTheDocument()
+  })
+
+  describe('foldInterstitialReasoning toggle', () => {
+    const interstitialMsg = () =>
+      makeMsg({
+        parts: [
+          { type: 'reasoning', text: 'first thought' },
+          { type: 'text', text: 'interim answer' },
+          { type: 'reasoning', text: 'second thought' },
+          { type: 'text', text: 'final answer' },
+        ],
+      }) as any
+
+    it('folds interim text between reasoning blocks into the trace when on', () => {
+      useInterfaceSettings.setState({ foldInterstitialReasoning: true })
+      render(
+        <MessageItem
+          message={interstitialMsg()}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+        />
+      )
+      // Single trace anchored at the last reasoning part.
+      expect(screen.getAllByTestId('cot')).toHaveLength(1)
+      // Interim text is folded in, so only the final answer hits the body renderer.
+      const bodies = screen.getAllByTestId('render-markdown')
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0]).toHaveTextContent('final answer')
+      // Interim narration is present, but inside the trace (not a body message).
+      expect(screen.getByText('interim answer')).toBeInTheDocument()
+    })
+
+    it('renders interim text as a normal message and splits the trace when off', () => {
+      useInterfaceSettings.setState({ foldInterstitialReasoning: false })
+      render(
+        <MessageItem
+          message={interstitialMsg()}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+        />
+      )
+      // Trace splits into two groups around the interim answer.
+      expect(screen.getAllByTestId('cot')).toHaveLength(2)
+      // Both interim and final render in the message body.
+      const bodies = screen.getAllByTestId('render-markdown')
+      expect(bodies).toHaveLength(2)
+      expect(bodies[0]).toHaveTextContent('interim answer')
+      expect(bodies[1]).toHaveTextContent('final answer')
+    })
+
+    it('skips empty interim text parts when split mode is off', () => {
+      useInterfaceSettings.setState({ foldInterstitialReasoning: false })
+      render(
+        <MessageItem
+          message={
+            makeMsg({
+              parts: [
+                { type: 'reasoning', text: 'thinking' },
+                { type: 'text', text: '   ' },
+                { type: 'text', text: 'final' },
+              ],
+            }) as any
+          }
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+        />
+      )
+      // Blank interim text does not flush the trace into a second group.
+      expect(screen.getAllByTestId('cot')).toHaveLength(1)
+      const bodies = screen.getAllByTestId('render-markdown')
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0]).toHaveTextContent('final')
+    })
   })
 
   it('renders tool error when state is output-error', () => {
@@ -344,6 +434,43 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.getByTestId('tool-output')).toHaveTextContent('boom')
+  })
+
+  it('shows progress for an executing tool call (not awaiting approval)', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              { type: 'tool-search', state: 'input-available', toolCallId: 'tc1', input: {} },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+  })
+
+  it('hides progress while a tool call awaits approval', () => {
+    pendingApprovalsRef.current = { tc1: {} }
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              { type: 'tool-search', state: 'input-available', toolCallId: 'tc1', input: {} },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
   })
 
   it('passes full text to copy button', () => {
