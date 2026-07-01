@@ -118,7 +118,12 @@ export default function AddProjectDialog({
               className="mt-1"
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isButtonDisabled) {
+                // e.keyCode 229 / isComposing means an IME (e.g.
+                // Chinese/Japanese) is composing; the Enter that confirms a
+                // candidate must not create the project.
+                const isComposing =
+                  e.nativeEvent.isComposing || e.keyCode === 229
+                if (e.key === 'Enter' && !isComposing && !isButtonDisabled) {
                   handleSave()
                 }
               }}
