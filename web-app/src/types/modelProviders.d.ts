@@ -37,6 +37,8 @@ type Model = {
   format?: string
   capabilities?: string[]
   settings?: Record<string, ProviderSetting>
+  /** Maximum context window in tokens as reported by the provider at catalog fetch time. */
+  contextLength?: number
   /** Whether this model is an embedding model (e.g., BERT-based) */
   embedding?: boolean
   /** Whether this model was imported from a user-supplied local file

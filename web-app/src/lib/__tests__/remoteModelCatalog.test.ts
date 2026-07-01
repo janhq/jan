@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   fetchTopRemoteModels,
   supportsRemoteCatalog,
+  inferLemonadeCapabilities,
 } from '../remoteModelCatalog'
 
 function mkResponse(body: unknown, status = 200): Response {
@@ -39,10 +40,11 @@ function mkGeminiProvider(extra: Record<string, unknown> = {}) {
 }
 
 describe('supportsRemoteCatalog', () => {
-  it('supports openai, anthropic and gemini', () => {
+  it('returns true for built-in catalog providers', () => {
     expect(supportsRemoteCatalog('openai')).toBe(true)
     expect(supportsRemoteCatalog('anthropic')).toBe(true)
     expect(supportsRemoteCatalog('gemini')).toBe(true)
+    expect(supportsRemoteCatalog('lemonade')).toBe(true)
     expect(supportsRemoteCatalog('groq')).toBe(false)
     expect(supportsRemoteCatalog('mistral')).toBe(false)
   })
@@ -193,5 +195,144 @@ describe('fetchTopRemoteModels anthropic', () => {
     expect(c35.capabilities).toEqual(['completion', 'tools', 'vision'])
     const c2 = result.find((m) => m.id === 'claude-2.1')!
     expect(c2.capabilities).toEqual(['completion', 'tools'])
+  })
+})
+
+function mkLemonadeProvider(extra: Record<string, unknown> = {}) {
+  return {
+    provider: 'lemonade',
+    base_url: 'http://127.0.0.1:13305/v1',
+    api_key: '',
+    ...extra,
+  } as any
+}
+
+describe('fetchTopRemoteModels lemonade', () => {
+  it('carries max_context_window as contextLength and omits it when absent', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          { id: 'Qwen3-0.6B-GGUF', created: 1700000000, labels: [], max_context_window: 40960 },
+          { id: 'Qwen3-8B-GGUF', created: 1700000001, labels: [] },
+        ],
+      })
+    )
+    const result = await fetchTopRemoteModels(mkLemonadeProvider(), fetchImpl)
+    const small = result.find((m) => m.id === 'Qwen3-0.6B-GGUF')!
+    const large = result.find((m) => m.id === 'Qwen3-8B-GGUF')!
+    expect(small.contextLength).toBe(40960)
+    expect(large.contextLength).toBeUndefined()
+  })
+
+  it('maps vision and tool-calling labels to capabilities', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          {
+            id: 'Qwen3-8B-GGUF',
+            created: 1700000000,
+            labels: ['vision', 'tool-calling'],
+          },
+        ],
+      })
+    )
+    const result = await fetchTopRemoteModels(mkLemonadeProvider(), fetchImpl)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('Qwen3-8B-GGUF')
+    expect(result[0].capabilities).toContain('completion')
+    expect(result[0].capabilities).toContain('vision')
+    expect(result[0].capabilities).toContain('tools')
+  })
+
+  it('excludes non-chat models (transcription, tts, image, embeddings, reranking, upscaling)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          { id: 'Whisper-Large', created: 1700000001, labels: ['transcription'] },
+          { id: 'Kokoro-v1', created: 1700000002, labels: ['tts'] },
+          { id: 'SD-Turbo', created: 1700000003, labels: ['image'] },
+          { id: 'bge-large', created: 1700000004, labels: ['embeddings'] },
+          { id: 'cross-encoder', created: 1700000005, labels: ['reranking'] },
+          { id: 'upscaler-model', created: 1700000007, labels: ['upscaling'] },
+          { id: 'Qwen3-0.6B-GGUF', created: 1700000006, labels: [] },
+        ],
+      })
+    )
+    const result = await fetchTopRemoteModels(mkLemonadeProvider(), fetchImpl)
+    const ids = result.map((m) => m.id)
+    expect(ids).not.toContain('Whisper-Large')
+    expect(ids).not.toContain('Kokoro-v1')
+    expect(ids).not.toContain('SD-Turbo')
+    expect(ids).not.toContain('bge-large')
+    expect(ids).not.toContain('cross-encoder')
+    expect(ids).not.toContain('upscaler-model')
+    expect(ids).toContain('Qwen3-0.6B-GGUF')
+  })
+
+  it('maps chat-transcription label to audio capability', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          {
+            id: 'LMX-Omni-5.5B',
+            created: 1700000000,
+            labels: ['vision', 'chat-transcription'],
+          },
+        ],
+      })
+    )
+    const result = await fetchTopRemoteModels(mkLemonadeProvider(), fetchImpl)
+    expect(result[0].capabilities).toContain('audio')
+  })
+
+  it('includes all chat models without TOP_N=10 cap', async () => {
+    const rows = Array.from({ length: 15 }, (_, i) => ({
+      id: `model-${i}`,
+      created: 1700000000 + i,
+      labels: [],
+    }))
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: rows }))
+    const result = await fetchTopRemoteModels(mkLemonadeProvider(), fetchImpl)
+    expect(result.length).toBe(15)
+  })
+
+  it('works without an API key (empty string)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({ data: [{ id: 'Qwen3-0.6B-GGUF', created: 1700000000, labels: [] }] })
+    )
+    const result = await fetchTopRemoteModels(
+      mkLemonadeProvider({ api_key: '' }),
+      fetchImpl
+    )
+    expect(result).toHaveLength(1)
+    // Should not have set Authorization header with empty key
+    const calledHeaders = fetchImpl.mock.calls[0][1]?.headers as Record<string, string>
+    expect(calledHeaders?.Authorization).toBeUndefined()
+  })
+})
+
+describe('inferLemonadeCapabilities', () => {
+  it('returns completion only for empty labels', () => {
+    expect(inferLemonadeCapabilities([])).toEqual(['completion'])
+  })
+
+  it('returns completion only for informational-only labels (hot, reasoning, coding)', () => {
+    expect(inferLemonadeCapabilities(['hot', 'reasoning', 'coding'])).toEqual(['completion'])
+  })
+
+  it('non-chat label wins even when capability labels are also present', () => {
+    expect(inferLemonadeCapabilities(['image', 'vision'])).toBeNull()
+    expect(inferLemonadeCapabilities(['transcription', 'tool-calling'])).toBeNull()
+    expect(inferLemonadeCapabilities(['tts', 'chat-transcription'])).toBeNull()
+    expect(inferLemonadeCapabilities(['embeddings', 'vision', 'tool-calling'])).toBeNull()
+  })
+
+  it('returns all matching capabilities when multiple capability labels present', () => {
+    const caps = inferLemonadeCapabilities(['vision', 'tool-calling', 'chat-transcription'])
+    expect(caps).toContain('completion')
+    expect(caps).toContain('vision')
+    expect(caps).toContain('tools')
+    expect(caps).toContain('audio')
+    expect(caps).toHaveLength(4)
   })
 })

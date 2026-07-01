@@ -153,6 +153,8 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  // CUSTOM_PERMISSIVE (not LLAMACPP): Lemonade may back any runtime, so extended samplers are optional rather than guaranteed.
+  lemonade: CUSTOM_PERMISSIVE,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }
@@ -176,7 +178,7 @@ export function getProviderApiType(
   return provider.provider === 'anthropic' ? 'anthropic' : 'openai'
 }
 
-const LOCAL_PROVIDER_IDS = new Set<string>(['llamacpp', 'mlx'])
+const LOCAL_PROVIDER_IDS = new Set<string>(['llamacpp', 'mlx', 'lemonade'])
 
 /**
  * Predefined remote providers ship locked base_urls and expose only a fixed
