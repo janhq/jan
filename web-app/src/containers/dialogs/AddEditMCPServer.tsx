@@ -449,7 +449,7 @@ export default function AddEditMCPServer({
 
             <div className="space-y-2">
               <label className="text-sm mb-2 inline-block">
-                Transport Type
+                {t('mcp-servers:editJson.transportType')}
               </label>
               <RadioGroup
                 value={transportType}

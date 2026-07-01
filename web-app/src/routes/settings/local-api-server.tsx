@@ -268,7 +268,7 @@ function LocalAPIServerContent() {
             <PopoverTrigger asChild>
               <Button size="sm" variant="outline" className="relative z-50">
                 <IconSettings2 size={16} />
-                Configuration
+                {t('settings:localApiServer.configuration')}
               </Button>
             </PopoverTrigger>
             <PopoverContent
@@ -364,10 +364,10 @@ function LocalAPIServerContent() {
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium">
-                        Execute tools on server
+                        {t('settings:localApiServer.mcpOnServer')}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Run tools server-side for chat endpoints.
+                        {t('settings:localApiServer.mcpOnServerDesc')}
                       </p>
                     </div>
                     <Switch
@@ -503,18 +503,18 @@ function LocalAPIServerContent() {
 
               <Card>
                 <CardItem
-                  title="Server Status"
+                  title={t('settings:localApiServer.serverStatus')}
                   description={
                     isServerRunning ? (
                       <div className="space-y-1">
-                        <div>The server is currently running.</div>
+                        <div>{t('settings:localApiServer.serverStatusRunning')}</div>
                         <div className="text-xs font-mono">
                           http://{serverHost}:{serverPort}
                           {apiPrefix}
                         </div>
                       </div>
                     ) : (
-                      'The server is stopped.'
+                      t('settings:localApiServer.serverStatusStopped')
                     )
                   }
                 />
@@ -561,7 +561,7 @@ function LocalAPIServerContent() {
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <IconExternalLink size={14} className="mr-1" />
-                    Open in New Window
+                    {t('settings:localApiServer.openInNewWindow')}
                   </Button>
                 </div>
                 <CollapsibleContent>

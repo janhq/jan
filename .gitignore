@@ -15,6 +15,7 @@ core/lib/**
 test_results.html
 pre-install
 .build
+.idea/
 
 # docs
 docs/yarn.lock
