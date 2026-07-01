@@ -1,5 +1,3 @@
-import { ContentType, ContentValue } from '../message'
-
 /**
  * The role of the author of this message.
  */

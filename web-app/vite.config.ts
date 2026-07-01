@@ -48,6 +48,18 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'zustand',
+        '@tauri-apps/api',
+        'vite-plugin-node-polyfills/shims/buffer',
+        'vite-plugin-node-polyfills/shims/global',
+        'vite-plugin-node-polyfills/shims/process',
+        'path',
+      ],
+    },
     plugins: [
       TanStackRouterVite({
         target: 'react',
@@ -64,6 +76,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        '@janhq/core': path.resolve(__dirname, '../core/src/index.ts'),
         '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
       },
     },
