@@ -46,10 +46,10 @@
   "profile": "Profil",
   "reset": "Zurücksetzen",
   "search": "Suchen",
-  "searchThreads": "Durchsuche Threads...",
-  "toNavigate": "Zum Navigieren",
-  "toSelect": "Zum Auswählen",
-  "toClose": "Zum Schließen",
+  "searchThreads": "Chats durchsuchen…",
+  "toNavigate": "zum Navigieren",
+  "toSelect": "zum Auswählen",
+  "toClose": "zum Schließen",
   "clearRecent": "Leeren",
   "name": "Name",
   "cancel": "Abbrechen",
@@ -81,7 +81,7 @@
   "noThreadsYet": "Keine Threads bisher",
   "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Threadverlauf hier anzuzeigen.",
   "downloads": "Downloads",
-  "downloading": "Herunterladen",
+  "downloading": "Wird heruntergeladen",
   "initializingDownload": "Herunterladen gestartet...",
   "paused": "Pausiert",
   "downloadProgress": "Dein Downloadfortschritt wird hier angezeigt",
@@ -175,7 +175,7 @@
     "enterCommand": "Kommando eingeben",
     "arguments": "Argumente",
     "argument": "Argument {{index}}",
-    "envVars": "Umgebungsvariable",
+    "envVars": "Umgebungsvariablen",
     "key": "Schlüssel",
     "value": "Wert",
     "save": "Speichern"
@@ -199,7 +199,7 @@
     "tools": "Werkzeuge",
     "vision": "Vision",
     "embeddings": "Einbettungen",
-    "notAvailable": "Bisher nicht verfügbar"
+    "notAvailable": "Noch nicht verfügbar"
   },
   "outOfContextError": {
     "truncateInput": "Input verkleinern",
@@ -295,7 +295,7 @@
       "nameLabel": "Projektname",
       "namePlaceholder": "Projektname eingeben...",
       "assistant": "Assistent",
-      "selectAssistant": "Wähle einen Assistenten (optional)",
+      "selectAssistant": "Einen Assistenten auswählen (optional)",
       "noAssistant": "Kein Assistent",
       "addAssistant": "Assistenten hinzufügen",
       "createButton": "Erstellen",
@@ -307,7 +307,7 @@
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
     "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
     "conversationsIn": "Gespräche in {{projectName}}",
-    "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiter zu chatten, oder starten Sie unten ein neues.",
+    "conversationsDescription": "Klicke auf einen Chat, um weiterzuchatten, oder starte unten einen neuen.",
     "thread": "Thread",
     "threads": "Threads",
     "updated": "Aktualisiert:",
@@ -321,15 +321,15 @@
     "processButton": "Hinzufügen"
   },
   "attachmentsIngestion": {
-    "title": "Wähle, wie der Anhang verarbeitet werden soll",
-    "description": "Wähle, ob die Dateien direkt eingebunden oder per Index eingebettet werden sollen.",
-    "inline": "Direkt in den Chat einbinden",
-    "embeddings": "Einbetten"
+    "title": "Wähle, wie Anhänge verarbeitet werden",
+    "description": "Wähle, ob diese Dateien direkt in den Chat eingefügt oder stattdessen als Embeddings indexiert werden sollen.",
+    "inline": "In den Chat einfügen",
+    "embeddings": "Embeddings verwenden"
   },
-  "attachmentInjectedIndicator": "Direkt eingebunden in den Chat",
-  "attachmentEmbeddedIndicator": "Eingebettet für RAG",
-  "viewInjectedContent": "Zeige eingebundenen Inhalt",
-  "injectedContentTitle": "Eingebundener Dateiinhalt",
+  "attachmentInjectedIndicator": "In den Chat eingefügt",
+  "attachmentEmbeddedIndicator": "Für RAG eingebettet",
+  "viewInjectedContent": "Eingefügten Inhalt anzeigen",
+  "injectedContentTitle": "Eingefügter Dateiinhalt",
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",
     "details": "Details"
@@ -425,11 +425,11 @@
     }
   },
   "llamacppBusyOnExit": {
-    "title": "llama.cpp ist noch aktiv",
-    "description": "Mindestens ein Model wurde nicht rechtzeitig beendet. Das erzwungene Beenden von llama.cpp kann die Antwortgenerierung unterbrechen.",
+    "title": "llama.cpp ist noch beschäftigt",
+    "description": "Ein oder mehrere Modelle wurden nicht rechtzeitig entladen. Das erzwungene Beenden beendet llama.cpp und kann aktive Antworten unterbrechen.",
     "forceQuit": "Beenden erzwingen",
-    "forcing": "Beenden erzwingen…",
-    "shuttingDown": "Herunterfahren…"
+    "forcing": "Beenden wird erzwungen…",
+    "shuttingDown": "Wird heruntergefahren…"
   },
   "addFile": {
     "addImages": "Bild hinzufügen",
