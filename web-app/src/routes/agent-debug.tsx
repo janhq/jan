@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconRobot } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
+import { isDev } from '@/lib/utils'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -28,6 +29,10 @@ const BUILTIN_TOOL_NAMES = [
 ]
 
 export const Route = createFileRoute(route.agentDebug as any)({
+  // TEMP smoke-test route: dev builds only. Packaged builds redirect home.
+  beforeLoad: () => {
+    if (!isDev()) throw redirect({ to: route.home })
+  },
   component: AgentDebugPanel,
 })
 
@@ -163,6 +168,30 @@ function AgentDebugPanel() {
   )
 
   const logRows = useMemo(() => condenseEvents(events), [events])
+
+  // Keep both panes pinned to the newest content while streaming, but stop
+  // auto-scrolling once the user scrolls up (re-pins when they return to the
+  // bottom). Pinned state is measured on scroll, before new content lands.
+  const outputRef = useRef<HTMLPreElement>(null)
+  const logRef = useRef<HTMLOListElement>(null)
+  const outputPinned = useRef(true)
+  const logPinned = useRef(true)
+
+  const trackPinned = (pinned: React.MutableRefObject<boolean>) => (
+    e: React.UIEvent<HTMLElement>
+  ) => {
+    const el = e.currentTarget
+    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }
+
+  useEffect(() => {
+    const el = outputRef.current
+    if (el && outputPinned.current) el.scrollTop = el.scrollHeight
+  }, [streamedText])
+  useEffect(() => {
+    const el = logRef.current
+    if (el && logPinned.current) el.scrollTop = el.scrollHeight
+  }, [logRows])
 
   const handleRun = async () => {
     if (running || !prompt.trim()) return
@@ -398,7 +427,11 @@ function AgentDebugPanel() {
             <h2 className="text-base font-semibold mb-2 shrink-0">
               {t('common:agentDebug.output')}
             </h2>
-            <pre className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere] flex-1 min-h-0 overflow-y-auto">
+            <pre
+              ref={outputRef}
+              onScroll={trackPinned(outputPinned)}
+              className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere] flex-1 min-h-0 overflow-y-auto"
+            >
               {streamedText}
             </pre>
           </div>
@@ -412,7 +445,11 @@ function AgentDebugPanel() {
                 {t('common:agentDebug.empty')}
               </div>
             ) : (
-              <ol className="text-xs font-mono flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              <ol
+                ref={logRef}
+                onScroll={trackPinned(logPinned)}
+                className="text-xs font-mono flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+              >
                 {logRows.map((row, i) => (
                   <li
                     key={i}
