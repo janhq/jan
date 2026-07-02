@@ -2,14 +2,7 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
-pub mod login;
-pub mod mcp;
 pub mod providers;
-mod path_refs;
-mod secret_input;
-pub mod tokamak;
-mod tui;
-pub mod updater;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -654,13 +647,11 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
 // ── Agent operations ───────────────────────────────────────────────────────
 
 use crate::core::agent::events::StreamEvent;
-use crate::core::agent::project::{
-    ensure_project, load_agent_config, permissions_from, set_model_in_agent_toml,
-};
+use crate::core::agent::project::{init_project, load_agent_config, permissions_from};
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
-use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
+use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
@@ -668,37 +659,25 @@ use std::io::Write as _;
 use tokio::sync::{mpsc, Mutex};
 
 /// Default turn cap when neither `--max-turns` nor `agent.toml [agent].max_turns`
-/// is set. `0` means unbounded: the session token budget and user cancellation
-/// guard the loop instead of a fixed step count, so runs aren't cut off
-/// mid-task. Set an explicit cap to bound it.
-const DEFAULT_MAX_TURNS: u32 = 0;
+/// is set. The loop separately clamps the effective value to 1..=400.
+const DEFAULT_MAX_TURNS: u32 = 400;
 
-/// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
-/// value is what the model would otherwise see verbatim in the system prompt's
-/// working-directory block, so a bare "." must become the real cwd rather than
-/// being sent to the model as-is. Falls back to the raw (possibly relative)
-/// path if canonicalization fails (e.g. the directory doesn't exist yet).
-fn resolve_project_root(project: &str) -> PathBuf {
-    PathBuf::from(project)
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(project))
+/// Scaffold `.jan/agent/` under `project`. Returns the created agent dir.
+pub fn cli_agent_init(project: &str) -> Result<PathBuf, String> {
+    init_project(&PathBuf::from(project))
 }
 
-/// Resolved-config + provider snapshot for `jan cli agent status`.
+/// Resolved-config + provider snapshot for `jan agent status`.
 pub fn cli_agent_status(
     project: &str,
     overrides: &ProviderOverrides,
 ) -> Result<serde_json::Value, String> {
-    let project_root = resolve_project_root(project);
-    ensure_project(&project_root)?;
+    let project_root = PathBuf::from(project);
     let cfg = load_agent_config(&project_root)?;
-    let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
+    let provider_configs = load_provider_configs(overrides)?;
 
-    // Only providers this build can reach: local-engine entries inherited from
-    // the desktop store have no upstream here (see `is_cli_reachable`).
     let mut providers: Vec<serde_json::Value> = provider_configs
         .values()
-        .filter(|c| crate::core::cli::providers::is_cli_reachable(c))
         .map(|c| {
             serde_json::json!({
                 "provider": c.provider,
@@ -720,65 +699,7 @@ pub fn cli_agent_status(
             "allow": cfg.tools.allow,
             "deny": cfg.tools.deny,
             "allow_write": cfg.tools.allow_write,
-            "allow_network": cfg.tools.allow_network,
-            "allow_home_read": cfg.tools.allow_home_read,
         },
-        "providers": providers,
-    }))
-}
-
-/// Set (create or merge) a provider entry in the global `~/.jan/config.toml`,
-/// the standalone-agent credential store. Returns the config path so the caller
-/// can report where the value landed. Headless: no Desktop app required.
-pub fn cli_agent_config_set(
-    provider: &str,
-    api_key: Option<String>,
-    base_url: Option<String>,
-    models: Option<Vec<String>>,
-    api_type: Option<String>,
-) -> Result<PathBuf, String> {
-    crate::core::agent::global_config::set_provider(
-        provider,
-        crate::core::agent::global_config::ProviderUpdate {
-            api_key,
-            base_url,
-            models,
-            api_type,
-        },
-    )
-}
-
-/// Remove a provider entry from `~/.jan/config.toml`. `Ok(false)` means it was
-/// already absent.
-pub fn cli_agent_config_unset(provider: &str) -> Result<bool, String> {
-    crate::core::agent::global_config::remove_provider(provider)
-}
-
-/// The global config file path, scaffolding a commented template if it doesn't
-/// exist yet so `jan config path` always points at a real file.
-pub fn cli_agent_config_path() -> Result<PathBuf, String> {
-    crate::core::agent::global_config::ensure_global_config()
-}
-
-/// Providers configured in `~/.jan/config.toml`, as JSON with API keys redacted.
-/// Reflects only the global store (what the user set), not Desktop inherit.
-pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
-    let configs = crate::core::agent::global_config::load_global_config()?;
-    let mut providers: Vec<serde_json::Value> = configs
-        .values()
-        .map(|c| {
-            serde_json::json!({
-                "provider": c.provider,
-                "base_url": c.base_url,
-                "has_api_key": c.api_key.is_some(),
-                "api_type": c.api_type,
-                "models": c.models,
-            })
-        })
-        .collect();
-    providers.sort_by(|a, b| a["provider"].as_str().cmp(&b["provider"].as_str()));
-    Ok(serde_json::json!({
-        "config_path": crate::core::agent::global_config::global_config_path()?.to_string_lossy(),
         "providers": providers,
     }))
 }
@@ -790,10 +711,8 @@ pub async fn cli_agent_run(
     model: Option<String>,
     max_turns: Option<u32>,
     overrides: ProviderOverrides,
-    yolo: bool,
-    resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, max_turns, overrides, yolo, resume).await
+    run_agent_loop(project, task, model, max_turns, overrides).await
 }
 
 /// Single-turn run for debugging (`max_turns = 1`).
@@ -802,352 +721,28 @@ pub async fn cli_agent_step(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
-    yolo: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, Some(1), overrides, yolo, None).await
+    run_agent_loop(project, task, model, Some(1), overrides).await
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_cli_orchestration_args(
     project_root: PathBuf,
-    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
+    permissions: crate::core::agent::permissions::ToolPermissions,
     provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
-    mcp_servers: crate::core::state::SharedMcpServers,
-    mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
-    yolo: bool,
-    plan: bool,
-    max_parallel_subagents: u32,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
         provider_configs: Arc::new(Mutex::new(provider_configs)),
-        mcp_servers,
-        mcp_settings: Arc::new(Mutex::new(mcp_settings)),
+        llama_state: Arc::new(init_llamacpp_state()),
+        mlx_sessions: Arc::new(Mutex::new(HashMap::new())),
+        mcp_servers: Arc::new(Mutex::new(HashMap::new())),
+        mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
         jan_data_folder: resolve_jan_data_folder().to_string_lossy().into_owned(),
         permissions,
         project_root: Some(project_root),
         permission_requests,
-        ask_requests: None,
-        todo_registry: None,
-        system_prompt_override: None,
-        subagents_enabled: true,
-        max_parallel_subagents,
-        yolo,
-        run_mode: if plan {
-            crate::core::agent::plan::RunMode::Plan
-        } else {
-            crate::core::agent::plan::RunMode::Normal
-        },
     }
-}
-
-/// Everything needed to drive one agent run: the engine handle, request body,
-/// and the shared permission registry. Built once and consumed by either the
-/// plain CLI printer or the TUI renderer.
-pub(crate) struct PreparedRun {
-    pub args: OrchestrationArgs,
-    pub body: serde_json::Value,
-    pub permission_requests: PermissionRegistry,
-    /// Background connect of `active` MCP servers, awaited before the first turn.
-    pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
-    /// Where to write the conversation once the run finishes.
-    persist: PersistTarget,
-}
-
-/// Bookkeeping for writing a non-interactive run to the project's thread store,
-/// so `--resume` can pick it up later. `thread_id` is `None` for a new session.
-struct PersistTarget {
-    agent_dir: PathBuf,
-    thread_id: Option<String>,
-    model: String,
-    history: Vec<serde_json::Value>,
-}
-
-/// Resolved engine handle for a chat session: the args are built once and the
-/// request body is assembled per turn (the TUI reuses this across many turns;
-/// the plain CLI builds a single body). `model`/`max_turns` seed each body.
-pub(crate) struct AgentSession {
-    pub args: OrchestrationArgs,
-    pub permission_requests: PermissionRegistry,
-    pub model: String,
-    /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
-    pub smol_model: String,
-    pub max_turns: u32,
-    /// Context window limit in tokens for the model. Defaults to 128K if agent.toml
-    /// doesn't set it. Used to display `ctx N/K` in the header and trigger compaction.
-    pub context_window: u64,
-    /// Tokens reserved for the model's response. Defaults to 16K if unset.
-    /// Compaction triggers at `context_window - reserve_tokens`.
-    pub reserve_tokens: u64,
-    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
-    /// `None` omits the field (model default).
-    pub max_tokens: Option<u64>,
-    /// Shared MCP connection map (same Arc held by `args`), so the TUI can
-    /// connect/disconnect servers live via `/mcp` and later turns pick them up.
-    pub mcp_servers: crate::core::state::SharedMcpServers,
-    /// Background connect of `active` MCP servers, awaited before the first turn.
-    /// `None` when no server is active. Resolves to the connected server names.
-    pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
-}
-
-impl AgentSession {
-    /// Build a streaming request body for the given conversation history.
-    pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "messages": messages,
-            "max_turns": self.max_turns,
-            "stream": true,
-        });
-        // Forward the per-request output cap only when configured; it flows to
-        // the upstream via `copy_optional_chat_params`.
-        if let Some(max) = self.max_tokens {
-            body["max_tokens"] = serde_json::json!(max);
-        }
-        body
-    }
-}
-
-/// Resolve project config + credentials into a ready-to-run engine handle.
-/// Shared by `run_agent_loop` (plain CLI) and `cli_agent_ui` (TUI).
-fn prepare_agent_session(
-    project: &str,
-    model_override: Option<String>,
-    max_turns_override: Option<u32>,
-    overrides: ProviderOverrides,
-    yolo: bool,
-    plan: bool,
-    require_model: bool,
-) -> Result<AgentSession, String> {
-    let project_root = resolve_project_root(project);
-    ensure_project(&project_root)?;
-    if let Err(e) = crate::core::agent::global_config::ensure_global_config() {
-        log::warn!("Agent: could not scaffold ~/.jan/config.toml: {e}");
-    }
-    let cfg = load_agent_config(&project_root)?;
-    let permissions = permissions_from(&cfg);
-
-    if yolo {
-        eprintln!(
-            "WARNING: --yolo disables the sandbox. The agent can read, write, and run any command without asking for approval."
-        );
-    }
-
-    // Resolution order: --model flag, then agent.toml [agent].model, then the
-    // standalone global config (~/.jan/config.toml default_model / first provider
-    // model), then the desktop app's currently-selected model (settings.json
-    // inherit). Global config outranks desktop so a standalone agent is
-    // self-sufficient without a desktop install.
-    let explicit = model_override.is_some() || overrides.api_key.is_some();
-    let model = model_override
-        .or_else(|| cfg.agent.model.clone())
-        .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
-        .or_else(|| crate::core::cli::providers::desktop_selection().model);
-    // A project or global default can name a model with nobody around to serve
-    // it (e.g. this repo's own agent.toml pins one, but a fresh `~/.jan` has no
-    // credentials for anything). Trust it only when the user was explicit
-    // (--model/--api-key) or some provider can actually be reached; otherwise
-    // treat it as unset so the TUI's sign-in notice fires instead of failing on
-    // the first message.
-    let model = if !require_model
-        && !explicit
-        && !crate::core::cli::providers::has_usable_provider(Some(&project_root))
-    {
-        String::new()
-    } else {
-        model.unwrap_or_default()
-    };
-    if model.is_empty() && require_model {
-        return Err(
-            "no model specified: run `jan login` to sign in to Tokamak, or pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
-                .to_string(),
-        );
-    }
-    let max_turns = max_turns_override
-        .or(cfg.agent.max_turns)
-        .unwrap_or(DEFAULT_MAX_TURNS);
-
-    // The `smol` role (used by /goal evaluation): an explicit smol_model in
-    // ~/.jan/config.toml, else reuse the main model so evaluation always works.
-    let smol_model = crate::core::agent::global_config::smol_model()
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| model.clone());
-
-    let provider_configs = load_provider_configs(Some(&project_root), &overrides)?;
-
-    // Reject a model whose only provider is a local engine descriptor before any
-    // setup work: the CLI cannot start an engine itself, so this would otherwise
-    // fail mid-run with a far vaguer message. Local models are still runnable
-    // over HTTP -- via the desktop app's API server -- which is what the hint
-    // points at; a provider entry with a base_url never reaches this branch.
-    if let Some(local) =
-        crate::core::cli::providers::unreachable_local_provider(&provider_configs, &model)
-    {
-        return Err(format!(
-            "model '{model}' is only offered by '{local}', a local engine the Jan CLI cannot \
-             start itself. To use it, run the model in the Jan desktop app with its API server \
-             enabled and point a provider at it:\n  \
-             jan config set --provider jan --base-url http://localhost:1337/v1 --model {model}\n\
-             Or pick a model from `jan cli models list`."
-        ));
-    }
-
-    // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
-    // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
-    // before the first turn (tools are collected once per run), so a race with
-    // the first message can't leave the model without its MCP tools. `None` when
-    // no server is active.
-    let mcp_servers: crate::core::state::SharedMcpServers =
-        Arc::new(Mutex::new(HashMap::new()));
-    let mcp_settings = mcp::read_settings();
-    let mcp_task = if mcp::active_count() > 0 {
-        let servers = mcp_servers.clone();
-        Some(tokio::spawn(
-            async move { mcp::connect_active(&servers).await },
-        ))
-    } else {
-        None
-    };
-
-    let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
-    let max_parallel_subagents = cfg
-        .agent
-        .max_parallel_subagents
-        .unwrap_or(crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS);
-    let args = build_cli_orchestration_args(
-        project_root,
-        permissions,
-        provider_configs,
-        mcp_servers.clone(),
-        mcp_settings,
-        permission_requests.clone(),
-        yolo,
-        plan,
-        max_parallel_subagents,
-    );
-
-    Ok(AgentSession {
-        args,
-        permission_requests,
-        model,
-        smol_model,
-        max_turns,
-        context_window: cfg.agent.context_window.unwrap_or(128_000),
-        reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
-        max_tokens: cfg.agent.max_tokens,
-        mcp_servers,
-        mcp_task,
-    })
-}
-
-/// The prior conversation a non-interactive `--resume` run continues, in
-/// OpenAI `{role, content}` shape (the wire format the engine expects).
-struct ResumedSession {
-    thread_id: String,
-    history: Vec<serde_json::Value>,
-}
-
-/// Load a saved thread's user/assistant turns for continuation. Tool calls are
-/// not replayed (they are not persisted as messages), matching `/resume` in the
-/// TUI. Errors describe why nothing could be resumed; the caller starts fresh.
-fn load_resume_history(
-    agent_dir: &std::path::Path,
-    target: &ResumeTarget,
-) -> Result<ResumedSession, String> {
-    let thread = find_resume_thread(agent_dir, target)?;
-    let thread_id = thread
-        .get("id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "saved thread has no id".to_string())?
-        .to_string();
-    let (messages, skipped) = cli_read_messages_lenient(agent_dir, &thread_id)?;
-    if skipped > 0 {
-        eprintln!("(skipped {skipped} unreadable message(s) in the resumed session)");
-    }
-    let history = messages
-        .iter()
-        .filter_map(|m| {
-            let role = m.get("role").and_then(|v| v.as_str())?;
-            if !matches!(role, "user" | "assistant") {
-                return None;
-            }
-            let text = thread_message_text(m);
-            (!text.is_empty()).then(|| serde_json::json!({ "role": role, "content": text }))
-        })
-        .collect();
-    Ok(ResumedSession { thread_id, history })
-}
-
-fn prepare_agent_run(
-    project: &str,
-    task: &str,
-    model_override: Option<String>,
-    max_turns_override: Option<u32>,
-    overrides: ProviderOverrides,
-    yolo: bool,
-    resume: Option<ResumeTarget>,
-) -> Result<PreparedRun, String> {
-    // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
-    // plan mode stays a TUI-only startup option.
-    let session = prepare_agent_session(
-        project,
-        model_override,
-        max_turns_override,
-        overrides,
-        yolo,
-        false,
-        true,
-    )?;
-    let project_root = resolve_project_root(project);
-    let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
-    let final_task = if injected.is_empty() {
-        clean_task
-    } else {
-        format!("{clean_task}\n\n---\nReferenced file contents:\n\n{injected}")
-    };
-
-    // A failed resume is not fatal: report it and run the prompt in a new session.
-    let resumed = resume.and_then(|target| {
-        match load_resume_history(&agent_dir_for(&project_root), &target) {
-            Ok(r) => {
-                eprintln!("(resumed session {} with {} message(s))", short_id(&r.thread_id), r.history.len());
-                Some(r)
-            }
-            Err(e) => {
-                eprintln!("{e}; starting a new session");
-                None
-            }
-        }
-    });
-
-    let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
-    history.push(serde_json::json!({ "role": "user", "content": final_task }));
-    let body = session.body(serde_json::json!(history.clone()));
-    // Emit resolved references stderr so the user sees what was injected
-    if !injected.is_empty() {
-        eprintln!("(resolved @path references)");
-    }
-    Ok(PreparedRun {
-        args: session.args,
-        body,
-        permission_requests: session.permission_requests,
-        mcp_task: session.mcp_task,
-        // Non-interactive runs persist into the same per-project store the TUI
-        // uses, so a run can later be continued with --resume from either side.
-        persist: PersistTarget {
-            agent_dir: agent_dir_for(&project_root),
-            thread_id: resumed.map(|r| r.thread_id),
-            model: session.model,
-            history,
-        },
-    })
-}
-
-/// First 8 chars of a thread id, the form the TUI shows in `/threads`.
-fn short_id(id: &str) -> String {
-    id.chars().take(8).collect()
 }
 
 async fn run_agent_loop(
@@ -1156,41 +751,36 @@ async fn run_agent_loop(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
-    yolo: bool,
-    resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
-    let PreparedRun {
-        args,
-        body,
-        permission_requests,
-        mcp_task,
-        persist,
-    } = prepare_agent_run(
-        project,
-        task,
-        model_override,
-        max_turns_override,
-        overrides,
-        yolo,
-        resume,
-    )?;
+    let project_root = PathBuf::from(project);
+    let cfg = load_agent_config(&project_root)?;
+    let permissions = permissions_from(&cfg);
 
-    // Block until active MCP servers connect, so tools (collected once per run)
-    // are present on the first turn.
-    if let Some(task) = mcp_task {
-        match task.await {
-            Ok(outcome) => {
-                if !outcome.connected.is_empty() {
-                    log::info!("MCP: connected {}", outcome.connected.join(", "));
-                }
-                // Headless has no transcript to note into, so these stay logs.
-                for failure in &outcome.failed {
-                    log::warn!("MCP: {failure}");
-                }
-            }
-            Err(e) => log::warn!("MCP connect task failed: {e}"),
-        }
-    }
+    let model = model_override
+        .or_else(|| cfg.agent.model.clone())
+        .ok_or_else(|| {
+            "no model specified: pass --model or set [agent].model in agent.toml".to_string()
+        })?;
+    let max_turns = max_turns_override
+        .or(cfg.agent.max_turns)
+        .unwrap_or(DEFAULT_MAX_TURNS);
+
+    let provider_configs = load_provider_configs(&overrides)?;
+
+    let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let args = build_cli_orchestration_args(
+        project_root,
+        permissions,
+        provider_configs,
+        permission_requests.clone(),
+    );
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": task }],
+        "max_turns": max_turns,
+        "stream": true,
+    });
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let printer = tokio::spawn(async move {
@@ -1202,67 +792,7 @@ async fn run_agent_loop(
     let result = run_orchestration_streamed(&tx, &body, &args).await;
     drop(tx);
     let _ = printer.await;
-
-    // Write the turn back so the session stays continuable with --resume.
-    if let Ok(completion) = result.as_ref() {
-        let PersistTarget { agent_dir, thread_id, model, mut history } = persist;
-        if let Some(text) = completion_text(completion) {
-            history.push(serde_json::json!({ "role": "assistant", "content": text }));
-        }
-        match cli_save_thread(&agent_dir, thread_id.as_deref(), &model, &history, None) {
-            Ok(id) => eprintln!("\x1b[2m[session {} - resume with `jan --resume={}`]\x1b[0m", short_id(&id), short_id(&id)),
-            Err(e) => eprintln!("(could not save session: {e})"),
-        }
-    }
     result.map(|_| ())
-}
-
-/// Assistant text of a chat-completion response, if any.
-fn completion_text(completion: &serde_json::Value) -> Option<String> {
-    let text = completion
-        .get("choices")?
-        .get(0)?
-        .get("message")?
-        .get("content")
-        .and_then(|v| v.as_str())?;
-    (!text.is_empty()).then(|| text.to_string())
-}
-
-/// Launch the interactive chat console (bare `jan`). An optional `task`
-/// seeds the first turn; otherwise the user types the first message. Shares the
-/// engine with `run_agent_loop` via `AgentSession` — only presentation differs.
-#[allow(clippy::too_many_arguments)]
-pub async fn cli_agent_ui(
-    project: &str,
-    task: Option<String>,
-    model: Option<String>,
-    max_turns: Option<u32>,
-    images: Vec<String>,
-    overrides: ProviderOverrides,
-    yolo: bool,
-    plan: bool,
-    resume: Option<ResumeTarget>,
-) -> Result<(), String> {
-    let project_root = resolve_project_root(project);
-    // A non-interactive invocation with nothing configured has no terminal to
-    // show the sign-in notice in, so it fails fast with instructions instead.
-    // Bypassed by an explicit --api-key/env key.
-    if overrides.api_key.is_none() {
-        login::reject_headless_without_provider(Some(&project_root))?;
-    }
-    // Fresh install with a terminal attached: launch with no model rather than
-    // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
-    // `jan login`) picks a model up once the user is ready.
-    let session = prepare_agent_session(project, model, max_turns, overrides, yolo, plan, false)?;
-    // TUI threads persist under the project's .jan/agent dir, separate from the
-    // desktop store, so continuing here never mutates desktop threads.
-    let agent_dir = agent_dir_for(&project_root);
-    tui::run(session, agent_dir, project_root, task, images, resume).await
-}
-
-/// Where the TUI persists a project's threads (`<project>/.jan/agent`).
-pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
-    project_root.join(".jan").join("agent")
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
@@ -1275,17 +805,7 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             let _ = std::io::stdout().flush();
         }
         StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
-        // In-progress signal is for the live TUI; the piped log stays quiet
-        // until the full call (with args) arrives just below.
-        // Headless prints one line per completed call; the in-progress signal
-        // and its argument deltas have nothing to render into.
-        StreamEvent::ToolCallStarted { .. } | StreamEvent::ToolCallArgsDelta { .. } => {}
-        // Headless reports totals once, from the terminal `Done`.
-        StreamEvent::TurnUsage { .. } => {}
-        StreamEvent::ToolCall { name, args, .. } => eprintln!(
-            "\x1b[2m[tool] {}\x1b[0m",
-            crate::core::agent::events::describe_tool_call(&name, &args)
-        ),
+        StreamEvent::ToolCall { name, args, .. } => eprintln!("\x1b[2m[tool] {name} {args}\x1b[0m"),
         StreamEvent::ToolResult {
             content, is_error, ..
         } => {
@@ -1296,23 +816,6 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             };
             eprintln!("\x1b[2m[{tag}] {content}\x1b[0m");
         }
-        StreamEvent::SubagentStart { name, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
-        }
-        StreamEvent::SubagentQueued { name, waiting, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
-        }
-        StreamEvent::SubagentEnd { name, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
-        }
-        StreamEvent::Subagent { name, event, .. } => {
-            if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
-                eprintln!(
-                    "\x1b[2m[subagent:{name}] {}\x1b[0m",
-                    crate::core::agent::events::describe_tool_call(&tool, &args)
-                );
-            }
-        }
         StreamEvent::Done { stop_reason, usage } => {
             let tokens = usage.and_then(|u| u.total_tokens).unwrap_or(0);
             eprintln!("\n\x1b[2m[done] stop_reason={stop_reason} tokens={tokens}\x1b[0m");
@@ -1320,32 +823,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Error { code, message } => {
             eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
         }
-        StreamEvent::AskRequest { .. } => {
-            eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
-        }
-        // The non-interactive CLI doesn't persist session state; a todo update
-        // is silently dropped here (mirrors MessagesUpdated below).
-        StreamEvent::TodoUpdate { .. } => {}
-        // The non-interactive CLI doesn't persist session state, so
-        // MessagesUpdated is a no-op here.
-        StreamEvent::MessagesUpdated { .. } => {}
         StreamEvent::PermissionRequest {
             request_id,
             tool_name,
             capability,
             path,
-            command,
-            diff,
             ..
         } => {
-            let detail = command
-                .map(|c| format!(" ({c})"))
-                .or_else(|| path.map(|p| format!(" on {p}")))
-                .unwrap_or_default();
-            if let Some(diff) = diff {
-                eprintln!("\x1b[2m{diff}\x1b[0m");
-            }
-            let decision = prompt_permission(tool_name, capability, detail).await;
+            let decision = prompt_permission(tool_name, capability, path).await;
             if let Some(sender) = registry.lock().await.remove(&request_id) {
                 let _ = sender.send(decision);
             }
@@ -1359,7 +844,7 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
 async fn prompt_permission(
     tool_name: String,
     capability: String,
-    detail: String,
+    path: Option<String>,
 ) -> PermissionDecision {
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
@@ -1367,7 +852,8 @@ async fn prompt_permission(
         return PermissionDecision::Deny;
     }
     tokio::task::spawn_blocking(move || {
-        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}? [y/N] \x1b[0m");
+        let target = path.map(|p| format!(" on {p}")).unwrap_or_default();
+        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{target}? [y/N] \x1b[0m");
         let _ = std::io::stderr().flush();
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line).is_err() {
