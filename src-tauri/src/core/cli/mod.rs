@@ -23,6 +23,25 @@ use crate::core::threads::{
         get_thread_metadata_path,
     },
 };
+use tauri_plugin_llamacpp::state::LlamacppState;
+#[cfg(target_os = "macos")]
+use tauri_plugin_mlx::state::MlxState;
+
+#[cfg(target_os = "macos")]
+pub use tauri_plugin_mlx::state::SessionInfo;
+#[cfg(target_os = "macos")]
+pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
+
+// ── State constructors ─────────────────────────────────────────────────────
+
+pub fn init_llamacpp_state() -> LlamacppState {
+    LlamacppState::new()
+}
+
+#[cfg(target_os = "macos")]
+pub fn init_mlx_state() -> MlxState {
+    MlxState::new()
+}
 
 // ── Thread operations ──────────────────────────────────────────────────────
 
@@ -228,22 +247,291 @@ pub fn cli_save_thread(
     let now_ms = now.as_millis() as i64;
     let now_secs = now.as_secs_f64();
 
-    let messages: Vec<serde_json::Value> = history
+    while let Some(dir) = stack.pop() {
+        let yml_path = dir.join("model.yml");
+        if yml_path.exists() {
+            if let Ok(content) = fs::read_to_string(&yml_path) {
+                if let Ok(yml) = serde_yaml::from_str::<ModelYml>(&content) {
+                    // model_id = path relative to models_root
+                    let model_id = dir
+                        .strip_prefix(&models_root)
+                        .unwrap_or(&dir)
+                        .to_string_lossy()
+                        .into_owned();
+                    results.push((model_id, yml));
+                    continue; // don't recurse into a model directory
+                }
+            }
+        }
+        // Recurse into subdirectories
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    stack.push(entry.path());
+                }
+            }
+        }
+    }
+
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results
+}
+
+/// Detect which engine owns `model_id` by probing the data folder, and
+/// resolve its paths.  Tries `llamacpp` first, then `mlx`.
+/// Returns `(engine, model_path, mmproj_path)`.
+pub fn resolve_model_engine(model_id: &str) -> Result<(String, PathBuf, Option<PathBuf>), String> {
+    let data_folder = resolve_jan_data_folder();
+    for engine in &["llamacpp", "mlx"] {
+        let yml_path = data_folder
+            .join(engine)
+            .join("models")
+            .join(model_id)
+            .join("model.yml");
+        if yml_path.exists() {
+            let (model_path, mmproj_path) = resolve_model_by_id(model_id, engine)?;
+            return Ok((engine.to_string(), model_path, mmproj_path));
+        }
+    }
+    Err(format!(
+        "Model '{}' not found for any engine. \
+        Run `jan models list` to see available models.",
+        model_id
+    ))
+}
+
+/// Resolve the absolute model file path (and optional mmproj path) for a
+/// given model ID and engine.
+///
+/// `model_path` in the YAML can be:
+///   - absolute (`/…` or `C:\…`) — used verbatim
+///   - relative — joined with the Jan data folder
+pub fn resolve_model_by_id(
+    model_id: &str,
+    engine: &str,
+) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let data_folder = resolve_jan_data_folder();
+    let yml_path = data_folder
+        .join(engine)
+        .join("models")
+        .join(model_id)
+        .join("model.yml");
+
+    if !yml_path.exists() {
+        return Err(format!(
+            "Model '{}' not found for engine '{}'. \
+            Run `jan models list` to see available models.",
+            model_id, engine
+        ));
+    }
+
+    let content = std::fs::read_to_string(&yml_path).map_err(|e| e.to_string())?;
+    let yml: ModelYml = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
+
+    let resolve_path = |p: &str| -> PathBuf {
+        let pb = PathBuf::from(p);
+        if pb.is_absolute() {
+            pb
+        } else {
+            data_folder.join(p)
+        }
+    };
+
+    let model_path = resolve_path(&yml.model_path);
+    let mmproj_path = yml.mmproj_path.as_deref().map(resolve_path);
+
+    Ok((model_path, mmproj_path))
+}
+
+// ── Binary auto-discovery ──────────────────────────────────────────────────
+
+/// Find the llama-server binary inside the Jan data folder.
+///
+/// Walks `<data_folder>/llamacpp/backends/<version>/<backend>/` and checks
+/// two locations per backend (same logic as the llamacpp-extension):
+///   1. `<backend_dir>/build/bin/llama-server[.exe]`
+///   2. `<backend_dir>/llama-server[.exe]`
+///
+/// Returns the first binary found, or `None` if no installed backend is found.
+pub fn discover_llamacpp_binary() -> Option<PathBuf> {
+    use std::fs;
+
+    let data_folder = resolve_jan_data_folder();
+    let backends_dir = data_folder.join("llamacpp").join("backends");
+
+    if !backends_dir.exists() {
+        return None;
+    }
+
+    let exe = if cfg!(windows) {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
+
+    // Collect version directories, sorted descending so we prefer the latest.
+    let mut version_entries: Vec<_> = fs::read_dir(&backends_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    version_entries.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+    for version_entry in version_entries {
+        let version_dir = version_entry.path();
+        let mut backend_entries: Vec<_> = fs::read_dir(&version_dir)
+            .ok()?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .collect();
+        backend_entries.sort_by_key(|a| a.file_name());
+
+        for backend_entry in backend_entries {
+            let backend_dir = backend_entry.path();
+
+            // Primary location: <backend>/build/bin/llama-server
+            let primary = backend_dir.join("build").join("bin").join(exe);
+            if primary.exists() {
+                return Some(primary);
+            }
+
+            // Fallback: <backend>/llama-server
+            let fallback = backend_dir.join(exe);
+            if fallback.exists() {
+                return Some(fallback);
+            }
+        }
+    }
+
+    None
+}
+
+/// Find the mlx-server binary.
+///
+/// Checks standard locations in order:
+///   1. `/Applications/Jan.app/Contents/Resources/bin/mlx-server` (installed app)
+///   2. Next to the running binary (for dev/custom installs)
+#[cfg(target_os = "macos")]
+pub fn discover_mlx_binary() -> Option<PathBuf> {
+    // 1. Standard macOS app bundle locations (try both path variants)
+    for candidate in &[
+        "/Applications/Jan.app/Contents/Resources/resources/bin/mlx-server",
+        "/Applications/Jan.app/Contents/Resources/bin/mlx-server",
+    ] {
+        let p = PathBuf::from(candidate);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 2. Next to the current executable (useful for dev builds / custom installs)
+    if let Ok(exe_dir) =
+        std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default())
+    {
+        let next_to_bin = exe_dir.join("mlx-server");
+        if next_to_bin.exists() {
+            return Some(next_to_bin);
+        }
+    }
+
+    None
+}
+
+// ── HuggingFace download ───────────────────────────────────────────────────
+
+/// A single file entry from a HuggingFace repository.
+#[derive(Debug, Clone)]
+pub struct HfFileInfo {
+    /// Original filename in the repo (e.g. `qwen3-30b.Q4_K_M.gguf`)
+    pub filename: String,
+    /// Total size in bytes (from HF metadata or LFS pointer)
+    pub size: u64,
+    /// SHA-256 from the LFS pointer, used for integrity validation
+    pub sha256: Option<String>,
+    /// Direct download URL (`https://huggingface.co/{repo}/resolve/main/{file}`)
+    pub download_url: String,
+}
+
+/// Return `true` if `s` looks like a HuggingFace repo ID (`owner/repo`).
+///
+/// A valid HF repo ID has exactly one `/`, both parts non-empty, no
+/// filesystem path markers, and only alphanumeric / `-` / `_` / `.` chars.
+pub fn looks_like_hf_repo(s: &str) -> bool {
+    if s.starts_with('/') || s.starts_with('.') || s.starts_with('~') {
+        return false;
+    }
+    let Some((owner, name)) = s.split_once('/') else {
+        return false;
+    };
+    if owner.is_empty() || name.is_empty() || name.contains('/') {
+        return false;
+    }
+    let ok = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.');
+    owner.chars().all(ok) && name.chars().all(ok)
+}
+
+/// Fetch the list of GGUF files available in a HuggingFace repository.
+///
+/// Results are sorted by size ascending so smaller quantizations appear first.
+/// Passes `hf_token` as a Bearer token when provided.
+pub async fn fetch_hf_gguf_files(
+    repo_id: &str,
+    hf_token: Option<&str>,
+) -> Result<Vec<HfFileInfo>, String> {
+    let url = format!(
+        "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
+        repo_id
+    );
+
+    let client = reqwest::Client::new();
+    let mut req = client.get(&url);
+    if let Some(tok) = hf_token {
+        req = req.bearer_auth(tok);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            401 | 403 => format!(
+                "HuggingFace returned {status} for '{repo_id}'. \
+                The repo may be gated — set the HF_TOKEN environment variable."
+            ),
+            404 => format!(
+                "HuggingFace repo '{repo_id}' not found. \
+                Check the repo ID or run `jan models list` to see local models."
+            ),
+            _ => format!("HuggingFace API error {status} for '{repo_id}'."),
+        });
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    let siblings = body["siblings"]
+        .as_array()
+        .ok_or_else(|| "Unexpected HuggingFace API response format".to_string())?;
+
+    let mut files: Vec<HfFileInfo> = siblings
         .iter()
-        .filter_map(|m| {
-            let role = m.get("role").and_then(|v| v.as_str())?;
-            let content = openai_content_text(m.get("content"));
-            Some(serde_json::json!({
-                "id": uuid::Uuid::new_v4().to_string(),
-                "object": "thread.message",
-                "thread_id": id,
-                "role": role,
-                "type": "text",
-                "status": "ready",
-                "created_at": now_ms,
-                "completed_at": now_ms,
-                "content": [{ "type": "text", "text": { "value": content, "annotations": [] } }],
-            }))
+        .filter_map(|s| {
+            let name = s["rfilename"].as_str()?;
+            if !name.to_lowercase().ends_with(".gguf") {
+                return None;
+            }
+            // Prefer LFS size, fall back to top-level size field
+            let size = s["lfs"]["size"]
+                .as_u64()
+                .or_else(|| s["size"].as_u64())
+                .unwrap_or(0);
+            let sha256 = s["lfs"]["sha256"].as_str().map(str::to_owned);
+            let download_url = format!("https://huggingface.co/{}/resolve/main/{}", repo_id, name);
+            Some(HfFileInfo {
+                filename: name.to_owned(),
+                size,
+                sha256,
+                download_url,
+            })
         })
         .collect();
     write_messages_to_file(&messages, &get_messages_path(base, &id))?;
@@ -289,24 +577,19 @@ pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result
     set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
 }
 
-/// Text of a persisted `thread.message` (content parts carry `text.value`) or of
-/// an OpenAI-shaped message (`content` is a plain string or `text` parts), so
-/// the same reader works on both sides of a save/resume round trip.
-pub(crate) fn thread_message_text(msg: &serde_json::Value) -> String {
-    match msg.get("content") {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(parts)) => parts
-            .iter()
-            .filter_map(|p| {
-                p.get("text")
-                    .and_then(|t| t.get("value"))
-                    .and_then(|v| v.as_str())
-                    .or_else(|| p.get("text").and_then(|t| t.as_str()))
-                    .or_else(|| p.as_str())
-            })
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => String::new(),
+    let data_folder = resolve_jan_data_folder();
+    let model_dir = data_folder.join("llamacpp").join("models").join(repo_id);
+    tokio::fs::create_dir_all(&model_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let dest_path = model_dir.join(&file.filename);
+
+    // ── Download ──────────────────────────────────────────────────────────
+    let client = reqwest::Client::new();
+    let mut req = client.get(&file.download_url);
+    if let Some(tok) = hf_token {
+        req = req.bearer_auth(tok);
     }
 }
 
@@ -337,10 +620,19 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
     if collapsed.is_empty() {
         return "Agent chat".to_string();
     }
-    if collapsed.chars().count() > 50 {
-        format!("{}…", collapsed.chars().take(49).collect::<String>())
-    } else {
-        collapsed
+    dest.flush().await.map_err(|e| e.to_string())?;
+
+    // ── Write model.yml ───────────────────────────────────────────────────
+    // model_path is relative to the Jan data folder
+    let rel_path = format!("llamacpp/models/{}/{}", repo_id, file.filename);
+    let display_name = repo_id.split('/').next_back().unwrap_or(repo_id);
+
+    let mut yml = format!(
+        "model_path: {rel_path}\nname: {display_name}\nsize_bytes: {}\nembedding: false\n",
+        file.size
+    );
+    if let Some(sha) = &file.sha256 {
+        yml.push_str(&format!("model_sha256: {sha}\n"));
     }
 }
 
