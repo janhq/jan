@@ -4,7 +4,7 @@
  */
 
 import { Channel, invoke } from '@tauri-apps/api/core'
-import type { AgentRunBody, StreamEvent } from './types'
+import type { AgentRunBody, PermissionDecision, StreamEvent } from './types'
 import { DefaultAgentService } from './default'
 
 export class TauriAgentService extends DefaultAgentService {
@@ -28,6 +28,30 @@ export class TauriAgentService extends DefaultAgentService {
       await invoke<void>('agent_cancel', { runId })
     } catch (error) {
       console.error(`Error invoking agent_cancel for '${runId}':`, error)
+      throw error
+    }
+  }
+
+  async respondPermission(
+    requestId: string,
+    decision: PermissionDecision
+  ): Promise<void> {
+    try {
+      await invoke<void>('agent_permission_respond', { requestId, decision })
+    } catch (error) {
+      console.error(
+        `Error invoking agent_permission_respond for '${requestId}':`,
+        error
+      )
+      throw error
+    }
+  }
+
+  async initProject(projectRoot: string): Promise<string> {
+    try {
+      return await invoke<string>('agent_init', { projectRoot })
+    } catch (error) {
+      console.error(`Error invoking agent_init for '${projectRoot}':`, error)
       throw error
     }
   }
