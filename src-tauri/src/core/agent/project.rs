@@ -6,12 +6,27 @@ use serde::Deserialize;
 
 use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
 
-/// Only `[tools]` is modeled this phase. serde ignores unknown sections
-/// (`[agent]`/`[budget]`/`[skills]`), which return when their consumers land.
+/// `[tools]` is always modeled. `[agent]` is only compiled for the CLI (its
+/// sole consumer, via `jan agent run/step/status`); serde still ignores the
+/// remaining deferred sections (`[budget]`/`[skills]`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AgentToml {
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub agent: AgentSection,
     #[serde(default)]
     pub tools: ToolsSection,
+}
+
+/// `[agent]` — resolves the model and default turn cap for CLI agent runs.
+/// `max_turns` is a soft default; the loop clamps it to 1..=400.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct AgentSection {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub max_turns: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -28,7 +43,7 @@ pub(crate) struct ToolsSection {
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
-max_turns = 8
+max_turns = 400
 instructions_file = "AGENT.md"
 
 [budget]
