@@ -35,7 +35,13 @@
     "exploreModels": "See model list from {{provider}}",
     "addModel": "Add Model",
     "modelExists": "Model already exists",
-    "modelExistsDesc": "Please choose a different model ID."
+    "modelExistsDesc": "Please choose a different model ID.",
+    "modelPinned": "Model added to your collection"
+  },
+  "manualFilter": {
+    "tooltip": "Show manually added models only",
+    "emptyTitle": "No manually added models",
+    "emptyDescription": "Use the \"Add Model\" button to add models manually, or toggle the filter off to show all models."
   },
   "deleteModel": {
     "title": "Delete Model: {{modelId}}",

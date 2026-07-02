@@ -819,9 +819,34 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 17 && state?.providers) {
+          // One-time backfill of `manuallyAdded` for users upgrading from
+          // before the manual-filter feature. Imported models are recognized
+          // at read time (see `isManuallyAdded`), so they need no backfill.
+          //
+          // Heuristic: a model is user-curated if it has user-configured
+          // capabilities, or a displayName that differs from its name/id
+          // (i.e. the user renamed it). We deliberately ignore a displayName
+          // that merely mirrors name/id, because remote catalogs sometimes
+          // populate it verbatim — counting those would wrongly hide
+          // auto-fetched models from the chat dropdown.
+          state.providers.forEach((provider) => {
+            provider.models?.forEach((model) => {
+              if (model.manuallyAdded === true) return
+              const userRenamed =
+                !!model.displayName &&
+                model.displayName !== model.name &&
+                model.displayName !== model.id
+              if (model._userConfiguredCapabilities === true || userRenamed) {
+                model.manuallyAdded = true
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 17,
+      version: 18,
     }
   )
 )

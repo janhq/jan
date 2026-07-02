@@ -29,6 +29,7 @@ import {
   IconInfoCircle,
   IconLoader,
   IconRefresh,
+  IconFilter,
   IconUpload,
 } from '@tabler/icons-react'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
@@ -39,6 +40,7 @@ import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
+import { isManuallyAdded } from '@/lib/models'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
@@ -73,6 +75,7 @@ function ProviderDetail() {
   )
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
+  const [showManualOnly, setShowManualOnly] = useState(false)
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isInstallingCuda, setIsInstallingCuda] = useState(false)
@@ -112,6 +115,17 @@ function ProviderDetail() {
         ? allModels.filter((m) => (m as any).embedding !== true)
         : allModels,
     [isLlamacpp, allModels]
+  )
+  // When the filter is active, show only models the user has curated.
+  // `isManuallyAdded` is the shared definition used by the chat dropdown too,
+  // so the two views stay consistent.
+  const displayedChatModels = useMemo(
+    () => (showManualOnly ? chatModels.filter(isManuallyAdded) : chatModels),
+    [chatModels, showManualOnly]
+  )
+  const displayedEmbeddingModels = useMemo(
+    () => (showManualOnly ? embeddingModels.filter(isManuallyAdded) : embeddingModels),
+    [embeddingModels, showManualOnly]
   )
   const defaultEmbeddingModelId = useDefaultEmbeddingModel((s) =>
     isLlamacpp ? s.getDefault('llamacpp') : undefined
@@ -514,6 +528,7 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
+    setShowManualOnly(false)
     if (!provider || !provider.base_url || !providerHasRemoteApiKeys(provider)) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
@@ -1277,6 +1292,17 @@ function ProviderDetail() {
                               />
                             )}
                           </Button>
+                          <Button
+                            variant={showManualOnly ? 'default' : 'secondary'}
+                            size="icon-xs"
+                            onClick={() => setShowManualOnly((prev) => !prev)}
+                            title={t('providers:manualFilter.tooltip')}
+                          >
+                            <IconFilter
+                              size={18}
+                              className={showManualOnly ? '' : 'text-muted-foreground'}
+                            />
+                          </Button>
                           <DialogAddModel provider={provider} />
                         </>
                       )}
@@ -1326,7 +1352,19 @@ function ProviderDetail() {
               >
                 {provider?.models.length ? (
                   <>
-                  {isLlamacpp && embeddingModels.length > 0 && chatModels.length > 0 && (
+                  {displayedChatModels.length === 0 && showManualOnly && (
+                    <div className="-mt-2">
+                      <div className="flex items-center gap-2">
+                        <h6 className="font-medium text-base">
+                          {t('providers:manualFilter.emptyTitle')}
+                        </h6>
+                      </div>
+                      <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                        {t('providers:manualFilter.emptyDescription')}
+                      </p>
+                    </div>
+                  )}
+                  {displayedChatModels.length > 0 && isLlamacpp && displayedEmbeddingModels.length > 0 && (
                     <div
                       role="separator"
                       aria-label={t('providers:chatModels')}
@@ -1338,7 +1376,7 @@ function ProviderDetail() {
                       <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
                     </div>
                   )}
-                  {(isLlamacpp ? chatModels : allModels).map((model, modelIndex) => {
+                  {displayedChatModels.map((model, modelIndex) => {
                     const capabilities = model.capabilities || []
                     return (
                       <CardItem
@@ -1472,7 +1510,7 @@ function ProviderDetail() {
                   />
                 )}
 
-                {isLlamacpp && provider && embeddingModels.length > 0 && (
+                {isLlamacpp && provider && displayedEmbeddingModels.length > 0 && (
                   <>
                     <div
                       role="separator"
@@ -1484,7 +1522,7 @@ function ProviderDetail() {
                       </span>
                       <span className="h-0.5 flex-1 rounded-full bg-main-view-fg/15" />
                     </div>
-                    {embeddingModels.map((model, modelIndex) => {
+                    {displayedEmbeddingModels.map((model, modelIndex) => {
                       const isDefault = defaultEmbeddingModelId === model.id
                       return (
                         <CardItem

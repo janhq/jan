@@ -122,7 +122,7 @@ export const DialogEditModel = ({
       const capabilitiesChanged = JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
 
       // Build the update object for the selected model
-      const modelUpdate: Partial<Model> & { _userConfiguredCapabilities?: boolean } = {}
+      const modelUpdate: Partial<Model> = {}
 
       if (nameChanged) {
         modelUpdate.displayName = displayName
@@ -133,6 +133,11 @@ export const DialogEditModel = ({
           .filter(([, isEnabled]) => isEnabled)
           .map(([capName]) => capName)
         modelUpdate._userConfiguredCapabilities = true
+      }
+
+      // Mark as manually added so it shows in the "manual only" filter
+      if (nameChanged || capabilitiesChanged) {
+        modelUpdate.manuallyAdded = true
       }
 
       // Update the model in the provider models array
