@@ -31,6 +31,16 @@ pub enum StreamEvent {
     },
     /// Terminal failure (setup error, upstream/tool failure, or max_turns).
     Error { code: String, message: String },
+    /// The loop needs the user to approve a gated tool call. The client replies via
+    /// the `agent_permission_respond` command referencing `request_id`.
+    PermissionRequest {
+        request_id: String,
+        tool_name: String,
+        capability: String,
+        path: Option<String>,
+        prompt_kind: String,
+        offers_always: bool,
+    },
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -113,6 +123,31 @@ mod tests {
         assert_eq!(
             err,
             json!({ "type": "error", "code": "error", "message": "boom" })
+        );
+    }
+
+    #[test]
+    fn permission_request_serializes_to_wire_shape() {
+        let v = serde_json::to_value(StreamEvent::PermissionRequest {
+            request_id: "perm-1".into(),
+            tool_name: "write".into(),
+            capability: "write".into(),
+            path: Some("out.txt".into()),
+            prompt_kind: "write".into(),
+            offers_always: true,
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            json!({
+                "type": "permission_request",
+                "request_id": "perm-1",
+                "tool_name": "write",
+                "capability": "write",
+                "path": "out.txt",
+                "prompt_kind": "write",
+                "offers_always": true
+            })
         );
     }
 
