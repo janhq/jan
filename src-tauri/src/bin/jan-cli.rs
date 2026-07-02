@@ -12,8 +12,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
+use app_lib::core::cli::providers::ProviderOverrides;
 use app_lib::core::cli::{
-    cli_delete_thread, cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
+    cli_agent_init, cli_agent_run, cli_agent_status, cli_agent_step, cli_delete_thread,
+    cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
     discover_llamacpp_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
 };
@@ -107,6 +109,83 @@ enum Commands {
     Models {
         #[command(subcommand)]
         cmd: ModelsCommands,
+    },
+    /// Run folder-based agents against local or cloud models
+    #[command(display_order = 12)]
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCommands,
+    },
+}
+
+// ── Agent subcommands ──────────────────────────────────────────────────────
+
+/// Cloud/local credential source shared by `agent run/step/status`. Overrides
+/// the persisted desktop provider store; env vars fill any remaining gaps.
+#[derive(Args)]
+struct ProviderArgs {
+    /// Target a single provider (e.g. anthropic); required to synthesize creds from flags alone
+    #[arg(long)]
+    provider: Option<String>,
+    /// API key for the target provider (else JAN_API_KEY / <PROVIDER>_API_KEY)
+    #[arg(long)]
+    api_key: Option<String>,
+}
+
+impl ProviderArgs {
+    fn into_overrides(self) -> ProviderOverrides {
+        ProviderOverrides {
+            provider: self.provider,
+            api_key: self.api_key,
+        }
+        .with_env()
+    }
+}
+
+#[derive(Subcommand)]
+enum AgentCommands {
+    /// Scaffold .jan/agent/ (agent.toml, AGENT.md, skills/, memory/) under a project
+    Init {
+        /// Project root to scaffold
+        #[arg(long, default_value = ".")]
+        project: String,
+    },
+    /// Run the agent loop to completion or the turn/token budget
+    Run {
+        /// Project root containing .jan/agent/agent.toml
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// The task/prompt for the agent
+        task: String,
+        /// Model ID (overrides [agent].model in agent.toml)
+        #[arg(long)]
+        model: Option<String>,
+        /// Max turns (overrides [agent].max_turns; clamped 1..=400)
+        #[arg(long)]
+        max_turns: Option<u32>,
+        #[command(flatten)]
+        providers: ProviderArgs,
+    },
+    /// Run a single turn (debugging)
+    Step {
+        /// Project root containing .jan/agent/agent.toml
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// The task/prompt for the agent
+        task: String,
+        /// Model ID (overrides [agent].model in agent.toml)
+        #[arg(long)]
+        model: Option<String>,
+        #[command(flatten)]
+        providers: ProviderArgs,
+    },
+    /// Print resolved project config and available providers as JSON
+    Status {
+        /// Project root containing .jan/agent/agent.toml
+        #[arg(long, default_value = ".")]
+        project: String,
+        #[command(flatten)]
+        providers: ProviderArgs,
     },
 }
 
@@ -289,6 +368,7 @@ async fn main() {
     match cli.command {
         Commands::Threads { cmd } => handle_threads(cmd).await,
         Commands::Models { cmd } => handle_models(cmd).await,
+        Commands::Agent { cmd } => handle_agent(cmd).await,
         Commands::Serve { args } => handle_serve(args).await,
         Commands::Launch {
             program,
@@ -321,6 +401,51 @@ async fn main() {
             )
             .await
         }
+    }
+}
+
+// ── Agent handlers ───────────────────────────────────────────────────────
+
+async fn handle_agent(cmd: AgentCommands) {
+    let result = match cmd {
+        AgentCommands::Init { project } => cli_agent_init(&project).map(|dir| {
+            println!("Scaffolded agent project at {}", dir.display());
+        }),
+        AgentCommands::Run {
+            project,
+            task,
+            model,
+            max_turns,
+            providers,
+        } => {
+            cli_agent_run(
+                &project,
+                &task,
+                model,
+                max_turns,
+                providers.into_overrides(),
+            )
+            .await
+        }
+        AgentCommands::Step {
+            project,
+            task,
+            model,
+            providers,
+        } => cli_agent_step(&project, &task, model, providers.into_overrides()).await,
+        AgentCommands::Status { project, providers } => {
+            match cli_agent_status(&project, &providers.into_overrides()) {
+                Ok(status) => {
+                    println!("{}", serde_json::to_string_pretty(&status).unwrap());
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
     }
 }
 
