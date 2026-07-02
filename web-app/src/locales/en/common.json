@@ -3,6 +3,7 @@
     "title": "Agent Debug",
     "modelLabel": "Model",
     "modelAuto": "Auto (first running model)",
+    "stepsLabel": "Max steps (1-400)",
     "toolsLabel": "Tools",
     "noTools": "No MCP tools available.",
     "promptLabel": "Prompt",
@@ -13,7 +14,18 @@
     "clear": "Clear",
     "output": "Streamed output",
     "eventLog": "Event log",
-    "empty": "No events yet."
+    "empty": "No events yet.",
+    "projectLabel": "Project root (enables built-in fs tools)",
+    "projectPlaceholder": "/absolute/path/to/project",
+    "init": "Init project",
+    "initSuccess": "Scaffolded {{path}}",
+    "initExists": "Already initialized (using existing agent.toml)",
+    "initError": "Init failed: {{message}}",
+    "permissionTitle": "Permission request",
+    "permissionBody": "The agent wants to use \"{{tool}}\" ({{capability}}){{path}}.",
+    "permissionAllowOnce": "Allow once",
+    "permissionAllowAlways": "Allow every time",
+    "permissionDeny": "Deny"
   },
   "htmlArtifact": {
     "code": "Code",
