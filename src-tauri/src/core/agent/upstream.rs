@@ -628,8 +628,14 @@ mod tests {
     fn accumulates_content_and_emits_token_per_delta() {
         let (tx, mut rx) = sink();
         let mut acc = SseAccumulator::default();
-        acc.ingest(&json!({ "choices": [{ "delta": { "content": "Hel" } }] }).to_string(), &tx);
-        acc.ingest(&json!({ "choices": [{ "delta": { "content": "lo" } }] }).to_string(), &tx);
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "Hel" } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "lo" } }] }).to_string(),
+            &tx,
+        );
         acc.ingest(
             &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
             &tx,
@@ -638,7 +644,9 @@ mod tests {
         let completion = acc.into_completion();
         assert_eq!(completion["choices"][0]["message"]["content"], "Hello");
         assert_eq!(completion["choices"][0]["finish_reason"], "stop");
-        assert!(completion["choices"][0]["message"].get("tool_calls").is_none());
+        assert!(completion["choices"][0]["message"]
+            .get("tool_calls")
+            .is_none());
 
         drop(tx);
         let mut tokens = Vec::new();

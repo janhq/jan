@@ -5,6 +5,7 @@
 //! cancellable by `run_id` via `agent_cancel`.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use tauri::ipc::Channel;
@@ -13,7 +14,10 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
+use crate::core::agent::permissions::ToolPermissions;
+use crate::core::agent::project::{init_project, load_agent_config, permissions_from};
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
+use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 
@@ -21,6 +25,11 @@ use crate::core::state::AppState;
 /// one-shot cancel sender per run. Managed via `app.manage(AgentRuns::default())`.
 #[derive(Default)]
 pub struct AgentRuns(pub Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>);
+
+/// Registry of in-flight permission prompts keyed by request_id, shared with the
+/// agent loop so `agent_permission_respond` can resolve the awaiting tool call.
+#[derive(Default)]
+pub struct AgentPermissions(pub Arc<Mutex<HashMap<String, oneshot::Sender<PermissionDecision>>>>);
 
 fn build_orchestration_args<R: Runtime>(
     app_handle: &AppHandle<R>,
@@ -36,9 +45,8 @@ fn build_orchestration_args<R: Runtime>(
         mlx_state.mlx_server_process.clone()
     };
     #[cfg(not(target_os = "macos"))]
-    let mlx_sessions: Arc<
-        Mutex<HashMap<i32, crate::core::server::MlxBackendSession>>,
-    > = Arc::new(Mutex::new(HashMap::new()));
+    let mlx_sessions: Arc<Mutex<HashMap<i32, crate::core::server::MlxBackendSession>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     OrchestrationArgs {
         client: reqwest::Client::new(),
@@ -50,6 +58,9 @@ fn build_orchestration_args<R: Runtime>(
         jan_data_folder: get_jan_data_folder_path(app_handle.clone())
             .to_string_lossy()
             .into_owned(),
+        permissions: ToolPermissions::allow_all(),
+        project_root: None,
+        permission_requests: Arc::new(Mutex::new(HashMap::new())),
     }
 }
 
@@ -61,11 +72,21 @@ pub async fn agent_run<R: Runtime>(
     app_handle: AppHandle<R>,
     state: State<'_, AppState>,
     runs: State<'_, AgentRuns>,
+    perms_registry: State<'_, AgentPermissions>,
     run_id: String,
     body: serde_json::Value,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
-    let args = build_orchestration_args(&app_handle, &state);
+    let mut args = build_orchestration_args(&app_handle, &state);
+    args.permission_requests = perms_registry.0.clone();
+
+    // When a project is explicitly named, its agent.toml governs tool permissions.
+    // A missing/malformed config is a hard error (never silently permissive).
+    if let Some(project) = body.get("project").and_then(|v| v.as_str()) {
+        let cfg = load_agent_config(Path::new(project))?;
+        args.permissions = permissions_from(&cfg);
+        args.project_root = Some(std::path::PathBuf::from(project));
+    }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let forward = tokio::spawn(async move {
@@ -107,4 +128,23 @@ pub async fn agent_cancel(runs: State<'_, AgentRuns>, run_id: String) -> Result<
         let _ = cancel_tx.send(());
     }
     Ok(())
+}
+
+/// Resolve an in-flight permission prompt emitted by the agent loop.
+#[tauri::command]
+pub async fn agent_permission_respond(
+    perms_registry: State<'_, AgentPermissions>,
+    request_id: String,
+    decision: PermissionDecision,
+) -> Result<(), String> {
+    if let Some(tx) = perms_registry.0.lock().await.remove(&request_id) {
+        let _ = tx.send(decision);
+    }
+    Ok(())
+}
+
+/// Scaffold a `.jan/agent/` project skeleton under `project_root`.
+#[tauri::command]
+pub async fn agent_init(project_root: String) -> Result<String, String> {
+    init_project(Path::new(&project_root)).map(|p| p.to_string_lossy().into_owned())
 }
