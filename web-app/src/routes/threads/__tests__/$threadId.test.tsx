@@ -298,6 +298,8 @@ vi.mock('@/lib/messages', () => ({
     msg.parts
       .filter((p: any) => p.type === 'text')
       .map((p: any) => ({ type: 'text', text: { value: p.text, annotations: [] } })),
+  uiMessageHasMeaningfulContent: (msg: any) =>
+    !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
 }))
 
 vi.mock('@/lib/completion', () => ({
@@ -334,18 +336,21 @@ vi.mock('zustand/react/shallow', () => ({
 }))
 
 vi.mock('@/hooks/use-chat', () => ({
-  useChat: (_args: any) => ({
-    messages: h.chatState.messages,
-    status: h.chatState.status,
-    error: h.chatState.error,
-    sendMessage: h.mockSendMessage,
-    regenerate: h.mockRegenerate,
-    setMessages: h.mockSetChatMessages,
-    stop: h.mockStop,
-    addToolOutput: h.mockAddToolOutput,
-    updateRagToolsAvailability: h.mockUpdateRag,
-    setContinueFromContent: h.mockSetContinueFromContent,
-  }),
+  useChat: (_args: any) => {
+    ;(h as any).capturedOnFinish = _args?.onFinish
+    return {
+      messages: h.chatState.messages,
+      status: h.chatState.status,
+      error: h.chatState.error,
+      sendMessage: h.mockSendMessage,
+      regenerate: h.mockRegenerate,
+      setMessages: h.mockSetChatMessages,
+      stop: h.mockStop,
+      addToolOutput: h.mockAddToolOutput,
+      updateRagToolsAvailability: h.mockUpdateRag,
+      setContinueFromContent: h.mockSetContinueFromContent,
+    }
+  },
 }))
 
 vi.mock('@/hooks/useThreads', () => ({ useThreads: h.useThreadsMock }))
@@ -436,6 +441,8 @@ describe('ThreadDetail route', () => {
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
     h.agentModeState.agentThreads = {}
+    h.modelProviderState.selectedProvider = 'openai'
+    h.appStateState.oomError = undefined
     sessionStorage.clear()
   })
 
@@ -581,6 +588,99 @@ describe('ThreadDetail route', () => {
     expect(h.messagesState.updateMessage).toHaveBeenCalled()
     expect(h.mockSetChatMessages).toHaveBeenCalled()
     expect(h.mockRegenerate).not.toHaveBeenCalled()
+  })
+
+  it('clears an active banner error when switching versions so a healthy assistant is not hidden', () => {
+    // A prior turn left a router OOM banner active. Without clearing it on
+    // switch, the render filter blanks the last assistant of whatever branch we
+    // land on, leaving only user messages visible.
+    h.modelProviderState.selectedProvider = 'llamacpp'
+    h.appStateState.oomError = 'router crashed'
+    const branched = [
+      {
+        id: 'u1',
+        role: 'user',
+        created_at: 1,
+        content: [{ type: 'text', text: { value: 'hi', annotations: [] } }],
+        metadata: { parentId: null },
+      },
+      {
+        id: 'a1a',
+        role: 'assistant',
+        created_at: 2,
+        content: [{ type: 'text', text: { value: 'v1', annotations: [] } }],
+        metadata: { parentId: 'u1' },
+      },
+      {
+        id: 'a1b',
+        role: 'assistant',
+        created_at: 3,
+        content: [{ type: 'text', text: { value: 'v2', annotations: [] } }],
+        metadata: { parentId: 'u1' },
+      },
+    ]
+    h.messagesState.messages = { 'thread-1': branched }
+    h.messagesState.getMessages = vi.fn(() => branched)
+    // a1b is rendered mid-list (a trailing user turn keeps it off the
+    // last-message filter) so its version nav stays clickable.
+    h.chatState.messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1b', role: 'assistant', parts: [{ type: 'text', text: 'v2' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'more' }] },
+    ]
+    renderComponent()
+    screen.getByTestId('prev-a1b').click()
+    expect(h.appStateState.setOomError).toHaveBeenCalledWith(undefined)
+    expect(h.mockRegenerate).not.toHaveBeenCalled()
+  })
+
+  it('onFinish links a new assistant to the active user turn in a branched thread (never null parent)', () => {
+    // Regression for #8357: once a thread is branched, a lost pending-parent ref
+    // must not persist the assistant with parentId:null (which computeActivePath
+    // drops as a phantom root, leaving "user messages in a row").
+    const branched = [
+      {
+        id: 'u1',
+        role: 'user',
+        created_at: 1,
+        content: [{ type: 'text', text: { value: 'hi', annotations: [] } }],
+        metadata: { parentId: null },
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        created_at: 2,
+        content: [{ type: 'text', text: { value: 'r1', annotations: [] } }],
+        metadata: { parentId: 'u1' },
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        created_at: 3,
+        content: [{ type: 'text', text: { value: 'again', annotations: [] } }],
+        metadata: { parentId: 'a1' },
+      },
+    ]
+    h.messagesState.getMessages = vi.fn(() => branched)
+    renderComponent()
+
+    act(() => {
+      ;(h as any).capturedOnFinish({
+        message: {
+          id: 'a2',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'reply for u2' }],
+          metadata: {},
+        },
+        isAbort: false,
+      })
+    })
+
+    const added = h.messagesState.addMessage.mock.calls.map((c: any[]) => c[0])
+    const persisted = added.find((m: any) => m.id === 'a2')
+    expect(persisted).toBeTruthy()
+    expect(persisted.metadata.parentId).toBe('u2')
+    expect(persisted.metadata.parentId).not.toBeNull()
   })
 
   it('delete removes message from store and chat list', () => {
