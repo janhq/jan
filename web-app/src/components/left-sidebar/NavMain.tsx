@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { isDev } from '@/lib/utils'
 
 import { Link, useNavigate } from '@tanstack/react-router'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
@@ -134,12 +135,16 @@ const getNavMainItems = (
     url: route.settings.general,
     animatedIcon: SettingsIcon,
   },
-  // TEMP: smoke-test entry for the agent loop; remove before ship.
-  {
-    title: 'common:agentDebug.title',
-    url: route.agentDebug,
-    icon: IconRobot,
-  },
+  // TEMP: smoke-test entry for the agent loop; dev builds only, remove before ship.
+  ...(isDev()
+    ? [
+        {
+          title: 'common:agentDebug.title',
+          url: route.agentDebug,
+          icon: IconRobot,
+        },
+      ]
+    : []),
 ]
 
 function NavMainItemWithAnimatedIcon({
