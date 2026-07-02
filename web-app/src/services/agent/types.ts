@@ -15,8 +15,20 @@ export type StreamEvent =
   | { type: 'step'; index: number; max: number }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
   | { type: 'tool_result'; id: string; content: string; is_error: boolean }
+  | {
+      type: 'permission_request'
+      request_id: string
+      tool_name: string
+      capability: string
+      path?: string | null
+      prompt_kind: string
+      offers_always: boolean
+    }
   | { type: 'done'; stop_reason: string; usage: AgentUsage | null }
   | { type: 'error'; code: string; message: string }
+
+/** Mirrors the Rust `PermissionDecision` (serde snake_case). */
+export type PermissionDecision = 'allow_once' | 'allow_always' | 'deny'
 
 export interface AgentRunMessage {
   role: string
@@ -30,6 +42,8 @@ export interface AgentRunBody {
   /** Per-run MCP tool allowlist (by tool name). Omit for all tools; empty
    * array for none. */
   allowed_tools?: string[]
+  /** Project root; enables built-in fs tools and loads agent.toml permissions. */
+  project?: string
   [key: string]: unknown
 }
 
@@ -43,4 +57,11 @@ export interface AgentService {
   ): Promise<void>
   /** Cancel an in-flight run by id. No-op if it already finished. */
   cancel(runId: string): Promise<void>
+  /** Answer a `permission_request` event by its `request_id`. */
+  respondPermission(
+    requestId: string,
+    decision: PermissionDecision
+  ): Promise<void>
+  /** Scaffold a `.jan/agent/` project under `projectRoot`; returns the created dir. */
+  initProject(projectRoot: string): Promise<string>
 }

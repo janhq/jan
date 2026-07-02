@@ -12,19 +12,14 @@ fn main() {
             .args(["--toolchain", "default", "--find", "swift"])
             .output()
         {
-            let swift_path = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
+            let swift_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if let Some(toolchain) = std::path::Path::new(&swift_path)
                 .parent()
                 .and_then(|p| p.parent())
             {
                 let lib_path = toolchain.join("lib/swift/macosx");
                 if lib_path.exists() {
-                    println!(
-                        "cargo:rustc-link-arg=-Wl,-rpath,{}",
-                        lib_path.display()
-                    );
+                    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_path.display());
                 }
             }
         }
