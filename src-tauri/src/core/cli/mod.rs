@@ -2,6 +2,8 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod providers;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -529,6 +531,230 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
     }
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     serde_json::from_str(&data).map_err(|e| e.to_string())
+}
+
+// ── Agent operations ───────────────────────────────────────────────────────
+
+use crate::core::agent::events::StreamEvent;
+use crate::core::agent::project::{init_project, load_agent_config, permissions_from};
+use crate::core::agent::r#loop::{
+    run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
+};
+use crate::core::agent::tools::gate::PermissionDecision;
+use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
+use crate::core::mcp::models::McpSettings;
+use std::collections::HashMap;
+use std::io::Write as _;
+use tokio::sync::{mpsc, Mutex};
+
+/// Default turn cap when neither `--max-turns` nor `agent.toml [agent].max_turns`
+/// is set. The loop separately clamps the effective value to 1..=400.
+const DEFAULT_MAX_TURNS: u32 = 400;
+
+/// Scaffold `.jan/agent/` under `project`. Returns the created agent dir.
+pub fn cli_agent_init(project: &str) -> Result<PathBuf, String> {
+    init_project(&PathBuf::from(project))
+}
+
+/// Resolved-config + provider snapshot for `jan agent status`.
+pub fn cli_agent_status(
+    project: &str,
+    overrides: &ProviderOverrides,
+) -> Result<serde_json::Value, String> {
+    let project_root = PathBuf::from(project);
+    let cfg = load_agent_config(&project_root)?;
+    let provider_configs = load_provider_configs(overrides)?;
+
+    let mut providers: Vec<serde_json::Value> = provider_configs
+        .values()
+        .map(|c| {
+            serde_json::json!({
+                "provider": c.provider,
+                "base_url": c.base_url,
+                "has_api_key": c.api_key.is_some() || !c.api_keys.is_empty(),
+                "models": c.models.len(),
+            })
+        })
+        .collect();
+    providers.sort_by(|a, b| a["provider"].as_str().cmp(&b["provider"].as_str()));
+
+    Ok(serde_json::json!({
+        "project": project_root.to_string_lossy(),
+        "data_folder": resolve_jan_data_folder().to_string_lossy(),
+        "model": cfg.agent.model,
+        "max_turns": cfg.agent.max_turns.unwrap_or(DEFAULT_MAX_TURNS),
+        "tools": {
+            "default": cfg.tools.default,
+            "allow": cfg.tools.allow,
+            "deny": cfg.tools.deny,
+            "allow_write": cfg.tools.allow_write,
+        },
+        "providers": providers,
+    }))
+}
+
+/// Autonomous multi-turn run to completion or the turn/token budget.
+pub async fn cli_agent_run(
+    project: &str,
+    task: &str,
+    model: Option<String>,
+    max_turns: Option<u32>,
+    overrides: ProviderOverrides,
+) -> Result<(), String> {
+    run_agent_loop(project, task, model, max_turns, overrides).await
+}
+
+/// Single-turn run for debugging (`max_turns = 1`).
+pub async fn cli_agent_step(
+    project: &str,
+    task: &str,
+    model: Option<String>,
+    overrides: ProviderOverrides,
+) -> Result<(), String> {
+    run_agent_loop(project, task, model, Some(1), overrides).await
+}
+
+fn build_cli_orchestration_args(
+    project_root: PathBuf,
+    permissions: crate::core::agent::permissions::ToolPermissions,
+    provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
+    permission_requests: PermissionRegistry,
+) -> OrchestrationArgs {
+    OrchestrationArgs {
+        client: reqwest::Client::new(),
+        provider_configs: Arc::new(Mutex::new(provider_configs)),
+        llama_state: Arc::new(init_llamacpp_state()),
+        mlx_sessions: Arc::new(Mutex::new(HashMap::new())),
+        mcp_servers: Arc::new(Mutex::new(HashMap::new())),
+        mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
+        jan_data_folder: resolve_jan_data_folder().to_string_lossy().into_owned(),
+        permissions,
+        project_root: Some(project_root),
+        permission_requests,
+    }
+}
+
+async fn run_agent_loop(
+    project: &str,
+    task: &str,
+    model_override: Option<String>,
+    max_turns_override: Option<u32>,
+    overrides: ProviderOverrides,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(project);
+    let cfg = load_agent_config(&project_root)?;
+    let permissions = permissions_from(&cfg);
+
+    let model = model_override
+        .or_else(|| cfg.agent.model.clone())
+        .ok_or_else(|| {
+            "no model specified: pass --model or set [agent].model in agent.toml".to_string()
+        })?;
+    let max_turns = max_turns_override
+        .or(cfg.agent.max_turns)
+        .unwrap_or(DEFAULT_MAX_TURNS);
+
+    let provider_configs = load_provider_configs(&overrides)?;
+
+    let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let args = build_cli_orchestration_args(
+        project_root,
+        permissions,
+        provider_configs,
+        permission_requests.clone(),
+    );
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": task }],
+        "max_turns": max_turns,
+        "stream": true,
+    });
+
+    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+    let printer = tokio::spawn(async move {
+        while let Some(ev) = rx.recv().await {
+            print_event(ev, &permission_requests).await;
+        }
+    });
+
+    let result = run_orchestration_streamed(&tx, &body, &args).await;
+    drop(tx);
+    let _ = printer.await;
+    result.map(|_| ())
+}
+
+/// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
+/// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
+/// resolved via the terminal (deny when non-interactive).
+async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
+    match ev {
+        StreamEvent::Token { text } => {
+            print!("{text}");
+            let _ = std::io::stdout().flush();
+        }
+        StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
+        StreamEvent::ToolCall { name, args, .. } => eprintln!("\x1b[2m[tool] {name} {args}\x1b[0m"),
+        StreamEvent::ToolResult {
+            content, is_error, ..
+        } => {
+            let tag = if is_error {
+                "tool-error"
+            } else {
+                "tool-result"
+            };
+            eprintln!("\x1b[2m[{tag}] {content}\x1b[0m");
+        }
+        StreamEvent::Done { stop_reason, usage } => {
+            let tokens = usage.and_then(|u| u.total_tokens).unwrap_or(0);
+            eprintln!("\n\x1b[2m[done] stop_reason={stop_reason} tokens={tokens}\x1b[0m");
+        }
+        StreamEvent::Error { code, message } => {
+            eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
+        }
+        StreamEvent::PermissionRequest {
+            request_id,
+            tool_name,
+            capability,
+            path,
+            ..
+        } => {
+            let decision = prompt_permission(tool_name, capability, path).await;
+            if let Some(sender) = registry.lock().await.remove(&request_id) {
+                let _ = sender.send(decision);
+            }
+        }
+    }
+}
+
+/// Ask the terminal to approve a gated tool call. Non-interactive stdin (pipe,
+/// CI) auto-denies, matching the headless "safe default" contract; blocking
+/// stdin is confined to a blocking thread so the loop task keeps running.
+async fn prompt_permission(
+    tool_name: String,
+    capability: String,
+    path: Option<String>,
+) -> PermissionDecision {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        eprintln!("\x1b[33m[permission] auto-denied {capability} via '{tool_name}' (non-interactive)\x1b[0m");
+        return PermissionDecision::Deny;
+    }
+    tokio::task::spawn_blocking(move || {
+        let target = path.map(|p| format!(" on {p}")).unwrap_or_default();
+        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{target}? [y/N] \x1b[0m");
+        let _ = std::io::stderr().flush();
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_err() {
+            return PermissionDecision::Deny;
+        }
+        match line.trim().to_ascii_lowercase().as_str() {
+            "y" | "yes" => PermissionDecision::AllowOnce,
+            _ => PermissionDecision::Deny,
+        }
+    })
+    .await
+    .unwrap_or(PermissionDecision::Deny)
 }
 
 #[cfg(test)]
