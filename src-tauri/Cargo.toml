@@ -91,6 +91,8 @@ rmcp = { version = "0.8.5", features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
+toml = "0.8"
+toml_edit = "0.23"
 sha2 = "0.10"
 tar = "0.4"
 zip = "0.6"
@@ -134,6 +136,8 @@ futures = "0.3"
 hostname = "0.4"
 base64 = "0.22"
 glob = "0.3"
+regex = "1"
+ignore = "0.4"
 clap = { version = "4", features = ["derive"] }
 dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }

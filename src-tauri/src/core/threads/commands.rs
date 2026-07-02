@@ -190,7 +190,10 @@ pub async fn create_message<R: Runtime>(
         ensure_thread_dir_exists(&data_folder, &thread_id)?;
 
         // Dedupe against a modify_message upsert that landed first.
-        let message_id = message.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let message_id = message
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         if let Some(ref id) = message_id {
             let existing = read_messages_from_file(&data_folder, &thread_id)?;
             if existing

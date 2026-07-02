@@ -80,7 +80,10 @@ fn delete_settings(data_folder: &std::path::Path) {
 /// Clear the WebKit/WRY webview profile (localStorage, cookies, IndexedDB,
 /// updater state) stored in the bundle-id app-data dir (e.g. `jan.ai.app/`).
 /// Distinct from the product-name data folder; only removed on explicit opt-in.
-fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_folder: &std::path::Path) {
+fn clear_webview_profile<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    data_folder: &std::path::Path,
+) {
     let webview_dir = match app_handle.path().app_data_dir() {
         Ok(dir) => dir,
         Err(e) => {
@@ -104,7 +107,10 @@ fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_fold
 
     log::info!("Clearing webview profile: {}", webview_dir.display());
     if let Err(e) = fs::remove_dir_all(&webview_dir) {
-        log::warn!("Failed to clear webview profile {}: {e}", webview_dir.display());
+        log::warn!(
+            "Failed to clear webview profile {}: {e}",
+            webview_dir.display()
+        );
     }
 }
 
@@ -860,16 +866,15 @@ fn jan_cli_install_dir() -> Result<PathBuf, String> {
             return Ok(usr_local_bin);
         }
     }
-    let home =
-        std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
+    let home = std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
     Ok(PathBuf::from(home).join(".local").join("bin"))
 }
 
 /// Return the directory containing the bundled CLI binary on Windows.
 #[cfg(windows)]
 fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
-    let local_app_data = std::env::var("LOCALAPPDATA")
-        .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
     Ok(PathBuf::from(local_app_data)
         .join("Programs")
         .join("Jan")
@@ -922,7 +927,10 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
         })
         .collect();
 
-    if parts.iter().any(|p| p.eq_ignore_ascii_case(&install_dir_str)) {
+    if parts
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case(&install_dir_str))
+    {
         return Ok(());
     }
 

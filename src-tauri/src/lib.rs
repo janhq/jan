@@ -1,6 +1,5 @@
 pub mod core;
 
-
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -72,6 +71,8 @@ macro_rules! invoke_commands_with_extras {
         // Agent commands
         core::agent::commands::agent_run,
         core::agent::commands::agent_cancel,
+        core::agent::commands::agent_permission_respond,
+        core::agent::commands::agent_init,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -274,6 +275,7 @@ pub fn run() {
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
         .manage(core::agent::commands::AgentRuns::default())
+        .manage(core::agent::commands::AgentPermissions::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -454,7 +456,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     log::info!("App cleanup completed");
                 });

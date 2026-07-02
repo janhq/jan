@@ -263,9 +263,8 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         let base_delay_ms = settings.base_restart_delay_ms;
         let max_delay_ms = settings.max_restart_delay_ms;
         let multiplier = settings.backoff_multiplier;
-        let delay_ms = (base_delay_ms as f64
-            * multiplier.powi((consecutive_failures - 1) as i32))
-            as u64;
+        let delay_ms =
+            (base_delay_ms as f64 * multiplier.powi((consecutive_failures - 1) as i32)) as u64;
         let capped_delay_ms = delay_ms.min(max_delay_ms);
 
         log::info!(
@@ -312,7 +311,9 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                 emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
-                log::error!("MCP server {name} reconnect attempt {consecutive_failures} failed: {e}");
+                log::error!(
+                    "MCP server {name} reconnect attempt {consecutive_failures} failed: {e}"
+                );
                 // Loop continues — will retry with increased backoff
             }
         }
@@ -576,8 +577,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // what most published MCP servers are tested against.
         let override_available = (config_params.command == "npx"
             && can_override_npx(bun_x_path.display().to_string()))
-            || (config_params.command == "uvx"
-                && can_override_uvx(uv_path.display().to_string()));
+            || (config_params.command == "uvx" && can_override_uvx(uv_path.display().to_string()));
 
         let build_cmd = |use_override: bool| -> Command {
             let mut cmd = Command::new(config_params.command.clone());
@@ -753,9 +753,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     return Ok(());
                 }
                 Some(Ok(Ok(_tools))) => {
-                    log::info!(
-                        "MCP server {name} tools/list verified on attempt {attempt}"
-                    );
+                    log::info!("MCP server {name} tools/list verified on attempt {attempt}");
                     break;
                 }
                 Some(Ok(Err(e))) => {
@@ -810,10 +808,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
 /// server itself reported, defaulting to info when no level tag is present.
 fn log_mcp_stderr_line(server_name: &str, line: &str) {
     let trimmed = line.trim_start();
-    let level_token = trimmed
-        .split_whitespace()
-        .next()
-        .map(|t| t.trim_matches(|c: char| !c.is_ascii_alphabetic()).to_ascii_uppercase());
+    let level_token = trimmed.split_whitespace().next().map(|t| {
+        t.trim_matches(|c: char| !c.is_ascii_alphabetic())
+            .to_ascii_uppercase()
+    });
     match level_token.as_deref() {
         Some("ERROR" | "CRITICAL" | "FATAL") => {
             log::error!("[mcp-stderr:{server_name}] {line}")
@@ -920,42 +918,41 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
             check_and_cleanup_stale_lock(app, port).await?;
             // Fall through — port may still be held by a grandchild that outlived this PID.
         } else {
+            // Process from lock file is alive - verify it's still the MCP process
+            if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
+                if jan_utils::network::is_orphaned_mcp_process(&process_info) {
+                    log::info!(
+                        "Lock file PID {} verified as MCP process, attempting kill",
+                        lock.pid
+                    );
+                    kill_process_by_pid(lock.pid).await?;
 
-        // Process from lock file is alive - verify it's still the MCP process
-        if let Some(process_info) = jan_utils::network::get_process_info_by_pid(lock.pid) {
-            if jan_utils::network::is_orphaned_mcp_process(&process_info) {
-                log::info!(
-                    "Lock file PID {} verified as MCP process, attempting kill",
-                    lock.pid
-                );
-                kill_process_by_pid(lock.pid).await?;
+                    use crate::core::mcp::lockfile::delete_lock_file;
+                    delete_lock_file(app, port)?;
 
-                use crate::core::mcp::lockfile::delete_lock_file;
-                delete_lock_file(app, port)?;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-                if jan_utils::network::is_port_available(port) {
-                    log::info!("Cleaned up orphaned process via lock file");
-                    return Ok(true);
-                }
-            } else {
-                log::warn!(
+                    if jan_utils::network::is_port_available(port) {
+                        log::info!("Cleaned up orphaned process via lock file");
+                        return Ok(true);
+                    }
+                } else {
+                    log::warn!(
                     "Lock file PID {} is alive but NOT an MCP process (name: {}, cmd: {:?}). Lock file is stale.",
                     lock.pid,
                     process_info.name,
                     process_info.cmd
                 );
-                // PID reused by another process, clean up stale lock file
+                    // PID reused by another process, clean up stale lock file
+                    check_and_cleanup_stale_lock(app, port).await?;
+                }
+            } else {
+                log::debug!(
+                    "Could not get process info for PID {}, cleaning up lock file",
+                    lock.pid
+                );
                 check_and_cleanup_stale_lock(app, port).await?;
             }
-        } else {
-            log::debug!(
-                "Could not get process info for PID {}, cleaning up lock file",
-                lock.pid
-            );
-            check_and_cleanup_stale_lock(app, port).await?;
-        }
         }
     }
 
@@ -1020,8 +1017,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
         None => kill(nix_pid, sig),
     };
 
-    send(Signal::SIGTERM)
-        .map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
+    send(Signal::SIGTERM).map_err(|e| format!("Failed to send SIGTERM to PID {}: {}", pid, e))?;
 
     for _ in 0..30 {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -1032,8 +1028,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     }
 
     log::warn!("Process group {} unresponsive, sending SIGKILL", pid);
-    send(Signal::SIGKILL)
-        .map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
+    send(Signal::SIGKILL).map_err(|e| format!("Failed to send SIGKILL to PID {}: {}", pid, e))?;
 
     Ok(())
 }
@@ -1089,7 +1084,12 @@ pub async fn terminate_browser_mcp(pid: Option<u32>, port: u16) {
             info.pid
         );
         if let Err(e) = kill_process_by_pid(info.pid).await {
-            log::warn!("Failed to kill straggler PID {} on port {}: {}", info.pid, port, e);
+            log::warn!(
+                "Failed to kill straggler PID {} on port {}: {}",
+                info.pid,
+                port,
+                e
+            );
         }
         let _ = jan_utils::network::wait_for_port_free(
             port,
