@@ -10,6 +10,7 @@ import {
   backfillParentIds,
   makeSibling,
   withActiveChild,
+  repairDetachedAssistants,
 } from '../message-branching'
 
 let clock = 1000
@@ -108,5 +109,86 @@ describe('message-branching', () => {
     const m = [a1, a2]
     expect(ids(computeActivePath(m))).toEqual(['a2'])
     expect(ids(computeActivePath(m, 'a1'))).toEqual(['a1'])
+  })
+
+  describe('repairDetachedAssistants', () => {
+    it('re-parents a detached assistant to the preceding user turn', () => {
+      // u1 -> a1(BROKEN: parentId null) -> u2(-> a1); a1 is a phantom root that
+      // computeActivePath drops, so only u1 renders.
+      const u1 = msg('u1', 'user', 'hi', { parentId: null })
+      const a1 = msg('a1', 'assistant', 'reply', { parentId: null })
+      const u2 = msg('u2', 'user', 'again', { parentId: 'a1' })
+      const before = [u1, a1, u2]
+      // Broken: a1 is a second null-parent root, so computeActivePath picks it
+      // as the (newest) root and drops the real u1 turn from the path.
+      expect(ids(computeActivePath(before))).toEqual(['a1', 'u2'])
+
+      const repaired = repairDetachedAssistants(before)
+      expect(repaired).toHaveLength(1)
+      expect(repaired[0].id).toBe('a1')
+      expect(getParentId(repaired[0])).toBe('u1')
+
+      const fixed = before.map((m) => repaired.find((r) => r.id === m.id) ?? m)
+      expect(ids(computeActivePath(fixed))).toEqual(['u1', 'a1', 'u2'])
+    })
+
+    it('is a no-op on healthy branched threads', () => {
+      const u1 = msg('u1', 'user', 'hi', { parentId: null })
+      const a1 = msg('a1', 'assistant', 'reply', { parentId: 'u1' })
+      expect(repairDetachedAssistants([u1, a1])).toEqual([])
+    })
+
+    it('is a no-op on legacy un-branched threads', () => {
+      const m = [msg('a', 'user', 'hi'), msg('b', 'assistant', 'yo')]
+      expect(repairDetachedAssistants(m)).toEqual([])
+    })
+
+    it('leaves a detached assistant with no preceding user untouched', () => {
+      const a1 = msg('a1', 'assistant', 'orphan', { parentId: null })
+      const u1 = msg('u1', 'user', 'hi', { parentId: null })
+      expect(repairDetachedAssistants([a1, u1])).toEqual([])
+    })
+
+    it('repairs the real-world pattern: undefined-parent assistants with the next user mis-linked to the previous user', () => {
+      // Reproduces thread 03d08945: branched thread where assistant replies lost
+      // their parentId entirely (undefined) and each following user was linked to
+      // the PREVIOUS user, skipping the reply. Repair must re-parent the reply AND
+      // re-link the following user onto it so the whole tail rejoins the path.
+      const u1 = msg('u1', 'user', 'q1', { parentId: null })
+      const a1 = msg('a1', 'assistant', 'r1', { parentId: 'u1' })
+      const u2 = msg('u2', 'user', 'q2', { parentId: 'a1' })
+      const a2 = msg('a2', 'assistant', 'r2') // parentId missing (undefined)
+      const u3 = msg('u3', 'user', 'q3', { parentId: 'u2' }) // mis-linked to u2
+      const a3 = msg('a3', 'assistant', 'r3') // parentId missing (undefined)
+      const before = [u1, a1, u2, a2, u3, a3]
+      // Broken: a2 and a3 are dropped, only users survive after u2.
+      expect(ids(computeActivePath(before))).toEqual(['u1', 'a1', 'u2', 'u3'])
+
+      const repaired = repairDetachedAssistants(before)
+      const fixed = before.map((m) => repaired.find((r) => r.id === m.id) ?? m)
+      expect(ids(computeActivePath(fixed))).toEqual([
+        'u1',
+        'a1',
+        'u2',
+        'a2',
+        'u3',
+        'a3',
+      ])
+      // Idempotent: a second pass finds nothing to write.
+      expect(repairDetachedAssistants(fixed)).toEqual([])
+    })
+
+    it('repairs multiple detached assistants to their nearest user by created_at', () => {
+      const u1 = msg('u1', 'user', 'q1', { parentId: null })
+      const a1 = msg('a1', 'assistant', 'r1', { parentId: null })
+      const u2 = msg('u2', 'user', 'q2', { parentId: 'a1' })
+      const a2 = msg('a2', 'assistant', 'r2', { parentId: null })
+      const repaired = repairDetachedAssistants([u1, a1, u2, a2])
+      const parentOf = (id: string) =>
+        getParentId(repaired.find((r) => r.id === id)!)
+      expect(repaired.map((r) => r.id).sort()).toEqual(['a1', 'a2'])
+      expect(parentOf('a1')).toBe('u1')
+      expect(parentOf('a2')).toBe('u2')
+    })
   })
 })

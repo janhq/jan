@@ -42,6 +42,7 @@ import {
   getSiblings,
   getVersionInfo,
   hasBranching,
+  repairDetachedAssistants,
 } from '@/lib/message-branching'
 import {
   ThreadMessage,
@@ -700,6 +701,16 @@ function ThreadDetail() {
             for (const id of emptyAssistantIds) {
               deleteMessage(threadId, id)
             }
+          }
+
+          // Migrate threads corrupted by the pre-#8357 bug: assistant replies
+          // saved with parentId:null are phantom roots that computeActivePath
+          // drops. Re-parent them to the user turn they answer and persist.
+          const repaired = repairDetachedAssistants(messagesToSet)
+          if (repaired.length > 0) {
+            const byId = new Map(repaired.map((m) => [m.id, m]))
+            messagesToSet = messagesToSet.map((m) => byId.get(m.id) ?? m)
+            for (const m of repaired) updateMessage(m)
           }
 
           setMessages(threadId, messagesToSet)

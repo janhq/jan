@@ -1,4 +1,9 @@
-import { ThreadMessage, ContentType, MessageStatus } from '@janhq/core'
+import {
+  ThreadMessage,
+  ContentType,
+  MessageStatus,
+  ChatCompletionRole,
+} from '@janhq/core'
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
@@ -137,6 +142,65 @@ export const withActiveChild = (
 export const backfillParentIds = (path: ThreadMessage[]): ThreadMessage[] => {
   if (path.some((m) => meta(m).parentId !== undefined)) return []
   return path.map((m, i) => withParentId(m, i === 0 ? null : path[i - 1].id))
+}
+
+/**
+ * Repair threads corrupted on disk by the assistant-orphan bug (#8357 and its
+ * earlier variants): in a branched thread an assistant reply was persisted with
+ * a detached parent link -- either `parentId: null` or no `parentId` at all.
+ * `computeActivePath` then treats it as a phantom root / non-child and drops it,
+ * so the conversation renders as user messages in a row with the replies gone.
+ *
+ * The break compounds: because the reply is detached, the *following* user turn
+ * was linked to the previous user instead of to that reply, so the whole tail
+ * hangs off the wrong nodes. Repair each detached assistant by:
+ *   1. re-parenting it to the user turn it answers (nearest preceding user by
+ *      `created_at`, mirroring `resolveAssistantParent`), and
+ *   2. re-linking the user turn that follows it (currently a child of that same
+ *      user) onto the assistant, restoring the alternating chain so every later
+ *      turn rejoins the active path.
+ * Genuine version forks are preserved: only detached assistants and the single
+ * user turn each one displaced are touched.
+ *
+ * Returns only the messages that need a write (empty when nothing is broken).
+ * Idempotent: once linked, an assistant has a string parent and is skipped.
+ * No-op on legacy (un-branched) threads -- without branching, `computeActivePath`
+ * returns messages unchanged, so a missing parent is harmless there.
+ */
+export const repairDetachedAssistants = (
+  messages: ThreadMessage[]
+): ThreadMessage[] => {
+  if (!hasBranching(messages)) return []
+  const ordered = [...messages].sort(byCreatedAt)
+  const writes = new Map<string, ThreadMessage>()
+  const parentOf = (m: ThreadMessage) => rawParent(writes.get(m.id) ?? m)
+
+  for (let i = 0; i < ordered.length; i++) {
+    const a = ordered[i]
+    if (a.role !== ChatCompletionRole.Assistant) continue
+    const p = parentOf(a)
+    if (p !== null && p !== undefined) continue
+
+    let user: ThreadMessage | undefined
+    for (let j = i - 1; j >= 0; j--) {
+      if (ordered[j].role === ChatCompletionRole.User) {
+        user = ordered[j]
+        break
+      }
+    }
+    if (!user) continue
+    writes.set(a.id, withParentId(writes.get(a.id) ?? a, user.id))
+
+    for (let j = i + 1; j < ordered.length; j++) {
+      const c = ordered[j]
+      if (c.role === ChatCompletionRole.User && parentOf(c) === user.id) {
+        writes.set(c.id, withParentId(writes.get(c.id) ?? c, a.id))
+        break
+      }
+    }
+  }
+
+  return [...writes.values()]
 }
 
 /**
