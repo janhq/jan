@@ -97,28 +97,27 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     )
 }
 
-/// Scaffold `<project_root>/.jan/agent/{agent.toml, AGENT.md, skills/, memory/}`.
-/// Err if `agent.toml` already exists (no clobber). Returns the created agent dir.
-pub(crate) fn init_project(project_root: &Path) -> Result<PathBuf, String> {
+/// Ensure a usable `.jan/agent/{agent.toml, AGENT.md, skills/, memory/}` exists
+/// under `project_root`, creating only the pieces that don't already exist.
+/// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
+/// on both the CLI and desktop agent-run paths (there is no explicit init step).
+pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     let agent_dir = project_root.join(".jan").join("agent");
-    let toml_path = agent_dir.join("agent.toml");
-    if toml_path.exists() {
-        return Err(format!(
-            "agent.toml already exists at {}",
-            toml_path.display()
-        ));
-    }
-
     std::fs::create_dir_all(agent_dir.join("skills"))
         .map_err(|e| format!("Failed to create skills dir: {e}"))?;
     std::fs::create_dir_all(agent_dir.join("memory"))
         .map_err(|e| format!("Failed to create memory dir: {e}"))?;
 
-    std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
-        .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
+    let toml_path = agent_dir.join("agent.toml");
+    if !toml_path.exists() {
+        std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
+            .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
+    }
     let md_path = agent_dir.join("AGENT.md");
-    std::fs::write(&md_path, AGENT_MD_TEMPLATE)
-        .map_err(|e| format!("Failed to write {}: {e}", md_path.display()))?;
+    if !md_path.exists() {
+        std::fs::write(&md_path, AGENT_MD_TEMPLATE)
+            .map_err(|e| format!("Failed to write {}: {e}", md_path.display()))?;
+    }
 
     Ok(agent_dir)
 }
@@ -171,22 +170,26 @@ mod tests {
     }
 
     #[test]
-    fn init_creates_artifacts_and_refuses_clobber() {
-        let root = unique_root("init");
-        let dir = init_project(&root).expect("init");
+    fn ensure_creates_artifacts_and_is_idempotent() {
+        let root = unique_root("ensure");
+        let dir = ensure_project(&root).expect("ensure");
         assert!(dir.join("agent.toml").exists());
         assert!(dir.join("AGENT.md").exists());
         assert!(dir.join("skills").is_dir());
         assert!(dir.join("memory").is_dir());
 
-        assert!(init_project(&root).is_err());
+        // Second call must not error and must preserve user edits.
+        std::fs::write(dir.join("agent.toml"), "[tools]\ndefault = \"deny\"\n").unwrap();
+        ensure_project(&root).expect("ensure again");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.tools.default.as_deref(), Some("deny"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn load_roundtrips_template() {
         let root = unique_root("roundtrip");
-        init_project(&root).expect("init");
+        ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
         let _ = std::fs::remove_dir_all(&root);
@@ -201,7 +204,7 @@ mod tests {
     #[test]
     fn full_template_parses_ignoring_deferred_sections() {
         let root = unique_root("full");
-        init_project(&root).expect("init");
+        ensure_project(&root).expect("scaffold");
         // The template carries [agent]/[budget]/[skills] we don't model yet;
         // parsing must succeed and read [tools].
         let cfg = load_agent_config(&root).expect("load");
@@ -212,7 +215,7 @@ mod tests {
     #[test]
     fn permissions_from_default_template_is_read_only() {
         let root = unique_root("perms");
-        init_project(&root).expect("init");
+        ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
         let perms = permissions_from(&cfg);
         assert!(!perms.permits("mcp.search"));
@@ -231,7 +234,7 @@ mod tests {
     #[test]
     fn grant_persists_by_capability_and_is_idempotent_and_keeps_comments() {
         let root = unique_root("grant");
-        init_project(&root).expect("init");
+        ensure_project(&root).expect("scaffold");
 
         grant_tool_in_agent_toml(&root, "write", true).expect("grant write");
         grant_tool_in_agent_toml(&root, "read", false).expect("grant read");

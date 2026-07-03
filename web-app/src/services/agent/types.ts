@@ -62,6 +62,4 @@ export interface AgentService {
     requestId: string,
     decision: PermissionDecision
   ): Promise<void>
-  /** Scaffold a `.jan/agent/` project under `projectRoot`; returns the created dir. */
-  initProject(projectRoot: string): Promise<string>
 }

@@ -536,7 +536,7 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
 // ── Agent operations ───────────────────────────────────────────────────────
 
 use crate::core::agent::events::StreamEvent;
-use crate::core::agent::project::{init_project, load_agent_config, permissions_from};
+use crate::core::agent::project::{ensure_project, load_agent_config, permissions_from};
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
@@ -551,17 +551,13 @@ use tokio::sync::{mpsc, Mutex};
 /// is set. The loop separately clamps the effective value to 1..=400.
 const DEFAULT_MAX_TURNS: u32 = 400;
 
-/// Scaffold `.jan/agent/` under `project`. Returns the created agent dir.
-pub fn cli_agent_init(project: &str) -> Result<PathBuf, String> {
-    init_project(&PathBuf::from(project))
-}
-
 /// Resolved-config + provider snapshot for `jan agent status`.
 pub fn cli_agent_status(
     project: &str,
     overrides: &ProviderOverrides,
 ) -> Result<serde_json::Value, String> {
     let project_root = PathBuf::from(project);
+    ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
     let provider_configs = load_provider_configs(overrides)?;
 
@@ -642,6 +638,7 @@ async fn run_agent_loop(
     overrides: ProviderOverrides,
 ) -> Result<(), String> {
     let project_root = PathBuf::from(project);
+    ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
 
