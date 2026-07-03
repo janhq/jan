@@ -14,7 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::providers::ProviderOverrides;
 use app_lib::core::cli::{
-    cli_agent_init, cli_agent_run, cli_agent_status, cli_agent_step, cli_delete_thread,
+    cli_agent_run, cli_agent_status, cli_agent_step, cli_delete_thread,
     cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
     discover_llamacpp_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
@@ -144,12 +144,6 @@ impl ProviderArgs {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Scaffold .jan/agent/ (agent.toml, AGENT.md, skills/, memory/) under a project
-    Init {
-        /// Project root to scaffold
-        #[arg(long, default_value = ".")]
-        project: String,
-    },
     /// Run the agent loop to completion or the turn/token budget
     Run {
         /// Project root containing .jan/agent/agent.toml
@@ -408,9 +402,6 @@ async fn main() {
 
 async fn handle_agent(cmd: AgentCommands) {
     let result = match cmd {
-        AgentCommands::Init { project } => cli_agent_init(&project).map(|dir| {
-            println!("Scaffolded agent project at {}", dir.display());
-        }),
         AgentCommands::Run {
             project,
             task,
