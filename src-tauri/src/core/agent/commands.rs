@@ -5,7 +5,6 @@
 //! cancellable by `run_id` via `agent_cancel`.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use tauri::ipc::Channel;
@@ -15,7 +14,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::permissions::ToolPermissions;
-use crate::core::agent::project::{init_project, load_agent_config, permissions_from};
+use crate::core::agent::project::{ensure_project, load_agent_config, permissions_from};
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -81,11 +80,14 @@ pub async fn agent_run<R: Runtime>(
     args.permission_requests = perms_registry.0.clone();
 
     // When a project is explicitly named, its agent.toml governs tool permissions.
-    // A missing/malformed config is a hard error (never silently permissive).
+    // The project is auto-managed: scaffold a `.jan/agent/` on first use, then
+    // load it. A malformed config is still a hard error (never silently permissive).
     if let Some(project) = body.get("project").and_then(|v| v.as_str()) {
-        let cfg = load_agent_config(Path::new(project))?;
+        let project_root = std::path::PathBuf::from(project);
+        ensure_project(&project_root)?;
+        let cfg = load_agent_config(&project_root)?;
         args.permissions = permissions_from(&cfg);
-        args.project_root = Some(std::path::PathBuf::from(project));
+        args.project_root = Some(project_root);
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
@@ -141,10 +143,4 @@ pub async fn agent_permission_respond(
         let _ = tx.send(decision);
     }
     Ok(())
-}
-
-/// Scaffold a `.jan/agent/` project skeleton under `project_root`.
-#[tauri::command]
-pub async fn agent_init(project_root: String) -> Result<String, String> {
-    init_project(Path::new(&project_root)).map(|p| p.to_string_lossy().into_owned())
 }
