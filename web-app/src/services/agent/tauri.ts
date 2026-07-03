@@ -46,13 +46,4 @@ export class TauriAgentService extends DefaultAgentService {
       throw error
     }
   }
-
-  async initProject(projectRoot: string): Promise<string> {
-    try {
-      return await invoke<string>('agent_init', { projectRoot })
-    } catch (error) {
-      console.error(`Error invoking agent_init for '${projectRoot}':`, error)
-      throw error
-    }
-  }
 }
