@@ -118,7 +118,6 @@ function AgentDebugPanel() {
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([])
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
   const [projectRoot, setProjectRoot] = useState('')
-  const [initMsg, setInitMsg] = useState('')
   const [pendingPermission, setPendingPermission] =
     useState<PermissionRequestEvent | null>(null)
   const runIdRef = useRef<string | null>(null)
@@ -239,22 +238,6 @@ function AgentDebugPanel() {
     }
   }
 
-  const handleInit = async () => {
-    if (!projectRoot.trim()) return
-    try {
-      const dir = await serviceHub.agent().initProject(projectRoot.trim())
-      setInitMsg(t('common:agentDebug.initSuccess', { path: dir }))
-    } catch (error) {
-      // No-clobber: an existing project is a benign "already set up", not a failure.
-      const message = String(error)
-      setInitMsg(
-        /already exists/i.test(message)
-          ? t('common:agentDebug.initExists')
-          : t('common:agentDebug.initError', { message })
-      )
-    }
-  }
-
   const respondPermission = async (decision: PermissionDecision) => {
     if (!pendingPermission) return
     const { request_id } = pendingPermission
@@ -321,28 +304,14 @@ function AgentDebugPanel() {
             >
               {t('common:agentDebug.projectLabel')}
             </label>
-            <div className="flex gap-2 items-center">
-              <input
-                id="agent-project"
-                className="appearance-none bg-secondary text-foreground border border-border rounded-lg p-2 text-sm flex-1 min-w-0 [color-scheme:dark]"
-                placeholder={t('common:agentDebug.projectPlaceholder')}
-                value={projectRoot}
-                onChange={(e) => setProjectRoot(e.target.value)}
-                disabled={running}
-              />
-              <button
-                className="bg-secondary text-foreground rounded-md px-3 py-2 text-sm disabled:opacity-50 shrink-0"
-                onClick={handleInit}
-                disabled={running || !projectRoot.trim()}
-              >
-                {t('common:agentDebug.init')}
-              </button>
-            </div>
-            {initMsg && (
-              <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                {initMsg}
-              </span>
-            )}
+            <input
+              id="agent-project"
+              className="appearance-none bg-secondary text-foreground border border-border rounded-lg p-2 text-sm min-w-0 [color-scheme:dark]"
+              placeholder={t('common:agentDebug.projectPlaceholder')}
+              value={projectRoot}
+              onChange={(e) => setProjectRoot(e.target.value)}
+              disabled={running}
+            />
           </div>
 
           <div className="flex flex-col gap-1 shrink-0">
