@@ -19,8 +19,4 @@ export class DefaultAgentService implements AgentService {
       'DefaultAgentService.respondPermission: no desktop backend, nothing to respond'
     )
   }
-
-  async initProject(): Promise<string> {
-    throw new Error('Agent service is only available in the desktop app')
-  }
 }

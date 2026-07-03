@@ -77,7 +77,6 @@ macro_rules! invoke_commands_with_extras {
         core::agent::commands::agent_run,
         core::agent::commands::agent_cancel,
         core::agent::commands::agent_permission_respond,
-        core::agent::commands::agent_init,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
