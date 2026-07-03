@@ -327,6 +327,30 @@ describe('createCustomFetch — max_tokens coercion', () => {
     )
     expect(sent.max_tokens).toBe(-1)
   })
+
+  it('coerces string numeric params (text input) back to numbers', async () => {
+    const sent = await captureSentBody(
+      { max_output_tokens: '2048', dry_penalty_last_n: '-1' },
+      true,
+      { messages: [] }
+    )
+    expect(sent.max_tokens).toBe(2048)
+    expect(sent.dry_penalty_last_n).toBe(-1)
+  })
+
+  it('coerces string "0" so the max_tokens=-1 rule still fires', async () => {
+    const sent = await captureSentBody({ max_output_tokens: '0' }, true, {
+      messages: [],
+    })
+    expect(sent.max_tokens).toBe(-1)
+  })
+
+  it('leaves non-numeric string params untouched', async () => {
+    const sent = await captureSentBody({ max_output_tokens: '' }, false, {
+      messages: [],
+    })
+    expect(sent.max_tokens).toBe('')
+  })
 })
 
 describe('createCustomFetch — llamacpp 500 handling', () => {

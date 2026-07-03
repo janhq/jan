@@ -347,6 +347,17 @@ export function createCustomFetch(
   keepLlamacppOnly = false,
   onLlamacppServerError?: () => void
 ): typeof globalThis.fetch {
+  // Params entered via a text input arrive as strings (see InputControl).
+  // Providers reject a string where a number is required, so coerce back to a
+  // number when the param's predefined default is numeric.
+  const coerceNumericParam = (key: string, value: unknown): unknown => {
+    if (typeof value !== 'string') return value
+    const def = paramsSettings[key]
+    if (!def || typeof def.value !== 'number' || value.trim() === '') return value
+    const n = Number(value)
+    return Number.isNaN(n) ? value : n
+  }
+
   const buildBody = (
     rawBody: Record<string, unknown>,
     includeOurParams: boolean
@@ -361,7 +372,7 @@ export function createCustomFetch(
       if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
       if (!keepLlamacppOnly && LLAMACPP_ONLY_PARAM_KEYS.has(key)) continue
       const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
-      normalised[targetKey] = value
+      normalised[targetKey] = coerceNumericParam(key, value)
     }
     const merged = { ...rawBody, ...normalised }
     if (keepLlamacppOnly && merged.stream === true) {

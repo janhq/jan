@@ -64,6 +64,12 @@ function renderControl(
   onChange: DynamicControllerProps['onChange']
 ) {
   if (controllerType === 'input') {
+    const isNumeric =
+      controllerProps.type === 'number' ||
+      typeof controllerProps.value === 'number' ||
+      controllerProps.min !== undefined ||
+      controllerProps.max !== undefined ||
+      controllerProps.step !== undefined
     return (
       <InputControl
         type={controllerProps.type}
@@ -78,7 +84,13 @@ function renderControl(
         min={controllerProps.min}
         max={controllerProps.max}
         step={controllerProps.step}
-        onChange={(newValue) => onChange(newValue)}
+        onChange={(newValue) => {
+          if (!isNumeric || typeof newValue !== 'string') return onChange(newValue)
+          const trimmed = newValue.trim()
+          if (trimmed === '' || trimmed === '-') return onChange(trimmed)
+          const n = Number(trimmed)
+          onChange(Number.isNaN(n) ? newValue : n)
+        }}
       />
     )
   } else if (controllerType === 'checkbox') {
