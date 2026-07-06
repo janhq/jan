@@ -264,6 +264,25 @@ mod tests {
         assert!(file_remove("never-stored").is_ok());
     }
 
+    /// A stored key must persist across reloads (restarts) and only disappear on
+    /// an explicit remove — never as a side effect of provider-config churn.
+    /// Regression guard for keys being wiped during boot reconciliation.
+    #[test]
+    fn stored_keys_survive_until_explicit_remove() {
+        let _tmp = TempDataFolder::new();
+        let provider = "custom-router";
+        let keys = vec!["sk-1234".to_string()];
+        file_store(provider, &keys).unwrap();
+
+        // Simulate a restart: re-read from disk without any register/unregister.
+        assert_eq!(file_load(provider), keys, "key must survive a reload");
+        assert_eq!(file_load(provider), keys, "and a second reload");
+
+        // Only an explicit removal clears it.
+        file_remove(provider).unwrap();
+        assert!(file_load(provider).is_empty());
+    }
+
     #[test]
     fn fallback_file_is_encrypted_at_rest() {
         let _tmp = TempDataFolder::new();

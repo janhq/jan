@@ -19,6 +19,11 @@ export class DefaultProvidersService implements ProvidersService {
     // No-op - not implemented in default service
   }
 
+  async deleteProviderKeys(providerName: string): Promise<void> {
+    console.log('deleteProviderKeys called:', { providerName })
+    // No-op - no keyring on the default (web) service
+  }
+
   fetch(): typeof fetch {
     return fetch
   }

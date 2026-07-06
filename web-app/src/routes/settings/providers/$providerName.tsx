@@ -346,6 +346,12 @@ function ProviderDetail() {
       api_key: nextPrimary,
       api_key_fallbacks: nextFallbacks,
     })
+    // Clearing the key is an explicit user action: purge the keyring secret so
+    // it isn't re-seeded into memory on the next launch. (register handles the
+    // non-empty case via boot sync -> register_provider_config.)
+    if (nextPrimary.length === 0 && nextFallbacks.length === 0) {
+      serviceHub.providers().deleteProviderKeys(providerName)
+    }
   }, [apiKeysDraft, provider, providerName, serviceHub, updateProvider])
 
   const commitBaseUrlDraft = useCallback(() => {

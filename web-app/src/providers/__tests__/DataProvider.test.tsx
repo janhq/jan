@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 const h = vi.hoisted(() => {
   return {
     setProviders: vi.fn(),
+    updateProvider: vi.fn(),
     getProviderByName: vi.fn(),
     providers: [] as Array<Record<string, unknown>>,
     checkForUpdate: vi.fn(),
@@ -46,8 +47,14 @@ vi.mock('@/hooks/useModelProvider', () => {
   const useModelProvider = vi.fn(() => ({
     setProviders: h.setProviders,
     getProviderByName: h.getProviderByName,
-  })) as unknown as { (): unknown; getState: () => { providers: unknown[] } }
-  useModelProvider.getState = () => ({ providers: h.providers })
+  })) as unknown as {
+    (): unknown
+    getState: () => { providers: unknown[]; updateProvider: () => void }
+  }
+  useModelProvider.getState = () => ({
+    providers: h.providers,
+    updateProvider: h.updateProvider,
+  })
   return { useModelProvider }
 })
 
@@ -275,7 +282,7 @@ describe('DataProvider', () => {
   })
 
   it('registers remote providers with the backend for active providers', async () => {
-    hubState.getProviders.mockResolvedValue([
+    const fetched = [
       {
         provider: 'openai',
         active: true,
@@ -289,7 +296,10 @@ describe('DataProvider', () => {
         models: [],
         custom_header: [],
       },
-    ])
+    ]
+    hubState.getProviders.mockResolvedValue(fetched)
+    // Registration reads the store after setProviders merges the fetched list.
+    h.providers = fetched
     render(<DataProvider />)
     await waitFor(() => {
       expect(h.invoke).toHaveBeenCalledWith(
@@ -326,9 +336,11 @@ describe('DataProvider', () => {
   it('logs provider registration failures without throwing', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     h.invoke.mockRejectedValue(new Error('nope'))
-    hubState.getProviders.mockResolvedValue([
+    const fetched = [
       { provider: 'openai', active: true, models: [], custom_header: [] },
-    ])
+    ]
+    hubState.getProviders.mockResolvedValue(fetched)
+    h.providers = fetched
     render(<DataProvider />)
     await waitFor(() => {
       expect(err).toHaveBeenCalledWith(

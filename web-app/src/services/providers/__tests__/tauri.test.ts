@@ -5,6 +5,10 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
+
 vi.mock('@/constants/providers', () => ({
   predefinedProviders: [
     {
@@ -67,6 +71,7 @@ vi.mock('@/lib/provider-api-keys', () => ({
 }))
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { invoke } from '@tauri-apps/api/core'
 import { EngineManager } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
@@ -453,6 +458,24 @@ describe('TauriProvidersService', () => {
 
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       await expect(svc.updateSettings('test', [])).rejects.toThrow('fail')
+      errSpy.mockRestore()
+    })
+  })
+
+  describe('deleteProviderKeys', () => {
+    it('invokes delete_provider_keys with the provider name', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined)
+      await svc.deleteProviderKeys('openai')
+      expect(invoke).toHaveBeenCalledWith('delete_provider_keys', {
+        provider: 'openai',
+      })
+    })
+
+    it('swallows and logs errors so a failed delete never throws', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('keyring down'))
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      await expect(svc.deleteProviderKeys('openai')).resolves.toBeUndefined()
+      expect(errSpy).toHaveBeenCalled()
       errSpy.mockRestore()
     })
   })

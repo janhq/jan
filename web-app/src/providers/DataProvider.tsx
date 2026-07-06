@@ -95,6 +95,24 @@ async function seedProviderKeysFromKeyring(
   )
 }
 
+// Re-seed keyring keys into the store for EVERY provider, including
+// user-added custom ones (getProviders() only returns predefined + engine
+// providers, so custom providers would otherwise stay keyless after a reload).
+// Applies via updateProvider so it merges over the already-hydrated state.
+async function applyKeyringKeys(): Promise<void> {
+  const store = useModelProvider.getState()
+  const seeded = await seedProviderKeysFromKeyring(store.providers)
+  for (const p of seeded) {
+    const current = store.providers.find((x) => x.provider === p.provider)
+    if (p.api_key && p.api_key !== current?.api_key) {
+      store.updateProvider(p.provider, {
+        api_key: p.api_key,
+        api_key_fallbacks: p.api_key_fallbacks,
+      })
+    }
+  }
+}
+
 // Track which providers have been registered so we can unregister stale ones
 let registeredProviderNames = new Set<string>()
 
@@ -189,11 +207,12 @@ export function DataProvider() {
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    serviceHub.providers().getProviders().then(async (providers) => {
-      const seeded = await seedProviderKeysFromKeyring(providers)
-      setProviders(seeded)
-      // Register active remote providers with the backend
-      seeded.forEach((provider) => {
+    serviceHub.providers().getProviders().then(async (fetched) => {
+      setProviders(fetched)
+      // Seed keyring keys into the merged store (predefined + engine + custom).
+      await applyKeyringKeys()
+      // Register active remote providers with the backend, keys now in place.
+      useModelProvider.getState().providers.forEach((provider) => {
         if (provider.active) {
           registerRemoteProvider(provider)
           registeredProviderNames.add(provider.provider)
@@ -307,9 +326,9 @@ export function DataProvider() {
 
   useEffect(() => {
     const handler = () => {
-      serviceHub.providers().getProviders().then(async (providers) => {
-        const seeded = await seedProviderKeysFromKeyring(providers)
-        setProviders(seeded)
+      serviceHub.providers().getProviders().then(async (fetched) => {
+        setProviders(fetched)
+        await applyKeyringKeys()
         syncRemoteProviders()
         syncModelParamDefaults()
       })

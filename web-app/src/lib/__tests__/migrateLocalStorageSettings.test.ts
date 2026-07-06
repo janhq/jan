@@ -96,6 +96,43 @@ describe('migrateLocalStorageToBackend', () => {
     expect(stored).toContain('gpt-4')
   })
 
+  it('falls back to the api-key settings value when top-level api_key is absent', async () => {
+    const blob = {
+      state: {
+        providers: [
+          {
+            provider: 'openai',
+            base_url: 'https://api.openai.com/v1',
+            models: [{ id: 'gpt-4' }],
+            settings: [
+              { key: 'api-key', controller_props: { value: 'sk-from-settings' } },
+              {
+                key: 'api-key-fallbacks',
+                controller_props: { value: 'sk-fb1\nsk-fb2' },
+              },
+            ],
+          },
+        ],
+      },
+      version: 17,
+    }
+    localStorage.setItem('model-provider', JSON.stringify(blob))
+
+    await migrateLocalStorageToBackend()
+
+    expect(invoke).toHaveBeenCalledWith('register_provider_config', {
+      request: expect.objectContaining({
+        provider: 'openai',
+        api_key: 'sk-from-settings',
+        api_keys: ['sk-fb1', 'sk-fb2'],
+      }),
+    })
+
+    const stored = backend.get('model-provider')!
+    expect(stored).not.toContain('sk-from-settings')
+    expect(stored).not.toContain('sk-fb1')
+  })
+
   it('extracts the HF token to keyring and strips it', async () => {
     localStorage.setItem(
       'setting-general',
@@ -119,10 +156,39 @@ describe('migrateLocalStorageToBackend', () => {
     expect(invoke).toHaveBeenCalledTimes(1) // only the flag check
   })
 
-  it('never clobbers existing backend data', async () => {
+  it('overwrites a pre-feature fossil when the flag is unset (localStorage wins)', async () => {
+    // #7821 shipped and was reverted within v0.8.0, but nightly testers can have
+    // a stale model-provider/theme blob in settings.json with no migration flag.
+    // localStorage is authoritative, so migration must overwrite the fossil.
     localStorage.setItem('theme', '{"state":{"activeTheme":"dark"}}')
     backend.set('theme', '{"state":{"activeTheme":"light"}}')
     await migrateLocalStorageToBackend()
-    expect(backend.get('theme')).toBe('{"state":{"activeTheme":"light"}}')
+    expect(backend.get('theme')).toBe('{"state":{"activeTheme":"dark"}}')
+  })
+
+  it('extracts keys from a fossil model-provider blob (flag unset, backend present)', async () => {
+    backend.set('model-provider', '{"state":{"providers":[]},"version":17}')
+    const blob = {
+      state: {
+        providers: [
+          {
+            provider: 'openai',
+            api_key: 'sk-real',
+            models: [{ id: 'gpt-4' }],
+          },
+        ],
+      },
+      version: 17,
+    }
+    localStorage.setItem('model-provider', JSON.stringify(blob))
+
+    await migrateLocalStorageToBackend()
+
+    expect(invoke).toHaveBeenCalledWith('register_provider_config', {
+      request: expect.objectContaining({ provider: 'openai', api_key: 'sk-real' }),
+    })
+    const stored = backend.get('model-provider')!
+    expect(stored).not.toContain('sk-real')
+    expect(stored).toContain('gpt-4')
   })
 })

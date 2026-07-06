@@ -60,12 +60,28 @@ async function transformModelProviderBlob(
     : []
 
   for (const p of providers) {
-    const primary = typeof p.api_key === 'string' ? p.api_key : ''
+    // Keys historically lived either at the top level (`api_key`) or, in older
+    // builds, only in the `api-key` settings controller value. Read the
+    // top-level first, then fall back to the settings entries so no key is
+    // stranded during migration.
+    const settingValue = (key: string): string => {
+      if (!Array.isArray(p.settings)) return ''
+      const entry = (p.settings as Array<Record<string, unknown>>).find(
+        (s) => s.key === key
+      )
+      const props = entry?.controller_props as
+        | { value?: unknown }
+        | undefined
+      return typeof props?.value === 'string' ? props.value : ''
+    }
+
+    const primary =
+      (typeof p.api_key === 'string' && p.api_key) || settingValue('api-key')
     const fallbacks = Array.isArray(p.api_key_fallbacks)
       ? (p.api_key_fallbacks as unknown[]).filter(
           (k): k is string => typeof k === 'string'
         )
-      : []
+      : settingValue('api-key-fallbacks').split(/\r?\n/)
     const chain = [primary, ...fallbacks]
       .map((k) => k.trim())
       .filter((k) => k.length > 0)
@@ -147,10 +163,13 @@ export async function migrateLocalStorageToBackend(): Promise<void> {
     for (const key of MIGRATED_KEYS) {
       const local = localStorage.getItem(key)
       if (local == null) continue
-      // Never clobber existing backend data (e.g. a downgrade/re-upgrade round).
-      const existing = await invoke<string | null>('settings_get', { key })
-      if (existing != null) continue
-
+      // Gate solely on MIGRATION_FLAG_KEY (checked above), never on per-key
+      // presence. The only way backend data exists while the flag is unset is a
+      // pre-feature fossil (the #7821 build persisted a model-provider blob into
+      // settings.json before being reverted in the same v0.8.0 release) or a
+      // crashed prior run — in both cases localStorage is authoritative, so we
+      // overwrite. Once the flag is set migration short-circuits entirely, so
+      // steady-state store writes are never clobbered.
       let value = local
       if (key === localStorageKey.modelProvider) {
         value = await transformModelProviderBlob(local, invoke)

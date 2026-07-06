@@ -78,6 +78,7 @@ macro_rules! invoke_commands_with_extras {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::delete_provider_keys,
         core::server::remote_provider_commands::set_model_param_defaults,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::get_provider_keys,

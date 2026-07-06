@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { CardItem } from '../Card'
 import { EngineManager } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -27,6 +28,7 @@ const DeleteProvider = ({ provider }: Props) => {
   const { t } = useTranslation()
   const { deleteProvider, providers } = useModelProvider()
   const { favoriteModels, removeFavorite } = useFavoriteModel()
+  const serviceHub = useServiceHub()
   const router = useRouter()
   if (
     !provider ||
@@ -45,6 +47,9 @@ const DeleteProvider = ({ provider }: Props) => {
     })
 
     deleteProvider(provider.provider)
+    // Removing a custom provider is an explicit user action, so purge its
+    // stored keyring secret too (boot reconciliation never does this).
+    serviceHub.providers().deleteProviderKeys(provider.provider)
     toast.success(t('providers:deleteProvider.title'), {
       id: `delete-provider-${provider.provider}`,
       description: t('providers:deleteProvider.success', {
