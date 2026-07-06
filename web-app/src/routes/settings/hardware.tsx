@@ -303,16 +303,16 @@ function HardwareContent() {
                         onClick={handleRefreshHardware}
                         disabled={isLoading}
                       >
-                        {isLoading ? '...' : 'Refresh'}
+                        {isLoading ? '...' : t('settings:hardware.refresh')}
                       </Button>
                     </div>
                   }
                 >
                   {llamacppDevicesLoading ? (
-                    <CardItem title="Loading devices..." actions={<></>} />
+                    <CardItem title={t('settings:hardware.loadingDevices')} actions={<></>} />
                   ) : llamacppDevicesError ? (
                     <CardItem
-                      title="Error loading devices"
+                      title={t('settings:hardware.errorLoadingDevices')}
                       actions={
                         <span className="text-destructive text-sm">
                           {llamacppDevicesError}

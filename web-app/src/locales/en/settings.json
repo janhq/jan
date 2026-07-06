@@ -90,6 +90,8 @@
     "themeDesc": "Match the OS theme.",
     "fontSize": "Font Size",
     "fontSizeDesc": "Adjust the app's font size.",
+    "accentColor": "Accent color",
+    "accentColorDesc": "Customize the accent color of the application.",
     "notificationPosition": "Notification position",
     "notificationPositionDesc": "Where toast notifications appear. On Windows, the default is bottom-right so popups do not cover the window controls.",
     "notificationPositionTopRight": "Top right",
@@ -157,7 +159,10 @@
     "freeOf": "free of",
     "driverVersion": "Driver Version",
     "computeCapability": "Compute Capability",
-    "systemMonitor": "System Monitor"
+    "systemMonitor": "System Monitor",
+    "refresh": "Refresh",
+    "loadingDevices": "Loading devices...",
+    "errorLoadingDevices": "Error loading devices"
   },
   "httpsProxy": {
     "proxy": "Proxy",
@@ -199,6 +204,7 @@
     "startupConfiguration": "Startup Configuration",
     "runOnStartup": "Auto start",
     "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
+    "configuration": "Configuration",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",
     "serverHostDesc": "Network address for the server.",
@@ -219,7 +225,14 @@
     "proxyTimeoutDesc": "Time to wait for a response from the local model, seconds.",
     "defaultModel": "Default Model Local API Server",
     "defaultModelDesc": "Local model to load automatically when the server starts.",
-    "defaultModelPlaceholder": "Select a local model"
+    "defaultModelPlaceholder": "Select a local model",
+    "serverStatus": "Server Status",
+    "serverStatusRunning": "The server is currently running.",
+    "serverStatusStopped": "The server is stopped.",
+    "openInNewWindow": "Open in New Window",
+    "mcpOnServer": "Execute tools on server",
+    "mcpOnServerDesc": "Run tools server-side for chat endpoints."
+
   },
   "privacy": {
     "analytics": "Analytics",

@@ -25,6 +25,7 @@ import {
   isModelLevelRejected,
 } from '@/lib/providerCaps'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export interface ParametersSectionProps {
   params: Record<string, unknown>
@@ -54,6 +55,7 @@ export function ParametersSection({
   providerId,
   modelId,
 }: ParametersSectionProps) {
+  const { t } = useTranslation()
   const modelRejects = (key: string) =>
     !!(providerId && modelId && isModelLevelRejected(key, providerId, modelId))
   const supportIndex = useMemo(() => {
@@ -118,7 +120,7 @@ export function ParametersSection({
     <div className="space-y-3">
       {!hasAny && (
         <div className="text-xs text-muted-foreground py-2">
-          No overrides — using model defaults.
+          {t('assistants:noParameter')}
         </div>
       )}
 
@@ -319,6 +321,7 @@ function AddParameterMenu({
   onAddGroup,
   modelRejects,
 }: AddParameterMenuProps) {
+  const { t } = useTranslation()
   const items = useMemo(() => {
     return paramCategories
       .map((cat) => {
@@ -351,7 +354,7 @@ function AddParameterMenu({
   if (items.length === 0) {
     return (
       <div className="text-xs text-muted-foreground">
-        No tunable parameters for this provider.
+        {t('assistants:noTunableParams')}
       </div>
     )
   }
@@ -361,7 +364,7 @@ function AddParameterMenu({
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="w-full justify-start">
           <IconPlus size={14} className="mr-1" />
-          Add parameter
+          {t('assistants:addParameter')}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72 max-h-[60vh] overflow-y-auto">

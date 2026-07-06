@@ -17,6 +17,7 @@
   "enterInstructions": "Anweisungen eingeben",
   "predefinedParameters": "Vordefinierte Parameter",
   "parameters": "Parameter",
+  "noParameter": "Keine Parameter — Nutzt Model Voreinstellungen.",
   "key": "Schlüssel",
   "value": "Wert",
   "stringValue": "String",
@@ -31,5 +32,13 @@
   "personality": "Persönlichkeit",
   "capabilities": "Fähigkeiten",
   "instructionsDateHint": "Tipp: Verwenden Sie {{current_date}}, um das heutige Datum einzufügen.",
-  "maxToolSteps": "Maximale Werkzeugschritte"
+  "maxToolSteps": "Maximale Werkzeugschritte",
+  "setAsDefault": "Als Standard-Assistenten verwenden",
+  "isDefault": "Standard",
+  "defaultAssistantSection": "Standard Assistent",
+  "defaultAssistantDesc": "Wird benutzt für neue Chats",
+  "allAssistants": "Alle Assistenten",
+  "lastUsed": "Zuletzt verwendet",
+  "addParameter": "Parameter hinzufügen",
+  "noTunableParams": "Keine veränderbaren Parameter setzbar."
 }

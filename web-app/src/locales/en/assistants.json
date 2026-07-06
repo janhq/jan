@@ -17,6 +17,7 @@
   "enterInstructions": "Enter instructions",
   "predefinedParameters": "Predefined Parameters",
   "parameters": "Parameters",
+  "noParameter": "No overrides — using model defaults.",
   "key": "Key",
   "value": "Value",
   "stringValue": "String",
@@ -37,5 +38,7 @@
   "defaultAssistantSection": "Default Assistant",
   "defaultAssistantDesc": "Used when starting a new chat",
   "allAssistants": "All Assistants",
-  "lastUsed": "Last used"
+  "lastUsed": "Last used",
+  "addParameter": "Add parameter",
+  "noTunableParams": "No tunable parameters for this provider."
 }
