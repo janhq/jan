@@ -18,6 +18,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
@@ -34,8 +35,38 @@ const NONCE_LEN: usize = 12;
 /// Serializes read-modify-write on the fallback file.
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 
-fn keyring_entry(provider: &str) -> Result<Entry, String> {
-    Entry::new(KEYRING_SERVICE, provider).map_err(|e| e.to_string())
+/// Latched on the first infrastructure-level keyring failure (D-Bus timeout,
+/// platform/storage-access failure). Once set, every secret op skips the
+/// keyring and goes straight to the encrypted file fallback for the rest of the
+/// session -- otherwise each call re-attempts a dead Secret Service, blocking on
+/// the D-Bus timeout and re-logging every time. A missing entry (`NoEntry`) is
+/// normal and never trips this.
+static KEYRING_DOWN: AtomicBool = AtomicBool::new(false);
+
+fn keyring_down() -> bool {
+    KEYRING_DOWN.load(Ordering::Relaxed)
+}
+
+/// Whether an error means the keyring backend itself is unusable (vs. a normal
+/// "key not stored" or a usage error on our controlled data).
+fn is_infra_failure(err: &keyring::Error) -> bool {
+    matches!(
+        err,
+        keyring::Error::PlatformFailure(_) | keyring::Error::NoStorageAccess(_)
+    )
+}
+
+/// Trip the latch on the first infrastructure failure and warn exactly once.
+fn note_keyring_failure(err: &keyring::Error) {
+    if is_infra_failure(err) && !KEYRING_DOWN.swap(true, Ordering::Relaxed) {
+        log::warn!(
+            "Keyring unavailable ({err}); using encrypted file fallback for the rest of this session"
+        );
+    }
+}
+
+fn keyring_entry(provider: &str) -> keyring::Result<Entry> {
+    Entry::new(KEYRING_SERVICE, provider)
 }
 
 fn secrets_file_path() -> PathBuf {
@@ -137,26 +168,29 @@ pub fn store_provider_keys(provider: &str, keys: &[String]) -> Result<(), String
         return delete_provider_keys(provider);
     }
     let serialized = serde_json::to_string(keys).map_err(|e| e.to_string())?;
-    match keyring_entry(provider).and_then(|e| e.set_password(&serialized).map_err(|e| e.to_string())) {
-        Ok(()) => {
-            // Keyring is authoritative; drop any stale fallback copy.
-            let _ = file_remove(provider);
-            Ok(())
-        }
-        Err(err) => {
-            log::warn!("Keyring unavailable for {provider} ({err}); using file fallback");
-            file_store(provider, keys)
+    if !keyring_down() {
+        match keyring_entry(provider).and_then(|e| e.set_password(&serialized)) {
+            Ok(()) => {
+                // Keyring is authoritative; drop any stale fallback copy.
+                let _ = file_remove(provider);
+                return Ok(());
+            }
+            Err(err) => note_keyring_failure(&err),
         }
     }
+    file_store(provider, keys)
 }
 
 /// Remove a provider's stored keys from both the keyring and the fallback file.
 /// Missing entries are not an error.
 pub fn delete_provider_keys(provider: &str) -> Result<(), String> {
-    if let Ok(entry) = keyring_entry(provider) {
-        match entry.delete_credential() {
+    if !keyring_down() {
+        match keyring_entry(provider).and_then(|e| e.delete_credential()) {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(err) => log::warn!("Failed to delete keyring entry for {provider}: {err}"),
+            Err(err) => {
+                note_keyring_failure(&err);
+                log::warn!("Failed to delete keyring entry for {provider}: {err}");
+            }
         }
     }
     file_remove(provider)
@@ -165,13 +199,17 @@ pub fn delete_provider_keys(provider: &str) -> Result<(), String> {
 /// Read a provider's key chain: keyring first, then the fallback file. Returns
 /// an empty vec when neither has it (caller falls back to env/flag).
 pub fn load_provider_keys(provider: &str) -> Vec<String> {
-    if let Ok(entry) = keyring_entry(provider) {
-        if let Ok(serialized) = entry.get_password() {
-            if let Ok(keys) = serde_json::from_str::<Vec<String>>(&serialized) {
-                if !keys.is_empty() {
-                    return keys;
+    if !keyring_down() {
+        match keyring_entry(provider).and_then(|e| e.get_password()) {
+            Ok(serialized) => {
+                if let Ok(keys) = serde_json::from_str::<Vec<String>>(&serialized) {
+                    if !keys.is_empty() {
+                        return keys;
+                    }
                 }
             }
+            Err(keyring::Error::NoEntry) => {}
+            Err(err) => note_keyring_failure(&err),
         }
     }
     file_load(provider)
@@ -258,6 +296,19 @@ mod tests {
         file_remove(provider).unwrap();
         assert!(file_load(provider).is_empty());
         assert_eq!(file_load("anthropic"), vec!["sk-ant".to_string()]);
+    }
+
+    #[test]
+    fn only_infra_errors_latch_the_keyring_off() {
+        // A missing key is normal churn -> must not disable the keyring.
+        assert!(!is_infra_failure(&keyring::Error::NoEntry));
+        // Backend-unusable errors (D-Bus timeout surfaces as PlatformFailure) latch.
+        assert!(is_infra_failure(&keyring::Error::PlatformFailure(Box::new(
+            std::io::Error::other("dbus timeout")
+        ))));
+        assert!(is_infra_failure(&keyring::Error::NoStorageAccess(Box::new(
+            std::io::Error::other("locked")
+        ))));
     }
 
     #[test]
