@@ -2118,7 +2118,6 @@ const ChatInput = memo(function ChatInput({
                       selectedModelHasTools={
                         selectedModel?.capabilities?.includes('tools') ?? false
                       }
-                      initialMessage={initialMessage}
                       MCPToolComponent={MCPToolComponent}
                     />
                   ) : (
@@ -2140,7 +2139,6 @@ const ChatInput = memo(function ChatInput({
                           }}
                         >
                           <DropdownToolsAvailable
-                            initialMessage={initialMessage}
                             onOpenChange={(isOpen) => {
                               setDropdownToolsAvailable(isOpen)
                               if (isOpen) {

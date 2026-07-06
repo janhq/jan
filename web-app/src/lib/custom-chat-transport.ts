@@ -648,13 +648,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const toolsRecord: Record<string, Tool> = {}
 
-    // Get disabled tools for this thread
-    const getDisabledToolsForThread =
-      useToolAvailable.getState().getDisabledToolsForThread
-    const disabledToolKeys = this.threadId
-      ? getDisabledToolsForThread(this.threadId)
-      : useToolAvailable.getState().getDefaultDisabledTools()
-    // Helper to check if a tool is disabled
+    // Tool availability is global (shared across all chats).
+    const disabledToolKeys = useToolAvailable.getState().getDisabledTools()
     const isToolDisabled = (serverName: string, toolName: string): boolean => {
       const toolKey = `${serverName}::${toolName}`
       return disabledToolKeys.includes(toolKey)

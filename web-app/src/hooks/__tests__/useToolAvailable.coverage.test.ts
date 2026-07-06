@@ -1,14 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 
-vi.mock('@/lib/fileStorage', () => ({
-  fileStorage: {
-    getItem: vi.fn(() => Promise.resolve(null)),
-    setItem: vi.fn(() => Promise.resolve()),
-    removeItem: vi.fn(() => Promise.resolve()),
-  },
-}))
-
 vi.mock('@/constants/localStorage', () => ({
   localStorageKey: {
     toolAvailability: 'tool-availability-settings',
@@ -17,90 +9,58 @@ vi.mock('@/constants/localStorage', () => ({
 
 import { useToolAvailable } from '../useToolAvailable'
 
+type Migrate = (state: unknown, version: number) => any
+
+const getMigrate = (): Migrate | undefined =>
+  (useToolAvailable as any).persist?.getOptions().migrate
+
 describe('useToolAvailable - coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useToolAvailable.setState({
-      disabledTools: {},
-      defaultDisabledTools: [],
-      defaultsInitialized: false,
-    })
+    useToolAvailable.setState({ disabledTools: [], defaultsInitialized: false })
   })
 
-  it('isDefaultsInitialized should return false initially', () => {
+  it('isDefaultsInitialized starts false; mark flips it', () => {
     const { result } = renderHook(() => useToolAvailable())
     expect(result.current.isDefaultsInitialized()).toBe(false)
-  })
-
-  it('markDefaultsAsInitialized should set flag', () => {
-    const { result } = renderHook(() => useToolAvailable())
-
-    act(() => {
-      result.current.markDefaultsAsInitialized()
-    })
-
+    act(() => result.current.markDefaultsAsInitialized())
     expect(result.current.isDefaultsInitialized()).toBe(true)
   })
 
-  it('should test migrate function with old format keys', () => {
-    const persistApi = (useToolAvailable as any).persist
-    const migrate = persistApi?.getOptions().migrate as
-      | ((state: unknown, version: number) => any)
-      | undefined
-
-    if (migrate) {
-      const oldState = {
-        disabledTools: { 't1': ['oldTool'] },
-        defaultDisabledTools: ['oldDefault'],
-        defaultsInitialized: true,
-      }
-      const migrated = migrate(oldState)
-      expect(migrated.disabledTools).toEqual({})
-      expect(migrated.defaultDisabledTools).toEqual([])
-      expect(migrated.defaultsInitialized).toBe(false)
-    }
-  })
-
-  it('should test migrate function with new format keys', () => {
-    const persistApi = (useToolAvailable as any).persist
-    const migrate = persistApi?.getOptions().migrate as
-      | ((state: unknown, version: number) => any)
-      | undefined
-
-    if (migrate) {
-      const newState = {
-        disabledTools: { 't1': ['server::tool'] },
-        defaultDisabledTools: ['server::default'],
-        defaultsInitialized: true,
-      }
-      const migrated = migrate(newState)
-      expect(migrated.disabledTools).toEqual({ 't1': ['server::tool'] })
-      expect(migrated.defaultDisabledTools).toEqual(['server::default'])
+  describe('v1 -> v2 migration (per-thread -> global)', () => {
+    it('collapses onto the previous global default and drops per-thread overrides', () => {
+      const migrate = getMigrate()!
+      const migrated = migrate(
+        {
+          disabledTools: { t1: ['exa::web_search_exa'] },
+          defaultDisabledTools: ['exa::web_fetch_exa'],
+          defaultsInitialized: true,
+        },
+        1
+      )
+      expect(migrated.disabledTools).toEqual(['exa::web_fetch_exa'])
       expect(migrated.defaultsInitialized).toBe(true)
-    }
-  })
+    })
 
-  it('should test migrate with null state', () => {
-    const persistApi = (useToolAvailable as any).persist
-    const migrate = persistApi?.getOptions().migrate as
-      | ((state: unknown, version: number) => any)
-      | undefined
+    it('re-seeds (defaultsInitialized=false) when old pre-:: keys are dropped', () => {
+      const migrate = getMigrate()!
+      const migrated = migrate(
+        { defaultDisabledTools: ['legacyTool'], defaultsInitialized: true },
+        1
+      )
+      expect(migrated.disabledTools).toEqual([])
+      expect(migrated.defaultsInitialized).toBe(false)
+    })
 
-    if (migrate) {
-      const migrated = migrate(null)
-      expect(migrated).toBeNull()
-    }
-  })
+    it('null/empty persisted state migrates to an empty global set', () => {
+      const migrate = getMigrate()!
+      expect(migrate(null, 1).disabledTools).toEqual([])
+    })
 
-  it('should test migrate with non-object state', () => {
-    const persistApi = (useToolAvailable as any).persist
-    const migrate = persistApi?.getOptions().migrate as
-      | ((state: unknown, version: number) => any)
-      | undefined
-
-    if (migrate) {
-      const migrated = migrate('string')
-      expect(migrated).toBe('string')
-    }
+    it('a v2 state passes through unchanged', () => {
+      const migrate = getMigrate()!
+      const state = { disabledTools: ['a::b'], defaultsInitialized: true }
+      expect(migrate(state, 2)).toEqual(state)
+    })
   })
 })

@@ -569,10 +569,8 @@ function ThreadDetail() {
   const hasBannerError = !!(oomError || backendError || contextLimitError)
   const effectiveStatus = hasBannerError ? 'ready' : status
 
-  // Get disabled tools for this thread to trigger re-render when they change
-  const disabledTools = useToolAvailable((state) =>
-    state.getDisabledToolsForThread(threadId)
-  )
+  // Global disabled-tools set; re-run the effect below when it changes.
+  const disabledTools = useToolAvailable((state) => state.disabledTools)
 
   // Update RAG tools availability when documents, model, or tool availability changes
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, memo } from 'react'
+import { useState, memo } from 'react'
 
 import {
   DropDrawer,
@@ -15,7 +15,6 @@ import {
 
 import { Switch } from '@/components/ui/switch'
 
-import { useThreads } from '@/hooks/useThreads'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 
 import React from 'react'
@@ -25,13 +24,11 @@ import { cn } from '@/lib/utils'
 
 interface DropdownToolsAvailableProps {
   children: (isOpen: boolean, toolsCount: number) => React.ReactNode
-  initialMessage?: boolean
   onOpenChange?: (isOpen: boolean) => void
 }
 
 export default memo(function DropdownToolsAvailable({
   children,
-  initialMessage = false,
   onOpenChange,
 }: DropdownToolsAvailableProps) {
   const allTools = useAppState((state) => state.tools)
@@ -44,53 +41,19 @@ export default memo(function DropdownToolsAvailable({
     setIsOpen(open)
     onOpenChange?.(open)
   }
-  const { getCurrentThread } = useThreads()
-  const {
-    isToolDisabled,
-    setToolDisabledForThread,
-    setDefaultDisabledTools,
-    initializeThreadTools,
-    getDisabledToolsForThread,
-    getDefaultDisabledTools,
-  } = useToolAvailable()
+  const { isToolDisabled, setToolDisabled, getDisabledTools } =
+    useToolAvailable()
 
-  const currentThread = getCurrentThread()
-
-  // Separate effect for thread initialization - only when we have tools and a new thread
-  useEffect(() => {
-    if (tools.length > 0 && currentThread?.id) {
-      initializeThreadTools(currentThread.id, tools)
-    }
-  }, [currentThread?.id, tools, initializeThreadTools])
-
-  const handleToolToggle = (serverName: string, toolName: string, checked: boolean) => {
-    if (initialMessage) {
-      // Update default tools for new threads/index page
-      const currentDefaults = getDefaultDisabledTools()
-      const toolKey = `${serverName}::${toolName}`
-      if (checked) {
-        setDefaultDisabledTools(
-          currentDefaults.filter((key) => key !== toolKey)
-        )
-      } else {
-        setDefaultDisabledTools([...currentDefaults, toolKey])
-      }
-    } else if (currentThread?.id) {
-      // Update tools for specific thread
-      setToolDisabledForThread(currentThread.id, serverName, toolName, checked)
-    }
+  const handleToolToggle = (
+    serverName: string,
+    toolName: string,
+    checked: boolean
+  ) => {
+    setToolDisabled(serverName, toolName, checked)
   }
 
   const isToolChecked = (serverName: string, toolName: string): boolean => {
-    if (initialMessage) {
-      // Use default tools for index page
-      const toolKey = `${serverName}::${toolName}`
-      return !getDefaultDisabledTools().includes(toolKey)
-    } else if (currentThread?.id) {
-      // Use thread-specific tools
-      return !isToolDisabled(currentThread.id, serverName, toolName)
-    }
-    return false
+    return !isToolDisabled(serverName, toolName)
   }
 
   const handleDisableAllServerTools = (
@@ -111,11 +74,7 @@ export default memo(function DropdownToolsAvailable({
   }
 
   const getEnabledToolsCount = (): number => {
-    const disabledToolKeys = initialMessage
-      ? getDefaultDisabledTools()
-      : currentThread?.id
-        ? getDisabledToolsForThread(currentThread.id)
-        : []
+    const disabledToolKeys = getDisabledTools()
     return tools.filter((tool) => {
       const toolKey = `${tool.server}::${tool.name}`
       return !disabledToolKeys.includes(toolKey)
@@ -230,7 +189,6 @@ export default memo(function DropdownToolsAvailable({
                               <Switch
                                 checked={isChecked}
                                 onCheckedChange={(checked) => {
-                                  console.log('checked', checked)
                                   handleToolToggle(tool.server, tool.name, checked)
                                 }}
                                 onClick={(e) => {
