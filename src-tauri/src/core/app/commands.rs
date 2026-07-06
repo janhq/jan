@@ -117,6 +117,15 @@ pub fn resolve_config_file_path() -> PathBuf {
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
 /// Reads AppConfiguration from the config file; falls back to the default location.
 pub fn resolve_jan_data_folder() -> PathBuf {
+    // Explicit override wins on every platform. `dirs::data_dir()` reads
+    // XDG_DATA_HOME only on Linux, so tests/headless consumers need a portable
+    // way to redirect the data folder without relying on OS-specific env.
+    if let Ok(folder) = std::env::var("JAN_DATA_FOLDER") {
+        if !folder.is_empty() {
+            return PathBuf::from(folder);
+        }
+    }
+
     let config_file = resolve_config_file_path();
 
     if config_file.exists() {

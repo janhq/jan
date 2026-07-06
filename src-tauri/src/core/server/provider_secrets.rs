@@ -205,8 +205,7 @@ mod tests {
 
     struct TempDataFolder {
         _guard: MutexGuard<'static, ()>,
-        prev_app_name: Option<String>,
-        prev_data_dir: Option<String>,
+        prev_data_folder: Option<String>,
         _dir: tempfile::TempDir,
     }
 
@@ -214,14 +213,13 @@ mod tests {
         fn new() -> Self {
             let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let dir = tempfile::tempdir().unwrap();
-            let prev_app_name = std::env::var("APP_NAME").ok();
-            let prev_data_dir = std::env::var("XDG_DATA_HOME").ok();
-            std::env::set_var("APP_NAME", "JanTest");
-            std::env::set_var("XDG_DATA_HOME", dir.path());
+            let prev_data_folder = std::env::var("JAN_DATA_FOLDER").ok();
+            // Portable override: XDG_DATA_HOME only redirects on Linux, so
+            // relying on it fails the fallback tests on macOS/Windows.
+            std::env::set_var("JAN_DATA_FOLDER", dir.path());
             Self {
                 _guard: guard,
-                prev_app_name,
-                prev_data_dir,
+                prev_data_folder,
                 _dir: dir,
             }
         }
@@ -229,13 +227,9 @@ mod tests {
 
     impl Drop for TempDataFolder {
         fn drop(&mut self) {
-            match &self.prev_app_name {
-                Some(v) => std::env::set_var("APP_NAME", v),
-                None => std::env::remove_var("APP_NAME"),
-            }
-            match &self.prev_data_dir {
-                Some(v) => std::env::set_var("XDG_DATA_HOME", v),
-                None => std::env::remove_var("XDG_DATA_HOME"),
+            match &self.prev_data_folder {
+                Some(v) => std::env::set_var("JAN_DATA_FOLDER", v),
+                None => std::env::remove_var("JAN_DATA_FOLDER"),
             }
         }
     }
