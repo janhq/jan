@@ -11,7 +11,6 @@ import { useHardware } from '@/hooks/useHardware'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { useModelSources } from '@/hooks/useModelSources'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useVulkan } from '@/hooks/useVulkan'
@@ -42,7 +41,6 @@ const secondaryStores = [
   useLocalApiServer,
   useToolApproval,
   useToolAvailable,
-  useModelSources,
   useDownloadStore,
   useProxyConfig,
   useVulkan,

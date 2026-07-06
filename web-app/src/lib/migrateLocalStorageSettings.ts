@@ -27,7 +27,6 @@ const MIGRATED_KEYS: string[] = [
   localStorageKey.settingLocalApiServer,
   localStorageKey.toolApproval,
   localStorageKey.toolAvailability,
-  localStorageKey.modelSources,
   localStorageKey.pausedDownloads,
   localStorageKey.settingProxyConfig,
   localStorageKey.settingVulkan,

@@ -67,5 +67,33 @@ describe('backendStorage', () => {
       invoke.mockRejectedValueOnce(new Error('boom'))
       await expect(backendStorage.setItem('k', 'v')).resolves.toBeUndefined()
     })
+
+    it('skips the invoke when the same value is written again', async () => {
+      invoke.mockResolvedValue(undefined)
+      await backendStorage.setItem('dedup', 'v1')
+      await backendStorage.setItem('dedup', 'v1')
+      await backendStorage.setItem('dedup', 'v2')
+      const sets = invoke.mock.calls.filter(([cmd]) => cmd === 'settings_set')
+      expect(sets).toHaveLength(2)
+      expect(sets.map(([, a]) => a.value)).toEqual(['v1', 'v2'])
+    })
+
+    it('retries after a failed write (cache not poisoned)', async () => {
+      invoke.mockRejectedValueOnce(new Error('boom'))
+      await backendStorage.setItem('retry', 'v')
+      invoke.mockResolvedValueOnce(undefined)
+      await backendStorage.setItem('retry', 'v')
+      const sets = invoke.mock.calls.filter(([cmd]) => cmd === 'settings_set')
+      expect(sets).toHaveLength(2)
+    })
+
+    it('removeItem clears the cache so an identical later write is not skipped', async () => {
+      invoke.mockResolvedValue(undefined)
+      await backendStorage.setItem('rm', 'v')
+      await backendStorage.removeItem('rm')
+      await backendStorage.setItem('rm', 'v')
+      const sets = invoke.mock.calls.filter(([cmd]) => cmd === 'settings_set')
+      expect(sets).toHaveLength(2)
+    })
   })
 })

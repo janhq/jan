@@ -13,6 +13,12 @@ import { getServiceHub } from '@/hooks/useServiceHub'
  * `skipHydration: true` and be rehydrated via `hydrateBackendStores()` only
  * after the ServiceHub is initialized (`getServiceHub()` throws before that).
  */
+// Last value known to be on the backend, per key. Lets setItem skip the
+// serialization + IPC round-trip when Zustand persist re-writes an unchanged
+// blob (it fires setItem on every set(), without diffing). Only updated on a
+// confirmed backend write/read so a failed invoke still retries next time.
+const lastWritten = new Map<string, string>()
+
 export const backendStorage: StateStorage = {
   getItem: async (name) => {
     if (!isPlatformTauri()) return localStorage.getItem(name)
@@ -21,6 +27,7 @@ export const backendStorage: StateStorage = {
         'settings_get',
         { key: name }
       )
+      if (value != null) lastWritten.set(name, value)
       return value ?? null
     } catch (error) {
       console.error(`settings_get failed for '${name}':`, error)
@@ -32,8 +39,10 @@ export const backendStorage: StateStorage = {
       localStorage.setItem(name, value)
       return
     }
+    if (lastWritten.get(name) === value) return
     try {
       await getServiceHub().core().invoke('settings_set', { key: name, value })
+      lastWritten.set(name, value)
     } catch (error) {
       console.error(`settings_set failed for '${name}':`, error)
     }
@@ -45,6 +54,7 @@ export const backendStorage: StateStorage = {
     }
     try {
       await getServiceHub().core().invoke('settings_remove', { key: name })
+      lastWritten.delete(name)
     } catch (error) {
       console.error(`settings_remove failed for '${name}':`, error)
     }

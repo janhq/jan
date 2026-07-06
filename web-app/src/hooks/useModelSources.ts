@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { backendStorage } from '@/lib/backendStorage'
 import type { CatalogModel } from '@/services/models/types'
 import { sanitizeModelId } from '@/lib/utils'
 
@@ -47,9 +46,12 @@ export const useModelSources = create<ModelSourcesState>()(
       },
     }),
     {
+      // Kept in webview localStorage, not the backend settings store: this is a
+      // re-fetchable network cache (the full Hub catalog, ~500 KB), not a user
+      // setting. Persisting it to settings.json rewrote the whole file on every
+      // Hub visit. localStorage is synchronous, so no skipHydration needed.
       name: localStorageKey.modelSources,
-      storage: createJSONStorage(() => backendStorage),
-      skipHydration: true,
+      storage: createJSONStorage(() => localStorage),
     }
   )
 )

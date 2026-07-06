@@ -404,6 +404,10 @@ pub fn run() {
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 
+            // Drain any debounced settings writes before the process dies so
+            // jan-cli never reads a stale settings.json.
+            core::app::settings_store::flush_settings();
+
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 if let Some(window) = app_handle.get_webview_window("main") {
