@@ -180,18 +180,26 @@ pub fn load_provider_keys(provider: &str) -> Vec<String> {
 /// Store a single generic secret (e.g. the Hugging Face token) under `key`.
 /// Empty value deletes it. Backed by the same keyring/encrypted-file store.
 #[tauri::command]
-pub fn set_secret(key: String, value: String) -> Result<(), String> {
-    if value.is_empty() {
-        delete_provider_keys(&key)
-    } else {
-        store_provider_keys(&key, std::slice::from_ref(&value))
-    }
+pub async fn set_secret(key: String, value: String) -> Result<(), String> {
+    // Keyring/file access is blocking; keep it off the main (UI) thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        if value.is_empty() {
+            delete_provider_keys(&key)
+        } else {
+            store_provider_keys(&key, std::slice::from_ref(&value))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Read a single generic secret stored via `set_secret`. None when absent.
 #[tauri::command]
-pub fn get_secret(key: String) -> Option<String> {
-    load_provider_keys(&key).into_iter().next()
+pub async fn get_secret(key: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || load_provider_keys(&key).into_iter().next())
+        .await
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]
