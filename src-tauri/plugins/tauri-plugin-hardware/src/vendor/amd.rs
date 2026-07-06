@@ -78,8 +78,8 @@ impl GpuInfo {
     pub fn get_usage_amd(&self) -> GpuUsage {
         use std::collections::HashMap;
 
-        let memory_usage_map = windows_impl::get_gpu_usage().unwrap_or_else(|_| {
-            log::error!("Failed to get AMD GPU memory usage");
+        let memory_usage_map = windows_impl::get_gpu_usage().unwrap_or_else(|e| {
+            log::error!("Failed to get AMD GPU memory usage: {e}");
             HashMap::new()
         });
 
@@ -144,18 +144,30 @@ mod windows_impl {
         unsafe {
             let lib = Library::new("atiadlxx.dll").or_else(|_| Library::new("atiadlxy.dll"))?;
 
+            macro_rules! get_sym {
+                ($lib:expr, $name:literal, $ty:ty) => {{
+                    $lib.get::<$ty>($name).map_err(|e| {
+                        log::error!(
+                            "Failed to resolve AMD ADL symbol '{}': {e}",
+                            std::str::from_utf8($name).unwrap_or("?")
+                        );
+                        e
+                    })?
+                }};
+            }
+
             let adlmaincontrolcreate: Symbol<ADLMAINCONTROLCREATE> =
-                lib.get(b"AdlMainControlCreate")?;
+                get_sym!(lib, b"ADL_Main_Control_Create\0", ADLMAINCONTROLCREATE);
             let adlmaincontroldestroy: Symbol<ADLMAINCONTROLDESTROY> =
-                lib.get(b"AdlMainControlDestroy")?;
+                get_sym!(lib, b"ADL_Main_Control_Destroy\0", ADLMAINCONTROLDESTROY);
             let adl_adapter_number_of_adapters_get: Symbol<AdlAdapterNumberofadaptersGet> =
-                lib.get(b"AdlAdapterNumberofadaptersGet")?;
+                get_sym!(lib, b"ADL_Adapter_NumberOfAdapters_Get\0", AdlAdapterNumberofadaptersGet);
             let adl_adapter_adapter_info_get: Symbol<AdlAdapterAdapterinfoGet> =
-                lib.get(b"AdlAdapterAdapterinfoGet")?;
+                get_sym!(lib, b"ADL_Adapter_AdapterInfo_Get\0", AdlAdapterAdapterinfoGet);
             let AdlAdapterActiveGet: Symbol<AdlAdapterActiveGet> =
-                lib.get(b"AdlAdapterActiveGet")?;
+                get_sym!(lib, b"ADL_Adapter_Active_Get\0", AdlAdapterActiveGet);
             let AdlGetDedicatedVramUsage: Symbol<AdlGetDedicatedVramUsage> =
-                lib.get(b"ADL2_Adapter_DedicatedVRAMUsage_Get")?;
+                get_sym!(lib, b"ADL2_Adapter_DedicatedVRAMUsage_Get\0", AdlGetDedicatedVramUsage);
 
             // TODO: try to put nullptr here. then we don't need direct libc dep
             if adlmaincontrolcreate(Some(adl_malloc), 1) != 0 {
