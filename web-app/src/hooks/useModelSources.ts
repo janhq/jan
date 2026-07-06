@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { backendStorage } from '@/lib/backendStorage'
 import type { CatalogModel } from '@/services/models/types'
 import { sanitizeModelId } from '@/lib/utils'
 
@@ -47,7 +48,8 @@ export const useModelSources = create<ModelSourcesState>()(
     }),
     {
       name: localStorageKey.modelSources,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )

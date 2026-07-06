@@ -63,6 +63,7 @@ vi.mock('@/lib/models', () => ({
 
 vi.mock('@/lib/provider-api-keys', () => ({
   providerRemoteApiKeyChain: vi.fn().mockReturnValue([]),
+  API_KEY_FALLBACKS_SETTING_KEY: 'api-key-fallbacks',
 }))
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
@@ -423,6 +424,24 @@ describe('TauriProvidersService', () => {
           controllerProps: { value: '' },
         }),
       ])
+    })
+
+    it('blanks api-key and api-key-fallbacks so keys never reach settings.json', async () => {
+      const mockUpdate = vi.fn()
+      vi.mocked(ExtensionManager.getInstance).mockReturnValue({
+        getEngine: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
+      } as any)
+
+      await svc.updateSettings('openai', [
+        { key: 'api-key', controller_type: 'input', controller_props: { value: 'sk-secret' } } as any,
+        { key: 'api-key-fallbacks', controller_type: 'input', controller_props: { value: 'sk-a\nsk-b' } } as any,
+        { key: 'base-url', controller_type: 'input', controller_props: { value: 'https://x' } } as any,
+      ])
+
+      const persisted = mockUpdate.mock.calls[0][0]
+      expect(persisted.find((s: any) => s.key === 'api-key').controllerProps.value).toBe('')
+      expect(persisted.find((s: any) => s.key === 'api-key-fallbacks').controllerProps.value).toBe('')
+      expect(persisted.find((s: any) => s.key === 'base-url').controllerProps.value).toBe('https://x')
     })
 
     it('rethrows on error', async () => {

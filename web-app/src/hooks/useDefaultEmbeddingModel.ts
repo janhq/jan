@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { backendStorage } from '@/lib/backendStorage'
 
 interface DefaultEmbeddingModelState {
   defaultByProvider: Record<string, string>
@@ -30,7 +31,8 @@ export const useDefaultEmbeddingModel = create<DefaultEmbeddingModelState>()(
     }),
     {
       name: localStorageKey.defaultEmbeddingModel,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )

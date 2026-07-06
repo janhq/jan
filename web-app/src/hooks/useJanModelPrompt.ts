@@ -6,6 +6,7 @@ import { useDownloadStore } from './useDownloadStore'
 import { useLatestJanModel } from './useLatestJanModel'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import { backendStorage } from '@/lib/backendStorage'
 
 export type JanModelPromptDismissedState = {
   dismissedModelName: string | null
@@ -22,7 +23,8 @@ export const useJanModelPromptDismissed =
       }),
       {
         name: localStorageKey.janModelPromptDismissed,
-        storage: createJSONStorage(() => localStorage),
+        storage: createJSONStorage(() => backendStorage),
+        skipHydration: true,
         version: 1,
         migrate: (persistedState: unknown) => {
           const state = persistedState as Record<string, unknown>

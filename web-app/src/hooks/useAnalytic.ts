@@ -1,6 +1,7 @@
 import { localStorageKey } from '@/constants/localStorage'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { backendStorage } from '@/lib/backendStorage'
 
 export const useAnalytic = () => {
   const { productAnalyticPrompt, setProductAnalyticPrompt } =
@@ -46,7 +47,8 @@ export const useProductAnalyticPrompt = create<ProductAnalyticPromptState>()(
     },
     {
       name: localStorageKey.productAnalyticPrompt,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )
@@ -70,7 +72,8 @@ export const useProductAnalytic = create<ProductAnalyticState>()(
     },
     {
       name: localStorageKey.productAnalytic,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )

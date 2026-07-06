@@ -27,8 +27,11 @@ pub const JAN_DATA_DIRS_COMMON: &[&str] = &["extensions", "logs", ".npx", ".uvx"
 /// Cross-category settings file (contains data spanning conversations, models,
 /// and UI preferences). Only deleted during a full wipe — i.e. when the user
 /// keeps neither conversations nor models/configs.
-/// After #7821, zustand stores persist to `settings.json` via @tauri-apps/plugin-store.
-pub const JAN_DATA_FILES_SETTINGS: &[&str] = &["settings.json"];
+/// Written by the backend settings store (`core::app::settings_store`), which
+/// persists webview zustand blobs here keyed by store namespace.
+/// `provider_secrets.enc` is the encrypted OS-keyring fallback for provider API
+/// keys (`core::server::provider_secrets`); it must also be wiped on a full reset.
+pub const JAN_DATA_FILES_SETTINGS: &[&str] = &["settings.json", "provider_secrets.enc"];
 
 /// All known data subdirectories (union of every category above).
 pub const JAN_DATA_SUBDIRS: &[&str] = &[
@@ -45,7 +48,7 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
 ];
 
 /// All known data files (union of every file category above).
-pub const JAN_DATA_FILES: &[&str] = &["mcp_config.json", "settings.json"];
+pub const JAN_DATA_FILES: &[&str] = &["mcp_config.json", "settings.json", "provider_secrets.enc"];
 
 #[cfg(test)]
 mod tests {

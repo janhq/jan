@@ -26,6 +26,12 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
+// Mock ServiceHub (setHuggingfaceToken persists to the keyring via set_secret)
+const mockInvoke = vi.fn().mockResolvedValue(undefined)
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({ core: () => ({ invoke: mockInvoke }) }),
+}))
+
 describe('useGeneralSetting', () => {
   let mockExtensionManager: any
 
@@ -162,6 +168,10 @@ describe('useGeneralSetting', () => {
       })
 
       expect(result.current.huggingfaceToken).toBe('test-token-123')
+      expect(mockInvoke).toHaveBeenCalledWith('set_secret', {
+        key: 'huggingface',
+        value: 'test-token-123',
+      })
     })
 
     it('should update huggingface token', () => {

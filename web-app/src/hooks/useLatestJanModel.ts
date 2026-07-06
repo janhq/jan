@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
+import { backendStorage } from '@/lib/backendStorage'
 
 type LatestJanModelState = {
   model: CatalogModel | null
@@ -55,7 +56,8 @@ export const useLatestJanModel = create<LatestJanModelState>()(
     }),
     {
       name: localStorageKey.latestJanModel,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
       partialize: (state) => ({
         model: state.model,
         lastFetchedAt: state.lastFetchedAt,

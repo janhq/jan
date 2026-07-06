@@ -1,7 +1,10 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import {
+  useGeneralSetting,
+  HUGGINGFACE_TOKEN_SECRET_KEY,
+} from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
@@ -59,6 +62,37 @@ async function registerRemoteProvider(provider: ModelProvider) {
   } catch (error) {
     console.error(`Failed to register provider ${provider.provider}:`, error)
   }
+}
+
+// Re-seed in-memory provider keys from the OS keyring. Keys are no longer
+// persisted to settings storage (stripped by useModelProvider.partialize), so
+// after a reload the store has none; synchronous consumers (model-factory,
+// presence checks) read provider.api_key, so we repopulate the runtime objects.
+async function seedProviderKeysFromKeyring(
+  providers: ModelProvider[]
+): Promise<ModelProvider[]> {
+  return Promise.all(
+    providers.map(async (provider) => {
+      if (provider.provider === 'llamacpp') return provider
+      try {
+        const keys = await invoke<string[]>('get_provider_keys', {
+          provider: provider.provider,
+        })
+        if (!keys || keys.length === 0) return provider
+        return {
+          ...provider,
+          api_key: keys[0],
+          api_key_fallbacks: keys.slice(1),
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to load keyring keys for ${provider.provider}:`,
+          error
+        )
+        return provider
+      }
+    })
+  )
 }
 
 // Track which providers have been registered so we can unregister stale ones
@@ -155,16 +189,26 @@ export function DataProvider() {
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    serviceHub.providers().getProviders().then((providers) => {
-      setProviders(providers)
+    serviceHub.providers().getProviders().then(async (providers) => {
+      const seeded = await seedProviderKeysFromKeyring(providers)
+      setProviders(seeded)
       // Register active remote providers with the backend
-      providers.forEach((provider) => {
+      seeded.forEach((provider) => {
         if (provider.active) {
           registerRemoteProvider(provider)
           registeredProviderNames.add(provider.provider)
         }
       })
     })
+    // Re-seed the Hugging Face token from the keyring (no longer persisted to
+    // settings storage) into the store + download extension for this session.
+    invoke<string | null>('get_secret', {
+      key: HUGGINGFACE_TOKEN_SECRET_KEY,
+    })
+      .then((token) => {
+        if (token) useGeneralSetting.getState().setHuggingfaceToken(token)
+      })
+      .catch(() => {})
     serviceHub
       .mcp()
       .getMCPConfig()
@@ -263,8 +307,9 @@ export function DataProvider() {
 
   useEffect(() => {
     const handler = () => {
-      serviceHub.providers().getProviders().then((providers) => {
-        setProviders(providers)
+      serviceHub.providers().getProviders().then(async (providers) => {
+        const seeded = await seedProviderKeysFromKeyring(providers)
+        setProviders(seeded)
         syncRemoteProviders()
         syncModelParamDefaults()
       })

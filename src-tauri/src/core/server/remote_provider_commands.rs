@@ -71,6 +71,19 @@ pub async fn register_provider_config(
         models: request.models, // Models will be added when they are configured
     };
 
+    // Persist the key chain to the OS keyring so it survives webview storage
+    // clears and is readable by out-of-process consumers (jan-cli). Keyring
+    // failure (e.g. headless Linux without an unlocked Secret Service) must not
+    // block registration; the in-memory config still works this session.
+    if let Err(err) =
+        crate::core::server::provider_secrets::store_provider_keys(&request.provider, &config.api_keys)
+    {
+        log::warn!(
+            "Failed to persist API keys to keyring for {}: {err}",
+            request.provider
+        );
+    }
+
     let provider_name = request.provider.clone();
     configs.insert(provider_name.clone(), config);
     log::info!("Registered provider config: {provider_name}");
@@ -99,12 +112,22 @@ pub async fn unregister_provider_config(
     let provider_configs = state.provider_configs.clone();
     let mut configs = provider_configs.lock().await;
 
+    if let Err(err) = crate::core::server::provider_secrets::delete_provider_keys(&provider) {
+        log::warn!("Failed to delete keyring entry for {provider}: {err}");
+    }
+
     if configs.remove(&provider).is_some() {
         log::info!("Unregistered provider config: {provider}");
-        Ok(())
-    } else {
-        Ok(())
     }
+    Ok(())
+}
+
+/// Read a provider's stored API key chain (keyring, then encrypted file
+/// fallback). Used by the frontend to re-seed in-memory keys at boot, since
+/// keys are no longer persisted to webview storage. Empty when none stored.
+#[tauri::command]
+pub fn get_provider_keys(provider: String) -> Vec<String> {
+    crate::core::server::provider_secrets::load_provider_keys(&provider)
 }
 
 /// Get provider configuration by name

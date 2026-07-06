@@ -2,16 +2,31 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { backendStorage } from '@/lib/backendStorage'
 import { modelSettings } from '@/lib/predefined'
 import { predefinedProviders } from '@/constants/providers'
 import { isLocalProvider } from '@/lib/utils'
-import {
-  API_KEY_FALLBACKS_SETTING_KEY,
-  parseApiKeyFallbacks,
-  serializeApiKeyFallbacks,
-} from '@/lib/provider-api-keys'
+import { API_KEY_FALLBACKS_SETTING_KEY } from '@/lib/provider-api-keys'
 
-const API_KEY_FALLBACKS_MIGRATION_FLAG = 'api_key_fallbacks_migrated_to_settings'
+const API_KEY_SETTING_KEY = 'api-key'
+
+// Secrets live only in the OS keyring (see register_provider_config), never in
+// persisted settings storage. Strip the key chain from every provider before it
+// is written to disk; the in-memory object keeps the keys (re-seeded from the
+// keyring at boot in DataProvider) so synchronous consumers still work.
+export function stripProviderSecrets(provider: ModelProvider): ModelProvider {
+  const settings = provider.settings?.map((s) =>
+    s.key === API_KEY_SETTING_KEY || s.key === API_KEY_FALLBACKS_SETTING_KEY
+      ? { ...s, controller_props: { ...s.controller_props, value: '' } }
+      : s
+  )
+  return {
+    ...provider,
+    api_key: undefined,
+    api_key_fallbacks: undefined,
+    ...(settings ? { settings } : {}),
+  }
+}
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -191,43 +206,16 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             })
 
-            // Preserve a zustand-only api-key-fallbacks setting when the
-            // backend doesn't return it, so disk-persisted fallbacks survive
-            // localStorage clears once they round-trip through updateSettings.
-            if (
-              !provider.persist &&
-              !mergedSettings.some((s) => s.key === API_KEY_FALLBACKS_SETTING_KEY)
-            ) {
-              const existingFallbacksSetting = existingProvider?.settings?.find(
-                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
-              )
-              if (existingFallbacksSetting) {
-                mergedSettings.push(existingFallbacksSetting)
-              }
-            }
-
-            const fallbacksSetting = mergedSettings.find(
-              (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
-            )
-            const fallbacksFromSetting = fallbacksSetting
-              ? parseApiKeyFallbacks(
-                  (
-                    fallbacksSetting.controller_props as {
-                      value?: unknown
-                    }
-                  )?.value
-                )
-              : undefined
-
+            // API keys live only in the OS keyring, never in provider settings.
+            // The in-memory chain is preserved from existing state or the
+            // keyring-seeded incoming provider (DataProvider).
             return {
               ...provider,
               models: provider.persist ? updatedModels : mergedModels,
               settings: mergedSettings,
               api_key: existingProvider?.api_key || provider.api_key,
               api_key_fallbacks:
-                existingProvider?.api_key_fallbacks ??
-                fallbacksFromSetting ??
-                provider.api_key_fallbacks,
+                existingProvider?.api_key_fallbacks ?? provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,
             }
@@ -238,64 +226,6 @@ export const useModelProvider = create<ModelProviderState>()(
               (e) => !updatedProviders.some((p) => p.provider === e.provider)
             ),
           ]
-
-          // One-shot migration: persist zustand-only fallback keys to disk
-          // via the providers extension so they survive localStorage clears.
-          if (
-            typeof localStorage !== 'undefined' &&
-            localStorage.getItem(API_KEY_FALLBACKS_MIGRATION_FLAG) !== 'true'
-          ) {
-            const toMigrate = nextProviders.filter((p) => {
-              const fallbacks = p.api_key_fallbacks ?? []
-              if (fallbacks.length === 0) return false
-              const setting = p.settings?.find(
-                (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
-              )
-              const persistedValue = setting
-                ? (setting.controller_props as { value?: unknown })?.value
-                : undefined
-              return (
-                typeof persistedValue !== 'string' || persistedValue.length === 0
-              )
-            })
-            localStorage.setItem(API_KEY_FALLBACKS_MIGRATION_FLAG, 'true')
-            if (toMigrate.length > 0) {
-              queueMicrotask(() => {
-                const svc = getServiceHub().providers()
-                for (const p of toMigrate) {
-                  const value = serializeApiKeyFallbacks(p.api_key_fallbacks ?? [])
-                  const settings = [...(p.settings ?? [])]
-                  const idx = settings.findIndex(
-                    (s) => s.key === API_KEY_FALLBACKS_SETTING_KEY
-                  )
-                  if (idx !== -1) {
-                    const props = settings[idx].controller_props as {
-                      value: string | boolean | number
-                    }
-                    props.value = value
-                  } else {
-                    settings.push({
-                      key: API_KEY_FALLBACKS_SETTING_KEY,
-                      title: 'API Key Fallbacks',
-                      description: '',
-                      controller_type: 'input',
-                      controller_props: {
-                        value,
-                        type: 'password',
-                        placeholder: '',
-                      },
-                    } as (typeof settings)[number])
-                  }
-                  svc.updateSettings(p.provider, settings).catch((err) => {
-                    console.warn(
-                      `[api-key-fallbacks] migration failed for ${p.provider}:`,
-                      err
-                    )
-                  })
-                }
-              })
-            }
-          }
 
           return effectiveDeletedModels === currentDeletedModels
             ? { providers: nextProviders }
@@ -407,7 +337,14 @@ export const useModelProvider = create<ModelProviderState>()(
     }),
     {
       name: localStorageKey.modelProvider,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      // Async backend storage; hydrate explicitly after ServiceHub init.
+      skipHydration: true,
+      // Never persist API keys — they live in the OS keyring only.
+      partialize: (state) => ({
+        ...state,
+        providers: state.providers.map(stripProviderSecrets),
+      }),
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as ModelProviderState & {
           providers: Array<

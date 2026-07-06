@@ -11,7 +11,10 @@ import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
-import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import {
+  API_KEY_FALLBACKS_SETTING_KEY,
+  providerRemoteApiKeyChain,
+} from '@/lib/provider-api-keys'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -269,6 +272,11 @@ export class TauriProvidersService extends DefaultProvidersService {
     settings: ProviderSetting[]
   ): Promise<void> {
     try {
+      // API keys are persisted to the OS keyring only (via
+      // register_provider_config), never to the extension's settings.json.
+      // Blank the key entries at this single chokepoint regardless of caller.
+      const isSecretKey = (key: string) =>
+        key === 'api-key' || key === API_KEY_FALLBACKS_SETTING_KEY
       return ExtensionManager.getInstance()
         .getEngine(providerName)
         ?.updateSettings(
@@ -276,8 +284,9 @@ export class TauriProvidersService extends DefaultProvidersService {
             ...setting,
             controllerProps: {
               ...setting.controller_props,
-              value:
-                setting.controller_props.value !== undefined
+              value: isSecretKey(setting.key)
+                ? ''
+                : setting.controller_props.value !== undefined
                   ? setting.controller_props.value
                   : '',
             },

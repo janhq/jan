@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { backendStorage } from '@/lib/backendStorage'
 
 interface VulkanStore {
   // Vulkan state
@@ -28,7 +29,8 @@ export const useVulkan = create<VulkanStore>()(
     }),
     {
       name: localStorageKey.settingVulkan,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )

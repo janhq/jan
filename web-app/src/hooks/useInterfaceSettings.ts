@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { backendStorage } from '@/lib/backendStorage'
 import { useTheme } from './useTheme'
 import {
   getDefaultNotificationPosition,
@@ -156,8 +157,8 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
   }
 }
 
-const interfaceStorage = createJSONStorage<InterfaceSettingsPersistedSlice>(() =>
-  localStorage
+const interfaceStorage = createJSONStorage<InterfaceSettingsPersistedSlice>(
+  () => backendStorage
 )
 
 export const useInterfaceSettings = create<InterfaceSettingsState>()(
@@ -236,6 +237,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
     {
       name: localStorageKey.settingInterface,
       storage: interfaceStorage,
+      skipHydration: true,
       partialize: (state) => ({
         fontSize: state.fontSize,
         accentColor: state.accentColor,

@@ -139,6 +139,14 @@ dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
+keyring = { version = "3", features = [
+    "apple-native",
+    "windows-native",
+    "sync-secret-service",
+    "crypto-rust",
+] }
+aes-gcm = "0.10"
+machine-uid = "0.5"
 
 [dependencies.tauri]
 version = "2.8.5"

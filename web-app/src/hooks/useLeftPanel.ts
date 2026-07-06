@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { backendStorage } from '@/lib/backendStorage'
 
 type LeftPanelStoreState = {
   open: boolean
@@ -23,7 +24,8 @@ export const useLeftPanel = create<LeftPanelStoreState>()(
     }),
     {
       name: localStorageKey.LeftPanel,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )

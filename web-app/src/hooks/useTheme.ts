@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { backendStorage } from '@/lib/backendStorage'
 import type { ThemeMode } from '@/services/theme/types'
 import { localStorageKey } from '@/constants/localStorage'
 
@@ -55,7 +56,10 @@ export const useTheme = create<ThemeState>()(
     },
     {
       name: localStorageKey.theme,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      // Backend storage is async; hydrate explicitly after ServiceHub init
+      // (see hydrateBackendStores). getServiceHub() throws before that.
+      skipHydration: true,
       // Persisted isDark from the previous session can be stale (user changed
       // OS theme while the app was closed). Re-derive on hydration so the
       // initial render matches reality; the Tauri portal listener corrects

@@ -26,6 +26,12 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    core: () => ({ invoke: vi.fn().mockResolvedValue(undefined) }),
+  }),
+}))
+
 describe('useGeneralSetting - coverage improvements', () => {
   let mockExtensionManager: any
 

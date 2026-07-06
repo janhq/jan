@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { backendStorage } from '@/lib/backendStorage'
 
 export interface DownloadProgressProps {
   id: string
@@ -107,7 +108,8 @@ export const useDownloadStore = create<DownloadState>()(
     }),
     {
       name: localStorageKey.pausedDownloads,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
       partialize: (state) => {
         const downloads: { [id: string]: DownloadProgressProps } = {}
         const resumeParams: { [id: string]: DownloadResumeParams } = {}
