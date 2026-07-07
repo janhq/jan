@@ -61,6 +61,7 @@ import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
+import { filterDefaultSseEvents } from './sseEventTypeFilter'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import {
@@ -400,7 +401,21 @@ export function createCustomFetch(
       if (!friendly) throw err
       throw new Error(`${friendly} (${requestUrlOf(input)})`)
     }
-    if (res.ok) return res
+    if (res.ok) {
+      // Servers may interleave custom named SSE events (e.g. tool-progress)
+      // with chat.completion.chunk data. The AI SDK validates every data line
+      // against the chunk schema regardless of event type, so strip non-default
+      // events before the stream reaches it.
+      const contentType = res.headers.get('content-type') || ''
+      if (res.body && contentType.includes('text/event-stream')) {
+        return new Response(filterDefaultSseEvents(res.body), {
+          status: res.status,
+          statusText: res.statusText,
+          headers: res.headers,
+        })
+      }
+      return res
+    }
 
     const isLlamacpp500 = keepLlamacppOnly && res.status === 500
 
