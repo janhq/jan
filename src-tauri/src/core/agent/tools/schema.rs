@@ -130,6 +130,66 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "memory_list",
+                "description": "List the names of your project memory notes (durable facts stored across sessions). No arguments.",
+                "parameters": { "type": "object", "properties": {}, "required": [] }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "memory_read",
+                "description": "Read one of your project memory notes by name.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Note name (without the .md extension)." }
+                    },
+                    "required": ["name"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "memory_write",
+                "description": "Create or overwrite a project memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note." },
+                        "content": { "type": "string", "description": "Full Markdown content of the note." }
+                    },
+                    "required": ["name", "content"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "skill_list",
+                "description": "List the names of the project skills (reusable procedures). Skills are already loaded into your context; use this to see what exists before adding or updating one. No arguments.",
+                "parameters": { "type": "object", "properties": {}, "required": [] }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "skill_write",
+                "description": "Create or update a project skill (a reusable procedure for this project). Keep it concise.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Skill name (without the .md extension); becomes the skill title." },
+                        "content": { "type": "string", "description": "Full Markdown content of the skill." }
+                    },
+                    "required": ["name", "content"]
+                }
+            }
+        }),
     ]
 }
 
@@ -141,7 +201,7 @@ mod tests {
     #[test]
     fn schemas_match_builtin_tools() {
         let schemas = builtin_tool_schemas();
-        assert_eq!(schemas.len(), 7);
+        assert_eq!(schemas.len(), 12);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }

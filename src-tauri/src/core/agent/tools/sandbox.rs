@@ -18,6 +18,36 @@ pub fn escapes_project(project_root: &Path, raw: &str) -> Result<bool, String> {
     Ok(!resolved.starts_with(&root))
 }
 
+/// True iff `raw` resolves inside the agent's own workspace
+/// (`<project_root>/.jan/agent/skills/` or `.../memory/`). These hold agent
+/// metadata (skills it authors, memory it records), not user source, so writes
+/// there bypass the write prompt. `agent.toml` is deliberately NOT covered:
+/// letting the agent rewrite its own permission file would be a self-escalation.
+pub fn within_agent_workspace(project_root: &Path, raw: &str) -> bool {
+    // Reject any `..` outright: this is an allow decision, so it must not rely on
+    // `canonicalize_lenient`'s lenient handling of `..` in a non-existent tail,
+    // which can diverge from how the OS resolves the path at write time.
+    if Path::new(raw)
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return false;
+    }
+    let Ok(root) = project_root.canonicalize() else {
+        return false;
+    };
+    let abs = if Path::new(raw).is_absolute() {
+        PathBuf::from(raw)
+    } else {
+        root.join(raw)
+    };
+    let Ok(resolved) = canonicalize_lenient(&abs) else {
+        return false;
+    };
+    let agent = root.join(".jan").join("agent");
+    resolved.starts_with(agent.join("skills")) || resolved.starts_with(agent.join("memory"))
+}
+
 /// Canonicalize a path that may not fully exist: canonicalize the deepest
 /// existing ancestor, then re-append the non-existing tail (resolving `.`/`..`
 /// lexically). Errors only if no ancestor up to root exists.
@@ -117,6 +147,19 @@ mod tests {
         let root = unique_root();
         std::fs::create_dir_all(root.join("sub")).unwrap();
         assert_eq!(escapes_project(&root, "sub/newfile.txt"), Ok(false));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn agent_workspace_covers_skills_and_memory_only() {
+        let root = unique_root();
+        assert!(within_agent_workspace(&root, ".jan/agent/skills/deploy.md"));
+        assert!(within_agent_workspace(&root, ".jan/agent/memory/decisions.md"));
+        // agent.toml and other project files are not the agent's scratch space.
+        assert!(!within_agent_workspace(&root, ".jan/agent/agent.toml"));
+        assert!(!within_agent_workspace(&root, "src/main.rs"));
+        // Escapes via .. do not count as workspace.
+        assert!(!within_agent_workspace(&root, ".jan/agent/skills/../../../etc/passwd"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

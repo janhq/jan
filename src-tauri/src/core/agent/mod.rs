@@ -2,8 +2,10 @@
 //! plumbing, consumed by both the API-server proxy and `tauri-plugin-agent`.
 
 pub mod commands;
+pub mod context;
 pub mod events;
 pub mod r#loop;
+pub mod memory;
 pub mod permissions;
 pub mod project;
 pub mod session;
