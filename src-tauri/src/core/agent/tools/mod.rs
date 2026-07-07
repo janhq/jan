@@ -59,7 +59,45 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         capability: Capability::Exec,
         path_args: &[],
     },
+    // Dedicated skill/memory tools. They operate on `.jan/agent/{skills,memory}/`
+    // by name (never a path), so they are always workspace-scoped and never
+    // prompt. `path_args` is empty: there is no path to sandbox-check.
+    BuiltinTool {
+        name: "memory_list",
+        capability: Capability::Read,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "memory_read",
+        capability: Capability::Read,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "memory_write",
+        capability: Capability::Write,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "skill_list",
+        capability: Capability::Read,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "skill_write",
+        capability: Capability::Write,
+        path_args: &[],
+    },
 ];
+
+/// Tools that act only on the agent's own `.jan/agent/{skills,memory}/`
+/// workspace. They are auto-allowed by the gate (no prompt), since a sanitized
+/// name can never escape the workspace. `deny` in agent.toml still overrides.
+pub fn is_workspace_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "memory_list" | "memory_read" | "memory_write" | "skill_list" | "skill_write"
+    )
+}
 
 pub fn lookup(name: &str) -> Option<&'static BuiltinTool> {
     BUILTIN_TOOLS.iter().find(|t| t.name == name)
@@ -94,7 +132,16 @@ mod tests {
     }
 
     #[test]
-    fn builtin_count_is_seven() {
-        assert_eq!(BUILTIN_TOOLS.len(), 7);
+    fn builtin_count_matches_expected() {
+        // 7 coding tools + 5 dedicated skill/memory tools.
+        assert_eq!(BUILTIN_TOOLS.len(), 12);
+    }
+
+    #[test]
+    fn workspace_tools_are_classified() {
+        assert!(is_workspace_tool("memory_write"));
+        assert!(is_workspace_tool("skill_list"));
+        assert!(!is_workspace_tool("write"));
+        assert!(!is_workspace_tool("bash"));
     }
 }

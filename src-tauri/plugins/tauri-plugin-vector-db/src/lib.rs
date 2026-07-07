@@ -5,7 +5,7 @@ use tauri::{
 };
 
 mod commands;
-mod db;
+pub mod db;
 mod error;
 mod state;
 mod utils;
@@ -27,6 +27,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_status,
             commands::list_attachments,
             commands::get_chunks,
+            commands::memory_index,
+            commands::memory_search,
+            commands::memory_clear,
         ])
         .setup(|app, _api| {
             app.manage(state::VectorDBState::new());
