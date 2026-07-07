@@ -9,7 +9,9 @@ import {
   type Tool,
   type LanguageModelUsage,
   jsonSchema,
+  InvalidToolInputError,
 } from 'ai'
+import { repairToolArgs } from './toolCallRepair'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
@@ -1110,6 +1112,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
       ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      experimental_repairToolCall: async ({ toolCall, error }) => {
+        // Windows paths (`C:\Users\...`) contain invalid JSON escapes that make
+        // the SDK's argument parse fail. Re-escape lone backslashes and retry
+        // so the tool receives the intended path instead of looping on failure.
+        if (!InvalidToolInputError.isInstance(error)) return null
+        const repaired = repairToolArgs(toolCall.input)
+        if (!repaired) return null
+        return { ...toolCall, input: JSON.stringify(repaired) }
+      },
     })
 
     let tokensPerSecond = 0
