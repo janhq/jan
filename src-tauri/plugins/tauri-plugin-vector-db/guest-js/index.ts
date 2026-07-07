@@ -112,3 +112,40 @@ export async function getChunks(
     endOrder,
   })
 }
+
+export interface MemoryHit {
+  msg_id: string
+  project_id: string
+  text: string
+  role: string
+  ts: number
+  score: number
+}
+
+export async function memoryIndex(
+  msgId: string,
+  projectId: string,
+  text: string,
+  role: string,
+  ts: number
+): Promise<void> {
+  return await invoke('plugin:vector-db|memory_index', {
+    msgId,
+    projectId,
+    text,
+    role,
+    ts,
+  })
+}
+
+export async function memorySearch(
+  projectId: string,
+  query: string,
+  topK: number
+): Promise<MemoryHit[]> {
+  return await invoke('plugin:vector-db|memory_search', { projectId, query, topK })
+}
+
+export async function memoryClear(projectId?: string): Promise<void> {
+  return await invoke('plugin:vector-db|memory_clear', { projectId })
+}

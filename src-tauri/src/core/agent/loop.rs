@@ -340,6 +340,28 @@ fn stop_reason_of(completion: &serde_json::Value) -> String {
         .to_string()
 }
 
+/// Text of the most recent `user` message. Handles both string content and the
+/// multimodal array form (text parts concatenated). None if there is no user turn.
+fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
+    let content = messages
+        .iter()
+        .rev()
+        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
+        .get("content")?;
+    match content {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(parts) => {
+            let text: String = parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
+}
+
 async fn orchestrate_inner(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
@@ -375,7 +397,26 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    if let Some(sys) = assistant_instructions {
+    let system_prompt = if let Some(root) = project_root {
+        let mut sp = crate::core::agent::context::build_system_prompt(
+            assistant_instructions.as_deref(),
+            root,
+        );
+        // Recall project memory for the current query before it is indexed, so
+        // the active turn cannot surface itself.
+        if let Some(query) = latest_user_text(&conversation_messages) {
+            if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                sp = Some(match sp {
+                    Some(s) => format!("{s}\n\n{mem}"),
+                    None => mem,
+                });
+            }
+        }
+        sp
+    } else {
+        assistant_instructions
+    };
+    if let Some(sys) = system_prompt {
         set_system_prompt(&mut conversation_messages, &sys);
     }
 
@@ -480,6 +521,9 @@ async fn orchestrate_inner(
     let mut budget = SessionBudget::new(max_session_tokens);
 
     if let Some(root) = project_root {
+        if let Some(query) = latest_user_text(&conversation_messages) {
+            crate::core::agent::memory::index_message(root, "user", &query);
+        }
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             project_root: root.clone(),
@@ -488,7 +532,7 @@ async fn orchestrate_inner(
             permission_requests: permission_requests.clone(),
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
         };
-        run_turn_cycle(
+        let result = run_turn_cycle(
             events,
             json_body,
             &model_id,
@@ -499,7 +543,15 @@ async fn orchestrate_inner(
             &http_model,
             &tools,
         )
-        .await
+        .await;
+        if let Ok(completion) = &result {
+            if let Some(answer) = extract_choice_message(completion)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
+            {
+                crate::core::agent::memory::index_message(root, "assistant", &answer);
+            }
+        }
+        result
     } else {
         run_turn_cycle(
             events,

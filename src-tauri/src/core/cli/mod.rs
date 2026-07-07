@@ -691,7 +691,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             let _ = std::io::stdout().flush();
         }
         StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
-        StreamEvent::ToolCall { name, args, .. } => eprintln!("\x1b[2m[tool] {name} {args}\x1b[0m"),
+        StreamEvent::ToolCall { name, args, .. } => eprintln!(
+            "\x1b[2m[tool] {}\x1b[0m",
+            crate::core::agent::events::describe_tool_call(&name, &args)
+        ),
         StreamEvent::ToolResult {
             content, is_error, ..
         } => {
