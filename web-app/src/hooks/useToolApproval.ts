@@ -32,6 +32,7 @@ type ToolApprovalState = {
   showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => Promise<boolean>
   requestApproval: (toolCallId: string, toolName: string, threadId: string) => Promise<boolean>
   resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
+  clearPendingForThread: (threadId: string) => void
   isApprovalPending: (toolCallId: string) => boolean
   closeModal: () => void
   setModalOpen: (open: boolean) => void
@@ -135,6 +136,21 @@ export const useToolApproval = create<ToolApprovalState>()(
           return { pending: next }
         })
         entry.resolve(decision !== 'deny')
+      },
+
+      clearPendingForThread: (threadId) => {
+        const { pending } = get()
+        const stranded = Object.values(pending).filter(
+          (entry) => entry.threadId === threadId
+        )
+        if (stranded.length === 0) return
+        set((s) => {
+          const next = { ...s.pending }
+          for (const entry of stranded) delete next[entry.toolCallId]
+          return { pending: next }
+        })
+        // Resolve as denied so any awaiting tool loop unblocks instead of hanging.
+        for (const entry of stranded) entry.resolve(false)
       },
 
       isApprovalPending: (toolCallId) => {

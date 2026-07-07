@@ -28,6 +28,7 @@ describe('useToolApproval', () => {
       allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
+      pending: {},
     })
   })
 
@@ -343,6 +344,94 @@ describe('useToolApproval', () => {
 
       expect(result2.current.approvedTools['thread-1']).toContain('tool-a')
       expect(result2.current.allowAllMCPPermissions).toBe(true)
+    })
+  })
+
+  describe('requestApproval + clearPendingForThread', () => {
+    it('stores a pending approval keyed by toolCallId', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.requestApproval('tc1', 'tool-a', 'thread-1')
+      })
+
+      expect(result.current.pending['tc1']).toMatchObject({
+        toolCallId: 'tc1',
+        toolName: 'tool-a',
+        threadId: 'thread-1',
+      })
+    })
+
+    it('auto-resolves without storing pending when tool is already approved', async () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveToolForThread('thread-1', 'tool-a')
+      })
+
+      let p: Promise<boolean>
+      act(() => {
+        p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
+      })
+
+      await expect(p!).resolves.toBe(true)
+      expect(result.current.pending['tc1']).toBeUndefined()
+    })
+
+    it('clearPendingForThread resolves matching promises with false and removes them', async () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      let p: Promise<boolean>
+      act(() => {
+        p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
+      })
+      expect(result.current.pending['tc1']).toBeDefined()
+
+      act(() => {
+        result.current.clearPendingForThread('thread-1')
+      })
+
+      await expect(p!).resolves.toBe(false)
+      expect(result.current.pending['tc1']).toBeUndefined()
+    })
+
+    it('clearPendingForThread leaves other threads pending untouched', async () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      let pA: Promise<boolean>
+      let pB: Promise<boolean>
+      act(() => {
+        pA = result.current.requestApproval('tcA', 'tool-a', 'thread-A')
+        pB = result.current.requestApproval('tcB', 'tool-b', 'thread-B')
+      })
+
+      act(() => {
+        result.current.clearPendingForThread('thread-A')
+      })
+
+      await expect(pA!).resolves.toBe(false)
+      expect(result.current.pending['tcA']).toBeUndefined()
+      expect(result.current.pending['tcB']).toMatchObject({ threadId: 'thread-B' })
+
+      // Thread-B's promise is still live; resolve it so it doesn't dangle.
+      act(() => {
+        result.current.resolveApproval('tcB', 'allow-once')
+      })
+      await expect(pB!).resolves.toBe(true)
+    })
+
+    it('clearPendingForThread is a no-op when nothing matches', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.requestApproval('tcA', 'tool-a', 'thread-A')
+      })
+
+      act(() => {
+        result.current.clearPendingForThread('thread-Z')
+      })
+
+      expect(result.current.pending['tcA']).toMatchObject({ threadId: 'thread-A' })
     })
   })
 

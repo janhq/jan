@@ -153,6 +153,12 @@ function ThreadDetail() {
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
 
+  // Approval promises started in onToolCall (so the popup appears immediately)
+  // and awaited by the onFinish execution loop, keyed by toolCallId. Executing
+  // stays in onFinish so the tool result lands on a completed assistant message
+  // and the AI SDK's auto-resubmit (sendAutomaticallyWhen) fires.
+  const toolApprovalPromises = useRef<Map<string, Promise<boolean>>>(new Map())
+
   const titleAbortRef = useRef<AbortController | null>(null)
 
   // Check if we should follow up with tool calls (respects abort signal)
@@ -387,11 +393,14 @@ function ThreadDetail() {
         }
       }
 
-      // Create a new AbortController for tool calls
+      // Execute tool calls here, after the assistant message has completed, so
+      // each addToolOutput lands on a finished message and the SDK's
+      // auto-resubmit (sendAutomaticallyWhen) fires. Approval is requested
+      // earlier in onToolCall (popup appears without waiting for this callback);
+      // we await that already-started promise here rather than prompting again.
       toolCallAbortController.current = new AbortController()
       const signal = toolCallAbortController.current.signal
 
-      // Get cached tool names from store (initialized in useTools hook)
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
 
@@ -399,10 +408,8 @@ function ThreadDetail() {
       // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
       useAppState.getState().setThreadBusy(threadId, true)
 
-      // Process tool calls sequentially, requesting approval for each if needed
       ;(async () => {
         for (const toolCall of sessionData.tools) {
-          // Check if already aborted before starting
           if (signal.aborted) {
             break
           }
@@ -413,12 +420,13 @@ function ThreadDetail() {
             // Built-in RAG tools are internal and should not require approval.
             const approved = ragToolNames.has(toolName)
               ? true
-              : await useToolApproval
-                  .getState()
-                  .requestApproval(toolCall.toolCallId, toolName, threadId)
+              : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
+                  useToolApproval
+                    .getState()
+                    .requestApproval(toolCall.toolCallId, toolName, threadId))
+            toolApprovalPromises.current.delete(toolCall.toolCallId)
 
             if (!approved) {
-              // User denied the tool call
               addToolOutput({
                 state: 'output-error',
                 tool: toolCall.toolName,
@@ -430,7 +438,6 @@ function ThreadDetail() {
 
             let result
 
-            // Route to the appropriate service based on tool name
             if (ragToolNames.has(toolName)) {
               result = await serviceHub.rag().callTool({
                 toolName,
@@ -445,7 +452,6 @@ function ThreadDetail() {
                 arguments: toolCall.input,
               })
             } else {
-              // Tool not found in either service
               result = {
                 error: `Tool '${toolName}' not found in any service`,
               }
@@ -466,7 +472,6 @@ function ThreadDetail() {
               })
             }
           } catch (error) {
-            // Ignore abort errors
             if ((error as Error).name !== 'AbortError') {
               console.error('Tool call error:', error)
               addToolOutput({
@@ -479,16 +484,16 @@ function ThreadDetail() {
           }
         }
 
-        // Clear tools after processing all
         sessionData.tools = []
+        toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
         useAppState.getState().setThreadBusy(threadId, false)
       })().catch((error) => {
-        // Ignore abort errors
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
         sessionData.tools = []
+        toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
         useAppState.getState().setThreadBusy(threadId, false)
       })
@@ -557,7 +562,25 @@ function ThreadDetail() {
       }
     },
     onToolCall: ({ toolCall }) => {
+      // Collect the tool for the onFinish execution loop, and request approval
+      // right now so the popup appears immediately instead of waiting for the
+      // stream's terminal finish chunk (a stalled stream would otherwise leave
+      // the tool at "Running..." with no popup). Execution itself stays in
+      // onFinish so the tool result lands on a completed message. RAG tools are
+      // internal and never prompt.
       sessionData.tools.push(toolCall)
+      const ragToolNames = useAppState.getState().ragToolNames
+      if (
+        !ragToolNames.has(toolCall.toolName) &&
+        !toolApprovalPromises.current.has(toolCall.toolCallId)
+      ) {
+        toolApprovalPromises.current.set(
+          toolCall.toolCallId,
+          useToolApproval
+            .getState()
+            .requestApproval(toolCall.toolCallId, toolCall.toolName, threadId)
+        )
+      }
     },
     sendAutomaticallyWhen: followUpMessage,
   })
@@ -748,6 +771,18 @@ function ThreadDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The route component is reused across thread switches (no remount), so tear
+  // down the in-flight tool loop and release approvals waiting on the thread we
+  // are leaving. Cleanup captures the previous threadId; without this the
+  // unresolved approval promise keeps that thread marked busy forever.
+  useEffect(() => {
+    return () => {
+      toolCallAbortController.current?.abort()
+      toolCallAbortController.current = null
+      useToolApproval.getState().clearPendingForThread(threadId)
+    }
+  }, [threadId])
 
   // Resync the OOM/backend banner from message metadata on every thread switch.
   // Persisted by LlamacppOomListener at error time; unset state when this

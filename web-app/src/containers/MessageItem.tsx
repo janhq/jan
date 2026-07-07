@@ -490,9 +490,17 @@ export const MessageItem = memo(
         return part.type.startsWith('tool-') && 'state' in part
       }
       const meaningful = entries.filter(isMeaningfulEntry)
+      // While streaming, show only the latest step — but never truncate away a
+      // tool part that is awaiting the user's approval, or its approve/deny
+      // controls would never mount and the run would hang (multi-tool turns).
+      const lastMeaningful = meaningful[meaningful.length - 1]
       const visibleEntries =
         groupIsStreaming && meaningful.length > 0
-          ? [meaningful[meaningful.length - 1]]
+          ? meaningful.filter((e) => {
+              if (e === lastMeaningful) return true
+              const toolCallId = (e.part as { toolCallId?: string }).toolCallId
+              return Boolean(toolCallId && pendingApprovals[toolCallId])
+            })
           : entries
 
       // Streaming label reflects the current step, not whether the whole trace

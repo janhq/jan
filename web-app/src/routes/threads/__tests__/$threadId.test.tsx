@@ -114,6 +114,8 @@ const h = vi.hoisted(() => {
   const toolApprovalState: any = {
     showApprovalModal: vi.fn().mockResolvedValue(true),
     approveToolForThread: vi.fn(),
+    clearPendingForThread: vi.fn(),
+    requestApproval: vi.fn().mockResolvedValue(true),
   }
   const useToolApprovalMock: any = (selector: any) => selector(toolApprovalState)
   useToolApprovalMock.getState = () => toolApprovalState
@@ -338,6 +340,7 @@ vi.mock('zustand/react/shallow', () => ({
 vi.mock('@/hooks/use-chat', () => ({
   useChat: (_args: any) => {
     ;(h as any).capturedOnFinish = _args?.onFinish
+    ;(h as any).capturedOnToolCall = _args?.onToolCall
     return {
       messages: h.chatState.messages,
       status: h.chatState.status,
@@ -443,6 +446,9 @@ describe('ThreadDetail route', () => {
     h.agentModeState.agentThreads = {}
     h.modelProviderState.selectedProvider = 'openai'
     h.appStateState.oomError = undefined
+    h.appStateState.ragToolNames = new Set<string>()
+    h.appStateState.mcpToolNames = new Set<string>()
+    h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
     sessionStorage.clear()
   })
 
@@ -470,6 +476,12 @@ describe('ThreadDetail route', () => {
     expect(h.threadsState.setCurrentThreadId).toHaveBeenCalledWith('thread-1')
     unmount()
     expect(h.threadsState.setCurrentThreadId).toHaveBeenLastCalledWith(undefined)
+  })
+
+  it('clears this thread pending tool approvals on unmount', () => {
+    const { unmount } = renderComponent()
+    unmount()
+    expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith('thread-1')
   })
 
   it('renders messages passed through useChat', () => {
@@ -681,6 +693,104 @@ describe('ThreadDetail route', () => {
     expect(persisted).toBeTruthy()
     expect(persisted.metadata.parentId).toBe('u2')
     expect(persisted.metadata.parentId).not.toBeNull()
+  })
+
+  describe('tool-call approval requested early, execution stays in onFinish', () => {
+    const toolCall = (id: string) => ({
+      toolCall: { toolCallId: id, toolName: 'fetch', input: { url: 'x' } },
+    })
+    const finishWithToolCalls = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-tc',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+
+    it('requests approval as soon as a tool call arrives, before onFinish', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      expect((h as any).capturedOnToolCall).toBeTypeOf('function')
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc1'))
+      })
+
+      // Popup is requested purely from the tool-call arrival, decoupled from onFinish.
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+        'tc1',
+        'fetch',
+        'thread-1'
+      )
+    })
+
+    it('does NOT execute the tool from onToolCall (execution deferred to onFinish)', async () => {
+      // Executing during streaming lands addToolResult on an incomplete message,
+      // which suppresses auto-resubmit and makes the model appear to "stop".
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc1'))
+      })
+
+      expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+    })
+
+    it('executes approved tools in onFinish so the completed message can auto-resubmit', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc2'))
+      })
+      await act(async () => {
+        await finishWithToolCalls()
+      })
+
+      // Global setup mock resolves callTool to { error: '', content: [] }.
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: 'tc2', tool: 'fetch' })
+      )
+    })
+
+    it('reuses the early approval instead of prompting twice', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc4'))
+      })
+      await act(async () => {
+        await finishWithToolCalls()
+      })
+
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+    })
+
+    it('marks the thread busy during onFinish execution and clears it when tools drain', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc5'))
+      })
+      await act(async () => {
+        await finishWithToolCalls()
+      })
+
+      expect(h.appStateState.setThreadBusy).toHaveBeenCalledWith('thread-1', true)
+      expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith('thread-1', false)
+    })
   })
 
   it('delete removes message from store and chat list', () => {

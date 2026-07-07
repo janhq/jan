@@ -473,6 +473,54 @@ describe('MessageItem', () => {
     expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
   })
 
+  it('keeps an earlier tool part visible while it awaits approval (multi-tool turn)', () => {
+    // Two tool calls in one streaming turn; the first is awaiting approval.
+    // Streaming truncation must not hide it, or its approve/deny controls
+    // never mount and the run hangs.
+    pendingApprovalsRef.current = { 'tc-alpha': {} }
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              { type: 'tool-alpha', state: 'input-available', toolCallId: 'tc-alpha', input: {} },
+              { type: 'tool-beta', state: 'input-available', toolCallId: 'tc-beta', input: {} },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'streaming' as any}
+      />
+    )
+    const headers = screen.getAllByTestId('tool-header').map((h) => h.textContent)
+    expect(headers).toContain('alpha')
+    expect(headers).toContain('beta')
+  })
+
+  it('still truncates a non-pending earlier tool step while streaming', () => {
+    // No pending approval: streaming truncation keeps only the latest step.
+    pendingApprovalsRef.current = {}
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              { type: 'tool-alpha', state: 'input-available', toolCallId: 'tc-alpha', input: {} },
+              { type: 'tool-beta', state: 'input-available', toolCallId: 'tc-beta', input: {} },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'streaming' as any}
+      />
+    )
+    const headers = screen.getAllByTestId('tool-header').map((h) => h.textContent)
+    expect(headers).not.toContain('alpha')
+    expect(headers).toContain('beta')
+  })
+
   it('passes full text to copy button', () => {
     render(
       <MessageItem
