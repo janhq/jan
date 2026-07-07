@@ -7,6 +7,7 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],
+      "@janhq/core": ["../core/src/index.ts"],
       "@janhq/conversational-extension": ["../extensions/conversational-extension/src/index.ts"]
     }
   }

@@ -337,7 +337,7 @@ async fn wait_for_app_ready<R: Runtime>(app: &AppHandle<R>, timeout: Duration) {
         let _ = tx.send(());
     });
     if tokio::time::timeout(timeout, rx).await.is_err() {
-        log::info!("app-ready not received within {timeout:?}; starting MCP servers anyway");
+        log::debug!("app-ready not received within {timeout:?}; starting MCP servers anyway");
         app.unlisten(handler);
     }
 }
@@ -350,7 +350,8 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
         use crate::core::mcp::lockfile::cleanup_all_stale_locks;
 
         // Defer past first paint so npx/uvx spawns don't starve cold start.
-        wait_for_app_ready(&app_handle, Duration::from_secs(30)).await;
+        // Reduced to 5s since frontend emits app-ready immediately upon paint.
+        wait_for_app_ready(&app_handle, Duration::from_secs(5)).await;
 
         // Create default mcp_config.json if it doesn't exist
         let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
