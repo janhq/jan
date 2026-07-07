@@ -53,6 +53,10 @@ impl ProviderOverrides {
 /// Load cloud provider configs from the persisted desktop store, applying
 /// `overrides`. A missing/malformed store is not fatal: it yields an empty map
 /// so `--provider`/`--api-key`/env can still stand up a config on their own.
+///
+/// Secrets no longer live in `settings.json` (moved to the OS keyring /
+/// encrypted fallback file by #8388), so keys are seeded from
+/// `provider_secrets::load_provider_keys` before overrides are applied.
 pub fn load_provider_configs(
     overrides: &ProviderOverrides,
 ) -> Result<HashMap<String, ProviderConfig>, String> {
@@ -61,8 +65,30 @@ pub fn load_provider_configs(
         Ok(raw) => parse_provider_store(&raw),
         Err(_) => HashMap::new(),
     };
+    seed_keys_from_store(&mut configs, |p| {
+        crate::core::server::provider_secrets::load_provider_keys(p)
+    });
     apply_overrides(&mut configs, overrides);
     Ok(configs)
+}
+
+/// Seed each config's key chain from the secret store when the settings blob
+/// carried no key. `load` is injected for testability. Explicit `--api-key`/env
+/// overrides run afterward and still win.
+fn seed_keys_from_store(
+    configs: &mut HashMap<String, ProviderConfig>,
+    load: impl Fn(&str) -> Vec<String>,
+) {
+    for (name, cfg) in configs.iter_mut() {
+        if cfg.api_key.is_some() {
+            continue;
+        }
+        let keys = load(name);
+        if !keys.is_empty() {
+            cfg.api_key = keys.first().cloned();
+            cfg.api_keys = keys;
+        }
+    }
 }
 
 /// Parse the `settings.json` body into provider configs. Tolerant of shape
@@ -260,6 +286,38 @@ mod tests {
         assert!(configs
             .values()
             .all(|c| c.api_key.as_deref() == Some("shared")));
+    }
+
+    #[test]
+    fn seed_fills_missing_key_from_store() {
+        let mut configs = parse_provider_store(STORE);
+        // openai has an empty key in the blob -> should be seeded.
+        seed_keys_from_store(&mut configs, |p| match p {
+            "openai" => vec!["sk-stored-1".to_string(), "sk-stored-2".to_string()],
+            _ => Vec::new(),
+        });
+        let openai = configs.get("openai").unwrap();
+        assert_eq!(openai.api_key.as_deref(), Some("sk-stored-1"));
+        assert_eq!(
+            openai.api_keys,
+            vec!["sk-stored-1".to_string(), "sk-stored-2".to_string()]
+        );
+    }
+
+    #[test]
+    fn seed_does_not_clobber_existing_key() {
+        let mut configs = parse_provider_store(STORE);
+        // anthropic already has sk-ant-123 from the blob -> store must not win.
+        seed_keys_from_store(&mut configs, |_| vec!["sk-should-not-apply".to_string()]);
+        let anthropic = configs.get("anthropic").unwrap();
+        assert_eq!(anthropic.api_key.as_deref(), Some("sk-ant-123"));
+    }
+
+    #[test]
+    fn seed_empty_store_leaves_key_none() {
+        let mut configs = parse_provider_store(STORE);
+        seed_keys_from_store(&mut configs, |_| Vec::new());
+        assert_eq!(configs.get("openai").unwrap().api_key, None);
     }
 
     #[test]
