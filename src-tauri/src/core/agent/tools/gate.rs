@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::core::agent::permissions::ToolPermissions;
-use crate::core::agent::tools::sandbox::escapes_project;
+use crate::core::agent::tools::sandbox::{escapes_project, within_agent_workspace};
 use crate::core::agent::tools::{BuiltinTool, Capability};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -75,6 +75,11 @@ pub fn resolve_decision(
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
     }
+    // Dedicated skill/memory tools act only on the agent's own workspace by a
+    // sanitized name, so they never prompt (deny above still wins).
+    if crate::core::agent::tools::is_workspace_tool(tool.name) {
+        return Decision::Allow;
+    }
     match tool.capability {
         Capability::Read => {
             let escapes = tool.path_args.iter().any(|key| {
@@ -89,7 +94,22 @@ pub fn resolve_decision(
                 Decision::Prompt(PromptKind::ReadEscape)
             }
         }
-        Capability::Write => gated(PromptKind::Write, grants),
+        Capability::Write => {
+            // The agent's own skills/memory workspace is auto-writable: it is
+            // agent metadata, not user source, so it skips the write prompt.
+            let in_workspace = !tool.path_args.is_empty()
+                && tool.path_args.iter().all(|key| {
+                    args.get(key)
+                        .and_then(|v| v.as_str())
+                        .map(|p| within_agent_workspace(project_root, p))
+                        .unwrap_or(false)
+                });
+            if in_workspace {
+                Decision::Allow
+            } else {
+                gated(PromptKind::Write, grants)
+            }
+        }
         Capability::Exec => gated(PromptKind::Exec, grants),
     }
 }
@@ -186,6 +206,77 @@ mod tests {
             &grants,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_to_agent_workspace_is_auto_allowed() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        for path in [".jan/agent/skills/deploy.md", ".jan/agent/memory/notes.md"] {
+            let d = resolve_decision(
+                lookup("write").unwrap(),
+                &json!({ "path": path }),
+                &root,
+                &perms,
+                &grants,
+            );
+            assert_eq!(d, Decision::Allow, "workspace write should skip prompt: {path}");
+        }
+        // agent.toml is excluded from the exception -> still prompts.
+        let d = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": ".jan/agent/agent.toml"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::Write));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn deny_still_blocks_agent_workspace_write() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["write"]), &[]);
+        let grants = SessionGrants::default();
+        let d = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": ".jan/agent/skills/x.md"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::HardDeny);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn workspace_tools_auto_allow_but_deny_still_wins() {
+        let root = unique_root();
+        let grants = SessionGrants::default();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        for name in ["memory_read", "memory_write", "skill_write", "memory_list"] {
+            let d = resolve_decision(
+                lookup(name).unwrap(),
+                &json!({"name": "x", "content": "y"}),
+                &root,
+                &perms,
+                &grants,
+            );
+            assert_eq!(d, Decision::Allow, "{name} should auto-allow");
+        }
+        // Explicit deny in agent.toml still overrides the auto-allow.
+        let denied = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
+        let d = resolve_decision(
+            lookup("memory_write").unwrap(),
+            &json!({"name": "x", "content": "y"}),
+            &root,
+            &denied,
+            &grants,
+        );
+        assert_eq!(d, Decision::HardDeny);
         let _ = std::fs::remove_dir_all(&root);
     }
 

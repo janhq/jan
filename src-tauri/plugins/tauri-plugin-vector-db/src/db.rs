@@ -48,6 +48,17 @@ pub struct MinimalChunkInput {
 // Connection & Path Management
 // ============================================================================
 
+/// Canonical base directory for all vector-db collections (RAG chunks and the
+/// agent memory store). Single source of truth shared by `VectorDBState` and any
+/// out-of-plugin consumer so they operate on the same `.db` files.
+pub fn default_base_dir() -> PathBuf {
+    let mut base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.push("Jan");
+    base.push("data");
+    base.push("db");
+    base
+}
+
 pub fn collection_path(base: &Path, name: &str) -> PathBuf {
     let mut p = base.to_path_buf();
     let clean = name.replace(['/', '\\'], "_");
@@ -747,5 +758,213 @@ mod tests {
             embedding_to_json(&[]).unwrap_err(),
             VectorDBError::InvalidInput(_)
         ));
+    }
+}
+
+// ============================================================================
+// Project-scoped agent memory (FTS5 / BM25)
+// ============================================================================
+
+/// Single global collection file holding all agent memories, isolated per
+/// project via the `project_id` column.
+pub const MEMORY_COLLECTION: &str = "__memory__";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MemoryHit {
+    pub msg_id: String,
+    pub project_id: String,
+    pub text: String,
+    pub role: String,
+    pub ts: i64,
+    pub score: f32,
+}
+
+/// FTS5 virtual table. `project_id` is UNINDEXED (filter column, not a search
+/// term). Porter stemming + unicode61 folding for lexical recall.
+pub fn ensure_memory_table(conn: &Connection) -> Result<(), VectorDBError> {
+    conn.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories USING fts5(
+            msg_id UNINDEXED,
+            project_id UNINDEXED,
+            text,
+            role UNINDEXED,
+            ts UNINDEXED,
+            tokenize = 'porter unicode61'
+        )",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Sanitize raw user text into a safe FTS5 MATCH expression: alphanumeric terms
+/// (>=2 chars) quoted and OR-joined, so FTS5 operators in the input cannot raise
+/// a syntax error. Returns None when nothing indexable remains.
+fn build_fts_match(query: &str) -> Option<String> {
+    let terms: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.chars().count() >= 2)
+        .map(|t| format!("\"{}\"", t.to_lowercase()))
+        .collect();
+    if terms.is_empty() {
+        None
+    } else {
+        Some(terms.join(" OR "))
+    }
+}
+
+/// Idempotent index: delete-then-insert by `msg_id`, so re-indexing an edited
+/// message replaces its row instead of duplicating it.
+pub fn memory_index(
+    conn: &Connection,
+    msg_id: &str,
+    project_id: &str,
+    text: &str,
+    role: &str,
+    ts: i64,
+) -> Result<(), VectorDBError> {
+    ensure_memory_table(conn)?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM memories WHERE msg_id = ?1", params![msg_id])?;
+    tx.execute(
+        "INSERT INTO memories (msg_id, project_id, text, role, ts) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![msg_id, project_id, text, role, ts],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// BM25-ranked recall scoped to a single project. Best match first (bm25 is more
+/// negative = more relevant), recency breaks ties.
+pub fn memory_search(
+    conn: &Connection,
+    project_id: &str,
+    query: &str,
+    top_k: usize,
+) -> Result<Vec<MemoryHit>, VectorDBError> {
+    ensure_memory_table(conn)?;
+    let match_expr = match build_fts_match(query) {
+        Some(m) => m,
+        None => return Ok(Vec::new()),
+    };
+    let mut stmt = conn.prepare(
+        "SELECT msg_id, project_id, text, role, ts, bm25(memories) AS score
+         FROM memories
+         WHERE project_id = ?1 AND memories MATCH ?2
+         ORDER BY score ASC, ts DESC
+         LIMIT ?3",
+    )?;
+    let rows = stmt.query_map(params![project_id, match_expr, top_k as i64], |r| {
+        Ok(MemoryHit {
+            msg_id: r.get(0)?,
+            project_id: r.get(1)?,
+            text: r.get(2)?,
+            role: r.get(3)?,
+            ts: r.get(4)?,
+            score: r.get::<_, f64>(5)? as f32,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Clear memories: a single project when `project_id` is given, else all.
+pub fn memory_clear(conn: &Connection, project_id: Option<&str>) -> Result<(), VectorDBError> {
+    ensure_memory_table(conn)?;
+    match project_id {
+        Some(pid) => conn.execute("DELETE FROM memories WHERE project_id = ?1", params![pid])?,
+        None => conn.execute("DELETE FROM memories", [])?,
+    };
+    Ok(())
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    fn mem_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+        ensure_memory_table(&conn).expect("fts5 memory table");
+        conn
+    }
+
+    #[test]
+    fn bundled_sqlite_ships_fts5() {
+        let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+        conn.execute(
+            "CREATE VIRTUAL TABLE t USING fts5(content)",
+            [],
+        )
+        .expect("bundled rusqlite must ship FTS5");
+    }
+
+    #[test]
+    fn index_and_bm25_recall() {
+        let conn = mem_conn();
+        memory_index(&conn, "m1", "p1", "the quick brown fox jumps", "user", 100).unwrap();
+        memory_index(&conn, "m2", "p1", "lazy dogs sleep all day", "user", 200).unwrap();
+
+        let hits = memory_search(&conn, "p1", "brown fox", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].msg_id, "m1");
+    }
+
+    #[test]
+    fn reindex_by_msg_id_is_idempotent() {
+        let conn = mem_conn();
+        memory_index(&conn, "m1", "p1", "original text about apples", "user", 100).unwrap();
+        memory_index(&conn, "m1", "p1", "revised text about oranges", "user", 150).unwrap();
+
+        assert!(memory_search(&conn, "p1", "apples", 5).unwrap().is_empty());
+        let hits = memory_search(&conn, "p1", "oranges", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].text, "revised text about oranges");
+    }
+
+    #[test]
+    fn search_is_project_isolated() {
+        let conn = mem_conn();
+        memory_index(&conn, "a", "projectA", "shared keyword alpha", "user", 100).unwrap();
+        memory_index(&conn, "b", "projectB", "shared keyword alpha", "user", 100).unwrap();
+
+        let hits = memory_search(&conn, "projectA", "keyword", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].project_id, "projectA");
+    }
+
+    #[test]
+    fn recency_breaks_score_ties() {
+        let conn = mem_conn();
+        memory_index(&conn, "old", "p1", "duplicate phrase here", "user", 100).unwrap();
+        memory_index(&conn, "new", "p1", "duplicate phrase here", "user", 200).unwrap();
+
+        let hits = memory_search(&conn, "p1", "duplicate phrase", 5).unwrap();
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].msg_id, "new");
+    }
+
+    #[test]
+    fn operator_injection_is_safe() {
+        let conn = mem_conn();
+        memory_index(&conn, "m1", "p1", "normal indexed content", "user", 100).unwrap();
+        // Raw FTS5 operators in the query must not raise a syntax error.
+        let hits = memory_search(&conn, "p1", "content AND (OR* NEAR/2 \"", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn clear_all_and_per_project() {
+        let conn = mem_conn();
+        memory_index(&conn, "a", "p1", "content one", "user", 100).unwrap();
+        memory_index(&conn, "b", "p2", "content two", "user", 100).unwrap();
+
+        memory_clear(&conn, Some("p1")).unwrap();
+        assert!(memory_search(&conn, "p1", "content", 5).unwrap().is_empty());
+        assert_eq!(memory_search(&conn, "p2", "content", 5).unwrap().len(), 1);
+
+        memory_clear(&conn, None).unwrap();
+        assert!(memory_search(&conn, "p2", "content", 5).unwrap().is_empty());
     }
 }
