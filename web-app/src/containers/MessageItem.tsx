@@ -38,7 +38,7 @@ import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useToolApproval } from '@/hooks/useToolApproval'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
 import type { RagCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
@@ -151,7 +151,7 @@ export const MessageItem = memo(
       })
     }, [isLastMessage, message.role, message.parts])
 
-    const pendingApprovals = useToolApproval((s) => s.pending)
+    const pendingApprovals = useToolApprovalRequests((s) => s.pending)
     const awaitingApproval = useMemo(() => {
       if (!hasPendingToolCall) return false
       return message.parts.some((part) => {

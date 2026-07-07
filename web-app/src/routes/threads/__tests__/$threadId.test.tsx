@@ -119,6 +119,11 @@ const h = vi.hoisted(() => {
   }
   const useToolApprovalMock: any = (selector: any) => selector(toolApprovalState)
   useToolApprovalMock.getState = () => toolApprovalState
+  // Transient approval store shares the same backing object so existing
+  // toolApprovalState.requestApproval / clearPendingForThread refs keep working.
+  const useToolApprovalRequestsMock: any = (selector: any) =>
+    selector(toolApprovalState)
+  useToolApprovalRequestsMock.getState = () => toolApprovalState
 
   const agentModeState: any = { agentThreads: {} }
   const useAgentModeMock: any = (selector: any) => selector(agentModeState)
@@ -158,6 +163,7 @@ const h = vi.hoisted(() => {
     useToolAvailableMock,
     toolApprovalState,
     useToolApprovalMock,
+    useToolApprovalRequestsMock,
     agentModeState,
     useAgentModeMock,
     messageQueueState,
@@ -369,6 +375,9 @@ vi.mock('@/hooks/useChatAttachments', () => ({
 vi.mock('@/hooks/useAttachments', () => ({ useAttachments: h.useAttachmentsMock }))
 vi.mock('@/hooks/useToolAvailable', () => ({ useToolAvailable: h.useToolAvailableMock }))
 vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
+vi.mock('@/hooks/useToolApprovalRequests', () => ({
+  useToolApprovalRequests: h.useToolApprovalRequestsMock,
+}))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: h.useAgentModeMock }))
 vi.mock('@/stores/message-queue-store', () => ({ useMessageQueue: h.useMessageQueueMock }))
 

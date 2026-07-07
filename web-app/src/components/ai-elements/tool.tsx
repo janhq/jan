@@ -20,7 +20,7 @@ import {
   useState,
 } from 'react'
 import { CodeBlock } from './code-block'
-import { useToolApproval } from '@/hooks/useToolApproval'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
@@ -67,7 +67,7 @@ export const Tool = memo(
     children,
     ...props
   }: ToolProps) => {
-    const isPending = useToolApproval((s) =>
+    const isPending = useToolApprovalRequests((s) =>
       toolCallId ? Boolean(s.pending[toolCallId]) : false
     )
     const [isOpen, setIsOpen] = useControllableState({
@@ -137,7 +137,7 @@ const getStatusText = (
 export const ToolHeader = memo(
   ({ className, title, state, type }: ToolHeaderProps) => {
     const { isOpen, toolCallId } = useTool()
-    const awaitingApproval = useToolApproval((s) =>
+    const awaitingApproval = useToolApprovalRequests((s) =>
       toolCallId ? Boolean(s.pending[toolCallId]) : false
     )
     const toolName = title ?? type.split('-').slice(1).join('-')
@@ -225,10 +225,10 @@ export const ToolInput = memo(
 export const ToolApprovalActions = memo(() => {
   const { t } = useTranslation()
   const { toolCallId } = useTool()
-  const pending = useToolApproval((s) =>
+  const pending = useToolApprovalRequests((s) =>
     toolCallId ? s.pending[toolCallId] : undefined
   )
-  const resolveApproval = useToolApproval((s) => s.resolveApproval)
+  const resolveApproval = useToolApprovalRequests((s) => s.resolveApproval)
 
   if (!pending || !toolCallId) return null
 

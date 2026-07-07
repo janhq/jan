@@ -11,29 +11,15 @@ export type ToolApprovalModalProps = {
   onDeny: () => void
 }
 
-export type PendingApproval = {
-  toolCallId: string
-  toolName: string
-  threadId: string
-  resolve: (approved: boolean) => void
-}
-
-export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
-
 type ToolApprovalState = {
   approvedTools: Record<string, string[]>
   allowAllMCPPermissions: boolean
   isModalOpen: boolean
   modalProps: ToolApprovalModalProps | null
-  pending: Record<string, PendingApproval>
 
   approveToolForThread: (threadId: string, toolName: string) => void
   isToolApproved: (threadId: string, toolName: string) => boolean
   showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => Promise<boolean>
-  requestApproval: (toolCallId: string, toolName: string, threadId: string) => Promise<boolean>
-  resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
-  clearPendingForThread: (threadId: string) => void
-  isApprovalPending: (toolCallId: string) => boolean
   closeModal: () => void
   setModalOpen: (open: boolean) => void
   setAllowAllMCPPermissions: (allow: boolean) => void
@@ -46,7 +32,6 @@ export const useToolApproval = create<ToolApprovalState>()(
       allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
-      pending: {},
 
       approveToolForThread: (threadId: string, toolName: string) => {
         set((state) => ({
@@ -102,59 +87,6 @@ export const useToolApproval = create<ToolApprovalState>()(
             },
           })
         })
-      },
-
-      requestApproval: (toolCallId, toolName, threadId) => {
-        return new Promise<boolean>((resolve) => {
-          const state = get()
-          if (state.allowAllMCPPermissions) {
-            resolve(true)
-            return
-          }
-          if (state.isToolApproved(threadId, toolName)) {
-            resolve(true)
-            return
-          }
-          set((s) => ({
-            pending: {
-              ...s.pending,
-              [toolCallId]: { toolCallId, toolName, threadId, resolve },
-            },
-          }))
-        })
-      },
-
-      resolveApproval: (toolCallId, decision) => {
-        const entry = get().pending[toolCallId]
-        if (!entry) return
-        if (decision === 'allow-always') {
-          get().approveToolForThread(entry.threadId, entry.toolName)
-        }
-        set((s) => {
-          const next = { ...s.pending }
-          delete next[toolCallId]
-          return { pending: next }
-        })
-        entry.resolve(decision !== 'deny')
-      },
-
-      clearPendingForThread: (threadId) => {
-        const { pending } = get()
-        const stranded = Object.values(pending).filter(
-          (entry) => entry.threadId === threadId
-        )
-        if (stranded.length === 0) return
-        set((s) => {
-          const next = { ...s.pending }
-          for (const entry of stranded) delete next[entry.toolCallId]
-          return { pending: next }
-        })
-        // Resolve as denied so any awaiting tool loop unblocks instead of hanging.
-        for (const entry of stranded) entry.resolve(false)
-      },
-
-      isApprovalPending: (toolCallId) => {
-        return Boolean(get().pending[toolCallId])
       },
 
       closeModal: () => {

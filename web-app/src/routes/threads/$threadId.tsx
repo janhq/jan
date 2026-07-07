@@ -71,6 +71,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -421,7 +422,7 @@ function ThreadDetail() {
             const approved = ragToolNames.has(toolName)
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
-                  useToolApproval
+                  useToolApprovalRequests
                     .getState()
                     .requestApproval(toolCall.toolCallId, toolName, threadId))
             toolApprovalPromises.current.delete(toolCall.toolCallId)
@@ -576,7 +577,7 @@ function ThreadDetail() {
       ) {
         toolApprovalPromises.current.set(
           toolCall.toolCallId,
-          useToolApproval
+          useToolApprovalRequests
             .getState()
             .requestApproval(toolCall.toolCallId, toolCall.toolName, threadId)
         )
@@ -780,7 +781,7 @@ function ThreadDetail() {
     return () => {
       toolCallAbortController.current?.abort()
       toolCallAbortController.current = null
-      useToolApproval.getState().clearPendingForThread(threadId)
+      useToolApprovalRequests.getState().clearPendingForThread(threadId)
     }
   }, [threadId])
 
