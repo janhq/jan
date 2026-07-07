@@ -778,9 +778,12 @@ function ThreadDetail() {
   // are leaving. Cleanup captures the previous threadId; without this the
   // unresolved approval promise keeps that thread marked busy forever.
   useEffect(() => {
+    // Stable ref object (never reassigned) — capture for the cleanup closure.
+    const approvalPromises = toolApprovalPromises.current
     return () => {
       toolCallAbortController.current?.abort()
       toolCallAbortController.current = null
+      approvalPromises.clear()
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
     }
   }, [threadId])
