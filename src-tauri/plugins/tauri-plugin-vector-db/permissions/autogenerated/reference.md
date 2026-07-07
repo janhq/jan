@@ -15,6 +15,9 @@ Default permissions for the vector-db plugin
 - `allow-chunk-text`
 - `allow-list-attachments`
 - `allow-get-chunks`
+- `allow-memory-index`
+- `allow-memory-search`
+- `allow-memory-clear`
 
 ## Permission Table
 
@@ -281,6 +284,84 @@ Enables the list_attachments command without any pre-configured scope.
 <td>
 
 Denies the list_attachments command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-memory-clear`
+
+</td>
+<td>
+
+Enables the memory_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-clear`
+
+</td>
+<td>
+
+Denies the memory_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-memory-index`
+
+</td>
+<td>
+
+Enables the memory_index command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-index`
+
+</td>
+<td>
+
+Denies the memory_index command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:allow-memory-search`
+
+</td>
+<td>
+
+Enables the memory_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vector-db:deny-memory-search`
+
+</td>
+<td>
+
+Denies the memory_search command without any pre-configured scope.
 
 </td>
 </tr>

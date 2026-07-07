@@ -1,6 +1,6 @@
 use crate::{VectorDBError, VectorDBState};
 use crate::db::{
-    self, AttachmentFileInfo, SearchResult, MinimalChunkInput,
+    self, AttachmentFileInfo, MemoryHit, MinimalChunkInput, SearchResult,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -204,4 +204,49 @@ pub async fn get_chunks<R: tauri::Runtime>(
     let path = db::collection_path(&state.base_dir, &collection);
     let conn = db::open_or_init_conn(&path)?;
     db::get_chunks(&conn, file_id, start_order, end_order)
+}
+
+// ============================================================================
+// Project-scoped agent memory (FTS5 / BM25)
+// ============================================================================
+
+fn memory_conn(state: &VectorDBState) -> Result<rusqlite::Connection, VectorDBError> {
+    let path = db::collection_path(&state.base_dir, db::MEMORY_COLLECTION);
+    db::open_or_init_conn(&path)
+}
+
+#[tauri::command]
+pub async fn memory_index<R: tauri::Runtime>(
+    _app: tauri::AppHandle<R>,
+    state: State<'_, VectorDBState>,
+    msg_id: String,
+    project_id: String,
+    text: String,
+    role: String,
+    ts: i64,
+) -> Result<(), VectorDBError> {
+    let conn = memory_conn(&state)?;
+    db::memory_index(&conn, &msg_id, &project_id, &text, &role, ts)
+}
+
+#[tauri::command]
+pub async fn memory_search<R: tauri::Runtime>(
+    _app: tauri::AppHandle<R>,
+    state: State<'_, VectorDBState>,
+    project_id: String,
+    query: String,
+    top_k: usize,
+) -> Result<Vec<MemoryHit>, VectorDBError> {
+    let conn = memory_conn(&state)?;
+    db::memory_search(&conn, &project_id, &query, top_k)
+}
+
+#[tauri::command]
+pub async fn memory_clear<R: tauri::Runtime>(
+    _app: tauri::AppHandle<R>,
+    state: State<'_, VectorDBState>,
+    project_id: Option<String>,
+) -> Result<(), VectorDBError> {
+    let conn = memory_conn(&state)?;
+    db::memory_clear(&conn, project_id.as_deref())
 }

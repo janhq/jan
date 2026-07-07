@@ -12,11 +12,7 @@ impl Default for VectorDBState {
 
 impl VectorDBState {
     pub fn new() -> Self {
-        // Default vector db path: /Jan/data/db
-        let mut base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-        base.push("Jan");
-        base.push("data");
-        base.push("db");
+        let base = crate::db::default_base_dir();
         std::fs::create_dir_all(&base).ok();
         Self { base_dir: base }
     }

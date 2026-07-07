@@ -80,7 +80,90 @@ pub async fn execute_builtin(
         "bash" => bash(args, project_root).await,
         "find" => find(args, project_root).await,
         "grep" => grep(args, project_root).await,
+        "memory_list" => workspace_list(project_root, "memory").await,
+        "memory_read" => workspace_read(args, project_root, "memory").await,
+        "memory_write" => workspace_write(args, project_root, "memory").await,
+        "skill_list" => workspace_list(project_root, "skills").await,
+        "skill_write" => workspace_write(args, project_root, "skills").await,
         other => format!("ERROR: unknown built-in tool '{other}'"),
+    }
+}
+
+/// `.jan/agent/<kind>` directory for the agent's own workspace.
+fn workspace_dir(root: &Path, kind: &str) -> PathBuf {
+    root.join(".jan").join("agent").join(kind)
+}
+
+/// Sanitize a caller-supplied entry name into a safe `<stem>.md` filename.
+/// Rejects path separators and `..` so the result can never escape the
+/// workspace. `.md` is appended if absent.
+fn workspace_filename(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.split('.').any(|seg| seg == ".")
+        || trimmed.contains("..")
+    {
+        return Err(format!("ERROR: invalid name '{name}'"));
+    }
+    let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
+    Ok(format!("{stem}.md"))
+}
+
+async fn workspace_list(root: &Path, kind: &str) -> String {
+    let dir = workspace_dir(root, kind);
+    let mut entries = match tokio::fs::read_dir(&dir).await {
+        Ok(rd) => rd,
+        Err(_) => return String::new(),
+    };
+    let mut names: Vec<String> = Vec::new();
+    while let Ok(Some(e)) = entries.next_entry().await {
+        let path = e.path();
+        if path.extension().and_then(|x| x.to_str()) == Some("md") {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                names.push(stem.to_string());
+            }
+        }
+    }
+    names.sort();
+    names.join("\n")
+}
+
+async fn workspace_read(args: &serde_json::Value, root: &Path, kind: &str) -> String {
+    let Some(name) = arg_str(args, "name") else {
+        return "ERROR: missing required argument 'name'".to_string();
+    };
+    let file = match workspace_filename(name) {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    let target = workspace_dir(root, kind).join(file);
+    match tokio::fs::read_to_string(&target).await {
+        Ok(c) => c,
+        Err(e) => format!("ERROR: {e}"),
+    }
+}
+
+async fn workspace_write(args: &serde_json::Value, root: &Path, kind: &str) -> String {
+    let Some(name) = arg_str(args, "name") else {
+        return "ERROR: missing required argument 'name'".to_string();
+    };
+    let Some(content) = arg_str(args, "content") else {
+        return "ERROR: missing required argument 'content'".to_string();
+    };
+    let file = match workspace_filename(name) {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    let dir = workspace_dir(root, kind);
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+        return format!("ERROR: {e}");
+    }
+    let target = dir.join(&file);
+    match tokio::fs::write(&target, content).await {
+        Ok(()) => format!("Wrote {} bytes to {kind}/{file}", content.len()),
+        Err(e) => format!("ERROR: {e}"),
     }
 }
 
@@ -690,6 +773,64 @@ mod tests {
         assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(out.contains("hi"), "unexpected: {out}");
         assert!(out.contains("[exit 3]"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn memory_write_read_list_roundtrip() {
+        let root = unique_root();
+        let w = execute_builtin(
+            lookup("memory_write").unwrap(),
+            &json!({"name": "drift", "content": "553 behind"}),
+            &root,
+        )
+        .await;
+        assert!(w.starts_with("Wrote"), "unexpected: {w}");
+        // Landed at the canonical workspace path.
+        assert_eq!(
+            std::fs::read_to_string(root.join(".jan/agent/memory/drift.md")).unwrap(),
+            "553 behind"
+        );
+
+        let r = execute_builtin(
+            lookup("memory_read").unwrap(),
+            &json!({"name": "drift"}),
+            &root,
+        )
+        .await;
+        assert_eq!(r, "553 behind");
+
+        let l = execute_builtin(lookup("memory_list").unwrap(), &json!({}), &root).await;
+        assert_eq!(l, "drift");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_write_targets_skills_dir_and_strips_md() {
+        let root = unique_root();
+        let w = execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "deploy.md", "content": "steps"}),
+            &root,
+        )
+        .await;
+        assert!(w.contains("skills/deploy.md"), "unexpected: {w}");
+        assert!(root.join(".jan/agent/skills/deploy.md").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn workspace_name_rejects_traversal() {
+        let root = unique_root();
+        for bad in ["../escape", "sub/x", "..", ""] {
+            let out = execute_builtin(
+                lookup("memory_write").unwrap(),
+                &json!({"name": bad, "content": "x"}),
+                &root,
+            )
+            .await;
+            assert!(out.starts_with("ERROR"), "name {bad:?} should be rejected: {out}");
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 }
