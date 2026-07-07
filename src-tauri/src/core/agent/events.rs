@@ -44,6 +44,75 @@ pub enum StreamEvent {
     },
 }
 
+/// If `path` targets a file in the agent's skill or memory workspace, return the
+/// kind (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
+fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
+    let norm = path.replace('\\', "/");
+    for (needle, kind) in [
+        (".jan/agent/skills/", "skill"),
+        (".jan/agent/memory/", "memory"),
+    ] {
+        if let Some(idx) = norm.find(needle) {
+            let rest = &norm[idx + needle.len()..];
+            if rest.is_empty() || rest.ends_with('/') {
+                return Some((kind, String::new()));
+            }
+            let stem = std::path::Path::new(rest)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(rest);
+            return Some((kind, stem.to_string()));
+        }
+    }
+    None
+}
+
+/// Human-facing one-line status for a tool call. Reads/writes of skill or memory
+/// files get a semantic label (e.g. "Reading skill: deploy", "Updating memory:
+/// decisions") instead of the raw tool name + path. Everything else falls back
+/// to `name` + compact args.
+pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
+    // Dedicated skill/memory tools are self-describing via their name + `name` arg.
+    let dedicated = match name {
+        "memory_list" => Some(("Reading", "memory", String::new())),
+        "skill_list" => Some(("Reading", "skill", String::new())),
+        "memory_read" => Some(("Reading", "memory", arg_name(args))),
+        "memory_write" => Some(("Updating", "memory", arg_name(args))),
+        "skill_write" => Some(("Updating", "skill", arg_name(args))),
+        _ => None,
+    };
+    // Fallback: generic read/write/edit hitting the workspace by path.
+    let labelled = dedicated.or_else(|| {
+        args.get("path")
+            .and_then(|v| v.as_str())
+            .and_then(classify_agent_path)
+            .map(|(kind, item)| {
+                let verb = if matches!(name, "write" | "edit") {
+                    "Updating"
+                } else {
+                    "Reading"
+                };
+                (verb, kind, item)
+            })
+    });
+    if let Some((verb, kind, item)) = labelled {
+        return if item.is_empty() {
+            let plural = if kind == "memory" { "memory notes" } else { "skills" };
+            format!("{verb} {plural}")
+        } else {
+            format!("{verb} {kind}: {item}")
+        };
+    }
+    format!("{name} {args}")
+}
+
+fn arg_name(args: &serde_json::Value) -> String {
+    args.get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().trim_end_matches(".md").to_string())
+        .unwrap_or_default()
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Usage {
     pub prompt_tokens: Option<u64>,
@@ -77,6 +146,51 @@ mod tests {
     fn step_serializes_with_snake_case_tag() {
         let v = serde_json::to_value(StreamEvent::Step { index: 1, max: 8 }).unwrap();
         assert_eq!(v, json!({ "type": "step", "index": 1, "max": 8 }));
+    }
+
+    #[test]
+    fn describe_labels_dedicated_skill_and_memory_tools() {
+        assert_eq!(
+            describe_tool_call("memory_write", &json!({"name": "decisions"})),
+            "Updating memory: decisions"
+        );
+        assert_eq!(
+            describe_tool_call("memory_read", &json!({"name": "drift.md"})),
+            "Reading memory: drift"
+        );
+        assert_eq!(
+            describe_tool_call("skill_write", &json!({"name": "deploy"})),
+            "Updating skill: deploy"
+        );
+        assert_eq!(
+            describe_tool_call("memory_list", &json!({})),
+            "Reading memory notes"
+        );
+        assert_eq!(describe_tool_call("skill_list", &json!({})), "Reading skills");
+    }
+
+    #[test]
+    fn describe_labels_fallback_path_ops() {
+        assert_eq!(
+            describe_tool_call("read", &json!({"path": ".jan/agent/skills/deploy.md"})),
+            "Reading skill: deploy"
+        );
+        assert_eq!(
+            describe_tool_call("write", &json!({"path": ".jan/agent/memory/decisions.md"})),
+            "Updating memory: decisions"
+        );
+    }
+
+    #[test]
+    fn describe_falls_back_for_non_workspace_calls() {
+        assert_eq!(
+            describe_tool_call("read", &json!({"path": "src/main.rs"})),
+            "read {\"path\":\"src/main.rs\"}"
+        );
+        assert_eq!(
+            describe_tool_call("search", &json!({"q": "rust"})),
+            "search {\"q\":\"rust\"}"
+        );
     }
 
     #[test]
