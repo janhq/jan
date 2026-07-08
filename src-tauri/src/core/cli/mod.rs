@@ -3,6 +3,7 @@
 //! This module is only compiled when the `cli` feature is enabled.
 
 pub mod providers;
+mod tui;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -70,111 +71,6 @@ pub async fn cli_list_threads() -> Result<Vec<serde_json::Value>, String> {
     list_threads_in(&data_folder)
 }
 
-/// Which saved thread a `--resume` / `--continue` / `/resume` request refers to.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ResumeTarget {
-    /// Most recently updated thread for the project.
-    Latest,
-    /// A full thread id or a unique prefix of one.
-    Id(String),
-}
-
-impl ResumeTarget {
-    /// Build a target from the CLI flag pair: `--resume [ID]` and `--continue`/`-c`
-    /// (an alias for a bare `--resume`). `None` means "do not resume".
-    pub fn from_flags(resume: Option<Option<String>>, continue_session: bool) -> Option<Self> {
-        match resume {
-            Some(Some(id)) if !id.trim().is_empty() => Some(Self::Id(id.trim().to_string())),
-            Some(_) => Some(Self::Latest),
-            None if continue_session => Some(Self::Latest),
-            None => None,
-        }
-    }
-}
-
-/// Recency sort key for a saved thread (`updated`, falling back to `created`).
-pub fn thread_recency(t: &serde_json::Value) -> f64 {
-    t.get("updated")
-        .or_else(|| t.get("created"))
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(0.0)
-}
-
-/// Sort threads most-recent-first (by `updated`/`created`).
-pub fn sort_threads_recent(threads: &mut [serde_json::Value]) {
-    threads.sort_by(|a, b| {
-        thread_recency(b)
-            .partial_cmp(&thread_recency(a))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-}
-
-/// Message shown when there is nothing to resume; the caller then starts fresh.
-pub const NO_SESSION_TO_RESUME: &str = "No session to resume";
-
-/// Resolve a resume target against `<base>/threads/`, returning the thread
-/// metadata. Threads whose `thread.json` is unparsable are skipped by
-/// `list_threads_in`, so a corrupted neighbour never blocks a resume.
-pub fn find_resume_thread(
-    base: &std::path::Path,
-    target: &ResumeTarget,
-) -> Result<serde_json::Value, String> {
-    let mut threads = list_threads_in(base)?;
-    match target {
-        ResumeTarget::Latest => {
-            sort_threads_recent(&mut threads);
-            threads
-                .into_iter()
-                .next()
-                .ok_or_else(|| NO_SESSION_TO_RESUME.to_string())
-        }
-        ResumeTarget::Id(id) => {
-            let mut matches: Vec<serde_json::Value> = threads
-                .into_iter()
-                .filter(|t| {
-                    t.get("id")
-                        .and_then(|v| v.as_str())
-                        .is_some_and(|full| full == id || full.starts_with(id.as_str()))
-                })
-                .collect();
-            match matches.len() {
-                0 => Err(format!("no thread matches '{id}'")),
-                1 => Ok(matches.remove(0)),
-                n => Err(format!("'{id}' is ambiguous ({n} matches)")),
-            }
-        }
-    }
-}
-
-/// Read a thread's messages, tolerating a truncated or malformed line (a crash
-/// mid-append leaves one). Returns the parsed records and the skipped count, so
-/// a resume degrades to "lost the tail" instead of failing outright.
-pub fn cli_read_messages_lenient(
-    base: &std::path::Path,
-    thread_id: &str,
-) -> Result<(Vec<serde_json::Value>, usize), String> {
-    use std::io::BufRead;
-
-    let path = get_messages_path(base, thread_id);
-    if !path.exists() {
-        return Ok((Vec::new(), 0));
-    }
-    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let mut messages = Vec::new();
-    let mut skipped = 0;
-    for line in std::io::BufReader::new(file).lines() {
-        let line = line.map_err(|e| e.to_string())?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        match serde_json::from_str(&line) {
-            Ok(v) => messages.push(v),
-            Err(_) => skipped += 1,
-        }
-    }
-    Ok((messages, skipped))
-}
-
 /// Read a thread's messages from `<base>/threads/<id>/messages.jsonl`.
 pub fn cli_list_messages_in(
     base: &std::path::Path,
@@ -223,10 +119,140 @@ pub fn cli_save_thread(
     thread_id: Option<&str>,
     model: &str,
     history: &[serde_json::Value],
-    metadata: Option<serde_json::Value>,
 ) -> Result<String, String> {
     if history.is_empty() {
         return Err("empty conversation".to_string());
+    }
+    ensure_data_dirs(base)?;
+    let id = thread_id
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(get_thread_dir(base, &id)).map_err(|e| e.to_string())?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let now_ms = now.as_millis() as i64;
+    let now_secs = now.as_secs_f64();
+
+    let messages: Vec<serde_json::Value> = history
+        .iter()
+        .filter_map(|m| {
+            let role = m.get("role").and_then(|v| v.as_str())?;
+            let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            Some(serde_json::json!({
+                "id": uuid::Uuid::new_v4().to_string(),
+                "object": "thread.message",
+                "thread_id": id,
+                "role": role,
+                "type": "text",
+                "status": "ready",
+                "created_at": now_ms,
+                "completed_at": now_ms,
+                "content": [{ "type": "text", "text": { "value": content, "annotations": [] } }],
+            }))
+        })
+        .collect();
+    write_messages_to_file(&messages, &get_messages_path(base, &id))?;
+
+    let existing: Option<serde_json::Value> =
+        std::fs::read_to_string(get_thread_metadata_path(base, &id))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok());
+    let created = existing
+        .as_ref()
+        .and_then(|e| e.get("created").and_then(serde_json::Value::as_f64))
+        .unwrap_or(now_secs);
+    let title = existing
+        .as_ref()
+        .and_then(|e| e.get("title").and_then(|v| v.as_str()))
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| default_thread_title(history));
+
+    let thread = serde_json::json!({
+        "id": id,
+        "object": "thread",
+        "title": title,
+        "created": created,
+        "updated": now_secs,
+        "model": { "id": model, "provider": "" },
+        "metadata": {},
+    });
+    update_thread_metadata(base, &id, &thread)?;
+    Ok(id)
+}
+
+/// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
+/// so it is remembered on the next session (agent.toml wins over the desktop
+/// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
+pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
+    set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
+}
+
+/// Fallback thread title: the first user message, whitespace-collapsed and
+/// truncated. Used only when no summarized title exists yet.
+fn default_thread_title(history: &[serde_json::Value]) -> String {
+    let first_user = history
+        .iter()
+        .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+        .and_then(|m| m.get("content").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return "Agent chat".to_string();
+    }
+    if collapsed.chars().count() > 50 {
+        format!("{}…", collapsed.chars().take(49).collect::<String>())
+    } else {
+        collapsed
+    }
+}
+
+// ── Server operations ──────────────────────────────────────────────────────
+
+/// Stop the running proxy server.
+pub async fn cli_stop_server(app_state: Arc<AppState>) -> Result<(), String> {
+    proxy::stop_server(app_state.server_handle.clone())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check whether the proxy server is currently running.
+pub async fn cli_is_server_running(app_state: Arc<AppState>) -> bool {
+    proxy::is_server_running(app_state.server_handle.clone()).await
+}
+
+// ── Model discovery ───────────────────────────────────────────────────────
+
+/// Parsed representation of a `model.yml` file.
+#[derive(Debug, serde::Deserialize)]
+pub struct ModelYml {
+    pub model_path: String,
+    pub name: Option<String>,
+    #[serde(default)]
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub embedding: bool,
+    pub mmproj_path: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+/// A discovered model entry: `(model_id, yml)`.
+pub type ModelEntry = (String, ModelYml);
+
+/// Scan `<data_folder>/<engine>/models/` for `model.yml` files.
+///
+/// `engine` is `"llamacpp"` or `"mlx"`. Returns one entry per model found.
+pub fn list_models(engine: &str) -> Vec<ModelEntry> {
+    use std::fs;
+
+    let data_folder = resolve_jan_data_folder();
+    let models_root = data_folder.join(engine).join("models");
+
+    if !models_root.exists() {
+        return Vec::new();
     }
     ensure_data_dirs(base)?;
     let id = thread_id
@@ -647,7 +673,9 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
 // ── Agent operations ───────────────────────────────────────────────────────
 
 use crate::core::agent::events::StreamEvent;
-use crate::core::agent::project::{ensure_project, load_agent_config, permissions_from};
+use crate::core::agent::project::{
+    ensure_project, load_agent_config, permissions_from, set_model_in_agent_toml,
+};
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
@@ -741,22 +769,58 @@ fn build_cli_orchestration_args(
     }
 }
 
-async fn run_agent_loop(
+/// Everything needed to drive one agent run: the engine handle, request body,
+/// and the shared permission registry. Built once and consumed by either the
+/// plain CLI printer or the TUI renderer.
+pub(crate) struct PreparedRun {
+    pub args: OrchestrationArgs,
+    pub body: serde_json::Value,
+    pub permission_requests: PermissionRegistry,
+}
+
+/// Resolved engine handle for a chat session: the args are built once and the
+/// request body is assembled per turn (the TUI reuses this across many turns;
+/// the plain CLI builds a single body). `model`/`max_turns` seed each body.
+pub(crate) struct AgentSession {
+    pub args: OrchestrationArgs,
+    pub permission_requests: PermissionRegistry,
+    pub model: String,
+    pub max_turns: u32,
+}
+
+impl AgentSession {
+    /// Build a streaming request body for the given conversation history.
+    pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+            "max_turns": self.max_turns,
+            "stream": true,
+        })
+    }
+}
+
+/// Resolve project config + credentials into a ready-to-run engine handle.
+/// Shared by `run_agent_loop` (plain CLI) and `cli_agent_ui` (TUI).
+fn prepare_agent_session(
     project: &str,
-    task: &str,
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
-) -> Result<(), String> {
+) -> Result<AgentSession, String> {
     let project_root = PathBuf::from(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
 
+    // Resolution order: --model flag, then agent.toml [agent].model, then the
+    // desktop app's currently-selected model (synced from settings.json).
     let model = model_override
         .or_else(|| cfg.agent.model.clone())
+        .or_else(|| crate::core::cli::providers::desktop_selection().model)
         .ok_or_else(|| {
-            "no model specified: pass --model or set [agent].model in agent.toml".to_string()
+            "no model specified: pass --model, set [agent].model in agent.toml, or select a model in the desktop app"
+                .to_string()
         })?;
     let max_turns = max_turns_override
         .or(cfg.agent.max_turns)
@@ -772,12 +836,42 @@ async fn run_agent_loop(
         permission_requests.clone(),
     );
 
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [{ "role": "user", "content": task }],
-        "max_turns": max_turns,
-        "stream": true,
-    });
+    Ok(AgentSession {
+        args,
+        permission_requests,
+        model,
+        max_turns,
+    })
+}
+
+fn prepare_agent_run(
+    project: &str,
+    task: &str,
+    model_override: Option<String>,
+    max_turns_override: Option<u32>,
+    overrides: ProviderOverrides,
+) -> Result<PreparedRun, String> {
+    let session = prepare_agent_session(project, model_override, max_turns_override, overrides)?;
+    let body = session.body(serde_json::json!([{ "role": "user", "content": task }]));
+    Ok(PreparedRun {
+        args: session.args,
+        body,
+        permission_requests: session.permission_requests,
+    })
+}
+
+async fn run_agent_loop(
+    project: &str,
+    task: &str,
+    model_override: Option<String>,
+    max_turns_override: Option<u32>,
+    overrides: ProviderOverrides,
+) -> Result<(), String> {
+    let PreparedRun {
+        args,
+        body,
+        permission_requests,
+    } = prepare_agent_run(project, task, model_override, max_turns_override, overrides)?;
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let printer = tokio::spawn(async move {
@@ -790,6 +884,23 @@ async fn run_agent_loop(
     drop(tx);
     let _ = printer.await;
     result.map(|_| ())
+}
+
+/// Launch the interactive chat console (`jan agent ui`). An optional `task`
+/// seeds the first turn; otherwise the user types the first message. Shares the
+/// engine with `run_agent_loop` via `AgentSession` — only presentation differs.
+pub async fn cli_agent_ui(
+    project: &str,
+    task: Option<String>,
+    model: Option<String>,
+    max_turns: Option<u32>,
+    overrides: ProviderOverrides,
+) -> Result<(), String> {
+    let session = prepare_agent_session(project, model, max_turns, overrides)?;
+    // TUI threads persist under the project's .jan/agent dir, separate from the
+    // desktop store, so continuing here never mutates desktop threads.
+    let agent_dir = PathBuf::from(project).join(".jan").join("agent");
+    tui::run(session, agent_dir, task).await
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
@@ -828,9 +939,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             tool_name,
             capability,
             path,
+            command,
             ..
         } => {
-            let decision = prompt_permission(tool_name, capability, path).await;
+            let detail = command
+                .map(|c| format!(" ({c})"))
+                .or_else(|| path.map(|p| format!(" on {p}")))
+                .unwrap_or_default();
+            let decision = prompt_permission(tool_name, capability, detail).await;
             if let Some(sender) = registry.lock().await.remove(&request_id) {
                 let _ = sender.send(decision);
             }
@@ -844,7 +960,7 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
 async fn prompt_permission(
     tool_name: String,
     capability: String,
-    path: Option<String>,
+    detail: String,
 ) -> PermissionDecision {
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
@@ -852,8 +968,7 @@ async fn prompt_permission(
         return PermissionDecision::Deny;
     }
     tokio::task::spawn_blocking(move || {
-        let target = path.map(|p| format!(" on {p}")).unwrap_or_default();
-        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{target}? [y/N] \x1b[0m");
+        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}? [y/N] \x1b[0m");
         let _ = std::io::stderr().flush();
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line).is_err() {
@@ -872,7 +987,33 @@ async fn prompt_permission(
 mod tests {
     use super::*;
 
-    // ── resume ─────────────────────────────────────────────────────────────
+    // ── default_thread_title ───────────────────────────────────────────────
+
+    #[test]
+    fn default_thread_title_uses_first_user_message() {
+        let history = serde_json::json!([
+            { "role": "user", "content": "Explain   the  buffer\nlogic" },
+            { "role": "assistant", "content": "sure" },
+        ]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "Explain the buffer logic"
+        );
+    }
+
+    #[test]
+    fn default_thread_title_truncates_and_falls_back() {
+        let long = "x".repeat(80);
+        let history = serde_json::json!([{ "role": "user", "content": long }]);
+        let title = default_thread_title(history.as_array().unwrap());
+        assert_eq!(title.chars().count(), 50);
+        assert!(title.ends_with('…'));
+
+        let no_user = serde_json::json!([{ "role": "assistant", "content": "hi" }]);
+        assert_eq!(default_thread_title(no_user.as_array().unwrap()), "Agent chat");
+    }
+
+    // ── looks_like_hf_repo ─────────────────────────────────────────────────
 
     #[test]
     fn resume_target_from_flags() {

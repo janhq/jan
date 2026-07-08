@@ -38,6 +38,10 @@ pub enum StreamEvent {
         tool_name: String,
         capability: String,
         path: Option<String>,
+        /// The shell command for exec prompts (drives the command-scoped
+        /// "allow always" grant); `None` for non-exec tools.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        command: Option<String>,
         prompt_kind: String,
         offers_always: bool,
     },
@@ -247,6 +251,7 @@ mod tests {
             tool_name: "write".into(),
             capability: "write".into(),
             path: Some("out.txt".into()),
+            command: None,
             prompt_kind: "write".into(),
             offers_always: true,
         })
