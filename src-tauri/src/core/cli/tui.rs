@@ -327,7 +327,10 @@ impl App {
                 ]));
             }
             StreamEvent::ToolResult {
-                content, is_error, ..
+                content,
+                is_error,
+                diff,
+                ..
             } => {
                 self.flush_assistant();
                 self.gap(Kind::Tool);
@@ -342,6 +345,11 @@ impl App {
                     Span::styled(format!("{tag} "), tag_style),
                     Span::styled(summarize_result(&content, max), Style::new().dim()),
                 ]));
+                if let Some(diff) = diff {
+                    for line in diff_lines(&diff, max) {
+                        self.push(line);
+                    }
+                }
             }
             StreamEvent::PermissionRequest {
                 request_id,
@@ -436,6 +444,39 @@ fn summarize_result(s: &str, max: usize) -> String {
     } else {
         head
     }
+}
+
+/// Max diff rows rendered under a tool result before collapsing the tail.
+const DIFF_MAX_ROWS: usize = 20;
+
+/// Render focused-diff text to styled transcript lines: `-` red, `+` green,
+/// `@@` headers dim-cyan. Collapses to `DIFF_MAX_ROWS` with a `(+N more)` tail.
+fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
+    let all: Vec<&str> = diff.lines().collect();
+    let shown = all.len().min(DIFF_MAX_ROWS);
+    let mut out = Vec::with_capacity(shown + 1);
+    for line in &all[..shown] {
+        let style = match line.as_bytes().first() {
+            Some(b'-') => Style::new().red(),
+            Some(b'+') => Style::new().green(),
+            Some(b'@') => Style::new().cyan().dim(),
+            _ => Style::new().dim(),
+        };
+        out.push(Line::from(vec![
+            Span::styled("│     ", Style::new().dark_gray()),
+            Span::styled(truncate(line, max), style),
+        ]));
+    }
+    if all.len() > shown {
+        out.push(Line::from(vec![
+            Span::styled("│     ", Style::new().dark_gray()),
+            Span::styled(
+                format!("(+{} more)", all.len() - shown),
+                Style::new().dim(),
+            ),
+        ]));
+    }
+    out
 }
 
 /// Human-facing label for a tool call: known tools get a clean verb+target,
@@ -860,6 +901,14 @@ async fn handle_key(
                 app.should_quit = true;
             }
         }
+        // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
+        // Enter submits.
+        KeyCode::Enter if app.status == Status::Idle && key.modifiers.contains(KeyModifiers::ALT) => {
+            app.input.push('\n');
+        }
+        KeyCode::Char('j') if app.status == Status::Idle && ctrl => {
+            app.input.push('\n');
+        }
         KeyCode::Enter => {
             if app.status == Status::Idle {
                 let text = app.input.trim().to_string();
@@ -1185,10 +1234,11 @@ fn message_text(msg: &serde_json::Value) -> String {
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
+    let input_h = input_box_height(app, f.area().width);
     let chunks = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(1),
-        Constraint::Length(3),
+        Constraint::Length(input_h),
         Constraint::Length(1),
     ])
     .split(f.area());
@@ -1222,7 +1272,18 @@ fn draw(f: &mut Frame, app: &mut App) {
     let scroll = max_back - app.scrollback;
     f.render_widget(body.scroll((scroll, 0)), chunks[1]);
 
-    f.render_widget(input_box(app), chunks[2]);
+    // Keep the cursor row visible when the input outgrows the box.
+    let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
+        let visible = chunks[2].height.saturating_sub(2);
+        let total = Paragraph::new(input_content_lines(&app.input))
+            .wrap(Wrap { trim: false })
+            .line_count(chunks[2].width.saturating_sub(2).max(1))
+            .min(u16::MAX as usize) as u16;
+        total.saturating_sub(visible)
+    } else {
+        0
+    };
+    f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(footer(app), chunks[3]);
 
     // Dock the permission prompt directly above the input box, growing upward
@@ -1337,6 +1398,52 @@ fn header(app: &App) -> Paragraph<'static> {
     ]))
 }
 
+/// Max content rows the input box grows to before it scrolls internally.
+const MAX_INPUT_ROWS: u16 = 8;
+
+/// Height (incl. borders) the message box should occupy: 1 content row for the
+/// idle/working placeholder, or the wrapped input height clamped to
+/// `MAX_INPUT_ROWS` while editing.
+fn input_box_height(app: &App, width: u16) -> u16 {
+    let content = if app.status == Status::Idle && app.picker.is_none() {
+        let inner = width.saturating_sub(2).max(1);
+        let rows = Paragraph::new(input_content_lines(&app.input))
+            .wrap(Wrap { trim: false })
+            .line_count(inner)
+            .max(1) as u16;
+        rows.min(MAX_INPUT_ROWS)
+    } else {
+        1
+    };
+    content + 2
+}
+
+/// Visible input as styled lines: `› ` on the first line, 2-space hang on
+/// continuations, cursor `▏` appended to the last line. Wrapping is left to the
+/// Paragraph so long single lines fold within the box width.
+fn input_content_lines(input: &str) -> Vec<Line<'static>> {
+    let arrow = Span::styled("› ", Style::new().cyan().bold());
+    let segments: Vec<&str> = input.split('\n').collect();
+    let last = segments.len() - 1;
+    segments
+        .into_iter()
+        .enumerate()
+        .map(|(i, seg)| {
+            let prefix = if i == 0 {
+                arrow.clone()
+            } else {
+                Span::raw("  ")
+            };
+            let text = if i == last {
+                format!("{seg}▏")
+            } else {
+                seg.to_string()
+            };
+            Line::from(vec![prefix, Span::raw(text)])
+        })
+        .collect()
+}
+
 fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default().borders(Borders::ALL).title(" message ");
     if app.picker.is_some() {
@@ -1348,11 +1455,9 @@ fn input_box(app: &App) -> Paragraph<'static> {
         ))
         .block(block)
     } else {
-        Paragraph::new(Line::from(vec![
-            Span::styled("› ", Style::new().cyan().bold()),
-            Span::raw(format!("{}▏", app.input)),
-        ]))
-        .block(block)
+        Paragraph::new(input_content_lines(&app.input))
+            .wrap(Wrap { trim: false })
+            .block(block)
     }
 }
 
@@ -1368,7 +1473,7 @@ fn footer(app: &App) -> Paragraph<'static> {
     }
     let hint = match app.status {
         Status::Running => "Esc/Ctrl-C cancel   ↑/↓ scroll",
-        Status::Idle => "Enter send   /help commands   ↑/↓ scroll   Ctrl-D quit",
+        Status::Idle => "Enter send   Alt+Enter newline   /help   ↑/↓ scroll   Ctrl-D quit",
     };
     let detail = if app.detail.is_empty() {
         String::new()
@@ -1381,8 +1486,8 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_tool_call, is_table_separator, message_text, parse_command, render_table,
-        split_reasoning, summarize_result, Pending,
+        diff_lines, format_tool_call, input_content_lines, is_table_separator, message_text,
+        parse_command, render_table, split_reasoning, summarize_result, Pending, DIFF_MAX_ROWS,
     };
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
@@ -1462,6 +1567,58 @@ mod tests {
             format_tool_call("grep", &json!({ "pattern": "foo", "path": "src/" })),
             "grep \"foo\" in src/"
         );
+    }
+
+    fn line_text(line: &ratatui::text::Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn input_lines_single_line_has_arrow_and_cursor() {
+        let lines = input_content_lines("hello");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(line_text(&lines[0]), "› hello▏");
+    }
+
+    #[test]
+    fn input_lines_multiline_hangs_and_cursor_on_last() {
+        let lines = input_content_lines("one\ntwo\nthree");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(line_text(&lines[0]), "› one");
+        assert_eq!(line_text(&lines[1]), "  two");
+        assert_eq!(line_text(&lines[2]), "  three▏");
+    }
+
+    #[test]
+    fn input_lines_trailing_newline_gives_empty_cursor_row() {
+        let lines = input_content_lines("hi\n");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(line_text(&lines[0]), "› hi");
+        assert_eq!(line_text(&lines[1]), "  ▏");
+    }
+
+    #[test]
+    fn diff_lines_renders_all_when_under_cap() {
+        let out = diff_lines("- foo\n+ bar", 80);
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn diff_lines_collapses_tail_past_cap() {
+        let diff = (0..30)
+            .map(|i| format!("+ line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = diff_lines(&diff, 80);
+        assert_eq!(out.len(), DIFF_MAX_ROWS + 1);
+        let tail: String = out
+            .last()
+            .unwrap()
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(tail.contains("(+10 more)"), "tail: {tail}");
     }
 
     #[test]
