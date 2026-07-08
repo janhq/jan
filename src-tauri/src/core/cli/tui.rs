@@ -180,6 +180,8 @@ struct App {
     /// (the group row already represents them). Survives group finalize.
     grouped_ids: std::collections::HashSet<String>,
     input: String,
+    /// Caret position as a byte index into `input` (always on a char boundary).
+    cursor: usize,
     status: Status,
     turn: (u32, u32),
     tokens: u64,
@@ -211,6 +213,7 @@ impl App {
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             input: String::new(),
+            cursor: 0,
             status: Status::Idle,
             turn: (0, 0),
             tokens: 0,
@@ -327,6 +330,43 @@ impl App {
             group_summary(&g.nouns, g.all_read)
         };
         self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
+    }
+
+    fn input_clear(&mut self) {
+        self.input.clear();
+        self.cursor = 0;
+    }
+
+    fn input_insert(&mut self, c: char) {
+        self.input.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    /// Delete the char before the caret (Backspace).
+    fn input_backspace(&mut self) {
+        if let Some(prev) = self.input[..self.cursor].chars().next_back() {
+            self.cursor -= prev.len_utf8();
+            self.input.remove(self.cursor);
+        }
+    }
+
+    /// Delete the char at the caret (Delete); caret stays put.
+    fn input_delete(&mut self) {
+        if self.cursor < self.input.len() {
+            self.input.remove(self.cursor);
+        }
+    }
+
+    fn cursor_left(&mut self) {
+        if let Some(prev) = self.input[..self.cursor].chars().next_back() {
+            self.cursor -= prev.len_utf8();
+        }
+    }
+
+    fn cursor_right(&mut self) {
+        if let Some(next) = self.input[self.cursor..].chars().next() {
+            self.cursor += next.len_utf8();
+        }
     }
 
     /// Queue a user message: record it in history and the transcript, and ask
@@ -1152,21 +1192,21 @@ async fn handle_key(
                 abort_run(current);
                 app.cancel_run();
             } else {
-                app.input.clear();
+                app.input_clear();
             }
         }
         // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
         // Enter submits.
         KeyCode::Enter if app.status == Status::Idle && key.modifiers.contains(KeyModifiers::ALT) => {
-            app.input.push('\n');
+            app.input_insert('\n');
         }
         KeyCode::Char('j') if app.status == Status::Idle && ctrl => {
-            app.input.push('\n');
+            app.input_insert('\n');
         }
         KeyCode::Enter => {
             if app.status == Status::Idle {
                 let text = app.input.trim().to_string();
-                app.input.clear();
+                app.input_clear();
                 if let Some(cmd) = text.strip_prefix('/') {
                     run_command(app, cmd).await;
                 } else if !text.is_empty() {
@@ -1175,10 +1215,25 @@ async fn handle_key(
             }
         }
         KeyCode::Backspace if app.status == Status::Idle => {
-            app.input.pop();
+            app.input_backspace();
+        }
+        KeyCode::Delete if app.status == Status::Idle => {
+            app.input_delete();
+        }
+        KeyCode::Left if app.status == Status::Idle => {
+            app.cursor_left();
+        }
+        KeyCode::Right if app.status == Status::Idle => {
+            app.cursor_right();
+        }
+        KeyCode::Home if app.status == Status::Idle => {
+            app.cursor = 0;
+        }
+        KeyCode::End if app.status == Status::Idle => {
+            app.cursor = app.input.len();
         }
         KeyCode::Char(c) if app.status == Status::Idle && !ctrl => {
-            app.input.push(c);
+            app.input_insert(c);
         }
         KeyCode::Up | KeyCode::PageUp => {
             let step = if key.code == KeyCode::PageUp { 10 } else { 1 };
@@ -1545,7 +1600,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Keep the cursor row visible when the input outgrows the box.
     let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
         let visible = chunks[2].height.saturating_sub(2);
-        let total = Paragraph::new(input_content_lines(&app.input))
+        let total = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
             .line_count(chunks[2].width.saturating_sub(2).max(1))
             .min(u16::MAX as usize) as u16;
@@ -1677,7 +1732,7 @@ const MAX_INPUT_ROWS: u16 = 8;
 fn input_box_height(app: &App, width: u16) -> u16 {
     let content = if app.status == Status::Idle && app.picker.is_none() {
         let inner = width.saturating_sub(2).max(1);
-        let rows = Paragraph::new(input_content_lines(&app.input))
+        let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
             .line_count(inner)
             .max(1) as u16;
@@ -1689,12 +1744,25 @@ fn input_box_height(app: &App, width: u16) -> u16 {
 }
 
 /// Visible input as styled lines: `› ` on the first line, 2-space hang on
-/// continuations, cursor `▏` appended to the last line. Wrapping is left to the
-/// Paragraph so long single lines fold within the box width.
-fn input_content_lines(input: &str) -> Vec<Line<'static>> {
+/// continuations, caret `▏` at the byte offset `cursor` (on the line that
+/// contains it). Wrapping is left to the Paragraph so long single lines fold
+/// within the box width.
+fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
     let arrow = Span::styled("› ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
+    // Locate the segment + in-segment byte offset holding the caret.
+    let (mut caret_seg, mut caret_off) = (last, segments[last].len());
+    let mut acc = 0usize;
+    for (i, seg) in segments.iter().enumerate() {
+        let seg_end = acc + seg.len();
+        if cursor <= seg_end {
+            caret_seg = i;
+            caret_off = cursor - acc;
+            break;
+        }
+        acc = seg_end + 1; // skip the '\n'
+    }
     segments
         .into_iter()
         .enumerate()
@@ -1704,8 +1772,9 @@ fn input_content_lines(input: &str) -> Vec<Line<'static>> {
             } else {
                 Span::raw("  ")
             };
-            let text = if i == last {
-                format!("{seg}▏")
+            let text = if i == caret_seg {
+                let (a, b) = seg.split_at(caret_off);
+                format!("{a}▏{b}")
             } else {
                 seg.to_string()
             };
@@ -1725,7 +1794,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
         ))
         .block(block)
     } else {
-        Paragraph::new(input_content_lines(&app.input))
+        Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
             .block(block)
     }
@@ -1869,14 +1938,14 @@ mod tests {
 
     #[test]
     fn input_lines_single_line_has_arrow_and_cursor() {
-        let lines = input_content_lines("hello");
+        let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
         assert_eq!(line_text(&lines[0]), "› hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
-        let lines = input_content_lines("one\ntwo\nthree");
+        let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
         assert_eq!(line_text(&lines[0]), "› one");
         assert_eq!(line_text(&lines[1]), "  two");
@@ -1885,10 +1954,46 @@ mod tests {
 
     #[test]
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
-        let lines = input_content_lines("hi\n");
+        let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
         assert_eq!(line_text(&lines[0]), "› hi");
         assert_eq!(line_text(&lines[1]), "  ▏");
+    }
+
+    #[test]
+    fn input_lines_caret_renders_mid_string() {
+        // Caret sits between "he" and "llo" on a single line.
+        let lines = input_content_lines("hello", 2);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(line_text(&lines[0]), "› he▏llo");
+    }
+
+    #[test]
+    fn input_lines_caret_on_earlier_line_only() {
+        // Cursor inside the first segment: caret there, none on later lines.
+        let lines = input_content_lines("one\ntwo", 1);
+        assert_eq!(line_text(&lines[0]), "› o▏ne");
+        assert_eq!(line_text(&lines[1]), "  two");
+    }
+
+    #[test]
+    fn input_editing_moves_and_deletes_at_caret() {
+        let mut app = test_app();
+        for c in "abc".chars() {
+            app.input_insert(c);
+        }
+        assert_eq!((app.input.as_str(), app.cursor), ("abc", 3));
+        app.cursor_left();
+        app.cursor_left();
+        app.input_insert('X'); // insert between a and b
+        assert_eq!((app.input.as_str(), app.cursor), ("aXbc", 2));
+        app.input_backspace(); // delete X
+        assert_eq!((app.input.as_str(), app.cursor), ("abc", 1));
+        app.input_delete(); // delete b at caret
+        assert_eq!((app.input.as_str(), app.cursor), ("ac", 1));
+        app.cursor = app.input.len();
+        app.cursor_right(); // clamp at end
+        assert_eq!(app.cursor, 2);
     }
 
     #[test]
