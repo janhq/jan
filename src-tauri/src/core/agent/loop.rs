@@ -67,12 +67,28 @@ pub(crate) trait ModelInvoker: Send + Sync {
     ) -> Result<serde_json::Value, String>;
 }
 
+/// One tool call's outcome: `content` is the model-facing result string,
+/// `diff` is display-only focused-change text (`write`/`edit` only).
+pub(crate) struct ToolOutcome {
+    pub id: String,
+    pub content: String,
+    pub diff: Option<String>,
+}
+
+impl ToolOutcome {
+    fn plain(id: String, content: String) -> Self {
+        Self {
+            id,
+            content,
+            diff: None,
+        }
+    }
+}
+
 #[async_trait]
 pub(crate) trait ToolInvoker: Send + Sync {
-    async fn invoke(
-        &self,
-        tool_calls: &[serde_json::Value],
-    ) -> Result<Vec<(String, String)>, String>;
+    async fn invoke(&self, tool_calls: &[serde_json::Value])
+        -> Result<Vec<ToolOutcome>, String>;
 }
 
 struct HttpModelInvoker {
@@ -110,14 +126,18 @@ impl ToolInvoker for McpToolInvoker {
     async fn invoke(
         &self,
         tool_calls: &[serde_json::Value],
-    ) -> Result<Vec<(String, String)>, String> {
-        execute_mcp_tool_calls(
+    ) -> Result<Vec<ToolOutcome>, String> {
+        let results = execute_mcp_tool_calls(
             tool_calls,
             &self.tool_to_server,
             &self.mcp_servers,
             &self.mcp_settings,
         )
-        .await
+        .await?;
+        Ok(results
+            .into_iter()
+            .map(|(id, content)| ToolOutcome::plain(id, content))
+            .collect())
     }
 }
 
@@ -137,13 +157,13 @@ impl ToolInvoker for CompositeToolInvoker {
     async fn invoke(
         &self,
         tool_calls: &[serde_json::Value],
-    ) -> Result<Vec<(String, String)>, String> {
+    ) -> Result<Vec<ToolOutcome>, String> {
         use crate::core::agent::tools::{
             gate::{resolve_decision, Decision, PromptKind},
-            handlers::execute_builtin,
+            handlers::execute_builtin_with_diff,
             is_builtin, lookup, Capability,
         };
-        let mut out: Vec<(String, String)> = Vec::with_capacity(tool_calls.len());
+        let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
         for tc in tool_calls {
             let name = tc
@@ -175,10 +195,10 @@ impl ToolInvoker for CompositeToolInvoker {
                 &self.permissions,
                 &snapshot,
             );
-            let text = match decision {
-                Decision::Allow => execute_builtin(tool, &args, &self.project_root).await,
+            let (text, diff) = match decision {
+                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
                 Decision::HardDeny => {
-                    format!("ERROR: tool '{name}' denied by project policy")
+                    (format!("ERROR: tool '{name}' denied by project policy"), None)
                 }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
@@ -223,7 +243,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.project_root).await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -237,15 +257,19 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.project_root).await
                         }
                         PermissionDecision::Deny => {
-                            format!("ERROR: tool '{name}' denied by user")
+                            (format!("ERROR: tool '{name}' denied by user"), None)
                         }
                     }
                 }
             };
-            out.push((id, text));
+            out.push(ToolOutcome {
+                id,
+                content: text,
+                diff,
+            });
         }
         if !mcp_calls.is_empty() {
             out.extend(self.mcp.invoke(&mcp_calls).await?);
@@ -255,7 +279,7 @@ impl ToolInvoker for CompositeToolInvoker {
             .enumerate()
             .filter_map(|(i, tc)| tc.get("id").and_then(|v| v.as_str()).map(|id| (id, i)))
             .collect();
-        out.sort_by_key(|(id, _)| *order.get(id.as_str()).unwrap_or(&usize::MAX));
+        out.sort_by_key(|o| *order.get(o.id.as_str()).unwrap_or(&usize::MAX));
         Ok(out)
     }
 }
@@ -670,16 +694,18 @@ async fn run_turn_cycle(
 
         let tool_results = tools.invoke(&tool_calls).await?;
 
-        for (tool_call_id, result_text) in tool_results {
+        for outcome in tool_results {
+            let ToolOutcome { id, content, diff } = outcome;
             let _ = events.send(StreamEvent::ToolResult {
-                id: tool_call_id.clone(),
-                content: result_text.clone(),
-                is_error: result_text.starts_with("ERROR"),
+                id: id.clone(),
+                content: content.clone(),
+                is_error: content.starts_with("ERROR"),
+                diff,
             });
             conversation_messages.push(serde_json::json!({
                 "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": result_text
+                "tool_call_id": id,
+                "content": content
             }));
         }
     }
@@ -732,7 +758,7 @@ mod tests {
         async fn invoke(
             &self,
             tool_calls: &[serde_json::Value],
-        ) -> Result<Vec<(String, String)>, String> {
+        ) -> Result<Vec<ToolOutcome>, String> {
             self.calls.lock().unwrap().push(tool_calls.to_vec());
             Ok(tool_calls
                 .iter()
@@ -742,7 +768,7 @@ mod tests {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    (id, "MOCK_RESULT".to_string())
+                    ToolOutcome::plain(id, "MOCK_RESULT".to_string())
                 })
                 .collect())
         }
@@ -959,7 +985,7 @@ mod tests {
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(!out[0].1.starts_with("ERROR"), "unexpected: {}", out[0].1);
+        assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -983,7 +1009,7 @@ mod tests {
         responder.await.unwrap();
 
         assert_eq!(out.len(), 1);
-        assert!(out[0].1.contains("denied by user"), "got: {}", out[0].1);
+        assert!(out[0].content.contains("denied by user"), "got: {}", out[0].content);
         assert!(!root.join("out.txt").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1012,7 +1038,7 @@ mod tests {
         };
 
         let out1 = invoker.invoke(&[write_call()]).await.unwrap();
-        assert!(!out1[0].1.starts_with("ERROR"), "first: {}", out1[0].1);
+        assert!(!out1[0].content.starts_with("ERROR"), "first: {}", out1[0].content);
 
         let second = json!({
             "id": "c2",
@@ -1023,7 +1049,7 @@ mod tests {
             }
         });
         let out2 = invoker.invoke(&[second]).await.unwrap();
-        assert!(!out2[0].1.starts_with("ERROR"), "second: {}", out2[0].1);
+        assert!(!out2[0].content.starts_with("ERROR"), "second: {}", out2[0].content);
 
         drop(invoker); // close events channel so responder loop ends
         responder.await.unwrap();
