@@ -388,18 +388,23 @@ impl App {
     fn apply(&mut self, ev: StreamEvent) {
         match ev {
             StreamEvent::Token { text } => {
-                // Commit the tool group's final status to the timeline as prose
-                // begins, so it persists as `✓` above the streaming response
-                // instead of lingering as a live `▸` until the turn ends.
-                if self.assistant_buf.is_empty() {
+                self.assistant_buf.push_str(&text);
+                // Commit the tool group as `✓` once real answer prose begins, so
+                // it lands above the streaming response. Reasoning tokens must
+                // not trigger this, or every call by a reasoning model splits
+                // into its own row.
+                if self.tool_group.is_some() && has_answer_text(&self.assistant_buf) {
                     self.finalize_tool_group();
                 }
-                self.assistant_buf.push_str(&text);
             }
             StreamEvent::Step { index, max } => {
-                // A new turn closes the previous turn's batch of tool calls.
-                self.finalize_tool_group();
-                self.flush_assistant();
+                // Only flush (and thereby close the tool group) once the model
+                // has produced answer prose; a turn that only reasoned or only
+                // called tools keeps the group open so the next turn's calls
+                // keep folding into one summary row instead of a row per turn.
+                if has_answer_text(&self.assistant_buf) {
+                    self.flush_assistant();
+                }
                 self.turn = (index, max);
             }
             StreamEvent::ToolCall { id, name, args } => {
@@ -412,11 +417,13 @@ impl App {
                     self.gap(Kind::Tool);
                     self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
                 } else {
-                    // Commit any text the model spoke before this call so the
-                    // timeline stays in emission order (pre-tool prose above the
-                    // tool row). No-op when the buffer is empty, so consecutive
-                    // tool calls with no prose between them still fold together.
-                    self.flush_assistant();
+                    // Commit any answer prose the model spoke before this call
+                    // so the timeline stays in emission order (pre-tool prose
+                    // above the tool row). Reasoning-only buffers are left
+                    // intact so consecutive calls keep folding together.
+                    if has_answer_text(&self.assistant_buf) {
+                        self.flush_assistant();
+                    }
                     self.push_grouped_call(&id, &name, label);
                 }
             }
@@ -458,7 +465,9 @@ impl App {
                 offers_always,
                 ..
             } => {
-                self.finalize_tool_group();
+                // Don't close the tool group here: the prompt renders docked
+                // above the input, and finalizing would break the running row
+                // for every gated call (i.e. every exec) into its own line.
                 self.pending = Some(Pending {
                     request_id,
                     tool_name,
@@ -695,6 +704,16 @@ fn pluralize(noun: &str, n: usize) -> String {
         format!("{noun}s")
     };
     format!("{n} {plural}")
+}
+
+/// True if `buf` contains any answer prose outside `<think>` reasoning. Used to
+/// decide when a tool group closes: reasoning streamed between tool calls must
+/// not end the run (a reasoning model thinks before every call), only real
+/// answer text does.
+fn has_answer_text(buf: &str) -> bool {
+    split_reasoning(buf)
+        .iter()
+        .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
 }
 
 fn think_re() -> &'static regex::Regex {
@@ -1046,15 +1065,15 @@ async fn handle_key(
         };
         match decision {
             Some(d) => {
-                let verb = match d {
-                    PermissionDecision::AllowOnce => "allowed once",
-                    PermissionDecision::AllowAlways => "allowed always",
-                    PermissionDecision::Deny => "denied",
-                };
-                app.push(Line::styled(
-                    format!("• {verb}: {}", pending.summary()),
-                    Style::new().yellow(),
-                ));
+                // Only record denials: the tool row that follows an allow
+                // already shows the call proceeded, so an "allowed" line is
+                // pure noise once granted.
+                if matches!(d, PermissionDecision::Deny) {
+                    app.push(Line::styled(
+                        format!("• denied: {}", pending.summary()),
+                        Style::new().red(),
+                    ));
+                }
                 if let Some(sender) = registry.lock().await.remove(&pending.request_id) {
                     let _ = sender.send(d);
                 }
@@ -1113,13 +1132,13 @@ async fn handle_key(
 
     match key.code {
         KeyCode::Esc => {
+            // Esc cancels a run or clears typed input; it never quits (that's
+            // Ctrl-D / Ctrl-C when idle), so a stray Esc can't close the app.
             if app.status == Status::Running {
                 abort_run(current);
                 app.cancel_run();
-            } else if !app.input.is_empty() {
-                app.input.clear();
             } else {
-                app.should_quit = true;
+                app.input.clear();
             }
         }
         // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
@@ -1996,10 +2015,125 @@ mod tests {
             .count();
         assert_eq!(tool_rows, 1);
         assert!(line_text(app.transcript.last().unwrap()).contains("(4)"));
-        // A turn boundary finalizes it to a short summary sentence.
-        app.apply(StreamEvent::Step { index: 2, max: 8 });
+        // The model speaking finalizes it to a short summary sentence.
+        app.apply(StreamEvent::Token { text: "Done.".into() });
         let row = line_text(app.transcript.last().unwrap());
         assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
+    }
+
+    #[test]
+    fn silent_tool_turns_keep_folding_across_step_boundaries() {
+        let mut app = test_app();
+        // One tool per turn (Step between each), no prose: the agent-loop shape.
+        for (i, id) in ["c1", "c2", "c3"].iter().enumerate() {
+            app.apply(StreamEvent::Step {
+                index: i as u32 + 1,
+                max: 8,
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: (*id).into(),
+                name: "bash".into(),
+                args: json!({ "command": "ls" }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: (*id).into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        // Still one open group after three turns, not a row per turn.
+        assert!(app.tool_group.is_some());
+        let tool_rows = app
+            .transcript
+            .iter()
+            .filter(|l| line_text(l).contains("Executing"))
+            .count();
+        assert_eq!(tool_rows, 1);
+        app.on_done("stop".into(), None);
+        let row = line_text(app.transcript.last().unwrap());
+        assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
+    }
+
+    #[test]
+    fn reasoning_between_tool_calls_keeps_folding() {
+        let mut app = test_app();
+        for (i, id) in ["c1", "c2", "c3"].iter().enumerate() {
+            app.apply(StreamEvent::Step {
+                index: i as u32 + 1,
+                max: 8,
+            });
+            // Reasoning model thinks before each call; this must not close the group.
+            app.apply(StreamEvent::Token {
+                text: "<think>let me look</think>".into(),
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: (*id).into(),
+                name: "bash".into(),
+                args: json!({ "command": "ls" }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: (*id).into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        assert!(app.tool_group.is_some());
+        let tool_rows = app
+            .transcript
+            .iter()
+            .filter(|l| line_text(l).contains("Executing"))
+            .count();
+        assert_eq!(tool_rows, 1);
+        // Real answer prose finally closes it to a single summary row.
+        app.apply(StreamEvent::Token {
+            text: "All done.".into(),
+        });
+        assert!(app.tool_group.is_none());
+        let row = app
+            .transcript
+            .iter()
+            .map(line_text)
+            .find(|t| t.contains("Executing") || t.contains("Ran "))
+            .unwrap();
+        assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
+    }
+
+    #[test]
+    fn permission_prompt_does_not_break_tool_folding() {
+        let mut app = test_app();
+        for id in ["c1", "c2"] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": "grep -n foo src/" }),
+            });
+            app.apply(StreamEvent::PermissionRequest {
+                request_id: format!("p-{id}"),
+                tool_name: "bash".into(),
+                capability: "exec".into(),
+                path: None,
+                command: Some("grep -n foo src/".into()),
+                prompt_kind: "exec".into(),
+                offers_always: true,
+            });
+            app.pending = None; // simulate approval
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        // Both gated calls stayed in one running group despite the prompts.
+        assert!(app.tool_group.is_some());
+        let tool_rows = app
+            .transcript
+            .iter()
+            .filter(|l| line_text(l).contains("Executing"))
+            .count();
+        assert_eq!(tool_rows, 1);
     }
 
     #[test]
