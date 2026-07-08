@@ -500,6 +500,20 @@ impl App {
         self.status = Status::Idle;
         self.detail = format!("stop_reason={stop_reason}");
         self.scrollback = 0;
+        // Surface abnormal completions in the timeline, not just the footer: a
+        // truncated/filtered finish, or a "stop" that yielded no answer (an
+        // empty/malformed upstream completion defaults to stop_reason=stop).
+        let normal = matches!(stop_reason.as_str(), "stop" | "end_turn" | "stop_sequence");
+        let no_answer = !has_answer_text(&answer);
+        if !normal || no_answer {
+            let msg = if no_answer {
+                format!("finished with no answer (stop_reason={stop_reason})")
+            } else {
+                format!("finished early (stop_reason={stop_reason})")
+            };
+            self.gap(Kind::Meta);
+            self.push(Line::styled(msg, Style::new().yellow().bold()));
+        }
         self.persist();
     }
 
@@ -2051,7 +2065,12 @@ mod tests {
             .count();
         assert_eq!(tool_rows, 1);
         app.on_done("stop".into(), None);
-        let row = line_text(app.transcript.last().unwrap());
+        let row = app
+            .transcript
+            .iter()
+            .map(line_text)
+            .find(|t| t.contains("Ran "))
+            .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
     }
 
@@ -2098,6 +2117,49 @@ mod tests {
             .find(|t| t.contains("Executing") || t.contains("Ran "))
             .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
+    }
+
+    #[test]
+    fn on_done_normal_stop_with_answer_has_no_warning() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "The answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert!(!app
+            .transcript
+            .iter()
+            .any(|l| line_text(l).contains("finished")));
+    }
+
+    #[test]
+    fn on_done_truncated_finish_warns_in_timeline() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "partial".into(),
+        });
+        app.on_done("length".into(), None);
+        let warn = app
+            .transcript
+            .iter()
+            .map(line_text)
+            .find(|t| t.contains("finished early"))
+            .unwrap();
+        assert!(warn.contains("length"), "warn: {warn}");
+    }
+
+    #[test]
+    fn on_done_stop_without_answer_warns() {
+        let mut app = test_app();
+        // Only reasoning, no answer prose (or an empty/malformed completion).
+        app.apply(StreamEvent::Token {
+            text: "<think>hmm</think>".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert!(app
+            .transcript
+            .iter()
+            .any(|l| line_text(l).contains("finished with no answer")));
     }
 
     #[test]
