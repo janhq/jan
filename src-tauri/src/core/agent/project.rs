@@ -717,6 +717,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn permissions_from_deny_default_blocks_mcp() {
         let mut cfg = AgentToml::default();
