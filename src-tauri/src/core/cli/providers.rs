@@ -50,6 +50,68 @@ impl ProviderOverrides {
     }
 }
 
+/// The desktop app's current selection (`state.selectedProvider` /
+/// `state.selectedModel.id` in the `model-provider` store), used to default the
+/// CLI `--provider`/`--model` when the user gives none.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct DesktopSelection {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+}
+
+/// Read the desktop's selected provider + model from `settings.json`. Missing or
+/// malformed data yields an empty selection (no defaults applied).
+pub fn desktop_selection() -> DesktopSelection {
+    let path = resolve_jan_data_folder().join("settings.json");
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => parse_selection(&raw),
+        Err(_) => DesktopSelection::default(),
+    }
+}
+
+/// Extract the selection from a `settings.json` body. Tolerant of shape drift.
+fn parse_selection(raw: &str) -> DesktopSelection {
+    let root: serde_json::Value = match serde_json::from_str(raw) {
+        Ok(v) => v,
+        Err(_) => return DesktopSelection::default(),
+    };
+    let blob = match root.get(MODEL_PROVIDER_KEY).and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return DesktopSelection::default(),
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(blob) {
+        Ok(v) => v,
+        Err(_) => return DesktopSelection::default(),
+    };
+    let state = parsed.get("state");
+    let non_empty = |v: Option<&serde_json::Value>| {
+        v.and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    };
+    DesktopSelection {
+        provider: non_empty(state.and_then(|s| s.get("selectedProvider"))),
+        model: non_empty(state.and_then(|s| s.get("selectedModel").and_then(|m| m.get("id")))),
+    }
+}
+
+/// Enumerate `(provider, model_id)` pairs from the persisted desktop store,
+/// sorted by provider then model. Used to populate the TUI `/model` selector.
+pub fn list_provider_models() -> Vec<(String, String)> {
+    let path = resolve_jan_data_folder().join("settings.json");
+    let configs = match std::fs::read_to_string(&path) {
+        Ok(raw) => parse_provider_store(&raw),
+        Err(_) => return Vec::new(),
+    };
+    let mut out: Vec<(String, String)> = configs
+        .values()
+        .flat_map(|c| c.models.iter().map(|m| (c.provider.clone(), m.clone())))
+        .collect();
+    out.sort();
+    out
+}
+
 /// Load cloud provider configs from the persisted desktop store, applying
 /// `overrides`. A missing/malformed store is not fatal: it yields an empty map
 /// so `--provider`/`--api-key`/env can still stand up a config on their own.
@@ -318,6 +380,43 @@ mod tests {
         let mut configs = parse_provider_store(STORE);
         seed_keys_from_store(&mut configs, |_| Vec::new());
         assert_eq!(configs.get("openai").unwrap().api_key, None);
+    }
+
+    #[test]
+    fn provider_models_from_store_are_flattened_and_sorted() {
+        let mut pairs: Vec<(String, String)> = parse_provider_store(STORE)
+            .values()
+            .flat_map(|c| c.models.iter().map(|m| (c.provider.clone(), m.clone())))
+            .collect();
+        pairs.sort();
+        assert_eq!(
+            pairs,
+            vec![
+                ("anthropic".to_string(), "claude-opus-4".to_string()),
+                ("anthropic".to_string(), "claude-sonnet-4-5".to_string()),
+                ("openai".to_string(), "gpt-4o".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_desktop_selection() {
+        let store = r#"{"model-provider":"{\"state\":{\"selectedProvider\":\"anthropic\",\"selectedModel\":{\"id\":\"claude-sonnet-4-5\",\"provider\":\"anthropic\"},\"providers\":[]}}"}"#;
+        let sel = parse_selection(store);
+        assert_eq!(sel.provider.as_deref(), Some("anthropic"));
+        assert_eq!(sel.model.as_deref(), Some("claude-sonnet-4-5"));
+    }
+
+    #[test]
+    fn selection_absent_or_empty_is_none() {
+        assert_eq!(parse_selection("not json"), DesktopSelection::default());
+        assert_eq!(
+            parse_selection(r#"{"model-provider":"{\"state\":{\"providers\":[]}}"}"#),
+            DesktopSelection::default()
+        );
+        // Empty strings / null model are treated as unset.
+        let blank = r#"{"model-provider":"{\"state\":{\"selectedProvider\":\"\",\"selectedModel\":null}}"}"#;
+        assert_eq!(parse_selection(blank), DesktopSelection::default());
     }
 
     #[test]
