@@ -145,6 +145,19 @@ struct CurrentRun {
     handle: JoinHandle<()>,
 }
 
+/// A run of consecutive collapsible tool calls folded into one transcript row.
+struct ToolGroup {
+    /// Transcript index of the row this group owns.
+    idx: usize,
+    /// Activity label of the first call (shown verbatim when the group is a
+    /// single call, e.g. "Reading memory notes").
+    first_label: String,
+    /// Per-call noun for the finalized breakdown ("memory note", "skill", ...).
+    nouns: Vec<&'static str>,
+    /// True while every call so far is a read-style op (drives "Read" vs "Ran").
+    all_read: bool,
+}
+
 struct App {
     model: String,
     max_turns: u32,
@@ -159,6 +172,13 @@ struct App {
     /// In-progress assistant text for the current turn, flushed on the next
     /// step/tool/terminal event.
     assistant_buf: String,
+    /// The current run of consecutive collapsible tool calls, rendered as one
+    /// transcript row that updates in real time and finalizes to a short summary.
+    /// edit/write are excluded (they render their own diff panel).
+    tool_group: Option<ToolGroup>,
+    /// Ids of calls folded into a `ToolGroup`, so their `ToolResult` is swallowed
+    /// (the group row already represents them). Survives group finalize.
+    grouped_ids: std::collections::HashSet<String>,
     input: String,
     status: Status,
     turn: (u32, u32),
@@ -188,6 +208,8 @@ impl App {
             thread_id: None,
             transcript: Vec::new(),
             assistant_buf: String::new(),
+            tool_group: None,
+            grouped_ids: std::collections::HashSet::new(),
             input: String::new(),
             status: Status::Idle,
             turn: (0, 0),
@@ -247,8 +269,64 @@ impl App {
         if lines.is_empty() {
             return;
         }
+        // Model prose ends the current run of tool calls.
+        self.finalize_tool_group();
         self.gap(Kind::Prose);
         self.transcript.extend(lines);
+    }
+
+    /// Fold a collapsible tool call into the current group row (extending it and
+    /// updating its live status) or open a new group row.
+    fn push_grouped_call(&mut self, id: &str, name: &str, label: String) {
+        let (noun, is_read) = tool_kind(name);
+        self.grouped_ids.insert(id.to_string());
+        let extend = self.tool_group.as_mut().map(|g| {
+            g.nouns.push(noun);
+            g.all_read = g.all_read && is_read;
+            (g.idx, g.nouns.len())
+        });
+        match extend {
+            Some((idx, n)) if idx < self.transcript.len() => {
+                self.transcript[idx] = tool_row(
+                    "▸",
+                    Style::new().cyan(),
+                    &format!("{label} ({n})"),
+                    Style::new().cyan().dim(),
+                );
+            }
+            _ => {
+                self.gap(Kind::Tool);
+                self.push(tool_row(
+                    "▸",
+                    Style::new().cyan(),
+                    &label,
+                    Style::new().cyan().dim(),
+                ));
+                self.tool_group = Some(ToolGroup {
+                    idx: self.transcript.len() - 1,
+                    first_label: label,
+                    nouns: vec![noun],
+                    all_read: is_read,
+                });
+            }
+        }
+    }
+
+    /// Close the current tool group, rewriting its row to a `✓` short summary:
+    /// the single activity label for one call, else a counted breakdown.
+    fn finalize_tool_group(&mut self) {
+        let Some(g) = self.tool_group.take() else {
+            return;
+        };
+        if g.idx >= self.transcript.len() {
+            return;
+        }
+        let text = if g.nouns.len() <= 1 {
+            g.first_label
+        } else {
+            group_summary(&g.nouns, g.all_read)
+        };
+        self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
     }
 
     /// Queue a user message: record it in history and the transcript, and ask
@@ -311,35 +389,42 @@ impl App {
         match ev {
             StreamEvent::Token { text } => self.assistant_buf.push_str(&text),
             StreamEvent::Step { index, max } => {
-                // Turn progress lives in the header statusline, not the transcript.
+                // A new turn closes the previous turn's batch of tool calls.
+                self.finalize_tool_group();
                 self.flush_assistant();
                 self.turn = (index, max);
             }
-            StreamEvent::ToolCall { name, args, .. } => {
-                self.flush_assistant();
-                self.gap(Kind::Tool);
+            StreamEvent::ToolCall { id, name, args } => {
                 let max = self.render_width().saturating_sub(6) as usize;
-                let label = truncate(&format_tool_call(&name, &args), max);
-                self.push(Line::from(vec![
-                    Span::styled("│ ", Style::new().dark_gray()),
-                    Span::styled("▸ ", Style::new().cyan()),
-                    Span::styled(label, Style::new().cyan().dim()),
-                ]));
+                let label = truncate(&tool_activity(&name, &args), max);
+                if matches!(name.as_str(), "edit" | "write") {
+                    // Diff-producing tools render standalone (call row + panel).
+                    self.finalize_tool_group();
+                    self.flush_assistant();
+                    self.gap(Kind::Tool);
+                    self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
+                } else {
+                    self.push_grouped_call(&id, &name, label);
+                }
             }
             StreamEvent::ToolResult {
+                id,
                 content,
                 is_error,
                 diff,
-                ..
             } => {
+                // Grouped calls are already represented by the group row.
+                if self.grouped_ids.contains(&id) {
+                    return;
+                }
                 self.flush_assistant();
-                self.gap(Kind::Tool);
                 let (tag, tag_style) = if is_error {
                     ("✗", Style::new().red())
                 } else {
                     ("✓", Style::new().green())
                 };
                 let max = self.render_width().saturating_sub(8) as usize;
+                self.gap(Kind::Tool);
                 self.push(Line::from(vec![
                     Span::styled("│   ", Style::new().dark_gray()),
                     Span::styled(format!("{tag} "), tag_style),
@@ -360,6 +445,7 @@ impl App {
                 offers_always,
                 ..
             } => {
+                self.finalize_tool_group();
                 self.pending = Some(Pending {
                     request_id,
                     tool_name,
@@ -382,6 +468,7 @@ impl App {
     }
 
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
+        self.finalize_tool_group();
         let answer = self.take_answer();
         if !answer.is_empty() {
             self.history
@@ -395,6 +482,7 @@ impl App {
     }
 
     fn on_error(&mut self, code: String, message: String) {
+        self.finalize_tool_group();
         self.flush_assistant();
         self.status = Status::Idle;
         self.detail = if message.contains("budget") {
@@ -412,6 +500,7 @@ impl App {
 
     /// Cancel the in-flight run, keeping the conversation intact.
     fn cancel_run(&mut self) {
+        self.finalize_tool_group();
         self.assistant_buf.clear();
         self.status = Status::Idle;
         self.detail = "cancelled".to_string();
@@ -449,12 +538,16 @@ fn summarize_result(s: &str, max: usize) -> String {
 /// Max diff rows rendered under a tool result before collapsing the tail.
 const DIFF_MAX_ROWS: usize = 20;
 
-/// Render focused-diff text to styled transcript lines: `-` red, `+` green,
-/// `@@` headers dim-cyan. Collapses to `DIFF_MAX_ROWS` with a `(+N more)` tail.
+/// Render focused-diff text as a boxed panel: a light rule frames the change,
+/// `-` lines red, `+` green, `@@` headers dim-cyan. Content is truncated to
+/// `max` and each row padded so the right border aligns. Collapses to
+/// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule.
 fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
     let all: Vec<&str> = diff.lines().collect();
     let shown = all.len().min(DIFF_MAX_ROWS);
-    let mut out = Vec::with_capacity(shown + 1);
+    let truncated = all.len() > shown;
+
+    let mut rows: Vec<(String, Style)> = Vec::with_capacity(shown + 1);
     for line in &all[..shown] {
         let style = match line.as_bytes().first() {
             Some(b'-') => Style::new().red(),
@@ -462,51 +555,133 @@ fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
             Some(b'@') => Style::new().cyan().dim(),
             _ => Style::new().dim(),
         };
+        rows.push((truncate(line, max), style));
+    }
+    if truncated {
+        rows.push((
+            format!("(+{} more)", all.len() - shown),
+            Style::new().dim(),
+        ));
+    }
+
+    let inner = rows
+        .iter()
+        .map(|(t, _)| t.chars().count())
+        .max()
+        .unwrap_or(0)
+        .clamp(1, max.max(1));
+
+    let gutter = "│     ";
+    let border = Style::new().dark_gray();
+    let mut out = Vec::with_capacity(rows.len() + 2);
+    out.push(Line::from(vec![
+        Span::styled(gutter, border),
+        Span::styled(format!("┌{}┐", "─".repeat(inner + 2)), border),
+    ]));
+    for (text, style) in rows {
+        let pad = inner.saturating_sub(text.chars().count());
         out.push(Line::from(vec![
-            Span::styled("│     ", Style::new().dark_gray()),
-            Span::styled(truncate(line, max), style),
+            Span::styled(gutter, border),
+            Span::styled("│ ", border),
+            Span::styled(text, style),
+            Span::styled(format!("{} │", " ".repeat(pad)), border),
         ]));
     }
-    if all.len() > shown {
-        out.push(Line::from(vec![
-            Span::styled("│     ", Style::new().dark_gray()),
-            Span::styled(
-                format!("(+{} more)", all.len() - shown),
-                Style::new().dim(),
-            ),
-        ]));
-    }
+    out.push(Line::from(vec![
+        Span::styled(gutter, border),
+        Span::styled(format!("└{}┘", "─".repeat(inner + 2)), border),
+    ]));
     out
 }
 
-/// Human-facing label for a tool call: known tools get a clean verb+target,
-/// everything else falls back to the shared `describe_tool_call`.
-fn format_tool_call(name: &str, args: &serde_json::Value) -> String {
+/// Concise present-tense activity label for the single, in-place tool row
+/// ("Executing grep", "Searching", "Updating memory: X"). Deliberately terse:
+/// the running row updates in real time and the completed row keeps this same
+/// text with a `✓`/`✗` tag, so it must read well in both states.
+fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let base = |p: &str| {
+        std::path::Path::new(p)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(p)
+            .to_string()
+    };
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            if cmd.is_empty() {
-                describe_tool_call(name, args)
+            let prog = cmd.split_whitespace().next().unwrap_or("");
+            let prog = prog.rsplit(['/', '\\']).next().unwrap_or(prog);
+            if prog.is_empty() {
+                "Executing command".to_string()
             } else {
-                format!("$ {}", cmd.replace('\n', " "))
+                format!("Executing {prog}")
             }
         }
-        "read" => format!("read {}", s("path")),
-        "write" => format!("write {}", s("path")),
-        "edit" => format!("edit {}", s("path")),
-        "list" | "ls" => format!("ls {}", s("path")),
-        "grep" | "search" => {
-            let pat = s("pattern");
-            let path = s("path");
-            if path.is_empty() {
-                format!("grep \"{pat}\"")
-            } else {
-                format!("grep \"{pat}\" in {path}")
-            }
-        }
+        "grep" | "search" => "Searching".to_string(),
+        "find" | "glob" => "Finding files".to_string(),
+        "read" => format!("Reading {}", base(s("path"))),
+        "list" | "ls" => "Listing files".to_string(),
+        "write" => format!("Writing {}", base(s("path"))),
+        "edit" => format!("Editing {}", base(s("path"))),
+        // Skill/memory tools already produce active labels ("Updating memory: X").
         _ => describe_tool_call(name, args),
     }
+}
+
+/// A one-line tool row: `│ <tag> <text>` with a styled tag and body.
+fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("│ ", Style::new().dark_gray()),
+        Span::styled(format!("{tag} "), tag_style),
+        Span::styled(text.to_string(), text_style),
+    ])
+}
+
+/// Classify a collapsible tool into a breakdown noun and whether it is a
+/// read-style op (drives the "Read" vs "Ran" verb in a group summary).
+fn tool_kind(name: &str) -> (&'static str, bool) {
+    match name {
+        n if n.starts_with("memory") => ("memory note", true),
+        n if n.starts_with("skill") => ("skill", true),
+        "read" => ("file", true),
+        "list" | "ls" => ("directory", true),
+        "grep" | "search" => ("search", false),
+        "find" | "glob" => ("file search", false),
+        "bash" | "shell" | "exec" => ("command", false),
+        _ => ("tool call", false),
+    }
+}
+
+/// Short sentence summarizing a finished tool group, e.g. "Read 3 memory notes,
+/// 1 skill" or "Ran 2 commands, 1 search". Verb is "Read" iff every call was a
+/// read-style op.
+fn group_summary(nouns: &[&str], all_read: bool) -> String {
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    for &n in nouns {
+        match counts.iter_mut().find(|(name, _)| *name == n) {
+            Some((_, c)) => *c += 1,
+            None => counts.push((n, 1)),
+        }
+    }
+    let parts: Vec<String> = counts.iter().map(|(n, c)| pluralize(n, *c)).collect();
+    let verb = if all_read { "Read" } else { "Ran" };
+    format!("{verb} {}", parts.join(", "))
+}
+
+/// "3 memory notes", "1 skill", "2 searches", "1 directory".
+fn pluralize(noun: &str, n: usize) -> String {
+    if n == 1 {
+        return format!("1 {noun}");
+    }
+    let plural = if let Some(stem) = noun.strip_suffix('y') {
+        format!("{stem}ies")
+    } else if noun.ends_with("ch") || noun.ends_with('s') {
+        format!("{noun}es")
+    } else {
+        format!("{noun}s")
+    };
+    format!("{n} {plural}")
 }
 
 fn think_re() -> &'static regex::Regex {
@@ -980,6 +1155,8 @@ async fn run_command(app: &mut App, line: &str) {
             app.history.clear();
             app.thread_id = None;
             app.transcript.clear();
+            app.tool_group = None;
+            app.grouped_ids.clear();
             app.assistant_buf.clear();
             app.pending = None;
             app.tokens = 0;
@@ -1164,6 +1341,8 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.history.clear();
     app.thread_id = Some(full_id.to_string());
     app.transcript.clear();
+    app.tool_group = None;
+    app.grouped_ids.clear();
     app.assistant_buf.clear();
     app.turn = (0, 0);
     app.tokens = 0;
@@ -1259,8 +1438,20 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     let mut lines = app.transcript.clone();
     if !app.assistant_buf.is_empty() {
-        // Live tail: strip reasoning tags so partial streaming stays clean.
-        lines.extend(format_assistant_lines(&app.assistant_buf, width));
+        let tail = format_assistant_lines(&app.assistant_buf, width);
+        if !tail.is_empty() {
+            // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
+            // streaming prose is present live, not only once it's finalized.
+            let last_blank = lines
+                .last()
+                .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
+                .unwrap_or(true);
+            if !last_blank {
+                lines.push(Line::raw(""));
+            }
+            // Live tail: strip reasoning tags so partial streaming stays clean.
+            lines.extend(tail);
+        }
     }
     let body = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
@@ -1486,11 +1677,17 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        diff_lines, format_tool_call, input_content_lines, is_table_separator, message_text,
-        parse_command, render_table, split_reasoning, summarize_result, Pending, DIFF_MAX_ROWS,
+        diff_lines, group_summary, input_content_lines, is_table_separator, message_text,
+        parse_command, render_table, split_reasoning, summarize_result, tool_activity, App,
+        Pending, DIFF_MAX_ROWS,
     };
+    use crate::core::agent::events::StreamEvent;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
+
+    fn test_app() -> App {
+        App::new("m".into(), 8, std::path::PathBuf::from("."))
+    }
 
     fn pending(offers_always: bool) -> Pending {
         Pending {
@@ -1554,18 +1751,36 @@ mod tests {
     }
 
     #[test]
-    fn format_tool_call_bash_and_read() {
+    fn group_summary_counts_and_pluralizes() {
         assert_eq!(
-            format_tool_call("bash", &json!({ "command": "ls src/ | head" })),
-            "$ ls src/ | head"
+            group_summary(&["memory note", "skill", "memory note"], true),
+            "Read 2 memory notes, 1 skill"
         );
         assert_eq!(
-            format_tool_call("read", &json!({ "path": "src/main.rs" })),
-            "read src/main.rs"
+            group_summary(&["command", "search", "search"], false),
+            "Ran 1 command, 2 searches"
+        );
+        assert_eq!(group_summary(&["directory", "directory"], true), "Read 2 directories");
+    }
+
+    #[test]
+    fn tool_activity_is_concise_present_tense() {
+        assert_eq!(
+            tool_activity("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
+            "Executing grep"
         );
         assert_eq!(
-            format_tool_call("grep", &json!({ "pattern": "foo", "path": "src/" })),
-            "grep \"foo\" in src/"
+            tool_activity("bash", &json!({ "command": "cargo test" })),
+            "Executing cargo"
+        );
+        assert_eq!(tool_activity("grep", &json!({ "pattern": "foo" })), "Searching");
+        assert_eq!(
+            tool_activity("read", &json!({ "path": "src/main.rs" })),
+            "Reading main.rs"
+        );
+        assert_eq!(
+            tool_activity("memory_write", &json!({ "name": "decisions" })),
+            "Updating memory: decisions"
         );
     }
 
@@ -1600,7 +1815,14 @@ mod tests {
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
         let out = diff_lines("- foo\n+ bar", 80);
-        assert_eq!(out.len(), 2);
+        // 2 content rows framed by a top and bottom border.
+        assert_eq!(out.len(), 4);
+        assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
+        assert!(
+            line_text(out.last().unwrap()).contains('┘'),
+            "bottom: {}",
+            line_text(out.last().unwrap())
+        );
     }
 
     #[test]
@@ -1610,15 +1832,101 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let out = diff_lines(&diff, 80);
-        assert_eq!(out.len(), DIFF_MAX_ROWS + 1);
-        let tail: String = out
-            .last()
-            .unwrap()
-            .spans
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
+        // DIFF_MAX_ROWS content rows + a `(+N more)` row, framed by 2 borders.
+        assert_eq!(out.len(), DIFF_MAX_ROWS + 1 + 2);
+        // The tail sits just above the closing border.
+        let tail = line_text(&out[out.len() - 2]);
         assert!(tail.contains("(+10 more)"), "tail: {tail}");
+    }
+
+    #[test]
+    fn single_collapsible_tool_folds_to_one_row() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        let running = line_text(app.transcript.last().unwrap());
+        assert!(running.contains("▸ Executing grep"), "running: {running}");
+        let before = app.transcript.len();
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match\nmatch\n(+50 lines)".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Result is swallowed: still one row, still running.
+        assert_eq!(app.transcript.len(), before);
+        // Finalizing (turn boundary / done) marks it complete on the same row.
+        app.finalize_tool_group();
+        let row = line_text(app.transcript.last().unwrap());
+        assert!(row.contains("✓") && row.contains("Executing grep"), "row: {row}");
+        assert!(!row.contains("lines"), "row: {row}");
+        assert!(app.tool_group.is_none());
+    }
+
+    #[test]
+    fn consecutive_collapsible_tools_fold_into_one_summary_row() {
+        let mut app = test_app();
+        let calls = [
+            ("c1", "memory_list", json!({})),
+            ("c2", "skill_list", json!({})),
+            ("c3", "memory_read", json!({ "name": "project-overview" })),
+            ("c4", "memory_read", json!({ "name": "top-p" })),
+        ];
+        for (id, name, args) in calls {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: name.into(),
+                args,
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        // All four folded into a single running row with a live counter.
+        let tool_rows = app
+            .transcript
+            .iter()
+            .filter(|l| line_text(l).contains("Reading") || line_text(l).contains("Read "))
+            .count();
+        assert_eq!(tool_rows, 1);
+        assert!(line_text(app.transcript.last().unwrap()).contains("(4)"));
+        // A turn boundary finalizes it to a short summary sentence.
+        app.apply(StreamEvent::Step { index: 2, max: 8 });
+        let row = line_text(app.transcript.last().unwrap());
+        assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
+    }
+
+    #[test]
+    fn diff_tool_result_keeps_separate_rows_and_panel() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "edit".into(),
+            args: json!({ "path": "a.txt" }),
+        });
+        let before = app.transcript.len();
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "edited".into(),
+            is_error: false,
+            diff: Some("- old\n+ new".into()),
+        });
+        // Call row preserved; result row + boxed diff appended below it.
+        assert!(app.transcript.len() > before);
+        let joined: String = app
+            .transcript
+            .iter()
+            .map(|l| line_text(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("Editing a.txt"), "{joined}");
+        assert!(joined.contains('┌') && joined.contains('┘'), "{joined}");
     }
 
     #[test]
