@@ -61,6 +61,11 @@ const OPENROUTER: ProviderCaps = {
   maybe: new Set(['typical_p']),
 }
 
+const TOKENLAB: ProviderCaps = {
+  supported: set('penalties', 'json_schema'),
+  maybe: new Set(['top_k', 'min_p', 'repetition']),
+}
+
 const XAI: ProviderCaps = {
   supported: set(),
   maybe: new Set(['penalties']),
@@ -149,6 +154,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   mistral: MISTRAL,
   groq: GROQ,
   openrouter: OPENROUTER,
+  tokenlab: TOKENLAB,
   xai: XAI,
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,

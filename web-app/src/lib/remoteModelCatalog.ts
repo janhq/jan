@@ -22,7 +22,8 @@ export function supportsRemoteCatalog(providerName: string): boolean {
   return (
     providerName === 'openai' ||
     providerName === 'anthropic' ||
-    providerName === 'gemini'
+    providerName === 'gemini' ||
+    providerName === 'tokenlab'
   )
 }
 
@@ -97,6 +98,40 @@ function inferAnthropicCapabilities(id: string): string[] | null {
     return ['completion', 'tools']
   }
   return ['completion', 'tools', 'vision']
+}
+
+function inferTokenLabCapabilities(id: string): string[] | null {
+  if (
+    id.startsWith('text-embedding-') ||
+    id.startsWith('embedding-') ||
+    id.startsWith('whisper-') ||
+    id.startsWith('tts-') ||
+    id.startsWith('dall-e-') ||
+    id.startsWith('gpt-image-')
+  ) {
+    return null
+  }
+
+  if (
+    id.startsWith('gpt-') ||
+    id.startsWith('claude-') ||
+    id.startsWith('gemini-') ||
+    id.startsWith('grok-')
+  ) {
+    return ['completion', 'tools', 'vision']
+  }
+
+  if (
+    id.startsWith('deepseek-') ||
+    id.startsWith('glm-') ||
+    id.startsWith('qwen') ||
+    id.startsWith('kimi-') ||
+    id.startsWith('minimax-')
+  ) {
+    return ['completion', 'tools']
+  }
+
+  return null
 }
 
 function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, string> {
@@ -174,7 +209,9 @@ function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogM
       ? inferOpenAICapabilities
       : providerName === 'gemini'
         ? inferGeminiCapabilities
-        : inferAnthropicCapabilities
+        : providerName === 'tokenlab'
+          ? inferTokenLabCapabilities
+          : inferAnthropicCapabilities
 
   const parsed: RemoteCatalogModel[] = []
   for (const raw of rows) {
