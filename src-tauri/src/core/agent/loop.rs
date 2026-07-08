@@ -167,7 +167,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|s| serde_json::from_str(s).ok())
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             let tool = lookup(name).expect("is_builtin implies lookup");
-            let snapshot = { *self.grants.lock().unwrap() };
+            let snapshot = { self.grants.lock().unwrap().clone() };
             let decision = resolve_decision(
                 tool,
                 &args,
@@ -203,11 +203,16 @@ impl ToolInvoker for CompositeToolInvoker {
                         .and_then(|k| args.get(*k))
                         .and_then(|v| v.as_str())
                         .map(String::from);
+                    let command = matches!(tool.capability, Capability::Exec)
+                        .then(|| args.get("command").and_then(|v| v.as_str()))
+                        .flatten()
+                        .map(String::from);
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
                         tool_name: name.to_string(),
                         capability: capability.to_string(),
                         path,
+                        command,
                         prompt_kind: prompt_kind.to_string(),
                         offers_always: true,
                     });
@@ -221,17 +226,16 @@ impl ToolInvoker for CompositeToolInvoker {
                             execute_builtin(tool, &args, &self.project_root).await
                         }
                         PermissionDecision::AllowAlways => {
-                            self.grants.lock().unwrap().grant(kind);
-                            // Persist for future runs (best-effort; the session
-                            // grant above already covers the rest of this run).
-                            let write_capable =
-                                matches!(tool.capability, Capability::Write | Capability::Exec);
-                            if let Err(e) = crate::core::agent::project::grant_tool_in_agent_toml(
-                                &self.project_root,
-                                name,
-                                write_capable,
-                            ) {
-                                log::warn!("failed to persist always-allow for '{name}': {e}");
+                            // Thread-scoped only; never persisted to agent.toml.
+                            // Exec grants are scoped to the base command so that
+                            // "allow always" for `git status` covers `git ...`
+                            // but not arbitrary shell commands.
+                            if matches!(tool.capability, Capability::Exec) {
+                                let command =
+                                    args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                                self.grants.lock().unwrap().grant_command(command);
+                            } else {
+                                self.grants.lock().unwrap().grant(kind);
                             }
                             execute_builtin(tool, &args, &self.project_root).await
                         }

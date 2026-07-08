@@ -14,7 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::providers::ProviderOverrides;
 use app_lib::core::cli::{
-    cli_agent_run, cli_agent_status, cli_agent_step, cli_delete_thread,
+    cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
     discover_llamacpp_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
@@ -134,8 +134,13 @@ struct ProviderArgs {
 
 impl ProviderArgs {
     fn into_overrides(self) -> ProviderOverrides {
+        // Default the target provider to the desktop app's current selection so
+        // env-key fallback (<PROVIDER>_API_KEY) works without an explicit flag.
+        let provider = self
+            .provider
+            .or_else(|| app_lib::core::cli::providers::desktop_selection().provider);
         ProviderOverrides {
-            provider: self.provider,
+            provider,
             api_key: self.api_key,
         }
         .with_env()
@@ -155,6 +160,22 @@ enum AgentCommands {
         #[arg(long)]
         model: Option<String>,
         /// Max turns (overrides [agent].max_turns; clamped 1..=400)
+        #[arg(long)]
+        max_turns: Option<u32>,
+        #[command(flatten)]
+        providers: ProviderArgs,
+    },
+    /// Open the interactive chat console (optionally seeded with a first message)
+    Ui {
+        /// Project root containing .jan/agent/agent.toml
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Optional first message; omit to start with an empty chat
+        task: Option<String>,
+        /// Model ID (overrides [agent].model in agent.toml)
+        #[arg(long)]
+        model: Option<String>,
+        /// Max turns per message (overrides [agent].max_turns; clamped 1..=400)
         #[arg(long)]
         max_turns: Option<u32>,
         #[command(flatten)]
@@ -418,6 +439,13 @@ async fn handle_agent(cmd: AgentCommands) {
             )
             .await
         }
+        AgentCommands::Ui {
+            project,
+            task,
+            model,
+            max_turns,
+            providers,
+        } => cli_agent_ui(&project, task, model, max_turns, providers.into_overrides()).await,
         AgentCommands::Step {
             project,
             task,
