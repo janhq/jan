@@ -1642,10 +1642,10 @@ fn header(app: &App) -> Paragraph<'static> {
         Status::Idle => ("ready", Style::new().green()),
         Status::Running => ("working", Style::new().yellow().bold()),
     };
-    let turn = if app.turn.1 > 0 {
-        format!("turn {}/{}  ", app.turn.0, app.turn.1)
-    } else {
-        String::new()
+    let turn = match app.turn {
+        (0, _) => String::new(),
+        (n, 0) => format!("turn {n}  "),
+        (n, m) => format!("turn {n}/{m}  "),
     };
     Paragraph::new(Line::from(vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),

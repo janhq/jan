@@ -528,11 +528,13 @@ async fn orchestrate_inner(
     )
     .await?;
 
+    // Explicit values pass through unclamped; `0` means unbounded (guarded by
+    // the session token budget and cancellation). Absent falls back to 8 for
+    // the proxy path, which has no interactive cancel.
     let max_turns = json_body
         .get("max_turns")
         .and_then(|v| v.as_u64())
-        .unwrap_or(8)
-        .clamp(1, 400) as usize;
+        .unwrap_or(8) as usize;
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -610,7 +612,12 @@ async fn run_turn_cycle(
 ) -> Result<serde_json::Value, String> {
     let mut last_response: Option<serde_json::Value> = None;
 
-    for turn in 0..max_turns {
+    // `max_turns == 0` means unbounded: the session token budget and user
+    // cancellation are the real guards, so an interactive run isn't cut off
+    // mid-task by a fixed turn cap.
+    let unlimited = max_turns == 0;
+    let mut turn: usize = 0;
+    while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
             max: max_turns as u32,
@@ -708,6 +715,7 @@ async fn run_turn_cycle(
                 "content": content
             }));
         }
+        turn += 1;
     }
 
     Err(format!(
@@ -869,6 +877,26 @@ mod tests {
             tool.calls.lock().unwrap().is_empty(),
             "tool must not run once budget is exhausted"
         );
+    }
+
+    #[tokio::test]
+    async fn turn_cycle_unbounded_runs_until_final_answer() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        // max_turns = 0 means unbounded: it must not error out and must keep
+        // going past the tool-call turn to return the final answer.
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool)
+            .await
+            .unwrap();
+
+        assert_eq!(result["choices"][0]["message"]["content"], "done");
     }
 
     #[test]
