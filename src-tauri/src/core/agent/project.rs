@@ -124,6 +124,7 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
 
 /// Persist `[agent].model` into the agent.toml at `path`, format-preserving
 /// (comments kept). Remembers a TUI `/model` selection across sessions.
+#[cfg(feature = "cli")]
 pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), String> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
@@ -212,6 +213,7 @@ mod tests {
         assert!(perms.permits("mcp.search"));
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn set_model_persists_and_reloads_and_keeps_comments() {
         let root = unique_root("setmodel");

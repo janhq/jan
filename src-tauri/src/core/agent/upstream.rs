@@ -464,6 +464,16 @@ struct SseAccumulator {
 }
 
 impl SseAccumulator {
+    /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
+    fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
+        if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
+            let data = rest.trim();
+            if !data.is_empty() {
+                self.ingest(data, events);
+            }
+        }
+    }
+
     fn ingest(&mut self, data: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
         if data == "[DONE]" {
             return;
@@ -584,6 +594,33 @@ impl SseAccumulator {
     }
 }
 
+/// Drain every complete (newline-terminated) line from `buf` into `acc`,
+/// leaving any trailing partial line buffered for the next chunk.
+fn drain_complete_lines(
+    buf: &mut String,
+    acc: &mut SseAccumulator,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) {
+    while let Some(nl) = buf.find('\n') {
+        let line = buf[..nl].to_string();
+        buf.drain(..=nl);
+        acc.ingest_line(&line, events);
+    }
+}
+
+/// Ingest a final, non-newline-terminated line left after the stream closes.
+/// Providers may end with `data: {...}` and no trailing blank line / `[DONE]`;
+/// without this the last chunk's finish_reason and tool-call args are dropped.
+fn flush_trailing_line(
+    buf: &str,
+    acc: &mut SseAccumulator,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) {
+    if !buf.trim().is_empty() {
+        acc.ingest_line(buf, events);
+    }
+}
+
 async fn consume_openai_sse(
     resp: reqwest::Response,
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -595,19 +632,9 @@ async fn consume_openai_sse(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Upstream stream error: {e}"))?;
         buf.push_str(&String::from_utf8_lossy(&chunk));
-
-        while let Some(nl) = buf.find('\n') {
-            let line = buf[..nl].trim_end_matches('\r').to_string();
-            buf.drain(..=nl);
-
-            if let Some(rest) = line.strip_prefix("data:") {
-                let data = rest.trim();
-                if !data.is_empty() {
-                    acc.ingest(data, events);
-                }
-            }
-        }
+        drain_complete_lines(&mut buf, &mut acc, events);
     }
+    flush_trailing_line(&buf, &mut acc, events);
 
     Ok(acc.into_completion())
 }
@@ -700,5 +727,56 @@ mod tests {
         acc.ingest("not json", &tx);
         let completion = acc.into_completion();
         assert!(completion["choices"][0]["message"]["content"].is_null());
+    }
+
+    /// Feed arbitrary byte chunks through the real buffering path, then close.
+    fn feed_and_close(
+        chunks: &[&str],
+        events: &mpsc::UnboundedSender<StreamEvent>,
+    ) -> serde_json::Value {
+        let mut buf = String::new();
+        let mut acc = SseAccumulator::default();
+        for c in chunks {
+            buf.push_str(c);
+            drain_complete_lines(&mut buf, &mut acc, events);
+        }
+        flush_trailing_line(&buf, &mut acc, events);
+        acc.into_completion()
+    }
+
+    #[test]
+    fn flushes_final_line_without_trailing_newline() {
+        let (tx, _rx) = sink();
+        // Provider closes right after the final data line: no `\n`, no `[DONE]`.
+        let final_chunk = json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] });
+        let completion = feed_and_close(
+            &[
+                "data: ",
+                &json!({ "choices": [{ "delta": { "content": "hi" } }] }).to_string(),
+                "\n\ndata: ",
+                &final_chunk.to_string(),
+            ],
+            &tx,
+        );
+
+        assert_eq!(completion["choices"][0]["message"]["content"], "hi");
+        assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
+    }
+
+    #[test]
+    fn newline_terminated_stream_still_parses() {
+        let (tx, _rx) = sink();
+        let completion = feed_and_close(
+            &[
+                &format!(
+                    "data: {}\n\n",
+                    json!({ "choices": [{ "delta": { "content": "ok" }, "finish_reason": "stop" }] })
+                ),
+                "data: [DONE]\n\n",
+            ],
+            &tx,
+        );
+        assert_eq!(completion["choices"][0]["message"]["content"], "ok");
+        assert_eq!(completion["choices"][0]["finish_reason"], "stop");
     }
 }
