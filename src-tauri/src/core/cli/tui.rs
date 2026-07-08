@@ -387,7 +387,15 @@ impl App {
     /// they mutate history and the run handle.
     fn apply(&mut self, ev: StreamEvent) {
         match ev {
-            StreamEvent::Token { text } => self.assistant_buf.push_str(&text),
+            StreamEvent::Token { text } => {
+                // Commit the tool group's final status to the timeline as prose
+                // begins, so it persists as `✓` above the streaming response
+                // instead of lingering as a live `▸` until the turn ends.
+                if self.assistant_buf.is_empty() {
+                    self.finalize_tool_group();
+                }
+                self.assistant_buf.push_str(&text);
+            }
             StreamEvent::Step { index, max } => {
                 // A new turn closes the previous turn's batch of tool calls.
                 self.finalize_tool_group();
@@ -404,6 +412,11 @@ impl App {
                     self.gap(Kind::Tool);
                     self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
                 } else {
+                    // Commit any text the model spoke before this call so the
+                    // timeline stays in emission order (pre-tool prose above the
+                    // tool row). No-op when the buffer is empty, so consecutive
+                    // tool calls with no prose between them still fold together.
+                    self.flush_assistant();
                     self.push_grouped_call(&id, &name, label);
                 }
             }
@@ -1897,6 +1910,60 @@ mod tests {
         assert!(row.contains("✓") && row.contains("Executing grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
+    }
+
+    #[test]
+    fn first_streamed_token_finalizes_open_tool_group() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        assert!(app.tool_group.is_some());
+        // Prose begins streaming in the same turn (no intervening Step): the
+        // group's status must land in the timeline as `✓` right away.
+        app.apply(StreamEvent::Token { text: "Here".into() });
+        assert!(app.tool_group.is_none());
+        let row = app
+            .transcript
+            .iter()
+            .rev()
+            .map(line_text)
+            .find(|t| t.contains("Executing grep"))
+            .unwrap();
+        assert!(row.contains("✓"), "row: {row}");
+        // Later tokens must not re-trigger finalize work.
+        app.apply(StreamEvent::Token { text: " goes".into() });
+        assert!(app.tool_group.is_none());
+    }
+
+    #[test]
+    fn pre_tool_prose_lands_above_the_tool_row() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "Let me check the README.".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token {
+            text: "Found it.".into(),
+        });
+        app.apply(StreamEvent::Step { index: 2, max: 8 });
+        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
+        let tool = rows.iter().position(|r| r.contains("Executing grep")).unwrap();
+        let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
+        assert!(prose < tool && tool < after, "rows: {rows:?}");
     }
 
     #[test]
