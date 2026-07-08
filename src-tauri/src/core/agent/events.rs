@@ -20,10 +20,14 @@ pub enum StreamEvent {
         args: serde_json::Value,
     },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
+    /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
+    /// `write`/`edit`; `None` for other tools.
     ToolResult {
         id: String,
         content: String,
         is_error: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diff: Option<String>,
     },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
@@ -214,6 +218,7 @@ mod tests {
             id: "c1".into(),
             content: "ok".into(),
             is_error: false,
+            diff: None,
         })
         .unwrap();
         assert_eq!(
