@@ -787,11 +787,44 @@ fn flush_prose(prose: &mut Vec<&str>, out: &mut Vec<Line<'static>>) {
 
 /// Render a markdown block to owned ratatui lines via `tui-markdown`.
 fn markdown_to_lines(text: &str) -> Vec<Line<'static>> {
-    tui_markdown::from_str(text)
+    let lines: Vec<Line<'static>> = tui_markdown::from_str(text)
         .lines
         .into_iter()
         .map(own_line)
-        .collect()
+        .collect();
+    merge_list_markers(lines)
+}
+
+/// tui-markdown renders loose list items with the marker (`1. `, `- `) alone on
+/// one line and the item body on the next. Fold a lone-marker line into the
+/// following line so list items read as `1. body`.
+fn merge_list_markers(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::with_capacity(lines.len());
+    let mut iter = lines.into_iter().peekable();
+    while let Some(line) = iter.next() {
+        if is_lone_list_marker(&line) && iter.peek().is_some() {
+            let body = iter.next().unwrap();
+            let mut spans = line.spans;
+            spans.extend(body.spans);
+            let mut merged = Line::from(spans);
+            merged.alignment = body.alignment;
+            out.push(merged);
+        } else {
+            out.push(line);
+        }
+    }
+    out
+}
+
+/// True if the line is nothing but a list marker: `1.`/`12.` or a `-`/`*`/`•`
+/// bullet (trailing spaces allowed).
+fn is_lone_list_marker(line: &Line<'_>) -> bool {
+    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    let t = text.trim();
+    if matches!(t, "-" | "*" | "•") {
+        return true;
+    }
+    matches!(t.strip_suffix('.'), Some(d) if !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Deep-clone a borrowed `Line` into a `'static` one (own each span's text).
@@ -1972,6 +2005,26 @@ mod tests {
         assert!(is_table_separator(" --- | --- "));
         assert!(!is_table_separator("| a | b |"));
         assert!(!is_table_separator("plain text"));
+    }
+
+    #[test]
+    fn loose_list_marker_merges_into_body_line() {
+        // tui-markdown splits loose-list markers onto their own line; the merge
+        // pass folds "1. " and "- " back onto the item body.
+        let md = "1. first item\n\n2. second item";
+        let lines: Vec<String> = super::markdown_to_lines(md)
+            .iter()
+            .map(line_text)
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert_eq!(lines, ["1. first item", "2. second item"], "{lines:?}");
+
+        let bullets: Vec<String> = super::markdown_to_lines("- alpha\n\n- beta")
+            .iter()
+            .map(line_text)
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert_eq!(bullets, ["- alpha", "- beta"], "{bullets:?}");
     }
 
     #[test]
