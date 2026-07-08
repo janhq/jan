@@ -122,38 +122,19 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     Ok(agent_dir)
 }
 
-/// Persist an always-allow grant for `tool_name` into agent.toml, format-preserving
-/// (comments kept). Write/exec tools go into `[tools].allow_write`, read tools into
-/// `[tools].allow`. Idempotent (no duplicate entries). Errs if agent.toml is missing.
-pub(crate) fn grant_tool_in_agent_toml(
-    project_root: &Path,
-    tool_name: &str,
-    write_capable: bool,
-) -> Result<(), String> {
-    let path = agent_toml_path(project_root);
-    let raw = std::fs::read_to_string(&path)
+/// Persist `[agent].model` into the agent.toml at `path`, format-preserving
+/// (comments kept). Remembers a TUI `/model` selection across sessions.
+pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     let mut doc = raw
         .parse::<toml_edit::DocumentMut>()
         .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
 
-    let tools = doc["tools"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    let key = if write_capable {
-        "allow_write"
-    } else {
-        "allow"
-    };
-    let list = tools[key].or_insert(toml_edit::value(toml_edit::Array::new()));
-    let arr = list
-        .as_array_mut()
-        .ok_or_else(|| format!("[tools].{key} is not an array in {}", path.display()))?;
+    let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    agent["model"] = toml_edit::value(model);
 
-    if arr.iter().any(|v| v.as_str() == Some(tool_name)) {
-        return Ok(());
-    }
-    arr.push(tool_name);
-
-    std::fs::write(&path, doc.to_string())
+    std::fs::write(path, doc.to_string())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
@@ -232,28 +213,21 @@ mod tests {
     }
 
     #[test]
-    fn grant_persists_by_capability_and_is_idempotent_and_keeps_comments() {
-        let root = unique_root("grant");
+    fn set_model_persists_and_reloads_and_keeps_comments() {
+        let root = unique_root("setmodel");
         ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
 
-        grant_tool_in_agent_toml(&root, "write", true).expect("grant write");
-        grant_tool_in_agent_toml(&root, "read", false).expect("grant read");
-        // Idempotent: a second identical grant does not duplicate.
-        grant_tool_in_agent_toml(&root, "write", true).expect("grant write again");
-
+        set_model_in_agent_toml(&path, "claude-sonnet-5").expect("set");
         let cfg = load_agent_config(&root).expect("load");
-        assert_eq!(cfg.tools.allow_write, vec!["write".to_string()]);
-        assert_eq!(cfg.tools.allow, vec!["read".to_string()]);
+        assert_eq!(cfg.agent.model.as_deref(), Some("claude-sonnet-5"));
 
-        // Format-preserving: the template's comment survives the edit.
-        let raw = std::fs::read_to_string(agent_toml_path(&root)).expect("read raw");
+        // Overwrites on a second set; template comment survives.
+        set_model_in_agent_toml(&path, "gpt-4o").expect("set again");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.model.as_deref(), Some("gpt-4o"));
+        let raw = std::fs::read_to_string(&path).expect("read");
         assert!(raw.contains("Secure default"));
         let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn grant_missing_agent_toml_errors() {
-        let root = unique_root("grant_missing");
-        assert!(grant_tool_in_agent_toml(&root, "write", true).is_err());
     }
 }

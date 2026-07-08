@@ -23,11 +23,23 @@ pub enum PermissionDecision {
     Deny,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+/// In-memory, thread-scoped permission grants (never persisted). Exec grants are
+/// per base command (e.g. granting `git` allows `git ...` but not `rm ...`),
+/// matching the user's "allow all git commands" intent.
+#[derive(Debug, Clone, Default)]
 pub struct SessionGrants {
     read_escape: bool,
     write: bool,
-    exec: bool,
+    exec_commands: std::collections::BTreeSet<String>,
+}
+
+/// The base command a shell string runs: the first whitespace-delimited token,
+/// with any directory prefix stripped (`/usr/bin/git` -> `git`). Returns `None`
+/// for an empty command.
+pub fn command_base(command: &str) -> Option<&str> {
+    let first = command.split_whitespace().next()?;
+    let base = first.rsplit(['/', '\\']).next().unwrap_or(first);
+    (!base.is_empty()).then_some(base)
 }
 
 impl SessionGrants {
@@ -35,15 +47,29 @@ impl SessionGrants {
         match kind {
             PromptKind::ReadEscape => self.read_escape,
             PromptKind::Write => self.write,
-            PromptKind::Exec => self.exec,
+            // Exec coverage is command-specific; use `covers_command`.
+            PromptKind::Exec => false,
         }
+    }
+
+    /// Whether a previously granted base command covers this shell command.
+    pub fn covers_command(&self, command: &str) -> bool {
+        command_base(command).is_some_and(|b| self.exec_commands.contains(b))
     }
 
     pub fn grant(&mut self, kind: PromptKind) {
         match kind {
             PromptKind::ReadEscape => self.read_escape = true,
             PromptKind::Write => self.write = true,
-            PromptKind::Exec => self.exec = true,
+            // No-op: exec is granted per command via `grant_command`.
+            PromptKind::Exec => {}
+        }
+    }
+
+    /// Grant the base command of `command` for the rest of this session.
+    pub fn grant_command(&mut self, command: &str) {
+        if let Some(base) = command_base(command) {
+            self.exec_commands.insert(base.to_string());
         }
     }
 }
@@ -110,7 +136,14 @@ pub fn resolve_decision(
                 gated(PromptKind::Write, grants)
             }
         }
-        Capability::Exec => gated(PromptKind::Exec, grants),
+        Capability::Exec => {
+            let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            if grants.covers_command(command) {
+                Decision::Allow
+            } else {
+                Decision::Prompt(PromptKind::Exec)
+            }
+        }
     }
 }
 
@@ -201,6 +234,43 @@ mod tests {
         let d = resolve_decision(
             lookup("bash").unwrap(),
             &json!({"command": "ls"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::Exec));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn command_base_strips_path_and_args() {
+        assert_eq!(command_base("git status"), Some("git"));
+        assert_eq!(command_base("/usr/bin/git commit -m x"), Some("git"));
+        assert_eq!(command_base("   "), None);
+        assert_eq!(command_base(""), None);
+    }
+
+    #[test]
+    fn exec_grant_is_scoped_to_base_command() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let mut grants = SessionGrants::default();
+        grants.grant_command("git status");
+
+        // Same base command -> allowed without prompting.
+        let d = resolve_decision(
+            lookup("bash").unwrap(),
+            &json!({"command": "git push"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Allow);
+
+        // A different command still prompts.
+        let d = resolve_decision(
+            lookup("bash").unwrap(),
+            &json!({"command": "rm -rf /"}),
             &root,
             &perms,
             &grants,
