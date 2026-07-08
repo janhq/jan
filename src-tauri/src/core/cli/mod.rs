@@ -664,8 +664,10 @@ use std::io::Write as _;
 use tokio::sync::{mpsc, Mutex};
 
 /// Default turn cap when neither `--max-turns` nor `agent.toml [agent].max_turns`
-/// is set. The loop separately clamps the effective value to 1..=400.
-const DEFAULT_MAX_TURNS: u32 = 400;
+/// is set. `0` means unbounded: the session token budget and user cancellation
+/// guard the loop instead of a fixed step count, so runs aren't cut off
+/// mid-task. Set an explicit cap to bound it.
+const DEFAULT_MAX_TURNS: u32 = 0;
 
 /// Resolved-config + provider snapshot for `jan agent status`.
 pub fn cli_agent_status(
