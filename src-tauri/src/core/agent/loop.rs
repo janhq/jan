@@ -152,6 +152,32 @@ struct CompositeToolInvoker {
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
 }
 
+impl CompositeToolInvoker {
+    /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
+    /// A dropped responder (client gone / run cancelled) resolves to Deny.
+    async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
+        let request_id = next_permission_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.permission_requests
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
+        let _ = self.events.send(StreamEvent::PermissionRequest {
+            request_id: request_id.clone(),
+            tool_name: tool_name.to_string(),
+            capability: "run".to_string(),
+            path: None,
+            command: None,
+            diff: None,
+            prompt_kind: "mcp".to_string(),
+            offers_always: true,
+        });
+        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+        self.permission_requests.lock().await.remove(&request_id);
+        decision
+    }
+}
+
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
     async fn invoke(
@@ -172,7 +198,30 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if !is_builtin(name) {
-                mcp_calls.push(tc.clone());
+                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Deny-listed MCP tools are never advertised, but guard anyway.
+                if self.permissions.is_denied(name) {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' denied by project policy"),
+                    ));
+                    continue;
+                }
+                if self.grants.lock().unwrap().covers_mcp(name) {
+                    mcp_calls.push(tc.clone());
+                    continue;
+                }
+                match self.prompt_mcp_permission(name).await {
+                    PermissionDecision::AllowOnce => mcp_calls.push(tc.clone()),
+                    PermissionDecision::AllowAlways => {
+                        self.grants.lock().unwrap().grant_mcp(name);
+                        mcp_calls.push(tc.clone());
+                    }
+                    PermissionDecision::Deny => out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' denied by user"),
+                    )),
+                }
                 continue;
             }
             let id = tc
@@ -1101,6 +1150,76 @@ mod tests {
             std::fs::read_to_string(root.join("out2.txt")).unwrap(),
             "yo"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn mcp_call(id: &str, name: &str) -> serde_json::Value {
+        json!({ "id": id, "type": "function", "function": { "name": name, "arguments": "{}" } })
+    }
+
+    #[tokio::test]
+    async fn mcp_prompt_deny_reports_error_and_skips_execution() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = Arc::new(build_prompting_invoker(root.clone(), tx, registry.clone()));
+
+        let responder = {
+            let registry = registry.clone();
+            tokio::spawn(async move {
+                respond_once(&mut rx, &registry, PermissionDecision::Deny).await;
+            })
+        };
+
+        let out = invoker.invoke(&[mcp_call("m1", "web_search_exa")]).await.unwrap();
+        responder.await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("denied by user"), "got: {}", out[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn mcp_allow_always_records_thread_grant() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+
+        let responder = {
+            let registry = registry.clone();
+            tokio::spawn(async move {
+                respond_once(&mut rx, &registry, PermissionDecision::AllowAlways).await;
+            })
+        };
+
+        // Execution errors (no live server) are irrelevant; assert the grant landed.
+        let _ = invoker.invoke(&[mcp_call("m1", "web_search_exa")]).await;
+        responder.await.unwrap();
+
+        assert!(invoker.grants.lock().unwrap().covers_mcp("web_search_exa"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn granted_mcp_tool_does_not_prompt() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.grants.lock().unwrap().grant_mcp("web_search_exa");
+
+        // Execution errors (no live server) are irrelevant; assert no prompt fired.
+        let _ = invoker.invoke(&[mcp_call("m1", "web_search_exa")]).await;
+        drop(invoker);
+
+        let mut prompted = false;
+        while let Some(ev) = rx.recv().await {
+            if matches!(ev, StreamEvent::PermissionRequest { .. }) {
+                prompted = true;
+            }
+        }
+        assert!(!prompted, "a pre-granted MCP tool must not prompt");
         let _ = std::fs::remove_dir_all(&root);
     }
 
