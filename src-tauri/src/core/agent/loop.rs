@@ -359,6 +359,25 @@ fn apply_tool_allowlist(
     tool_to_server.retain(|name, _| allow.contains(name.as_str()));
 }
 
+/// Keep only MCP tools advertised under the agent.toml policy (see
+/// `ToolPermissions::advertises_mcp`), pruning the OpenAI tool array and the
+/// tool->server map in lockstep. The read-only default does NOT suppress MCP
+/// advertisement; only an explicit deny (or `default = "deny"`) does.
+fn retain_advertisable_mcp_tools(
+    openai_tools: &mut Vec<serde_json::Value>,
+    tool_to_server: &mut HashMap<String, String>,
+    permissions: &crate::core::agent::permissions::ToolPermissions,
+) {
+    openai_tools.retain(|t| {
+        t.get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+            .map(|n| permissions.advertises_mcp(n))
+            .unwrap_or(false)
+    });
+    tool_to_server.retain(|name, _| permissions.advertises_mcp(name));
+}
+
 fn stop_reason_of(completion: &serde_json::Value) -> String {
     completion
         .get("choices")
@@ -484,16 +503,10 @@ async fn orchestrate_inner(
         apply_tool_allowlist(&mut openai_tools, &mut tool_to_server, &names);
     }
 
-    // Permission gate: prune tools the agent is not permitted to call before the
-    // model sees them. Proxy path uses `allow_all()` (unchanged behavior).
-    openai_tools.retain(|t| {
-        t.get("function")
-            .and_then(|f| f.get("name"))
-            .and_then(|n| n.as_str())
-            .map(|n| permissions.permits(n))
-            .unwrap_or(false)
-    });
-    tool_to_server.retain(|name, _| permissions.permits(name));
+    // Advertise MCP tools per agent.toml policy: read-only (the CLI default) does
+    // NOT suppress them; only an explicit deny or `default = "deny"` does. Proxy
+    // path uses `allow_all()`, so behavior there is unchanged.
+    retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
 
     if project_root.is_some() {
         // Built-ins are governed by the capability gate at execution time, so here
@@ -1099,6 +1112,58 @@ mod tests {
         apply_tool_allowlist(&mut tools, &mut map, &[]);
 
         assert!(tools.is_empty());
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn read_only_project_still_advertises_mcp_tools() {
+        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
+        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        // The scaffolded CLI project default: read-only, no allow-list.
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+
+        retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
+
+        assert_eq!(tools.len(), 1, "read-only must not suppress MCP advertisement");
+        assert!(map.contains_key("web_search_exa"));
+    }
+
+    #[test]
+    fn denied_mcp_tool_is_not_advertised() {
+        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        let mut tools = vec![
+            json!({ "type": "function", "function": { "name": "web_search_exa" } }),
+            json!({ "type": "function", "function": { "name": "dangerous_write" } }),
+        ];
+        let mut map = HashMap::from([
+            ("web_search_exa".to_string(), "exa".to_string()),
+            ("dangerous_write".to_string(), "exa".to_string()),
+        ]);
+        let perms = ToolPermissions::new(
+            PermissionDefault::ReadOnly,
+            &[],
+            &["dangerous_write".to_string()],
+            &[],
+        );
+
+        retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
+
+        assert_eq!(tools.len(), 1);
+        assert!(map.contains_key("web_search_exa"));
+        assert!(!map.contains_key("dangerous_write"), "deny-list must still prune");
+    }
+
+    #[test]
+    fn deny_default_advertises_no_mcp_tools() {
+        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
+        let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
+        let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
+
+        retain_advertisable_mcp_tools(&mut tools, &mut map, &perms);
+
+        assert!(tools.is_empty(), "default=deny must lock down MCP advertisement");
         assert!(map.is_empty());
     }
 }

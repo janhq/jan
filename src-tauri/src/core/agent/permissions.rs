@@ -75,13 +75,16 @@ impl ToolPermissions {
             || self.allow_write.iter().any(|p| p.matches(name))
     }
 
-    /// Deny always wins. Then an explicit allow / allow_write match permits.
-    /// Otherwise fall back to the default policy: Allow permits, Deny/ReadOnly block.
-    pub(crate) fn permits(&self, tool_name: &str) -> bool {
+    /// Whether an MCP tool is advertised to the model. Deny always wins. Otherwise
+    /// an explicit allow, or any default except `deny`, advertises it. Unlike
+    /// built-in fs/exec tools, MCP tools are opaque and the user opted into them by
+    /// configuring the server, so `read-only` does not suppress them (`deny` locks
+    /// everything down). Execution of built-ins is gated separately at call time.
+    pub(crate) fn advertises_mcp(&self, tool_name: &str) -> bool {
         if self.is_denied(tool_name) {
             return false;
         }
-        self.is_allowed(tool_name) || matches!(self.default, PermissionDefault::Allow)
+        self.is_allowed(tool_name) || !matches!(self.default, PermissionDefault::Deny)
     }
 }
 
@@ -100,53 +103,43 @@ mod tests {
     }
 
     #[test]
-    fn read_only_default_blocks_unlisted_tools() {
+    fn read_only_advertises_unlisted_mcp_tools() {
+        // read-only (the CLI default) must not suppress opaque MCP tools.
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        assert!(!perms.permits("mcp.search"));
-
-        let perms =
-            ToolPermissions::new(PermissionDefault::ReadOnly, &s(&["mcp.search"]), &[], &[]);
-        assert!(perms.permits("mcp.search"));
+        assert!(perms.advertises_mcp("mcp.search"));
     }
 
     #[test]
-    fn deny_wins_over_allow() {
+    fn deny_default_locks_down_mcp_unless_allowed() {
+        let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);
+        assert!(!perms.advertises_mcp("mcp.search"));
+
+        let perms = ToolPermissions::new(PermissionDefault::Deny, &s(&["mcp.search"]), &[], &[]);
+        assert!(perms.advertises_mcp("mcp.search"));
+    }
+
+    #[test]
+    fn deny_wins_over_default_and_allow() {
         let perms = ToolPermissions::new(
-            PermissionDefault::ReadOnly,
+            PermissionDefault::Allow,
             &s(&["fs.*"]),
             &s(&["fs.delete"]),
             &[],
         );
-        assert!(perms.permits("fs.read"));
-        assert!(!perms.permits("fs.delete"));
+        assert!(perms.advertises_mcp("fs.read"));
+        assert!(!perms.advertises_mcp("fs.delete"));
     }
 
     #[test]
-    fn write_is_opt_in() {
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        assert!(!perms.permits("fs.write"));
-
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &s(&["fs.write"]));
-        assert!(perms.permits("fs.write"));
-    }
-
-    #[test]
-    fn allow_default_permits_unlisted_but_deny_blocks() {
-        let perms = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["secret.*"]), &[]);
-        assert!(perms.permits("anything"));
-        assert!(!perms.permits("secret.key"));
-    }
-
-    #[test]
-    fn glob_matching() {
+    fn is_allowed_matches_globs_only() {
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &s(&["rag.*"]), &[], &[]);
-        assert!(perms.permits("rag.query"));
-        assert!(!perms.permits("mcp.search"));
+        assert!(perms.is_allowed("rag.query"));
+        assert!(!perms.is_allowed("mcp.search"));
     }
 
     #[test]
-    fn allow_all_is_permissive() {
-        assert!(ToolPermissions::allow_all().permits("x"));
+    fn allow_all_advertises_everything() {
+        assert!(ToolPermissions::allow_all().advertises_mcp("x"));
     }
 
     #[test]
