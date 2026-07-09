@@ -51,8 +51,10 @@ max_steps = 40
 max_tokens = 200000
 
 [tools]
-# read-only | deny | allow. Secure default: read-only.
+# read-only | deny | allow. read-only (default) exposes MCP tools and built-in
+# reads; built-in writes/exec still prompt. deny locks down all MCP tools.
 default = "read-only"
+# Exposed even under deny; deny-list wins over everything:
 allow = []
 deny = []
 # Write tools are opt-in only:
@@ -195,22 +197,26 @@ mod tests {
     }
 
     #[test]
-    fn permissions_from_default_template_is_read_only() {
+    fn permissions_from_default_template_advertises_mcp() {
+        // The scaffolded read-only default must still advertise MCP tools.
         let root = unique_root("perms");
         ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
         let perms = permissions_from(&cfg);
-        assert!(!perms.permits("mcp.search"));
+        assert!(perms.advertises_mcp("mcp.search"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn permissions_from_respects_allow_list() {
+    fn permissions_from_deny_default_blocks_mcp() {
         let mut cfg = AgentToml::default();
-        cfg.tools.default = Some("read-only".to_string());
+        cfg.tools.default = Some("deny".to_string());
+        let perms = permissions_from(&cfg);
+        assert!(!perms.advertises_mcp("mcp.search"));
+
         cfg.tools.allow = vec!["mcp.search".to_string()];
         let perms = permissions_from(&cfg);
-        assert!(perms.permits("mcp.search"));
+        assert!(perms.advertises_mcp("mcp.search"));
     }
 
     #[cfg(feature = "cli")]
@@ -229,7 +235,7 @@ mod tests {
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.model.as_deref(), Some("gpt-4o"));
         let raw = std::fs::read_to_string(&path).expect("read");
-        assert!(raw.contains("Secure default"));
+        assert!(raw.contains("read-only | deny | allow"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
