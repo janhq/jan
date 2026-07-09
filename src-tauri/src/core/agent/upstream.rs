@@ -160,12 +160,14 @@ pub(crate) async fn resolve_upstream_for_model(
     if let Some(provider) = provider_name {
         let pc2 = provider_configs.lock().await;
         if let Some(provider_cfg) = pc2.get(provider.as_str()).cloned() {
-            let api_url = provider_cfg
-                .base_url
-                .clone()
-                .ok_or_else(|| format!("Missing base_url for provider '{provider}'"))?;
-            let url = format!("{}{}", api_url, destination_path);
-            return Ok((url, provider_cfg.bearer_key_chain()));
+            // A populated base_url means an HTTP upstream (cloud, or a local
+            // engine whose live endpoint was registered at runtime). A local
+            // engine loaded from persisted settings has none -- fall through to
+            // the MLX session / llama-server router resolution below.
+            if let Some(api_url) = provider_cfg.base_url.clone().filter(|u| !u.is_empty()) {
+                let url = format!("{}{}", api_url, destination_path);
+                return Ok((url, provider_cfg.bearer_key_chain()));
+            }
         }
     }
 
