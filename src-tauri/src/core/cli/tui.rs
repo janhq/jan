@@ -51,6 +51,9 @@ struct Pending {
     path: Option<String>,
     /// Shell command for exec prompts; drives the command-scoped always-grant.
     command: Option<String>,
+    /// Focused diff preview for write/edit prompts, shown so the user approves
+    /// with the change in view; `None` for other tools.
+    diff: Option<String>,
     offers_always: bool,
     /// Highlighted option in the docked prompt (index into `options()`).
     selected: usize,
@@ -80,6 +83,16 @@ impl Pending {
         match self.command_base() {
             Some(base) => format!("Allow all '{base}' commands (this thread)"),
             None => "Allow always (this thread)".to_string(),
+        }
+    }
+
+    /// Boxed diff preview for the prompt, sized to `inner` width; empty when the
+    /// tool carries no diff (exec/read). No gutter: the panel sits flush in the
+    /// prompt box, unlike the tool-row-aligned result diff.
+    fn diff_preview(&self, inner: u16) -> Vec<Line<'static>> {
+        match &self.diff {
+            Some(d) => diff_lines(d, (inner as usize).saturating_sub(4).max(1), ""),
+            None => Vec::new(),
         }
     }
 
@@ -495,7 +508,7 @@ impl App {
                     Span::styled(summarize_result(&content, max), Style::new().dim()),
                 ]));
                 if let Some(diff) = diff {
-                    for line in diff_lines(&diff, max) {
+                    for line in diff_lines(&diff, max, "│     ") {
                         self.push(line);
                     }
                 }
@@ -506,6 +519,7 @@ impl App {
                 capability,
                 path,
                 command,
+                diff,
                 offers_always,
                 ..
             } => {
@@ -518,6 +532,7 @@ impl App {
                     capability,
                     path,
                     command,
+                    diff,
                     offers_always,
                     selected: 0,
                 });
@@ -629,8 +644,9 @@ const DIFF_MAX_ROWS: usize = 20;
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
 /// `-` lines red, `+` green, `@@` headers dim-cyan. Content is truncated to
 /// `max` and each row padded so the right border aligns. Collapses to
-/// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule.
-fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
+/// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule. `gutter`
+/// indents the panel (tool-row alignment under a result; empty in the prompt).
+fn diff_lines(diff: &str, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let all: Vec<&str> = diff.lines().collect();
     let shown = all.len().min(DIFF_MAX_ROWS);
     let truncated = all.len() > shown;
@@ -651,7 +667,7 @@ fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
             Style::new().dim(),
         ));
     }
-    boxed_panel(rows, max, "│     ")
+    boxed_panel(rows, max, gutter)
 }
 
 /// Frame `(text, style)` rows in a light box, right-padded to the widest row
@@ -1853,7 +1869,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // and clamped to the body area so it never overruns the transcript.
     if let Some(pending) = &app.pending {
         let detail_rows = 1 + u16::from(pending.path.is_some() || pending.command.is_some());
-        let height = (pending.options().len() as u16 + detail_rows + 2).min(chunks[1].height);
+        let diff_rows = pending.diff_preview(chunks[2].width.saturating_sub(2)).len() as u16;
+        let height =
+            (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -1900,12 +1918,17 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_widget(Clear, area);
     f.render_widget(block, area);
 
+    let diff = pending.diff_preview(inner.width);
     let rows = Layout::vertical([
         Constraint::Length(detail.len() as u16),
-        Constraint::Min(1),
+        Constraint::Min(diff.len() as u16),
+        Constraint::Length(pending.options().len() as u16),
     ])
     .split(inner);
     f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), rows[0]);
+    if !diff.is_empty() {
+        f.render_widget(Paragraph::new(diff), rows[1]);
+    }
 
     let items: Vec<ListItem> = pending
         .options()
@@ -1917,7 +1940,7 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(pending.selected));
-    f.render_stateful_widget(list, rows[1], &mut state);
+    f.render_stateful_widget(list, rows[2], &mut state);
 }
 
 fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
@@ -2090,6 +2113,7 @@ mod tests {
             capability: "execute".into(),
             path: None,
             command: Some("git status".into()),
+            diff: None,
             offers_always,
             selected: 0,
         }
@@ -2112,6 +2136,44 @@ mod tests {
         let opts = pending(true).options();
         assert_eq!(opts.len(), 3);
         assert_eq!(opts[1].0, PermissionDecision::AllowAlways);
+    }
+
+    #[test]
+    fn write_permission_prompt_carries_diff_into_pending() {
+        let mut app = test_app();
+        app.apply(StreamEvent::PermissionRequest {
+            request_id: "w1".into(),
+            tool_name: "write".into(),
+            capability: "write".into(),
+            path: Some("out.txt".into()),
+            command: None,
+            diff: Some("@@ created file @@\n+ hi".into()),
+            prompt_kind: "write".into(),
+            offers_always: true,
+        });
+        let p = app.pending.as_ref().unwrap();
+        assert_eq!(p.diff.as_deref(), Some("@@ created file @@\n+ hi"));
+        let preview = p.diff_preview(60);
+        assert!(preview.len() >= 4, "boxed diff expected, got {preview:?}");
+        let text: String = preview.iter().map(line_text).collect();
+        assert!(text.contains('┌') && text.contains('┘'), "no box frame: {text}");
+        assert!(text.contains("+ hi"), "diff content missing: {text}");
+    }
+
+    #[test]
+    fn exec_permission_prompt_has_no_diff_preview() {
+        let mut app = test_app();
+        app.apply(StreamEvent::PermissionRequest {
+            request_id: "e1".into(),
+            tool_name: "bash".into(),
+            capability: "exec".into(),
+            path: None,
+            command: Some("ls".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+        });
+        assert!(app.pending.as_ref().unwrap().diff_preview(60).is_empty());
     }
 
     #[test]
@@ -2318,7 +2380,7 @@ mod tests {
 
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
-        let out = diff_lines("- foo\n+ bar", 80);
+        let out = diff_lines("- foo\n+ bar", 80, "│     ");
         // 2 content rows framed by a top and bottom border.
         assert_eq!(out.len(), 4);
         assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
@@ -2335,7 +2397,7 @@ mod tests {
             .map(|i| format!("+ line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let out = diff_lines(&diff, 80);
+        let out = diff_lines(&diff, 80, "│     ");
         // DIFF_MAX_ROWS content rows + a `(+N more)` row, framed by 2 borders.
         assert_eq!(out.len(), DIFF_MAX_ROWS + 1 + 2);
         // The tail sits just above the closing border.
@@ -2640,6 +2702,7 @@ mod tests {
                 capability: "exec".into(),
                 path: None,
                 command: Some("grep -n foo src/".into()),
+                diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
             });
