@@ -3,7 +3,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::core::agent::permissions::ToolPermissions;
-use crate::core::agent::tools::sandbox::{escapes_project, within_agent_workspace};
+use crate::core::agent::tools::sandbox::{
+    command_touches_restricted_agent_path, escapes_project, is_restricted_agent_path,
+};
 use crate::core::agent::tools::{BuiltinTool, Capability};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -98,6 +100,24 @@ pub fn resolve_decision(
     if perms.is_denied(tool.name) {
         return Decision::HardDeny;
     }
+    // Only the agent's own skills/memory/AGENT.md are reachable under .jan/agent/.
+    // Any other path there (agent.toml, the dir listing) is off-limits to every
+    // tool, ahead of allow rules so an allowed tool name cannot bypass it.
+    let hits_restricted = tool.path_args.iter().any(|key| {
+        args.get(key)
+            .and_then(|v| v.as_str())
+            .map(|p| is_restricted_agent_path(project_root, p))
+            .unwrap_or(false)
+    });
+    let exec_hits_restricted = tool.capability == Capability::Exec
+        && args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(|c| command_touches_restricted_agent_path(project_root, c))
+            .unwrap_or(false);
+    if hits_restricted || exec_hits_restricted {
+        return Decision::HardDeny;
+    }
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
     }
@@ -120,22 +140,7 @@ pub fn resolve_decision(
                 Decision::Prompt(PromptKind::ReadEscape)
             }
         }
-        Capability::Write => {
-            // The agent's own skills/memory workspace is auto-writable: it is
-            // agent metadata, not user source, so it skips the write prompt.
-            let in_workspace = !tool.path_args.is_empty()
-                && tool.path_args.iter().all(|key| {
-                    args.get(key)
-                        .and_then(|v| v.as_str())
-                        .map(|p| within_agent_workspace(project_root, p))
-                        .unwrap_or(false)
-                });
-            if in_workspace {
-                Decision::Allow
-            } else {
-                gated(PromptKind::Write, grants)
-            }
-        }
+        Capability::Write => gated(PromptKind::Write, grants),
         Capability::Exec => {
             let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             if grants.covers_command(command) {
@@ -211,6 +216,46 @@ mod tests {
     }
 
     #[test]
+    fn agent_config_is_off_limits_to_every_tool() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        // Read/ls/find/grep and write/edit all hard-deny on agent.toml.
+        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
+            let d = resolve_decision(
+                lookup(tool).unwrap(),
+                &json!({ "path": ".jan/agent/agent.toml" }),
+                &root,
+                &perms,
+                &grants,
+            );
+            assert_eq!(d, Decision::HardDeny, "{tool} on agent.toml must be denied");
+        }
+        // bash referencing it is denied too.
+        let d = resolve_decision(
+            lookup("bash").unwrap(),
+            &json!({"command": "cat .jan/agent/agent.toml"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::HardDeny);
+        // AGENT.md remains readable.
+        std::fs::write(root.join(".jan/agent/AGENT.md"), b"x").unwrap();
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": ".jan/agent/AGENT.md"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn write_prompts_by_default() {
         let root = unique_root();
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
@@ -280,45 +325,29 @@ mod tests {
     }
 
     #[test]
-    fn write_to_agent_workspace_is_auto_allowed() {
+    fn general_tools_cannot_reach_skills_memory_or_config() {
         let root = unique_root();
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let perms = ToolPermissions::allow_all();
         let grants = SessionGrants::default();
-        for path in [".jan/agent/skills/deploy.md", ".jan/agent/memory/notes.md"] {
-            let d = resolve_decision(
-                lookup("write").unwrap(),
-                &json!({ "path": path }),
-                &root,
-                &perms,
-                &grants,
-            );
-            assert_eq!(d, Decision::Allow, "workspace write should skip prompt: {path}");
+        // skills/ and memory/ are reachable only via the dedicated tools; general
+        // read/write/edit/ls/find/grep hard-deny there, same as agent.toml.
+        let paths = [
+            ".jan/agent/skills/deploy.md",
+            ".jan/agent/memory/notes.md",
+            ".jan/agent/agent.toml",
+        ];
+        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
+            for path in paths {
+                let d = resolve_decision(
+                    lookup(tool).unwrap(),
+                    &json!({ "path": path }),
+                    &root,
+                    &perms,
+                    &grants,
+                );
+                assert_eq!(d, Decision::HardDeny, "{tool} on {path} must be denied");
+            }
         }
-        // agent.toml is excluded from the exception -> still prompts.
-        let d = resolve_decision(
-            lookup("write").unwrap(),
-            &json!({"path": ".jan/agent/agent.toml"}),
-            &root,
-            &perms,
-            &grants,
-        );
-        assert_eq!(d, Decision::Prompt(PromptKind::Write));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn deny_still_blocks_agent_workspace_write() {
-        let root = unique_root();
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["write"]), &[]);
-        let grants = SessionGrants::default();
-        let d = resolve_decision(
-            lookup("write").unwrap(),
-            &json!({"path": ".jan/agent/skills/x.md"}),
-            &root,
-            &perms,
-            &grants,
-        );
-        assert_eq!(d, Decision::HardDeny);
         let _ = std::fs::remove_dir_all(&root);
     }
 
