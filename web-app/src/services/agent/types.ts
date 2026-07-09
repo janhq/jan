@@ -21,6 +21,8 @@ export type StreamEvent =
       tool_name: string
       capability: string
       path?: string | null
+      command?: string | null
+      diff?: string | null
       prompt_kind: string
       offers_always: boolean
     }

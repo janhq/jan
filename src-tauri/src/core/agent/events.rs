@@ -47,6 +47,10 @@ pub enum StreamEvent {
         /// "allow always" grant); `None` for non-exec tools.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         command: Option<String>,
+        /// Focused diff preview for `write`/`edit` prompts so the user sees the
+        /// change before approving; `None` for other tools.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diff: Option<String>,
         prompt_kind: String,
         offers_always: bool,
     },
@@ -258,6 +262,7 @@ mod tests {
             capability: "write".into(),
             path: Some("out.txt".into()),
             command: None,
+            diff: Some("@@ created file @@\n+ hi".into()),
             prompt_kind: "write".into(),
             offers_always: true,
         })
@@ -270,6 +275,7 @@ mod tests {
                 "tool_name": "write",
                 "capability": "write",
                 "path": "out.txt",
+                "diff": "@@ created file @@\n+ hi",
                 "prompt_kind": "write",
                 "offers_always": true
             })
