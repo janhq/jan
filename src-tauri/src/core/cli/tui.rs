@@ -651,15 +651,18 @@ fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
             Style::new().dim(),
         ));
     }
+    boxed_panel(rows, max, "│     ")
+}
 
+/// Frame `(text, style)` rows in a light box, right-padded to the widest row
+/// (clamped to `max`). `gutter` prefixes every line to indent the panel.
+fn boxed_panel(rows: Vec<(String, Style)>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
         .map(|(t, _)| t.chars().count())
         .max()
         .unwrap_or(0)
         .clamp(1, max.max(1));
-
-    let gutter = "│     ";
     let border = Style::new().dark_gray();
     let mut out = Vec::with_capacity(rows.len() + 2);
     out.push(Line::from(vec![
@@ -889,15 +892,28 @@ fn is_table_separator(line: &str) -> bool {
         })
 }
 
-/// Render answer prose: GitHub pipe tables are aligned into padded columns by
-/// `render_table` (tui-markdown does not support tables); every other block is
-/// rendered by `tui-markdown` (headings, bold/italic, lists, code, quotes).
+/// Render answer prose. Fenced code blocks and GitHub pipe tables are rendered
+/// ourselves (`render_code_block`/`render_table`) because tui-markdown leaks the
+/// ` ``` ` fences as literal text and has no table support; every other block
+/// goes through tui-markdown (headings, bold/italic, lists, quotes).
 fn format_markdown_lines(text: &str, width: u16) -> Vec<Line<'static>> {
     let src: Vec<&str> = text.lines().collect();
     let mut out = Vec::new();
     let mut prose: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < src.len() {
+        if let Some(lang) = src[i].trim_start().strip_prefix("```") {
+            flush_prose(&mut prose, &mut out);
+            let lang = lang.trim().to_string();
+            i += 1;
+            let start = i;
+            while i < src.len() && !src[i].trim_start().starts_with("```") {
+                i += 1;
+            }
+            out.extend(render_code_block(&src[start..i], &lang, (width as usize).saturating_sub(4)));
+            i += usize::from(i < src.len()); // consume closing fence when present
+            continue;
+        }
         let is_table_head =
             src[i].contains('|') && i + 1 < src.len() && is_table_separator(src[i + 1]);
         if is_table_head {
@@ -917,6 +933,20 @@ fn format_markdown_lines(text: &str, width: u16) -> Vec<Line<'static>> {
     }
     flush_prose(&mut prose, &mut out);
     out
+}
+
+/// Render a fenced code block as a boxed panel (same frame as `diff_lines`),
+/// the language tag (when present) as a dim header row. Content bypasses
+/// tui-markdown so code is never reinterpreted as markdown.
+fn render_code_block(body: &[&str], lang: &str, max: usize) -> Vec<Line<'static>> {
+    let mut rows: Vec<(String, Style)> = Vec::with_capacity(body.len() + 1);
+    if !lang.is_empty() {
+        rows.push((lang.to_string(), Style::new().dark_gray().italic()));
+    }
+    for l in body {
+        rows.push((truncate(l, max), Style::new()));
+    }
+    boxed_panel(rows, max, "")
 }
 
 fn flush_prose(prose: &mut Vec<&str>, out: &mut Vec<Line<'static>>) {
@@ -2753,6 +2783,26 @@ mod tests {
         // No raw markdown pipes; cell content preserved; wrapped within width.
         assert!(text.contains('a') && text.contains('b') && text.contains('1'));
         assert!(lines.iter().all(|l| joined(std::slice::from_ref(l)).chars().count() <= 40));
+    }
+
+    #[test]
+    fn format_markdown_renders_code_fence_without_literal_backticks() {
+        let md = "before\n\n```cpp\nconst bool x = true;\nif (x) { foo(); }\n```\n\nafter";
+        let text = joined(&super::format_markdown_lines(md, 80));
+        assert!(!text.contains("```"), "fence markers leaked: {text}");
+        assert!(text.contains("const bool x = true;"));
+        assert!(text.contains("if (x) { foo(); }"));
+        assert!(text.contains("cpp"), "language tag missing: {text}");
+        assert!(text.contains("before") && text.contains("after"));
+        assert!(text.contains('┌') && text.contains('┘'), "missing box frame: {text}");
+    }
+
+    #[test]
+    fn format_markdown_handles_unterminated_code_fence() {
+        let md = "```rust\nfn main() {}";
+        let text = joined(&super::format_markdown_lines(md, 80));
+        assert!(!text.contains("```"), "fence leaked: {text}");
+        assert!(text.contains("fn main() {}"));
     }
 
     #[test]
