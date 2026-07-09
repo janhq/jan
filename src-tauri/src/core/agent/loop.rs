@@ -610,8 +610,6 @@ async fn run_turn_cycle(
     model: &dyn ModelInvoker,
     tools: &dyn ToolInvoker,
 ) -> Result<serde_json::Value, String> {
-    let mut last_response: Option<serde_json::Value> = None;
-
     // `max_turns == 0` means unbounded: the session token budget and user
     // cancellation are the real guards, so an interactive run isn't cut off
     // mid-task by a fixed turn cap.
@@ -646,7 +644,6 @@ async fn run_turn_cycle(
         budget.record(&Usage::from_completion(&completion));
 
         let tool_calls = extract_tool_calls(&completion);
-        last_response = Some(completion.clone());
 
         if tool_calls.is_empty() {
             return Ok(completion);
@@ -719,9 +716,7 @@ async fn run_turn_cycle(
     }
 
     Err(format!(
-        "max_turns reached while resolving tool calls; last_response={}",
-        serde_json::to_string(&last_response.unwrap_or_else(|| serde_json::json!({})))
-            .unwrap_or_else(|_| "{}".to_string())
+        "reached the {max_turns}-turn limit while the model was still calling tools; raise --max-turns (or set 0 for unbounded) to let it finish"
     ))
 }
 
