@@ -273,6 +273,24 @@ impl App {
         self.last_kind = next;
     }
 
+    /// Drop the current conversation and all transient turn state, detaching from
+    /// the saved thread so the next message starts a fresh one. Backs `/clear` and
+    /// `/new`; the model/MCP setup and picker state are untouched.
+    fn reset_session(&mut self) {
+        self.history.clear();
+        self.thread_id = None;
+        self.transcript.clear();
+        self.tool_group = None;
+        self.grouped_ids.clear();
+        self.assistant_buf.clear();
+        self.pending = None;
+        self.tokens = 0;
+        self.turn = (0, 0);
+        self.detail.clear();
+        self.scrollback = 0;
+        self.last_kind = Kind::None;
+    }
+
     /// Append a dim single-line status note (command output, cancel, errors).
     fn note(&mut self, text: &str) {
         self.scrollback = 0;
@@ -1467,6 +1485,7 @@ async fn run_command(app: &mut App, line: &str) {
             for l in [
                 "commands:",
                 "  /help              show this help",
+                "  /new               start a new session",
                 "  /clear             clear the conversation",
                 "  /threads           list saved threads",
                 "  /resume [id]       pick a saved thread to load (or pass an id)",
@@ -1478,19 +1497,12 @@ async fn run_command(app: &mut App, line: &str) {
             }
         }
         "clear" => {
-            app.history.clear();
-            app.thread_id = None;
-            app.transcript.clear();
-            app.tool_group = None;
-            app.grouped_ids.clear();
-            app.assistant_buf.clear();
-            app.pending = None;
-            app.tokens = 0;
-            app.turn = (0, 0);
-            app.detail.clear();
-            app.scrollback = 0;
-            app.last_kind = Kind::None;
+            app.reset_session();
             app.note("conversation cleared");
+        }
+        "new" => {
+            app.reset_session();
+            app.note("started a new session");
         }
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
@@ -2095,9 +2107,10 @@ fn footer(app: &App) -> Paragraph<'static> {
 mod tests {
     use super::{
         diff_lines, group_summary, input_content_lines, is_table_separator, message_text,
-        parse_command, render_table, split_reasoning, summarize_result, tool_activity,
-        tool_finished, App, Pending, DIFF_MAX_ROWS,
+        parse_command, render_table, run_command, split_reasoning, summarize_result,
+        tool_activity, tool_finished, App, Pending, DIFF_MAX_ROWS,
     };
+    use ratatui::text::Line;
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
@@ -2889,6 +2902,24 @@ mod tests {
         assert_eq!(parse_command("help"), ("help", ""));
         assert_eq!(parse_command("  resume   abc  "), ("resume", "abc"));
         assert_eq!(parse_command(""), ("", ""));
+    }
+
+    #[tokio::test]
+    async fn new_command_resets_session() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        app.thread_id = Some("t-123".into());
+        app.tokens = 42;
+        app.push(Line::raw("old content"));
+
+        run_command(&mut app, "new").await;
+
+        assert!(app.history.is_empty());
+        assert!(app.thread_id.is_none(), "must detach from the saved thread");
+        assert_eq!(app.tokens, 0);
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(!text.contains("old content"), "transcript not reset: {text}");
+        assert!(text.contains("started a new session"), "missing note: {text}");
     }
 
     #[test]
