@@ -1,28 +1,4 @@
 {
-  "agentDebug": {
-    "title": "Agent Debug",
-    "modelLabel": "Model",
-    "modelAuto": "Auto (first running model)",
-    "stepsLabel": "Max steps (1-400)",
-    "toolsLabel": "Tools",
-    "noTools": "No MCP tools available.",
-    "promptLabel": "Prompt",
-    "promptPlaceholder": "Type a message for the agent loop...",
-    "run": "Run",
-    "running": "Running...",
-    "cancel": "Cancel",
-    "clear": "Clear",
-    "output": "Streamed output",
-    "eventLog": "Event log",
-    "empty": "No events yet.",
-    "projectLabel": "Project root (enables built-in fs tools)",
-    "projectPlaceholder": "/absolute/path/to/project",
-    "permissionTitle": "Permission request",
-    "permissionBody": "The agent wants to use \"{{tool}}\" ({{capability}}){{path}}.",
-    "permissionAllowOnce": "Allow once",
-    "permissionAllowAlways": "Allow every time",
-    "permissionDeny": "Deny"
-  },
   "htmlArtifact": {
     "code": "Code",
     "preview": "Preview",
