@@ -21,10 +21,11 @@ use rmcp::{
     ServiceExt,
 };
 use serde_json::Value;
+use tauri_plugin_http::reqwest;
 use tokio::process::Command;
 
 use crate::core::app::commands::resolve_jan_data_folder;
-use crate::core::mcp::models::{extract_active_status, extract_command_args};
+use crate::core::mcp::helpers::{extract_active_status, extract_command_args};
 use crate::core::mcp::models::McpSettings;
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 
@@ -249,30 +250,17 @@ pub fn active_count() -> usize {
     list_servers().iter().filter(|e| e.active).count()
 }
 
-/// Outcome of a best-effort connect of every `active` server.
-///
-/// Failures are returned rather than logged: the TUI owns the terminal while
-/// this runs, so a `log::warn!` here paints raw text over the alternate screen.
-/// The caller decides how to surface them (the TUI notes them in the
-/// transcript alongside the ready line; headless logs them as before).
-#[derive(Debug, Default)]
-pub struct ConnectOutcome {
-    /// Servers that came up, in the order they connected.
-    pub connected: Vec<String>,
-    /// One `failed to connect to '<name>': <error>` per server that didn't.
-    pub failed: Vec<String>,
-}
-
-/// Connect every `active` server into the shared map, best-effort.
-pub async fn connect_active(servers: &SharedMcpServers) -> ConnectOutcome {
-    let mut out = ConnectOutcome::default();
+/// Connect every `active` server into the shared map, best-effort. Returns the
+/// names that connected successfully; failures are logged.
+pub async fn connect_active(servers: &SharedMcpServers) -> Vec<String> {
+    let mut connected = Vec::new();
     for entry in list_servers().into_iter().filter(|e| e.active) {
         match connect(&entry.name, &entry.config, servers).await {
-            Ok(()) => out.connected.push(entry.name),
-            Err(e) => out.failed.push(e),
+            Ok(()) => connected.push(entry.name),
+            Err(e) => log::warn!("MCP: {e}"),
         }
     }
-    out
+    connected
 }
 
 #[cfg(test)]
