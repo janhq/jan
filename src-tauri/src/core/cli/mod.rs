@@ -1168,12 +1168,16 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             capability,
             path,
             command,
+            diff,
             ..
         } => {
             let detail = command
                 .map(|c| format!(" ({c})"))
                 .or_else(|| path.map(|p| format!(" on {p}")))
                 .unwrap_or_default();
+            if let Some(diff) = diff {
+                eprintln!("\x1b[2m{diff}\x1b[0m");
+            }
             let decision = prompt_permission(tool_name, capability, detail).await;
             if let Some(sender) = registry.lock().await.remove(&request_id) {
                 let _ = sender.send(decision);
