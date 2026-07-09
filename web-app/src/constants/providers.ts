@@ -174,6 +174,44 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.unorouter.com/v1',
+    explore_models_url: 'https://unorouter.com/models',
+    provider: 'unorouter',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The UnoRouter API uses API keys for authentication. Visit the [token page](https://unorouter.com/token) to create the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek-v4-flash:free',
+        name: 'DeepSeek V4 Flash (free)',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'glm-5.2:free',
+        name: 'GLM 5.2 (free)',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
