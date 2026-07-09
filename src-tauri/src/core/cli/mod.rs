@@ -2,6 +2,7 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod preset;
 pub mod providers;
 mod tui;
 
@@ -17,6 +18,7 @@ use crate::core::threads::{
         get_thread_metadata_path,
     },
 };
+use tauri_plugin_llamacpp::router as llamacpp_router;
 use tauri_plugin_llamacpp::state::LlamacppState;
 #[cfg(target_os = "macos")]
 use tauri_plugin_mlx::state::MlxState;
@@ -755,12 +757,13 @@ fn build_cli_orchestration_args(
     project_root: PathBuf,
     permissions: crate::core::agent::permissions::ToolPermissions,
     provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
+    llama_state: Arc<LlamacppState>,
     permission_requests: PermissionRegistry,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
         provider_configs: Arc::new(Mutex::new(provider_configs)),
-        llama_state: Arc::new(init_llamacpp_state()),
+        llama_state,
         mlx_sessions: Arc::new(Mutex::new(HashMap::new())),
         mcp_servers: Arc::new(Mutex::new(HashMap::new())),
         mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
@@ -771,6 +774,164 @@ fn build_cli_orchestration_args(
     }
 }
 
+/// Model-load readiness timeout (seconds) for the router started on the agent
+/// path. Generous: a cold local model can take a while to memory-map + warm up.
+const AGENT_ROUTER_TIMEOUT_SECS: u64 = 300;
+
+/// Pick a free TCP port on the loopback interface. The port is released
+/// immediately; the router binds it moments later (standard, benign race).
+fn pick_free_port() -> Result<u16, String> {
+    let listener =
+        std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
+    listener
+        .local_addr()
+        .map(|a| a.port())
+        .map_err(|e| e.to_string())
+}
+
+/// When `model_id` resolves to a local llamacpp model, spawn a background task
+/// that starts the router and loads the model into `llama_state`. Returns the
+/// task handle so the caller can await readiness before the first turn without
+/// blocking setup/render. Cloud (and MLX) models return `None` -- they either
+/// hit an HTTP provider or a separately-managed session.
+fn spawn_local_router_if_needed(
+    model_id: &str,
+    llama_state: &Arc<LlamacppState>,
+) -> Option<tokio::task::JoinHandle<Result<(), String>>> {
+    match resolve_model_engine(model_id) {
+        Ok((engine, _, _)) if engine == "llamacpp" => {}
+        _ => return None,
+    }
+
+    let llama_state = llama_state.clone();
+    let model_id = model_id.to_string();
+    Some(tokio::spawn(async move {
+        let bin_path = discover_llamacpp_binary()
+            .ok_or_else(|| {
+                "llama-server binary not found; install a backend in the Jan desktop app".to_string()
+            })?
+            .to_string_lossy()
+            .into_owned();
+        let port = pick_free_port()?;
+        ensure_router_and_load(
+            &llama_state,
+            &bin_path,
+            &model_id,
+            port,
+            String::new(),
+            false,
+            HashMap::new(),
+            AGENT_ROUTER_TIMEOUT_SECS,
+        )
+        .await
+        .map(|_| ())
+    }))
+}
+
+/// Await a spawned router-start task, flattening the join + inner errors.
+async fn await_router_task(
+    task: Option<tokio::task::JoinHandle<Result<(), String>>>,
+) -> Result<(), String> {
+    match task {
+        Some(h) => h
+            .await
+            .map_err(|e| format!("router task failed: {e}"))?
+            .map_err(|e| format!("failed to start local model: {e}")),
+        None => Ok(()),
+    }
+}
+
+/// Router endpoint + pid after [`ensure_router_and_load`].
+pub struct RouterServeInfo {
+    pub pid: i32,
+    pub port: u16,
+    #[allow(dead_code)]
+    pub api_key: String,
+}
+
+/// Start the llama-server router (if not already running) against the generated
+/// preset, then POST `/models/load` for `model_id`. Shared by `jan serve` and
+/// the agent path so a local model has a live upstream to talk to. The preset is
+/// generated on demand (see [`preset::ensure_router_preset`]) when the desktop
+/// app hasn't produced one.
+#[allow(clippy::too_many_arguments)]
+pub async fn ensure_router_and_load(
+    llama_state: &Arc<LlamacppState>,
+    bin_path: &str,
+    model_id: &str,
+    port: u16,
+    api_key: String,
+    is_embedding: bool,
+    envs: HashMap<String, String>,
+    timeout: u64,
+) -> Result<RouterServeInfo, String> {
+    if is_embedding {
+        return Err(
+            "--embedding on the llamacpp engine requires router preset support; \
+             use the desktop UI to load embedding models for now."
+                .to_string(),
+        );
+    }
+
+    let preset_path = preset::ensure_router_preset()?;
+
+    let already_running = { llama_state.router.lock().await.is_some() };
+    if !already_running {
+        let router_api_key = if api_key.is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            api_key.clone()
+        };
+        let mut router_envs = envs.clone();
+        router_envs
+            .entry("LLAMA_ARG_TIMEOUT".to_string())
+            .or_insert_with(|| timeout.to_string());
+
+        let handle = llamacpp_router::start_router(
+            PathBuf::from(bin_path),
+            preset_path,
+            port,
+            router_api_key,
+            0,
+            Vec::new(),
+            router_envs,
+            None,
+        )
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+        let mut guard = llama_state.router.lock().await;
+        *guard = Some(handle);
+    }
+
+    let (router_port, router_key, router_pid) = {
+        let guard = llama_state.router.lock().await;
+        let h = guard
+            .as_ref()
+            .ok_or_else(|| "Router unexpectedly missing after start".to_string())?;
+        (h.port, h.api_key.clone(), h.pid)
+    };
+
+    let url = format!("http://127.0.0.1:{router_port}/models/load");
+    let resp = reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", format!("Bearer {router_key}"))
+        .json(&serde_json::json!({ "model": model_id }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to POST {url}: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Router /models/load returned {status}: {body}"));
+    }
+
+    Ok(RouterServeInfo {
+        pid: router_pid as i32,
+        port: router_port,
+        api_key: router_key,
+    })
+}
+
 /// Everything needed to drive one agent run: the engine handle, request body,
 /// and the shared permission registry. Built once and consumed by either the
 /// plain CLI printer or the TUI renderer.
@@ -778,6 +939,9 @@ pub(crate) struct PreparedRun {
     pub args: OrchestrationArgs,
     pub body: serde_json::Value,
     pub permission_requests: PermissionRegistry,
+    /// Background local-router startup, awaited before the first turn. `None`
+    /// for cloud models.
+    pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
 }
 
 /// Resolved engine handle for a chat session: the args are built once and the
@@ -788,6 +952,9 @@ pub(crate) struct AgentSession {
     pub permission_requests: PermissionRegistry,
     pub model: String,
     pub max_turns: u32,
+    /// Background local-router startup, awaited before the first turn. `None`
+    /// for cloud models.
+    pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
 }
 
 impl AgentSession {
@@ -830,11 +997,18 @@ fn prepare_agent_session(
 
     let provider_configs = load_provider_configs(&overrides)?;
 
+    // A local llamacpp model needs its router started; cloud models are plain
+    // HTTP upstreams. Start it off-thread so setup/render isn't blocked on the
+    // model load; the caller awaits `router_task` before the first turn.
+    let llama_state = Arc::new(init_llamacpp_state());
+    let router_task = spawn_local_router_if_needed(&model, &llama_state);
+
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
     let args = build_cli_orchestration_args(
         project_root,
         permissions,
         provider_configs,
+        llama_state,
         permission_requests.clone(),
     );
 
@@ -843,6 +1017,7 @@ fn prepare_agent_session(
         permission_requests,
         model,
         max_turns,
+        router_task,
     })
 }
 
@@ -859,6 +1034,7 @@ fn prepare_agent_run(
         args: session.args,
         body,
         permission_requests: session.permission_requests,
+        router_task: session.router_task,
     })
 }
 
@@ -873,7 +1049,11 @@ async fn run_agent_loop(
         args,
         body,
         permission_requests,
+        router_task,
     } = prepare_agent_run(project, task, model_override, max_turns_override, overrides)?;
+
+    // Block until the local model is loaded (no-op for cloud models).
+    await_router_task(router_task).await?;
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let printer = tokio::spawn(async move {
