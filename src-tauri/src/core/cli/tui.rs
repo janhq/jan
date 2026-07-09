@@ -104,10 +104,11 @@ impl Pending {
 enum PickerKind {
     ResumeThread,
     SelectModel,
+    ToggleMcp,
 }
 
-/// Interactive list overlay (`/resume` threads, `/model` models): rows with a
-/// highlighted cursor, acted on by `PickerKind` on Enter.
+/// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
+/// servers): rows with a highlighted cursor, acted on by `PickerKind` on Enter.
 struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
@@ -119,6 +120,7 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " resume thread ",
             PickerKind::SelectModel => " select model ",
+            PickerKind::ToggleMcp => " mcp servers ",
         }
     }
 
@@ -126,17 +128,20 @@ impl Picker {
         match self.kind {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
+            PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   Esc close",
         }
     }
 }
 
 struct PickerItem {
-    /// The value acted on (thread id or model id).
+    /// The value acted on (thread id, model id, or MCP server name).
     value: String,
     /// Primary display text.
     label: String,
     /// Optional dim prefix (e.g. a thread's short id).
     hint: Option<String>,
+    /// Enabled-state for toggle pickers (`/mcp`); `None` for one-shot pickers.
+    checkbox: Option<bool>,
 }
 
 /// A spawned agent run: the event stream and its abort handle.
@@ -999,6 +1004,18 @@ async fn await_router(
     }
 }
 
+/// Await the background MCP-connect task once, returning the connected server
+/// names (empty if none / on task failure). Same cancel-safe borrow as
+/// `await_router`: the slot is cleared only on completion.
+async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> Vec<String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.unwrap_or_default()
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -1010,6 +1027,8 @@ pub async fn run(
         model,
         max_turns,
         router_task,
+        mcp_servers,
+        mcp_task,
     } = session;
     let args = Arc::new(args);
 
@@ -1027,6 +1046,8 @@ pub async fn run(
         &mut app,
         initial_task,
         router_task,
+        mcp_task,
+        &mcp_servers,
     )
     .await;
 
@@ -1036,6 +1057,7 @@ pub async fn run(
     res
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn chat_loop<B: Backend>(
     terminal: &mut Terminal<B>,
     args: &Arc<OrchestrationArgs>,
@@ -1043,12 +1065,16 @@ async fn chat_loop<B: Backend>(
     app: &mut App,
     initial_task: Option<String>,
     mut router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
+    mut mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
+    mcp_servers: &crate::core::state::SharedMcpServers,
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
 
-    // A local model loads in the background; gate the first run on it.
+    // A local model and active MCP servers load in the background; gate the first
+    // run on both so the model's tools (collected once per run) are ready.
     let mut router_ready = router_task.is_none();
+    let mut mcp_ready = mcp_task.is_none();
     let mut loading_noted = false;
 
     match initial_task {
@@ -1061,12 +1087,16 @@ async fn chat_loop<B: Backend>(
         // model (if any) is loaded. `submit_user` already flipped status to
         // Running and reset the turn counter.
         if app.want_start && current.is_none() {
-            if router_ready {
+            if router_ready && mcp_ready {
                 app.want_start = false;
                 current = Some(spawn_run(args, app.body()));
             } else if !loading_noted {
                 loading_noted = true;
-                app.note("loading local model...");
+                app.note(if !router_ready {
+                    "loading local model..."
+                } else {
+                    "connecting MCP servers..."
+                });
             }
         }
 
@@ -1078,7 +1108,7 @@ async fn chat_loop<B: Backend>(
             _ = ticker.tick() => {
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     if let Ok(Event::Key(key)) = event::read() {
-                        handle_key(app, key, registry, &mut current).await;
+                        handle_key(app, key, registry, &mut current, mcp_servers).await;
                     }
                 }
             }
@@ -1087,6 +1117,13 @@ async fn chat_loop<B: Backend>(
                 if let Err(e) = router_res {
                     app.want_start = false;
                     app.on_error(String::new(), e);
+                }
+            }
+            connected = await_mcp(&mut mcp_task) => {
+                mcp_ready = true;
+                match connected.as_slice() {
+                    [] => {}
+                    names => app.note(&format!("MCP ready: {}", names.join(", "))),
                 }
             }
             ev = next_event(&mut current) => match ev {
@@ -1123,6 +1160,7 @@ async fn handle_key(
     key: KeyEvent,
     registry: &PermissionRegistry,
     current: &mut Option<CurrentRun>,
+    mcp_servers: &crate::core::state::SharedMcpServers,
 ) {
     if key.kind != KeyEventKind::Press {
         return;
@@ -1191,7 +1229,8 @@ async fn handle_key(
         return;
     }
 
-    // The `/resume` picker owns navigation/Enter/Esc while it is open.
+    // An open picker owns navigation/Enter/Esc. One-shot pickers (thread/model)
+    // act and close; the `/mcp` picker toggles the selected row in place.
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1200,6 +1239,13 @@ async fn handle_key(
             KeyCode::Down | KeyCode::Char('j') => {
                 picker.selected = (picker.selected + 1).min(picker.items.len() - 1);
             }
+            KeyCode::Enter if picker.kind == PickerKind::ToggleMcp => {
+                let item = &mut picker.items[picker.selected];
+                let name = item.value.clone();
+                let enable = !item.checkbox.unwrap_or(false);
+                item.checkbox = Some(enable);
+                toggle_mcp_server(app, mcp_servers, name, enable);
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
@@ -1207,15 +1253,14 @@ async fn handle_key(
                 match kind {
                     PickerKind::ResumeThread => resume_thread(app, &value),
                     PickerKind::SelectModel => app.set_model(value),
+                    PickerKind::ToggleMcp => {}
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.picker = None;
-                app.note("resume cancelled");
             }
             _ if ctrl_c => {
                 app.picker = None;
-                app.note("resume cancelled");
             }
             _ => {}
         }
@@ -1327,6 +1372,7 @@ async fn run_command(app: &mut App, line: &str) {
                 "  /threads           list saved threads",
                 "  /resume [id]       pick a saved thread to load (or pass an id)",
                 "  /model [id]        pick a provider/model (or pass an id)",
+                "  /mcp               enable/disable MCP servers",
                 "  /quit              exit",
             ] {
                 app.push(Line::styled(l.to_string(), Style::new().dim()));
@@ -1390,6 +1436,7 @@ async fn run_command(app: &mut App, line: &str) {
                 app.set_model(arg.to_string());
             }
         }
+        "mcp" => open_mcp_picker(app),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
     }
@@ -1452,7 +1499,7 @@ fn open_thread_picker(app: &mut App) {
                     let label =
                         thread_display_name(&base, &id, t.get("title").and_then(|v| v.as_str()));
                     let hint = Some(id.chars().take(8).collect());
-                    Some(PickerItem { value: id, label, hint })
+                    Some(PickerItem { value: id, label, hint, checkbox: None })
                 })
                 .collect::<Vec<_>>();
             if items.is_empty() {
@@ -1483,12 +1530,73 @@ fn open_model_picker(app: &mut App) {
             label: format!("{provider} / {model}"),
             value: model,
             hint: None,
+            checkbox: None,
         })
         .collect();
     app.picker = Some(Picker {
         kind: PickerKind::SelectModel,
         items,
         selected,
+    });
+}
+
+/// Open the `/mcp` picker listing configured MCP servers with their enabled
+/// state. Enter toggles a row in place (see `toggle_mcp_server`).
+fn open_mcp_picker(app: &mut App) {
+    let servers = super::mcp::list_servers();
+    if servers.is_empty() {
+        return app.note("no MCP servers configured (add them in the desktop app or mcp_config.json)");
+    }
+    let items = servers
+        .into_iter()
+        .map(|s| PickerItem {
+            label: s.name.clone(),
+            value: s.name,
+            hint: None,
+            checkbox: Some(s.active),
+        })
+        .collect();
+    app.picker = Some(Picker {
+        kind: PickerKind::ToggleMcp,
+        items,
+        selected: 0,
+    });
+}
+
+/// Persist a server's enabled flag and connect/disconnect it in the background
+/// (off the render loop, so a cold stdio spawn never freezes the UI). Later
+/// turns read the shared map fresh, so tools appear/vanish once the task lands.
+fn toggle_mcp_server(
+    app: &mut App,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+    name: String,
+    enable: bool,
+) {
+    if let Err(e) = super::mcp::set_active(&name, enable) {
+        app.note(&format!("failed to update mcp_config.json: {e}"));
+        return;
+    }
+    let servers = mcp_servers.clone();
+    let task_name = name.clone();
+    tokio::spawn(async move {
+        if enable {
+            let cfg = super::mcp::list_servers()
+                .into_iter()
+                .find(|s| s.name == task_name)
+                .map(|s| s.config);
+            if let Some(cfg) = cfg {
+                if let Err(e) = super::mcp::connect(&task_name, &cfg, &servers).await {
+                    log::warn!("MCP: {e}");
+                }
+            }
+        } else {
+            super::mcp::disconnect(&task_name, &servers).await;
+        }
+    });
+    app.note(&if enable {
+        format!("enabling MCP server '{name}'...")
+    } else {
+        format!("disabled MCP server '{name}'")
     });
 }
 
@@ -1737,6 +1845,14 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
         .iter()
         .map(|it| {
             let mut spans = Vec::new();
+            if let Some(on) = it.checkbox {
+                let (mark, style) = if on {
+                    ("[x] ", Style::new().green())
+                } else {
+                    ("[ ] ", Style::new().dark_gray())
+                };
+                spans.push(Span::styled(mark, style));
+            }
             if let Some(hint) = &it.hint {
                 spans.push(Span::styled(format!("{hint}  "), Style::new().dark_gray()));
             }
