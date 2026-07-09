@@ -16,8 +16,8 @@ use app_lib::core::cli::providers::ProviderOverrides;
 use app_lib::core::cli::{
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
-    discover_llamacpp_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
-    list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
+    discover_llamacpp_binary, download_hf_model, ensure_router_and_load, fetch_hf_gguf_files,
+    init_llamacpp_state, list_models, looks_like_hf_repo, resolve_model_engine, HfFileInfo,
 };
 // MLX is macOS-only; these CLI symbols don't exist on other platforms.
 #[cfg(target_os = "macos")]
@@ -25,8 +25,6 @@ use app_lib::core::cli::{
     discover_mlx_binary, init_mlx_state, load_mlx_model_impl, resolve_model_by_id, MlxConfig,
 };
 use std::path::PathBuf;
-use tauri_plugin_llamacpp::router as llamacpp_router;
-use tauri_plugin_llamacpp::state::LlamacppState;
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
 
@@ -1195,102 +1193,6 @@ async fn handle_serve(args: ServeArgs) {
     }
 }
 
-struct RouterServeInfo {
-    pid: i32,
-    port: u16,
-    #[allow(dead_code)]
-    api_key: String,
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn ensure_router_and_load(
-    llama_state: &std::sync::Arc<LlamacppState>,
-    bin_path: &str,
-    model_id: &str,
-    port: u16,
-    api_key: String,
-    is_embedding: bool,
-    envs: HashMap<String, String>,
-    timeout: u64,
-) -> Result<RouterServeInfo, String> {
-    if is_embedding {
-        return Err(
-            "--embedding on the llamacpp engine requires router preset support; \
-             use the desktop UI to load embedding models for now."
-                .to_string(),
-        );
-    }
-
-    let preset_path = cli_get_data_folder()
-        .join("llamacpp")
-        .join("router.preset.ini");
-    if !preset_path.exists() {
-        return Err(format!(
-            "Router preset not found at {}; run the desktop app once to generate it, \
-             or implement a Rust preset generator.",
-            preset_path.display()
-        ));
-    }
-
-    let already_running = { llama_state.router.lock().await.is_some() };
-    if !already_running {
-        let router_api_key = if api_key.is_empty() {
-            uuid::Uuid::new_v4().to_string()
-        } else {
-            api_key.clone()
-        };
-        let mut router_envs = envs.clone();
-        router_envs
-            .entry("LLAMA_ARG_TIMEOUT".to_string())
-            .or_insert_with(|| timeout.to_string());
-
-        let log_dir = cli_get_data_folder().join("logs");
-
-        let handle = llamacpp_router::start_router(
-            std::path::PathBuf::from(bin_path),
-            preset_path,
-            log_dir,
-            port,
-            router_api_key,
-            0,
-            Vec::new(),
-            router_envs,
-            None,
-        )
-        .await
-        .map_err(|e| format!("{e:?}"))?;
-        let mut guard = llama_state.router.lock().await;
-        *guard = Some(handle);
-    }
-
-    let (router_port, router_key, router_pid) = {
-        let guard = llama_state.router.lock().await;
-        let h = guard
-            .as_ref()
-            .ok_or_else(|| "Router unexpectedly missing after start".to_string())?;
-        (h.port, h.api_key.clone(), h.pid)
-    };
-
-    let url = format!("http://127.0.0.1:{router_port}/models/load");
-    let resp = reqwest::Client::new()
-        .post(&url)
-        .header("Authorization", format!("Bearer {router_key}"))
-        .json(&serde_json::json!({ "model": model_id }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to POST {url}: {e}"))?;
-    let status = resp.status();
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Router /models/load returned {status}: {body}"));
-    }
-
-    Ok(RouterServeInfo {
-        pid: router_pid as i32,
-        port: router_port,
-        api_key: router_key,
-    })
-}
 
 /// Block until Ctrl+C, then terminate the child process.
 async fn wait_for_shutdown(pid: i32) {
