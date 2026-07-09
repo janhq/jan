@@ -580,13 +580,21 @@ impl App {
 
     /// Cancel the in-flight run, keeping the conversation intact.
     fn cancel_run(&mut self) {
+        // Commit whatever was streamed before the cancel so partial prose and the
+        // preceding tool calls stay in the transcript, and record the partial
+        // answer in history so the next turn and a later /resume both see it.
         self.finalize_tool_group();
-        self.assistant_buf.clear();
+        let answer = self.take_answer();
+        if !answer.is_empty() {
+            self.history
+                .push(serde_json::json!({ "role": "assistant", "content": answer }));
+        }
         self.status = Status::Idle;
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
         self.push(Line::styled("cancelled", Style::new().yellow()));
+        self.persist();
     }
 }
 
@@ -1153,10 +1161,12 @@ async fn chat_loop<B: Backend>(
                 Some(other) => app.apply(other),
                 None => {
                     // Stream closed without a terminal event (aborted task).
+                    // Keep any partial prose/tool calls already streamed.
                     app.pending = None;
                     if app.status == Status::Running {
+                        app.flush_assistant();
+                        app.finalize_tool_group();
                         app.status = Status::Idle;
-                        app.assistant_buf.clear();
                     }
                     current = None;
                 }
@@ -2077,6 +2087,49 @@ mod tests {
     }
 
     #[test]
+    fn long_user_prompt_wraps_in_transcript() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        let msg = "Check why in this project, for some models like Gemma 4 12b, \
+                   the cache is never stored and it starts reprocessing the prompt \
+                   from the beginning on every turn";
+        app.submit_user(msg.to_string());
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let rows: Vec<String> = (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        // The last word must survive on a wrapped continuation row.
+        assert!(
+            rows.iter().any(|r| r.contains("beginning")),
+            "user prompt truncated instead of wrapping:\n{}",
+            rows.join("\n")
+        );
+
+        // And it must re-wrap after the terminal shrinks (resize mid-session).
+        terminal.backend_mut().resize(40, 30);
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let rows: Vec<String> = (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(
+            rows.iter().any(|r| r.contains("beginning")),
+            "user prompt truncated after resize:\n{}",
+            rows.join("\n")
+        );
+    }
+
+    #[test]
     fn group_summary_counts_and_pluralizes() {
         assert_eq!(
             group_summary(&[("memory note", true), ("skill", true), ("memory note", true)]),
@@ -2216,6 +2269,44 @@ mod tests {
         // The tail sits just above the closing border.
         let tail = line_text(&out[out.len() - 2]);
         assert!(tail.contains("(+10 more)"), "tail: {tail}");
+    }
+
+    #[test]
+    fn cancel_keeps_streamed_prose_and_tool_calls() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        // Model calls a tool, then streams a partial answer.
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::Token {
+            text: "Here is what I found so far".into(),
+        });
+        app.cancel_run();
+        let body: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let joined = body.join("\n");
+        assert!(
+            joined.contains("Here is what I found so far"),
+            "streamed prose vanished on cancel:\n{joined}"
+        );
+        assert!(
+            joined.contains("grep"),
+            "tool call vanished on cancel:\n{joined}"
+        );
+        assert!(joined.contains("cancelled"), "no cancel marker:\n{joined}");
+        assert!(app.assistant_buf.is_empty());
+        // The partial answer is recorded in history for the next turn / resume.
+        let last = app.history.last().expect("history entry");
+        assert_eq!(last["role"], "assistant");
+        assert!(
+            last["content"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Here is what I found so far"),
+            "partial answer not in history: {last}"
+        );
     }
 
     #[test]
