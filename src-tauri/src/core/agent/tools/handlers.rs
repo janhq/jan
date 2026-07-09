@@ -89,6 +89,34 @@ pub async fn execute_builtin(
     }
 }
 
+/// Focused diff previewing what a `write`/`edit` call would change, without
+/// running it. Line-prefixed (`-`/`+`) hunk text; `None` for other tools or when
+/// nothing would change. Used to show the change in the permission prompt. For
+/// `write` it reads the prior file so an overwrite shows its `created`/`overwrote`
+/// header; `edit` is a pure preview of the `edits` args (no I/O).
+pub(crate) async fn preview_diff(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    project_root: &Path,
+) -> Option<String> {
+    match tool.name {
+        "edit" => args
+            .get("edits")
+            .and_then(|v| v.as_array())
+            .map(|e| render_edit_diff(e))
+            .filter(|d| !d.is_empty()),
+        "write" => {
+            let prior = match arg_str(args, "path") {
+                Some(p) => tokio::fs::read_to_string(resolve(project_root, p)).await.ok(),
+                None => None,
+            };
+            let new = arg_str(args, "content").unwrap_or("");
+            Some(render_write_diff(prior.as_deref(), new))
+        }
+        _ => None,
+    }
+}
+
 /// Run a built-in tool and, for `write`/`edit`, also produce a focused diff.
 /// Returns `(content, diff)` where `diff` is line-prefixed (`-`/`+`) hunk text
 /// for display; `None` for non-mutating tools or on error. For `edit` the diff
@@ -105,27 +133,18 @@ pub(crate) async fn execute_builtin_with_diff(
             if content.starts_with("ERROR") {
                 return (content, None);
             }
-            let diff = args
-                .get("edits")
-                .and_then(|v| v.as_array())
-                .map(|e| render_edit_diff(e))
-                .filter(|d| !d.is_empty());
-            match diff {
+            match preview_diff(tool, args, project_root).await {
                 Some(d) => (format!("{content}\n\n{d}"), Some(d)),
                 None => (content, None),
             }
         }
         "write" => {
-            let prior = match arg_str(args, "path") {
-                Some(p) => tokio::fs::read_to_string(resolve(project_root, p)).await.ok(),
-                None => None,
-            };
+            let diff = preview_diff(tool, args, project_root).await;
             let content = execute_builtin(tool, args, project_root).await;
             if content.starts_with("ERROR") {
                 return (content, None);
             }
-            let new = arg_str(args, "content").unwrap_or("");
-            (content, Some(render_write_diff(prior.as_deref(), new)))
+            (content, diff)
         }
         _ => (execute_builtin(tool, args, project_root).await, None),
     }
@@ -770,6 +789,35 @@ mod tests {
             render_write_diff(Some("old"), "x"),
             "@@ overwrote file @@\n+ x"
         );
+    }
+
+    #[tokio::test]
+    async fn preview_diff_does_not_write_and_matches_execution_diff() {
+        let root = unique_root();
+        // edit preview: pure, no file needed, no file created.
+        let edit_preview = preview_diff(
+            lookup("edit").unwrap(),
+            &json!({"path": "p.txt", "edits": [{"old_string": "foo", "new_string": "bar"}]}),
+            &root,
+        )
+        .await;
+        assert_eq!(edit_preview.as_deref(), Some("- foo\n+ bar"));
+
+        // write preview reflects prior-file state and does not create the file.
+        let write_preview = preview_diff(
+            lookup("write").unwrap(),
+            &json!({"path": "new.txt", "content": "hello"}),
+            &root,
+        )
+        .await;
+        assert_eq!(write_preview.as_deref(), Some("@@ created file @@\n+ hello"));
+        assert!(!root.join("new.txt").exists(), "preview must not write");
+
+        // non-mutating tools have no preview.
+        assert!(preview_diff(lookup("read").unwrap(), &json!({"path": "x"}), &root)
+            .await
+            .is_none());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

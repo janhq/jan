@@ -160,7 +160,7 @@ impl ToolInvoker for CompositeToolInvoker {
     ) -> Result<Vec<ToolOutcome>, String> {
         use crate::core::agent::tools::{
             gate::{resolve_decision, Decision, PromptKind},
-            handlers::execute_builtin_with_diff,
+            handlers::{execute_builtin_with_diff, preview_diff},
             is_builtin, lookup, Capability,
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
@@ -227,12 +227,14 @@ impl ToolInvoker for CompositeToolInvoker {
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
                         .map(String::from);
+                    let diff = preview_diff(tool, &args, &self.project_root).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
                         tool_name: name.to_string(),
                         capability: capability.to_string(),
                         path,
                         command,
+                        diff,
                         prompt_kind: prompt_kind.to_string(),
                         offers_always: true,
                     });
