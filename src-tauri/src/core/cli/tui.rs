@@ -157,10 +157,11 @@ struct ToolGroup {
     /// Activity label of the first call (shown verbatim when the group is a
     /// single call, e.g. "Reading memory notes").
     first_label: String,
-    /// Per-call noun for the finalized breakdown ("memory note", "skill", ...).
-    nouns: Vec<&'static str>,
-    /// True while every call so far is a read-style op (drives "Read" vs "Ran").
-    all_read: bool,
+    /// Per-call noun for the finalized breakdown, paired with whether it is a
+    /// read-style op ("memory note"/true, "command"/false, ...). The flag splits
+    /// the summary into a "Read ..." clause and a "ran ..." clause so the verb
+    /// always agrees with its noun.
+    nouns: Vec<(&'static str, bool)>,
 }
 
 struct App {
@@ -289,8 +290,7 @@ impl App {
         let (noun, is_read) = tool_kind(name);
         self.grouped_ids.insert(id.to_string());
         let extend = self.tool_group.as_mut().map(|g| {
-            g.nouns.push(noun);
-            g.all_read = g.all_read && is_read;
+            g.nouns.push((noun, is_read));
             (g.idx, g.nouns.len())
         });
         match extend {
@@ -313,8 +313,7 @@ impl App {
                 self.tool_group = Some(ToolGroup {
                     idx: self.transcript.len() - 1,
                     first_label: label,
-                    nouns: vec![noun],
-                    all_read: is_read,
+                    nouns: vec![(noun, is_read)],
                 });
             }
         }
@@ -332,7 +331,7 @@ impl App {
         let text = if g.nouns.len() <= 1 {
             g.first_label
         } else {
-            group_summary(&g.nouns, g.all_read)
+            group_summary(&g.nouns)
         };
         self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
     }
@@ -735,19 +734,35 @@ fn tool_kind(name: &str) -> (&'static str, bool) {
 }
 
 /// Short sentence summarizing a finished tool group, e.g. "Read 3 memory notes,
-/// 1 skill" or "Ran 2 commands, 1 search". Verb is "Read" iff every call was a
-/// read-style op.
-fn group_summary(nouns: &[&str], all_read: bool) -> String {
-    let mut counts: Vec<(&str, usize)> = Vec::new();
-    for &n in nouns {
-        match counts.iter_mut().find(|(name, _)| *name == n) {
+/// 1 skill" or "Read 20 files; ran 12 commands". Read-style nouns get a "Read"
+/// clause and executed nouns a "ran" clause, so the verb always agrees with its
+/// noun (never "Ran 1 directory"). Each clause preserves first-seen order.
+fn group_summary(nouns: &[(&str, bool)]) -> String {
+    let mut read: Vec<(&str, usize)> = Vec::new();
+    let mut run: Vec<(&str, usize)> = Vec::new();
+    for &(n, is_read) in nouns {
+        let bucket = if is_read { &mut read } else { &mut run };
+        match bucket.iter_mut().find(|(name, _)| *name == n) {
             Some((_, c)) => *c += 1,
-            None => counts.push((n, 1)),
+            None => bucket.push((n, 1)),
         }
     }
-    let parts: Vec<String> = counts.iter().map(|(n, c)| pluralize(n, *c)).collect();
-    let verb = if all_read { "Read" } else { "Ran" };
-    format!("{verb} {}", parts.join(", "))
+    let clause = |items: &[(&str, usize)]| {
+        items
+            .iter()
+            .map(|(n, c)| pluralize(n, *c))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut out = String::new();
+    if !read.is_empty() {
+        out = format!("Read {}", clause(&read));
+    }
+    if !run.is_empty() {
+        let verb = if out.is_empty() { "Ran" } else { "; ran" };
+        out.push_str(&format!("{verb} {}", clause(&run)));
+    }
+    out
 }
 
 /// "3 memory notes", "1 skill", "2 searches", "1 directory".
@@ -2064,14 +2079,31 @@ mod tests {
     #[test]
     fn group_summary_counts_and_pluralizes() {
         assert_eq!(
-            group_summary(&["memory note", "skill", "memory note"], true),
+            group_summary(&[("memory note", true), ("skill", true), ("memory note", true)]),
             "Read 2 memory notes, 1 skill"
         );
         assert_eq!(
-            group_summary(&["command", "search", "search"], false),
+            group_summary(&[("command", false), ("search", false), ("search", false)]),
             "Ran 1 command, 2 searches"
         );
-        assert_eq!(group_summary(&["directory", "directory"], true), "Read 2 directories");
+        assert_eq!(
+            group_summary(&[("directory", true), ("directory", true)]),
+            "Read 2 directories"
+        );
+    }
+
+    #[test]
+    fn group_summary_splits_read_and_run_clauses() {
+        // Mixed ops keep the verb agreeing with its noun: never "Ran 1 directory".
+        assert_eq!(
+            group_summary(&[
+                ("directory", true),
+                ("search", false),
+                ("file", true),
+                ("command", false),
+            ]),
+            "Read 1 directory, 1 file; ran 1 search, 1 command"
+        );
     }
 
     #[test]
