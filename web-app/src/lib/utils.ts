@@ -176,6 +176,8 @@ export const getProviderTitle = (provider: string) => {
       return 'OpenAI'
     case 'openrouter':
       return 'OpenRouter'
+    case 'orcarouter':
+      return 'OrcaRouter'
     case 'gemini':
       return 'Gemini'
     case 'huggingface':
