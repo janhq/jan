@@ -979,6 +979,26 @@ async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
     }
 }
 
+/// Await the background router-start task once, then never resolve again (so the
+/// select arm stays quiet after the model is ready). `None` -> pends forever.
+///
+/// The handle is borrowed, not taken: this future is rebuilt (and dropped) every
+/// select iteration, so taking it would discard the still-running task the first
+/// time another branch wins the race. The slot is cleared only on completion.
+async fn await_router(
+    task: &mut Option<tokio::task::JoinHandle<Result<(), String>>>,
+) -> Result<(), String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner.map_err(|e| format!("failed to start local model: {e}")),
+        Err(e) => Err(format!("router task failed: {e}")),
+    }
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -989,6 +1009,7 @@ pub async fn run(
         permission_requests,
         model,
         max_turns,
+        router_task,
     } = session;
     let args = Arc::new(args);
 
@@ -999,7 +1020,15 @@ pub async fn run(
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
     let mut app = App::new(model, max_turns, agent_dir);
-    let res = chat_loop(&mut terminal, &args, &permission_requests, &mut app, initial_task).await;
+    let res = chat_loop(
+        &mut terminal,
+        &args,
+        &permission_requests,
+        &mut app,
+        initial_task,
+        router_task,
+    )
+    .await;
 
     let _ = disable_raw_mode();
     let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
@@ -1013,9 +1042,14 @@ async fn chat_loop<B: Backend>(
     registry: &PermissionRegistry,
     app: &mut App,
     initial_task: Option<String>,
+    mut router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+
+    // A local model loads in the background; gate the first run on it.
+    let mut router_ready = router_task.is_none();
+    let mut loading_noted = false;
 
     match initial_task {
         Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
@@ -1023,11 +1057,17 @@ async fn chat_loop<B: Backend>(
     }
 
     while !app.should_quit {
-        // Kick off a queued run once the previous one has cleared. `submit_user`
-        // already flipped status to Running and reset the turn counter.
+        // Kick off a queued run once the previous one has cleared and the local
+        // model (if any) is loaded. `submit_user` already flipped status to
+        // Running and reset the turn counter.
         if app.want_start && current.is_none() {
-            app.want_start = false;
-            current = Some(spawn_run(args, app.body()));
+            if router_ready {
+                app.want_start = false;
+                current = Some(spawn_run(args, app.body()));
+            } else if !loading_noted {
+                loading_noted = true;
+                app.note("loading local model...");
+            }
         }
 
         terminal
@@ -1040,6 +1080,13 @@ async fn chat_loop<B: Backend>(
                     if let Ok(Event::Key(key)) = event::read() {
                         handle_key(app, key, registry, &mut current).await;
                     }
+                }
+            }
+            router_res = await_router(&mut router_task) => {
+                router_ready = true;
+                if let Err(e) = router_res {
+                    app.want_start = false;
+                    app.on_error(String::new(), e);
                 }
             }
             ev = next_event(&mut current) => match ev {
