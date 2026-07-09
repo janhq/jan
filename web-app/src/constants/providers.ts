@@ -287,6 +287,13 @@ export const predefinedProviders = [
     ],
     models: [
       {
+        id: 'MiniMax-M3',
+        name: 'MiniMax-M3',
+        version: '1.0',
+        description: 'Flagship MiniMax model with a 1M token context window.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
         id: 'MiniMax-M2.7',
         name: 'MiniMax-M2.7',
         version: '1.0',
