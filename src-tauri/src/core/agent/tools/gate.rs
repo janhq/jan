@@ -33,6 +33,8 @@ pub struct SessionGrants {
     read_escape: bool,
     write: bool,
     exec_commands: std::collections::BTreeSet<String>,
+    /// MCP tools granted "allow always" this thread, by tool name.
+    mcp_tools: std::collections::BTreeSet<String>,
 }
 
 /// The base command a shell string runs: the first whitespace-delimited token,
@@ -73,6 +75,16 @@ impl SessionGrants {
         if let Some(base) = command_base(command) {
             self.exec_commands.insert(base.to_string());
         }
+    }
+
+    /// Whether an MCP tool was granted "allow always" this thread.
+    pub fn covers_mcp(&self, tool_name: &str) -> bool {
+        self.mcp_tools.contains(tool_name)
+    }
+
+    /// Grant an MCP tool for the rest of this session.
+    pub fn grant_mcp(&mut self, tool_name: &str) {
+        self.mcp_tools.insert(tool_name.to_string());
     }
 }
 
@@ -285,6 +297,15 @@ mod tests {
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn mcp_grant_is_scoped_to_tool_name() {
+        let mut grants = SessionGrants::default();
+        assert!(!grants.covers_mcp("web_search_exa"));
+        grants.grant_mcp("web_search_exa");
+        assert!(grants.covers_mcp("web_search_exa"));
+        assert!(!grants.covers_mcp("other_tool"));
     }
 
     #[test]
