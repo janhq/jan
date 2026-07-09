@@ -154,9 +154,8 @@ struct CurrentRun {
 struct ToolGroup {
     /// Transcript index of the row this group owns.
     idx: usize,
-    /// Activity label of the first call (shown verbatim when the group is a
-    /// single call, e.g. "Reading memory notes").
-    first_label: String,
+    /// Past-tense label shown when the group finalizes as a single call.
+    first_done: String,
     /// Per-call noun for the finalized breakdown, paired with whether it is a
     /// read-style op ("memory note"/true, "command"/false, ...). The flag splits
     /// the summary into a "Read ..." clause and a "ran ..." clause so the verb
@@ -286,7 +285,7 @@ impl App {
 
     /// Fold a collapsible tool call into the current group row (extending it and
     /// updating its live status) or open a new group row.
-    fn push_grouped_call(&mut self, id: &str, name: &str, label: String) {
+    fn push_grouped_call(&mut self, id: &str, name: &str, label: String, done: String) {
         let (noun, is_read) = tool_kind(name);
         self.grouped_ids.insert(id.to_string());
         let extend = self.tool_group.as_mut().map(|g| {
@@ -312,7 +311,7 @@ impl App {
                 ));
                 self.tool_group = Some(ToolGroup {
                     idx: self.transcript.len() - 1,
-                    first_label: label,
+                    first_done: done,
                     nouns: vec![(noun, is_read)],
                 });
             }
@@ -329,7 +328,7 @@ impl App {
             return;
         }
         let text = if g.nouns.len() <= 1 {
-            g.first_label
+            g.first_done
         } else {
             group_summary(&g.nouns)
         };
@@ -454,6 +453,7 @@ impl App {
             StreamEvent::ToolCall { id, name, args } => {
                 let max = self.render_width().saturating_sub(6) as usize;
                 let label = truncate(&tool_activity(&name, &args), max);
+                let done = truncate(&tool_finished(&name, &args), max);
                 if matches!(name.as_str(), "edit" | "write") {
                     // Diff-producing tools render standalone (call row + panel).
                     self.finalize_tool_group();
@@ -468,7 +468,7 @@ impl App {
                     if has_answer_text(&self.assistant_buf) {
                         self.flush_assistant();
                     }
-                    self.push_grouped_call(&id, &name, label);
+                    self.push_grouped_call(&id, &name, label, done);
                 }
             }
             StreamEvent::ToolResult {
@@ -682,10 +682,8 @@ fn diff_lines(diff: &str, max: usize) -> Vec<Line<'static>> {
     out
 }
 
-/// Concise present-tense activity label for the single, in-place tool row
-/// ("Executing grep", "Searching", "Updating memory: X"). Deliberately terse:
-/// the running row updates in real time and the completed row keeps this same
-/// text with a `✓`/`✗` tag, so it must read well in both states.
+/// Present-tense activity label for the running tool row ("Executing grep",
+/// "Searching"). Completed rows use `tool_finished` / `group_summary`.
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -713,6 +711,36 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
         // Skill/memory tools already produce active labels ("Updating memory: X").
+        _ => describe_tool_call(name, args),
+    }
+}
+
+/// Past-tense counterpart to `tool_activity` for a finalized single call
+/// ("Reading main.rs" -> "Read main.rs"); falls back to `describe_tool_call`.
+fn tool_finished(name: &str, args: &serde_json::Value) -> String {
+    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let base = |p: &str| {
+        std::path::Path::new(p)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(p)
+            .to_string()
+    };
+    match name {
+        "bash" | "shell" | "exec" => {
+            let cmd = s("command");
+            let prog = cmd.split_whitespace().next().unwrap_or("");
+            let prog = prog.rsplit(['/', '\\']).next().unwrap_or(prog);
+            if prog.is_empty() {
+                "Ran command".to_string()
+            } else {
+                format!("Ran {prog}")
+            }
+        }
+        "grep" | "search" => "Searched".to_string(),
+        "find" | "glob" => "Found files".to_string(),
+        "read" => format!("Read {}", base(s("path"))),
+        "list" | "ls" => "Listed files".to_string(),
         _ => describe_tool_call(name, args),
     }
 }
@@ -2014,8 +2042,8 @@ fn footer(app: &App) -> Paragraph<'static> {
 mod tests {
     use super::{
         diff_lines, group_summary, input_content_lines, is_table_separator, message_text,
-        parse_command, render_table, split_reasoning, summarize_result, tool_activity, App,
-        Pending, DIFF_MAX_ROWS,
+        parse_command, render_table, split_reasoning, summarize_result, tool_activity,
+        tool_finished, App, Pending, DIFF_MAX_ROWS,
     };
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::tools::gate::PermissionDecision;
@@ -2180,6 +2208,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tool_finished_is_concise_past_tense() {
+        assert_eq!(
+            tool_finished("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
+            "Ran grep"
+        );
+        assert_eq!(tool_finished("grep", &json!({ "pattern": "foo" })), "Searched");
+        assert_eq!(
+            tool_finished("read", &json!({ "path": "src/main.rs" })),
+            "Read main.rs"
+        );
+        assert_eq!(tool_finished("list", &json!({})), "Listed files");
+    }
+
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
@@ -2331,7 +2373,7 @@ mod tests {
         // Finalizing (turn boundary / done) marks it complete on the same row.
         app.finalize_tool_group();
         let row = line_text(app.transcript.last().unwrap());
-        assert!(row.contains("✓") && row.contains("Executing grep"), "row: {row}");
+        assert!(row.contains("✓") && row.contains("Ran grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
     }
@@ -2354,7 +2396,7 @@ mod tests {
             .iter()
             .rev()
             .map(line_text)
-            .find(|t| t.contains("Executing grep"))
+            .find(|t| t.contains("Ran grep"))
             .unwrap();
         assert!(row.contains("✓"), "row: {row}");
         // Later tokens must not re-trigger finalize work.
@@ -2385,7 +2427,7 @@ mod tests {
         app.apply(StreamEvent::Step { index: 2, max: 8 });
         let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
         let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
-        let tool = rows.iter().position(|r| r.contains("Executing grep")).unwrap();
+        let tool = rows.iter().position(|r| r.contains("Ran grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
         assert!(prose < tool && tool < after, "rows: {rows:?}");
     }
