@@ -8,8 +8,9 @@
 
 use std::future::pending;
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ratatui::crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -23,6 +24,7 @@ use tokio::task::JoinHandle;
 
 use super::AgentSession;
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
+use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
 use crate::core::agent::tools::gate::PermissionDecision;
 
@@ -118,6 +120,10 @@ enum PickerKind {
     ResumeThread,
     SelectModel,
     ToggleMcp,
+    /// Double-Esc rewind: pick a past user message to roll back to.
+    RewindMessage,
+    /// Second step of a rewind: restore conversation only, or + workspace.
+    RewindScope,
 }
 
 /// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
@@ -134,6 +140,8 @@ impl Picker {
             PickerKind::ResumeThread => " resume thread ",
             PickerKind::SelectModel => " select model ",
             PickerKind::ToggleMcp => " mcp servers ",
+            PickerKind::RewindMessage => " rewind to message ",
+            PickerKind::RewindScope => " restore ",
         }
     }
 
@@ -142,6 +150,8 @@ impl Picker {
             PickerKind::ResumeThread => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::SelectModel => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   Esc close",
+            PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
+            PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
         }
     }
 }
@@ -176,9 +186,31 @@ struct ToolGroup {
     nouns: Vec<(&'static str, bool)>,
 }
 
+/// A committed workspace state, one per turn that changed files. `user_index` is
+/// the position (among user messages) of the message that drove the turn, so a
+/// rewind to message N resets to the checkpoint recorded before N.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Checkpoint {
+    user_index: usize,
+    preview: String,
+    sha: String,
+}
+
 struct App {
     model: String,
     max_turns: u32,
+    /// Repo top-level when the project is a git repo; enables workspace snapshots.
+    /// Cleared if git setup fails, permanently disabling snapshots this session.
+    repo_root: Option<PathBuf>,
+    /// Base snapshot (working-tree state before the first turn) for the active
+    /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
+    base_snapshot: Option<String>,
+    /// Per-turn workspace checkpoints for the active thread, oldest first.
+    checkpoints: Vec<Checkpoint>,
+    /// Timestamp of the last idle Esc, to detect a double-Esc rewind gesture.
+    last_esc: Option<Instant>,
+    /// User-message index chosen in the rewind picker, carried into the scope step.
+    rewind_target: Option<usize>,
     /// Project `.jan/agent` dir where this TUI's threads are saved/listed.
     agent_dir: std::path::PathBuf,
     /// OpenAI-shaped conversation history sent with each run.
@@ -219,10 +251,20 @@ struct App {
 }
 
 impl App {
-    fn new(model: String, max_turns: u32, agent_dir: std::path::PathBuf) -> Self {
+    fn new(
+        model: String,
+        max_turns: u32,
+        agent_dir: std::path::PathBuf,
+        repo_root: Option<PathBuf>,
+    ) -> Self {
         Self {
             model,
             max_turns,
+            repo_root,
+            base_snapshot: None,
+            checkpoints: Vec::new(),
+            last_esc: None,
+            rewind_target: None,
             agent_dir,
             history: Vec::new(),
             thread_id: None,
@@ -279,6 +321,10 @@ impl App {
     fn reset_session(&mut self) {
         self.history.clear();
         self.thread_id = None;
+        // Detach snapshots; the next submit arms a fresh base + thread id.
+        self.base_snapshot = None;
+        self.checkpoints.clear();
+        self.last_esc = None;
         self.transcript.clear();
         self.tool_group = None;
         self.grouped_ids.clear();
@@ -407,6 +453,7 @@ impl App {
     /// the loop to start a run. Flips to `Running` synchronously so further keys
     /// in the same input batch can't slip through as a second submit.
     fn submit_user(&mut self, text: String) {
+        self.ensure_base_snapshot();
         self.history
             .push(serde_json::json!({ "role": "user", "content": text }));
         self.gap(Kind::User);
@@ -430,6 +477,89 @@ impl App {
         })
     }
 
+    /// Arm workspace snapshots for the active thread by capturing the base state
+    /// before the first turn. No-op when the project is not a git repo (no
+    /// workspace restore) or the base is already captured. Allocates the thread id
+    /// up front so the snapshot ref and the persisted thread share one id. Any git
+    /// failure disables snapshots for the session (conversation rewind still works).
+    fn ensure_base_snapshot(&mut self) {
+        let Some(repo) = self.repo_root.clone() else {
+            return;
+        };
+        if self.base_snapshot.is_some() {
+            return;
+        }
+        let id = self.thread_id.clone().unwrap_or_else(|| {
+            let n = uuid::Uuid::new_v4().to_string();
+            self.thread_id = Some(n.clone());
+            n
+        });
+        match git::snapshot(&repo, None, "jan agent base") {
+            Ok(sha) => {
+                let _ = git::update_ref(&repo, &id, &sha);
+                self.base_snapshot = Some(sha);
+            }
+            Err(e) => {
+                self.note(&format!("workspace snapshots disabled: {e}"));
+                self.repo_root = None;
+            }
+        }
+    }
+
+    /// Thread metadata persisted alongside the conversation: the base snapshot and
+    /// per-turn checkpoints, so `/resume` can restore and rewind. `None` when
+    /// snapshots are inactive (keeps a plain `{}` metadata block).
+    fn thread_metadata(&self) -> Option<serde_json::Value> {
+        let base = self.base_snapshot.as_ref()?;
+        Some(serde_json::json!({
+            "base_snapshot": base,
+            "checkpoints": self.checkpoints,
+        }))
+    }
+
+    /// Snapshot the working tree produced by the just-finished turn, recording a
+    /// checkpoint keyed to the driving user message. A turn that changed no files
+    /// still snapshots (its tree equals the previous), which keeps the
+    /// message->snapshot map complete for rewind.
+    fn checkpoint_turn(&mut self) {
+        let (Some(repo), Some(base)) = (self.repo_root.clone(), self.base_snapshot.clone()) else {
+            return;
+        };
+        let user_index = self
+            .history
+            .iter()
+            .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+            .count()
+            .saturating_sub(1);
+        let parent = self
+            .checkpoints
+            .last()
+            .map(|c| c.sha.clone())
+            .unwrap_or(base);
+        let n = self.checkpoints.len() + 1;
+        match git::snapshot(&repo, Some(&parent), &format!("jan agent turn {n}")) {
+            Ok(sha) => {
+                if let Some(id) = &self.thread_id {
+                    let _ = git::update_ref(&repo, id, &sha);
+                }
+                let preview = self
+                    .history
+                    .iter()
+                    .rev()
+                    .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+                    .and_then(|m| m.get("content").and_then(|v| v.as_str()))
+                    .map(truncate_preview)
+                    .unwrap_or_default();
+                self.checkpoints.push(Checkpoint {
+                    user_index,
+                    preview,
+                    sha,
+                });
+            }
+            Err(e) => self.detail = format!("checkpoint failed: {e}"),
+        }
+    }
+
     /// Save the conversation to a thread on disk so it survives and appears in
     /// `/resume`. Fire-and-forget: failures surface in the status detail only.
     fn persist(&mut self) {
@@ -441,6 +571,7 @@ impl App {
             self.thread_id.as_deref(),
             &self.model,
             &self.history,
+            self.thread_metadata(),
         ) {
             Ok(id) => self.thread_id = Some(id),
             Err(e) => self.detail = format!("save failed: {e}"),
@@ -591,6 +722,7 @@ impl App {
             self.gap(Kind::Meta);
             self.push(Line::styled(msg, Style::new().yellow().bold()));
         }
+        self.checkpoint_turn();
         self.persist();
     }
 
@@ -1134,6 +1266,7 @@ async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> V
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
+    project_root: PathBuf,
     initial_task: Option<String>,
 ) -> Result<(), String> {
     let AgentSession {
@@ -1153,7 +1286,10 @@ pub async fn run(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
-    let mut app = App::new(model, max_turns, agent_dir);
+    // A git repo enables workspace snapshots (rewind can restore files); a
+    // non-repo runs exactly as before with conversation-only rewind.
+    let repo_root = git::repo_root(&project_root);
+    let mut app = App::new(model, max_turns, agent_dir, repo_root);
     let res = chat_loop(
         &mut terminal,
         &args,
@@ -1371,6 +1507,16 @@ async fn handle_key(
                     PickerKind::ResumeThread => resume_thread(app, &value),
                     PickerKind::SelectModel => app.set_model(value),
                     PickerKind::ToggleMcp => {}
+                    PickerKind::RewindMessage => {
+                        if let Ok(idx) = value.parse::<usize>() {
+                            open_rewind_scope(app, idx);
+                        }
+                    }
+                    PickerKind::RewindScope => {
+                        if let Some(idx) = app.rewind_target.take() {
+                            rewind_to(app, idx, value == "workspace");
+                        }
+                    }
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
@@ -1400,8 +1546,20 @@ async fn handle_key(
             if app.status == Status::Running {
                 abort_run(current);
                 app.cancel_run();
+                app.last_esc = None;
             } else {
-                app.input_clear();
+                // A second idle Esc within the window opens the rewind picker;
+                // a lone Esc clears the input as before.
+                let double = app
+                    .last_esc
+                    .is_some_and(|t| t.elapsed() < Duration::from_millis(600));
+                if double {
+                    app.last_esc = None;
+                    open_rewind_picker(app);
+                } else {
+                    app.last_esc = Some(Instant::now());
+                    app.input_clear();
+                }
             }
         }
         // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
@@ -1713,6 +1871,162 @@ fn toggle_mcp_server(
 
 /// Resolve a thread by id (exact or unique prefix), load its messages into the
 /// conversation history, and render them into the transcript.
+/// Reload workspace-snapshot bookkeeping for a resumed thread from its persisted
+/// metadata. Snapshots live in the git object store (kept alive by the thread's
+/// ref), so there is nothing on disk to reattach; a later rewind restores them.
+fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
+    app.base_snapshot = None;
+    app.checkpoints.clear();
+    let Some(meta) = metadata else { return };
+    let Some(base) = meta
+        .get("base_snapshot")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+    else {
+        return;
+    };
+    app.checkpoints = meta
+        .get("checkpoints")
+        .and_then(|v| serde_json::from_value::<Vec<Checkpoint>>(v.clone()).ok())
+        .unwrap_or_default();
+    app.base_snapshot = Some(base);
+}
+
+/// Open the double-Esc rewind picker listing the conversation's user messages.
+fn open_rewind_picker(app: &mut App) {
+    let mut items = Vec::new();
+    let mut ui = 0usize;
+    for m in &app.history {
+        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
+            let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            items.push(PickerItem {
+                value: ui.to_string(),
+                label: truncate_preview(text),
+                hint: Some(format!("#{}", ui + 1)),
+                checkbox: None,
+            });
+            ui += 1;
+        }
+    }
+    if items.is_empty() {
+        return app.note("nothing to rewind to");
+    }
+    let selected = items.len() - 1;
+    app.picker = Some(Picker {
+        kind: PickerKind::RewindMessage,
+        items,
+        selected,
+    });
+}
+
+/// Second rewind step: choose whether to also reset the isolated workspace. The
+/// workspace option is offered only when the session has a worktree.
+fn open_rewind_scope(app: &mut App, user_index: usize) {
+    app.rewind_target = Some(user_index);
+    let mut items = vec![PickerItem {
+        value: "conversation".to_string(),
+        label: "conversation only".to_string(),
+        hint: None,
+        checkbox: None,
+    }];
+    if app.base_snapshot.is_some() {
+        items.push(PickerItem {
+            value: "workspace".to_string(),
+            label: "conversation + workspace".to_string(),
+            hint: None,
+            checkbox: None,
+        });
+    }
+    app.picker = Some(Picker {
+        kind: PickerKind::RewindScope,
+        items,
+        selected: 0,
+    });
+}
+
+/// Roll the conversation back to just before the `target`-th user message,
+/// dropping it and everything after. When `restore_workspace`, also hard-reset
+/// the worktree to the checkpoint that preceded that message (or the base commit).
+fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
+    let mut ui = 0usize;
+    let mut cut = None;
+    for (i, m) in app.history.iter().enumerate() {
+        if m.get("role").and_then(|v| v.as_str()) == Some("user") {
+            if ui == target {
+                cut = Some(i);
+                break;
+            }
+            ui += 1;
+        }
+    }
+    let Some(cut) = cut else {
+        return app.note("rewind target not found");
+    };
+
+    if restore_workspace {
+        if let (Some(repo), Some(base)) = (app.repo_root.clone(), app.base_snapshot.clone()) {
+            // State before the target turn = the newest checkpoint that predates
+            // it, else the base snapshot. `latest` (newest snapshot) tells restore
+            // which files were added since, so they can be removed.
+            let sha = app
+                .checkpoints
+                .iter()
+                .rev()
+                .find(|c| c.user_index < target)
+                .map(|c| c.sha.clone())
+                .unwrap_or(base.clone());
+            let latest = app
+                .checkpoints
+                .last()
+                .map(|c| c.sha.clone())
+                .unwrap_or(base);
+            match git::restore(&repo, &sha, &latest) {
+                Ok(()) => app.note("workspace restored"),
+                Err(e) => app.note(&format!("workspace restore failed: {e}")),
+            }
+        }
+    }
+
+    app.history.truncate(cut);
+    app.checkpoints.retain(|c| c.user_index < target);
+    rebuild_transcript(app);
+    app.status = Status::Idle;
+    app.scrollback = 0;
+    app.note(&format!("rewound to message #{}", target + 1));
+    app.persist();
+}
+
+/// Re-render the transcript from the current `history` after a rewind.
+fn rebuild_transcript(app: &mut App) {
+    app.transcript.clear();
+    app.tool_group = None;
+    app.grouped_ids.clear();
+    app.assistant_buf.clear();
+    app.last_kind = Kind::None;
+    let width = app.render_width();
+    let history = app.history.clone();
+    for m in &history {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if text.is_empty() {
+            continue;
+        }
+        if role == "user" {
+            app.gap(Kind::User);
+            app.push(Line::from(vec![
+                Span::styled("› ", Style::new().light_magenta().bold()),
+                Span::styled(text.to_string(), Style::new().bold()),
+            ]));
+        } else if role == "assistant" {
+            let lines = format_assistant_lines(text, width);
+            if !lines.is_empty() {
+                app.gap(Kind::Prose);
+                app.transcript.extend(lines);
+            }
+        }
+    }
+}
+
 fn resume_thread(app: &mut App, id_arg: &str) {
     let threads = match super::list_threads_in(&app.agent_dir) {
         Ok(t) => t,
@@ -1747,6 +2061,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.turn = (0, 0);
     app.tokens = 0;
     app.scrollback = 0;
+    restore_snapshots(app, thread.get("metadata"));
 
     // Adopt the thread's model so continuation stays coherent.
     if let Some(model) = thread
@@ -1809,6 +2124,17 @@ fn message_text(msg: &serde_json::Value) -> String {
             .collect::<Vec<_>>()
             .join(""),
         _ => String::new(),
+    }
+}
+
+/// Whitespace-collapsed, char-truncated one-liner for checkpoint/rewind labels.
+fn truncate_preview(text: &str) -> String {
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() > 60 {
+        let head: String = collapsed.chars().take(57).collect();
+        format!("{head}...")
+    } else {
+        collapsed
     }
 }
 
@@ -2116,7 +2442,7 @@ mod tests {
     use serde_json::json;
 
     fn test_app() -> App {
-        App::new("m".into(), 8, std::path::PathBuf::from("."))
+        App::new("m".into(), 8, std::path::PathBuf::from("."), None)
     }
 
     fn pending(offers_always: bool) -> Pending {
