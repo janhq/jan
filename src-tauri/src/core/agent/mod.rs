@@ -4,6 +4,8 @@
 pub mod commands;
 pub mod context;
 pub mod events;
+#[cfg(feature = "cli")]
+pub mod git;
 pub mod r#loop;
 pub mod memory;
 pub mod permissions;
