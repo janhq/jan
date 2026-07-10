@@ -123,6 +123,7 @@ pub fn cli_save_thread(
     thread_id: Option<&str>,
     model: &str,
     history: &[serde_json::Value],
+    metadata: Option<serde_json::Value>,
 ) -> Result<String, String> {
     if history.is_empty() {
         return Err("empty conversation".to_string());
@@ -174,6 +175,12 @@ pub fn cli_save_thread(
         .map(str::to_string)
         .unwrap_or_else(|| default_thread_title(history));
 
+    // Preserve prior metadata when the caller passes none (e.g. a plain save with
+    // no worktree state), so an update never drops isolation bookkeeping.
+    let metadata = metadata
+        .or_else(|| existing.as_ref().and_then(|e| e.get("metadata").cloned()))
+        .unwrap_or_else(|| serde_json::json!({}));
+
     let thread = serde_json::json!({
         "id": id,
         "object": "thread",
@@ -181,7 +188,7 @@ pub fn cli_save_thread(
         "created": created,
         "updated": now_secs,
         "model": { "id": model, "provider": "" },
-        "metadata": {},
+        "metadata": metadata,
     });
     update_thread_metadata(base, &id, &thread)?;
     Ok(id)
@@ -1105,7 +1112,7 @@ pub async fn cli_agent_ui(
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let agent_dir = PathBuf::from(project).join(".jan").join("agent");
-    tui::run(session, agent_dir, task).await
+    tui::run(session, agent_dir, PathBuf::from(project), task).await
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
@@ -1220,6 +1227,47 @@ mod tests {
 
         let no_user = serde_json::json!([{ "role": "assistant", "content": "hi" }]);
         assert_eq!(default_thread_title(no_user.as_array().unwrap()), "Agent chat");
+    }
+
+    // ── cli_save_thread metadata (snapshot bookkeeping) ────────────────────
+
+    #[test]
+    fn save_thread_persists_and_preserves_snapshot_metadata() {
+        let base = std::env::temp_dir().join(format!(
+            "jan_savethread_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let history = serde_json::json!([
+            { "role": "user", "content": "hi" },
+            { "role": "assistant", "content": "hello" },
+        ]);
+        let meta = serde_json::json!({
+            "base_snapshot": "abc",
+            "checkpoints": [{ "user_index": 0, "preview": "hi", "sha": "def" }],
+        });
+
+        let id = cli_save_thread(
+            &base,
+            None,
+            "m",
+            history.as_array().unwrap(),
+            Some(meta.clone()),
+        )
+        .expect("save");
+
+        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read");
+        let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(stored["metadata"]["base_snapshot"], "abc");
+        assert_eq!(stored["metadata"]["checkpoints"][0]["sha"], "def");
+
+        // A follow-up save with no metadata must preserve the prior snapshot block.
+        cli_save_thread(&base, Some(&id), "m", history.as_array().unwrap(), None).expect("resave");
+        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read2");
+        let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(stored["metadata"]["base_snapshot"], "abc");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // ── looks_like_hf_repo ─────────────────────────────────────────────────
