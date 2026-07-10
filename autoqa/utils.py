@@ -242,7 +242,7 @@ def start_jan_app(jan_app_path=None):
     try:
         # Start the Jan application
         if IS_WINDOWS:
-            subprocess.Popen([jan_app_path], shell=True)
+            subprocess.Popen([jan_app_path])
         elif IS_LINUX:
             # On Linux, start with DISPLAY environment variable
             env = os.environ.copy()
