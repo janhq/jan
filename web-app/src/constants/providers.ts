@@ -388,4 +388,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://daoxe.com/v1',
+    explore_models_url: 'https://daoxe.com/pricing',
+    provider: 'daoxe',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'DaoXE uses API keys for authentication. Create a key in the [DaoXE dashboard](https://daoxe.com) to discover the models available to your account.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]
