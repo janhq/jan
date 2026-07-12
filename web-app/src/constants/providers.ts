@@ -290,14 +290,14 @@ export const predefinedProviders = [
         id: 'MiniMax-M3',
         name: 'MiniMax-M3',
         version: '1.0',
-        description: 'Flagship MiniMax model with a 1M token context window.',
-        capabilities: ['completion', 'tools'],
+        description: 'Flagship multimodal model with a 1M token context window.',
+        capabilities: ['completion', 'tools', 'vision'],
       },
       {
         id: 'MiniMax-M2.7',
         name: 'MiniMax-M2.7',
         version: '1.0',
-        description: 'Latest flagship model with enhanced reasoning and coding.',
+        description: 'Reasoning and coding model with a 204.8K token context window.',
         capabilities: ['completion', 'tools'],
       },
       {

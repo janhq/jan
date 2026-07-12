@@ -113,7 +113,7 @@ export const providerModels = {
     supportsCompletion: true,
     supportsStreaming: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsJSON: [],
-    supportsImages: [],
+    supportsImages: ['MiniMax-M3'],
     supportsToolCalls: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsN: true,
   },
