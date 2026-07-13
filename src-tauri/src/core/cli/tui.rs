@@ -374,14 +374,15 @@ impl App {
         self.grouped_ids.insert(id.to_string());
         let extend = self.tool_group.as_mut().map(|g| {
             g.nouns.push((noun, is_read));
-            (g.idx, g.nouns.len())
+            (g.idx, group_activity(&g.nouns))
         });
         match extend {
-            Some((idx, n)) if idx < self.transcript.len() => {
+            Some((idx, running)) if idx < self.transcript.len() => {
+                let max = self.render_width().saturating_sub(6) as usize;
                 self.transcript[idx] = tool_row(
                     "▸",
                     Style::new().cyan(),
-                    &format!("{label} ({n})"),
+                    &truncate(&running, max),
                     Style::new().cyan().dim(),
                 );
             }
@@ -680,13 +681,12 @@ impl App {
                     self.gap(Kind::Tool);
                     self.push(tool_row("▸", Style::new().cyan(), &label, Style::new().cyan().dim()));
                 } else {
-                    // Commit any answer prose the model spoke before this call
-                    // so the timeline stays in emission order (pre-tool prose
-                    // above the tool row). Reasoning-only buffers are left
-                    // intact so consecutive calls keep folding together.
-                    if has_answer_text(&self.assistant_buf) {
-                        self.flush_assistant();
-                    }
+                    // Commit any buffered prose OR reasoning the model emitted
+                    // before this call so the timeline stays in emission order
+                    // (pre-tool thinking renders above the tool row, not stranded
+                    // in the live tail below it). `flush_assistant` no-ops on an
+                    // empty buffer, so truly silent consecutive calls still fold.
+                    self.flush_assistant();
                     self.push_grouped_call(&id, &name, label, done);
                 }
             }
@@ -1000,6 +1000,20 @@ fn tool_kind(name: &str) -> (&'static str, bool) {
 /// clause and executed nouns a "ran" clause, so the verb always agrees with its
 /// noun (never "Ran 1 directory"). Each clause preserves first-seen order.
 fn group_summary(nouns: &[(&str, bool)]) -> String {
+    group_clauses(nouns, "Read", "ran")
+}
+
+/// Present-tense counterpart to `group_summary` for the live, in-progress group
+/// row, e.g. "Reading 3 files, 1 directory; running 2 commands". Keeps the row
+/// honest about the mix of calls instead of showing the latest call + a count.
+fn group_activity(nouns: &[(&str, bool)]) -> String {
+    group_clauses(nouns, "Reading", "running")
+}
+
+/// Bucket `nouns` into read-style and run-style clauses (first-seen order,
+/// counted and pluralized) and join them with the given verbs, so the verb
+/// always agrees with its noun (never "Ran 1 directory").
+fn group_clauses(nouns: &[(&str, bool)], read_verb: &str, run_verb: &str) -> String {
     let mut read: Vec<(&str, usize)> = Vec::new();
     let mut run: Vec<(&str, usize)> = Vec::new();
     for &(n, is_read) in nouns {
@@ -1018,10 +1032,17 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     };
     let mut out = String::new();
     if !read.is_empty() {
-        out = format!("Read {}", clause(&read));
+        out = format!("{read_verb} {}", clause(&read));
     }
     if !run.is_empty() {
-        let verb = if out.is_empty() { "Ran" } else { "; ran" };
+        let verb = if out.is_empty() {
+            let mut c = run_verb.chars();
+            c.next()
+                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                .unwrap_or_default()
+        } else {
+            format!("; {run_verb}")
+        };
         out.push_str(&format!("{verb} {}", clause(&run)));
     }
     out
@@ -1087,7 +1108,10 @@ fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static>> {
         if reasoning {
             for l in seg.lines() {
                 if !l.trim().is_empty() {
-                    lines.push(Line::styled(l.to_string(), Style::new().dim().italic()));
+                    lines.push(Line::from(vec![
+                        Span::styled("┊ ", Style::new().dark_gray()),
+                        Span::styled(l.to_string(), Style::new().dim().italic()),
+                    ]));
                 }
             }
         } else {
@@ -2657,7 +2681,8 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        diff_lines, group_summary, input_content_lines, is_table_separator, message_text,
+        diff_lines, group_activity, group_summary, input_content_lines, is_table_separator,
+        message_text,
         parse_command, render_table, run_command, split_reasoning, summarize_result,
         tool_activity, tool_finished, transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
     };
@@ -2881,6 +2906,22 @@ mod tests {
                 ("command", false),
             ]),
             "Read 1 directory, 1 file; ran 1 search, 1 command"
+        );
+    }
+
+    #[test]
+    fn group_activity_is_present_tense_running_breakdown() {
+        assert_eq!(
+            group_activity(&[("file", true), ("file", true), ("command", false)]),
+            "Reading 2 files; running 1 command"
+        );
+        assert_eq!(
+            group_activity(&[("search", false), ("search", false)]),
+            "Running 2 searches"
+        );
+        assert_eq!(
+            group_activity(&[("file", true), ("directory", true)]),
+            "Reading 1 file, 1 directory"
         );
     }
 
@@ -3158,7 +3199,9 @@ mod tests {
             .filter(|l| line_text(l).contains("Reading") || line_text(l).contains("Read "))
             .count();
         assert_eq!(tool_rows, 1);
-        assert!(line_text(app.transcript.last().unwrap()).contains("(4)"));
+        // The live row is an honest present-tense breakdown, not "<latest> (4)".
+        assert!(line_text(app.transcript.last().unwrap())
+            .contains("Reading 3 memory notes, 1 skill"));
         // The model speaking finalizes it to a short summary sentence.
         app.apply(StreamEvent::Token { text: "Done.".into() });
         let row = line_text(app.transcript.last().unwrap());
@@ -3191,7 +3234,7 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| line_text(l).contains("Executing"))
+            .filter(|l| { let t = line_text(l); t.contains("Executing") || t.contains("Running") })
             .count();
         assert_eq!(tool_rows, 1);
         app.on_done("stop".into(), None);
@@ -3205,24 +3248,50 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_between_tool_calls_keeps_folding() {
+    fn reasoning_before_tool_call_renders_above_it_in_order() {
         let mut app = test_app();
-        for (i, id) in ["c1", "c2", "c3"].iter().enumerate() {
-            app.apply(StreamEvent::Step {
-                index: i as u32 + 1,
-                max: 8,
-            });
-            // Reasoning model thinks before each call; this must not close the group.
-            app.apply(StreamEvent::Token {
-                text: "<think>let me look</think>".into(),
-            });
+        // Reasoning model thinks, then acts. The thought must commit above the
+        // tool row (emission order), not linger in the live tail below it.
+        app.apply(StreamEvent::Token {
+            text: "<think>let me look at the config</think>".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Buffer is drained: the reasoning is committed, not stranded below.
+        assert!(app.assistant_buf.is_empty());
+        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let think_at = rows.iter().position(|r| r.contains("let me look")).unwrap();
+        let tool_at = rows
+            .iter()
+            .position(|r| r.contains("Executing") || r.contains("Running"))
+            .unwrap();
+        assert!(
+            think_at < tool_at,
+            "reasoning must render above the tool row it preceded: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn silent_consecutive_tool_calls_still_fold() {
+        let mut app = test_app();
+        // No reasoning/prose between calls: they must fold into one group row.
+        for id in ["c1", "c2", "c3"] {
             app.apply(StreamEvent::ToolCall {
-                id: (*id).into(),
+                id: id.into(),
                 name: "bash".into(),
                 args: json!({ "command": "ls" }),
             });
             app.apply(StreamEvent::ToolResult {
-                id: (*id).into(),
+                id: id.into(),
                 content: "ok".into(),
                 is_error: false,
                 diff: None,
@@ -3232,10 +3301,12 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| line_text(l).contains("Executing"))
+            .filter(|l| {
+                let t = line_text(l);
+                t.contains("Executing") || t.contains("Running")
+            })
             .count();
         assert_eq!(tool_rows, 1);
-        // Real answer prose finally closes it to a single summary row.
         app.apply(StreamEvent::Token {
             text: "All done.".into(),
         });
@@ -3244,7 +3315,7 @@ mod tests {
             .transcript
             .iter()
             .map(line_text)
-            .find(|t| t.contains("Executing") || t.contains("Ran "))
+            .find(|t| t.contains("Ran "))
             .unwrap();
         assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
     }
@@ -3324,7 +3395,7 @@ mod tests {
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|l| line_text(l).contains("Executing"))
+            .filter(|l| { let t = line_text(l); t.contains("Executing") || t.contains("Running") })
             .count();
         assert_eq!(tool_rows, 1);
     }
