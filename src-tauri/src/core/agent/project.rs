@@ -104,6 +104,12 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
 /// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
 /// on both the CLI and desktop agent-run paths (there is no explicit init step).
 pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
+    if !project_root.is_dir() {
+        return Err(format!(
+            "project directory does not exist: {}. Pass --project with a path to an existing directory (paths are case-sensitive).",
+            project_root.display()
+        ));
+    }
     let agent_dir = project_root.join(".jan").join("agent");
     std::fs::create_dir_all(agent_dir.join("skills"))
         .map_err(|e| format!("Failed to create skills dir: {e}"))?;
@@ -150,7 +156,21 @@ mod tests {
 
     fn unique_root(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("jan_agent_test_{tag}_{n}"))
+        let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{n}"));
+        std::fs::create_dir_all(&root).expect("create test project root");
+        root
+    }
+
+    #[test]
+    fn ensure_errors_when_project_dir_missing() {
+        // A mistyped --project (e.g. wrong case) must fail fast, not scaffold a
+        // phantom project dir from nothing.
+        let root = std::env::temp_dir()
+            .join(format!("jan_agent_missing_{}", COUNTER.fetch_add(1, Ordering::SeqCst)));
+        assert!(!root.exists());
+        let err = ensure_project(&root).expect_err("must reject missing dir");
+        assert!(err.contains("does not exist"), "err: {err}");
+        assert!(!root.exists(), "must not create the missing project dir");
     }
 
     #[test]

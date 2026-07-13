@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ignore::WalkBuilder;
 
+use crate::core::agent::tools::sandbox::is_restricted_agent_path;
 use crate::core::agent::tools::BuiltinTool;
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -477,6 +478,7 @@ async fn find(args: &serde_json::Value, root: &Path) -> String {
         .map(|v| v as usize)
         .unwrap_or(FIND_DEFAULT_LIMIT);
     let base = resolve(root, &path);
+    let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -499,6 +501,9 @@ async fn find(args: &serde_json::Value, root: &Path) -> String {
             .flatten()
         {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
+                continue;
+            }
+            if is_restricted_agent_path(&root_owned, &entry.path().to_string_lossy()) {
                 continue;
             }
             let rel = rel_to(&base, entry.path());
@@ -530,6 +535,7 @@ async fn grep(args: &serde_json::Value, root: &Path) -> String {
         .map(|v| v as usize)
         .unwrap_or(GREP_DEFAULT_LIMIT);
     let base = resolve(root, &path);
+    let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -615,6 +621,9 @@ async fn grep(args: &serde_json::Value, root: &Path) -> String {
                 .flatten()
             {
                 if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
+                    continue;
+                }
+                if is_restricted_agent_path(&root_owned, &entry.path().to_string_lossy()) {
                     continue;
                 }
                 if !search_file(entry.path(), &base) {
@@ -892,6 +901,65 @@ mod tests {
         assert!(
             !out.contains("skip/b.txt"),
             "should exclude gitignored skip: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn find_does_not_leak_restricted_agent_tree() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
+        std::fs::write(root.join(".jan/agent/threads/t1/thread.json"), b"{}").unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
+        std::fs::write(root.join(".jan/agent/AGENT.md"), b"instructions").unwrap();
+        std::fs::write(root.join("README.md"), b"x").unwrap();
+        let out = execute_builtin(
+            lookup("find").unwrap(),
+            &json!({"pattern": "**/*"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("README.md"), "should include project file: {out}");
+        assert!(
+            out.contains(".jan/agent/AGENT.md"),
+            "AGENT.md is readable, should be listed: {out}"
+        );
+        assert!(
+            !out.contains("thread.json"),
+            "must not leak thread storage: {out}"
+        );
+        assert!(
+            !out.contains("agent.toml"),
+            "must not leak agent config: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn grep_does_not_leak_restricted_agent_contents() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
+        std::fs::write(
+            root.join(".jan/agent/threads/t1/messages.jsonl"),
+            b"SECRET_MARKER thread content",
+        )
+        .unwrap();
+        std::fs::write(root.join(".jan/agent/agent.toml"), b"SECRET_MARKER config").unwrap();
+        std::fs::write(root.join("README.md"), b"SECRET_MARKER readme").unwrap();
+        let out = execute_builtin(
+            lookup("grep").unwrap(),
+            &json!({"pattern": "SECRET_MARKER"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("README.md"), "should match project file: {out}");
+        assert!(
+            !out.contains("messages.jsonl"),
+            "must not grep thread storage: {out}"
+        );
+        assert!(
+            !out.contains("agent.toml"),
+            "must not grep agent config: {out}"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
