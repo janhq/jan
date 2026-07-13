@@ -1,0 +1,75 @@
+---
+title: MiniMax API
+description: Connect Jan to MiniMax-M3 and MiniMax-M2.7 through OpenAI-compatible or Anthropic-compatible endpoints.
+keywords:
+  [
+    Jan,
+    MiniMax,
+    MiniMax-M3,
+    MiniMax-M2.7,
+    OpenAI-compatible,
+    Anthropic-compatible,
+    API key,
+    base URL,
+    cloud models,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# MiniMax
+
+Jan includes MiniMax as a built-in cloud provider. The model list includes **MiniMax-M3**, with
+tool use and vision support, and **MiniMax-M2.7**, with text and tool use support.
+
+## Use the built-in provider
+
+<Steps>
+
+### Get an API key
+
+Create an API key in the MiniMax platform for your region.
+
+### Configure Jan
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) >
+   **Model Providers**.
+2. Select **MiniMax**.
+3. Enter your API key.
+
+The built-in provider uses the global OpenAI-compatible endpoint.
+
+### Select a model
+
+Start or open a chat, then select **MiniMax-M3** or **MiniMax-M2.7** from the model selector.
+
+</Steps>
+
+## Endpoint options
+
+Jan has one base URL per provider. Use the built-in provider for the default endpoint, or add a custom
+provider for another region or API format.
+
+| Region | API format | Base URL | Jan setup |
+| --- | --- | --- | --- |
+| Global | OpenAI-compatible | `https://api.minimax.io/v1` | Built-in MiniMax provider |
+| CN | OpenAI-compatible | `https://api.minimaxi.com/v1` | Custom provider with OpenAI-compatible selected |
+| Global | Anthropic-compatible | `https://api.minimax.io/anthropic` | Custom provider with Anthropic-compatible selected |
+| CN | Anthropic-compatible | `https://api.minimaxi.com/anthropic` | Custom provider with Anthropic-compatible selected |
+
+To use a custom endpoint:
+
+1. In **Settings** > **Model Providers**, click **Add Provider**
+   (<Plus width={16} height={16} style={{display:"inline"}}/>).
+2. Select the API format shown in the table and enter the matching base URL and API key.
+3. Add `MiniMax-M3` or `MiniMax-M2.7` to the provider's model list. Enable tools and vision for
+   MiniMax-M3, or tools for MiniMax-M2.7.
+
+<Callout type="warning">
+For Anthropic-compatible endpoints, enter the base URL exactly as shown, ending in `/anthropic`.
+Do not append `/v1`; Jan adds the `/v1/messages` request path internally.
+</Callout>
+
+See the official [global documentation](https://platform.minimax.io/docs/guides/text-generation)
+or [CN documentation](https://platform.minimaxi.com/docs/guides/text-generation) for API details.
