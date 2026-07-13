@@ -160,7 +160,7 @@ export function getProviderLogo(provider: string) {
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
     case 'daoxe':
-      return '/images/model-provider/daoxe.svg'
+      return '/images/model-provider/daoxe.png'
     default:
       return undefined
   }
