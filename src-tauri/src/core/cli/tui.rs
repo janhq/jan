@@ -2138,6 +2138,14 @@ fn truncate_preview(text: &str) -> String {
     }
 }
 
+/// Blank lines to prepend so a transcript shorter than the body viewport pins
+/// to the bottom (terminal-chat feel) instead of top-anchoring with a gap
+/// below. Zero once the wrapped content fills or overflows `inner_h`, so the
+/// scrollback path is left untouched.
+fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
+    inner_h.saturating_sub(total)
+}
+
 fn draw(f: &mut Frame, app: &mut App) {
     let input_h = input_box_height(app, f.area().width);
     let chunks = Layout::vertical([
@@ -2179,10 +2187,29 @@ fn draw(f: &mut Frame, app: &mut App) {
             lines.extend(tail);
         }
     }
-    let body = Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::TOP | Borders::BOTTOM));
+    let block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
     let inner_h = chunks[1].height.saturating_sub(2);
+
+    // Wrapping only grows the line count, so if the unwrapped count already
+    // fills the viewport no padding is possible; skip the measuring clone and
+    // keep the long-transcript path allocation-free.
+    let pad = if (lines.len() as u16) < inner_h {
+        let total = Paragraph::new(lines.clone())
+            .wrap(Wrap { trim: false })
+            .block(block.clone())
+            .line_count(width)
+            .min(u16::MAX as usize) as u16;
+        transcript_top_padding(total, inner_h)
+    } else {
+        0
+    };
+    if pad > 0 {
+        let mut padded = vec![Line::raw(""); pad as usize];
+        padded.append(&mut lines);
+        lines = padded;
+    }
+
+    let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);
     let total = body.line_count(width).min(u16::MAX as usize) as u16;
     let max_back = total.saturating_sub(inner_h);
     app.scrollback = app.scrollback.min(max_back);
@@ -2434,7 +2461,7 @@ mod tests {
     use super::{
         diff_lines, group_summary, input_content_lines, is_table_separator, message_text,
         parse_command, render_table, run_command, split_reasoning, summarize_result,
-        tool_activity, tool_finished, App, Pending, DIFF_MAX_ROWS,
+        tool_activity, tool_finished, transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
     };
     use ratatui::text::Line;
     use crate::core::agent::events::StreamEvent;
@@ -2456,6 +2483,16 @@ mod tests {
             offers_always,
             selected: 0,
         }
+    }
+
+    #[test]
+    fn transcript_bottom_anchors_short_content() {
+        // Short transcript: pad to push the last line to the viewport bottom.
+        assert_eq!(transcript_top_padding(3, 20), 17);
+        // Exactly full: no padding.
+        assert_eq!(transcript_top_padding(20, 20), 0);
+        // Overflowing viewport: no padding, scrollback path stays untouched.
+        assert_eq!(transcript_top_padding(45, 20), 0);
     }
 
     #[test]
