@@ -2328,7 +2328,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             if !last_blank {
                 lines.push(Line::raw(""));
             }
-            // Live tail: strip reasoning tags so partial streaming stays clean.
+            // Live tail: same renderer as finalized messages, so an open
+            // (unterminated) <think> block dims and grows during streaming.
             lines.extend(tail);
         }
     }
@@ -2660,7 +2661,7 @@ mod tests {
         parse_command, render_table, run_command, split_reasoning, summarize_result,
         tool_activity, tool_finished, transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
     };
-    use ratatui::text::Line;
+    use ratatui::{style::Modifier, text::Line};
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
@@ -2784,6 +2785,30 @@ mod tests {
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
         let segs = split_reasoning("<mm:think>reasoning tail");
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
+    }
+
+    #[test]
+    fn live_tail_dims_open_think_block_instead_of_stripping() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.assistant_buf = "<think>pondering the answer".to_string();
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        let mut found_dim = false;
+        for y in 0..buf.area.height {
+            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+            if row.contains("pondering") {
+                let x = row.find("pondering").unwrap() as u16;
+                assert!(
+                    buf[(x, y)].style().add_modifier.contains(Modifier::DIM),
+                    "open <think> content must render dimmed while streaming"
+                );
+                found_dim = true;
+            }
+        }
+        assert!(found_dim, "open <think> content must still appear in the live tail");
     }
 
     #[test]
