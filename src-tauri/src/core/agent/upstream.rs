@@ -473,9 +473,22 @@ struct SseAccumulator {
     tool_calls: Vec<ToolCallAccum>,
     finish_reason: Option<String>,
     usage: Option<serde_json::Value>,
+    /// A `<think>` boundary was streamed for `reasoning_content` and not yet
+    /// closed. Reasoning is display-only (dimmed in the TUI) and deliberately
+    /// kept out of `content` so it is never resent to the model as history.
+    reasoning_open: bool,
 }
 
 impl SseAccumulator {
+    fn close_reasoning(&mut self, events: &mpsc::UnboundedSender<StreamEvent>) {
+        if self.reasoning_open {
+            self.reasoning_open = false;
+            let _ = events.send(StreamEvent::Token {
+                text: "</think>".to_string(),
+            });
+        }
+    }
+
     /// Parse one raw SSE line (`data: {...}`); non-`data:`/blank lines are ignored.
     fn ingest_line(&mut self, line: &str, events: &mpsc::UnboundedSender<StreamEvent>) {
         if let Some(rest) = line.trim_end_matches('\r').strip_prefix("data:") {
@@ -511,14 +524,30 @@ impl SseAccumulator {
 
         if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
             self.finish_reason = Some(fr.to_string());
+            self.close_reasoning(events);
         }
 
         let Some(delta) = choice.get("delta") else {
             return;
         };
 
+        if let Some(text) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                if !self.reasoning_open {
+                    self.reasoning_open = true;
+                    let _ = events.send(StreamEvent::Token {
+                        text: "<think>".to_string(),
+                    });
+                }
+                let _ = events.send(StreamEvent::Token {
+                    text: text.to_string(),
+                });
+            }
+        }
+
         if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
             if !text.is_empty() {
+                self.close_reasoning(events);
                 self.content.push_str(text);
                 let _ = events.send(StreamEvent::Token {
                     text: text.to_string(),
@@ -695,6 +724,64 @@ mod tests {
             }
         }
         assert_eq!(tokens, vec!["Hel", "lo"]);
+    }
+
+    #[test]
+    fn reasoning_content_streams_as_think_wrapped_tokens_but_stays_out_of_content() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "reasoning_content": "let me " } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "reasoning_content": "think" } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "answer" } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
+            &tx,
+        );
+
+        // Reasoning must not leak into the reconstructed message sent back to the
+        // model as history; only the answer prose is persisted.
+        let completion = acc.into_completion();
+        assert_eq!(completion["choices"][0]["message"]["content"], "answer");
+
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
+            tokens.push(text);
+        }
+        assert_eq!(tokens, vec!["<think>", "let me ", "think", "</think>", "answer"]);
+    }
+
+    #[test]
+    fn reasoning_only_completion_closes_the_open_think_block() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "reasoning_content": "hmm" } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": {}, "finish_reason": "stop" }] }).to_string(),
+            &tx,
+        );
+
+        let completion = acc.into_completion();
+        assert!(completion["choices"][0]["message"]["content"].is_null());
+
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(StreamEvent::Token { text }) = rx.try_recv() {
+            tokens.push(text);
+        }
+        assert_eq!(tokens, vec!["<think>", "hmm", "</think>"]);
     }
 
     #[test]
