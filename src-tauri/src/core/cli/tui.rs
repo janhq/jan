@@ -2666,7 +2666,14 @@ mod tests {
     use serde_json::json;
 
     fn test_app() -> App {
-        App::new("m".into(), 8, std::path::PathBuf::from("."), None)
+        // Persist into a unique temp dir so tests that save threads never
+        // dirty the working tree (src-tauri/threads/).
+        let agent_dir = std::env::temp_dir().join(format!(
+            "jan_tui_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        App::new("m".into(), 8, agent_dir, None)
     }
 
     fn pending(offers_always: bool) -> Pending {
