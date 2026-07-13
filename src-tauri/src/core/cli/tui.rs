@@ -232,6 +232,11 @@ struct App {
     input: String,
     /// Caret position as a byte index into `input` (always on a char boundary).
     cursor: usize,
+    /// Highlighted row in the slash-command hint popup (clamped to matches).
+    slash_selected: usize,
+    /// Set by Esc to hide the hint popup without clearing the buffer; cleared on
+    /// the next keystroke that edits the input so typing re-shows it.
+    slash_dismissed: bool,
     status: Status,
     turn: (u32, u32),
     tokens: u64,
@@ -274,6 +279,8 @@ impl App {
             grouped_ids: std::collections::HashSet::new(),
             input: String::new(),
             cursor: 0,
+            slash_selected: 0,
+            slash_dismissed: false,
             status: Status::Idle,
             turn: (0, 0),
             tokens: 0,
@@ -415,11 +422,13 @@ impl App {
     fn input_clear(&mut self) {
         self.input.clear();
         self.cursor = 0;
+        self.reset_slash_hint();
     }
 
     fn input_insert(&mut self, c: char) {
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
+        self.reset_slash_hint();
     }
 
     /// Delete the char before the caret (Backspace).
@@ -428,6 +437,7 @@ impl App {
             self.cursor -= prev.len_utf8();
             self.input.remove(self.cursor);
         }
+        self.reset_slash_hint();
     }
 
     /// Delete the char at the caret (Delete); caret stays put.
@@ -435,6 +445,53 @@ impl App {
         if self.cursor < self.input.len() {
             self.input.remove(self.cursor);
         }
+        self.reset_slash_hint();
+    }
+
+    /// Reset hint selection and un-dismiss so an edited buffer re-shows the popup.
+    fn reset_slash_hint(&mut self) {
+        self.slash_selected = 0;
+        self.slash_dismissed = false;
+    }
+
+    /// Slash commands whose name prefixes the current buffer, or empty when the
+    /// popup should not show: not idle, buffer isn't a bare `/name` token (no
+    /// whitespace yet), the popup was Esc-dismissed, or nothing matches.
+    fn slash_matches(&self) -> Vec<&'static SlashCommand> {
+        if self.status != Status::Idle
+            || self.slash_dismissed
+            || !self.input.starts_with('/')
+            || self.input.chars().any(char::is_whitespace)
+        {
+            return Vec::new();
+        }
+        SLASH_COMMANDS
+            .iter()
+            .filter(|c| c.name.starts_with(&self.input))
+            .collect()
+    }
+
+    /// Move the hint selection, wrapping within the current match count.
+    fn slash_move(&mut self, delta: isize) {
+        let len = self.slash_matches().len();
+        if len == 0 {
+            return;
+        }
+        let cur = self.slash_selected.min(len - 1) as isize;
+        self.slash_selected = (cur + delta).rem_euclid(len as isize) as usize;
+    }
+
+    /// Fill the buffer with the highlighted command name plus a trailing space,
+    /// ready for arguments; the space hides the popup via `slash_matches`.
+    fn accept_slash(&mut self) {
+        let matches = self.slash_matches();
+        if matches.is_empty() {
+            return;
+        }
+        let name = matches[self.slash_selected.min(matches.len() - 1)].name;
+        self.input = format!("{name} ");
+        self.cursor = self.input.len();
+        self.slash_selected = 0;
     }
 
     fn cursor_left(&mut self) {
@@ -1539,6 +1596,41 @@ async fn handle_key(
         return;
     }
 
+    // Slash-command hint popup: while typing a `/command` name (idle, no space
+    // yet) with at least one match, it owns Up/Down/Tab/Esc and Enter-to-accept.
+    // Enter on a fully-typed command falls through to run it; typed chars fall
+    // through to normal editing (which re-filters the popup live).
+    if !app.slash_matches().is_empty() {
+        match key.code {
+            KeyCode::Up => {
+                app.slash_move(-1);
+                return;
+            }
+            KeyCode::Down => {
+                app.slash_move(1);
+                return;
+            }
+            KeyCode::Tab => {
+                app.accept_slash();
+                return;
+            }
+            KeyCode::Esc => {
+                app.slash_dismissed = true;
+                return;
+            }
+            KeyCode::Enter => {
+                let matches = app.slash_matches();
+                let sel = app.slash_selected.min(matches.len() - 1);
+                if app.input.trim() != matches[sel].name {
+                    app.accept_slash();
+                    return;
+                }
+                // Exact match: fall through to the normal Enter path to run it.
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
         KeyCode::Esc => {
             // Esc cancels a run or clears typed input; it never quits (that's
@@ -1626,6 +1718,60 @@ fn abort_run(current: &mut Option<CurrentRun>) {
     }
 }
 
+/// A slash command's name, argument hint, and description. Single source of
+/// truth shared by the hint popup and the `/help` listing so they never drift
+/// as commands are added or removed.
+struct SlashCommand {
+    /// Includes the leading slash, e.g. `/resume`.
+    name: &'static str,
+    /// Argument hint (`[id]`) or empty when the command takes none.
+    hint: &'static str,
+    description: &'static str,
+}
+
+const SLASH_COMMANDS: &[SlashCommand] = &[
+    SlashCommand {
+        name: "/help",
+        hint: "",
+        description: "Show available commands",
+    },
+    SlashCommand {
+        name: "/new",
+        hint: "",
+        description: "Start a new session",
+    },
+    SlashCommand {
+        name: "/clear",
+        hint: "",
+        description: "Clear the conversation",
+    },
+    SlashCommand {
+        name: "/threads",
+        hint: "",
+        description: "List saved threads for this project",
+    },
+    SlashCommand {
+        name: "/resume",
+        hint: "[id]",
+        description: "Resume a thread (bare: pick interactively)",
+    },
+    SlashCommand {
+        name: "/model",
+        hint: "[id]",
+        description: "Switch model (bare: pick interactively)",
+    },
+    SlashCommand {
+        name: "/mcp",
+        hint: "",
+        description: "Enable/disable MCP servers",
+    },
+    SlashCommand {
+        name: "/quit",
+        hint: "",
+        description: "Exit the TUI",
+    },
+];
+
 /// Split a command line into `(name, arg)`, UTF-8 safe (no byte slicing).
 fn parse_command(line: &str) -> (&str, &str) {
     match line.trim().split_once(char::is_whitespace) {
@@ -1640,18 +1786,17 @@ async fn run_command(app: &mut App, line: &str) {
     match name {
         "" | "help" | "?" => {
             app.gap(Kind::Meta);
-            for l in [
-                "commands:",
-                "  /help              show this help",
-                "  /new               start a new session",
-                "  /clear             clear the conversation",
-                "  /threads           list saved threads",
-                "  /resume [id]       pick a saved thread to load (or pass an id)",
-                "  /model [id]        pick a provider/model (or pass an id)",
-                "  /mcp               enable/disable MCP servers",
-                "  /quit              exit",
-            ] {
-                app.push(Line::styled(l.to_string(), Style::new().dim()));
+            app.push(Line::styled("commands:".to_string(), Style::new().dim()));
+            for c in SLASH_COMMANDS {
+                let sig = if c.hint.is_empty() {
+                    c.name.to_string()
+                } else {
+                    format!("{} {}", c.name, c.hint)
+                };
+                app.push(Line::styled(
+                    format!("  {sig:18} {}", c.description),
+                    Style::new().dim(),
+                ));
             }
         }
         "clear" => {
@@ -2245,7 +2390,59 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_permission(f, rect, pending);
+    } else {
+        // Dock the slash-command hints above the input box, growing upward and
+        // clamped to the body so they never overrun the transcript. Mutually
+        // exclusive with the permission prompt (that only shows while running).
+        let matches = app.slash_matches();
+        if !matches.is_empty() {
+            let height = (matches.len() as u16 + 2).min(chunks[1].height);
+            let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+            let rect = ratatui::layout::Rect {
+                x: chunks[2].x,
+                y,
+                width: chunks[2].width,
+                height,
+            };
+            draw_slash_hints(f, rect, &matches, app.slash_selected);
+        }
     }
+}
+
+/// Slash-command hint popup: one row per match (`/name [hint]  description`),
+/// the highlighted row reversed. Docked above the input box.
+fn draw_slash_hints(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    matches: &[&SlashCommand],
+    selected: usize,
+) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let dim = Style::new().dark_gray();
+    let items: Vec<ListItem> = matches
+        .iter()
+        .map(|c| {
+            let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
+            if !c.hint.is_empty() {
+                spans.push(Span::styled(format!(" {}", c.hint), dim));
+            }
+            spans.push(Span::styled(format!("  {}", c.description), dim));
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().dark_gray())
+        .title(Span::styled(" commands ", Style::new().dim()));
+    f.render_widget(Clear, area);
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::new().reversed())
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(selected.min(matches.len().saturating_sub(1))));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 /// Permission prompt docked above the input: names the tool, capability, and
@@ -3312,5 +3509,77 @@ mod tests {
         assert_eq!(message_text(&bare), "plain");
         let empty = json!({ "role": "user" });
         assert_eq!(message_text(&empty), "");
+    }
+
+    fn names(app: &App) -> Vec<&'static str> {
+        app.slash_matches().iter().map(|c| c.name).collect()
+    }
+
+    #[test]
+    fn slash_bare_lists_all_commands() {
+        let mut app = test_app();
+        app.input = "/".into();
+        assert_eq!(names(&app).len(), super::SLASH_COMMANDS.len());
+    }
+
+    #[test]
+    fn slash_prefix_narrows_and_unmatched_hides() {
+        let mut app = test_app();
+        app.input = "/re".into();
+        assert_eq!(names(&app), vec!["/resume"]);
+        app.input = "/xyz".into();
+        assert!(app.slash_matches().is_empty());
+    }
+
+    #[test]
+    fn slash_hidden_when_not_command_or_has_space() {
+        let mut app = test_app();
+        app.input = "hello".into();
+        assert!(app.slash_matches().is_empty());
+        // A space means the user is typing an argument, not the command name.
+        app.input = "/resume ".into();
+        assert!(app.slash_matches().is_empty());
+    }
+
+    #[test]
+    fn slash_hidden_while_running() {
+        let mut app = test_app();
+        app.input = "/".into();
+        app.status = super::Status::Running;
+        assert!(app.slash_matches().is_empty());
+    }
+
+    #[test]
+    fn slash_move_wraps_within_matches() {
+        let mut app = test_app();
+        app.input = "/".into();
+        let n = super::SLASH_COMMANDS.len();
+        app.slash_move(-1);
+        assert_eq!(app.slash_selected, n - 1);
+        app.slash_move(1);
+        assert_eq!(app.slash_selected, 0);
+    }
+
+    #[test]
+    fn accept_slash_fills_buffer_with_trailing_space() {
+        let mut app = test_app();
+        app.input = "/re".into();
+        app.accept_slash();
+        assert_eq!(app.input, "/resume ");
+        assert_eq!(app.cursor, app.input.len());
+        // Trailing space now hides the popup.
+        assert!(app.slash_matches().is_empty());
+    }
+
+    #[test]
+    fn esc_dismiss_hides_until_next_edit() {
+        let mut app = test_app();
+        app.input = "/re".into();
+        app.cursor = app.input.len();
+        app.slash_dismissed = true;
+        assert!(app.slash_matches().is_empty());
+        // Editing the buffer re-shows the popup.
+        app.input_insert('s');
+        assert_eq!(names(&app), vec!["/resume"]);
     }
 }
