@@ -218,24 +218,34 @@ pub(crate) async fn collect_mcp_openai_tools(
     let mut openai_tools = Vec::new();
     let mut tool_to_server: HashMap<String, String> = HashMap::new();
 
-    for (server_name, service) in servers.iter() {
-        let tools_future = service.list_all_tools();
-        let tools = match tokio::time::timeout(timeout_duration, tools_future).await {
-            Ok(Ok(tools)) => tools,
-            Ok(Err(e)) => {
-                log::warn!("MCP server {} failed to list tools: {}", server_name, e);
-                continue;
-            }
-            Err(_) => {
-                log::warn!(
-                    "Listing MCP tools timed out after {} seconds on server {}",
-                    timeout_duration.as_secs(),
-                    server_name
-                );
-                continue;
-            }
-        };
+    // Probe every server concurrently so one slow/hanging server can't serialize
+    // the whole collection behind its timeout (previously each server waited out
+    // the full timeout before the next was contacted).
+    let listings = futures_util::future::join_all(servers.iter().map(|(server_name, service)| {
+        async move {
+            let result = match tokio::time::timeout(timeout_duration, service.list_all_tools()).await
+            {
+                Ok(Ok(tools)) => Some(tools),
+                Ok(Err(e)) => {
+                    log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                    None
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Listing MCP tools timed out after {} seconds on server {}",
+                        timeout_duration.as_secs(),
+                        server_name
+                    );
+                    None
+                }
+            };
+            (server_name.clone(), result)
+        }
+    }))
+    .await;
 
+    for (server_name, tools) in listings {
+        let Some(tools) = tools else { continue };
         for tool in tools {
             tool_to_server.insert(tool.name.to_string(), server_name.clone());
 
