@@ -4,44 +4,45 @@
 
 use std::path::Path;
 
+use crate::core::agent::skills;
+
 /// Built-in guide teaching the model the skills/memory file conventions. Always
 /// injected for project runs so the model can read and maintain both without
 /// prior knowledge. Embedded in the binary at compile time.
 const DEFAULT_SKILL_GUIDE: &str = include_str!("default_skill.md");
 
-/// Read `<project_root>/.jan/agent/skills/*.md`, sorted by filename, and
-/// concatenate them into one skills block. Empty files are skipped. Returns
-/// None when the skills dir is absent or holds no non-empty markdown.
+/// Build the skills catalog for the system prompt: one `## Skill: <name>` entry
+/// per skill with its one-line description only — NOT the full body. Progressive
+/// disclosure: the model calls `skill_read` to pull a skill's full instructions
+/// on demand, so a large skill library costs ~a description each, not full text.
+/// Covers folder skills (`<name>/SKILL.md`) and legacy flat `<name>.md`. Returns
+/// None when no advertisable skill exists.
 pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
-    let skills_dir = project_root.join(".jan").join("agent").join("skills");
-    let mut paths: Vec<_> = std::fs::read_dir(&skills_dir)
-        .ok()?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
-        .collect();
-    paths.sort();
-
-    let mut sections = Vec::new();
-    for path in paths {
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let trimmed = content.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("skill");
-        sections.push(format!("## Skill: {name}\n\n{trimmed}"));
+    // Honor the project's `[skills].enabled` whitelist (empty = all). Reading the
+    // config here keeps load_skills self-contained; a missing/malformed config
+    // falls back to "all skills" rather than erroring.
+    let enabled = crate::core::agent::project::load_agent_config(project_root)
+        .ok()
+        .map(|c| c.skills.enabled)
+        .unwrap_or_default();
+    let entries = skills::catalog(project_root, &enabled);
+    if entries.is_empty() {
+        return None;
     }
-
-    if sections.is_empty() {
-        None
-    } else {
-        Some(format!("# Available Skills\n\n{}", sections.join("\n\n")))
-    }
+    let list = entries
+        .iter()
+        .map(|m| {
+            if m.description.is_empty() {
+                format!("## Skill: {}", m.name)
+            } else {
+                format!("## Skill: {}\n\n{}", m.name, m.description)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    Some(format!(
+        "# Available Skills\n\nEach skill below lists its name and purpose. Before applying a skill, call `skill_read` with its name to load its full instructions.\n\n{list}"
+    ))
 }
 
 /// Assemble the project system prompt: the optional base prompt, the always-on
@@ -101,6 +102,23 @@ mod tests {
         assert!(!block.contains("## Skill: empty"));
         // Alphabetical: a_first precedes b_second.
         assert!(block.find("a_first").unwrap() < block.find("b_second").unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn catalog_advertises_description_not_full_body() {
+        let root = scratch_project("catalog");
+        write_skill(
+            &root,
+            "deploy.md",
+            "---\ndescription: How to deploy\n---\n\nSECRET_BODY_MARKER run ./deploy.sh",
+        );
+        let block = load_skills(&root).expect("skills block");
+        assert!(block.contains("## Skill: deploy"));
+        assert!(block.contains("How to deploy"));
+        // Progressive disclosure: the body stays out of the prompt until read.
+        assert!(!block.contains("SECRET_BODY_MARKER"));
+        assert!(block.contains("skill_read"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

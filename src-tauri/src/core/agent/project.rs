@@ -16,6 +16,17 @@ pub(crate) struct AgentToml {
     pub agent: AgentSection,
     #[serde(default)]
     pub tools: ToolsSection,
+    #[serde(default)]
+    pub skills: SkillsSection,
+}
+
+/// `[skills]` — which project skills are advertised to the model. An empty
+/// `enabled` list means "all skills" (backward-compatible with the scaffold
+/// template, which ships `enabled = []`); a non-empty list is a whitelist.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct SkillsSection {
+    #[serde(default)]
+    pub enabled: Vec<String>,
 }
 
 /// `[agent]` — resolves the model and default turn cap for CLI agent runs.
@@ -142,6 +153,29 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
 
     let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
     agent["model"] = toml_edit::value(model);
+
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+/// Persist `[skills].enabled` into the agent.toml at `path`, format-preserving
+/// (comments kept). An empty list clears the whitelist (= all skills enabled).
+pub(crate) fn set_skills_enabled_in_agent_toml(
+    path: &Path,
+    enabled: &[String],
+) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    let skills = doc["skills"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    let mut arr = toml_edit::Array::new();
+    for name in enabled {
+        arr.push(name.as_str());
+    }
+    skills["enabled"] = toml_edit::value(arr);
 
     std::fs::write(path, doc.to_string())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))

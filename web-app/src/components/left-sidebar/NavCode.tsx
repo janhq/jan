@@ -10,6 +10,8 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { MessageSquarePlus, Box, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { useCodeSessions } from '@/hooks/useCodeSessions'
+import { useState } from 'react'
+import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 
 type CodeNavItem = {
   title: string
@@ -22,6 +24,7 @@ export function NavCode() {
   const navigate = useNavigate()
   const sessions = useCodeSessions((s) => s.sessions)
   const currentId = useCodeSessions((s) => s.currentId)
+  const [skillsOpen, setSkillsOpen] = useState(false)
 
   const goCode = () => navigate({ to: route.code })
 
@@ -42,7 +45,7 @@ export function NavCode() {
     {
       title: t('common:customize'),
       icon: SlidersHorizontal,
-      onClick: goCode,
+      onClick: () => setSkillsOpen(true),
     },
   ]
 
@@ -82,6 +85,8 @@ export function NavCode() {
           </SidebarMenu>
         </SidebarGroup>
       )}
+
+      <SkillsManagerDialog open={skillsOpen} onOpenChange={setSkillsOpen} />
     </>
   )
 }

@@ -2,10 +2,20 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 
-// A single visible transcript entry. `tool` rows are display-only.
+// A single visible transcript entry. `tool` rows are display-only and carry the
+// structured call/result so the UI can render a tool card. The extra fields are
+// optional for backward-compat with sessions persisted before they existed.
 export type CodeTurn = {
   role: 'user' | 'assistant' | 'tool'
   content: string
+  // Tool-row only: merged from the `tool_call` + matching `tool_result` events.
+  callId?: string
+  name?: string
+  args?: unknown
+  result?: string
+  isError?: boolean
+  diff?: string
+  status?: 'running' | 'done'
 }
 
 // OpenAI-style history replayed to the agent on the next turn (no tool rows).
@@ -32,13 +42,14 @@ type CodeSessionsState = {
   setFolder: (id: string, folder: string) => void
   setTitle: (id: string, title: string) => void
   commitTurns: (id: string, turns: CodeTurn[], history: CodeMessage[]) => void
+  clearSession: (id: string) => void
 }
 
 const now = () => Date.now()
 
 export const useCodeSessions = create<CodeSessionsState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       sessions: [],
       currentId: null,
 
@@ -89,6 +100,13 @@ export const useCodeSessions = create<CodeSessionsState>()(
                   updated: now(),
                 }
               : x
+          ),
+        })),
+
+      clearSession: (id) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, turns: [], history: [], updated: now() } : x
           ),
         })),
     }),
