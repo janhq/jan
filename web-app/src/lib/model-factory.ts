@@ -767,6 +767,20 @@ const REASONING_TAG_MAP: Record<string, string> = {
  */
 const DEFAULT_REASONING_TAG = 'think'
 
+const MINIMAX_ANTHROPIC_BASE_URLS = new Set([
+  'https://api.minimax.io/anthropic',
+  'https://api.minimaxi.com/anthropic',
+])
+
+function getAnthropicSdkBaseUrl(baseUrl: string | undefined) {
+  const normalized = baseUrl?.replace(/\/+$/, '')
+  if (normalized && MINIMAX_ANTHROPIC_BASE_URLS.has(normalized)) {
+    // The SDK appends /messages, while MiniMax exposes /anthropic/v1/messages.
+    return `${normalized}/v1`
+  }
+  return baseUrl
+}
+
 /**
  * Determines the reasoning tag name based on the model ID.
  * Defaults to 'think' if no specific override is found in the map.
@@ -1041,7 +1055,7 @@ export class ModelFactory {
 
     const anthropic = createAnthropic({
       apiKey: keyChain[0] ?? provider.api_key ?? '',
-      baseURL: provider.base_url,
+      baseURL: getAnthropicSdkBaseUrl(provider.base_url),
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,
     })

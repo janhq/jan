@@ -348,6 +348,22 @@ describe('getModelCapabilities', () => {
     expect(capabilities).toContain(ModelCapabilities.VISION)
   })
 
+  it('reports the distinct MiniMax M3 and M2.7 capabilities', () => {
+    const m3Capabilities = getModelCapabilities('minimax', 'MiniMax-M3')
+    const m27Capabilities = getModelCapabilities('minimax', 'MiniMax-M2.7')
+
+    expect(defaultModel('minimax')).toBe('MiniMax-M3')
+    expect(m3Capabilities).toEqual([
+      ModelCapabilities.COMPLETION,
+      ModelCapabilities.TOOLS,
+      ModelCapabilities.VISION,
+    ])
+    expect(m27Capabilities).toEqual([
+      ModelCapabilities.COMPLETION,
+      ModelCapabilities.TOOLS,
+    ])
+  })
+
   it('handles provider with no capability arrays gracefully', () => {
     const capabilities = getModelCapabilities('ai21', 'jamba-instruct')
     expect(capabilities).toEqual([ModelCapabilities.COMPLETION])
