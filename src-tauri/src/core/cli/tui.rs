@@ -173,6 +173,18 @@ struct CurrentRun {
     handle: JoinHandle<()>,
 }
 
+/// One folded call's retained detail, so an expanded group can reconstruct each
+/// individual call and its result without re-fetching anything.
+struct GroupedCall {
+    id: String,
+    /// Past-tense finished label (e.g. "Ran grep -n foo src/").
+    done: String,
+    /// Raw result content, filled when the matching `ToolResult` arrives.
+    content: Option<String>,
+    is_error: bool,
+    diff: Option<String>,
+}
+
 /// A run of consecutive collapsible tool calls folded into one transcript row.
 struct ToolGroup {
     /// Transcript index of the row this group owns.
@@ -184,6 +196,18 @@ struct ToolGroup {
     /// the summary into a "Read ..." clause and a "ran ..." clause so the verb
     /// always agrees with its noun.
     nouns: Vec<(&'static str, bool)>,
+    /// Per-call detail retained so the collapsed row can expand back to its
+    /// individual calls/results (never discarded at fold time).
+    calls: Vec<GroupedCall>,
+}
+
+/// A committed `<think>` reasoning block, folded to a one-line summary row.
+/// The full dimmed lines are retained so the row can expand back to them.
+struct ReasoningBlock {
+    /// Transcript index of the summary row this block owns.
+    idx: usize,
+    /// Full dimmed reasoning lines, revealed when expanded.
+    detail: Vec<Line<'static>>,
 }
 
 /// A committed workspace state, one per turn that changed files. `user_index` is
@@ -229,6 +253,18 @@ struct App {
     /// Ids of calls folded into a `ToolGroup`, so their `ToolResult` is swallowed
     /// (the group row already represents them). Survives group finalize.
     grouped_ids: std::collections::HashSet<String>,
+    /// Finalized tool groups, retained with their per-call detail so a collapsed
+    /// summary row can be expanded back to its individual calls/results.
+    groups: Vec<ToolGroup>,
+    /// Committed reasoning blocks, folded to a summary row and expandable back to
+    /// their full dimmed lines.
+    reasoning_blocks: Vec<ReasoningBlock>,
+    /// Transcript row indices of collapsed regions (tool groups or reasoning
+    /// blocks) the user has expanded to full detail.
+    expanded: std::collections::HashSet<usize>,
+    /// Transcript row of a region to scroll into view on the next draw (set when
+    /// expanding one that may sit above the pinned-to-bottom viewport).
+    reveal: Option<usize>,
     input: String,
     /// Caret position as a byte index into `input` (always on a char boundary).
     cursor: usize,
@@ -277,6 +313,10 @@ impl App {
             assistant_buf: String::new(),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
+            groups: Vec::new(),
+            reasoning_blocks: Vec::new(),
+            expanded: std::collections::HashSet::new(),
+            reveal: None,
             input: String::new(),
             cursor: 0,
             slash_selected: 0,
@@ -335,6 +375,10 @@ impl App {
         self.transcript.clear();
         self.tool_group = None;
         self.grouped_ids.clear();
+        self.groups.clear();
+        self.reasoning_blocks.clear();
+        self.expanded.clear();
+        self.reveal = None;
         self.assistant_buf.clear();
         self.pending = None;
         self.tokens = 0;
@@ -354,17 +398,42 @@ impl App {
     fn flush_assistant(&mut self) {
         let text = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
-        if text.is_empty() {
-            return;
-        }
-        let lines = format_assistant_lines(&text, self.render_width());
-        if lines.is_empty() {
+        // No-op (and, crucially, don't finalize the tool group) on an empty or
+        // whitespace-only buffer, so silent consecutive tool calls keep folding.
+        if !assistant_has_content(&text) {
             return;
         }
         // Model prose ends the current run of tool calls.
         self.finalize_tool_group();
-        self.gap(Kind::Prose);
-        self.transcript.extend(lines);
+        self.push_assistant_blocks(&text);
+    }
+
+    /// Commit assistant `text` to the transcript in emission order: answer prose
+    /// through markdown, each `<think>` block folded to a one-line summary row
+    /// whose full dimmed detail is retained for expansion.
+    fn push_assistant_blocks(&mut self, text: &str) {
+        let width = self.render_width();
+        for (reasoning, seg) in split_reasoning(text) {
+            if seg.trim().is_empty() {
+                continue;
+            }
+            if reasoning {
+                let detail = reasoning_detail_lines(&seg);
+                if detail.is_empty() {
+                    continue;
+                }
+                self.gap(Kind::Prose);
+                self.push(reasoning_summary_row(detail.len()));
+                let idx = self.transcript.len() - 1;
+                self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+            } else {
+                let lines = format_markdown_lines(&seg, width);
+                if !lines.is_empty() {
+                    self.gap(Kind::Prose);
+                    self.transcript.extend(lines);
+                }
+            }
+        }
     }
 
     /// Fold a collapsible tool call into the current group row (extending it and
@@ -372,8 +441,16 @@ impl App {
     fn push_grouped_call(&mut self, id: &str, name: &str, label: String, done: String) {
         let (noun, is_read) = tool_kind(name);
         self.grouped_ids.insert(id.to_string());
+        let call = GroupedCall {
+            id: id.to_string(),
+            done: done.clone(),
+            content: None,
+            is_error: false,
+            diff: None,
+        };
         let extend = self.tool_group.as_mut().map(|g| {
             g.nouns.push((noun, is_read));
+            g.calls.push(call);
             (g.idx, group_activity(&g.nouns))
         });
         match extend {
@@ -396,8 +473,15 @@ impl App {
                 ));
                 self.tool_group = Some(ToolGroup {
                     idx: self.transcript.len() - 1,
-                    first_done: done,
+                    first_done: done.clone(),
                     nouns: vec![(noun, is_read)],
+                    calls: vec![GroupedCall {
+                        id: id.to_string(),
+                        done,
+                        content: None,
+                        is_error: false,
+                        diff: None,
+                    }],
                 });
             }
         }
@@ -413,11 +497,36 @@ impl App {
             return;
         }
         let text = if g.nouns.len() <= 1 {
-            g.first_done
+            g.first_done.clone()
         } else {
             group_summary(&g.nouns)
         };
         self.transcript[g.idx] = tool_row("✓", Style::new().green(), &text, Style::new().dim());
+        self.groups.push(g);
+    }
+
+    /// Toggle full detail for every collapsed region (tool groups and reasoning
+    /// blocks): collapse all when all are already expanded, else expand all and
+    /// scroll the most-recent one into view.
+    fn toggle_regions(&mut self) {
+        let all: Vec<usize> = self
+            .groups
+            .iter()
+            .map(|g| g.idx)
+            .chain(self.reasoning_blocks.iter().map(|r| r.idx))
+            .collect();
+        if all.is_empty() {
+            return;
+        }
+        if all.iter().all(|i| self.expanded.contains(i)) {
+            self.expanded.clear();
+            self.reveal = None;
+        } else {
+            self.expanded = all.iter().copied().collect();
+            // The regions sit above the answer that follows; scroll the latest
+            // into view rather than staying pinned to the bottom.
+            self.reveal = all.iter().copied().max();
+        }
     }
 
     fn input_clear(&mut self) {
@@ -696,8 +805,18 @@ impl App {
                 is_error,
                 diff,
             } => {
-                // Grouped calls are already represented by the group row.
+                // Grouped calls are already represented by the group row; retain
+                // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
+                    if let Some(call) = self
+                        .tool_group
+                        .as_mut()
+                        .and_then(|g| g.calls.iter_mut().find(|c| c.id == id))
+                    {
+                        call.is_error = is_error;
+                        call.diff = diff;
+                        call.content = Some(content);
+                    }
                     return;
                 }
                 self.flush_assistant();
@@ -980,6 +1099,38 @@ fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<
     ])
 }
 
+/// Per-call detail lines for an expanded tool group: each call's finished label
+/// with its result summary (and diff, if any) indented under the summary row.
+fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
+    let max = width.saturating_sub(8) as usize;
+    let mut out = Vec::new();
+    for call in &group.calls {
+        out.push(Line::from(vec![
+            Span::styled("│   ", Style::new().dark_gray()),
+            Span::styled("▸ ", Style::new().cyan()),
+            Span::styled(call.done.clone(), Style::new().dim()),
+        ]));
+        if let Some(content) = &call.content {
+            let (tag, tag_style) = if call.is_error {
+                ("✗", Style::new().red())
+            } else {
+                ("✓", Style::new().green())
+            };
+            out.push(Line::from(vec![
+                Span::styled("│     ", Style::new().dark_gray()),
+                Span::styled(format!("{tag} "), tag_style),
+                Span::styled(summarize_result(content, max), Style::new().dim()),
+            ]));
+            if let Some(diff) = &call.diff {
+                for line in diff_lines(diff, max, "│       ") {
+                    out.push(line);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Classify a collapsible tool into a breakdown noun and whether it is a
 /// read-style op (drives the "Read" vs "Ran" verb in a group summary).
 fn tool_kind(name: &str) -> (&'static str, bool) {
@@ -1106,19 +1257,45 @@ fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for (reasoning, seg) in split_reasoning(text) {
         if reasoning {
-            for l in seg.lines() {
-                if !l.trim().is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("┊ ", Style::new().dark_gray()),
-                        Span::styled(l.to_string(), Style::new().dim().italic()),
-                    ]));
-                }
-            }
+            lines.extend(reasoning_detail_lines(&seg));
         } else {
             lines.extend(format_markdown_lines(&seg, width));
         }
     }
     lines
+}
+
+/// True if `text` has any non-whitespace content in any reasoning/answer run.
+fn assistant_has_content(text: &str) -> bool {
+    split_reasoning(text)
+        .iter()
+        .any(|(_, seg)| !seg.trim().is_empty())
+}
+
+/// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body).
+fn reasoning_detail_lines(seg: &str) -> Vec<Line<'static>> {
+    seg.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            Line::from(vec![
+                Span::styled("┊ ", Style::new().dark_gray()),
+                Span::styled(l.to_string(), Style::new().dim().italic()),
+            ])
+        })
+        .collect()
+}
+
+/// Collapsed summary row for a folded reasoning block.
+fn reasoning_summary_row(n: usize) -> Line<'static> {
+    let label = if n == 1 {
+        "reasoning (1 line)".to_string()
+    } else {
+        format!("reasoning ({n} lines)")
+    };
+    Line::from(vec![
+        Span::styled("┊ ", Style::new().dark_gray()),
+        Span::styled(label, Style::new().dim().italic()),
+    ])
 }
 
 fn table_cells(line: &str) -> Vec<String> {
@@ -1686,6 +1863,11 @@ async fn handle_key(
         KeyCode::Char('j') if app.status == Status::Idle && ctrl => {
             app.input_insert('\n');
         }
+        // Ctrl-O expands/collapses all folded regions (tool groups and reasoning
+        // blocks), scrolling the latest into view.
+        KeyCode::Char('o') if ctrl => {
+            app.toggle_regions();
+        }
         KeyCode::Enter => {
             if app.status == Status::Idle {
                 let text = app.input.trim().to_string();
@@ -2170,9 +2352,12 @@ fn rebuild_transcript(app: &mut App) {
     app.transcript.clear();
     app.tool_group = None;
     app.grouped_ids.clear();
+    app.groups.clear();
+    app.reasoning_blocks.clear();
+    app.expanded.clear();
+    app.reveal = None;
     app.assistant_buf.clear();
     app.last_kind = Kind::None;
-    let width = app.render_width();
     let history = app.history.clone();
     for m in &history {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -2187,11 +2372,7 @@ fn rebuild_transcript(app: &mut App) {
                 Span::styled(text.to_string(), Style::new().bold()),
             ]));
         } else if role == "assistant" {
-            let lines = format_assistant_lines(text, width);
-            if !lines.is_empty() {
-                app.gap(Kind::Prose);
-                app.transcript.extend(lines);
-            }
+            app.push_assistant_blocks(text);
         }
     }
 }
@@ -2226,6 +2407,10 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.transcript.clear();
     app.tool_group = None;
     app.grouped_ids.clear();
+    app.groups.clear();
+    app.reasoning_blocks.clear();
+    app.expanded.clear();
+    app.reveal = None;
     app.assistant_buf.clear();
     app.turn = (0, 0);
     app.tokens = 0;
@@ -2241,7 +2426,6 @@ fn resume_thread(app: &mut App, id_arg: &str) {
         app.model = model.to_string();
     }
 
-    let width = app.render_width();
     let mut count = 0;
     for msg in &messages {
         let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -2258,12 +2442,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
                 Span::styled(text, Style::new().bold()),
             ]));
         } else {
-            let lines = format_assistant_lines(&text, width);
-            if lines.is_empty() {
-                continue;
-            }
-            app.gap(Kind::Prose);
-            app.transcript.extend(lines);
+            app.push_assistant_blocks(&text);
         }
         count += 1;
     }
@@ -2339,7 +2518,21 @@ fn draw(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let mut lines = app.transcript.clone();
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(app.transcript.len());
+    let mut reveal_at: Option<usize> = None;
+    for (i, line) in app.transcript.iter().enumerate() {
+        if app.reveal == Some(i) {
+            reveal_at = Some(lines.len());
+        }
+        lines.push(line.clone());
+        if app.expanded.contains(&i) {
+            if let Some(group) = app.groups.iter().find(|g| g.idx == i) {
+                lines.extend(group_detail_lines(group, width));
+            } else if let Some(block) = app.reasoning_blocks.iter().find(|r| r.idx == i) {
+                lines.extend(block.detail.iter().cloned());
+            }
+        }
+    }
     if !app.assistant_buf.is_empty() {
         let tail = format_assistant_lines(&app.assistant_buf, width);
         if !tail.is_empty() {
@@ -2377,11 +2570,27 @@ fn draw(f: &mut Frame, app: &mut App) {
         let mut padded = vec![Line::raw(""); pad as usize];
         padded.append(&mut lines);
         lines = padded;
+        reveal_at = reveal_at.map(|n| n + pad as usize);
     }
+
+    // Wrapped-content offset of the row we want scrolled into view, in the same
+    // coordinate space as `scroll` (TOP/BOTTOM borders don't affect wrapping).
+    let reveal_scroll = reveal_at.map(|n| {
+        Paragraph::new(lines[..n].to_vec())
+            .wrap(Wrap { trim: false })
+            .line_count(width)
+            .min(u16::MAX as usize) as u16
+    });
 
     let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);
     let total = body.line_count(width).min(u16::MAX as usize) as u16;
     let max_back = total.saturating_sub(inner_h);
+    if let Some(target) = reveal_scroll {
+        // Position the region near the top of the viewport; clamps to pinned
+        // bottom when it is already close enough to the end.
+        app.scrollback = max_back.saturating_sub(target);
+    }
+    app.reveal = None;
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
     f.render_widget(body.scroll((scroll, 0)), chunks[1]);
@@ -2667,8 +2876,8 @@ fn footer(app: &App) -> Paragraph<'static> {
         return Paragraph::new(Line::styled(picker.action_hint(), Style::new().dim()));
     }
     let hint = match app.status {
-        Status::Running => "Esc/Ctrl-C cancel   ↑/↓ scroll",
-        Status::Idle => "Enter send   Alt+Enter newline   /help   ↑/↓ scroll   Ctrl-D quit",
+        Status::Running => "Esc/Ctrl-C cancel   ↑/↓ scroll   Ctrl-O expand all",
+        Status::Idle => "Enter send   Alt+Enter newline   /help   ↑/↓ scroll   Ctrl-O expand all   Ctrl-D quit",
     };
     let detail = if app.detail.is_empty() {
         String::new()
@@ -2681,8 +2890,8 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        diff_lines, group_activity, group_summary, input_content_lines, is_table_separator,
-        message_text,
+        diff_lines, group_activity, group_detail_lines, group_summary, input_content_lines,
+        is_table_separator, message_text,
         parse_command, render_table, run_command, split_reasoning, summarize_result,
         tool_activity, tool_finished, transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
     };
@@ -2834,6 +3043,134 @@ mod tests {
             }
         }
         assert!(found_dim, "open <think> content must still appear in the live tail");
+    }
+
+    #[test]
+    fn expanded_reasoning_renders_full_detail_in_draw() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        app.apply(StreamEvent::Token {
+            text: "<think>secret plan line</think>Answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 1);
+
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let collapsed = render(&mut app);
+        assert!(!collapsed.contains("secret plan line"), "collapsed: {collapsed}");
+        assert!(collapsed.contains("reasoning (1 line)"));
+
+        app.toggle_regions();
+        let expanded = render(&mut app);
+        assert!(
+            expanded.contains("secret plan line"),
+            "expanded draw must reveal the reasoning: {expanded}"
+        );
+    }
+
+    #[test]
+    fn expanding_offscreen_region_scrolls_it_into_view() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        // Reasoning near the top, then a long answer that fills past a short
+        // viewport so the folded row is off-screen when pinned to the bottom.
+        app.apply(StreamEvent::Token {
+            text: "<think>hidden rationale</think>".into(),
+        });
+        for i in 0..40 {
+            app.apply(StreamEvent::Token {
+                text: format!("answer line {i}\n"),
+            });
+        }
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 1);
+
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Pinned to the bottom: the folded reasoning row is not on screen.
+        assert!(!render(&mut app).contains("reasoning (1 line)"));
+
+        // Expanding scrolls the region into view so its detail is visible.
+        app.toggle_regions();
+        let expanded = render(&mut app);
+        assert!(
+            expanded.contains("hidden rationale"),
+            "expanded region must be scrolled into view: {expanded}"
+        );
+    }
+
+    #[test]
+    fn toggle_expands_and_collapses_all_regions_at_once() {
+        let mut app = test_app();
+        // Two reasoning blocks and two tool groups interleaved across turns.
+        app.apply(StreamEvent::Token { text: "<think>a</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "<think>b</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "pwd" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.reasoning_blocks.len(), 2);
+        assert_eq!(app.groups.len(), 2);
+
+        // One toggle expands every region.
+        app.toggle_regions();
+        let all: std::collections::HashSet<usize> = app
+            .groups
+            .iter()
+            .map(|g| g.idx)
+            .chain(app.reasoning_blocks.iter().map(|r| r.idx))
+            .collect();
+        assert_eq!(app.expanded, all);
+
+        // A second toggle collapses them all.
+        app.toggle_regions();
+        assert!(app.expanded.is_empty());
     }
 
     #[test]
@@ -3209,6 +3546,44 @@ mod tests {
     }
 
     #[test]
+    fn folded_group_expands_and_collapses_via_keybinding() {
+        let mut app = test_app();
+        let calls = [
+            ("c1", "memory_read", json!({ "name": "project-overview" })),
+            ("c2", "memory_read", json!({ "name": "top-p" })),
+        ];
+        for (id, name, args) in calls {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: name.into(),
+                args,
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: format!("result for {id}"),
+                is_error: false,
+                diff: None,
+            });
+        }
+        app.apply(StreamEvent::Token { text: "Done.".into() });
+        assert_eq!(app.groups.len(), 1);
+
+        // Collapsed by default: draw injects no per-call detail.
+        assert!(app.expanded.is_empty());
+        let group_idx = app.groups[0].idx;
+        let detail = group_detail_lines(&app.groups[0], 80);
+        let detail_text: Vec<String> = detail.iter().map(line_text).collect();
+        assert!(detail_text.iter().any(|l| l.contains("result for c1")));
+        assert!(detail_text.iter().any(|l| l.contains("result for c2")));
+
+        // Ctrl-O expands, a second toggle collapses.
+        app.toggle_regions();
+        assert!(app.expanded.contains(&group_idx));
+        app.toggle_regions();
+        assert!(app.expanded.is_empty());
+    }
+
+    #[test]
     fn silent_tool_turns_keep_folding_across_step_boundaries() {
         let mut app = test_app();
         // One tool per turn (Step between each), no prose: the agent-loop shape.
@@ -3268,8 +3643,14 @@ mod tests {
         });
         // Buffer is drained: the reasoning is committed, not stranded below.
         assert!(app.assistant_buf.is_empty());
+        // Reasoning folds to a collapsed summary row (raw thought hidden), which
+        // still lands above the tool row it preceded (emission order).
         let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
-        let think_at = rows.iter().position(|r| r.contains("let me look")).unwrap();
+        assert!(
+            !rows.iter().any(|r| r.contains("let me look")),
+            "raw reasoning must be hidden by default: {rows:?}"
+        );
+        let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
         let tool_at = rows
             .iter()
             .position(|r| r.contains("Executing") || r.contains("Running"))
@@ -3278,6 +3659,32 @@ mod tests {
             think_at < tool_at,
             "reasoning must render above the tool row it preceded: {rows:?}"
         );
+        // The raw thought is retained on the block for expansion.
+        let block = &app.reasoning_blocks[0];
+        assert!(block.detail.iter().map(line_text).any(|l| l.contains("let me look")));
+    }
+
+    #[test]
+    fn committed_reasoning_folds_and_expands_via_keybinding() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>step one\nstep two</think>The answer is 42.".into(),
+        });
+        // A turn boundary commits the buffer.
+        app.apply(StreamEvent::Step { index: 1, max: 8 });
+
+        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        assert!(rows.iter().any(|r| r.contains("reasoning (2 lines)")));
+        assert!(rows.iter().any(|r| r.contains("The answer is 42")));
+        // Raw reasoning is hidden until expanded.
+        assert!(!rows.iter().any(|r| r.contains("step one")));
+        assert_eq!(app.reasoning_blocks.len(), 1);
+
+        let idx = app.reasoning_blocks[0].idx;
+        app.toggle_regions();
+        assert!(app.expanded.contains(&idx));
+        app.toggle_regions();
+        assert!(app.expanded.is_empty());
     }
 
     #[test]
