@@ -29,6 +29,23 @@ pub enum StreamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diff: Option<String>,
     },
+    /// A backgrounded subagent run began. `run_id` identifies the run so a
+    /// consumer can attribute concurrent children; brackets the child's wrapped
+    /// events with `SubagentEnd`.
+    SubagentStart { run_id: String, name: String },
+    /// A backgrounded subagent run finished (success or error). Pairs with the
+    /// `SubagentStart` of the same `run_id`.
+    SubagentEnd { run_id: String, name: String },
+    /// A backgrounded subagent's own internal event, tagged with its run so a
+    /// consumer can attribute it to the right child even when several run
+    /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
+    /// ToolResult/PermissionRequest); the child's terminal Done/Error is never
+    /// wrapped (its result is delivered via `await_subagent`).
+    Subagent {
+        run_id: String,
+        name: String,
+        event: Box<StreamEvent>,
+    },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,
@@ -278,6 +295,47 @@ mod tests {
                 "diff": "@@ created file @@\n+ hi",
                 "prompt_kind": "write",
                 "offers_always": true
+            })
+        );
+    }
+
+    #[test]
+    fn subagent_bracket_events_serialize_to_wire_shape() {
+        let start = serde_json::to_value(StreamEvent::SubagentStart {
+            run_id: "sub-1".into(),
+            name: "rust-reviewer".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            start,
+            json!({ "type": "subagent_start", "run_id": "sub-1", "name": "rust-reviewer" })
+        );
+        let end = serde_json::to_value(StreamEvent::SubagentEnd {
+            run_id: "sub-1".into(),
+            name: "rust-reviewer".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            end,
+            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer" })
+        );
+    }
+
+    #[test]
+    fn wrapped_subagent_event_nests_inner_event() {
+        let v = serde_json::to_value(StreamEvent::Subagent {
+            run_id: "sub-1".into(),
+            name: "reviewer".into(),
+            event: Box::new(StreamEvent::Token { text: "hi".into() }),
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            json!({
+                "type": "subagent",
+                "run_id": "sub-1",
+                "name": "reviewer",
+                "event": { "type": "token", "text": "hi" }
             })
         );
     }
