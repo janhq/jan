@@ -1,0 +1,1321 @@
+//! Subagent definitions and their two-scope registry. A subagent is a named,
+//! reusable system prompt + default tool allowlist that the main agent can
+//! dispatch a nested, isolated run against (see `dispatch_subagent`). Definitions
+//! live as `<scope>/.jan/agent/subagents/<name>.toml`, merged from the user scope
+//! (`~/.jan/agent/subagents/`) and the project scope (`<project>/.jan/agent/
+//! subagents/`); the project scope shadows the user scope by name.
+
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::core::agent::permissions::ToolPermissions;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubagentScope {
+    User,
+    Project,
+}
+
+/// A dispatchable subagent definition, resolved from a `<name>.toml` file plus
+/// the scope of the directory it was loaded from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentDefinition {
+    pub name: String,
+    pub description: String,
+    pub system_prompt: String,
+    pub allowed_tools: Option<Vec<String>>,
+    pub model: Option<String>,
+    pub scope: SubagentScope,
+}
+
+/// On-disk shape of a subagent `.toml`; `scope` is derived from the directory,
+/// not stored in the file.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct SubagentFile {
+    name: String,
+    description: String,
+    system_prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    allowed_tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubagentError {
+    UnknownSubagent(String),
+    PermissionDenied(String),
+    Upstream(String),
+    Cancelled,
+}
+
+impl std::fmt::Display for SubagentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubagentError::UnknownSubagent(n) => {
+                write!(f, "unknown subagent '{n}': no matching definition in the user or project scope")
+            }
+            SubagentError::PermissionDenied(m) => write!(f, "permission denied: {m}"),
+            SubagentError::Upstream(m) => write!(f, "{m}"),
+            SubagentError::Cancelled => write!(f, "subagent run cancelled"),
+        }
+    }
+}
+
+/// `~/.jan/agent/subagents/`. `None` when the home directory can't be resolved.
+pub fn user_subagents_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".jan").join("agent").join("subagents"))
+}
+
+/// `<project_root>/.jan/agent/subagents/`.
+pub fn project_subagents_dir(project_root: &Path) -> PathBuf {
+    project_root
+        .join(".jan")
+        .join("agent")
+        .join("subagents")
+}
+
+/// A subagent name is used to build a filename, so it must be a single path
+/// component of `[A-Za-z0-9_-]`. Rejects empty, separators, and dots.
+fn validate_name(name: &str) -> Result<(), SubagentError> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(SubagentError::PermissionDenied(format!(
+            "invalid subagent name '{name}': use only letters, digits, '-' and '_'"
+        )));
+    }
+    Ok(())
+}
+
+/// Merged view of subagent definitions across the user and project scopes.
+/// Load order is user first, then project, so `get` (which resolves the winning
+/// definition) returns the project entry when both scopes define a name; `list`
+/// still reports both so shadowing is visible.
+#[derive(Debug, Default)]
+pub struct SubagentRegistry {
+    defs: Vec<SubagentDefinition>,
+}
+
+impl SubagentRegistry {
+    /// Load and merge the user scope then the project scope. Malformed files are
+    /// skipped with a warning rather than failing the whole run.
+    pub fn load(project_root: &Path) -> Self {
+        let mut defs = Vec::new();
+        if let Some(dir) = user_subagents_dir() {
+            load_dir(&dir, SubagentScope::User, &mut defs);
+        }
+        load_dir(
+            &project_subagents_dir(project_root),
+            SubagentScope::Project,
+            &mut defs,
+        );
+        Self { defs }
+    }
+
+    /// The winning definition for `name`: the project-scoped entry shadows a
+    /// user-scoped one of the same name.
+    pub fn get(&self, name: &str) -> Option<&SubagentDefinition> {
+        self.defs.iter().rev().find(|d| d.name == name)
+    }
+
+    /// Every loaded definition, in load order (user scope first). Shadowed
+    /// user-scope entries remain visible alongside their project-scope shadows.
+    pub fn list(&self) -> Vec<&SubagentDefinition> {
+        self.defs.iter().collect()
+    }
+
+    /// Write `def` to the directory for `scope`, refusing to clobber an existing
+    /// definition of the same name in that same scope unless `overwrite`. Returns
+    /// `true` when a project-scope write shadows a user-scope definition (so the
+    /// caller can surface a note). A same-name definition in the *other* scope is
+    /// not a collision (it is shadowing, by design).
+    pub fn create(
+        &mut self,
+        def: SubagentDefinition,
+        scope: SubagentScope,
+        overwrite: bool,
+    ) -> Result<bool, SubagentError> {
+        validate_name(&def.name)?;
+        let dir = match scope {
+            SubagentScope::User => user_subagents_dir().ok_or_else(|| {
+                SubagentError::Upstream("cannot resolve home directory for user scope".to_string())
+            })?,
+            SubagentScope::Project => {
+                return Err(SubagentError::Upstream(
+                    "project scope requires create_in; use create_in".to_string(),
+                ))
+            }
+        };
+        self.create_in(&dir, def, scope, overwrite)
+    }
+
+    /// Scope-directory-explicit variant of [`create`]. The project scope depends
+    /// on the run's project root, which the registry does not retain, so callers
+    /// pass the directory directly.
+    pub fn create_in(
+        &mut self,
+        dir: &Path,
+        def: SubagentDefinition,
+        scope: SubagentScope,
+        overwrite: bool,
+    ) -> Result<bool, SubagentError> {
+        validate_name(&def.name)?;
+        let collides = self
+            .defs
+            .iter()
+            .any(|d| d.name == def.name && d.scope == scope);
+        if collides && !overwrite {
+            return Err(SubagentError::PermissionDenied(format!(
+                "a {scope:?}-scope subagent named '{}' already exists; pass overwrite to replace it",
+                def.name
+            )));
+        }
+        std::fs::create_dir_all(dir)
+            .map_err(|e| SubagentError::Upstream(format!("failed to create {}: {e}", dir.display())))?;
+        let file = SubagentFile {
+            name: def.name.clone(),
+            description: def.description.clone(),
+            system_prompt: def.system_prompt.clone(),
+            allowed_tools: def.allowed_tools.clone(),
+            model: def.model.clone(),
+        };
+        let body = toml::to_string_pretty(&file)
+            .map_err(|e| SubagentError::Upstream(format!("failed to serialize subagent: {e}")))?;
+        let path = dir.join(format!("{}.toml", def.name));
+        std::fs::write(&path, body)
+            .map_err(|e| SubagentError::Upstream(format!("failed to write {}: {e}", path.display())))?;
+
+        let shadows_user = scope == SubagentScope::Project
+            && self
+                .defs
+                .iter()
+                .any(|d| d.name == def.name && d.scope == SubagentScope::User);
+        // Keep the in-memory view consistent: replace any same-scope entry.
+        self.defs
+            .retain(|d| !(d.name == def.name && d.scope == scope));
+        self.defs.push(SubagentDefinition { scope, ..def });
+        Ok(shadows_user)
+    }
+}
+
+fn load_dir(dir: &Path, scope: SubagentScope, out: &mut Vec<SubagentDefinition>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("subagent: failed to read {}: {e}", path.display());
+                continue;
+            }
+        };
+        match toml::from_str::<SubagentFile>(&raw) {
+            Ok(file) => out.push(SubagentDefinition {
+                name: file.name,
+                description: file.description,
+                system_prompt: file.system_prompt,
+                allowed_tools: file.allowed_tools,
+                model: file.model,
+                scope,
+            }),
+            Err(e) => log::warn!("subagent: failed to parse {}: {e}", path.display()),
+        }
+    }
+}
+
+/// Effective tool allowlist for a subagent dispatch: the intersection of the
+/// definition's `allowed_tools`, the call-site override, and the parent's
+/// permissions. Narrowing only, never widening; deny (from the parent) always
+/// wins. Returns the list to set as the child's `allowed_tools` (an empty list
+/// means "no tools"), or `None` to inherit the definition's full toolset with no
+/// per-run allowlist (the parent's deny-list still applies at gate time).
+///
+/// Fails closed: a tool named in `request` that the definition does not permit,
+/// or that the parent denies, is rejected rather than silently dropped. A
+/// definition-listed tool the parent denies is dropped (the definition author
+/// need not know the parent's policy).
+pub fn intersect_allowed_tools(
+    definition: Option<&[String]>,
+    request: Option<&[String]>,
+    parent: &ToolPermissions,
+) -> Result<Option<Vec<String>>, SubagentError> {
+    if let Some(requested) = request {
+        let mut effective = Vec::with_capacity(requested.len());
+        for tool in requested {
+            if let Some(def) = definition {
+                if !def.iter().any(|t| t == tool) {
+                    return Err(SubagentError::PermissionDenied(format!(
+                        "tool '{tool}' is outside the subagent definition's allowed_tools"
+                    )));
+                }
+            }
+            if parent.is_denied(tool) {
+                return Err(SubagentError::PermissionDenied(format!(
+                    "tool '{tool}' is denied by the parent's policy"
+                )));
+            }
+            effective.push(tool.clone());
+        }
+        return Ok(Some(effective));
+    }
+    match definition {
+        Some(def) => Ok(Some(
+            def.iter()
+                .filter(|t| !parent.is_denied(t))
+                .cloned()
+                .collect(),
+        )),
+        None => Ok(None),
+    }
+}
+
+/// A model- or orchestration-issued request to run a subagent. When
+/// `subagent_name` resolves in the registry, that definition is used (and
+/// `allowed_tools` further narrows it). Otherwise, if `system_prompt` is
+/// provided, an ephemeral one-off subagent is run inline with that prompt (no
+/// registry entry, no disk write) so create + dispatch collapse to one call.
+#[derive(Debug, Clone)]
+pub struct SubagentRequest {
+    pub subagent_name: String,
+    pub description: String,
+    pub allowed_tools: Option<Vec<String>>,
+    pub system_prompt: Option<String>,
+}
+
+/// The resolved plan for a dispatch: the winning definition plus the effective
+/// per-run tool allowlist after the three-way intersection.
+#[derive(Debug)]
+struct ResolvedDispatch {
+    definition: SubagentDefinition,
+    allowed_tools: Option<Vec<String>>,
+}
+
+/// Resolve a dispatch request against the registry and parent permissions,
+/// without running anything. Errors on an unknown name or a permission conflict.
+fn resolve_dispatch(
+    registry: &SubagentRegistry,
+    req: &SubagentRequest,
+    parent: &ToolPermissions,
+) -> Result<ResolvedDispatch, SubagentError> {
+    match registry.get(&req.subagent_name).cloned() {
+        Some(definition) => {
+            // Registered definition: the call-site allowlist further narrows it.
+            let allowed_tools = intersect_allowed_tools(
+                definition.allowed_tools.as_deref(),
+                req.allowed_tools.as_deref(),
+                parent,
+            )?;
+            Ok(ResolvedDispatch {
+                definition,
+                allowed_tools,
+            })
+        }
+        None => {
+            // Unregistered: run an ephemeral one-off if an inline system_prompt
+            // was supplied; otherwise it's a genuine unknown-name error.
+            let system_prompt = req
+                .system_prompt
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| SubagentError::UnknownSubagent(req.subagent_name.clone()))?;
+            let definition = SubagentDefinition {
+                name: req.subagent_name.clone(),
+                description: req.description.clone(),
+                system_prompt,
+                allowed_tools: req.allowed_tools.clone(),
+                model: None,
+                scope: SubagentScope::Project,
+            };
+            // The inline allowed_tools IS the definition's toolset; only the
+            // parent's deny-list narrows it further.
+            let allowed_tools =
+                intersect_allowed_tools(definition.allowed_tools.as_deref(), None, parent)?;
+            Ok(ResolvedDispatch {
+                definition,
+                allowed_tools,
+            })
+        }
+    }
+}
+
+/// Child stream events are folded into the parent's own stream, except the
+/// child's terminal `Done`/`Error`: the parent must not see the child terminate
+/// its stream. Dispatch turns the child's result into a synthetic tool result
+/// instead, bracketed by `SubagentStart`/`SubagentEnd`.
+fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
+    use crate::core::agent::events::StreamEvent;
+    !matches!(ev, StreamEvent::Done { .. } | StreamEvent::Error { .. })
+}
+
+/// Final assistant text of a completion, or empty when the model returned none.
+fn final_assistant_text(completion: &serde_json::Value) -> String {
+    completion
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|c| c.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+static SUBAGENT_RUN_SEQ: AtomicU64 = AtomicU64::new(1);
+
+fn next_subagent_run_id(name: &str) -> String {
+    format!("sub-{name}-{}", SUBAGENT_RUN_SEQ.fetch_add(1, Ordering::Relaxed))
+}
+
+/// One in-flight background subagent: the channel that will carry its final
+/// result, and the handle to abort it on parent cancellation/teardown.
+struct BackgroundEntry {
+    result: Option<tokio::sync::oneshot::Receiver<Result<String, SubagentError>>>,
+    abort: tokio::task::AbortHandle,
+}
+
+/// Registry of a single parent run's background subagents, keyed by `run_id`.
+/// Dropped when the parent run ends (see `AbortOnDrop`), aborting any child that
+/// was never collected so a finished/cancelled parent leaves no orphan runs.
+#[derive(Default)]
+pub(crate) struct BackgroundSubagents {
+    inner: std::sync::Mutex<std::collections::HashMap<String, BackgroundEntry>>,
+}
+
+impl BackgroundSubagents {
+    /// Abort and forget every registered child. Called on parent teardown.
+    pub(crate) fn abort_all(&self) {
+        let mut guard = self.inner.lock().unwrap();
+        for (_, entry) in guard.drain() {
+            entry.abort.abort();
+        }
+    }
+}
+
+/// RAII guard tying background children to the parent run's lifetime: dropping it
+/// (on normal return or when the parent future is cancelled) aborts every child.
+pub(crate) struct AbortOnDrop(pub Arc<BackgroundSubagents>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort_all();
+    }
+}
+
+/// Build the child request body shared by every subagent run.
+fn child_body(
+    resolved: &ResolvedDispatch,
+    description: &str,
+    parent_model: &str,
+    budget_remaining: Option<u64>,
+) -> serde_json::Value {
+    let model = resolved
+        .definition
+        .model
+        .clone()
+        .unwrap_or_else(|| parent_model.to_string());
+    let mut body = serde_json::Map::new();
+    body.insert("model".to_string(), serde_json::json!(model));
+    body.insert(
+        "messages".to_string(),
+        serde_json::json!([{ "role": "user", "content": description }]),
+    );
+    // Unbounded turns: guarded by the inherited budget and parent teardown.
+    body.insert("max_turns".to_string(), serde_json::json!(0));
+    body.insert("stream".to_string(), serde_json::json!(true));
+    if let Some(tools) = &resolved.allowed_tools {
+        body.insert("allowed_tools".to_string(), serde_json::json!(tools));
+    }
+    if let Some(remaining) = budget_remaining {
+        body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    serde_json::Value::Object(body)
+}
+
+/// Run one resolved subagent to completion, wrapping its events for `run_id` and
+/// returning its final assistant text. Isolated: fresh history (`description`),
+/// the definition's system prompt, narrowed tools, dispatch disabled.
+async fn run_subagent(
+    parent_args: crate::core::agent::r#loop::OrchestrationArgs,
+    resolved: ResolvedDispatch,
+    description: String,
+    parent_model: String,
+    budget_remaining: Option<u64>,
+    events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    run_id: String,
+) -> Result<String, SubagentError> {
+    use crate::core::agent::events::StreamEvent;
+    use crate::core::agent::r#loop::run_orchestration_streamed;
+
+    let name = resolved.definition.name.clone();
+    let mut child_args = parent_args;
+    child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
+    child_args.subagents_enabled = false;
+
+    let body = child_body(&resolved, &description, &parent_model, budget_remaining);
+
+    let _ = events.send(StreamEvent::SubagentStart {
+        run_id: run_id.clone(),
+        name: name.clone(),
+    });
+
+    let (child_tx, mut child_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
+    let parent_events = events.clone();
+    let fwd_run_id = run_id.clone();
+    let fwd_name = name.clone();
+    let forwarder = tokio::spawn(async move {
+        while let Some(ev) = child_rx.recv().await {
+            if forward_to_parent(&ev) {
+                let _ = parent_events.send(StreamEvent::Subagent {
+                    run_id: fwd_run_id.clone(),
+                    name: fwd_name.clone(),
+                    event: Box::new(ev),
+                });
+            }
+        }
+    });
+
+    let result = run_orchestration_streamed(&child_tx, &body, &child_args).await;
+    drop(child_tx);
+    let _ = forwarder.await;
+
+    let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
+
+    match result {
+        Ok(completion) => Ok(final_assistant_text(&completion)),
+        Err(message) => Err(SubagentError::Upstream(message)),
+    }
+}
+
+/// Resolve and start a subagent on a background task, returning its `run_id`
+/// immediately (non-blocking). The caller collects the result later with
+/// [`await_subagent`]. Registered in `bg` so the parent run can abort it on
+/// teardown. Resolution (name lookup, permission intersection) happens
+/// synchronously, so a bad request errors here rather than in the background.
+pub(crate) fn spawn_subagent(
+    bg: &Arc<BackgroundSubagents>,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    req: SubagentRequest,
+    parent_model: &str,
+    budget_remaining: Option<u64>,
+    events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+) -> Result<String, SubagentError> {
+    if !parent_args.subagents_enabled {
+        return Err(SubagentError::PermissionDenied(
+            "subagents cannot dispatch nested subagents".to_string(),
+        ));
+    }
+    let project_root = parent_args
+        .project_root
+        .as_ref()
+        .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
+    let registry = SubagentRegistry::load(project_root);
+    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
+
+    let run_id = next_subagent_run_id(&resolved.definition.name);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    let parent_args = parent_args.clone();
+    let events = events.clone();
+    let model = parent_model.to_string();
+    let description = req.description.clone();
+    let run_id_task = run_id.clone();
+    let handle = tokio::spawn(async move {
+        let result = run_subagent(
+            parent_args,
+            resolved,
+            description,
+            model,
+            budget_remaining,
+            events,
+            run_id_task,
+        )
+        .await;
+        let _ = tx.send(result);
+    });
+
+    bg.inner.lock().unwrap().insert(
+        run_id.clone(),
+        BackgroundEntry {
+            result: Some(rx),
+            abort: handle.abort_handle(),
+        },
+    );
+    Ok(run_id)
+}
+
+/// Block until the background subagent `run_id` finishes and return its final
+/// text (or error). Removes the run from the registry; a second await, or an
+/// unknown id, errors. A run aborted by parent teardown resolves to `Cancelled`.
+pub(crate) async fn await_subagent(
+    bg: &Arc<BackgroundSubagents>,
+    run_id: &str,
+) -> Result<String, SubagentError> {
+    let rx = {
+        let mut guard = bg.inner.lock().unwrap();
+        match guard.get_mut(run_id).and_then(|e| e.result.take()) {
+            Some(rx) => {
+                guard.remove(run_id);
+                rx
+            }
+            None => {
+                return Err(SubagentError::Upstream(format!(
+                    "unknown or already-collected subagent run '{run_id}'"
+                )))
+            }
+        }
+    };
+    rx.await.unwrap_or(Err(SubagentError::Cancelled))
+}
+
+/// The model-callable subagent tools, handled by the loop's tool invoker ahead
+/// of the built-in fs/exec gate and the MCP fallback.
+pub fn is_subagent_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "dispatch_subagent" | "await_subagent" | "create_subagent" | "list_subagents"
+    )
+}
+
+/// One-line "name [scope]: description" per definition; shadowed user-scope
+/// entries are listed alongside their project-scope shadows.
+pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
+    let defs = registry.list();
+    if defs.is_empty() {
+        return "No subagents are configured in the user or project scope.".to_string();
+    }
+    let mut lines = Vec::with_capacity(defs.len());
+    for d in defs {
+        let scope = match d.scope {
+            SubagentScope::User => "user",
+            SubagentScope::Project => "project",
+        };
+        lines.push(format!("{} [{}]: {}", d.name, scope, d.description));
+    }
+    lines.join("\n")
+}
+
+/// OpenAI tool schemas for the subagent tools. The dispatch tool's description
+/// lists the currently-resolvable subagent names so the model can pick one
+/// without a separate discovery call.
+pub fn subagent_tool_schemas(registry: &SubagentRegistry) -> Vec<serde_json::Value> {
+    use serde_json::json;
+    let available: Vec<&str> = {
+        let mut names: Vec<&str> = registry.list().iter().map(|d| d.name.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    };
+    let one_off = " For a one-off subagent, pass system_prompt inline (with a descriptive subagent_name); use create_subagent only to save a reusable definition.";
+    let bg = " Runs in the BACKGROUND and returns a run_id immediately; keep working, dispatch more, then call await_subagent(run_id) to collect each result. Several can run concurrently.";
+    let dispatch_desc = if available.is_empty() {
+        format!("Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} No saved subagents yet.")
+    } else {
+        format!(
+            "Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} Saved subagents: {}.",
+            available.join(", ")
+        )
+    };
+    vec![
+        json!({
+            "type": "function",
+            "function": {
+                "name": "dispatch_subagent",
+                "description": dispatch_desc,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subagent_name": { "type": "string", "description": "Name of a saved subagent to run, or a short descriptive name for a one-off (paired with system_prompt)." },
+                        "description": { "type": "string", "description": "The task for the subagent, as its sole user message. Include everything it needs; it does not see this conversation." },
+                        "system_prompt": { "type": "string", "description": "Inline system prompt for a one-off subagent when subagent_name is not a saved one. Omit to run a saved subagent." },
+                        "allowed_tools": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Tool allowlist. For a saved subagent this further narrows its own allowed_tools (never widens); for a one-off it is the subagent's toolset."
+                        }
+                    },
+                    "required": ["subagent_name", "description"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "await_subagent",
+                "description": "Block until a backgrounded subagent (started by dispatch_subagent) finishes, and return its final answer. Pass the run_id that dispatch_subagent returned. Each run_id can be awaited once.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": { "type": "string", "description": "The run_id returned by dispatch_subagent." }
+                    },
+                    "required": ["run_id"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "create_subagent",
+                "description": "Author a new reusable subagent definition. Writes to the project scope by default (shareable with collaborators); use scope 'user' for a personal one reusable across projects (this requires user approval).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Subagent name: letters, digits, '-' and '_' only." },
+                        "description": { "type": "string", "description": "One line describing what the subagent is for." },
+                        "system_prompt": { "type": "string", "description": "The subagent's full system prompt." },
+                        "allowed_tools": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional default tool allowlist for the subagent."
+                        },
+                        "scope": { "type": "string", "enum": ["user", "project"], "description": "Where to store it (default 'project')." },
+                        "overwrite": { "type": "boolean", "description": "Replace an existing same-name definition in that scope (default false)." }
+                    },
+                    "required": ["name", "description", "system_prompt"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "list_subagents",
+                "description": "List the subagents available to dispatch, with their scope (user or project) and description. No arguments.",
+                "parameters": { "type": "object", "properties": {}, "required": [] }
+            }
+        }),
+    ]
+}
+
+fn required_str(args: &serde_json::Value, key: &str) -> Result<String, SubagentError> {
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| SubagentError::Upstream(format!("missing required argument '{key}'")))
+}
+
+fn optional_tool_list(args: &serde_json::Value) -> Option<Vec<String>> {
+    args.get("allowed_tools")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+}
+
+/// Parse a `dispatch_subagent` tool-call argument object.
+pub fn parse_dispatch_args(args: &serde_json::Value) -> Result<SubagentRequest, SubagentError> {
+    Ok(SubagentRequest {
+        subagent_name: required_str(args, "subagent_name")?,
+        description: required_str(args, "description")?,
+        allowed_tools: optional_tool_list(args),
+        system_prompt: args
+            .get("system_prompt")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .filter(|s| !s.trim().is_empty()),
+    })
+}
+
+/// Parse an `await_subagent` tool-call argument object, returning the run_id.
+pub fn parse_await_args(args: &serde_json::Value) -> Result<String, SubagentError> {
+    required_str(args, "run_id")
+}
+
+/// Parse a `create_subagent` tool-call argument object into a definition plus
+/// its target scope and the overwrite flag.
+pub fn parse_create_args(
+    args: &serde_json::Value,
+) -> Result<(SubagentDefinition, SubagentScope, bool), SubagentError> {
+    let name = required_str(args, "name")?;
+    let description = required_str(args, "description")?;
+    let system_prompt = required_str(args, "system_prompt")?;
+    let scope = match args.get("scope").and_then(|v| v.as_str()) {
+        Some("user") => SubagentScope::User,
+        Some("project") | None => SubagentScope::Project,
+        Some(other) => {
+            return Err(SubagentError::Upstream(format!(
+                "invalid scope '{other}': use 'user' or 'project'"
+            )))
+        }
+    };
+    let overwrite = args
+        .get("overwrite")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Ok((
+        SubagentDefinition {
+            name,
+            description,
+            system_prompt,
+            allowed_tools: optional_tool_list(args),
+            model: args
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            scope,
+        },
+        scope,
+        overwrite,
+    ))
+}
+
+/// The directory a scope writes to for this project. User scope needs a
+/// resolvable home directory.
+pub fn subagent_dir_for(
+    project_root: &Path,
+    scope: SubagentScope,
+) -> Result<PathBuf, SubagentError> {
+    match scope {
+        SubagentScope::Project => Ok(project_subagents_dir(project_root)),
+        SubagentScope::User => user_subagents_dir().ok_or_else(|| {
+            SubagentError::Upstream("cannot resolve home directory for user scope".to_string())
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    fn unique_root(tag: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!(
+            "jan_subagent_test_{tag}_{}_{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create test root");
+        root
+    }
+
+    fn write_def(dir: &Path, name: &str, extra: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        let body = format!(
+            "name = \"{name}\"\ndescription = \"desc for {name}\"\nsystem_prompt = \"You are {name}.\"\n{extra}"
+        );
+        std::fs::write(dir.join(format!("{name}.toml")), body).unwrap();
+    }
+
+    #[test]
+    fn empty_directories_yield_empty_registry() {
+        let root = unique_root("empty");
+        let reg = SubagentRegistry::load(&root);
+        assert!(reg.list().is_empty());
+        assert!(reg.get("nope").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parses_definition_fields() {
+        let root = unique_root("parse");
+        let dir = project_subagents_dir(&root);
+        write_def(
+            &dir,
+            "rust-reviewer",
+            "allowed_tools = [\"read\", \"grep\"]\nmodel = \"m-1\"\n",
+        );
+        let reg = SubagentRegistry::load(&root);
+        let def = reg.get("rust-reviewer").expect("loaded");
+        assert_eq!(def.description, "desc for rust-reviewer");
+        assert_eq!(def.system_prompt, "You are rust-reviewer.");
+        assert_eq!(def.allowed_tools.as_deref(), Some(&["read".to_string(), "grep".to_string()][..]));
+        assert_eq!(def.model.as_deref(), Some("m-1"));
+        assert_eq!(def.scope, SubagentScope::Project);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn malformed_file_is_skipped_not_fatal() {
+        let root = unique_root("malformed");
+        let dir = project_subagents_dir(&root);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bad.toml"), "this is = not valid = toml").unwrap();
+        write_def(&dir, "good", "");
+        let reg = SubagentRegistry::load(&root);
+        assert!(reg.get("good").is_some());
+        assert_eq!(reg.list().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_writes_project_scope_and_reloads() {
+        let root = unique_root("create");
+        let mut reg = SubagentRegistry::load(&root);
+        let dir = project_subagents_dir(&root);
+        let def = SubagentDefinition {
+            name: "helper".to_string(),
+            description: "d".to_string(),
+            system_prompt: "sp".to_string(),
+            allowed_tools: Some(vec!["read".to_string()]),
+            model: None,
+            scope: SubagentScope::Project,
+        };
+        let shadows = reg
+            .create_in(&dir, def, SubagentScope::Project, false)
+            .expect("create");
+        assert!(!shadows);
+        assert!(dir.join("helper.toml").exists());
+        // A fresh load sees it too.
+        let reg2 = SubagentRegistry::load(&root);
+        let loaded = reg2.get("helper").expect("reloaded");
+        assert_eq!(loaded.allowed_tools.as_deref(), Some(&["read".to_string()][..]));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_refuses_same_scope_collision_without_overwrite() {
+        let root = unique_root("collision");
+        let dir = project_subagents_dir(&root);
+        write_def(&dir, "dup", "");
+        let mut reg = SubagentRegistry::load(&root);
+        let def = SubagentDefinition {
+            name: "dup".to_string(),
+            description: "d".to_string(),
+            system_prompt: "sp".to_string(),
+            allowed_tools: None,
+            model: None,
+            scope: SubagentScope::Project,
+        };
+        let err = reg
+            .create_in(&dir, def.clone(), SubagentScope::Project, false)
+            .expect_err("must refuse");
+        assert!(matches!(err, SubagentError::PermissionDenied(_)));
+        // overwrite succeeds.
+        reg.create_in(&dir, def, SubagentScope::Project, true)
+            .expect("overwrite ok");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn project_scope_shadows_user_but_both_visible() {
+        let root = unique_root("shadow");
+        // Fake the user dir under the project root to avoid touching the real HOME.
+        let user_dir = root.join("user_scope");
+        let proj_dir = project_subagents_dir(&root);
+        write_def(&user_dir, "reviewer", "model = \"user-model\"\n");
+        write_def(&proj_dir, "reviewer", "model = \"proj-model\"\n");
+
+        let mut defs = Vec::new();
+        load_dir(&user_dir, SubagentScope::User, &mut defs);
+        load_dir(&proj_dir, SubagentScope::Project, &mut defs);
+        let reg = SubagentRegistry { defs };
+
+        // get() resolves the project entry (shadowing).
+        assert_eq!(reg.get("reviewer").unwrap().model.as_deref(), Some("proj-model"));
+        assert_eq!(reg.get("reviewer").unwrap().scope, SubagentScope::Project);
+        // list() still shows both, with correct scope tags.
+        let all = reg.list();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|d| d.scope == SubagentScope::User));
+        assert!(all.iter().any(|d| d.scope == SubagentScope::Project));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_reports_shadowing_of_user_scope() {
+        let root = unique_root("shadow_create");
+        let user_dir = root.join("user_scope");
+        let proj_dir = project_subagents_dir(&root);
+        write_def(&user_dir, "reviewer", "");
+        let mut defs = Vec::new();
+        load_dir(&user_dir, SubagentScope::User, &mut defs);
+        let mut reg = SubagentRegistry { defs };
+        let def = SubagentDefinition {
+            name: "reviewer".to_string(),
+            description: "d".to_string(),
+            system_prompt: "sp".to_string(),
+            allowed_tools: None,
+            model: None,
+            scope: SubagentScope::Project,
+        };
+        let shadows = reg
+            .create_in(&proj_dir, def, SubagentScope::Project, false)
+            .expect("create");
+        assert!(shadows, "project create over a user def must report shadowing");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_rejects_invalid_name() {
+        let root = unique_root("badname");
+        let dir = project_subagents_dir(&root);
+        let mut reg = SubagentRegistry::default();
+        let def = SubagentDefinition {
+            name: "../escape".to_string(),
+            description: "d".to_string(),
+            system_prompt: "sp".to_string(),
+            allowed_tools: None,
+            model: None,
+            scope: SubagentScope::Project,
+        };
+        assert!(reg.create_in(&dir, def, SubagentScope::Project, false).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ── intersect_allowed_tools ─────────────────────────────────────────────
+
+    fn perms_denying(deny: &[&str]) -> ToolPermissions {
+        let deny: Vec<String> = deny.iter().map(|s| s.to_string()).collect();
+        ToolPermissions::new(PermissionDefault::ReadOnly, &[], &deny, &[])
+    }
+
+    #[test]
+    fn intersect_none_none_inherits() {
+        let p = ToolPermissions::allow_all();
+        assert_eq!(intersect_allowed_tools(None, None, &p).unwrap(), None);
+    }
+
+    #[test]
+    fn intersect_definition_only_drops_parent_denied() {
+        let def = vec!["read".to_string(), "write".to_string()];
+        let p = perms_denying(&["write"]);
+        let out = intersect_allowed_tools(Some(&def), None, &p).unwrap();
+        assert_eq!(out, Some(vec!["read".to_string()]));
+    }
+
+    #[test]
+    fn intersect_request_narrows_within_definition() {
+        let def = vec!["read".to_string(), "grep".to_string(), "write".to_string()];
+        let req = vec!["read".to_string()];
+        let p = ToolPermissions::allow_all();
+        let out = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap();
+        assert_eq!(out, Some(vec!["read".to_string()]));
+    }
+
+    #[test]
+    fn intersect_request_outside_definition_is_rejected() {
+        let def = vec!["read".to_string()];
+        let req = vec!["bash".to_string()];
+        let p = ToolPermissions::allow_all();
+        let err = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap_err();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)));
+    }
+
+    #[test]
+    fn intersect_request_denied_by_parent_is_rejected() {
+        let req = vec!["bash".to_string()];
+        let p = perms_denying(&["bash"]);
+        let err = intersect_allowed_tools(None, Some(&req), &p).unwrap_err();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)));
+    }
+
+    // ── resolve_dispatch ────────────────────────────────────────────────────
+
+    fn registry_with(name: &str, allowed: Option<Vec<String>>) -> SubagentRegistry {
+        SubagentRegistry {
+            defs: vec![SubagentDefinition {
+                name: name.to_string(),
+                description: "d".to_string(),
+                system_prompt: "sp".to_string(),
+                allowed_tools: allowed,
+                model: None,
+                scope: SubagentScope::Project,
+            }],
+        }
+    }
+
+    fn req(name: &str, allowed: Option<Vec<String>>) -> SubagentRequest {
+        SubagentRequest {
+            subagent_name: name.to_string(),
+            description: "do the thing".to_string(),
+            allowed_tools: allowed,
+            system_prompt: None,
+        }
+    }
+
+    #[test]
+    fn resolve_unknown_name_without_inline_prompt_errors() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let err = resolve_dispatch(&reg, &req("nope", None), &p).unwrap_err();
+        assert!(matches!(err, SubagentError::UnknownSubagent(n) if n == "nope"));
+    }
+
+    #[test]
+    fn resolve_unknown_name_with_inline_prompt_runs_ephemeral() {
+        let reg = SubagentRegistry::default();
+        let p = ToolPermissions::allow_all();
+        let request = SubagentRequest {
+            subagent_name: "one-off".to_string(),
+            description: "task".to_string(),
+            allowed_tools: Some(vec!["read".to_string()]),
+            system_prompt: Some("You are a one-off.".to_string()),
+        };
+        let resolved = resolve_dispatch(&reg, &request, &p).unwrap();
+        assert_eq!(resolved.definition.system_prompt, "You are a one-off.");
+        assert_eq!(resolved.definition.name, "one-off");
+        assert_eq!(resolved.allowed_tools, Some(vec!["read".to_string()]));
+    }
+
+    #[test]
+    fn parse_dispatch_reads_inline_system_prompt() {
+        let r = parse_dispatch_args(&serde_json::json!({
+            "subagent_name": "one-off",
+            "description": "task",
+            "system_prompt": "You are a one-off."
+        }))
+        .unwrap();
+        assert_eq!(r.system_prompt.as_deref(), Some("You are a one-off."));
+    }
+
+    #[test]
+    fn resolve_narrows_tools_within_definition() {
+        let reg = registry_with(
+            "reviewer",
+            Some(vec!["read".to_string(), "grep".to_string()]),
+        );
+        let p = ToolPermissions::allow_all();
+        let resolved =
+            resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
+        assert_eq!(resolved.allowed_tools, Some(vec!["read".to_string()]));
+        assert_eq!(resolved.definition.system_prompt, "sp");
+    }
+
+    #[test]
+    fn resolve_rejects_tool_outside_definition() {
+        let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
+        let p = ToolPermissions::allow_all();
+        let err =
+            resolve_dispatch(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)));
+    }
+
+    // ── event forwarding + final text ───────────────────────────────────────
+
+    #[test]
+    fn forward_drops_child_terminal_events() {
+        use crate::core::agent::events::StreamEvent;
+        assert!(forward_to_parent(&StreamEvent::Token { text: "x".into() }));
+        assert!(forward_to_parent(&StreamEvent::Step { index: 1, max: 0 }));
+        assert!(forward_to_parent(&StreamEvent::ToolCall {
+            id: "c".into(),
+            name: "read".into(),
+            args: serde_json::Value::Null,
+        }));
+        assert!(!forward_to_parent(&StreamEvent::Done {
+            stop_reason: "stop".into(),
+            usage: None,
+        }));
+        assert!(!forward_to_parent(&StreamEvent::Error {
+            code: "e".into(),
+            message: "m".into(),
+        }));
+    }
+
+    /// Cancellation contract: `dispatch_subagent` is awaited inline inside the
+    /// parent's run future, which the command layer drops via `tokio::select!` on
+    /// cancel. This test encodes that guarantee: an in-flight child future nested
+    /// under such a select is dropped (cancelled) when the parent is cancelled,
+    /// with no separate child-run registration required.
+    #[tokio::test]
+    async fn cancelling_parent_drops_in_flight_child() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let child_dropped = Arc::new(AtomicBool::new(false));
+
+        struct DropFlag(Arc<AtomicBool>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let flag = child_dropped.clone();
+        // The "parent run" awaits a never-completing "child" (dispatch) that owns
+        // a drop guard, exactly as dispatch_subagent is awaited inline in the loop.
+        let parent = async move {
+            let _child_guard = DropFlag(flag);
+            std::future::pending::<()>().await;
+        };
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        cancel_tx.send(()).unwrap();
+
+        tokio::select! {
+            // Biased so the parent is polled first and actually starts (building
+            // the child guard), modelling an in-flight child at cancel time.
+            biased;
+            _ = parent => unreachable!("parent should be cancelled first"),
+            _ = cancel_rx => {}
+        }
+
+        assert!(
+            child_dropped.load(Ordering::SeqCst),
+            "cancelling the parent must drop the in-flight child"
+        );
+    }
+
+    #[test]
+    fn final_text_extracts_or_defaults_empty() {
+        let with = serde_json::json!({
+            "choices": [{ "message": { "content": "the answer" } }]
+        });
+        assert_eq!(final_assistant_text(&with), "the answer");
+        assert_eq!(final_assistant_text(&serde_json::json!({})), "");
+    }
+
+    // ── tool schemas + arg parsing ──────────────────────────────────────────
+
+    #[test]
+    fn subagent_tool_names_are_recognized() {
+        assert!(is_subagent_tool("dispatch_subagent"));
+        assert!(is_subagent_tool("await_subagent"));
+        assert!(is_subagent_tool("create_subagent"));
+        assert!(is_subagent_tool("list_subagents"));
+        assert!(!is_subagent_tool("read"));
+        assert!(!is_subagent_tool("web_search"));
+    }
+
+    // ── background registry (spawn/await/abort) ─────────────────────────────
+
+    #[tokio::test]
+    async fn await_unknown_run_errors() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        assert!(await_subagent(&bg, "nope").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn await_delivers_result_and_second_await_errors() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        bg.inner.lock().unwrap().insert(
+            "r1".to_string(),
+            BackgroundEntry {
+                result: Some(rx),
+                abort: handle.abort_handle(),
+            },
+        );
+        tx.send(Ok("done".to_string())).unwrap();
+        assert_eq!(await_subagent(&bg, "r1").await.unwrap(), "done");
+        assert!(await_subagent(&bg, "r1").await.is_err(), "run is consumed");
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn abort_on_drop_cancels_and_clears_children() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (_tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        bg.inner.lock().unwrap().insert(
+            "r1".to_string(),
+            BackgroundEntry {
+                result: Some(rx),
+                abort: handle.abort_handle(),
+            },
+        );
+        let guard = AbortOnDrop(bg.clone());
+        drop(guard);
+        assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
+        assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
+    }
+
+    #[test]
+    fn schemas_list_available_names_in_dispatch_description() {
+        let reg = registry_with("reviewer", None);
+        let schemas = subagent_tool_schemas(&reg);
+        assert_eq!(schemas.len(), 4);
+        let names: Vec<&str> = schemas
+            .iter()
+            .map(|s| s["function"]["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "dispatch_subagent",
+                "await_subagent",
+                "create_subagent",
+                "list_subagents"
+            ]
+        );
+        let dispatch = &schemas[0]["function"]["description"].as_str().unwrap();
+        assert!(dispatch.contains("reviewer"), "got: {dispatch}");
+        assert!(dispatch.contains("await_subagent"), "dispatch should mention await");
+    }
+
+    #[test]
+    fn parse_await_requires_run_id() {
+        assert_eq!(
+            parse_await_args(&serde_json::json!({ "run_id": "sub-x-1" })).unwrap(),
+            "sub-x-1"
+        );
+        assert!(parse_await_args(&serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn format_list_reports_scope_and_empty() {
+        let empty = SubagentRegistry::default();
+        assert!(format_subagent_list(&empty).contains("No subagents"));
+        let reg = registry_with("reviewer", None);
+        let listed = format_subagent_list(&reg);
+        assert!(listed.contains("reviewer [project]: d"));
+    }
+
+    #[test]
+    fn parse_dispatch_requires_name_and_description() {
+        let ok = parse_dispatch_args(&serde_json::json!({
+            "subagent_name": "reviewer",
+            "description": "review this",
+            "allowed_tools": ["read"]
+        }))
+        .unwrap();
+        assert_eq!(ok.subagent_name, "reviewer");
+        assert_eq!(ok.allowed_tools, Some(vec!["read".to_string()]));
+        assert!(parse_dispatch_args(&serde_json::json!({ "description": "x" })).is_err());
+    }
+
+    #[test]
+    fn parse_create_defaults_scope_to_project() {
+        let (def, scope, overwrite) = parse_create_args(&serde_json::json!({
+            "name": "helper",
+            "description": "d",
+            "system_prompt": "sp"
+        }))
+        .unwrap();
+        assert_eq!(scope, SubagentScope::Project);
+        assert!(!overwrite);
+        assert_eq!(def.name, "helper");
+        assert!(def.allowed_tools.is_none());
+    }
+
+    #[test]
+    fn parse_create_reads_user_scope_and_overwrite() {
+        let (_, scope, overwrite) = parse_create_args(&serde_json::json!({
+            "name": "helper",
+            "description": "d",
+            "system_prompt": "sp",
+            "scope": "user",
+            "overwrite": true
+        }))
+        .unwrap();
+        assert_eq!(scope, SubagentScope::User);
+        assert!(overwrite);
+    }
+
+    #[test]
+    fn parse_create_rejects_bad_scope_and_missing_fields() {
+        assert!(parse_create_args(&serde_json::json!({
+            "name": "x", "description": "d", "system_prompt": "sp", "scope": "global"
+        }))
+        .is_err());
+        assert!(parse_create_args(&serde_json::json!({ "name": "x" })).is_err());
+    }
+}

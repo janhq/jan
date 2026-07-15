@@ -59,6 +59,9 @@ struct Pending {
     offers_always: bool,
     /// Highlighted option in the docked prompt (index into `options()`).
     selected: usize,
+    /// Name of the subagent that requested this, when the call originated inside
+    /// a nested subagent run; `None` for the parent agent's own calls.
+    subagent: Option<String>,
 }
 
 impl Pending {
@@ -289,7 +292,42 @@ struct App {
     view_width: u16,
     last_kind: Kind,
     should_quit: bool,
+    /// Live panels for background subagents currently streaming, one per run.
+    /// Several may be active at once; each renders its own rolling window.
+    subagents: Vec<SubagentPanel>,
+    /// Committed finished-subagent summary rows, expandable to their full
+    /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
+    subagent_blocks: Vec<SubagentBlock>,
+    /// In-flight `await_subagent` calls, `(tool_call_id, subagent_name)`. Each
+    /// renders a live throbber row until its tool result arrives.
+    awaiting: Vec<(String, String)>,
+    /// Monotonic frame counter advanced each render tick; drives the throbber.
+    spinner_frame: usize,
 }
+
+/// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Live rolling view of an in-flight subagent's tool calls. The panel shows only
+/// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
+/// the finished summary row can expand back to every call (Ctrl-O).
+struct SubagentPanel {
+    run_id: String,
+    name: String,
+    calls: Vec<String>,
+}
+
+/// A committed finished-subagent summary row, folded to one line but retaining
+/// its full tool-call list so the row can expand back to it (like a tool group).
+struct SubagentBlock {
+    /// Transcript index of the summary row this block owns.
+    idx: usize,
+    /// Full detail lines (one per tool call), revealed when expanded.
+    detail: Vec<Line<'static>>,
+}
+
+/// Rolling window size for a subagent's live tool-call list.
+const SUBAGENT_WINDOW: usize = 5;
 
 impl App {
     fn new(
@@ -332,6 +370,10 @@ impl App {
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
+            subagents: Vec::new(),
+            subagent_blocks: Vec::new(),
+            awaiting: Vec::new(),
+            spinner_frame: 0,
         }
     }
 
@@ -377,6 +419,7 @@ impl App {
         self.grouped_ids.clear();
         self.groups.clear();
         self.reasoning_blocks.clear();
+        self.subagent_blocks.clear();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -514,6 +557,7 @@ impl App {
             .iter()
             .map(|g| g.idx)
             .chain(self.reasoning_blocks.iter().map(|r| r.idx))
+            .chain(self.subagent_blocks.iter().map(|b| b.idx))
             .collect();
         if all.is_empty() {
             return;
@@ -780,6 +824,15 @@ impl App {
                 self.turn = (index, max);
             }
             StreamEvent::ToolCall { id, name, args } => {
+                // Awaiting a subagent is a long block: show a live throbber row
+                // (advanced each render tick) instead of a static grouped row,
+                // cleared when its result arrives.
+                if name == "await_subagent" {
+                    let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let sub = subagent_name_from_run_id(run_id).to_string();
+                    self.awaiting.push((id, sub));
+                    return;
+                }
                 let max = self.render_width().saturating_sub(6) as usize;
                 let label = truncate(&tool_activity(&name, &args), max);
                 let done = truncate(&tool_finished(&name, &args), max);
@@ -805,6 +858,8 @@ impl App {
                 is_error,
                 diff,
             } => {
+                // Clear the throbber for an awaited subagent once its result lands.
+                self.awaiting.retain(|(await_id, _)| await_id != &id);
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
@@ -860,9 +915,104 @@ impl App {
                     diff,
                     offers_always,
                     selected: 0,
+                    subagent: None,
                 });
             }
+            StreamEvent::SubagentStart { run_id, name } => {
+                // Open a live rolling panel for this run; several may be active.
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.subagents.push(SubagentPanel {
+                    run_id,
+                    name,
+                    calls: Vec::new(),
+                });
+            }
+            StreamEvent::SubagentEnd { run_id, name } => {
+                // Take the run's full call list, commit a folded summary row, and
+                // retain the detail so Ctrl-O can expand it (like a tool group).
+                let calls = self
+                    .subagents
+                    .iter()
+                    .find(|p| p.run_id == run_id)
+                    .map(|p| p.calls.clone())
+                    .unwrap_or_default();
+                self.subagents.retain(|p| p.run_id != run_id);
+                let total = calls.len();
+                self.gap(Kind::Tool);
+                let noun = if total == 1 { "call" } else { "calls" };
+                self.push(tool_row(
+                    "↲",
+                    Style::new().magenta().dim(),
+                    &format!("subagent {name} finished ({total} tool {noun})"),
+                    Style::new().magenta().dim(),
+                ));
+                if total > 0 {
+                    let idx = self.transcript.len() - 1;
+                    let detail = calls
+                        .into_iter()
+                        .map(|label| {
+                            Line::from(vec![
+                                Span::styled("│   ", Style::new().dark_gray()),
+                                Span::styled("▸ ", Style::new().magenta()),
+                                Span::styled(label, Style::new().dim()),
+                            ])
+                        })
+                        .collect();
+                    self.subagent_blocks.push(SubagentBlock { idx, detail });
+                }
+            }
+            StreamEvent::Subagent {
+                run_id,
+                name,
+                event,
+            } => self.apply_subagent_event(&run_id, &name, *event),
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+        }
+    }
+
+    /// Route one backgrounded subagent's internal event to its run's live panel.
+    /// Only tool calls populate the rolling window; the child's own prose/steps/
+    /// results are internal. A permission request docks the shared prompt,
+    /// attributed to the asking subagent.
+    fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
+        match event {
+            StreamEvent::ToolCall {
+                name: tool, args, ..
+            } => {
+                let max = self.render_width().saturating_sub(6) as usize;
+                let label = truncate(&subagent_activity(&tool, &args), max);
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    // Full history retained for expansion; the panel renders only
+                    // the last SUBAGENT_WINDOW.
+                    panel.calls.push(label);
+                }
+            }
+            StreamEvent::PermissionRequest {
+                request_id,
+                tool_name,
+                capability,
+                path,
+                command,
+                diff,
+                offers_always,
+                ..
+            } => {
+                self.pending = Some(Pending {
+                    request_id,
+                    tool_name,
+                    capability,
+                    path,
+                    command,
+                    diff,
+                    offers_always,
+                    selected: 0,
+                    subagent: Some(name.to_string()),
+                });
+            }
+            // Token/Step/ToolResult and any nested bracket are internal to the
+            // child run and not surfaced in the parent transcript.
+            _ => {}
         }
     }
 
@@ -1029,6 +1179,16 @@ fn boxed_panel(rows: Vec<(String, Style)>, max: usize, gutter: &'static str) -> 
 
 /// Present-tense activity label for the running tool row ("Executing grep",
 /// "Searching"). Completed rows use `tool_finished` / `group_summary`.
+/// The subagent name embedded in a `sub-<name>-<seq>` run id (falls back to the
+/// raw id when it doesn't match that shape).
+fn subagent_name_from_run_id(run_id: &str) -> &str {
+    let s = run_id.strip_prefix("sub-").unwrap_or(run_id);
+    match s.rfind('-') {
+        Some(i) if i + 1 < s.len() && s[i + 1..].bytes().all(|b| b.is_ascii_digit()) => &s[..i],
+        _ => s,
+    }
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -1055,8 +1215,37 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
+        "dispatch_subagent" => format!("Dispatching subagent: {}", s("subagent_name")),
+        "await_subagent" => format!("Awaiting subagent: {}", subagent_name_from_run_id(s("run_id"))),
+        "create_subagent" => format!("Creating subagent: {}", s("name")),
+        "list_subagents" => "Listing subagents".to_string(),
         // Skill/memory tools already produce active labels ("Updating memory: X").
         _ => describe_tool_call(name, args),
+    }
+}
+
+/// Detailed one-line label for a subagent's own tool call, shown in the live
+/// panel. Unlike `tool_activity` (deliberately terse for the parent transcript),
+/// this keeps the concrete command/path/pattern so consecutive calls are
+/// distinguishable ("git log -5" vs "git diff", not two "Executing git" rows).
+fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
+    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    match name {
+        "bash" | "shell" | "exec" => {
+            let cmd = s("command");
+            if cmd.trim().is_empty() {
+                "command".to_string()
+            } else {
+                format!("$ {}", cmd.split_whitespace().collect::<Vec<_>>().join(" "))
+            }
+        }
+        "grep" | "search" => format!("grep {}", s("pattern")),
+        "find" | "glob" => format!("find {}", s("pattern")),
+        "read" => format!("read {}", s("path")),
+        "list" | "ls" => format!("ls {}", s("path")),
+        "write" => format!("write {}", s("path")),
+        "edit" => format!("edit {}", s("path")),
+        _ => tool_activity(name, args),
     }
 }
 
@@ -1086,6 +1275,10 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "find" | "glob" => "Found files".to_string(),
         "read" => format!("Read {}", base(s("path"))),
         "list" | "ls" => "Listed files".to_string(),
+        "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
+        "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
+        "create_subagent" => format!("Created subagent: {}", s("name")),
+        "list_subagents" => "Listed subagents".to_string(),
         _ => describe_tool_call(name, args),
     }
 }
@@ -1615,6 +1808,10 @@ async fn chat_loop<B: Backend>(
 
         tokio::select! {
             _ = ticker.tick() => {
+                // Advance the throbber (~20fps) so awaiting rows animate.
+                if !app.awaiting.is_empty() {
+                    app.spinner_frame = app.spinner_frame.wrapping_add(1);
+                }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     if let Ok(Event::Key(key)) = event::read() {
                         handle_key(app, key, registry, &mut current, mcp_servers).await;
@@ -2354,6 +2551,7 @@ fn rebuild_transcript(app: &mut App) {
     app.grouped_ids.clear();
     app.groups.clear();
     app.reasoning_blocks.clear();
+    app.subagent_blocks.clear();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
@@ -2409,6 +2607,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.grouped_ids.clear();
     app.groups.clear();
     app.reasoning_blocks.clear();
+    app.subagent_blocks.clear();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
@@ -2530,7 +2729,43 @@ fn draw(f: &mut Frame, app: &mut App) {
                 lines.extend(group_detail_lines(group, width));
             } else if let Some(block) = app.reasoning_blocks.iter().find(|r| r.idx == i) {
                 lines.extend(block.detail.iter().cloned());
+            } else if let Some(block) = app.subagent_blocks.iter().find(|b| b.idx == i) {
+                lines.extend(block.detail.iter().cloned());
             }
+        }
+    }
+    for (_, name) in &app.awaiting {
+        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        lines.push(Line::from(vec![
+            Span::styled(format!("{frame} "), Style::new().cyan()),
+            Span::styled(
+                format!("Awaiting subagent: {name}"),
+                Style::new().cyan().dim(),
+            ),
+        ]));
+    }
+    for panel in &app.subagents {
+        let last_blank = lines
+            .last()
+            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
+            .unwrap_or(true);
+        if !last_blank {
+            lines.push(Line::raw(""));
+        }
+        // Down-then-left arrow header, then the rolling window (last N calls).
+        lines.push(Line::from(vec![
+            Span::styled("↲ ", Style::new().magenta()),
+            Span::styled(
+                format!("subagent: {}", panel.name),
+                Style::new().magenta().dim(),
+            ),
+        ]));
+        let start = panel.calls.len().saturating_sub(SUBAGENT_WINDOW);
+        for label in &panel.calls[start..] {
+            lines.push(Line::from(vec![
+                Span::styled("    ", Style::new().dark_gray()),
+                Span::styled(label.clone(), Style::new().dim()),
+            ]));
         }
     }
     if !app.assistant_buf.is_empty() {
@@ -2612,7 +2847,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Dock the permission prompt directly above the input box, growing upward
     // and clamped to the body area so it never overruns the transcript.
     if let Some(pending) = &app.pending {
-        let detail_rows = 1 + u16::from(pending.path.is_some() || pending.command.is_some());
+        let detail_rows = 1
+            + u16::from(pending.path.is_some() || pending.command.is_some())
+            + u16::from(pending.subagent.is_some());
         let diff_rows = pending.diff_preview(chunks[2].width.saturating_sub(2)).len() as u16;
         let height =
             (pending.options().len() as u16 + detail_rows + diff_rows + 2).min(chunks[1].height);
@@ -2686,11 +2923,19 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
     let dim = Style::new().dark_gray();
-    let mut detail = vec![Line::from(vec![
+    let mut detail = Vec::new();
+    if let Some(name) = &pending.subagent {
+        detail.push(Line::from(vec![
+            Span::styled("subagent ", dim),
+            Span::styled(name.clone(), Style::new().magenta().bold()),
+            Span::styled(" is asking:", dim),
+        ]));
+    }
+    detail.push(Line::from(vec![
         Span::styled(pending.tool_name.clone(), Style::new().cyan().bold()),
         Span::styled(" wants ", dim),
         Span::styled(pending.capability.clone(), Style::new().yellow().bold()),
-    ])];
+    ]));
     if let Some(command) = &pending.command {
         detail.push(Line::from(vec![
             Span::styled("$ ", dim),
@@ -2892,8 +3137,9 @@ mod tests {
     use super::{
         diff_lines, group_activity, group_detail_lines, group_summary, input_content_lines,
         is_table_separator, message_text,
-        parse_command, render_table, run_command, split_reasoning, summarize_result,
-        tool_activity, tool_finished, transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
+        parse_command, render_table, run_command, split_reasoning, subagent_activity,
+        subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
+        transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
     };
     use ratatui::{style::Modifier, text::Line};
     use crate::core::agent::events::StreamEvent;
@@ -2921,6 +3167,7 @@ mod tests {
             diff: None,
             offers_always,
             selected: 0,
+            subagent: None,
         }
     }
 
@@ -3299,6 +3546,286 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn subagent_tool_rows_have_readable_labels() {
+        let dispatch = json!({ "subagent_name": "reviewer", "description": "x" });
+        assert_eq!(tool_activity("dispatch_subagent", &dispatch), "Dispatching subagent: reviewer");
+        assert_eq!(tool_finished("dispatch_subagent", &dispatch), "Dispatched subagent: reviewer");
+        let await_args = json!({ "run_id": "sub-sycl-cuda-gap-explorer-1" });
+        assert_eq!(
+            tool_activity("await_subagent", &await_args),
+            "Awaiting subagent: sycl-cuda-gap-explorer"
+        );
+        assert_eq!(tool_activity("list_subagents", &json!({})), "Listing subagents");
+        assert_eq!(tool_activity("create_subagent", &json!({"name": "r"})), "Creating subagent: r");
+    }
+
+    #[test]
+    fn subagent_name_from_run_id_strips_prefix_and_seq() {
+        assert_eq!(subagent_name_from_run_id("sub-reviewer-3"), "reviewer");
+        assert_eq!(subagent_name_from_run_id("sub-a-b-c-12"), "a-b-c");
+        // Non-conforming ids pass through.
+        assert_eq!(subagent_name_from_run_id("weird"), "weird");
+    }
+
+    #[test]
+    fn subagent_panel_labels_keep_command_detail() {
+        // The panel must distinguish consecutive bash calls, not collapse to
+        // "Executing git".
+        assert_eq!(
+            subagent_activity("bash", &json!({ "command": "git log --oneline -5" })),
+            "$ git log --oneline -5"
+        );
+        assert_eq!(
+            subagent_activity("bash", &json!({ "command": "git diff" })),
+            "$ git diff"
+        );
+        assert_eq!(
+            subagent_activity("read", &json!({ "path": "src/main.rs" })),
+            "read src/main.rs"
+        );
+        assert_eq!(
+            subagent_activity("grep", &json!({ "pattern": "TODO" })),
+            "grep TODO"
+        );
+    }
+
+    #[test]
+    fn await_subagent_shows_throbber_until_result() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-reviewer-1" }),
+        });
+        // Tracked as an awaiting throbber (not folded into a tool group row).
+        assert_eq!(app.awaiting.len(), 1);
+        assert_eq!(app.awaiting[0], ("a1".to_string(), "reviewer".to_string()));
+        assert!(app.tool_group.is_none(), "await must not open a tool group");
+        // The result clears the throbber.
+        app.apply(StreamEvent::ToolResult {
+            id: "a1".into(),
+            content: "the subagent's answer".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(app.awaiting.is_empty());
+    }
+
+    fn wrap(run_id: &str, name: &str, event: StreamEvent) -> StreamEvent {
+        StreamEvent::Subagent {
+            run_id: run_id.into(),
+            name: name.into(),
+            event: Box::new(event),
+        }
+    }
+
+    #[test]
+    fn subagent_calls_fill_rolling_panel_capped_at_window() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        // Seven calls; only the last SUBAGENT_WINDOW remain visible.
+        for i in 0..7 {
+            app.apply(wrap(
+                "r1",
+                "reviewer",
+                StreamEvent::ToolCall {
+                    id: format!("c{i}"),
+                    name: "bash".into(),
+                    args: json!({ "command": format!("cmd{i}") }),
+                },
+            ));
+            // Results are internal to the subagent and must not surface.
+            app.apply(wrap(
+                "r1",
+                "reviewer",
+                StreamEvent::ToolResult {
+                    id: format!("c{i}"),
+                    content: "ok".into(),
+                    is_error: false,
+                    diff: None,
+                },
+            ));
+        }
+        let panel = app.subagents.iter().find(|p| p.run_id == "r1").expect("active");
+        // Full history retained (for later expansion); the window is a render concern.
+        assert_eq!(panel.calls.len(), 7);
+        assert!(panel.calls.first().unwrap().contains("cmd0"));
+        assert!(panel.calls.last().unwrap().contains("cmd6"));
+        // The live panel renders only the last SUBAGENT_WINDOW calls.
+        use ratatui::{backend::TestBackend, Terminal};
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let out = render(&mut app);
+        assert!(out.contains("cmd6") && out.contains("cmd2"), "window tail shown");
+        assert!(!out.contains("cmd0") && !out.contains("cmd1"), "oldest scrolled out: {out}");
+    }
+
+    #[test]
+    fn concurrent_subagents_track_independent_panels() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "alpha".into(),
+        });
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r2".into(),
+            name: "beta".into(),
+        });
+        app.apply(wrap(
+            "r2",
+            "beta",
+            StreamEvent::ToolCall {
+                id: "c0".into(),
+                name: "bash".into(),
+                args: json!({ "command": "beta-cmd" }),
+            },
+        ));
+        assert_eq!(app.subagents.len(), 2);
+        let alpha = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
+        let beta = app.subagents.iter().find(|p| p.run_id == "r2").unwrap();
+        assert_eq!(alpha.calls.len(), 0, "beta's call must not land on alpha");
+        assert_eq!(beta.calls.len(), 1);
+        assert!(beta.calls.last().unwrap().contains("beta-cmd"));
+    }
+
+    #[test]
+    fn finished_subagent_summary_expands_full_call_list_via_ctrl_o() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        // More calls than the live window, so expansion reveals ones it hid.
+        for i in 0..7 {
+            app.apply(wrap(
+                "r1",
+                "reviewer",
+                StreamEvent::ToolCall {
+                    id: format!("c{i}"),
+                    name: "bash".into(),
+                    args: json!({ "command": format!("cmd{i}") }),
+                },
+            ));
+        }
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        // A collapsed summary row + a retained expandable block.
+        assert_eq!(app.subagent_blocks.len(), 1);
+        let idx = app.subagent_blocks[0].idx;
+
+        use ratatui::{backend::TestBackend, Terminal};
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        // Collapsed: full list (e.g. the oldest call) is hidden.
+        assert!(!render(&mut app).contains("cmd0"));
+        // Ctrl-O expand-all reveals every call, including ones outside the window.
+        app.toggle_regions();
+        assert!(app.expanded.contains(&idx));
+        let expanded = render(&mut app);
+        assert!(expanded.contains("cmd0"), "expanded must reveal earliest call: {expanded}");
+        assert!(expanded.contains("cmd6"));
+        // Toggling again collapses it.
+        app.toggle_regions();
+        assert!(!app.expanded.contains(&idx));
+    }
+
+    #[test]
+    fn subagent_end_commits_summary_and_clears_only_that_panel() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        app.apply(wrap(
+            "r1",
+            "reviewer",
+            StreamEvent::ToolCall {
+                id: "c0".into(),
+                name: "bash".into(),
+                args: json!({ "command": "ls" }),
+            },
+        ));
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
+        assert!(app
+            .transcript
+            .iter()
+            .any(|l| line_text(l).contains("subagent reviewer finished (1 tool call)")));
+    }
+
+    #[test]
+    fn parent_tokens_still_render_while_subagent_active() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        // A wrapped child token is internal and dropped.
+        app.apply(wrap(
+            "r1",
+            "reviewer",
+            StreamEvent::Token {
+                text: "child prose".into(),
+            },
+        ));
+        assert!(app.assistant_buf.is_empty());
+        // The parent's own token still streams even with a child active.
+        app.apply(StreamEvent::Token {
+            text: "parent prose".into(),
+        });
+        assert_eq!(app.assistant_buf, "parent prose");
+    }
+
+    #[test]
+    fn permission_inside_subagent_attributes_the_asking_subagent() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        app.apply(wrap(
+            "r1",
+            "reviewer",
+            StreamEvent::PermissionRequest {
+                request_id: "p1".into(),
+                tool_name: "bash".into(),
+                capability: "exec".into(),
+                path: None,
+                command: Some("cargo test".into()),
+                diff: None,
+                prompt_kind: "exec".into(),
+                offers_always: true,
+            },
+        ));
+        assert_eq!(
+            app.pending.as_ref().and_then(|p| p.subagent.as_deref()),
+            Some("reviewer")
+        );
     }
 
     #[test]
