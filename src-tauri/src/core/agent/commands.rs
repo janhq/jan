@@ -60,6 +60,8 @@ fn build_orchestration_args<R: Runtime>(
         permissions: ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
+        system_prompt_override: None,
+        subagents_enabled: true,
     }
 }
 
