@@ -21,10 +21,26 @@ const TOP_N = 10
 const ANTHROPIC_VERSION_HEADER = 'anthropic-version'
 const ANTHROPIC_VERSION = '2023-06-01'
 
+/// Whether a provider fronts Anthropic's API (built-in `anthropic` or a
+/// user-added Anthropic-compatible proxy), detected by provider name or host.
+function isAnthropicProvider(provider: {
+  provider?: string
+  base_url?: string
+}): boolean {
+  return (
+    (provider.provider ?? '').toLowerCase().includes('anthropic') ||
+    (provider.base_url ?? '').toLowerCase().includes('anthropic')
+  )
+}
+
 /// Anthropic's `/v1/models` (and any Anthropic-shaped proxy) rejects requests
-/// without `anthropic-version`. Add a default when the caller hasn't set one;
-/// OpenAI/Gemini and other providers ignore the unknown header.
-export function ensureAnthropicVersion(headers: Record<string, string>): void {
+/// without `anthropic-version`. Add a default for Anthropic providers when the
+/// caller hasn't set one; other providers are left untouched.
+export function ensureAnthropicVersion(
+  provider: { provider?: string; base_url?: string },
+  headers: Record<string, string>
+): void {
+  if (!isAnthropicProvider(provider)) return
   const present = Object.keys(headers).some(
     (h) => h.toLowerCase() === ANTHROPIC_VERSION_HEADER
   )
@@ -123,7 +139,7 @@ function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, 
   if (p.custom_header) {
     for (const h of p.custom_header) headers[h.header] = h.value
   }
-  ensureAnthropicVersion(headers)
+  ensureAnthropicVersion(p, headers)
   return headers
 }
 

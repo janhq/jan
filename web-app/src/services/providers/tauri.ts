@@ -179,7 +179,7 @@ export class TauriProvidersService extends DefaultProvidersService {
           })
         }
 
-        ensureAnthropicVersion(headers)
+        ensureAnthropicVersion(provider, headers)
 
         const response = await fetchTauri(`${provider.base_url}/models`, {
           method: 'GET',

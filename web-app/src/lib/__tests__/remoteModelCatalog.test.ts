@@ -205,4 +205,11 @@ describe('fetchTopRemoteModels anthropic', () => {
       })
     )
   })
+
+  it('does not send anthropic-version for openai', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
+    await fetchTopRemoteModels(mkOpenAIProvider(), fetchImpl)
+    const headers = fetchImpl.mock.calls[0][1].headers as Record<string, string>
+    expect(headers).not.toHaveProperty('anthropic-version')
+  })
 })
