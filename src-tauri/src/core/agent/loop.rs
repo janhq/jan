@@ -45,6 +45,7 @@ fn next_permission_id() -> String {
 /// All state the orchestration loop threads from multiple subsystems. Grouped
 /// into a struct so the streaming and non-streaming entry points share one
 /// argument surface instead of a ten-parameter signature.
+#[derive(Clone)]
 pub(crate) struct OrchestrationArgs {
     pub client: Client,
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
@@ -56,6 +57,14 @@ pub(crate) struct OrchestrationArgs {
     pub permissions: crate::core::agent::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
+    /// When set, used verbatim as the system prompt, bypassing project-context
+    /// assembly and memory recall/indexing. Set for subagent child runs so a
+    /// dispatched subagent gets exactly its definition prompt with no parent
+    /// context bleed. `None` for normal runs.
+    pub system_prompt_override: Option<String>,
+    /// Whether this run may dispatch subagents. `false` for child runs, which
+    /// caps recursion depth at one (a subagent cannot spawn grandchildren).
+    pub subagents_enabled: bool,
 }
 
 #[async_trait]
@@ -141,6 +150,17 @@ impl ToolInvoker for McpToolInvoker {
     }
 }
 
+/// Context the invoker needs to dispatch subagents. `None` when subagents are
+/// disabled for this run (a child run, or the proxy path), in which case a
+/// subagent tool call returns an error instead of spawning a nested run.
+struct SubagentContext {
+    parent_args: OrchestrationArgs,
+    model_id: String,
+    max_session_tokens: Option<u64>,
+    /// Background children of this run, aborted when the run ends.
+    bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
+}
+
 /// Dispatches built-in tool calls to native handlers (gated by `resolve_decision`)
 /// and everything else to the existing `McpToolInvoker`, preserving input order.
 struct CompositeToolInvoker {
@@ -150,6 +170,7 @@ struct CompositeToolInvoker {
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
+    subagents: Option<SubagentContext>,
 }
 
 impl CompositeToolInvoker {
@@ -176,6 +197,118 @@ impl CompositeToolInvoker {
         self.permission_requests.lock().await.remove(&request_id);
         decision
     }
+
+    /// Prompt the user to approve a `user`-scope subagent write (it persists
+    /// outside the current project). Project-scope writes are not prompted.
+    async fn prompt_subagent_create(&self, name: &str) -> PermissionDecision {
+        let request_id = next_permission_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.permission_requests
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
+        let _ = self.events.send(StreamEvent::PermissionRequest {
+            request_id: request_id.clone(),
+            tool_name: "create_subagent".to_string(),
+            capability: "write".to_string(),
+            path: Some(name.to_string()),
+            command: None,
+            diff: None,
+            prompt_kind: "subagent_create".to_string(),
+            offers_always: false,
+        });
+        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+        self.permission_requests.lock().await.remove(&request_id);
+        decision
+    }
+
+    /// Execute one subagent tool call, returning the model-facing result string
+    /// (an `ERROR:`-prefixed message on failure, matching the tool-result
+    /// convention). The registry is loaded fresh from disk each call so a
+    /// just-created subagent is immediately dispatchable within the same run.
+    async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
+        use crate::core::agent::subagent::{
+            await_subagent, format_subagent_list, parse_await_args, parse_create_args,
+            parse_dispatch_args, spawn_subagent, subagent_dir_for, SubagentRegistry, SubagentScope,
+        };
+        let Some(ctx) = &self.subagents else {
+            return "ERROR: subagents are not available in this run".to_string();
+        };
+        match name {
+            "list_subagents" => {
+                let registry = SubagentRegistry::load(&self.project_root);
+                format_subagent_list(&registry)
+            }
+            "dispatch_subagent" => {
+                let req = match parse_dispatch_args(args) {
+                    Ok(r) => r,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                match spawn_subagent(
+                    &ctx.bg,
+                    &ctx.parent_args,
+                    req,
+                    &ctx.model_id,
+                    ctx.max_session_tokens,
+                    &self.events,
+                ) {
+                    Ok(run_id) => format!(
+                        "Subagent started in the background. run_id={run_id}. Continue working, then call await_subagent with this run_id to collect its result."
+                    ),
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            "await_subagent" => {
+                let run_id = match parse_await_args(args) {
+                    Ok(r) => r,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                match await_subagent(&ctx.bg, &run_id).await {
+                    Ok(text) if text.trim().is_empty() => {
+                        "The subagent finished but produced no text output.".to_string()
+                    }
+                    Ok(text) => text,
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            "create_subagent" => {
+                let (def, scope, overwrite) = match parse_create_args(args) {
+                    Ok(v) => v,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                if scope == SubagentScope::User {
+                    match self.prompt_subagent_create(&def.name).await {
+                        PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
+                        PermissionDecision::Deny => {
+                            return "ERROR: user-scope subagent creation denied by user".to_string()
+                        }
+                    }
+                }
+                let dir = match subagent_dir_for(&self.project_root, scope) {
+                    Ok(d) => d,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                let scope_label = match scope {
+                    SubagentScope::User => "user",
+                    SubagentScope::Project => "project",
+                };
+                let mut registry = SubagentRegistry::load(&self.project_root);
+                match registry.create_in(&dir, def.clone(), scope, overwrite) {
+                    Ok(shadows) => {
+                        let mut msg = format!("Created {scope_label}-scope subagent '{}'.", def.name);
+                        if shadows {
+                            msg.push_str(
+                                " Note: it shadows a user-scope subagent of the same name.",
+                            );
+                        }
+                        msg
+                    }
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            _ => "ERROR: unknown subagent tool".to_string(),
+        }
+    }
 }
 
 #[async_trait]
@@ -197,6 +330,20 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|f| f.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            // Subagent tools are handled ahead of the fs/exec gate and the MCP
+            // fallback: they orchestrate nested runs, not filesystem access.
+            if crate::core::agent::subagent::is_subagent_tool(name) {
+                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_subagent_tool(name, &args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
             if !is_builtin(name) {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 // Deny-listed MCP tools are never advertised, but guard anyway.
@@ -360,6 +507,8 @@ pub(crate) async fn run_server_side_openai_orchestration(
         permissions: crate::core::agent::permissions::ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
+        system_prompt_override: None,
+        subagents_enabled: false,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
 }
@@ -476,6 +625,8 @@ async fn orchestrate_inner(
         permissions,
         project_root,
         permission_requests,
+        system_prompt_override,
+        subagents_enabled: _,
     } = args;
 
     let messages_value = json_body
@@ -495,7 +646,9 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    let system_prompt = if let Some(root) = project_root {
+    let system_prompt = if let Some(override_prompt) = system_prompt_override.clone() {
+        Some(override_prompt)
+    } else if let Some(root) = project_root {
         let mut sp = crate::core::agent::context::build_system_prompt(
             assistant_instructions.as_deref(),
             root,
@@ -582,6 +735,26 @@ async fn orchestrate_inner(
             }
             openai_tools.push(schema);
         }
+        // Subagent tools are advertised only when this run may dispatch them
+        // (never for a child run, capping recursion depth at one). The dispatch
+        // tool's description lists the resolvable subagent names.
+        if args.subagents_enabled {
+            if let Some(root) = project_root {
+                let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
+                for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
+                    let name = schema["function"]["name"].as_str().unwrap_or_default();
+                    if permissions.is_denied(name) {
+                        continue;
+                    }
+                    if let Some(allow) = &allowed_names {
+                        if !allow.contains(name) {
+                            continue;
+                        }
+                    }
+                    openai_tools.push(schema);
+                }
+            }
+        }
     }
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -615,9 +788,24 @@ async fn orchestrate_inner(
     let mut budget = SessionBudget::new(max_session_tokens);
 
     if let Some(root) = project_root {
-        if let Some(query) = latest_user_text(&conversation_messages) {
-            crate::core::agent::memory::index_message(root, "user", &query);
+        // Subagent (override) runs are ephemeral: their turns are never indexed
+        // into project memory, so a child cannot pollute the parent's recall.
+        let index_memory = system_prompt_override.is_none();
+        if index_memory {
+            if let Some(query) = latest_user_text(&conversation_messages) {
+                crate::core::agent::memory::index_message(root, "user", &query);
+            }
         }
+        // Background subagents are scoped to this run: `_bg_guard` aborts any
+        // still-running child when `orchestrate_inner` returns or is cancelled.
+        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
+        let subagents = args.subagents_enabled.then(|| SubagentContext {
+            parent_args: args.clone(),
+            model_id: model_id.clone(),
+            max_session_tokens,
+            bg: bg.clone(),
+        });
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             project_root: root.clone(),
@@ -625,6 +813,7 @@ async fn orchestrate_inner(
             events: events.clone(),
             permission_requests: permission_requests.clone(),
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
+            subagents,
         };
         let result = run_turn_cycle(
             events,
@@ -638,11 +827,13 @@ async fn orchestrate_inner(
             &tools,
         )
         .await;
-        if let Ok(completion) = &result {
-            if let Some(answer) = extract_choice_message(completion)
-                .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
-            {
-                crate::core::agent::memory::index_message(root, "assistant", &answer);
+        if index_memory {
+            if let Ok(completion) = &result {
+                if let Some(answer) = extract_choice_message(completion)
+                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
+                {
+                    crate::core::agent::memory::index_message(root, "assistant", &answer);
+                }
             }
         }
         result
@@ -1030,6 +1221,7 @@ mod tests {
             events,
             permission_requests: registry,
             grants: std::sync::Mutex::new(SessionGrants::default()),
+            subagents: None,
         }
     }
 
