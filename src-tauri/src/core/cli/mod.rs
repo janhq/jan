@@ -759,6 +759,8 @@ fn build_cli_orchestration_args(
         permissions,
         project_root: Some(project_root),
         permission_requests,
+        system_prompt_override: None,
+        subagents_enabled: true,
     }
 }
 
@@ -1138,6 +1140,20 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
                 "tool-result"
             };
             eprintln!("\x1b[2m[{tag}] {content}\x1b[0m");
+        }
+        StreamEvent::SubagentStart { name, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
+        }
+        StreamEvent::SubagentEnd { name, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
+        }
+        StreamEvent::Subagent { name, event, .. } => {
+            if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
+                eprintln!(
+                    "\x1b[2m[subagent:{name}] {}\x1b[0m",
+                    crate::core::agent::events::describe_tool_call(&tool, &args)
+                );
+            }
         }
         StreamEvent::Done { stop_reason, usage } => {
             let tokens = usage.and_then(|u| u.total_tokens).unwrap_or(0);
