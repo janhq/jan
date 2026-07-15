@@ -379,6 +379,31 @@ describe('TauriProvidersService', () => {
       )
     })
 
+    it('adds default anthropic-version header when api_type is anthropic despite non-anthropic name/host', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'my-gateway',
+        base_url: 'https://gateway.corp.com/v1',
+        api_type: 'anthropic',
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          }),
+        })
+      )
+    })
+
     it('does not add anthropic-version for non-anthropic providers', async () => {
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,
@@ -392,6 +417,9 @@ describe('TauriProvidersService', () => {
         string
       >
       expect(headers).not.toHaveProperty('anthropic-version')
+      expect(headers).not.toHaveProperty(
+        'anthropic-dangerous-direct-browser-access'
+      )
     })
 
     it('does not override a caller-supplied anthropic-version', async () => {

@@ -75,6 +75,7 @@ import {
   getProviderApiType,
 } from '@/lib/providerCaps'
 import { useAppState } from '@/hooks/useAppState'
+import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
 /**
  * Llama.cpp timings structure from the response
@@ -1057,12 +1058,14 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified (e.g., anthropic-version)
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
+    // Custom Anthropic providers may ship no custom_header; Anthropic rejects
+    // browser-context requests (webview Origin) without the opt-in header.
+    ensureAnthropicHeaders(provider, headers)
 
     const keyChain = providerRemoteApiKeyChain(provider)
     const fetchImpl =

@@ -16,7 +16,7 @@ import {
   API_KEY_FALLBACKS_SETTING_KEY,
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
-import { ensureAnthropicVersion } from '@/lib/remoteModelCatalog'
+import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -179,7 +179,7 @@ export class TauriProvidersService extends DefaultProvidersService {
           })
         }
 
-        ensureAnthropicVersion(provider, headers)
+        ensureAnthropicHeaders(provider, headers)
 
         const response = await fetchTauri(`${provider.base_url}/models`, {
           method: 'GET',
