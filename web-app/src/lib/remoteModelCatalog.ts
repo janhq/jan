@@ -18,6 +18,21 @@ type FetchImpl = typeof fetch
 
 const TOP_N = 10
 
+const ANTHROPIC_VERSION_HEADER = 'anthropic-version'
+const ANTHROPIC_VERSION = '2023-06-01'
+
+/// Anthropic's `/v1/models` (and any Anthropic-shaped proxy) rejects requests
+/// without `anthropic-version`. Add a default when the caller hasn't set one;
+/// OpenAI/Gemini and other providers ignore the unknown header.
+export function ensureAnthropicVersion(headers: Record<string, string>): void {
+  const present = Object.keys(headers).some(
+    (h) => h.toLowerCase() === ANTHROPIC_VERSION_HEADER
+  )
+  if (!present) {
+    headers[ANTHROPIC_VERSION_HEADER] = ANTHROPIC_VERSION
+  }
+}
+
 export function supportsRemoteCatalog(providerName: string): boolean {
   return (
     providerName === 'openai' ||
@@ -108,6 +123,7 @@ function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, 
   if (p.custom_header) {
     for (const h of p.custom_header) headers[h.header] = h.value
   }
+  ensureAnthropicVersion(headers)
   return headers
 }
 

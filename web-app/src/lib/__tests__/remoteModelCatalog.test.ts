@@ -194,4 +194,15 @@ describe('fetchTopRemoteModels anthropic', () => {
     const c2 = result.find((m) => m.id === 'claude-2.1')!
     expect(c2.capabilities).toEqual(['completion', 'tools'])
   })
+
+  it('sends default anthropic-version header', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
+    await fetchTopRemoteModels(mkAnthropicProvider(), fetchImpl)
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.anthropic.com/v1/models',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'anthropic-version': '2023-06-01' }),
+      })
+    )
+  })
 })

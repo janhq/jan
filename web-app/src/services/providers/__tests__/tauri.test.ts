@@ -358,6 +358,42 @@ describe('TauriProvidersService', () => {
       )
     })
 
+    it('adds default anthropic-version header for custom providers', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(baseProvider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'anthropic-version': '2023-06-01' }),
+        })
+      )
+    })
+
+    it('does not override a caller-supplied anthropic-version', async () => {
+      const provider = {
+        ...baseProvider,
+        custom_header: [{ header: 'anthropic-version', value: '2099-01-01' }],
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'anthropic-version': '2099-01-01' }),
+        })
+      )
+    })
+
     it('retries with next key on 401 and succeeds', async () => {
       vi.mocked(providerRemoteApiKeyChain).mockReturnValue(['bad-key', 'good-key'])
       vi.mocked(fetchTauri)
