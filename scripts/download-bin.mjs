@@ -317,6 +317,23 @@ async function main() {
   } catch (err) {
     // Expect EEXIST error
   }
+  if (platform === 'linux') {
+    const janUvSrc = path.join(binDir, 'uv')
+    const janUvDest = path.join(binDir, 'jan-uv')
+    const janUvTripleDest = path.join(binDir, 'jan-uv-' + uvPlatform)
+
+    try {
+      fs.copyFileSync(janUvSrc, janUvDest)
+      fs.chmodSync(janUvDest, 0o755)
+      console.log('Created jan-uv binary for Linux packaging')
+
+      fs.copyFileSync(janUvSrc, janUvTripleDest)
+      fs.chmodSync(janUvTripleDest, 0o755)
+      console.log('Created jan-uv triple binary (' + uvPlatform + ') for Linux packaging')
+    } catch (err) {
+      console.error('Error creating jan-uv binaries:', err)
+    }
+  }
   try {
     copySync(path.join(tempBinDir, 'uv.exe'), path.join(binDir))
     if (platform === 'win32') {
