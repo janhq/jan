@@ -42,6 +42,7 @@ enum Kind {
     None,
     User,
     Prose,
+    Reasoning,
     Tool,
     Meta,
 }
@@ -234,6 +235,11 @@ struct App {
     base_snapshot: Option<String>,
     /// Per-turn workspace checkpoints for the active thread, oldest first.
     checkpoints: Vec<Checkpoint>,
+    /// Pending git snapshots, run off the render loop (see `SnapshotJob`).
+    snap_queue: std::collections::VecDeque<SnapshotJob>,
+    /// Whether a base snapshot has been requested for the active thread (queued,
+    /// in flight, done, or resumed), so it is captured at most once per thread.
+    base_requested: bool,
     /// Timestamp of the last idle Esc, to detect a double-Esc rewind gesture.
     last_esc: Option<Instant>,
     /// User-message index chosen in the rewind picker, carried into the scope step.
@@ -329,6 +335,18 @@ struct SubagentBlock {
 /// Rolling window size for a subagent's live tool-call list.
 const SUBAGENT_WINDOW: usize = 5;
 
+/// A queued git workspace snapshot. The `git` subprocess re-hashes the whole
+/// working tree and is slow on a large repo, so snapshots run off the render
+/// loop (via `spawn_blocking`) and serialized (each checkpoint parents the
+/// previous), driven from the main loop rather than inline in `submit_user`/
+/// `on_done`.
+enum SnapshotJob {
+    /// Base state captured before the first turn; gates the first run.
+    Base,
+    /// Per-turn checkpoint keyed to the driving user message.
+    Checkpoint { user_index: usize, preview: String },
+}
+
 impl App {
     fn new(
         model: String,
@@ -342,6 +360,8 @@ impl App {
             repo_root,
             base_snapshot: None,
             checkpoints: Vec::new(),
+            snap_queue: std::collections::VecDeque::new(),
+            base_requested: false,
             last_esc: None,
             rewind_target: None,
             agent_dir,
@@ -413,6 +433,8 @@ impl App {
         // Detach snapshots; the next submit arms a fresh base + thread id.
         self.base_snapshot = None;
         self.checkpoints.clear();
+        self.snap_queue.clear();
+        self.base_requested = false;
         self.last_esc = None;
         self.transcript.clear();
         self.tool_group = None;
@@ -465,7 +487,9 @@ impl App {
                 if detail.is_empty() {
                     continue;
                 }
-                self.gap(Kind::Prose);
+                // Distinct Kind so the reasoning->prose transition still gaps
+                // (both sharing Kind::Prose would collapse to no separator).
+                self.gap(Kind::Reasoning);
                 self.push(reasoning_summary_row(detail.len()));
                 let idx = self.transcript.len() - 1;
                 self.reasoning_blocks.push(ReasoningBlock { idx, detail });
@@ -688,33 +712,20 @@ impl App {
         })
     }
 
-    /// Arm workspace snapshots for the active thread by capturing the base state
-    /// before the first turn. No-op when the project is not a git repo (no
-    /// workspace restore) or the base is already captured. Allocates the thread id
-    /// up front so the snapshot ref and the persisted thread share one id. Any git
-    /// failure disables snapshots for the session (conversation rewind still works).
+    /// Arm workspace snapshots by queuing the base capture before the first turn.
+    /// No-op when the project is not a git repo or the base is already armed. The
+    /// blocking `git` work runs off the render loop; the run start gates on it.
+    /// Allocates the thread id up front so the snapshot ref and the persisted
+    /// thread share one id.
     fn ensure_base_snapshot(&mut self) {
-        let Some(repo) = self.repo_root.clone() else {
-            return;
-        };
-        if self.base_snapshot.is_some() {
+        if self.repo_root.is_none() || self.base_requested {
             return;
         }
-        let id = self.thread_id.clone().unwrap_or_else(|| {
-            let n = uuid::Uuid::new_v4().to_string();
-            self.thread_id = Some(n.clone());
-            n
-        });
-        match git::snapshot(&repo, None, "jan agent base") {
-            Ok(sha) => {
-                let _ = git::update_ref(&repo, &id, &sha);
-                self.base_snapshot = Some(sha);
-            }
-            Err(e) => {
-                self.note(&format!("workspace snapshots disabled: {e}"));
-                self.repo_root = None;
-            }
+        if self.thread_id.is_none() {
+            self.thread_id = Some(uuid::Uuid::new_v4().to_string());
         }
+        self.base_requested = true;
+        self.snap_queue.push_back(SnapshotJob::Base);
     }
 
     /// Thread metadata persisted alongside the conversation: the base snapshot and
@@ -728,46 +739,51 @@ impl App {
         }))
     }
 
-    /// Snapshot the working tree produced by the just-finished turn, recording a
-    /// checkpoint keyed to the driving user message. A turn that changed no files
-    /// still snapshots (its tree equals the previous), which keeps the
-    /// message->snapshot map complete for rewind.
+    /// Queue a checkpoint of the working tree produced by the just-finished turn,
+    /// keyed to the driving user message. A turn that changed no files still
+    /// snapshots (its tree equals the previous), keeping the message->snapshot map
+    /// complete for rewind. The blocking `git` work runs off the render loop.
     fn checkpoint_turn(&mut self) {
-        let (Some(repo), Some(base)) = (self.repo_root.clone(), self.base_snapshot.clone()) else {
+        if self.repo_root.is_none() || !self.base_requested {
             return;
-        };
+        }
         let user_index = self
             .history
             .iter()
             .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
             .count()
             .saturating_sub(1);
-        let parent = self
-            .checkpoints
-            .last()
-            .map(|c| c.sha.clone())
-            .unwrap_or(base);
-        let n = self.checkpoints.len() + 1;
-        match git::snapshot(&repo, Some(&parent), &format!("jan agent turn {n}")) {
-            Ok(sha) => {
-                if let Some(id) = &self.thread_id {
-                    let _ = git::update_ref(&repo, id, &sha);
-                }
-                let preview = self
-                    .history
-                    .iter()
-                    .rev()
-                    .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-                    .and_then(|m| m.get("content").and_then(|v| v.as_str()))
-                    .map(truncate_preview)
-                    .unwrap_or_default();
-                self.checkpoints.push(Checkpoint {
-                    user_index,
-                    preview,
-                    sha,
-                });
+        let preview = self
+            .history
+            .iter()
+            .rev()
+            .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
+            .and_then(|m| m.get("content").and_then(|v| v.as_str()))
+            .map(truncate_preview)
+            .unwrap_or_default();
+        self.snap_queue.push_back(SnapshotJob::Checkpoint {
+            user_index,
+            preview,
+        });
+    }
+
+    /// Resolve the git inputs for the next queued snapshot from current state:
+    /// `(repo, parent, message, thread_id)`. `None` when snapshotting is
+    /// unavailable (not a git repo, or no thread id yet), so the job is dropped.
+    fn resolve_snapshot(&self, job: &SnapshotJob) -> Option<(PathBuf, Option<String>, String, String)> {
+        let repo = self.repo_root.clone()?;
+        let id = self.thread_id.clone()?;
+        match job {
+            SnapshotJob::Base => Some((repo, None, "jan agent base".to_string(), id)),
+            SnapshotJob::Checkpoint { .. } => {
+                let parent = self
+                    .checkpoints
+                    .last()
+                    .map(|c| c.sha.clone())
+                    .or_else(|| self.base_snapshot.clone());
+                let n = self.checkpoints.len() + 1;
+                Some((repo, parent, format!("jan agent turn {n}"), id))
             }
-            Err(e) => self.detail = format!("checkpoint failed: {e}"),
         }
     }
 
@@ -1714,6 +1730,38 @@ async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> V
     joined.unwrap_or_default()
 }
 
+/// Run one git snapshot (and ref update) off the render loop. Returns the
+/// snapshot sha. Blocking `git` work is confined to a blocking thread so the UI
+/// stays responsive on large repos.
+fn spawn_snapshot(
+    repo: PathBuf,
+    parent: Option<String>,
+    msg: String,
+    thread_id: String,
+) -> tokio::task::JoinHandle<Result<String, String>> {
+    tokio::task::spawn_blocking(move || {
+        let sha = git::snapshot(&repo, parent.as_deref(), &msg)?;
+        git::update_ref(&repo, &thread_id, &sha)?;
+        Ok(sha)
+    })
+}
+
+/// Await the in-flight snapshot task once, clearing the slot. Same cancel-safe
+/// borrow as `await_router`; pends forever when idle.
+async fn await_snapshot(
+    task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
+) -> Result<String, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("snapshot task failed: {e}")),
+    }
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -1779,20 +1827,39 @@ async fn chat_loop<B: Backend>(
     let mut mcp_ready = mcp_task.is_none();
     let mut loading_noted = false;
 
+    // Off-loop git snapshotting: one job at a time (checkpoints must stay
+    // ordered), driven from the queue `App` fills in submit_user/on_done.
+    let mut snap_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
+    let mut snap_inflight: Option<SnapshotJob> = None;
+
     match initial_task {
         Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
         _ => app.note("type a message to start, or /help for commands"),
     }
 
     while !app.should_quit {
-        // Kick off a queued run once the previous one has cleared and the local
-        // model (if any) is loaded. `submit_user` already flipped status to
-        // Running and reset the turn counter.
+        // Drive the snapshot queue: run one job off-loop at a time. A job whose
+        // inputs no longer resolve (snapshots disabled) is dropped.
+        if snap_task.is_none() {
+            while let Some(job) = app.snap_queue.pop_front() {
+                if let Some((repo, parent, msg, id)) = app.resolve_snapshot(&job) {
+                    snap_task = Some(spawn_snapshot(repo, parent, msg, id));
+                    snap_inflight = Some(job);
+                    break;
+                }
+            }
+        }
+
+        // Kick off a queued run once the previous one has cleared, the local
+        // model (if any) is loaded, and the base snapshot (if any) is captured.
+        // `submit_user` already flipped status to Running and reset the counter.
         if app.want_start && current.is_none() {
-            if router_ready && mcp_ready {
+            let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
+            if router_ready && mcp_ready && base_ready {
                 app.want_start = false;
                 current = Some(spawn_run(args, app.body()));
-            } else if !loading_noted {
+            } else if !loading_noted && (!router_ready || !mcp_ready) {
+                // The base snapshot gates silently; only model/MCP loads note.
                 loading_noted = true;
                 app.note(if !router_ready {
                     "loading local model..."
@@ -1830,6 +1897,29 @@ async fn chat_loop<B: Backend>(
                 match connected.as_slice() {
                     [] => {}
                     names => app.note(&format!("MCP ready: {}", names.join(", "))),
+                }
+            }
+            snap_res = await_snapshot(&mut snap_task) => {
+                match (snap_inflight.take(), snap_res) {
+                    (Some(SnapshotJob::Base), Ok(sha)) => {
+                        app.base_snapshot = Some(sha);
+                        app.persist();
+                    }
+                    (Some(SnapshotJob::Checkpoint { user_index, preview }), Ok(sha)) => {
+                        app.checkpoints.push(Checkpoint { user_index, preview, sha });
+                        app.persist();
+                    }
+                    (Some(SnapshotJob::Base), Err(e)) => {
+                        // Base failed: disable snapshots for the session and drop
+                        // any queued checkpoints (they have no base to parent).
+                        app.note(&format!("workspace snapshots disabled: {e}"));
+                        app.repo_root = None;
+                        app.snap_queue.clear();
+                    }
+                    (Some(SnapshotJob::Checkpoint { .. }), Err(e)) => {
+                        app.detail = format!("checkpoint failed: {e}");
+                    }
+                    (None, _) => {}
                 }
             }
             ev = next_event(&mut current) => match ev {
@@ -2425,6 +2515,8 @@ fn toggle_mcp_server(
 fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
     app.base_snapshot = None;
     app.checkpoints.clear();
+    app.snap_queue.clear();
+    app.base_requested = false;
     let Some(meta) = metadata else { return };
     let Some(base) = meta
         .get("base_snapshot")
@@ -2438,6 +2530,8 @@ fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
         .and_then(|v| serde_json::from_value::<Vec<Checkpoint>>(v.clone()).ok())
         .unwrap_or_default();
     app.base_snapshot = Some(base);
+    // A resumed thread already has its base; don't re-snapshot on next submit.
+    app.base_requested = true;
 }
 
 /// Open the double-Esc rewind picker listing the conversation's user messages.
@@ -3139,7 +3233,7 @@ mod tests {
         is_table_separator, message_text,
         parse_command, render_table, run_command, split_reasoning, subagent_activity,
         subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
-        transcript_top_padding, App, Pending, DIFF_MAX_ROWS,
+        transcript_top_padding, App, Pending, SnapshotJob, DIFF_MAX_ROWS,
     };
     use ratatui::{style::Modifier, text::Line};
     use crate::core::agent::events::StreamEvent;
@@ -3546,6 +3640,69 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn base_snapshot_is_queued_off_loop_not_run_inline() {
+        let mut app = test_app();
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.submit_user("hi".into());
+        // Queued for the loop to run off-thread; NOT captured synchronously here.
+        assert!(app.base_requested);
+        assert!(app.thread_id.is_some());
+        assert!(app.base_snapshot.is_none(), "no inline git on the render thread");
+        assert_eq!(app.snap_queue.len(), 1);
+        assert!(matches!(app.snap_queue.front(), Some(SnapshotJob::Base)));
+        // Idempotent: a second submit does not re-queue the base.
+        app.submit_user("again".into());
+        assert_eq!(
+            app.snap_queue
+                .iter()
+                .filter(|j| matches!(j, SnapshotJob::Base))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn checkpoint_is_queued_only_after_base_armed() {
+        let mut app = test_app();
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.thread_id = Some("t1".into());
+        app.history.push(json!({ "role": "user", "content": "do it" }));
+        // No base armed yet -> no checkpoint.
+        app.checkpoint_turn();
+        assert!(app.snap_queue.is_empty());
+        app.base_requested = true;
+        app.checkpoint_turn();
+        match app.snap_queue.front() {
+            Some(SnapshotJob::Checkpoint { user_index, preview }) => {
+                assert_eq!(*user_index, 0);
+                assert_eq!(preview, "do it");
+            }
+            other => panic!("expected a checkpoint job, got {:?}", other.is_some()),
+        }
+    }
+
+    #[test]
+    fn resolve_snapshot_builds_git_inputs() {
+        let mut app = test_app();
+        app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
+        app.thread_id = Some("t1".into());
+        let (_, parent, msg, id) = app.resolve_snapshot(&SnapshotJob::Base).unwrap();
+        assert!(parent.is_none());
+        assert_eq!(msg, "jan agent base");
+        assert_eq!(id, "t1");
+
+        app.base_snapshot = Some("basesha".into());
+        let job = SnapshotJob::Checkpoint { user_index: 0, preview: "x".into() };
+        let (_, parent, msg, _) = app.resolve_snapshot(&job).unwrap();
+        assert_eq!(parent.as_deref(), Some("basesha"), "first checkpoint parents the base");
+        assert_eq!(msg, "jan agent turn 1");
+
+        // Disabled (no repo) -> job dropped.
+        app.repo_root = None;
+        assert!(app.resolve_snapshot(&SnapshotJob::Base).is_none());
     }
 
     #[test]
@@ -4189,6 +4346,24 @@ mod tests {
         // The raw thought is retained on the block for expansion.
         let block = &app.reasoning_blocks[0];
         assert!(block.detail.iter().map(line_text).any(|l| l.contains("let me look")));
+    }
+
+    #[test]
+    fn reasoning_row_is_separated_from_following_prose_by_a_blank_line() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>thinking</think>Hi there!".into(),
+        });
+        app.apply(StreamEvent::Step { index: 1, max: 8 });
+        let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
+        let think_at = rows.iter().position(|r| r.contains("reasoning (1 line)")).unwrap();
+        let prose_at = rows.iter().position(|r| r.contains("Hi there!")).unwrap();
+        assert!(think_at < prose_at);
+        // A blank line must sit between the reasoning row and the prose.
+        assert!(
+            rows[think_at + 1..prose_at].iter().any(|r| r.trim().is_empty()),
+            "expected a blank line between reasoning and prose: {rows:?}"
+        );
     }
 
     #[test]
