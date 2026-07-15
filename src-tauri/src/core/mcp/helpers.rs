@@ -336,11 +336,11 @@ pub async fn start_mcp_server<R: Runtime>(
     // 400, tearing down the connection (issue #8411). This can happen when boot
     // startup and a frontend activation fire for the same server.
     if servers_state.lock().await.contains_key(&name) {
-        log::info!("MCP server {name} already running; skipping duplicate start");
+        log::debug!("MCP server {name} already running; skipping duplicate start");
         return Ok(());
     }
     if !app_state.mcp_starting.lock().await.insert(name.clone()) {
-        log::info!("MCP server {name} start already in progress; skipping duplicate start");
+        log::debug!("MCP server {name} start already in progress; skipping duplicate start");
         return Ok(());
     }
 
