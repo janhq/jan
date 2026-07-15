@@ -154,6 +154,14 @@ fn is_llamacpp_router_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> b
         .unwrap_or(false)
 }
 
+#[cfg(all(not(feature = "cli"), not(target_os = "macos")))]
+fn is_proxy_server_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    app.try_state::<AppState>()
+        .and_then(|s| s.server_handle.try_lock().ok().map(|g| g.is_some()))
+        .unwrap_or(false)
+}
+
 #[cfg(not(feature = "cli"))]
 fn reemit_busy_if_any<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) {
     let busy = BUSY_MODELS.lock().map(|g| g.clone()).unwrap_or_default();
@@ -370,22 +378,38 @@ pub fn run() {
             ..
         } = &event
         {
-            if label == "main"
-                && !SHUTTING_DOWN.load(Ordering::SeqCst)
-                && is_llamacpp_router_running(app)
-            {
-                api.prevent_close();
-                let _ = app.emit("llamacpp-close-attempt", ());
-                if GRACEFUL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-                    reemit_busy_if_any(app);
+            if label == "main" && !SHUTTING_DOWN.load(Ordering::SeqCst) {
+                // macOS: closing the window hides it; the app (and background
+                // services) keep running. Quit happens via Cmd+Q / dock / tray,
+                // which routes through RunEvent::ExitRequested.
+                #[cfg(target_os = "macos")]
+                {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
                     return;
                 }
-                let app_handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    handle_graceful_exit(app_handle, "CloseRequested", 0).await;
-                    GRACEFUL_IN_PROGRESS.store(false, Ordering::SeqCst);
-                });
-                return;
+                // Windows/Linux: hide to tray only while the Local API Server is
+                // running; otherwise fall through to the normal quit-on-close.
+                // The llamacpp router is not a reason to keep the app resident
+                // (normal chat usage keeps it alive), so it gets torn down via
+                // the ExitRequested path on quit.
+                #[cfg(not(target_os = "macos"))]
+                if is_proxy_server_running(app) {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                    return;
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = &event {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
             }
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
