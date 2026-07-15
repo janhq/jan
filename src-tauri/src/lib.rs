@@ -12,7 +12,10 @@ use core::{
 #[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
 #[cfg(not(feature = "cli"))]
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 #[cfg(not(feature = "cli"))]
 use tauri::{Emitter, Manager, RunEvent};
 #[cfg(not(feature = "cli"))]
@@ -264,6 +267,7 @@ pub fn run() {
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
+            mcp_starting: Arc::new(Mutex::new(HashSet::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
