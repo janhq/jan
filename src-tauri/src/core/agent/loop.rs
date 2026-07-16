@@ -324,6 +324,11 @@ impl ToolInvoker for CompositeToolInvoker {
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
+        // Auto-allowed read-only built-ins (no prompt, no filesystem mutation)
+        // are deferred and executed concurrently after the gating pass. Anything
+        // that prompts, writes, execs, or dispatches stays sequential so
+        // permission prompts don't interleave and writes can't race.
+        let mut read_futures = Vec::new();
         for tc in tool_calls {
             let name = tc
                 .get("function")
@@ -391,6 +396,18 @@ impl ToolInvoker for CompositeToolInvoker {
                 &self.permissions,
                 &snapshot,
             );
+            if matches!(decision, Decision::Allow) && tool.capability == Capability::Read {
+                let root = self.project_root.clone();
+                read_futures.push(async move {
+                    let (text, diff) = execute_builtin_with_diff(tool, &args, &root).await;
+                    ToolOutcome {
+                        id,
+                        content: text,
+                        diff,
+                    }
+                });
+                continue;
+            }
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
                 Decision::HardDeny => {
@@ -468,6 +485,9 @@ impl ToolInvoker for CompositeToolInvoker {
                 content: text,
                 diff,
             });
+        }
+        if !read_futures.is_empty() {
+            out.extend(futures::future::join_all(read_futures).await);
         }
         if !mcp_calls.is_empty() {
             out.extend(self.mcp.invoke(&mcp_calls).await?);
@@ -854,6 +874,34 @@ async fn orchestrate_inner(
     }
 }
 
+/// Upper bound on compaction retries per model call, so a persistently
+/// overflowing request fails loudly instead of looping forever.
+const MAX_COMPACTION_ATTEMPTS: usize = 4;
+
+/// Build one OpenAI chat-completion request from the current conversation.
+fn build_completion_request(
+    model_id: &str,
+    conversation_messages: &[serde_json::Value],
+    openai_tools: &[serde_json::Value],
+    json_body: &serde_json::Value,
+) -> serde_json::Value {
+    let mut completion_map = serde_json::Map::new();
+    completion_map.insert("model".to_string(), serde_json::json!(model_id));
+    completion_map.insert(
+        "messages".to_string(),
+        serde_json::Value::Array(conversation_messages.to_vec()),
+    );
+    completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
+    if !openai_tools.is_empty() {
+        completion_map.insert(
+            "tools".to_string(),
+            serde_json::Value::Array(openai_tools.to_vec()),
+        );
+    }
+    copy_optional_chat_params(json_body, &mut completion_map);
+    serde_json::Value::Object(completion_map)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -877,25 +925,45 @@ async fn run_turn_cycle(
             max: max_turns as u32,
         });
 
-        let mut completion_map = serde_json::Map::new();
-        completion_map.insert("model".to_string(), serde_json::json!(model_id));
-        completion_map.insert(
-            "messages".to_string(),
-            serde_json::Value::Array(conversation_messages.clone()),
-        );
-        completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
-
-        if !openai_tools.is_empty() {
-            completion_map.insert(
-                "tools".to_string(),
-                serde_json::Value::Array(openai_tools.to_vec()),
-            );
-        }
-
-        copy_optional_chat_params(json_body, &mut completion_map);
-        let request_value = serde_json::Value::Object(completion_map);
-
-        let completion = model.invoke(&request_value, events).await?;
+        // On a context-overflow error, compact the conversation and retry.
+        // Compaction runs progressively (a smaller kept tail each attempt) and
+        // the loop gives up if a pass fails to shrink the message list.
+        let completion = {
+            let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
+            let mut attempts = 0usize;
+            loop {
+                let request_value =
+                    build_completion_request(model_id, &conversation_messages, openai_tools, json_body);
+                match model.invoke(&request_value, events).await {
+                    Ok(c) => break c,
+                    Err(e)
+                        if crate::core::agent::upstream::is_context_overflow_error(&e)
+                            && attempts < MAX_COMPACTION_ATTEMPTS =>
+                    {
+                        let compacted = crate::core::agent::compaction::compact_conversation(
+                            &conversation_messages,
+                            model_id,
+                            model,
+                            keep_recent,
+                        )
+                        .await;
+                        if compacted.len() >= conversation_messages.len() {
+                            return Err(e);
+                        }
+                        log::info!(
+                            "agent: context overflow, compacted {} -> {} messages (attempt {})",
+                            conversation_messages.len(),
+                            compacted.len(),
+                            attempts + 1
+                        );
+                        conversation_messages = compacted;
+                        keep_recent = (keep_recent / 2).max(2);
+                        attempts += 1;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        };
 
         budget.record(&Usage::from_completion(&completion));
 
@@ -950,6 +1018,33 @@ async fn run_turn_cycle(
                 "content": serde_json::Value::Null,
                 "tool_calls": tool_calls.clone()
             }));
+        }
+
+        // A `length` finish means the model was cut off mid-emission, so the
+        // streamed tool-call arguments may be silently truncated. Executing them
+        // would run with partial/empty args; instead fail every call so the model
+        // sees the error and retries with a shorter response next turn.
+        if stop_reason_of(&completion) == "length" {
+            for tc in &tool_calls {
+                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let content =
+                    "ERROR: response truncated (finish_reason=length); tool-call arguments are \
+                     incomplete and were not executed. Retry with a shorter response."
+                        .to_string();
+                let _ = events.send(StreamEvent::ToolResult {
+                    id: id.clone(),
+                    content: content.clone(),
+                    is_error: true,
+                    diff: None,
+                });
+                conversation_messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": id,
+                    "content": content
+                }));
+            }
+            turn += 1;
+            continue;
         }
 
         let tool_results = tools.invoke(&tool_calls).await?;
@@ -1130,6 +1225,83 @@ mod tests {
         );
     }
 
+    struct ResultQueueModel {
+        results: StdMutex<VecDeque<Result<serde_json::Value, String>>>,
+    }
+    #[async_trait]
+    impl ModelInvoker for ResultQueueModel {
+        async fn invoke(
+            &self,
+            _request: &serde_json::Value,
+            _events: &mpsc::UnboundedSender<StreamEvent>,
+        ) -> Result<serde_json::Value, String> {
+            self.results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err("mock exhausted".to_string()))
+        }
+    }
+
+    #[tokio::test]
+    async fn turn_cycle_compacts_and_retries_on_context_overflow() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // 1) main request overflows, 2) summarizer succeeds, 3) retry succeeds.
+        let overflow = Err(format!(
+            "[{}] Upstream returned HTTP 400: context_length_exceeded",
+            crate::core::agent::upstream::CONTEXT_OVERFLOW_MARKER
+        ));
+        let model = ResultQueueModel {
+            results: StdMutex::new(
+                vec![
+                    overflow,
+                    Ok(json!({ "choices": [{ "message": { "content": "SUMMARY" } }] })),
+                    Ok(json!({ "choices": [{ "message": { "content": "final" }, "finish_reason": "stop" }] })),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        for i in 0..20 {
+            let r = if i % 2 == 0 { "user" } else { "assistant" };
+            convo.push(json!({ "role": r, "content": format!("m{i}") }));
+        }
+
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool)
+            .await
+            .unwrap();
+
+        assert_eq!(result["choices"][0]["message"]["content"], "final");
+        assert!(tool.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn turn_cycle_skips_execution_on_truncated_tool_calls() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut truncated = tool_call_completion();
+        truncated["choices"][0]["finish_reason"] = json!("length");
+        let model = MockModel::new(vec![
+            truncated,
+            json!({ "choices": [{ "message": { "content": "recovered" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool)
+            .await
+            .unwrap();
+
+        assert_eq!(result["choices"][0]["message"]["content"], "recovered");
+        assert!(
+            tool.calls.lock().unwrap().is_empty(),
+            "truncated tool calls must not execute"
+        );
+    }
+
     #[tokio::test]
     async fn turn_cycle_unbounded_runs_until_final_answer() {
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -1244,6 +1416,38 @@ mod tests {
                 None => return,
             }
         }
+    }
+
+    #[tokio::test]
+    async fn parallel_reads_all_execute_and_preserve_order() {
+        let root = unique_project_root();
+        std::fs::write(root.join("a.txt"), "AAA").unwrap();
+        std::fs::write(root.join("b.txt"), "BBB").unwrap();
+        std::fs::write(root.join("c.txt"), "CCC").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        // Read-only default => reads auto-allow (no prompt) and run concurrently.
+        let invoker = build_prompting_invoker(root.clone(), tx, registry);
+
+        let read = |id: &str, path: &str| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": "read", "arguments": format!("{{\"path\":\"{path}\"}}") }
+            })
+        };
+        let calls = vec![read("r1", "a.txt"), read("r2", "b.txt"), read("r3", "c.txt")];
+        let out = invoker.invoke(&calls).await.unwrap();
+
+        assert_eq!(out.len(), 3);
+        // Output order must match input order regardless of completion order.
+        assert_eq!(out[0].id, "r1");
+        assert_eq!(out[1].id, "r2");
+        assert_eq!(out[2].id, "r3");
+        assert!(out[0].content.contains("AAA"), "got: {}", out[0].content);
+        assert!(out[1].content.contains("BBB"), "got: {}", out[1].content);
+        assert!(out[2].content.contains("CCC"), "got: {}", out[2].content);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
