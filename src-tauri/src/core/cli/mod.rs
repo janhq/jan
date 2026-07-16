@@ -145,7 +145,7 @@ pub fn cli_save_thread(
         .iter()
         .filter_map(|m| {
             let role = m.get("role").and_then(|v| v.as_str())?;
-            let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let content = openai_content_text(m.get("content"));
             Some(serde_json::json!({
                 "id": uuid::Uuid::new_v4().to_string(),
                 "object": "thread.message",
@@ -202,14 +202,29 @@ pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result
     set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
 }
 
+/// Text of an OpenAI-shaped message `content`: the string as-is, or the joined
+/// `text` parts of a multimodal content array (image parts contribute nothing).
+fn openai_content_text(content: Option<&serde_json::Value>) -> String {
+    match content {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(parts)) => parts
+            .iter()
+            .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("text"))
+            .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
 /// Fallback thread title: the first user message, whitespace-collapsed and
 /// truncated. Used only when no summarized title exists yet.
 fn default_thread_title(history: &[serde_json::Value]) -> String {
     let first_user = history
         .iter()
         .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-        .and_then(|m| m.get("content").and_then(|v| v.as_str()))
-        .unwrap_or("");
+        .map(|m| openai_content_text(m.get("content")))
+        .unwrap_or_default();
     let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.is_empty() {
         return "Agent chat".to_string();
@@ -1120,6 +1135,7 @@ pub async fn cli_agent_ui(
     task: Option<String>,
     model: Option<String>,
     max_turns: Option<u32>,
+    images: Vec<String>,
     overrides: ProviderOverrides,
 ) -> Result<(), String> {
     let session = prepare_agent_session(project, model, max_turns, overrides)?;
@@ -1127,7 +1143,7 @@ pub async fn cli_agent_ui(
     // desktop store, so continuing here never mutates desktop threads.
     let project_root = resolve_project_root(project);
     let agent_dir = project_root.join(".jan").join("agent");
-    tui::run(session, agent_dir, project_root, task).await
+    tui::run(session, agent_dir, project_root, task, images).await
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
@@ -1243,6 +1259,31 @@ mod tests {
         assert_eq!(
             default_thread_title(history.as_array().unwrap()),
             "Explain the buffer logic"
+        );
+    }
+
+    #[test]
+    fn openai_content_text_reads_multimodal_array() {
+        let content = serde_json::json!([
+            { "type": "text", "text": "describe" },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
+        ]);
+        assert_eq!(openai_content_text(Some(&content)), "describe");
+        assert_eq!(openai_content_text(Some(&serde_json::json!("plain"))), "plain");
+    }
+
+    #[test]
+    fn default_thread_title_uses_multimodal_user_text() {
+        let history = serde_json::json!([{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": "look at this" },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
+            ],
+        }]);
+        assert_eq!(
+            default_thread_title(history.as_array().unwrap()),
+            "look at this"
         );
     }
 
