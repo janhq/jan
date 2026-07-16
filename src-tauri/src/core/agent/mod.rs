@@ -2,6 +2,7 @@
 //! plumbing, consumed by both the API-server proxy and `tauri-plugin-agent`.
 
 pub mod commands;
+pub mod compaction;
 pub mod context;
 pub mod events;
 #[cfg(feature = "cli")]
