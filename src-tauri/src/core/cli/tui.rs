@@ -210,6 +210,15 @@ struct ToolGroup {
     started: Instant,
 }
 
+impl ToolGroup {
+    /// Whether the most recent call is still awaiting its `ToolResult`.
+    /// A group can stay open with no in-flight call so future calls keep
+    /// folding into it; the throbber must not show while that's the case.
+    fn is_running(&self) -> bool {
+        self.calls.last().is_some_and(|c| c.content.is_none())
+    }
+}
+
 /// A committed `<think>` reasoning block, folded to a one-line summary row.
 /// The full dimmed lines are retained so the row can expand back to them.
 struct ReasoningBlock {
@@ -319,9 +328,10 @@ struct App {
     /// Committed finished-subagent summary rows, expandable to their full
     /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
-    /// In-flight `await_subagent` calls, `(tool_call_id, subagent_name)`. Each
-    /// renders a live throbber row until its tool result arrives.
-    awaiting: Vec<(String, String)>,
+    /// In-flight `await_subagent` calls, `(tool_call_id, run_id, subagent_name)`.
+    /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
+    /// first (the two can race).
+    awaiting: Vec<(String, String, String)>,
     /// Monotonic frame counter advanced each render tick; drives the throbber.
     spinner_frame: usize,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
@@ -339,6 +349,11 @@ struct App {
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
     run_started: Option<Instant>,
+    /// Whether the terminal's mouse capture should be on (click-to-expand) or
+    /// off (native text selection/copy). Toggled by Ctrl-T; `chat_loop` diffs
+    /// this against its previous value each tick to (de)activate it, since
+    /// crossterm's enable/disable calls need the real terminal handle.
+    mouse_capture: bool,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -441,6 +456,7 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
+            mouse_capture: true,
         }
     }
 
@@ -923,7 +939,7 @@ impl App {
                 if name == "await_subagent" {
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
-                    self.awaiting.push((id, sub));
+                    self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
                 let max = self.render_width().saturating_sub(6) as usize;
@@ -957,7 +973,7 @@ impl App {
                 diff,
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
-                self.awaiting.retain(|(await_id, _)| await_id != &id);
+                self.awaiting.retain(|(await_id, ..)| await_id != &id);
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
@@ -1036,6 +1052,7 @@ impl App {
                     .map(|p| p.calls.clone())
                     .unwrap_or_default();
                 self.subagents.retain(|p| p.run_id != run_id);
+                self.awaiting.retain(|(_, r, _)| r != &run_id);
                 let total = calls.len();
                 self.gap(Kind::Tool);
                 let noun = if total == 1 { "call" } else { "calls" };
@@ -1921,6 +1938,9 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    // Mirrors app.mouse_capture; `run` enables capture on the real terminal
+    // before this loop starts, so both start in sync.
+    let mut mouse_capture_active = true;
 
     // A local model and active MCP servers load in the background; gate the first
     // run on both so the model's tools (collected once per run) are ready.
@@ -1977,13 +1997,27 @@ async fn chat_loop<B: Backend>(
         tokio::select! {
             _ = ticker.tick() => {
                 // Advance the throbber (~20fps) so awaiting/running rows animate.
-                if !app.awaiting.is_empty() || app.tool_group.is_some() {
+                if !app.awaiting.is_empty()
+                    || app.tool_group.as_ref().is_some_and(ToolGroup::is_running)
+                {
                     app.spinner_frame = app.spinner_frame.wrapping_add(1);
                 }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
                             handle_key(app, key, registry, &mut current, mcp_servers).await;
+                            if app.mouse_capture != mouse_capture_active {
+                                mouse_capture_active = app.mouse_capture;
+                                // Written straight to stdout (not through the generic
+                                // `Backend`) since chat_loop is generic over B for
+                                // testability with TestBackend, which isn't io::Write.
+                                let mut stdout = io::stdout();
+                                let _ = if mouse_capture_active {
+                                    execute!(stdout, EnableMouseCapture)
+                                } else {
+                                    execute!(stdout, DisableMouseCapture)
+                                };
+                            }
                         }
                         Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
                         _ => {}
@@ -2098,6 +2132,18 @@ async fn handle_key(
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let ctrl_c = ctrl && key.code == KeyCode::Char('c');
     let ctrl_d = ctrl && key.code == KeyCode::Char('d');
+
+    // Global: toggle mouse capture so the terminal's native text selection
+    // works (crossterm's mouse capture otherwise claims all mouse input).
+    if ctrl && key.code == KeyCode::Char('t') {
+        app.mouse_capture = !app.mouse_capture;
+        app.note(if app.mouse_capture {
+            "mouse capture on: click to expand"
+        } else {
+            "mouse capture off: drag to select/copy text (Ctrl-T to re-enable)"
+        });
+        return;
+    }
 
     // A pending permission prompt captures y/a/n; Ctrl-C cancels the run and
     // Ctrl-D quits, so it can't be wedged waiting on an unanswered prompt.
@@ -2428,7 +2474,7 @@ async fn run_command(app: &mut App, line: &str) {
                 ));
             }
             app.push(Line::styled(
-                "  hold Shift while dragging to select/copy text (most terminals)".to_string(),
+                "  Ctrl-T toggles mouse capture off to select/copy text".to_string(),
                 Style::new().dim(),
             ));
         }
@@ -2965,7 +3011,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         if let Some(row) = app
             .tool_group
             .as_ref()
-            .filter(|g| g.idx == i)
+            .filter(|g| g.idx == i && g.is_running())
             .map(|g| running_group_row(g, app.spinner_frame, width))
         {
             lines.push(row);
@@ -3005,7 +3051,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             }
         }
     }
-    for (_, name) in &app.awaiting {
+    for (_, _, name) in &app.awaiting {
         let frame = SPINNER[app.spinner_frame % SPINNER.len()];
         lines.push(Line::from(vec![
             Span::styled(format!("{frame} "), Style::new().cyan()),
@@ -3482,18 +3528,24 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        diff_lines, group_activity, group_detail_lines, group_summary, handle_mouse,
+        diff_lines, group_activity, group_detail_lines, group_summary, handle_key, handle_mouse,
         input_content_lines, is_table_separator, message_text,
         parse_command, render_table, run_command, running_group_row, split_reasoning,
         subagent_activity, subagent_name_from_run_id, summarize_result, tool_activity,
-        tool_finished, transcript_top_padding, App, Pending, SnapshotJob, DIFF_MAX_ROWS, SPINNER,
+        tool_finished, transcript_top_padding, App, CurrentRun, Pending, SnapshotJob,
+        DIFF_MAX_ROWS, SPINNER,
     };
-    use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
     use ratatui::layout::Rect;
     use ratatui::{style::Modifier, text::Line};
     use crate::core::agent::events::StreamEvent;
+    use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     fn test_app() -> App {
         // Persist into a unique temp dir so tests that save threads never
@@ -4020,7 +4072,10 @@ mod tests {
         });
         // Tracked as an awaiting throbber (not folded into a tool group row).
         assert_eq!(app.awaiting.len(), 1);
-        assert_eq!(app.awaiting[0], ("a1".to_string(), "reviewer".to_string()));
+        assert_eq!(
+            app.awaiting[0],
+            ("a1".to_string(), "sub-reviewer-1".to_string(), "reviewer".to_string())
+        );
         assert!(app.tool_group.is_none(), "await must not open a tool group");
         // The result clears the throbber.
         app.apply(StreamEvent::ToolResult {
@@ -4030,6 +4085,37 @@ mod tests {
             diff: None,
         });
         assert!(app.awaiting.is_empty());
+    }
+
+    /// Regression test: `SubagentEnd` can arrive before the parent's own
+    /// `await_subagent` `ToolResult` (the two race). Previously only the
+    /// `ToolResult` cleared `awaiting`, so a finished subagent kept showing
+    /// an "Awaiting subagent: X" throbber alongside its own "finished" row.
+    #[test]
+    fn subagent_end_clears_its_awaiting_throbber_even_without_a_tool_result() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-reviewer-1" }),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "a2".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-explorer-1" }),
+        });
+        assert_eq!(app.awaiting.len(), 2);
+
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-reviewer-1".into(),
+            name: "reviewer".into(),
+        });
+        assert_eq!(
+            app.awaiting.len(),
+            1,
+            "the finished subagent's throbber must clear even without its ToolResult"
+        );
+        assert_eq!(app.awaiting[0].2, "explorer");
     }
 
     fn wrap(run_id: &str, name: &str, event: StreamEvent) -> StreamEvent {
@@ -4651,6 +4737,34 @@ mod tests {
     }
 
     #[test]
+    fn tool_group_stops_looking_live_once_its_call_resolves() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        assert!(app.tool_group.as_ref().unwrap().is_running());
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Group stays open (folding), but with its only call resolved and no
+        // next call yet, it must not render as still executing.
+        assert!(app.tool_group.is_some());
+        assert!(!app.tool_group.as_ref().unwrap().is_running());
+
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "bar" }),
+        });
+        assert!(app.tool_group.as_ref().unwrap().is_running());
+    }
+
+    #[test]
     fn handle_mouse_click_maps_row_to_region_toggle() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
@@ -5153,6 +5267,22 @@ mod tests {
         assert_eq!(parse_command("help"), ("help", ""));
         assert_eq!(parse_command("  resume   abc  "), ("resume", "abc"));
         assert_eq!(parse_command(""), ("", ""));
+    }
+
+    #[tokio::test]
+    async fn ctrl_t_toggles_mouse_capture() {
+        let mut app = test_app();
+        assert!(app.mouse_capture, "capture starts on");
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mut current: Option<CurrentRun> = None;
+        let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+
+        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
+        assert!(!app.mouse_capture);
+        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
+        assert!(app.mouse_capture);
     }
 
     #[tokio::test]
