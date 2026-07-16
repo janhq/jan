@@ -2098,6 +2098,19 @@ async fn chat_loop<B: Backend>(
 /// Ignores clicks outside the transcript viewport or on rows that aren't a
 /// region's own summary row (detail lines, blank padding, etc).
 fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    // Wheel scrolls the transcript (clamped to `max_back` on the next draw);
+    // one notch matches a single arrow-key step.
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            app.scrollback = app.scrollback.saturating_add(1);
+            return;
+        }
+        MouseEventKind::ScrollDown => {
+            app.scrollback = app.scrollback.saturating_sub(1);
+            return;
+        }
+        _ => {}
+    }
     if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
         return;
     }
@@ -3051,16 +3064,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             }
         }
     }
-    for (_, _, name) in &app.awaiting {
-        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
-        lines.push(Line::from(vec![
-            Span::styled(format!("{frame} "), Style::new().cyan()),
-            Span::styled(
-                format!("Awaiting subagent: {name}"),
-                Style::new().cyan().dim(),
-            ),
-        ]));
-    }
     for panel in &app.subagents {
         let last_blank = lines
             .last()
@@ -3102,7 +3105,19 @@ fn draw(f: &mut Frame, app: &mut App) {
             lines.extend(tail);
         }
     }
-    // Awaiting throbbers, live subagent panels, and streaming prose above have
+    // Awaiting throbbers render last: below the assistant's reasoning/message
+    // so the "still waiting" state trails the prose that led up to the wait.
+    for (_, _, name) in &app.awaiting {
+        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        lines.push(Line::from(vec![
+            Span::styled(format!("{frame} "), Style::new().cyan()),
+            Span::styled(
+                format!("Awaiting subagent: {name}"),
+                Style::new().cyan().dim(),
+            ),
+        ]));
+    }
+    // Live subagent panels, streaming prose, and awaiting throbbers above have
     // no transcript index; they're all appended after the transcript loop.
     row_index.resize(lines.len(), None);
 
@@ -4033,6 +4048,38 @@ mod tests {
     }
 
     #[test]
+    fn awaiting_throbber_renders_below_assistant_prose() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "Let me wait for the subagent.".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-reviewer-1" }),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let rows: Vec<String> = (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        let prose = rows.iter().position(|r| r.contains("wait for the subagent"));
+        let awaiting = rows.iter().position(|r| r.contains("Awaiting subagent: reviewer"));
+        let (prose, awaiting) = (prose.expect("prose row"), awaiting.expect("awaiting row"));
+        assert!(
+            awaiting > prose,
+            "awaiting throbber must render below prose:\n{}",
+            rows.join("\n")
+        );
+    }
+
+    #[test]
     fn subagent_name_from_run_id_strips_prefix_and_seq() {
         assert_eq!(subagent_name_from_run_id("sub-reviewer-3"), "reviewer");
         assert_eq!(subagent_name_from_run_id("sub-a-b-c-12"), "a-b-c");
@@ -4809,6 +4856,36 @@ mod tests {
             },
         );
         assert!(app.expanded.contains(&group_idx));
+    }
+
+    #[test]
+    fn wheel_scrolls_transcript() {
+        let mut app = test_app();
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        let up = |app: &mut App| {
+            handle_mouse(
+                app,
+                MouseEvent {
+                    kind: MouseEventKind::ScrollUp,
+                    column: 5,
+                    row: 5,
+                    modifiers: KeyModifiers::NONE,
+                },
+            )
+        };
+        up(&mut app);
+        up(&mut app);
+        assert_eq!(app.scrollback, 2);
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 5,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+        assert_eq!(app.scrollback, 1);
     }
 
     #[test]
