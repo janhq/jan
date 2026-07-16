@@ -1,6 +1,15 @@
 //! Git-backed workspace snapshots (ticket #164). The agent edits files in place
 //! in the user's working directory; to make a run revertible we snapshot the
-//! whole working tree per turn and can restore it, Claude-Code style.
+//! state after each turn and can restore it, Claude-Code style.
+//!
+//! Snapshots never scan the working tree. Each checkpoint stages only the exact
+//! paths the caller reports as touched this turn (`edit`/`write` tool calls);
+//! the base snapshot seeds from the current `HEAD` tree plus a `git diff
+//! --name-only HEAD` (tracked files only -- no untracked-file walk). This keeps
+//! cost bounded by what actually changed instead of the size of the repo, which
+//! matters on large trees or ones with big non-ignored build/model directories.
+//! A known trade-off: changes made by other means (a `bash` tool call, an
+//! external editor) are not captured unless also reported via `changed`.
 //!
 //! Snapshots are kept OUT of the user's branch, HEAD, and index: we stage into a
 //! throwaway index file (`GIT_INDEX_FILE`) and build commit objects with
@@ -59,10 +68,20 @@ fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, Strin
 
 static IDX_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// A unique throwaway index path so snapshotting never disturbs the real index.
+/// A unique throwaway index path so one-off git operations (restore) never
+/// disturb the real index.
 fn temp_index() -> PathBuf {
     let n = IDX_COUNTER.fetch_add(1, Ordering::SeqCst);
     std::env::temp_dir().join(format!("jan-agent-idx-{}-{n}", std::process::id()))
+}
+
+/// A stable index path for a thread's snapshot chain, kept across calls (not
+/// deleted after use). Reusing it lets `git add -A` compare against its own
+/// prior stat cache instead of a fresh empty one, so unchanged files are only
+/// stat'd (cheap) rather than re-hashed and re-inserted like every other file
+/// touched this turn.
+fn snapshot_index(thread_id: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("jan-agent-snap-idx-{thread_id}"))
 }
 
 /// Hidden ref that keeps a thread's snapshot chain reachable across GC. One ref
@@ -82,27 +101,74 @@ pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Snapshot the entire working tree as a commit object, without touching the
-/// user's branch/HEAD/index. `.gitignore` is respected (build/deps dirs are not
-/// captured). `parent` chains onto the previous snapshot; `None` for the base.
-/// Returns the snapshot commit sha.
-pub(crate) fn snapshot(repo: &Path, parent: Option<&str>, msg: &str) -> Result<String, String> {
-    let idx = temp_index();
-    let result = (|| {
-        run(repo, Some(&idx), &["read-tree", "--empty"])?;
-        run(repo, Some(&idx), &["add", "-A"])?;
-        let tree = run(repo, Some(&idx), &["write-tree"])?;
-        let mut args = vec!["commit-tree", &tree];
-        if let Some(p) = parent {
-            args.push("-p");
-            args.push(p);
+/// The canonical empty tree object every git repo has, without needing a
+/// commit to hash it from -- used as the base tree when `HEAD` is unborn.
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/// Stage a single relative path into `idx`: `add` if it still exists on disk,
+/// `rm --cached` (ignoring paths not currently tracked) if it was deleted.
+/// Never touches any other path, so cost is O(1) per call, not O(repo size).
+fn stage_path(repo: &Path, idx: &Path, rel: &Path) -> Result<(), String> {
+    let rel_str = rel.to_string_lossy();
+    if repo.join(rel).exists() {
+        run(repo, Some(idx), &["add", "--", &rel_str])?;
+    } else {
+        run(repo, Some(idx), &["rm", "--cached", "--ignore-unmatch", "--", &rel_str])?;
+    }
+    Ok(())
+}
+
+/// Snapshot the current state as a commit object, without touching the user's
+/// branch/HEAD/index, and without ever scanning the whole working tree.
+/// `parent` chains onto the previous snapshot; `None` for the base. `changed`
+/// lists paths (relative to `repo`) touched since the previous snapshot in
+/// this thread's chain -- only these are staged. Returns the snapshot sha.
+///
+/// `thread_id` keys a persistent throwaway index reused across a thread's
+/// whole snapshot chain, seeded once (base) from `HEAD`'s tree (or the empty
+/// tree for an unborn `HEAD`) plus any already-dirty tracked files (via `git
+/// diff --name-only HEAD`, which compares only tracked paths -- no untracked
+/// scan). Every later checkpoint reuses that same index and stages only
+/// `changed`.
+pub(crate) fn snapshot(
+    repo: &Path,
+    parent: Option<&str>,
+    msg: &str,
+    thread_id: &str,
+    changed: &[PathBuf],
+) -> Result<String, String> {
+    let idx = snapshot_index(thread_id);
+    if !idx.exists() {
+        let base_tree = run(repo, None, &["rev-parse", "--verify", "-q", "HEAD^{tree}"])
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| EMPTY_TREE.to_string());
+        run(repo, Some(&idx), &["read-tree", &base_tree])?;
+        if let Ok(dirty) = run(repo, None, &["diff", "--name-only", "HEAD"]) {
+            for rel in dirty.lines().filter(|l| !l.is_empty()) {
+                stage_path(repo, &idx, Path::new(rel))?;
+            }
         }
-        args.push("-m");
-        args.push(msg);
-        run(repo, None, &args)
-    })();
-    let _ = std::fs::remove_file(&idx);
-    result
+    }
+    for rel in changed {
+        stage_path(repo, &idx, rel)?;
+    }
+    let tree = run(repo, Some(&idx), &["write-tree"])?;
+    let mut args = vec!["commit-tree", &tree];
+    if let Some(p) = parent {
+        args.push("-p");
+        args.push(p);
+    }
+    args.push("-m");
+    args.push(msg);
+    run(repo, None, &args)
+}
+
+/// Drop a thread's persistent snapshot index (e.g. once the thread is done or
+/// after a workspace restore invalidates it). Safe to call even if it was
+/// never created.
+pub(crate) fn cleanup_snapshot_index(thread_id: &str) {
+    let _ = std::fs::remove_file(snapshot_index(thread_id));
 }
 
 /// Point the thread's snapshot ref at `sha` (create or update).
@@ -161,7 +227,8 @@ mod tests {
     fn snapshot_restore_roundtrip() {
         let Some(root) = init_repo() else { return };
 
-        let base = snapshot(&root, None, "base").expect("base snapshot");
+        let thread_id = "test-thread";
+        let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
 
         // Mutate: edit a file, add a new one, and drop something into an ignored dir.
         std::fs::write(root.join("a.txt"), "two\n").unwrap();
@@ -169,7 +236,9 @@ mod tests {
         std::fs::create_dir_all(root.join("ignored")).unwrap();
         std::fs::write(root.join("ignored/keep.txt"), "keep\n").unwrap();
 
-        let turn = snapshot(&root, Some(&base), "turn 1").expect("turn snapshot");
+        let changed = [PathBuf::from("a.txt"), PathBuf::from("b.txt")];
+        let turn =
+            snapshot(&root, Some(&base), "turn 1", thread_id, &changed).expect("turn snapshot");
         assert_ne!(turn, base);
 
         // Restore to base: a.txt reverts, b.txt (added) is removed, ignored file stays.
@@ -180,6 +249,7 @@ mod tests {
             root.join("ignored/keep.txt").exists(),
             "gitignored file must be left alone"
         );
+        cleanup_snapshot_index(thread_id);
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -187,12 +257,62 @@ mod tests {
     #[test]
     fn snapshot_is_invisible_to_user_state() {
         let Some(root) = init_repo() else { return };
+        let thread_id = "test-thread-2";
         std::fs::write(root.join("a.txt"), "dirty\n").unwrap();
-        let _ = snapshot(&root, None, "s").expect("snapshot");
+        let _ = snapshot(&root, None, "s", thread_id, &[]).expect("snapshot");
         // The user's index/branch are untouched: HEAD still the init commit and the
         // working change is still unstaged.
         let staged = run(&root, None, &["diff", "--cached", "--name-only"]).unwrap();
         assert!(staged.is_empty(), "snapshot must not stage anything");
+        cleanup_snapshot_index(thread_id);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn base_snapshot_picks_up_preexisting_dirty_tracked_file() {
+        let Some(root) = init_repo() else { return };
+        let thread_id = "test-thread-dirty-base";
+
+        // Dirty *before* the agent starts -- no tool call reported it, so the
+        // base must still capture it via the tracked-only diff, not `changed`.
+        std::fs::write(root.join("a.txt"), "dirty-at-start\n").unwrap();
+        let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
+
+        let head_tree = run(&root, None, &["rev-parse", "HEAD^{tree}"]).unwrap();
+        let base_tree = run(&root, None, &["rev-parse", &format!("{base}^{{tree}}")]).unwrap();
+        assert_ne!(base_tree, head_tree, "base tree must include the pre-existing dirty edit");
+
+        cleanup_snapshot_index(thread_id);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn checkpoint_only_stages_reported_paths() {
+        let Some(root) = init_repo() else { return };
+        let thread_id = "test-thread-3";
+
+        let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
+        let idx = snapshot_index(thread_id);
+        assert!(idx.exists(), "base snapshot should persist its index");
+
+        // Two files change on disk, but only one is reported as touched; the
+        // checkpoint must reflect just that one.
+        std::fs::write(root.join("a.txt"), "two\n").unwrap();
+        std::fs::write(root.join("untouched.txt"), "not reported\n").unwrap();
+        let changed = [PathBuf::from("a.txt")];
+        let turn =
+            snapshot(&root, Some(&base), "turn 1", thread_id, &changed).expect("turn snapshot");
+        assert_ne!(turn, base);
+
+        let listed = run(&root, None, &["ls-tree", "-r", "--name-only", &turn]).unwrap();
+        assert!(listed.lines().any(|l| l == "a.txt"));
+        assert!(
+            !listed.lines().any(|l| l == "untouched.txt"),
+            "unreported path must not be staged even though it changed on disk"
+        );
+
+        cleanup_snapshot_index(thread_id);
+        assert!(!idx.exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 
