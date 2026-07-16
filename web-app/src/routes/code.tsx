@@ -29,6 +29,9 @@ import CodePermissionDialog, {
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
+import { PromptProgress } from '@/components/PromptProgress'
+import { useAppState } from '@/hooks/useAppState'
+import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
   Conversation,
   ConversationContent,
@@ -106,6 +109,7 @@ function CodePage() {
   const currentId = useCodeSessions((s) => s.currentId)
   const current = sessions.find((s) => s.id === currentId)
   const selectedModel = useModelProvider((s) => s.selectedModel)
+  const selectedProvider = useModelProvider((s) => s.selectedProvider)
   const providers = useModelProvider((s) => s.providers)
 
   const folder = current?.folder ?? null
@@ -120,6 +124,30 @@ function CodePage() {
   const runningRef = useRef(false)
   const liveTurnsRef = useRef<CodeTurn[]>([])
   const runIdRef = useRef<string | null>(null)
+
+  // Local (llamacpp) models can take a while to load before the first token.
+  // The router emits `llamacpp-model-load-progress`, which LlamacppOomListener
+  // pipes into the global useAppState load state; we just flip `loadingModel`
+  // (the flag PromptProgress keys off) on for the code run so the shared
+  // progress card shows here too. Cleared once generation starts or the run ends.
+  const modelLoadingRef = useRef(false)
+  const finishModelLoad = () => {
+    if (!modelLoadingRef.current) return
+    modelLoadingRef.current = false
+    useAppState.getState().updateLoadingModel(false)
+    useAppState.getState().updateModelLoadProgress(undefined)
+  }
+  // Clear the shared load flag if the user navigates away mid-load.
+  useEffect(() => finishModelLoad, [])
+
+  // Same auto-scroll wiring the chat route uses, so the streaming reasoning
+  // block scrolls and shows the scroll-to-bottom button identically here.
+  const {
+    containerRef: reasoningContainerRef,
+    isAtBottom: isReasoningAtBottom,
+    handleScroll: handleReasoningScroll,
+    forceScrollToBottom: forceScrollReasoningToBottom,
+  } = useAutoScroll()
 
   // Queue of gated tool calls awaiting the user's approval. The agent loop
   // awaits each one, so in practice there is at most one live at a time, but we
@@ -361,6 +389,14 @@ function CodePage() {
     runningRef.current = true
     setRunning(true)
 
+    // Local models load before the first token; surface the shared progress card
+    // until generation actually starts (first stream event) or the run ends.
+    if (selectedProvider === 'llamacpp') {
+      modelLoadingRef.current = true
+      useAppState.getState().updateModelLoadProgress(undefined)
+      useAppState.getState().updateLoadingModel(true)
+    }
+
     const runId = crypto.randomUUID()
     runIdRef.current = runId
 
@@ -372,9 +408,15 @@ function CodePage() {
     onEvent.onmessage = (ev) => {
       switch (ev.type) {
         case 'token':
+          // First actual output means the model finished loading and is now
+          // generating; drop the load card. (`step` fires before invoke/load,
+          // so clearing on it would hide the card during the real load.)
+          finishModelLoad()
           appendToken(ev.text)
           break
         case 'tool_call':
+          // A tool call is model output too — loading is done.
+          finishModelLoad()
           pushLive({
             role: 'tool',
             content: '',
@@ -434,6 +476,9 @@ function CodePage() {
       runError = String(e)
       toast.error(String(e))
     } finally {
+      // Drop the load card if the run ended before any stream event (error,
+      // cancel, or an unloaded model that never produced output).
+      finishModelLoad()
       // Any tool call still 'running' when the run ends was interrupted (cancel
       // or error mid-tool); finalize it so it doesn't render as a forever spinner.
       liveTurnsRef.current = liveTurnsRef.current.map((tn) =>
@@ -482,9 +527,9 @@ function CodePage() {
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
-        <span className="font-medium">
-          {current?.title ?? t('common:newSession')}
-        </span>
+        <div className="flex items-center justify-between w-full pr-2">
+          <DropdownModelProvider useLastUsedModel />
+        </div>
       </HeaderPage>
 
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -498,8 +543,8 @@ function CodePage() {
               </h1>
             </div>
           ) : (
-            <Conversation className="absolute inset-0 px-3">
-              <ConversationContent className="mx-auto w-full md:w-4/5 xl:w-4/6 py-4 flex flex-col gap-3">
+            <Conversation className="absolute inset-0 text-start">
+              <ConversationContent className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}>
                 {uiMessages.map((message, i) => (
                   <MessageItem
                     key={message.id}
@@ -507,9 +552,15 @@ function CodePage() {
                     isFirstMessage={i === 0}
                     isLastMessage={i === uiMessages.length - 1}
                     status={running ? 'streaming' : 'ready'}
-                    hideActions
+                    reasoningContainerRef={reasoningContainerRef}
+                    isReasoningAtBottom={isReasoningAtBottom}
+                    onReasoningScroll={handleReasoningScroll}
+                    onReasoningScrollToBottom={forceScrollReasoningToBottom}
                   />
                 ))}
+                {/* Shared load card; renders only while a local model is loading
+                    (hideIdle suppresses the generic "Working…" fallback). */}
+                {running && <PromptProgress hideIdle />}
               </ConversationContent>
               <ConversationScrollButton />
             </Conversation>
@@ -517,7 +568,7 @@ function CodePage() {
         </div>
 
         {/* Fixed input dock at the bottom. */}
-        <div className="px-3 pb-4 shrink-0">
+        <div className="pb-4 shrink-0">
           <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
             <div className="flex items-center gap-2 px-1 pb-2">
               <Button variant="outline" size="sm" className="h-7 gap-1.5 rounded-full">
@@ -574,9 +625,6 @@ function CodePage() {
                 onStop={handleStop}
                 chatStatus={running ? 'streaming' : 'ready'}
               />
-            </div>
-            <div className="flex justify-end px-1 pt-2">
-              <DropdownModelProvider />
             </div>
           </div>
         </div>

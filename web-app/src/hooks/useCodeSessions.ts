@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { backendStorage } from '@/lib/backendStorage'
 
 // A single visible transcript entry. `tool` rows are display-only and carry the
 // structured call/result so the UI can render a tool card. The extra fields are
@@ -112,7 +113,12 @@ export const useCodeSessions = create<CodeSessionsState>()(
     }),
     {
       name: localStorageKey.codeSessions,
-      storage: createJSONStorage(() => localStorage),
+      // Persist through the Rust settings store (see backendStorage) so sessions
+      // live in <jan_data>/settings.json instead of webview localStorage.
+      // Async storage requires skipHydration + explicit rehydrate in
+      // hydrateBackendStores() once the ServiceHub is ready.
+      storage: createJSONStorage(() => backendStorage),
+      skipHydration: true,
     }
   )
 )

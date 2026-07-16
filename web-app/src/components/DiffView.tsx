@@ -1,9 +1,10 @@
 import { cn } from '@/lib/utils'
+import { CodeBlock } from '@/components/ai-elements/code-block'
 
 /**
- * Renders a focused, line-prefixed diff (the `diff` field emitted by the agent
- * loop for `write`/`edit`): `+` additions green, `-` deletions red, `@` hunk
- * headers muted. Display-only — not a full unified-diff parser.
+ * Renders the line-prefixed diff emitted by the agent loop for `write`/`edit`
+ * using the shared Shiki `CodeBlock` with the `diff` grammar, so agent diffs are
+ * highlighted the same way code and tool output are elsewhere in the app.
  */
 export function DiffView({
   diff,
@@ -13,24 +14,13 @@ export function DiffView({
   className?: string
 }) {
   return (
-    <pre
+    <div
       className={cn(
-        'max-h-56 overflow-auto rounded-md bg-sidebar-foreground/5 p-2 text-xs font-mono leading-relaxed',
+        'max-h-56 overflow-auto rounded-md border text-xs',
         className
       )}
     >
-      {diff.split('\n').map((line, i) => (
-        <div
-          key={i}
-          className={cn(
-            line.startsWith('+') && 'text-emerald-600 dark:text-emerald-400',
-            line.startsWith('-') && 'text-red-600 dark:text-red-400',
-            line.startsWith('@') && 'text-muted-foreground'
-          )}
-        >
-          {line || ' '}
-        </div>
-      ))}
-    </pre>
+      <CodeBlock code={diff} language="diff" />
+    </div>
   )
 }

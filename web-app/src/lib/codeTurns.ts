@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { UIMessage } from 'ai'
 import type { CodeTurn } from '@/hooks/useCodeSessions'
+import { reasoningPartsFromText } from '@/lib/messages'
 
 /**
  * Adapts the code screen's flat `CodeTurn[]` transcript into the AI SDK
@@ -8,7 +9,7 @@ import type { CodeTurn } from '@/hooks/useCodeSessions'
  *
  * Grouping: each `user` turn starts a user message; every following
  * `assistant`/`tool` turn folds into a single assistant message (assistant text
- * as `text` parts, tool calls as `tool-<name>` parts) until the next user turn —
+ * as reasoning/`text` parts, tool calls as `tool-<name>` parts) until the next user turn —
  * mirroring how one agent turn maps to one assistant message with ordered parts.
  *
  * `diff` has no dedicated slot in the UIMessage tool part, so it is prepended to
@@ -45,7 +46,15 @@ export function codeTurnsToUIMessages(
     }
 
     if (turn.role === 'assistant') {
-      if (turn.content) ensureAssistant(i).parts.push({ type: 'text', text: turn.content })
+      // Split out <think>/<thought> reasoning into reasoning parts (same helper
+      // the chat loader uses) so the agent's chain-of-thought renders in the
+      // collapsible reasoning UI instead of leaking into the transcript as text.
+      if (turn.content) {
+        const asst = ensureAssistant(i)
+        for (const part of reasoningPartsFromText(turn.content)) {
+          asst.parts.push(part)
+        }
+      }
       return
     }
 

@@ -19,6 +19,7 @@ import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useCodeSessions } from '@/hooks/useCodeSessions'
 
 /**
  * Stores persisted through `backendStorage` set `skipHydration: true` so they
@@ -49,6 +50,7 @@ const secondaryStores = [
   useJanModelPromptDismissed,
   useDefaultEmbeddingModel,
   useAgentMode,
+  useCodeSessions,
 ] as const
 
 export async function hydrateBackendStores(): Promise<void> {
