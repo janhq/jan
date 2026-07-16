@@ -45,10 +45,24 @@ pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
     ))
 }
 
+/// Guidance injected only when subagent tools are actually available, so the
+/// model delegates context-heavy exploration instead of exhausting its own
+/// (limited) context window reading files and tool output directly.
+const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited. For open-ended exploration \
+that could pull in a lot of file content or tool output (broad codebase search, reading many files, \
+multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
+in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
+their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
+targeted tasks where delegating would cost more than it saves.";
+
 /// Assemble the project system prompt: the optional base prompt, the always-on
 /// built-in skills/memory guide, then any project-authored skills. The guide is
 /// always present for project runs, so this never returns None.
-pub(crate) fn build_system_prompt(base: Option<&str>, project_root: &Path) -> Option<String> {
+pub(crate) fn build_system_prompt(
+    base: Option<&str>,
+    project_root: &Path,
+    subagents_enabled: bool,
+) -> Option<String> {
     let mut blocks: Vec<String> = Vec::new();
     if let Some(b) = base {
         blocks.push(b.to_string());
@@ -57,6 +71,9 @@ pub(crate) fn build_system_prompt(base: Option<&str>, project_root: &Path) -> Op
         "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
         project_root.display()
     ));
+    if subagents_enabled {
+        blocks.push(SUBAGENT_GUIDE.to_string());
+    }
     blocks.push(DEFAULT_SKILL_GUIDE.trim().to_string());
     if let Some(skills) = load_skills(project_root) {
         blocks.push(skills);
@@ -130,7 +147,7 @@ mod tests {
     fn build_system_prompt_orders_base_guide_then_skills() {
         let root = scratch_project("merge");
         write_skill(&root, "s.md", "Do the thing.");
-        let out = build_system_prompt(Some("You are Jan."), &root).expect("prompt");
+        let out = build_system_prompt(Some("You are Jan."), &root, false).expect("prompt");
         assert!(out.starts_with("You are Jan."));
         assert!(out.contains("Do the thing."));
         // Guide sits between the base prompt and the project skills.
@@ -144,15 +161,25 @@ mod tests {
     fn build_system_prompt_always_includes_guide() {
         let root = scratch_project("guide");
         // No base and no project skills: the built-in guide is still injected.
-        let out = build_system_prompt(None, &root).expect("guide always present");
+        let out = build_system_prompt(None, &root, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
         assert!(out.contains("memory_write"));
 
         // Base is preserved and precedes the guide.
-        let with_base = build_system_prompt(Some("base"), &root).expect("prompt");
+        let with_base = build_system_prompt(Some("base"), &root, false).expect("prompt");
         assert!(with_base.starts_with("base"));
         assert!(with_base.contains("Skills and Project Memory"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn build_system_prompt_advertises_subagents_only_when_enabled() {
+        let root = scratch_project("subagents");
+        let without = build_system_prompt(None, &root, false).expect("prompt");
+        assert!(!without.contains("dispatch_subagent"));
+        let with = build_system_prompt(None, &root, true).expect("prompt");
+        assert!(with.contains("dispatch_subagent"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
