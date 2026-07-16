@@ -16,11 +16,6 @@ use crate::core::agent::upstream::extract_choice_message;
 /// Default number of most-recent non-system messages kept verbatim.
 pub(crate) const DEFAULT_KEEP_RECENT: usize = 8;
 
-/// Recent tail kept when the user explicitly runs `/compact`. Smaller than the
-/// automatic threshold so a deliberate compaction is honoured on short threads.
-#[cfg(feature = "cli")]
-pub(crate) const MANUAL_KEEP_RECENT: usize = 2;
-
 const SUMMARY_SYSTEM_PROMPT: &str = "You are compacting an AI agent conversation that grew too long for \
 the model's context window. Summarize the messages below into a dense, factual brief that preserves \
 everything needed to continue the task: the user's goals and constraints, decisions made, files and \
