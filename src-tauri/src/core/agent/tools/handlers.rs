@@ -3,10 +3,13 @@
 //! Errors are returned as a String starting with "ERROR" (matching
 //! `execute_mcp_tool_calls`) so the loop flags `is_error` correctly.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use ignore::WalkBuilder;
+use tokio::sync::oneshot;
 
 use crate::core::agent::tools::sandbox::is_restricted_agent_path;
 use crate::core::agent::tools::BuiltinTool;
@@ -17,9 +20,24 @@ const GREP_MAX_LINE: usize = 500;
 const LS_DEFAULT_LIMIT: usize = 500;
 const FIND_DEFAULT_LIMIT: usize = 1000;
 const GREP_DEFAULT_LIMIT: usize = 100;
+/// How long a `bash` call waits for the command before backgrounding it, when
+/// the caller doesn't specify `timeout`.
+const DEFAULT_BASH_TIMEOUT_SECS: u64 = 30;
 
 /// Counter for unique temp-file names for truncated bash output.
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+/// Counter for unique bash background job ids.
+static BASH_JOB_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Commands still running past their `bash` call's timeout, keyed by job_id.
+/// Each receiver resolves with the same formatted output a foreground call
+/// would have returned. Entries are removed once collected via `job_id`;
+/// uncollected jobs live for the process's lifetime, same tradeoff as the
+/// bash-output temp files this module already leaves on disk.
+fn bash_jobs() -> &'static Mutex<HashMap<String, oneshot::Receiver<String>>> {
+    static JOBS: OnceLock<Mutex<HashMap<String, oneshot::Receiver<String>>>> = OnceLock::new();
+    JOBS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 fn resolve(project_root: &Path, raw: &str) -> PathBuf {
     if Path::new(raw).is_absolute() {
@@ -426,10 +444,14 @@ async fn edit(args: &serde_json::Value, root: &Path) -> String {
 }
 
 async fn bash(args: &serde_json::Value, root: &Path) -> String {
+    if let Some(job_id) = arg_str(args, "job_id") {
+        return await_bash_job(job_id).await;
+    }
     let Some(command) = arg_str(args, "command") else {
-        return "ERROR: missing required argument 'command'".to_string();
+        return "ERROR: missing required argument 'command' (or 'job_id' to poll a backgrounded job)"
+            .to_string();
     };
-    let timeout = arg_u64(args, "timeout");
+    let timeout_secs = arg_u64(args, "timeout").unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
     let child = match tokio::process::Command::new("sh")
         .arg("-c")
@@ -444,19 +466,47 @@ async fn bash(args: &serde_json::Value, root: &Path) -> String {
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };
 
-    let output = match timeout {
-        Some(secs) => {
-            let dur = std::time::Duration::from_secs(secs);
-            match tokio::time::timeout(dur, child.wait_with_output()).await {
-                Ok(res) => res,
-                Err(_) => {
-                    return format!("ERROR: command timed out after {secs}s");
-                }
-            }
-        }
-        None => child.wait_with_output().await,
-    };
+    // The child is handed to a detached task immediately so it keeps running
+    // (and its output keeps being collected) no matter what the race below
+    // does; only the *receiver* end is at risk of being dropped on timeout.
+    let (tx, mut rx) = oneshot::channel();
+    tokio::spawn(async move {
+        let out = child.wait_with_output().await;
+        let _ = tx.send(format_bash_output(out));
+    });
 
+    tokio::select! {
+        res = &mut rx => res.unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
+        _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => {
+            let job_id = format!("bash-{}", BASH_JOB_COUNTER.fetch_add(1, Ordering::SeqCst));
+            bash_jobs().lock().unwrap().insert(job_id.clone(), rx);
+            format!(
+                "Command exceeded {timeout_secs}s and is continuing in the background \
+                 (job_id={job_id}). Call bash again with {{\"job_id\": \"{job_id}\"}} (no \
+                 command) to wait for and collect its output once it finishes."
+            )
+        }
+    }
+}
+
+/// Wait for a previously backgrounded command to finish and return its
+/// (already-formatted) output, or an error if `job_id` is unknown or was
+/// already collected.
+async fn await_bash_job(job_id: &str) -> String {
+    let rx = bash_jobs().lock().unwrap().remove(job_id);
+    match rx {
+        Some(rx) => rx
+            .await
+            .unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
+        None => format!("ERROR: unknown or already-collected job_id '{job_id}'"),
+    }
+}
+
+/// Format a finished command's output the same way for foreground and
+/// backgrounded runs: combined stdout/stderr, an exit-code marker, then
+/// capped to `MAX_LINES` with the full text spilled to a temp file when it
+/// doesn't fit.
+fn format_bash_output(output: std::io::Result<std::process::Output>) -> String {
     match output {
         Ok(out) => {
             let mut combined = String::new();
@@ -1061,18 +1111,66 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bash_timeout_returns_error() {
+    async fn bash_exceeding_timeout_backgrounds_instead_of_erroring() {
         let root = unique_root();
         let out = execute_builtin(
             lookup("bash").unwrap(),
-            &json!({"command": "sleep 5", "timeout": 1}),
+            &json!({"command": "sleep 2", "timeout": 0}),
             &root,
         )
         .await;
+        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
+        assert!(out.contains("continuing in the background"), "{out}");
+        assert!(out.contains("job_id=bash-"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_job_id_waits_for_and_collects_background_output() {
+        let root = unique_root();
+        let started = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 0.2; echo done", "timeout": 0}),
+            &root,
+        )
+        .await;
+        let job_id = started
+            .split("job_id=")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .trim_end_matches(|c: char| !c.is_alphanumeric());
+
+        let collected = execute_builtin(lookup("bash").unwrap(), &json!({"job_id": job_id}), &root).await;
+        assert!(collected.contains("done"), "unexpected: {collected}");
+
+        // The job is removed once collected.
+        let again = execute_builtin(lookup("bash").unwrap(), &json!({"job_id": job_id}), &root).await;
         assert!(
-            out.starts_with("ERROR: command timed out"),
+            again.starts_with("ERROR: unknown or already-collected"),
+            "unexpected: {again}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_unknown_job_id_errors() {
+        let root = unique_root();
+        let out = execute_builtin(lookup("bash").unwrap(), &json!({"job_id": "nope"}), &root).await;
+        assert!(
+            out.starts_with("ERROR: unknown or already-collected"),
             "unexpected: {out}"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_missing_command_and_job_id_errors() {
+        let root = unique_root();
+        let out = execute_builtin(lookup("bash").unwrap(), &json!({}), &root).await;
+        assert!(out.starts_with("ERROR: missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
