@@ -238,6 +238,14 @@ struct Checkpoint {
     sha: String,
 }
 
+/// An image staged by `/image <path>`, sent with the next user message as an
+/// OpenAI `image_url` content part. `name` is the basename shown in the
+/// transcript; `data_url` is the `data:<mime>;base64,...` payload.
+struct PendingImage {
+    name: String,
+    data_url: String,
+}
+
 struct App {
     model: String,
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
@@ -298,6 +306,8 @@ struct App {
     /// expanding one that may sit above the pinned-to-bottom viewport).
     reveal: Option<usize>,
     input: String,
+    /// Images staged by `/image`, flushed into the next submitted user message.
+    pending_images: Vec<PendingImage>,
     /// Caret position as a byte index into `input` (always on a char boundary).
     cursor: usize,
     /// Highlighted row in the slash-command hint popup (clamped to matches).
@@ -438,6 +448,7 @@ impl App {
             expanded: std::collections::HashSet::new(),
             reveal: None,
             input: String::new(),
+            pending_images: Vec::new(),
             cursor: 0,
             slash_selected: 0,
             slash_dismissed: false,
@@ -519,6 +530,7 @@ impl App {
         self.reveal = None;
         self.assistant_buf.clear();
         self.pending_queue.clear();
+        self.pending_images.clear();
         self.tokens = 0;
         self.turn = (0, 0);
         self.detail.clear();
@@ -778,19 +790,52 @@ impl App {
     /// in the same input batch can't slip through as a second submit.
     fn submit_user(&mut self, text: String) {
         self.ensure_base_snapshot();
-        self.history
-            .push(serde_json::json!({ "role": "user", "content": text }));
-        self.gap(Kind::User);
-        self.push(Line::from(vec![
-            Span::styled("› ", Style::new().light_magenta().bold()),
-            Span::styled(text, Style::new().bold()),
-        ]));
+        let images = std::mem::take(&mut self.pending_images);
+        let names: Vec<String> = images.iter().map(|i| i.name.clone()).collect();
+        self.history.push(build_user_message(&text, &images));
+        self.push_user_line(&text, &names);
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
         self.scrollback = 0;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Render a user turn: the prompt line, then one dotted connector row per
+    /// attached image ending in an `[IMAGE]` label (basename when known).
+    fn push_user_line(&mut self, text: &str, images: &[String]) {
+        self.gap(Kind::User);
+        self.push(Line::from(vec![
+            Span::styled("› ", Style::new().light_magenta().bold()),
+            Span::styled(text.to_string(), Style::new().bold()),
+        ]));
+        for name in images {
+            let label = if name.is_empty() {
+                "[IMAGE]".to_string()
+            } else {
+                format!("[IMAGE] {name}")
+            };
+            self.push(Line::from(vec![
+                Span::styled("  ┊ ", Style::new().dim()),
+                Span::styled(label, Style::new().cyan()),
+            ]));
+        }
+    }
+
+    /// Stage the OS clipboard's image for the next message, noting the result.
+    fn attach_clipboard_image(&mut self) {
+        match clipboard_image() {
+            Ok(img) => {
+                let name = img.name.clone();
+                self.pending_images.push(img);
+                self.note(&format!(
+                    "attached {name} ({} image(s) pending)",
+                    self.pending_images.len()
+                ));
+            }
+            Err(e) => self.note(&format!("no image in clipboard: {e}")),
+        }
     }
 
     fn body(&self) -> serde_json::Value {
@@ -1889,6 +1934,7 @@ pub async fn run(
     agent_dir: std::path::PathBuf,
     project_root: PathBuf,
     initial_task: Option<String>,
+    initial_images: Vec<String>,
 ) -> Result<(), String> {
     let AgentSession {
         args,
@@ -1912,6 +1958,12 @@ pub async fn run(
     let repo_root = git::repo_root(&project_root);
     let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
     app.args = Some(args.clone());
+    for path in &initial_images {
+        match load_image_file(path) {
+            Ok(img) => app.pending_images.push(img),
+            Err(e) => app.note(&format!("could not attach image: {e}")),
+        }
+    }
     let res = chat_loop(
         &mut terminal,
         &args,
@@ -2354,6 +2406,11 @@ async fn handle_key(
         // blocks), scrolling the latest into view.
         KeyCode::Char('o') if ctrl => {
             app.toggle_regions();
+        }
+        // Ctrl-V stages an image from the OS clipboard (terminal paste is
+        // text-only, so we read the clipboard directly) for the next message.
+        KeyCode::Char('v') if app.status == Status::Idle && ctrl => {
+            app.attach_clipboard_image();
         }
         KeyCode::Enter => {
             if app.status == Status::Idle {
@@ -2884,18 +2941,17 @@ fn rebuild_transcript(app: &mut App) {
     let history = app.history.clone();
     for m in &history {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
-        let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
-        if text.is_empty() {
-            continue;
-        }
         if role == "user" {
-            app.gap(Kind::User);
-            app.push(Line::from(vec![
-                Span::styled("› ", Style::new().light_magenta().bold()),
-                Span::styled(text.to_string(), Style::new().bold()),
-            ]));
+            let (text, images) = user_content_parts(m.get("content").unwrap_or(&serde_json::Value::Null));
+            if text.is_empty() && images.is_empty() {
+                continue;
+            }
+            app.push_user_line(&text, &images);
         } else if role == "assistant" {
-            app.push_assistant_blocks(text);
+            let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            if !text.is_empty() {
+                app.push_assistant_blocks(text);
+            }
         }
     }
 }
@@ -2960,11 +3016,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
         app.history
             .push(serde_json::json!({ "role": role, "content": text }));
         if role == "user" {
-            app.gap(Kind::User);
-            app.push(Line::from(vec![
-                Span::styled("› ", Style::new().light_magenta().bold()),
-                Span::styled(text, Style::new().bold()),
-            ]));
+            app.push_user_line(&text, &[]);
         } else {
             app.push_assistant_blocks(&text);
         }
@@ -2977,6 +3029,147 @@ fn resume_thread(app: &mut App, id_arg: &str) {
         .filter(|s| !s.is_empty())
         .unwrap_or("(untitled)");
     app.note(&format!("resumed \"{title}\" ({count} messages)"));
+}
+
+/// Infer an image MIME type from a file extension, defaulting to PNG.
+fn image_mime(path: &str) -> &'static str {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/png",
+    }
+}
+
+/// Read an image file into a `PendingImage` (base64 data URL + basename).
+fn load_image_file(path: &str) -> Result<PendingImage, String> {
+    use base64::Engine;
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    if bytes.is_empty() {
+        return Err(format!("{path}: empty file"));
+    }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let name = std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("image")
+        .to_string();
+    Ok(PendingImage {
+        name,
+        data_url: format!("data:{};base64,{b64}", image_mime(path)),
+    })
+}
+
+/// Percent-decode a `file://` URI or plain path from clipboard text into a
+/// filesystem path. Takes the first line (uri-lists are newline-separated) and
+/// strips a `file://[host]` scheme; decodes `%XX` byte escapes.
+fn clipboard_path(text: &str) -> Option<String> {
+    let line = text.lines().find(|l| !l.trim().is_empty())?.trim();
+    let raw = line
+        .strip_prefix("file://localhost")
+        .or_else(|| line.strip_prefix("file://"))
+        .unwrap_or(line);
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&raw[i + 1..i + 3], 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).ok().filter(|p| !p.is_empty())
+}
+
+/// Read an image from the OS clipboard into a `PendingImage`. Prefers raw image
+/// data (PNG-encoding it); falls back to treating clipboard text as an image
+/// file path or `file://` URI (as file managers and browsers put on the
+/// clipboard). Errors when neither yields an image.
+fn clipboard_image() -> Result<PendingImage, String> {
+    use base64::Engine;
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    let img = match clip.get_image() {
+        Ok(img) => img,
+        Err(image_err) => {
+            if let Some(path) = clip.get_text().ok().as_deref().and_then(clipboard_path) {
+                if std::path::Path::new(&path).is_file() {
+                    return load_image_file(&path);
+                }
+            }
+            return Err(image_err.to_string());
+        }
+    };
+    let mut png = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut png, img.width as u32, img.height as u32);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc.write_header().map_err(|e| e.to_string())?;
+        writer
+            .write_image_data(&img.bytes)
+            .map_err(|e| e.to_string())?;
+    }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+    Ok(PendingImage {
+        name: "clipboard.png".to_string(),
+        data_url: format!("data:image/png;base64,{b64}"),
+    })
+}
+
+/// Build the OpenAI-shaped user message: a plain string with no images, else a
+/// content-part array (text first, then `image_url` parts) matching the desktop
+/// web-app wire shape.
+fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value {
+    if images.is_empty() {
+        return serde_json::json!({ "role": "user", "content": text });
+    }
+    let mut parts = Vec::with_capacity(images.len() + 1);
+    if !text.is_empty() {
+        parts.push(serde_json::json!({ "type": "text", "text": text }));
+    }
+    for img in images {
+        parts.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": img.data_url, "detail": "auto" }
+        }));
+    }
+    serde_json::json!({ "role": "user", "content": parts })
+}
+
+/// Split a user message's `content` into display text and one label per attached
+/// image. Handles plain-string content and the `image_url` content-part array;
+/// data-URL parts carry no filename, so their label is empty.
+fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
+    match content {
+        serde_json::Value::String(s) => (s.clone(), Vec::new()),
+        serde_json::Value::Array(parts) => {
+            let mut text = String::new();
+            let mut images = Vec::new();
+            for p in parts {
+                match p.get("type").and_then(|v| v.as_str()) {
+                    Some("text") => {
+                        if let Some(t) = p.get("text").and_then(|v| v.as_str()) {
+                            text.push_str(t);
+                        }
+                    }
+                    Some("image_url") => images.push(String::new()),
+                    _ => {}
+                }
+            }
+            (text, images)
+        }
+        _ => (String::new(), Vec::new()),
+    }
 }
 
 /// Extract plain text from a stored thread message (`content` is an array of
@@ -3574,12 +3767,12 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        diff_lines, group_activity, group_detail_lines, group_summary, handle_key, handle_mouse,
-        input_content_lines, is_table_separator, message_text,
-        parse_command, render_table, run_command, running_group_row, split_reasoning,
+        build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
+        group_summary, handle_key, handle_mouse, image_mime, input_content_lines, is_table_separator, load_image_file,
+        message_text, parse_command, render_table, run_command, running_group_row, split_reasoning,
         subagent_activity, subagent_name_from_run_id, summarize_result, tool_activity,
-        tool_finished, transcript_top_padding, App, CurrentRun, Pending, SnapshotJob,
-        DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
+        tool_finished, transcript_top_padding, user_content_parts, App, CurrentRun, Pending,
+        PendingImage, SnapshotJob, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
     };
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -3993,6 +4186,111 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn image_mime_infers_from_extension() {
+        assert_eq!(image_mime("a.png"), "image/png");
+        assert_eq!(image_mime("a.JPG"), "image/jpeg");
+        assert_eq!(image_mime("a.jpeg"), "image/jpeg");
+        assert_eq!(image_mime("noext"), "image/png");
+    }
+
+    #[test]
+    fn clipboard_path_parses_file_uri_and_plain_path() {
+        assert_eq!(
+            clipboard_path("file:///home/u/my%20pic.png\n").as_deref(),
+            Some("/home/u/my pic.png")
+        );
+        assert_eq!(
+            clipboard_path("file://localhost/tmp/a.png").as_deref(),
+            Some("/tmp/a.png")
+        );
+        assert_eq!(clipboard_path("/tmp/b.jpg").as_deref(), Some("/tmp/b.jpg"));
+        assert_eq!(clipboard_path("   \n  "), None);
+    }
+
+    #[test]
+    fn build_user_message_is_plain_string_without_images() {
+        let m = build_user_message("hi", &[]);
+        assert_eq!(m["content"], json!("hi"));
+    }
+
+    #[test]
+    fn build_user_message_wraps_text_and_image_parts() {
+        let imgs = vec![PendingImage {
+            name: "p.png".into(),
+            data_url: "data:image/png;base64,AAAA".into(),
+        }];
+        let m = build_user_message("look", &imgs);
+        let parts = m["content"].as_array().unwrap();
+        assert_eq!(parts[0], json!({ "type": "text", "text": "look" }));
+        assert_eq!(parts[1]["type"], "image_url");
+        assert_eq!(parts[1]["image_url"]["url"], "data:image/png;base64,AAAA");
+    }
+
+    #[test]
+    fn build_user_message_omits_empty_text_part() {
+        let imgs = vec![PendingImage {
+            name: "p.png".into(),
+            data_url: "data:image/png;base64,AAAA".into(),
+        }];
+        let parts = build_user_message("", &imgs)["content"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "image_url");
+    }
+
+    #[test]
+    fn user_content_parts_splits_text_and_images() {
+        let content = json!([
+            { "type": "text", "text": "hello" },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
+        ]);
+        let (text, images) = user_content_parts(&content);
+        assert_eq!(text, "hello");
+        assert_eq!(images.len(), 1);
+        let (text, images) = user_content_parts(&json!("plain"));
+        assert_eq!(text, "plain");
+        assert!(images.is_empty());
+    }
+
+    #[test]
+    fn load_image_file_encodes_base64_data_url() {
+        let path = std::env::temp_dir().join(format!("jan_img_{}.png", uuid::Uuid::new_v4()));
+        std::fs::write(&path, [1u8, 2, 3, 4]).unwrap();
+        let img = load_image_file(path.to_str().unwrap()).unwrap();
+        assert!(img.data_url.starts_with("data:image/png;base64,"));
+        assert!(img.name.ends_with(".png"));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn load_image_file_rejects_empty() {
+        let path = std::env::temp_dir().join(format!("jan_empty_{}.png", uuid::Uuid::new_v4()));
+        std::fs::write(&path, []).unwrap();
+        assert!(load_image_file(path.to_str().unwrap()).is_err());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn submit_user_attaches_pending_images_and_renders_label() {
+        let mut app = test_app();
+        app.pending_images.push(PendingImage {
+            name: "shot.png".into(),
+            data_url: "data:image/png;base64,AAAA".into(),
+        });
+        app.submit_user("describe this".into());
+
+        let content = app.history.last().unwrap()["content"].as_array().unwrap();
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[1]["type"], "image_url");
+        assert!(app.pending_images.is_empty(), "pending images flushed");
+
+        let rendered: Vec<String> = app.transcript.iter().map(line_text).collect();
+        assert!(rendered.iter().any(|l| l.contains("[IMAGE] shot.png")));
     }
 
     #[test]
