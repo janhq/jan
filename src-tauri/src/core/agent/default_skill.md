@@ -9,13 +9,17 @@ naming for you.
 ## Skills
 
 A skill is a reusable procedure for this project: how to run the tests, how to
-deploy, a coding convention, a checklist. Every skill is loaded into your
-context automatically at the start of each run, so you already have their
-contents and do not need to read them.
+deploy, a coding convention, a checklist. The "Available Skills" section of your
+system prompt is a catalog: it lists each skill's name and a one-line purpose,
+but NOT its full instructions. When a skill's purpose matches the task, call
+`skill_read` to load its complete instructions before applying it.
 
-- `skill_list` - see which skills exist before adding or changing one.
+- `skill_list` - list skills with their descriptions.
+- `skill_read` (name) - load a skill's full instructions. Do this before
+  applying a skill; the catalog only shows its purpose.
 - `skill_write` (name, content) - create a new skill or update an existing one
   (same name overwrites). Use a short, descriptive name; keep the skill concise.
+  Start the skill with a one-line description so the catalog can summarize it.
 
 Create or update a skill when you discover a procedure worth reusing on later
 runs. Refine an existing skill instead of duplicating it.

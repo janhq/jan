@@ -14,8 +14,13 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::permissions::ToolPermissions;
-use crate::core::agent::project::{ensure_project, load_agent_config, permissions_from};
+use crate::core::agent::project::{
+    agent_toml_path, ensure_project, load_agent_config, permissions_from,
+    set_skills_enabled_in_agent_toml,
+};
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
+use crate::core::agent::skill_hub;
+use crate::core::agent::skills::{self, SkillMeta};
 use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
@@ -145,4 +150,84 @@ pub async fn agent_permission_respond(
         let _ = tx.send(decision);
     }
     Ok(())
+}
+
+/// Strip the internal `ERROR: ` prefix (an agent-tool-output convention) so the
+/// message reads cleanly in a UI toast.
+fn ui_error(e: String) -> String {
+    e.strip_prefix("ERROR: ").map(str::to_string).unwrap_or(e)
+}
+
+/// List the skills under `<project>/.jan/agent/skills/` (folder `<name>/SKILL.md`
+/// and legacy flat `<name>.md`). These are the same skills `load_skills` injects
+/// into the agent's system prompt; managing them here is CRUD over that
+/// directory. Read-only: returns empty when the project isn't scaffolded yet.
+#[tauri::command]
+pub async fn agent_skill_list(project: String) -> Result<Vec<SkillMeta>, String> {
+    let root = std::path::PathBuf::from(&project);
+    Ok(skills::list_meta(&root))
+}
+
+/// Read one skill's raw SKILL.md (frontmatter included) for the editor.
+#[tauri::command]
+pub async fn agent_skill_read(project: String, name: String) -> Result<String, String> {
+    let root = std::path::PathBuf::from(&project);
+    skills::read_raw(&root, &name).map_err(ui_error)
+}
+
+/// Create or overwrite a skill. New skills are written as `<name>/SKILL.md`;
+/// existing ones keep their on-disk form. `name` is sanitized (no path escape).
+#[tauri::command]
+pub async fn agent_skill_write(
+    project: String,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    ensure_project(&root)?;
+    skills::write(&root, &name, &content).map_err(ui_error)
+}
+
+/// Delete a skill by name. Idempotent: a missing skill is treated as success.
+#[tauri::command]
+pub async fn agent_skill_delete(project: String, name: String) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    skills::delete(&root, &name).map_err(ui_error)
+}
+
+/// List the skills available on Anthropic's public skill hub (name + purpose).
+#[tauri::command]
+pub async fn agent_skill_hub_list() -> Result<Vec<skill_hub::HubSkill>, String> {
+    skill_hub::list().await.map_err(ui_error)
+}
+
+/// Download a hub skill (SKILL.md + bundled files) into the project as
+/// `<name>/SKILL.md`. Scaffolds the project on first use.
+#[tauri::command]
+pub async fn agent_skill_hub_import(project: String, name: String) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    ensure_project(&root)?;
+    skill_hub::import(&root, &name).await.map_err(ui_error)
+}
+
+/// Read the project's enabled-skill whitelist (`[skills].enabled`). An empty
+/// list means all skills are enabled.
+#[tauri::command]
+pub async fn agent_skill_enabled_get(project: String) -> Result<Vec<String>, String> {
+    let root = std::path::PathBuf::from(&project);
+    Ok(load_agent_config(&root)
+        .map(|c| c.skills.enabled)
+        .unwrap_or_default())
+}
+
+/// Set the project's enabled-skill whitelist. Empty = all skills enabled.
+/// Persisted to `[skills].enabled` in agent.toml (format-preserving).
+#[tauri::command]
+pub async fn agent_skill_enabled_set(
+    project: String,
+    enabled: Vec<String>,
+) -> Result<(), String> {
+    let root = std::path::PathBuf::from(&project);
+    ensure_project(&root)?;
+    set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)
 }

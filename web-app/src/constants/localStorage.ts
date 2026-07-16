@@ -30,6 +30,7 @@ export const localStorageKey = {
   latestJanModel: 'latest-jan-model',
   defaultEmbeddingModel: 'default-embedding-model',
   pausedDownloads: 'paused-downloads',
+  codeSessions: 'code-sessions',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24
