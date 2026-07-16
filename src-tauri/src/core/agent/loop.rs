@@ -906,6 +906,7 @@ fn build_completion_request(
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
 /// no `ModelInvoker`.
+#[cfg(feature = "cli")]
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,

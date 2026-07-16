@@ -8,7 +8,7 @@ set -euo pipefail
 TRIPLE=$(rustc -vV | awk '/^host:/ { print $2 }')
 mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/icons
 [ -f src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
-[ -f src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+[ -f src-tauri/resources/bin/jan ] || touch src-tauri/resources/bin/jan
 [ "$(ls -A src-tauri/resources/pre-install 2>/dev/null)" ] || touch src-tauri/resources/pre-install/.gitkeep
 for bin in uv bun; do
   stub="src-tauri/resources/bin/${bin}-${TRIPLE}"
