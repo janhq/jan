@@ -119,14 +119,15 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "bash",
-                "description": "Run a shell command in the project root. Returns combined stdout and stderr. Output is truncated to 2000 lines or 64KB; full output is saved to a temp file when truncated. Optional timeout in seconds.",
+                "description": "Run a shell command in the project root. Returns combined stdout and stderr. Output is truncated to 2000 lines or 64KB; full output is saved to a temp file when truncated. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background and this call returns a job_id instead of erroring or killing it; call bash again with only job_id set to wait for and collect its output once it finishes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "command": { "type": "string", "description": "Shell command to run." },
-                        "timeout": { "type": "integer", "description": "Timeout in seconds (optional, no default timeout)." }
+                        "command": { "type": "string", "description": "Shell command to run. Omit when polling with job_id." },
+                        "timeout": { "type": "integer", "description": "Seconds to wait before backgrounding the command if it hasn't finished (default 30)." },
+                        "job_id": { "type": "string", "description": "Poll a previously backgrounded command by the job_id it returned, instead of running a new command." }
                     },
-                    "required": ["command"]
+                    "required": []
                 }
             }
         }),

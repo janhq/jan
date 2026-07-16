@@ -154,6 +154,12 @@ pub fn resolve_decision(
         }
         Capability::Write => gated(PromptKind::Write, grants),
         Capability::Exec => {
+            // Polling a previously backgrounded command (job_id, no new
+            // command) never prompts: the exec permission was already
+            // granted (or denied above) when the command was started.
+            if args.get("job_id").and_then(|v| v.as_str()).is_some() {
+                return Decision::Allow;
+            }
             let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             if grants.covers_command(command) {
                 Decision::Allow
@@ -296,6 +302,22 @@ mod tests {
             &grants,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bash_job_id_poll_never_prompts() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        let d = resolve_decision(
+            lookup("bash").unwrap(),
+            &json!({"job_id": "bash-0"}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
     }
 
