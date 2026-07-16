@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { GitBranch, Laptop, Folder } from 'lucide-react'
+import { Laptop, Folder } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -29,7 +29,6 @@ import CodePermissionDialog, {
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
@@ -136,19 +135,6 @@ function CodePage() {
 
   const folder = current?.folder ?? null
   const folderName = folder ? folder.split(/[/\\]/).pop() : undefined
-  const [gitBranch, setGitBranch] = useState<string | null>(null)
-
-  // Fetch git branch when the folder changes.
-  useEffect(() => {
-    if (!folder) {
-      setGitBranch(null)
-      return
-    }
-    setGitBranch(null)
-    invoke<string | null>('agent_git_branch', { project: folder })
-      .then(setGitBranch)
-      .catch(() => setGitBranch(null))
-  }, [folder])
 
   // In-flight transcript for the active run; committed to the store on `done`.
   const [liveTurns, setLiveTurns] = useState<CodeTurn[]>([])
@@ -205,15 +191,6 @@ function CodePage() {
     () => codeTurnsToUIMessages(current?.turns ?? [], 'c'),
     [current?.turns]
   )
-  // Sessions persist their diffs, but the runtime diff store is transient, so
-  // reopening a session would otherwise render its write/edit cards with no
-  // diff at all.
-  useEffect(() => {
-    const { recordDiff } = useToolCallRuntime.getState()
-    for (const turn of current?.turns ?? []) {
-      if (turn.callId && turn.diff) recordDiff(turn.callId, turn.diff)
-    }
-  }, [current?.turns])
   const liveMessages = useMemo(
     () => codeTurnsToUIMessages(liveTurns, 'l'),
     [liveTurns]
@@ -490,11 +467,6 @@ function CodePage() {
             diff: ev.diff,
             status: 'done',
           })
-          // Kept out of the turn's output text so the model never sees it and
-          // the widget's output parsing stays intact.
-          if (ev.diff) {
-            useToolCallRuntime.getState().recordDiff(ev.id, ev.diff)
-          }
           break
         case 'permission_request':
           setPendingPerms((prev) => [
@@ -637,31 +609,18 @@ function CodePage() {
                 <Laptop size={14} className="text-muted-foreground" />
                 <span>{t('common:local')}</span>
               </Button>
-              <div className="flex items-center gap-1 min-w-0 max-w-[460px]">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1.5 rounded-full shrink-0"
-                  onClick={handleSelectFolder}
-                  title={folder ?? t('common:selectFolder')}
-                >
-                  <Folder size={14} className="text-muted-foreground shrink-0" />
-                  <span className="truncate max-w-[140px]">
-                    {folderName ?? t('common:selectFolder')}
-                  </span>
-                </Button>
-                {folder && (
-                  <span className="text-xs text-muted-foreground truncate" title={folder}>
-                    {folder}
-                  </span>
-                )}
-                {gitBranch && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground shrink-0">
-                    <GitBranch size={10} />
-                    {gitBranch}
-                  </span>
-                )}
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 rounded-full max-w-[220px]"
+                onClick={handleSelectFolder}
+                title={folder ?? undefined}
+              >
+                <Folder size={14} className="text-muted-foreground" />
+                <span className="truncate">
+                  {folderName ?? t('common:selectFolder')}
+                </span>
+              </Button>
               <div className="ml-auto">
                 <SkillSelector folder={folder} />
               </div>

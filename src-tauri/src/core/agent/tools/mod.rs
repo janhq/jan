@@ -83,6 +83,11 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         path_args: &[],
     },
     BuiltinTool {
+        name: "skill_read",
+        capability: Capability::Read,
+        path_args: &[],
+    },
+    BuiltinTool {
         name: "skill_write",
         capability: Capability::Write,
         path_args: &[],
@@ -95,7 +100,12 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
 pub fn is_workspace_tool(name: &str) -> bool {
     matches!(
         name,
-        "memory_list" | "memory_read" | "memory_write" | "skill_list" | "skill_write"
+        "memory_list"
+            | "memory_read"
+            | "memory_write"
+            | "skill_list"
+            | "skill_read"
+            | "skill_write"
     )
 }
 
@@ -133,8 +143,8 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 7 coding tools + 5 dedicated skill/memory tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 12);
+        // 7 coding tools + 6 dedicated skill/memory tools.
+        assert_eq!(BUILTIN_TOOLS.len(), 13);
     }
 
     #[test]

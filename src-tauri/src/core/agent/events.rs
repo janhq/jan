@@ -106,6 +106,7 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
         "skill_list" => Some(("Reading", "skill", String::new())),
         "memory_read" => Some(("Reading", "memory", arg_name(args))),
         "memory_write" => Some(("Updating", "memory", arg_name(args))),
+        "skill_read" => Some(("Reading", "skill", arg_name(args))),
         "skill_write" => Some(("Updating", "skill", arg_name(args))),
         _ => None,
     };

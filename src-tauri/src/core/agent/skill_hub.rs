@@ -10,7 +10,7 @@ use std::path::Path;
 
 use futures::future::join_all;
 
-use tauri_plugin_agent_tools::{skills, workspace};
+use crate::core::agent::skills;
 
 const TREE_URL: &str =
     "https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1";
@@ -152,9 +152,8 @@ pub async fn import(root: &Path, name: &str) -> Result<(), String> {
     }
 
     // Phase 2: replace the destination with the freshly fetched files.
-    let skills_dir = skills::skills_dir(&workspace::project_store(root));
-    let dest_root = skills_dir.join(&stem);
-    let flat = skills_dir.join(format!("{stem}.md"));
+    let dest_root = skills::skills_dir(root).join(&stem);
+    let flat = skills::skills_dir(root).join(format!("{stem}.md"));
     let _ = tokio::fs::remove_dir_all(&dest_root).await;
     let _ = tokio::fs::remove_file(&flat).await; // drop a legacy flat form, if any
     for (rel, bytes) in fetched {

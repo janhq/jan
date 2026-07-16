@@ -12,10 +12,8 @@ import { reasoningPartsFromText } from '@/lib/messages'
  * as reasoning/`text` parts, tool calls as `tool-<name>` parts) until the next user turn —
  * mirroring how one agent turn maps to one assistant message with ordered parts.
  *
- * `diff` has no slot on a UIMessage tool part, so it does not travel here at all.
- * It is published to `useToolCallRuntime.diffs` by the caller and rendered as a
- * real coloured diff by `AgentToolWidget`, keyed on `toolCallId`. Folding it into
- * the output text would also corrupt the output the widget parses.
+ * `diff` has no dedicated slot in the UIMessage tool part, so it is prepended to
+ * the tool output as text (per the chosen tradeoff — non-colored).
  */
 export function codeTurnsToUIMessages(
   turns: CodeTurn[],
@@ -75,8 +73,9 @@ export function codeTurnsToUIMessages(
     }
 
     if (!running) {
-      // Legacy turns carry only `content`; new turns carry `result`.
-      const output = turn.result ?? turn.content ?? ''
+      // Legacy turns carry only `content`; new turns carry result (+optional diff).
+      const body = turn.result ?? turn.content ?? ''
+      const output = turn.diff ? `${turn.diff}\n\n${body}` : body
       if (turn.isError) {
         part.errorText = output
       } else {

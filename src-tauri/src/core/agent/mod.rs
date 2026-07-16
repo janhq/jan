@@ -11,6 +11,8 @@ pub mod memory;
 pub mod permissions;
 pub mod project;
 pub mod session;
+pub mod skill_hub;
+pub mod skills;
 pub mod subagent;
 pub mod tools;
 pub mod upstream;
