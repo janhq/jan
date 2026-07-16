@@ -230,6 +230,12 @@ struct App {
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
+    /// Directory tool paths (`edit`/`write` "path" args) are resolved against.
+    project_root: PathBuf,
+    /// Absolute paths touched by `edit`/`write` tool calls so far this turn;
+    /// drained into the next checkpoint's snapshot and reset per turn. Only
+    /// these exact paths are staged -- checkpoints never scan the repo.
+    turn_touched: Vec<PathBuf>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -335,29 +341,42 @@ struct SubagentBlock {
 /// Rolling window size for a subagent's live tool-call list.
 const SUBAGENT_WINDOW: usize = 5;
 
-/// A queued git workspace snapshot. The `git` subprocess re-hashes the whole
-/// working tree and is slow on a large repo, so snapshots run off the render
-/// loop (via `spawn_blocking`) and serialized (each checkpoint parents the
-/// previous), driven from the main loop rather than inline in `submit_user`/
-/// `on_done`.
+/// A queued git workspace snapshot. Snapshots only stage the paths the agent
+/// actually touched this turn (see `App::turn_touched`), never the whole
+/// working tree, so this stays cheap on a large repo. Still run off the
+/// render loop (via `spawn_blocking`) and serialized (each checkpoint parents
+/// the previous), driven from the main loop rather than inline in
+/// `submit_user`/`on_done`.
 enum SnapshotJob {
     /// Base state captured before the first turn; gates the first run.
     Base,
-    /// Per-turn checkpoint keyed to the driving user message.
-    Checkpoint { user_index: usize, preview: String },
+    /// Per-turn checkpoint keyed to the driving user message, carrying the
+    /// paths touched by `edit`/`write` tool calls since the previous one.
+    Checkpoint {
+        user_index: usize,
+        preview: String,
+        changed: Vec<PathBuf>,
+    },
 }
+
+/// `(repo, parent sha, commit message, thread id, changed paths)` resolved
+/// from a queued [`SnapshotJob`], ready to hand to `git::snapshot`.
+type SnapshotInputs = (PathBuf, Option<String>, String, String, Vec<PathBuf>);
 
 impl App {
     fn new(
         model: String,
         max_turns: u32,
         agent_dir: std::path::PathBuf,
+        project_root: PathBuf,
         repo_root: Option<PathBuf>,
     ) -> Self {
         Self {
             model,
             max_turns,
             repo_root,
+            project_root,
+            turn_touched: Vec::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -764,25 +783,32 @@ impl App {
         self.snap_queue.push_back(SnapshotJob::Checkpoint {
             user_index,
             preview,
+            changed: std::mem::take(&mut self.turn_touched),
         });
     }
 
     /// Resolve the git inputs for the next queued snapshot from current state:
-    /// `(repo, parent, message, thread_id)`. `None` when snapshotting is
-    /// unavailable (not a git repo, or no thread id yet), so the job is dropped.
-    fn resolve_snapshot(&self, job: &SnapshotJob) -> Option<(PathBuf, Option<String>, String, String)> {
+    /// `(repo, parent, message, thread_id, changed paths)`. `None` when
+    /// snapshotting is unavailable (not a git repo, or no thread id yet), so the
+    /// job is dropped. Changed paths are made relative to `repo`; anything
+    /// outside it is dropped rather than passed to `git`.
+    fn resolve_snapshot(&self, job: &SnapshotJob) -> Option<SnapshotInputs> {
         let repo = self.repo_root.clone()?;
         let id = self.thread_id.clone()?;
         match job {
-            SnapshotJob::Base => Some((repo, None, "jan agent base".to_string(), id)),
-            SnapshotJob::Checkpoint { .. } => {
+            SnapshotJob::Base => Some((repo, None, "jan agent base".to_string(), id, Vec::new())),
+            SnapshotJob::Checkpoint { changed, .. } => {
                 let parent = self
                     .checkpoints
                     .last()
                     .map(|c| c.sha.clone())
                     .or_else(|| self.base_snapshot.clone());
                 let n = self.checkpoints.len() + 1;
-                Some((repo, parent, format!("jan agent turn {n}"), id))
+                let changed = changed
+                    .iter()
+                    .filter_map(|p| p.strip_prefix(&repo).ok().map(|p| p.to_path_buf()))
+                    .collect();
+                Some((repo, parent, format!("jan agent turn {n}"), id, changed))
             }
         }
     }
@@ -853,7 +879,12 @@ impl App {
                 let label = truncate(&tool_activity(&name, &args), max);
                 let done = truncate(&tool_finished(&name, &args), max);
                 if matches!(name.as_str(), "edit" | "write") {
-                    // Diff-producing tools render standalone (call row + panel).
+                    // Record the touched path so the next checkpoint snapshots
+                    // exactly this file instead of scanning the whole repo.
+                    if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
+                        self.turn_touched.push(self.project_root.join(p));
+                    }
+                    // Diff-producing tools render standalone (call row & panel).
                     self.finalize_tool_group();
                     self.flush_assistant();
                     self.gap(Kind::Tool);
@@ -1731,16 +1762,18 @@ async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> V
 }
 
 /// Run one git snapshot (and ref update) off the render loop. Returns the
-/// snapshot sha. Blocking `git` work is confined to a blocking thread so the UI
-/// stays responsive on large repos.
+/// snapshot sha. Only `changed` (the paths touched this turn) are staged, so
+/// this stays fast regardless of repo size; the blocking `git` work still runs
+/// on a blocking thread so the UI stays responsive.
 fn spawn_snapshot(
     repo: PathBuf,
     parent: Option<String>,
     msg: String,
     thread_id: String,
+    changed: Vec<PathBuf>,
 ) -> tokio::task::JoinHandle<Result<String, String>> {
     tokio::task::spawn_blocking(move || {
-        let sha = git::snapshot(&repo, parent.as_deref(), &msg)?;
+        let sha = git::snapshot(&repo, parent.as_deref(), &msg, &thread_id, &changed)?;
         git::update_ref(&repo, &thread_id, &sha)?;
         Ok(sha)
     })
@@ -1788,7 +1821,7 @@ pub async fn run(
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, agent_dir, repo_root);
+    let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
     let res = chat_loop(
         &mut terminal,
         &args,
@@ -1842,8 +1875,8 @@ async fn chat_loop<B: Backend>(
         // inputs no longer resolve (snapshots disabled) is dropped.
         if snap_task.is_none() {
             while let Some(job) = app.snap_queue.pop_front() {
-                if let Some((repo, parent, msg, id)) = app.resolve_snapshot(&job) {
-                    snap_task = Some(spawn_snapshot(repo, parent, msg, id));
+                if let Some((repo, parent, msg, id, changed)) = app.resolve_snapshot(&job) {
+                    snap_task = Some(spawn_snapshot(repo, parent, msg, id, changed));
                     snap_inflight = Some(job);
                     break;
                 }
@@ -1905,7 +1938,7 @@ async fn chat_loop<B: Backend>(
                         app.base_snapshot = Some(sha);
                         app.persist();
                     }
-                    (Some(SnapshotJob::Checkpoint { user_index, preview }), Ok(sha)) => {
+                    (Some(SnapshotJob::Checkpoint { user_index, preview, .. }), Ok(sha)) => {
                         app.checkpoints.push(Checkpoint { user_index, preview, sha });
                         app.persist();
                     }
@@ -3248,7 +3281,7 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, agent_dir, None)
+        App::new("m".into(), 8, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
     fn pending(offers_always: bool) -> Pending {
@@ -3676,7 +3709,7 @@ mod tests {
         app.base_requested = true;
         app.checkpoint_turn();
         match app.snap_queue.front() {
-            Some(SnapshotJob::Checkpoint { user_index, preview }) => {
+            Some(SnapshotJob::Checkpoint { user_index, preview, .. }) => {
                 assert_eq!(*user_index, 0);
                 assert_eq!(preview, "do it");
             }
@@ -3689,16 +3722,22 @@ mod tests {
         let mut app = test_app();
         app.repo_root = Some(std::path::PathBuf::from("/tmp/repo"));
         app.thread_id = Some("t1".into());
-        let (_, parent, msg, id) = app.resolve_snapshot(&SnapshotJob::Base).unwrap();
+        let (_, parent, msg, id, changed) = app.resolve_snapshot(&SnapshotJob::Base).unwrap();
         assert!(parent.is_none());
         assert_eq!(msg, "jan agent base");
         assert_eq!(id, "t1");
+        assert!(changed.is_empty());
 
         app.base_snapshot = Some("basesha".into());
-        let job = SnapshotJob::Checkpoint { user_index: 0, preview: "x".into() };
-        let (_, parent, msg, _) = app.resolve_snapshot(&job).unwrap();
+        let job = SnapshotJob::Checkpoint {
+            user_index: 0,
+            preview: "x".into(),
+            changed: vec![std::path::PathBuf::from("/tmp/repo/src/a.rs")],
+        };
+        let (_, parent, msg, _, changed) = app.resolve_snapshot(&job).unwrap();
         assert_eq!(parent.as_deref(), Some("basesha"), "first checkpoint parents the base");
         assert_eq!(msg, "jan agent turn 1");
+        assert_eq!(changed, vec![std::path::PathBuf::from("src/a.rs")]);
 
         // Disabled (no repo) -> job dropped.
         app.repo_root = None;
