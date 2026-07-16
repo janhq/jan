@@ -702,12 +702,23 @@ use tokio::sync::{mpsc, Mutex};
 /// mid-task. Set an explicit cap to bound it.
 const DEFAULT_MAX_TURNS: u32 = 0;
 
+/// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
+/// value is what the model would otherwise see verbatim in the system prompt's
+/// working-directory block, so a bare "." must become the real cwd rather than
+/// being sent to the model as-is. Falls back to the raw (possibly relative)
+/// path if canonicalization fails (e.g. the directory doesn't exist yet).
+fn resolve_project_root(project: &str) -> PathBuf {
+    PathBuf::from(project)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project))
+}
+
 /// Resolved-config + provider snapshot for `jan agent status`.
 pub fn cli_agent_status(
     project: &str,
     overrides: &ProviderOverrides,
 ) -> Result<serde_json::Value, String> {
-    let project_root = PathBuf::from(project);
+    let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
     let provider_configs = load_provider_configs(overrides)?;
@@ -998,7 +1009,7 @@ fn prepare_agent_session(
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
 ) -> Result<AgentSession, String> {
-    let project_root = PathBuf::from(project);
+    let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
@@ -1136,8 +1147,9 @@ pub async fn cli_agent_ui(
     let session = prepare_agent_session(project, model, max_turns, overrides)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
-    let agent_dir = PathBuf::from(project).join(".jan").join("agent");
-    tui::run(session, agent_dir, PathBuf::from(project), task).await
+    let project_root = resolve_project_root(project);
+    let agent_dir = project_root.join(".jan").join("agent");
+    tui::run(session, agent_dir, project_root, task).await
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
