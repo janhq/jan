@@ -399,6 +399,33 @@ pub(crate) async fn call_openai_chat_completions(
 /// (with usage), emits `StreamEvent::Token` per content delta, and reconstructs
 /// an OpenAI non-streaming completion JSON so the rest of the loop (tool-call
 /// extraction, history append) is identical to the non-streaming path.
+/// Stable marker prefixed onto an upstream error when the failure looks like a
+/// context/prompt-length overflow, so the agent loop can react (compact + retry)
+/// instead of surfacing the raw provider error. Works uniformly for local
+/// (llama-server) and remote (OpenAI/Anthropic/Google) since all report overflow
+/// via an HTTP error body rather than the streamed deltas.
+pub(crate) const CONTEXT_OVERFLOW_MARKER: &str = "context-overflow";
+
+/// True when a provider error body reads like a context/prompt-length overflow.
+/// Matches the OpenAI `context_length_exceeded` code, Anthropic's "prompt is too
+/// long", Google's token-limit phrasing, and llama-server's context messages.
+pub(crate) fn is_context_overflow_body(body: &str) -> bool {
+    let b = body.to_lowercase();
+    b.contains("context_length_exceeded")
+        || b.contains("maximum context length")
+        || b.contains("prompt is too long")
+        || b.contains("exceeds the maximum number of tokens")
+        || b.contains("the request exceeds the available context")
+        || b.contains("exceed context")
+        || b.contains("context window")
+        || (b.contains("context") && b.contains("too long"))
+}
+
+/// True when an error string carries the [`CONTEXT_OVERFLOW_MARKER`].
+pub(crate) fn is_context_overflow_error(err: &str) -> bool {
+    err.contains(CONTEXT_OVERFLOW_MARKER)
+}
+
 pub(crate) async fn stream_openai_chat_completions(
     client: &Client,
     upstream_url: &str,
@@ -446,6 +473,9 @@ pub(crate) async fn stream_openai_chat_completions(
 
         let text = resp.text().await.unwrap_or_default();
         last_err = format!("Upstream returned HTTP {status}: {text}");
+        if is_context_overflow_body(&text) {
+            last_err = format!("[{CONTEXT_OVERFLOW_MARKER}] {last_err}");
+        }
         if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
             log::warn!("OpenAI stream: HTTP {status} with API key index {i}, trying next key");
             continue;
@@ -690,6 +720,27 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+
+    #[test]
+    fn detects_provider_context_overflow_bodies() {
+        assert!(is_context_overflow_body(
+            "{\"error\":{\"code\":\"context_length_exceeded\"}}"
+        ));
+        assert!(is_context_overflow_body("This model's maximum context length is 8192 tokens"));
+        assert!(is_context_overflow_body("prompt is too long: 210000 tokens > 200000"));
+        assert!(is_context_overflow_body(
+            "the request exceeds the available context size"
+        ));
+        assert!(!is_context_overflow_body("invalid api key"));
+        assert!(!is_context_overflow_body("rate limit exceeded"));
+    }
+
+    #[test]
+    fn overflow_marker_round_trips() {
+        let err = format!("[{CONTEXT_OVERFLOW_MARKER}] Upstream returned HTTP 400: ...");
+        assert!(is_context_overflow_error(&err));
+        assert!(!is_context_overflow_error("Upstream returned HTTP 500: boom"));
     }
 
     #[test]
