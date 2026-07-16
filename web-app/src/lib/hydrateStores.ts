@@ -21,7 +21,6 @@ import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { useCodeSessions } from '@/hooks/useCodeSessions'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 /**
  * Stores persisted through `backendStorage` set `skipHydration: true` so they
@@ -54,7 +53,6 @@ const secondaryStores = [
   useAgentMode,
   useWebSearchConfig,
   useCodeSessions,
-  useAgentToolsConfig,
 ] as const
 
 export async function hydrateBackendStores(): Promise<void> {
