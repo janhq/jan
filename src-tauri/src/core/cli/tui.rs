@@ -1164,6 +1164,9 @@ fn summarize_result(s: &str, max: usize) -> String {
 /// Max diff rows rendered under a tool result before collapsing the tail.
 const DIFF_MAX_ROWS: usize = 20;
 
+/// Max chars shown for a bash/shell/exec command label in the transcript.
+const COMMAND_LABEL_MAX: usize = 80;
+
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
 /// `-` lines red, `+` green, `@@` headers dim-cyan. Content is truncated to
 /// `max` and each row padded so the right border aligns. Collapses to
@@ -1248,12 +1251,11 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            let prog = cmd.split_whitespace().next().unwrap_or("");
-            let prog = prog.rsplit(['/', '\\']).next().unwrap_or(prog);
-            if prog.is_empty() {
+            if cmd.trim().is_empty() {
                 "Executing command".to_string()
             } else {
-                format!("Executing {prog}")
+                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
+                format!("Executing: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -1310,12 +1312,11 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            let prog = cmd.split_whitespace().next().unwrap_or("");
-            let prog = prog.rsplit(['/', '\\']).next().unwrap_or(prog);
-            if prog.is_empty() {
+            if cmd.trim().is_empty() {
                 "Ran command".to_string()
             } else {
-                format!("Ran {prog}")
+                let collapsed = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
+                format!("Ran: {}", truncate(&collapsed, COMMAND_LABEL_MAX))
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -3640,11 +3641,11 @@ mod tests {
     fn tool_activity_is_concise_present_tense() {
         assert_eq!(
             tool_activity("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
-            "Executing grep"
+            "Executing: /usr/bin/grep -n foo src/"
         );
         assert_eq!(
             tool_activity("bash", &json!({ "command": "cargo test" })),
-            "Executing cargo"
+            "Executing: cargo test"
         );
         assert_eq!(tool_activity("grep", &json!({ "pattern": "foo" })), "Searching");
         assert_eq!(
@@ -3661,7 +3662,7 @@ mod tests {
     fn tool_finished_is_concise_past_tense() {
         assert_eq!(
             tool_finished("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
-            "Ran grep"
+            "Ran: /usr/bin/grep -n foo src/"
         );
         assert_eq!(tool_finished("grep", &json!({ "pattern": "foo" })), "Searched");
         assert_eq!(
@@ -4158,7 +4159,7 @@ mod tests {
             args: json!({ "command": "grep -n foo src/" }),
         });
         let running = line_text(app.transcript.last().unwrap());
-        assert!(running.contains("▸ Executing grep"), "running: {running}");
+        assert!(running.contains("▸ Executing: grep"), "running: {running}");
         let before = app.transcript.len();
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -4171,7 +4172,7 @@ mod tests {
         // Finalizing (turn boundary / done) marks it complete on the same row.
         app.finalize_tool_group();
         let row = line_text(app.transcript.last().unwrap());
-        assert!(row.contains("✓") && row.contains("Ran grep"), "row: {row}");
+        assert!(row.contains("✓") && row.contains("Ran: grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
     }
@@ -4194,7 +4195,7 @@ mod tests {
             .iter()
             .rev()
             .map(line_text)
-            .find(|t| t.contains("Ran grep"))
+            .find(|t| t.contains("Ran: grep"))
             .unwrap();
         assert!(row.contains("✓"), "row: {row}");
         // Later tokens must not re-trigger finalize work.
@@ -4225,7 +4226,7 @@ mod tests {
         app.apply(StreamEvent::Step { index: 2, max: 8 });
         let rows: Vec<String> = app.transcript.iter().map(line_text).collect();
         let prose = rows.iter().position(|r| r.contains("check the README")).unwrap();
-        let tool = rows.iter().position(|r| r.contains("Ran grep")).unwrap();
+        let tool = rows.iter().position(|r| r.contains("Ran: grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
         assert!(prose < tool && tool < after, "rows: {rows:?}");
     }
