@@ -8,15 +8,20 @@ repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.77.2"
 resolver = "2"
-default-run = "Jan"
+default-run = "jan-desktop"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "jan-cli"
-path = "src/bin/jan-cli.rs"
+name = "jan-desktop"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "jan"
+path = "src/bin/jan.rs"
 required-features = ["cli"]
 
 [features]

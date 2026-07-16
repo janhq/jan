@@ -102,7 +102,7 @@ jobs:
           mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/icons
           touch src-tauri/resources/pre-install/.gitkeep
           touch src-tauri/resources/LICENSE
-          touch src-tauri/resources/bin/jan-cli
+          touch src-tauri/resources/bin/jan
           for bin in uv bun; do
             touch "src-tauri/resources/bin/${bin}-${TRIPLE}"
           done

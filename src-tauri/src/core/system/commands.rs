@@ -669,43 +669,24 @@ fn jan_cli_install_candidates() -> Vec<PathBuf> {
 pub fn install_jan_cli_sync<R: Runtime>(
     app_handle: &AppHandle<R>,
 ) -> Result<CliInstallStatus, String> {
-    let bin_name = if cfg!(windows) {
-        "jan-cli.exe"
-    } else {
-        "jan-cli"
-    };
-    let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
     let resource_bin_dir = app_handle
         .path()
         .resource_dir()
         .map_err(|e| e.to_string())?
         .join("resources/bin");
     let bundled = resource_bin_dir.join(bin_name);
-    let dest = resource_bin_dir.join(dest_bin_name);
 
-    if !bundled.exists() && !dest.exists() {
+    if !bundled.exists() {
         return Err("Jan CLI binary not bundled with this version of Jan.".to_string());
     }
 
     #[cfg(windows)]
     {
-        if bundled.exists() {
-            // rename won't reliably clobber a stale jan.exe from a previous
-            // version (replace semantics / AV locks), so drop it first to
-            // guarantee a version upgrade actually overwrites the binary.
-            if dest.exists() {
-                if let Err(e) = std::fs::remove_file(&dest) {
-                    log::warn!("Could not remove stale {}: {}", dest.display(), e);
-                }
-            }
-            if let Err(e) = std::fs::rename(&bundled, &dest) {
-                log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
-            }
-        }
         add_to_path_windows(&resource_bin_dir)?;
         return Ok(CliInstallStatus {
             installed: true,
-            path: Some(dest.to_string_lossy().into_owned()),
+            path: Some(bundled.to_string_lossy().into_owned()),
         });
     }
 
@@ -713,7 +694,7 @@ pub fn install_jan_cli_sync<R: Runtime>(
     {
         let install_dir = jan_cli_install_dir()?;
         std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
-        let dest = install_dir.join(dest_bin_name);
+        let dest = install_dir.join("jan");
 
         std::fs::copy(&bundled, &dest)
             .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
