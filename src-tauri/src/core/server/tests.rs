@@ -901,8 +901,18 @@ mod server_tests {
     }
 
     #[test]
-    fn parse_openai_messages_non_string_content_errors() {
-        let msgs = json!([{"role": "user", "content": [{"type": "text", "text": "hi"}]}]);
+    fn parse_openai_messages_passes_multimodal_array_through() {
+        let msgs = json!([{"role": "user", "content": [
+            {"type": "text", "text": "hi"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}},
+        ]}]);
+        let out = proxy::parse_openai_messages(&msgs).unwrap();
+        assert_eq!(out[0]["content"], msgs[0]["content"]);
+    }
+
+    #[test]
+    fn parse_openai_messages_non_string_non_array_content_errors() {
+        let msgs = json!([{"role": "user", "content": 42}]);
         assert!(proxy::parse_openai_messages(&msgs).is_err());
     }
 

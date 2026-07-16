@@ -176,6 +176,9 @@ enum AgentCommands {
         /// Max turns per message (overrides [agent].max_turns; clamped 1..=400)
         #[arg(long)]
         max_turns: Option<u32>,
+        /// Image file to attach to the first message (repeatable)
+        #[arg(long = "image")]
+        images: Vec<String>,
         #[command(flatten)]
         providers: ProviderArgs,
     },
@@ -442,8 +445,19 @@ async fn handle_agent(cmd: AgentCommands) {
             task,
             model,
             max_turns,
+            images,
             providers,
-        } => cli_agent_ui(&project, task, model, max_turns, providers.into_overrides()).await,
+        } => {
+            cli_agent_ui(
+                &project,
+                task,
+                model,
+                max_turns,
+                images,
+                providers.into_overrides(),
+            )
+            .await
+        }
         AgentCommands::Step {
             project,
             task,
