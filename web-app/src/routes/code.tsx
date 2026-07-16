@@ -82,6 +82,27 @@ function capHistory(messages: CodeMessage[]): CodeMessage[] {
   return kept
 }
 
+// Strict chat templates (llama.cpp Jinja) require strictly alternating
+// user/assistant roles and reject empty content. Drop empties and merge
+// consecutive same-role messages so a turn that produced no assistant text
+// (tool-only / cancelled / errored) can't leave two user messages adjacent.
+const normalizeAlternating = (messages: CodeMessage[]): CodeMessage[] => {
+  const out: CodeMessage[] = []
+  for (const m of messages) {
+    if (!m.content.trim()) continue
+    // The template also requires the conversation to START with user; drop any
+    // leading assistant message (e.g. after aggressive trimming).
+    if (out.length === 0 && m.role !== 'user') continue
+    const last = out[out.length - 1]
+    if (last && last.role === m.role) {
+      last.content = `${last.content}\n\n${m.content}`
+    } else {
+      out.push({ role: m.role, content: m.content })
+    }
+  }
+  return out
+}
+
 // Slash commands available from the input. Client-side actions — they never hit
 // the agent. `descKey` is an i18n key resolved at render time. mode 'run'
 // executes immediately; 'args' fills the input so the user can pick an argument
@@ -380,21 +401,34 @@ function CodePage() {
       store.setTitle(sid, text.slice(0, 40))
     }
 
-    const outgoing: CodeMessage[] = [
+    // Mirror the CLI agent: replay the full history each turn (capped only by a
+    // coarse sliding window against runaway growth). normalizeAlternating is the
+    // one guard the CLI lacks — it keeps roles strictly alternating so a turn
+    // that produced no assistant text can't leave two user messages adjacent.
+    // Real out-of-context handling belongs in the shared Rust loop, not here.
+    const outgoing: CodeMessage[] = normalizeAlternating([
       ...capHistory(session.history),
       { role: 'user', content: text },
-    ]
+    ])
     liveTurnsRef.current = [{ role: 'user', content: text }]
     setLiveTurns(liveTurnsRef.current)
     runningRef.current = true
     setRunning(true)
 
-    // Local models load before the first token; surface the shared progress card
-    // until generation actually starts (first stream event) or the run ends.
+    // Local models load before the first token — but only on a cold start.
+    // Probe the router (as the chat transport does) so the load card shows only
+    // when the model isn't already loaded, not on every warm run.
     if (selectedProvider === 'llamacpp') {
-      modelLoadingRef.current = true
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateLoadingModel(true)
+      try {
+        const loaded = await invoke<string[]>('plugin:llamacpp|get_loaded_models')
+        if (!loaded.includes(selectedModel.id)) {
+          modelLoadingRef.current = true
+          useAppState.getState().updateModelLoadProgress(undefined)
+          useAppState.getState().updateLoadingModel(true)
+        }
+      } catch {
+        // Probe failed; skip the load card rather than flash it every run.
+      }
     }
 
     const runId = crypto.randomUUID()
