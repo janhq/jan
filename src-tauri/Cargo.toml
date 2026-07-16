@@ -93,7 +93,7 @@ test-tauri = [
     "deep-link",
     "hardware",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:ratatui", "dep:tui-markdown", "dep:comfy-table"]
+cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:ratatui", "dep:tui-markdown", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [], optional = true }
@@ -204,6 +204,8 @@ machine-uid = "0.5"
 ratatui = { version = "0.30", optional = true, features = ["unstable-rendered-line-info"] }
 tui-markdown = { version = "0.3.8", optional = true, default-features = false }
 comfy-table = { version = "7.2", default-features = false, optional = true }
+arboard = { version = "3", optional = true, features = ["wayland-data-control"] }
+png = { version = "0.17", optional = true }
 
 [dependencies.tauri]
 version = "2.8.5"
