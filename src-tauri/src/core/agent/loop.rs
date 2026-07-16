@@ -902,6 +902,36 @@ fn build_completion_request(
     serde_json::Value::Object(completion_map)
 }
 
+/// Manually compact `messages` for the given model, resolving the upstream from
+/// `args` and reusing the same summarization path as the reactive loop. Used by
+/// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
+/// no `ModelInvoker`.
+pub(crate) async fn compact_history(
+    args: &OrchestrationArgs,
+    model_id: &str,
+    messages: &[serde_json::Value],
+) -> Result<Vec<serde_json::Value>, String> {
+    let (upstream_url, api_keys) = resolve_upstream_for_model(
+        model_id,
+        args.provider_configs.clone(),
+        args.llama_state.clone(),
+        args.mlx_sessions.clone(),
+    )
+    .await?;
+    let model = HttpModelInvoker {
+        client: args.client.clone(),
+        upstream_url,
+        api_keys,
+    };
+    Ok(crate::core::agent::compaction::compact_conversation(
+        messages,
+        model_id,
+        &model,
+        crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+    )
+    .await)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
