@@ -332,6 +332,9 @@ struct App {
     /// viewport width), so a click's rendered row maps directly here without
     /// needing wrap-aware layout math.
     row_index: Vec<Option<usize>>,
+    /// When the current run started, so the header can show elapsed time.
+    /// `None` while idle.
+    run_started: Option<Instant>,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -433,6 +436,7 @@ impl App {
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
+            run_started: None,
         }
     }
 
@@ -752,6 +756,7 @@ impl App {
             Span::styled(text, Style::new().bold()),
         ]));
         self.status = Status::Running;
+        self.run_started = Some(Instant::now());
         self.turn = (0, 0);
         self.scrollback = 0;
         self.want_start = true;
@@ -1115,6 +1120,7 @@ impl App {
         }
         self.tokens = usage.and_then(|u| u.total_tokens).unwrap_or(self.tokens);
         self.status = Status::Idle;
+        self.run_started = None;
         self.detail = format!("stop_reason={stop_reason}");
         self.scrollback = 0;
         // Surface abnormal completions in the timeline, not just the footer: a
@@ -1139,6 +1145,7 @@ impl App {
         self.finalize_tool_group();
         self.flush_assistant();
         self.status = Status::Idle;
+        self.run_started = None;
         self.detail = if message.contains("budget") {
             format!("budget exhausted: {message}")
         } else {
@@ -1164,6 +1171,7 @@ impl App {
                 .push(serde_json::json!({ "role": "assistant", "content": answer }));
         }
         self.status = Status::Idle;
+        self.run_started = None;
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -2027,6 +2035,7 @@ async fn chat_loop<B: Backend>(
                         app.flush_assistant();
                         app.finalize_tool_group();
                         app.status = Status::Idle;
+                        app.run_started = None;
                     }
                     current = None;
                 }
@@ -2745,6 +2754,7 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
     app.status = Status::Idle;
+    app.run_started = None;
     app.scrollback = 0;
     app.note(&format!("rewound to message #{}", target + 1));
     app.persist();
@@ -3268,6 +3278,17 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
     f.render_stateful_widget(list, area, &mut state);
 }
 
+/// Render a duration as a compact `"12s"` / `"3m12s"` / `"1h04m"` label.
+fn format_elapsed(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m{:02}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
+    }
+}
+
 fn header(app: &App) -> Paragraph<'static> {
     let (status, style) = match app.status {
         Status::Idle => ("ready", Style::new().green()),
@@ -3278,9 +3299,22 @@ fn header(app: &App) -> Paragraph<'static> {
         (n, 0) => format!("turn {n}  "),
         (n, m) => format!("turn {n}/{m}  "),
     };
+    let dir = app
+        .project_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".");
+    let elapsed = app
+        .run_started
+        .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
+        .unwrap_or_default();
     Paragraph::new(Line::from(vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
-        Span::raw(format!("  {}  {turn}tokens {}  ", app.model, app.tokens)),
+        Span::raw(format!("  {}  ", app.model)),
+        Span::styled(dir.to_string(), Style::new().dark_gray()),
+        Span::raw(format!("  {turn}tokens {}", app.tokens)),
+        Span::styled(elapsed, Style::new().dim()),
+        Span::raw("  "),
         Span::styled(format!("[{status}]"), style),
     ]))
 }
@@ -3362,26 +3396,66 @@ fn input_box(app: &App) -> Paragraph<'static> {
     }
 }
 
+/// Build a footer hint line from `(key, label)` pairs, with the key bright and
+/// bold so it stands out against the dim label text.
+fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
+    let mut spans = vec![Span::raw(" ")];
+    for (i, (key, label)) in pairs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("   "));
+        }
+        spans.push(Span::styled(key.to_string(), key_style));
+        if !label.is_empty() {
+            spans.push(Span::styled(format!(" {label}"), Style::new().dim()));
+        }
+    }
+    spans
+}
+
 fn footer(app: &App) -> Paragraph<'static> {
     if app.pending.is_some() {
-        return Paragraph::new(Line::styled(
-            " ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel",
-            Style::new().yellow().dim(),
-        ));
+        return Paragraph::new(Line::from(hint_spans(
+            Style::new().yellow().bold(),
+            &[
+                ("↑/↓", "select"),
+                ("Enter", "confirm"),
+                ("Esc", "deny"),
+                ("Ctrl-C", "cancel"),
+            ],
+        )));
     }
     if let Some(picker) = &app.picker {
         return Paragraph::new(Line::styled(picker.action_hint(), Style::new().dim()));
     }
-    let hint = match app.status {
-        Status::Running => "Esc/Ctrl-C cancel   ↑/↓ scroll   Ctrl-O expand all",
-        Status::Idle => "Enter send   Alt+Enter newline   /help   ↑/↓ scroll   Ctrl-O expand all   Ctrl-D quit",
+    let key_style = Style::new().cyan().bold();
+    let mut spans = match app.status {
+        Status::Running => hint_spans(
+            key_style,
+            &[
+                ("Esc/Ctrl-C", "cancel"),
+                ("↑/↓", "scroll"),
+                ("Ctrl-O", "expand all"),
+            ],
+        ),
+        Status::Idle => hint_spans(
+            key_style,
+            &[
+                ("Enter", "send"),
+                ("Alt+Enter", "newline"),
+                ("/help", ""),
+                ("↑/↓", "scroll"),
+                ("Ctrl-O", "expand all"),
+                ("Ctrl-D", "quit"),
+            ],
+        ),
     };
-    let detail = if app.detail.is_empty() {
-        String::new()
-    } else {
-        format!("   {}", app.detail)
-    };
-    Paragraph::new(Line::styled(format!(" {hint}{detail}"), Style::new().dim()))
+    if !app.detail.is_empty() {
+        spans.push(Span::styled(
+            format!("   {}", app.detail),
+            Style::new().dim(),
+        ));
+    }
+    Paragraph::new(Line::from(spans))
 }
 
 #[cfg(test)]
