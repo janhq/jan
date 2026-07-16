@@ -69,12 +69,15 @@ pub(crate) fn parse_openai_messages(
             .get("role")
             .and_then(|v| v.as_str())
             .ok_or("Each message must include a string 'role'")?;
-        let content = msg
-            .get("content")
-            .and_then(|v| v.as_str())
-            .ok_or("Each message must include 'content' as a string")?;
+        // Content is a plain string or an OpenAI multimodal content-part array
+        // (text + image_url); pass either through verbatim.
+        let content = match msg.get("content") {
+            Some(v @ serde_json::Value::String(_)) | Some(v @ serde_json::Value::Array(_)) => {
+                v.clone()
+            }
+            _ => return Err("Each message must include 'content' as a string or array".into()),
+        };
 
-        // Keep upstream format minimal and predictable.
         out.push(serde_json::json!({
             "role": role,
             "content": content
@@ -720,6 +723,25 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+
+    #[test]
+    fn parse_messages_passes_multimodal_content_array_through() {
+        let messages = json!([{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": "look" },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
+            ],
+        }]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert_eq!(out[0]["content"], messages[0]["content"]);
+    }
+
+    #[test]
+    fn parse_messages_rejects_missing_content() {
+        let messages = json!([{ "role": "user" }]);
+        assert!(parse_openai_messages(&messages).is_err());
     }
 
     #[test]
