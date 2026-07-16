@@ -91,21 +91,29 @@ pub async fn execute_builtin(
 }
 
 /// Focused diff previewing what a `write`/`edit` call would change, without
-/// running it. Line-prefixed (`-`/`+`) hunk text; `None` for other tools or when
-/// nothing would change. Used to show the change in the permission prompt. For
-/// `write` it reads the prior file so an overwrite shows its `created`/`overwrote`
-/// header; `edit` is a pure preview of the `edits` args (no I/O).
+/// running it. Line-prefixed (`-`/`+`) hunk text with each line numbered against
+/// its position in the file; `None` for other tools or when nothing would
+/// change. Used to show the change in the permission prompt. Both variants read
+/// the prior file: `write` to show its `created`/`overwrote` header, `edit` to
+/// locate `old_string` and number the hunk against real file lines.
 pub(crate) async fn preview_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     project_root: &Path,
 ) -> Option<String> {
     match tool.name {
-        "edit" => args
-            .get("edits")
-            .and_then(|v| v.as_array())
-            .map(|e| render_edit_diff(e))
-            .filter(|d| !d.is_empty()),
+        "edit" => {
+            let edits = args.get("edits").and_then(|v| v.as_array())?;
+            if edits.is_empty() {
+                return None;
+            }
+            let prior = match arg_str(args, "path") {
+                Some(p) => tokio::fs::read_to_string(resolve(project_root, p)).await.unwrap_or_default(),
+                None => String::new(),
+            };
+            let d = render_edit_diff(edits, &prior);
+            (!d.is_empty()).then_some(d)
+        }
         "write" => {
             let prior = match arg_str(args, "path") {
                 Some(p) => tokio::fs::read_to_string(resolve(project_root, p)).await.ok(),
@@ -120,9 +128,11 @@ pub(crate) async fn preview_diff(
 
 /// Run a built-in tool and, for `write`/`edit`, also produce a focused diff.
 /// Returns `(content, diff)` where `diff` is line-prefixed (`-`/`+`) hunk text
-/// for display; `None` for non-mutating tools or on error. For `edit` the diff
-/// is also appended to `content` (the model sees exactly what changed); for
-/// `write` the diff is display-only and `content` stays the concise summary.
+/// for display; `None` for non-mutating tools or on error. Diffs are computed
+/// against the pre-execution file so line numbers match the file as the model
+/// saw it. For `edit` the diff is also appended to `content` (the model sees
+/// exactly what changed); for `write` the diff is display-only and `content`
+/// stays the concise summary.
 pub(crate) async fn execute_builtin_with_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
@@ -130,11 +140,12 @@ pub(crate) async fn execute_builtin_with_diff(
 ) -> (String, Option<String>) {
     match tool.name {
         "edit" => {
+            let diff = preview_diff(tool, args, project_root).await;
             let content = execute_builtin(tool, args, project_root).await;
             if content.starts_with("ERROR") {
                 return (content, None);
             }
-            match preview_diff(tool, args, project_root).await {
+            match diff {
                 Some(d) => (format!("{content}\n\n{d}"), Some(d)),
                 None => (content, None),
             }
@@ -151,9 +162,18 @@ pub(crate) async fn execute_builtin_with_diff(
     }
 }
 
-/// Per-edit `-old`/`+new` hunks. Multiple edits are separated by `@@ edit i/n @@`.
-fn render_edit_diff(edits: &[serde_json::Value]) -> String {
+/// 1-based line number of the start of `pos` within `text`.
+fn line_number_at(text: &str, pos: usize) -> usize {
+    text[..pos].matches('\n').count() + 1
+}
+
+/// Per-edit `-old`/`+new` hunks, each line numbered against its position in
+/// `prior` (the file content before this call's edits are applied). Multiple
+/// edits are separated by `@@ edit i/n @@` and applied in order so later edits
+/// number against the state left by earlier ones, matching what `edit()` does.
+fn render_edit_diff(edits: &[serde_json::Value], prior: &str) -> String {
     let n = edits.len();
+    let mut working = prior.to_string();
     let mut out = String::new();
     for (i, e) in edits.iter().enumerate() {
         let old = e.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
@@ -161,32 +181,31 @@ fn render_edit_diff(edits: &[serde_json::Value]) -> String {
         if n > 1 {
             out.push_str(&format!("@@ edit {}/{} @@\n", i + 1, n));
         }
-        for line in old.lines() {
-            out.push_str("- ");
-            out.push_str(line);
-            out.push('\n');
+        let start = working.find(old).map(|pos| line_number_at(&working, pos)).unwrap_or(1);
+        for (j, line) in old.lines().enumerate() {
+            out.push_str(&format!("- {:>4} | {line}\n", start + j));
         }
-        for line in new.lines() {
-            out.push_str("+ ");
-            out.push_str(line);
-            out.push('\n');
+        for (j, line) in new.lines().enumerate() {
+            out.push_str(&format!("+ {:>4} | {line}\n", start + j));
+        }
+        if let Some(pos) = working.find(old) {
+            working.replace_range(pos..pos + old.len(), new);
         }
     }
     out.trim_end().to_string()
 }
 
-/// Whole-file `+` preview for a write, headed by created/overwrote. Display-only;
-/// the TUI collapses long output.
+/// Whole-file `+` preview for a write, headed by created/overwrote, each line
+/// numbered by its position in the new content. Display-only; the TUI
+/// collapses long output.
 fn render_write_diff(prior: Option<&str>, content: &str) -> String {
     let mut out = String::from(if prior.is_some() {
         "@@ overwrote file @@\n"
     } else {
         "@@ created file @@\n"
     });
-    for line in content.lines() {
-        out.push_str("+ ");
-        out.push_str(line);
-        out.push('\n');
+    for (i, line) in content.lines().enumerate() {
+        out.push_str(&format!("+ {:>4} | {line}\n", i + 1));
     }
     out.trim_end().to_string()
 }
@@ -778,39 +797,59 @@ mod tests {
 
     #[test]
     fn edit_diff_single_hunk_has_no_header() {
-        let d = render_edit_diff(&[json!({"old_string": "foo", "new_string": "bar"})]);
-        assert_eq!(d, "- foo\n+ bar");
+        let d = render_edit_diff(&[json!({"old_string": "foo", "new_string": "bar"})], "foo");
+        assert_eq!(d, "-    1 | foo\n+    1 | bar");
     }
 
     #[test]
     fn edit_diff_multi_hunk_is_numbered_and_multiline() {
-        let d = render_edit_diff(&[
-            json!({"old_string": "a\nb", "new_string": "A"}),
-            json!({"old_string": "c", "new_string": "C\nD"}),
-        ]);
-        assert_eq!(d, "@@ edit 1/2 @@\n- a\n- b\n+ A\n@@ edit 2/2 @@\n- c\n+ C\n+ D");
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "a\nb", "new_string": "A"}),
+                json!({"old_string": "c", "new_string": "C\nD"}),
+            ],
+            "a\nb\nc",
+        );
+        assert_eq!(
+            d,
+            "@@ edit 1/2 @@\n-    1 | a\n-    2 | b\n+    1 | A\n@@ edit 2/2 @@\n-    2 | c\n+    2 | C\n+    3 | D"
+        );
+    }
+
+    #[test]
+    fn edit_diff_numbers_against_real_file_position() {
+        let d = render_edit_diff(
+            &[json!({"old_string": "two", "new_string": "TWO"})],
+            "one\ntwo\nthree",
+        );
+        assert_eq!(d, "-    2 | two\n+    2 | TWO");
     }
 
     #[test]
     fn write_diff_headers_created_vs_overwrote() {
-        assert_eq!(render_write_diff(None, "x\ny"), "@@ created file @@\n+ x\n+ y");
+        assert_eq!(
+            render_write_diff(None, "x\ny"),
+            "@@ created file @@\n+    1 | x\n+    2 | y"
+        );
         assert_eq!(
             render_write_diff(Some("old"), "x"),
-            "@@ overwrote file @@\n+ x"
+            "@@ overwrote file @@\n+    1 | x"
         );
     }
 
     #[tokio::test]
     async fn preview_diff_does_not_write_and_matches_execution_diff() {
         let root = unique_root();
-        // edit preview: pure, no file needed, no file created.
+        // edit preview reads the current file to number the hunk, but never writes.
+        std::fs::write(root.join("p.txt"), b"foo").unwrap();
         let edit_preview = preview_diff(
             lookup("edit").unwrap(),
             &json!({"path": "p.txt", "edits": [{"old_string": "foo", "new_string": "bar"}]}),
             &root,
         )
         .await;
-        assert_eq!(edit_preview.as_deref(), Some("- foo\n+ bar"));
+        assert_eq!(edit_preview.as_deref(), Some("-    1 | foo\n+    1 | bar"));
+        assert_eq!(std::fs::read_to_string(root.join("p.txt")).unwrap(), "foo");
 
         // write preview reflects prior-file state and does not create the file.
         let write_preview = preview_diff(
@@ -819,7 +858,10 @@ mod tests {
             &root,
         )
         .await;
-        assert_eq!(write_preview.as_deref(), Some("@@ created file @@\n+ hello"));
+        assert_eq!(
+            write_preview.as_deref(),
+            Some("@@ created file @@\n+    1 | hello")
+        );
         assert!(!root.join("new.txt").exists(), "preview must not write");
 
         // non-mutating tools have no preview.
@@ -839,8 +881,11 @@ mod tests {
             &root,
         )
         .await;
-        assert_eq!(content, "Applied 1 edit(s) to e.txt\n\n- foo\n+ bar");
-        assert_eq!(diff.as_deref(), Some("- foo\n+ bar"));
+        assert_eq!(
+            content,
+            "Applied 1 edit(s) to e.txt\n\n-    1 | foo\n+    1 | bar"
+        );
+        assert_eq!(diff.as_deref(), Some("-    1 | foo\n+    1 | bar"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -855,7 +900,10 @@ mod tests {
         .await;
         assert!(content.starts_with("Wrote"), "unexpected: {content}");
         assert!(!content.contains('+'), "write content must stay concise");
-        assert_eq!(diff.as_deref(), Some("@@ created file @@\n+ hello"));
+        assert_eq!(
+            diff.as_deref(),
+            Some("@@ created file @@\n+    1 | hello")
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
