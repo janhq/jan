@@ -99,6 +99,7 @@ pub fn cli_delete_thread(thread_id: &str) -> Result<(), String> {
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
     }
+    crate::core::agent::git::cleanup_snapshot_index(thread_id);
     Ok(())
 }
 
