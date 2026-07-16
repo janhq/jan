@@ -11,6 +11,8 @@ use std::sync::{Mutex, OnceLock};
 use ignore::WalkBuilder;
 use tokio::sync::oneshot;
 
+use crate::core::agent::project::load_agent_config;
+use crate::core::agent::skills;
 use crate::core::agent::tools::sandbox::is_restricted_agent_path;
 use crate::core::agent::tools::BuiltinTool;
 
@@ -102,8 +104,11 @@ pub async fn execute_builtin(
         "memory_list" => workspace_list(project_root, "memory").await,
         "memory_read" => workspace_read(args, project_root, "memory").await,
         "memory_write" => workspace_write(args, project_root, "memory").await,
-        "skill_list" => workspace_list(project_root, "skills").await,
-        "skill_write" => workspace_write(args, project_root, "skills").await,
+        // Skills go through the skills module so the tool honors the folder form
+        // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
+        "skill_list" => skill_list(project_root),
+        "skill_read" => skill_read(args, project_root),
+        "skill_write" => skill_write(args, project_root),
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }
@@ -229,14 +234,14 @@ fn render_write_diff(prior: Option<&str>, content: &str) -> String {
 }
 
 /// `.jan/agent/<kind>` directory for the agent's own workspace.
-fn workspace_dir(root: &Path, kind: &str) -> PathBuf {
+pub(crate) fn workspace_dir(root: &Path, kind: &str) -> PathBuf {
     root.join(".jan").join("agent").join(kind)
 }
 
 /// Sanitize a caller-supplied entry name into a safe `<stem>.md` filename.
 /// Rejects path separators and `..` so the result can never escape the
 /// workspace. `.md` is appended if absent.
-fn workspace_filename(name: &str) -> Result<String, String> {
+pub(crate) fn workspace_filename(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty()
         || trimmed.contains('/')
@@ -248,6 +253,61 @@ fn workspace_filename(name: &str) -> Result<String, String> {
     }
     let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
     Ok(format!("{stem}.md"))
+}
+
+/// The project's enabled-skill whitelist (`[skills].enabled`; empty = all).
+/// A missing/malformed config falls back to "all enabled".
+fn enabled_skills(root: &Path) -> Vec<String> {
+    load_agent_config(root)
+        .ok()
+        .map(|c| c.skills.enabled)
+        .unwrap_or_default()
+}
+
+/// `skill_list` tool: catalog of `name — description` lines for ENABLED skills
+/// only (disabled skills must stay invisible to the model). Empty if none.
+fn skill_list(root: &Path) -> String {
+    let enabled = enabled_skills(root);
+    skills::catalog(root, &enabled)
+        .iter()
+        .map(|m| {
+            if m.description.is_empty() {
+                m.name.clone()
+            } else {
+                format!("{} — {}", m.name, m.description)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `skill_read` tool: a skill's full instructions (frontmatter stripped). A
+/// disabled skill is treated as absent so it never reaches the model.
+fn skill_read(args: &serde_json::Value, root: &Path) -> String {
+    let Some(name) = arg_str(args, "name") else {
+        return "ERROR: missing required argument 'name'".to_string();
+    };
+    if !skills::is_enabled(&enabled_skills(root), name) {
+        return format!("ERROR: skill '{name}' not found");
+    }
+    match skills::read_body(root, name) {
+        Ok(body) => body,
+        Err(e) => e,
+    }
+}
+
+/// `skill_write` tool: create/update a skill (new ones as `<name>/SKILL.md`).
+fn skill_write(args: &serde_json::Value, root: &Path) -> String {
+    let Some(name) = arg_str(args, "name") else {
+        return "ERROR: missing required argument 'name'".to_string();
+    };
+    let Some(content) = arg_str(args, "content") else {
+        return "ERROR: missing required argument 'content'".to_string();
+    };
+    match skills::write(root, name, content) {
+        Ok(()) => format!("Wrote skill '{name}'"),
+        Err(e) => e,
+    }
 }
 
 async fn workspace_list(root: &Path, kind: &str) -> String {
@@ -1219,7 +1279,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skill_write_targets_skills_dir_and_strips_md() {
+    async fn skill_write_creates_folder_form_and_skill_read_returns_body() {
         let root = unique_root();
         let w = execute_builtin(
             lookup("skill_write").unwrap(),
@@ -1227,8 +1287,69 @@ mod tests {
             &root,
         )
         .await;
-        assert!(w.contains("skills/deploy.md"), "unexpected: {w}");
-        assert!(root.join(".jan/agent/skills/deploy.md").exists());
+        assert!(w.contains("deploy"), "unexpected: {w}");
+        // New skills are written as the folder form `<name>/SKILL.md`.
+        assert!(root.join(".jan/agent/skills/deploy/SKILL.md").exists());
+
+        // skill_read returns the body on demand (progressive disclosure).
+        let r = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "deploy"}),
+            &root,
+        )
+        .await;
+        assert_eq!(r, "steps");
+
+        // skill_list surfaces the catalog line.
+        let l = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
+        assert!(l.contains("deploy"), "unexpected list: {l}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_tools_hide_disabled_skills() {
+        let root = unique_root();
+        execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "on", "content": "on body"}),
+            &root,
+        )
+        .await;
+        execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "off", "content": "off body"}),
+            &root,
+        )
+        .await;
+        // Whitelist only "on".
+        crate::core::agent::project::ensure_project(&root).unwrap();
+        crate::core::agent::project::set_skills_enabled_in_agent_toml(
+            &crate::core::agent::project::agent_toml_path(&root),
+            &["on".to_string()],
+        )
+        .unwrap();
+
+        let list = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
+        assert!(list.contains("on"), "list: {list}");
+        assert!(!list.contains("off body"), "disabled skill leaked: {list}");
+
+        // Disabled skill is unreadable.
+        let read_off = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "off"}),
+            &root,
+        )
+        .await;
+        assert!(read_off.starts_with("ERROR"), "disabled read: {read_off}");
+
+        // Enabled skill still readable.
+        let read_on = execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "on"}),
+            &root,
+        )
+        .await;
+        assert_eq!(read_on, "on body");
         let _ = std::fs::remove_dir_all(&root);
     }
 
