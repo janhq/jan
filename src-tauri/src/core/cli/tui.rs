@@ -6491,6 +6491,10 @@ async fn run_command(app: &mut App, line: &str) {
             for (keys, description) in KEY_BINDINGS {
                 app.system_detail_text(&format!("{keys:18} {description}"));
             }
+            app.push(Line::styled(
+                "  hold Shift while dragging to select/copy text (most terminals)".to_string(),
+                Style::new().dim(),
+            ));
         }
         "clear" => {
             app.reset_session();
