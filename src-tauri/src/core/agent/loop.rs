@@ -626,7 +626,7 @@ async fn orchestrate_inner(
         project_root,
         permission_requests,
         system_prompt_override,
-        subagents_enabled: _,
+        subagents_enabled,
     } = args;
 
     let messages_value = json_body
@@ -652,6 +652,7 @@ async fn orchestrate_inner(
         let mut sp = crate::core::agent::context::build_system_prompt(
             assistant_instructions.as_deref(),
             root,
+            *subagents_enabled,
         );
         // Recall project memory for the current query before it is indexed, so
         // the active turn cannot surface itself.
