@@ -53,6 +53,10 @@ pub(crate) fn build_system_prompt(base: Option<&str>, project_root: &Path) -> Op
     if let Some(b) = base {
         blocks.push(b.to_string());
     }
+    blocks.push(format!(
+        "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
+        project_root.display()
+    ));
     blocks.push(DEFAULT_SKILL_GUIDE.trim().to_string());
     if let Some(skills) = load_skills(project_root) {
         blocks.push(skills);
