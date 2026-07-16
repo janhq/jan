@@ -219,7 +219,10 @@ mod tests {
         std::fs::write(root.join(".gitignore"), "ignored/\n").ok()?;
         std::fs::write(root.join("a.txt"), "one\n").ok()?;
         run(&root, None, &["add", "-A"]).ok()?;
-        run(&root, None, &["commit", "-q", "-m", "init"]).ok()?;
+        // --no-gpg-sign: this is a throwaway test repo, so signing (which
+        // needs the developer's own key/passphrase and would hang or fail on
+        // a box without one configured) is irrelevant and must be off.
+        run(&root, None, &["commit", "-q", "-m", "init", "--no-gpg-sign"]).ok()?;
         repo_root(&root)
     }
 
