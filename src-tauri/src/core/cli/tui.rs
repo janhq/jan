@@ -240,6 +240,9 @@ struct Checkpoint {
 
 struct App {
     model: String,
+    /// Orchestration handle for out-of-run model calls (the `/compact` command).
+    /// `None` in unit tests, set by `run` for the live session.
+    args: Option<Arc<OrchestrationArgs>>,
     max_turns: u32,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
@@ -412,6 +415,7 @@ impl App {
     ) -> Self {
         Self {
             model,
+            args: None,
             max_turns,
             repo_root,
             project_root,
@@ -1907,6 +1911,7 @@ pub async fn run(
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
     let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
+    app.args = Some(args.clone());
     let res = chat_loop(
         &mut terminal,
         &args,
@@ -2434,6 +2439,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Clear the conversation",
     },
     SlashCommand {
+        name: "/compact",
+        hint: "",
+        description: "Summarize older turns to free up context",
+    },
+    SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
@@ -2499,6 +2509,7 @@ async fn run_command(app: &mut App, line: &str) {
             app.reset_session();
             app.note("started a new session");
         }
+        "compact" => compact_command(app).await,
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -2545,6 +2556,26 @@ async fn run_command(app: &mut App, line: &str) {
         "mcp" => open_mcp_picker(app),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
+    }
+}
+
+/// Manually compact the conversation: summarize older turns, keeping the recent
+/// tail, then persist. Blocks the event loop for one model call; runs only while
+/// idle (the caller gates on `Status::Idle`).
+async fn compact_command(app: &mut App) {
+    let Some(args) = app.args.clone() else {
+        app.note("compaction unavailable (no active session)");
+        return;
+    };
+    let before = app.history.len();
+    match crate::core::agent::r#loop::compact_history(&args, &app.model, &app.history).await {
+        Ok(compacted) if compacted.len() < before => {
+            app.history = compacted;
+            app.persist();
+            app.note(&format!("compacted {before} -> {} messages", app.history.len()));
+        }
+        Ok(_) => app.note("nothing to compact yet"),
+        Err(e) => app.note(&format!("compaction failed: {e}")),
     }
 }
 
@@ -3548,7 +3579,7 @@ mod tests {
         parse_command, render_table, run_command, running_group_row, split_reasoning,
         subagent_activity, subagent_name_from_run_id, summarize_result, tool_activity,
         tool_finished, transcript_top_padding, App, CurrentRun, Pending, SnapshotJob,
-        DIFF_MAX_ROWS, SPINNER,
+        DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
     };
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -5360,6 +5391,22 @@ mod tests {
         assert!(!app.mouse_capture);
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
         assert!(app.mouse_capture);
+    }
+
+    #[tokio::test]
+    async fn compact_command_notes_when_unavailable() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        run_command(&mut app, "compact").await;
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("compaction unavailable"), "got: {text}");
+        // History untouched when no session is attached.
+        assert_eq!(app.history.len(), 1);
+    }
+
+    #[test]
+    fn compact_is_a_registered_command() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
     }
 
     #[tokio::test]
