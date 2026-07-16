@@ -297,7 +297,11 @@ struct App {
     turn: (u32, u32),
     tokens: u64,
     detail: String,
-    pending: Option<Pending>,
+    /// Outstanding permission requests, oldest first. Several subagents (or a
+    /// subagent and the parent) can request approval concurrently; only the
+    /// front is shown/answerable at a time, later ones queue and surface once
+    /// the front resolves so no requester is silently dropped/left hanging.
+    pending_queue: std::collections::VecDeque<Pending>,
     picker: Option<Picker>,
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
@@ -422,7 +426,7 @@ impl App {
             turn: (0, 0),
             tokens: 0,
             detail: String::new(),
-            pending: None,
+            pending_queue: std::collections::VecDeque::new(),
             picker: None,
             scrollback: 0,
             want_start: false,
@@ -438,6 +442,12 @@ impl App {
             row_index: Vec::new(),
             run_started: None,
         }
+    }
+
+    /// The permission request currently shown/answerable, if any (the front of
+    /// `pending_queue`). Later queued requests stay hidden until this resolves.
+    fn pending(&self) -> Option<&Pending> {
+        self.pending_queue.front()
     }
 
     /// Effective width for table wrapping (fallback before the first draw).
@@ -488,7 +498,7 @@ impl App {
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
-        self.pending = None;
+        self.pending_queue.clear();
         self.tokens = 0;
         self.turn = (0, 0);
         self.detail.clear();
@@ -994,7 +1004,7 @@ impl App {
                 // Don't close the tool group here: the prompt renders docked
                 // above the input, and finalizing would break the running row
                 // for every gated call (i.e. every exec) into its own line.
-                self.pending = Some(Pending {
+                self.pending_queue.push_back(Pending {
                     request_id,
                     tool_name,
                     capability,
@@ -1086,7 +1096,7 @@ impl App {
                 offers_always,
                 ..
             } => {
-                self.pending = Some(Pending {
+                self.pending_queue.push_back(Pending {
                     request_id,
                     tool_name,
                     capability,
@@ -2030,7 +2040,7 @@ async fn chat_loop<B: Backend>(
                 None => {
                     // Stream closed without a terminal event (aborted task).
                     // Keep any partial prose/tool calls already streamed.
-                    app.pending = None;
+                    app.pending_queue.clear();
                     if app.status == Status::Running {
                         app.flush_assistant();
                         app.finalize_tool_group();
@@ -2091,9 +2101,13 @@ async fn handle_key(
 
     // A pending permission prompt captures y/a/n; Ctrl-C cancels the run and
     // Ctrl-D quits, so it can't be wedged waiting on an unanswered prompt.
-    if let Some(mut pending) = app.pending.take() {
+    // Several subagents can have requests queued at once (see `pending_queue`),
+    // so cancelling/quitting denies all of them, not just the one on screen.
+    if !app.pending_queue.is_empty() {
         if ctrl_c || ctrl_d {
-            deny(registry, &pending.request_id).await;
+            for pending in app.pending_queue.drain(..) {
+                deny(registry, &pending.request_id).await;
+            }
             abort_run(current);
             if ctrl_d {
                 app.should_quit = true;
@@ -2102,6 +2116,7 @@ async fn handle_key(
             }
             return;
         }
+        let pending = app.pending_queue.front_mut().expect("checked non-empty above");
         let decision = match key.code {
             KeyCode::Up => {
                 pending.move_selection(-1);
@@ -2121,22 +2136,22 @@ async fn handle_key(
             }
             _ => None,
         };
-        match decision {
-            Some(d) => {
-                // Only record denials: the tool row that follows an allow
-                // already shows the call proceeded, so an "allowed" line is
-                // pure noise once granted.
-                if matches!(d, PermissionDecision::Deny) {
-                    app.push(Line::styled(
-                        format!("• denied: {}", pending.summary()),
-                        Style::new().red(),
-                    ));
-                }
-                if let Some(sender) = registry.lock().await.remove(&pending.request_id) {
-                    let _ = sender.send(d);
-                }
+        if let Some(d) = decision {
+            // Only the front request resolves here; any others stay queued and
+            // surface on the next draw once this one is popped.
+            let pending = app.pending_queue.pop_front().expect("checked non-empty above");
+            // Only record denials: the tool row that follows an allow
+            // already shows the call proceeded, so an "allowed" line is
+            // pure noise once granted.
+            if matches!(d, PermissionDecision::Deny) {
+                app.push(Line::styled(
+                    format!("• denied: {}", pending.summary()),
+                    Style::new().red(),
+                ));
             }
-            None => app.pending = Some(pending),
+            if let Some(sender) = registry.lock().await.remove(&pending.request_id) {
+                let _ = sender.send(d);
+            }
         }
         return;
     }
@@ -3108,7 +3123,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     // Dock the permission prompt directly above the input box, growing upward
     // and clamped to the body area so it never overruns the transcript.
-    if let Some(pending) = &app.pending {
+    if let Some(pending) = app.pending() {
         let detail_rows = 1
             + u16::from(pending.path.is_some() || pending.command.is_some())
             + u16::from(pending.subagent.is_some());
@@ -3122,7 +3137,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             width: chunks[2].width,
             height,
         };
-        draw_permission(f, rect, pending);
+        draw_permission(f, rect, pending, app.pending_queue.len());
     } else {
         // Dock the slash-command hints above the input box, growing upward and
         // clamped to the body so they never overrun the transcript. Mutually
@@ -3181,7 +3196,7 @@ fn draw_slash_hints(
 /// Permission prompt docked above the input: names the tool, capability, and
 /// target path, then an arrow-navigable option list (Enter confirms the
 /// highlighted choice; `y`/`a`/`n` still work as shortcuts).
-fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending) {
+fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
     let dim = Style::new().dark_gray();
@@ -3210,13 +3225,15 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
         ]));
     }
 
+    let title = if queue_len > 1 {
+        format!(" permission required (1 of {queue_len}) ")
+    } else {
+        " permission required ".to_string()
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::new().yellow())
-        .title(Span::styled(
-            " permission required ",
-            Style::new().on_yellow().black().bold(),
-        ));
+        .title(Span::styled(title, Style::new().on_yellow().black().bold()));
     let inner = block.inner(area);
     f.render_widget(Clear, area);
     f.render_widget(block, area);
@@ -3413,7 +3430,7 @@ fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
 }
 
 fn footer(app: &App) -> Paragraph<'static> {
-    if app.pending.is_some() {
+    if !app.pending_queue.is_empty() {
         return Paragraph::new(Line::from(hint_spans(
             Style::new().yellow().bold(),
             &[
@@ -3541,7 +3558,7 @@ mod tests {
             prompt_kind: "write".into(),
             offers_always: true,
         });
-        let p = app.pending.as_ref().unwrap();
+        let p = app.pending().unwrap();
         assert_eq!(p.diff.as_deref(), Some("@@ created file @@\n+ hi"));
         let preview = p.diff_preview(60);
         assert!(preview.len() >= 4, "boxed diff expected, got {preview:?}");
@@ -3563,7 +3580,7 @@ mod tests {
             prompt_kind: "exec".into(),
             offers_always: true,
         });
-        assert!(app.pending.as_ref().unwrap().diff_preview(60).is_empty());
+        assert!(app.pending().unwrap().diff_preview(60).is_empty());
     }
 
     #[test]
@@ -4220,8 +4237,81 @@ mod tests {
             },
         ));
         assert_eq!(
-            app.pending.as_ref().and_then(|p| p.subagent.as_deref()),
+            app.pending().and_then(|p| p.subagent.as_deref()),
             Some("reviewer")
+        );
+    }
+
+    /// Regression test: two subagents requesting permission concurrently must
+    /// both be retained (queued), not have the second overwrite/drop the
+    /// first. Previously `pending` was a single `Option<Pending>` that the
+    /// second `PermissionRequest` clobbered, leaving the first subagent's
+    /// oneshot sender unreachable and its call hung forever.
+    #[test]
+    fn concurrent_subagent_permission_requests_both_queue() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+        });
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r2".into(),
+            name: "explorer".into(),
+        });
+        app.apply(wrap(
+            "r1",
+            "reviewer",
+            StreamEvent::PermissionRequest {
+                request_id: "p1".into(),
+                tool_name: "bash".into(),
+                capability: "exec".into(),
+                path: None,
+                command: Some("cargo test".into()),
+                diff: None,
+                prompt_kind: "exec".into(),
+                offers_always: true,
+            },
+        ));
+        // Second subagent's request arrives while the first is still pending.
+        app.apply(wrap(
+            "r2",
+            "explorer",
+            StreamEvent::PermissionRequest {
+                request_id: "p2".into(),
+                tool_name: "read".into(),
+                capability: "read".into(),
+                path: Some("secrets.env".into()),
+                command: None,
+                diff: None,
+                prompt_kind: "read".into(),
+                offers_always: false,
+            },
+        ));
+
+        assert_eq!(app.pending_queue.len(), 2, "both requests must be retained");
+        // The first request stays visible/answerable; the second is not lost.
+        assert_eq!(
+            app.pending().map(|p| p.request_id.as_str()),
+            Some("p1"),
+            "front of the queue should still be the first subagent's request"
+        );
+        assert_eq!(
+            app.pending().and_then(|p| p.subagent.as_deref()),
+            Some("reviewer")
+        );
+
+        // Resolving the front (simulating the user answering it) pops it and
+        // surfaces the second subagent's request, attributed correctly.
+        app.pending_queue.pop_front();
+        assert_eq!(app.pending_queue.len(), 1);
+        assert_eq!(
+            app.pending().map(|p| p.request_id.as_str()),
+            Some("p2"),
+            "second subagent's request must surface once the first resolves"
+        );
+        assert_eq!(
+            app.pending().and_then(|p| p.subagent.as_deref()),
+            Some("explorer")
         );
     }
 
@@ -4876,7 +4966,7 @@ mod tests {
                 prompt_kind: "exec".into(),
                 offers_always: true,
             });
-            app.pending = None; // simulate approval
+            app.pending_queue.clear(); // simulate approval
             app.apply(StreamEvent::ToolResult {
                 id: id.into(),
                 content: "ok".into(),
