@@ -48,7 +48,7 @@ Models downloaded in the Jan desktop app are automatically available here.",
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -381,7 +381,20 @@ async fn main() {
         .get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
-    match cli.command {
+    let Some(command) = cli.command else {
+        let overrides = ProviderArgs {
+            provider: None,
+            api_key: None,
+        }
+        .into_overrides();
+        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides).await {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    };
+
+    match command {
         Commands::Threads { cmd } => handle_threads(cmd).await,
         Commands::Models { cmd } => handle_models(cmd).await,
         Commands::Agent { cmd } => handle_agent(cmd).await,
