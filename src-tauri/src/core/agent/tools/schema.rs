@@ -172,8 +172,22 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "skill_list",
-                "description": "List the names of the project skills (reusable procedures). Skills are already loaded into your context; use this to see what exists before adding or updating one. No arguments.",
+                "description": "List the project skills (reusable procedures) with a one-line description of each. No arguments.",
                 "parameters": { "type": "object", "properties": {}, "required": [] }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "skill_read",
+                "description": "Load a skill's full instructions by name. The system prompt lists each skill's name and purpose; call this to read the complete procedure before applying a skill.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Skill name (without the .md extension)." }
+                    },
+                    "required": ["name"]
+                }
             }
         }),
         json!({
@@ -202,7 +216,7 @@ mod tests {
     #[test]
     fn schemas_match_builtin_tools() {
         let schemas = builtin_tool_schemas();
-        assert_eq!(schemas.len(), 12);
+        assert_eq!(schemas.len(), 13);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }

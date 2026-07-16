@@ -1,7 +1,9 @@
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { NavChats } from './NavChats'
+import { NavCode } from './NavCode'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
+import { NavTabs } from './NavTabs'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 
 import {
@@ -13,9 +15,13 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
+import { useLocation } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
+  const { pathname } = useLocation()
+  const isCode = pathname === route.code
   // Right-align the header when native controls own the top-left (macOS, or a Linux
   // DE placing buttons left); "Jan" moves into the right cluster except on macOS.
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
@@ -35,11 +41,16 @@ export function LeftSidebar() {
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
           </div>
-          <NavMain />
+          <NavTabs />
+          {isCode ? <NavCode /> : <NavMain />}
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
-          <NavProjects />
-          <NavChats />
+          {!isCode && (
+            <>
+              <NavProjects />
+              <NavChats />
+            </>
+          )}
         </SidebarContent>
         <SidebarRail />
       </Sidebar>

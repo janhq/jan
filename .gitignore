@@ -1,5 +1,7 @@
 .env
 error.log
+# Runtime agent workspace scaffolded by ensure_project (not source)
+.jan/
 node_modules
 *.tgz
 dist
