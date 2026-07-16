@@ -13,7 +13,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -203,6 +206,8 @@ struct ToolGroup {
     /// Per-call detail retained so the collapsed row can expand back to its
     /// individual calls/results (never discarded at fold time).
     calls: Vec<GroupedCall>,
+    /// When the group opened, so the running row can show elapsed time.
+    started: Instant,
 }
 
 /// A committed `<think>` reasoning block, folded to a one-line summary row.
@@ -315,6 +320,18 @@ struct App {
     awaiting: Vec<(String, String)>,
     /// Monotonic frame counter advanced each render tick; drives the throbber.
     spinner_frame: usize,
+    /// Transcript viewport rect from the last draw, for mapping mouse clicks
+    /// to rows.
+    transcript_rect: Rect,
+    /// Wrapped-line scroll offset from the last draw (`0` = top), in the same
+    /// coordinate space as `row_index`.
+    last_scroll: u16,
+    /// Rendered-row -> source transcript index from the last draw (`None` for
+    /// synthetic rows: awaiting throbbers, live subagent panels, streaming
+    /// prose). Assumes summary rows never wrap (they're pre-truncated to the
+    /// viewport width), so a click's rendered row maps directly here without
+    /// needing wrap-aware layout math.
+    row_index: Vec<Option<usize>>,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -413,6 +430,9 @@ impl App {
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
             spinner_frame: 0,
+            transcript_rect: Rect::default(),
+            last_scroll: 0,
+            row_index: Vec::new(),
         }
     }
 
@@ -568,6 +588,7 @@ impl App {
                         is_error: false,
                         diff: None,
                     }],
+                    started: Instant::now(),
                 });
             }
         }
@@ -613,6 +634,21 @@ impl App {
             // The regions sit above the answer that follows; scroll the latest
             // into view rather than staying pinned to the bottom.
             self.reveal = all.iter().copied().max();
+        }
+    }
+
+    /// Toggle a single collapsed region by its transcript row index (a click on
+    /// its summary row); no-op if `idx` isn't an expandable region.
+    fn toggle_region(&mut self, idx: usize) {
+        let is_region = self.groups.iter().any(|g| g.idx == idx)
+            || self.reasoning_blocks.iter().any(|r| r.idx == idx)
+            || self.subagent_blocks.iter().any(|b| b.idx == idx)
+            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx);
+        if !is_region {
+            return;
+        }
+        if !self.expanded.remove(&idx) {
+            self.expanded.insert(idx);
         }
     }
 
@@ -1402,6 +1438,19 @@ fn group_activity(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Reading", "running")
 }
 
+/// Live row for the still-open tool group: a braille throbber in place of the
+/// static `▸` tag, plus elapsed time, so the user can see it's actively
+/// working and how long it's taken. Rebuilt fresh every draw (not stored in
+/// `transcript`) since the group's row there is only overwritten on the next
+/// tool call, not every tick.
+fn running_group_row(group: &ToolGroup, spinner_frame: usize, width: u16) -> Line<'static> {
+    let frame = SPINNER[spinner_frame % SPINNER.len()];
+    let elapsed = group.started.elapsed().as_secs();
+    let text = format!("{} ({elapsed}s)", group_activity(&group.nouns));
+    let max = (width as usize).saturating_sub(6).max(1);
+    tool_row(frame, Style::new().cyan(), &truncate(&text, max), Style::new().cyan().dim())
+}
+
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
 /// counted and pluralized) and join them with the given verbs, so the verb
 /// always agrees with its noun (never "Ran 1 directory").
@@ -1815,7 +1864,7 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(|e| e.to_string())?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -1836,7 +1885,7 @@ pub async fn run(
     .await;
 
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
     let _ = terminal.show_cursor();
     res
 }
@@ -1909,13 +1958,17 @@ async fn chat_loop<B: Backend>(
 
         tokio::select! {
             _ = ticker.tick() => {
-                // Advance the throbber (~20fps) so awaiting rows animate.
-                if !app.awaiting.is_empty() {
+                // Advance the throbber (~20fps) so awaiting/running rows animate.
+                if !app.awaiting.is_empty() || app.tool_group.is_some() {
                     app.spinner_frame = app.spinner_frame.wrapping_add(1);
                 }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
-                    if let Ok(Event::Key(key)) = event::read() {
-                        handle_key(app, key, registry, &mut current, mcp_servers).await;
+                    match event::read() {
+                        Ok(Event::Key(key)) => {
+                            handle_key(app, key, registry, &mut current, mcp_servers).await;
+                        }
+                        Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
+                        _ => {}
                     }
                 }
             }
@@ -1985,6 +2038,31 @@ async fn chat_loop<B: Backend>(
         c.handle.abort();
     }
     Ok(())
+}
+
+/// A left click on a folded row (tool group / reasoning block / subagent
+/// summary) toggles its detail, the same as Ctrl-O but for a single region.
+/// Ignores clicks outside the transcript viewport or on rows that aren't a
+/// region's own summary row (detail lines, blank padding, etc).
+fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+        return;
+    }
+    let rect = app.transcript_rect;
+    if mouse.column < rect.x
+        || mouse.column >= rect.x + rect.width
+        || mouse.row <= rect.y
+        || mouse.row >= rect.y + rect.height.saturating_sub(1)
+    {
+        return;
+    }
+    // Top border consumes one row; the rest maps 1:1 onto `row_index` since
+    // summary rows are pre-truncated to the viewport width and never wrap.
+    let body_row = (mouse.row - rect.y - 1) as usize;
+    let absolute = app.last_scroll as usize + body_row;
+    if let Some(Some(idx)) = app.row_index.get(absolute) {
+        app.toggle_region(*idx);
+    }
 }
 
 async fn handle_key(
@@ -2839,6 +2917,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.view_width = width;
 
     if let Some(picker) = &app.picker {
+        app.row_index.clear();
         draw_picker(f, chunks[1], picker);
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(footer(app), chunks[3]);
@@ -2846,19 +2925,54 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
 
     let mut lines: Vec<Line<'static>> = Vec::with_capacity(app.transcript.len());
+    // Parallel to `lines`: which transcript index (if any) owns each rendered
+    // row, so a mouse click can be mapped back to a region to toggle.
+    let mut row_index: Vec<Option<usize>> = Vec::with_capacity(app.transcript.len());
     let mut reveal_at: Option<usize> = None;
     for (i, line) in app.transcript.iter().enumerate() {
         if app.reveal == Some(i) {
             reveal_at = Some(lines.len());
         }
-        lines.push(line.clone());
+        if let Some(row) = app
+            .tool_group
+            .as_ref()
+            .filter(|g| g.idx == i)
+            .map(|g| running_group_row(g, app.spinner_frame, width))
+        {
+            lines.push(row);
+        } else {
+            lines.push(line.clone());
+        }
+        row_index.push(Some(i));
         if app.expanded.contains(&i) {
-            if let Some(group) = app.groups.iter().find(|g| g.idx == i) {
-                lines.extend(group_detail_lines(group, width));
-            } else if let Some(block) = app.reasoning_blocks.iter().find(|r| r.idx == i) {
-                lines.extend(block.detail.iter().cloned());
-            } else if let Some(block) = app.subagent_blocks.iter().find(|b| b.idx == i) {
-                lines.extend(block.detail.iter().cloned());
+            // Detail rows map back to the same owning idx (not `None`), so a
+            // click anywhere in an expanded block collapses it -- not just on
+            // its header row, which may have scrolled out of view once the
+            // block grew past the viewport (long reasoning, many tool calls).
+            let running_group = app.tool_group.as_ref().filter(|g| g.idx == i);
+            let detail = app
+                .groups
+                .iter()
+                .find(|g| g.idx == i)
+                // The still-running group isn't finalized into `groups` yet,
+                // but its row is already clickable/expandable like any other.
+                .or(running_group)
+                .map(|group| group_detail_lines(group, width))
+                .or_else(|| {
+                    app.reasoning_blocks
+                        .iter()
+                        .find(|r| r.idx == i)
+                        .map(|block| block.detail.clone())
+                })
+                .or_else(|| {
+                    app.subagent_blocks
+                        .iter()
+                        .find(|b| b.idx == i)
+                        .map(|block| block.detail.clone())
+                });
+            if let Some(detail) = detail {
+                row_index.extend(std::iter::repeat(Some(i)).take(detail.len()));
+                lines.extend(detail);
             }
         }
     }
@@ -2913,6 +3027,10 @@ fn draw(f: &mut Frame, app: &mut App) {
             lines.extend(tail);
         }
     }
+    // Awaiting throbbers, live subagent panels, and streaming prose above have
+    // no transcript index; they're all appended after the transcript loop.
+    row_index.resize(lines.len(), None);
+
     let block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
     let inner_h = chunks[1].height.saturating_sub(2);
 
@@ -2934,6 +3052,9 @@ fn draw(f: &mut Frame, app: &mut App) {
         padded.append(&mut lines);
         lines = padded;
         reveal_at = reveal_at.map(|n| n + pad as usize);
+        let mut padded_idx = vec![None; pad as usize];
+        padded_idx.append(&mut row_index);
+        row_index = padded_idx;
     }
 
     // Wrapped-content offset of the row we want scrolled into view, in the same
@@ -2957,6 +3078,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
     f.render_widget(body.scroll((scroll, 0)), chunks[1]);
+    app.transcript_rect = chunks[1];
+    app.last_scroll = scroll;
+    app.row_index = row_index;
 
     // Keep the cursor row visible when the input outgrows the box.
     let input_scroll = if app.status == Status::Idle && app.picker.is_none() {
@@ -3263,12 +3387,14 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        diff_lines, group_activity, group_detail_lines, group_summary, input_content_lines,
-        is_table_separator, message_text,
-        parse_command, render_table, run_command, split_reasoning, subagent_activity,
-        subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
-        transcript_top_padding, App, Pending, SnapshotJob, DIFF_MAX_ROWS,
+        diff_lines, group_activity, group_detail_lines, group_summary, handle_mouse,
+        input_content_lines, is_table_separator, message_text,
+        parse_command, render_table, run_command, running_group_row, split_reasoning,
+        subagent_activity, subagent_name_from_run_id, summarize_result, tool_activity,
+        tool_finished, transcript_top_padding, App, Pending, SnapshotJob, DIFF_MAX_ROWS, SPINNER,
     };
+    use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
     use ratatui::{style::Modifier, text::Line};
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::tools::gate::PermissionDecision;
@@ -4305,6 +4431,151 @@ mod tests {
         assert!(app.expanded.contains(&group_idx));
         app.toggle_regions();
         assert!(app.expanded.is_empty());
+    }
+
+    #[test]
+    fn folded_group_expands_and_collapses_via_click() {
+        let mut app = test_app();
+        let calls = [
+            ("c1", "memory_read", json!({ "name": "project-overview" })),
+            ("c2", "memory_read", json!({ "name": "top-p" })),
+        ];
+        for (id, name, args) in calls {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: name.into(),
+                args,
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: format!("result for {id}"),
+                is_error: false,
+                diff: None,
+            });
+        }
+        app.apply(StreamEvent::Token { text: "Done.".into() });
+        let group_idx = app.groups[0].idx;
+
+        // A click on the group's own row toggles it, same as Ctrl-O.
+        app.toggle_region(group_idx);
+        assert!(app.expanded.contains(&group_idx));
+        app.toggle_region(group_idx);
+        assert!(app.expanded.is_empty());
+
+        // A row that isn't a region's own summary is a no-op.
+        app.toggle_region(9999);
+        assert!(app.expanded.is_empty());
+    }
+
+    #[test]
+    fn running_group_row_shows_spinner_and_elapsed() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let group = app.tool_group.as_ref().expect("group open");
+        let row = running_group_row(group, 2, 80);
+        let text = line_text(&row);
+        assert!(text.contains(SPINNER[2]), "{text}");
+        assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
+    }
+
+    #[test]
+    fn handle_mouse_click_maps_row_to_region_toggle() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "memory_read".into(),
+            args: json!({ "name": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "result".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "Done.".into() });
+        let group_idx = app.groups[0].idx;
+
+        // Simulate what `draw` would have recorded: the group's row is the
+        // only transcript row, right under the top border at row 1.
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        app.last_scroll = 0;
+        app.row_index = vec![Some(group_idx)];
+
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 1,
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+        assert!(app.expanded.contains(&group_idx));
+
+        // Clicking outside the viewport (past the bottom border) is a no-op.
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 9,
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+        assert!(app.expanded.contains(&group_idx));
+    }
+
+    #[test]
+    fn toggle_region_expands_still_running_group() {
+        // A tool group is still open (not yet finalized into `app.groups`)
+        // while the agent is actively executing -- clicking its row must
+        // still toggle it, not just after it finishes.
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "foo" }),
+        });
+        let idx = app.tool_group.as_ref().expect("group open").idx;
+        assert!(app.groups.is_empty(), "not finalized yet");
+
+        app.toggle_region(idx);
+        assert!(app.expanded.contains(&idx));
+        app.toggle_region(idx);
+        assert!(app.expanded.is_empty());
+    }
+
+    #[test]
+    fn clicking_anywhere_in_expanded_block_collapses_it() {
+        // Once a block (e.g. long reasoning) has expanded past the viewport,
+        // its header row can scroll out of view. A click on any of its detail
+        // rows -- not just the header -- must still collapse it.
+        let mut app = test_app();
+        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer");
+        assert_eq!(app.reasoning_blocks.len(), 1);
+        let idx = app.reasoning_blocks[0].idx;
+
+        app.toggle_region(idx);
+        assert!(app.expanded.contains(&idx));
+
+        // Detail rows map back to the same idx as the header (see draw()).
+        app.transcript_rect = Rect::new(0, 0, 80, 10);
+        app.last_scroll = 0;
+        app.row_index = vec![Some(idx), Some(idx), Some(idx)];
+        handle_mouse(
+            &mut app,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: 2, // a detail row, not the header at row 1
+                modifiers: KeyModifiers::NONE,
+            },
+        );
+        assert!(app.expanded.is_empty(), "click on a detail row should collapse");
     }
 
     #[test]
