@@ -234,42 +234,42 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(DETECTED_OS),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan --target aarch64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan --target x86_64-apple-darwin
 	lipo -create \
-		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
-		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
-		-output src-tauri/resources/bin/jan-cli
-	chmod +x src-tauri/resources/bin/jan-cli
+		src-tauri/target/aarch64-apple-darwin/release/jan \
+		src-tauri/target/x86_64-apple-darwin/release/jan \
+		-output src-tauri/resources/bin/jan
+	chmod +x src-tauri/resources/bin/jan
 	$(call MKDIR,'src-tauri/target/universal-apple-darwin/release')
 
 	echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing jan-cli with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
+		echo "Signing jan with identity: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan; \
 		echo "Code signing completed successfully"; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
 	fi
 
-	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
+	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
 else ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+	cd src-tauri && cargo build --release --features cli --bin jan
+	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
 else
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
+	cd src-tauri && cargo build --release --features cli --bin jan
+	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
 endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
 	$(call MKDIR,'src-tauri/resources/bin')	
-	cd src-tauri && cargo build --features cli --bin jan-cli
+	cd src-tauri && cargo build --features cli --bin jan
 ifeq ($(DETECTED_OS),Windows)
-	copy src-tauri\target\debug\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
+	copy src-tauri\target\debug\jan.exe src-tauri\resources\bin\jan.exe
 else
-	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
+	install -m755 src-tauri/target/debug/jan src-tauri/resources/bin/jan
 endif
 
 # Build

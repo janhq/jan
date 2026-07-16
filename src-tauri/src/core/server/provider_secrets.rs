@@ -3,7 +3,7 @@
 //! Secrets never touch the settings file or webview storage. The key chain for
 //! a provider (primary key + fallbacks) is stored as a JSON array under a stable
 //! service/account pair in the OS keyring so an out-of-process consumer
-//! (jan-cli) can read it.
+//! (jan CLI) can read it.
 //!
 //! The Linux Secret Service needs a D-Bus session + an unlocked keyring, which
 //! is often absent on headless/CI/SSH boxes. When the keyring is unavailable we
