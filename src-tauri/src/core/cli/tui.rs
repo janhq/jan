@@ -2427,6 +2427,10 @@ async fn run_command(app: &mut App, line: &str) {
                     Style::new().dim(),
                 ));
             }
+            app.push(Line::styled(
+                "  hold Shift while dragging to select/copy text (most terminals)".to_string(),
+                Style::new().dim(),
+            ));
         }
         "clear" => {
             app.reset_session();
