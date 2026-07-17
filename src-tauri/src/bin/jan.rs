@@ -49,6 +49,10 @@ Models downloaded in the Jan desktop app are automatically available here.",
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+    /// Disable the sandbox and auto-approve every tool call in the default agent
+    /// TUI (no prompts). Ignored when a subcommand is given.
+    #[arg(long)]
+    yolo: bool,
 }
 
 #[derive(Subcommand)]
@@ -396,7 +400,7 @@ async fn main() {
             api_key: None,
         }
         .into_overrides();
-        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, false).await {
+        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, cli.yolo).await {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
