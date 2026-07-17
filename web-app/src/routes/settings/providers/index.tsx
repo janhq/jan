@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useNavigate } from '@tanstack/react-router'
 import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
 import { cn, getProviderTitle } from '@/lib/utils'
@@ -30,6 +31,12 @@ function ModelProviders() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const { providers, addProvider, updateProvider } = useModelProvider()
+  const stripReasoningFromContext = useGeneralSetting(
+    (s) => s.stripReasoningFromContext
+  )
+  const setStripReasoningFromContext = useGeneralSetting(
+    (s) => s.setStripReasoningFromContext
+  )
   const navigate = useNavigate()
 
   const createProvider = useCallback(
@@ -100,6 +107,28 @@ function ModelProviders() {
         <SettingsMenu />
         <div className="p-4 pt-0 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+            {/* Global settings */}
+            <Card
+              header={
+                <div className="flex items-center justify-between w-full mb-6">
+                  <span className="font-medium text-base font-studio text-foreground">
+                    {t('provider:globalSettings')}
+                  </span>
+                </div>
+              }
+            >
+              <CardItem
+                title={t('provider:stripReasoning')}
+                description={t('provider:stripReasoningDesc')}
+                className="items-center flex-row gap-y-2"
+                actions={
+                  <Switch
+                    checked={stripReasoningFromContext}
+                    onCheckedChange={setStripReasoningFromContext}
+                  />
+                }
+              />
+            </Card>
             {/* Model Providers */}
             <Card
               header={

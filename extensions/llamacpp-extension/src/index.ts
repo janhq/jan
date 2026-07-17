@@ -24,6 +24,7 @@ import {
   chatCompletionRequestMessage,
   SettingComponentProps,
   DropdownComponentProps,
+  logger,
 } from '@janhq/core'
 import {
   readSettingsFile,
@@ -31,7 +32,6 @@ import {
   settingsFileExists,
 } from './settings-store'
 
-import { error, info, warn } from '@tauri-apps/plugin-log'
 import { listen } from '@tauri-apps/api/event'
 import {
   listSupportedBackends,
@@ -50,11 +50,17 @@ import {
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
   detectMtpLayersFromGgufMeta,
+  detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
 import { generatePreset, MTP_MIN_BUILD } from './preset'
+import {
+  getBackendSetting,
+  setBackendSetting,
+  removeBackendSetting,
+} from './backend-settings'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -65,6 +71,7 @@ import {
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
+  TemplateKwarg,
   EmbeddingResponse,
   ModelProps,
   DeviceList,
@@ -80,6 +87,7 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+const TEMPLATE_KWARGS_CHECK_VERSION = 1
 
 // Upstream build that added the `GET /models?reload=1` diff/reconcile path
 // (llama.cpp #21848). At/above this, a preset change can be hot-applied without
@@ -120,41 +128,9 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
   'cache_reuse',
   'swa_full',
   'keep',
+  'kv_unified',
 ])
 
-/**
- * Override the default app.log function to use Jan's logging system.
- * @param args
- */
-function formatLogArg(arg: unknown): string {
-  if (arg instanceof Error) {
-    return arg.stack ? `${arg.message}\n${arg.stack}` : arg.message
-  }
-  if (arg === null || arg === undefined) return String(arg)
-  if (typeof arg === 'object') {
-    try {
-      return JSON.stringify(arg)
-    } catch {
-      return String(arg)
-    }
-  }
-  return String(arg)
-}
-
-const logger = {
-  info: function (...args: any[]) {
-    console.log(...args)
-    info(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
-  },
-  warn: function (...args: any[]) {
-    console.warn(...args)
-    warn(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
-  },
-  error: function (...args: any[]) {
-    console.error(...args)
-    error(args.map((arg) => ` ${formatLogArg(arg)}`).join(` `))
-  },
-}
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -184,7 +160,12 @@ type PersistedModelState = {
   settings?: Record<string, PersistedProviderSetting>
 }
 
-const MODEL_PROVIDER_LOCAL_STORAGE_KEY = 'model-provider'
+const MODEL_PROVIDER_STORE_KEY = 'model-provider'
+const INTERFACE_SETTINGS_STORE_KEY = 'setting-appearance'
+const EMBEDDER_BOOTSTRAP_KEY = 'llamacpp-embedder-bootstrapped'
+const FALLBACK_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
+const FALLBACK_EMBEDDING_MODEL_URL =
+  'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
   'llamacpp_model_yaml_backfill_v1'
 
@@ -288,9 +269,9 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
   },
 }
 
-function readPersistedLlamacppModels(): PersistedModelState[] {
+async function readPersistedLlamacppModels(): Promise<PersistedModelState[]> {
   try {
-    const raw = localStorage.getItem(MODEL_PROVIDER_LOCAL_STORAGE_KEY)
+    const raw = await getBackendSetting(MODEL_PROVIDER_STORE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     const providers = parsed?.state?.providers
@@ -302,6 +283,22 @@ function readPersistedLlamacppModels(): PersistedModelState[] {
   } catch (error) {
     logger.warn('Failed to read persisted llamacpp model settings:', error)
     return []
+  }
+}
+
+// Interface settings persist to the Rust settings store (settings.json), not
+// webview localStorage — see web-app/src/lib/backendStorage.ts. The value is
+// the Zustand-persisted blob `{ state: {...} }`. Defaults to true (feature on).
+async function readAutoGenerateTitleSetting(): Promise<boolean> {
+  try {
+    const raw = await getBackendSetting(INTERFACE_SETTINGS_STORE_KEY)
+    if (!raw) return true
+    const parsed = JSON.parse(raw)
+    const value = parsed?.state?.autoGenerateTitle
+    return typeof value === 'boolean' ? value : true
+  } catch (error) {
+    logger.warn('Failed to read autoGenerateTitle setting:', error)
+    return true
   }
 }
 
@@ -379,6 +376,7 @@ export default class llamacpp_extension extends AIEngine {
   private routerPort?: number
   private routerApiKey?: string
   private userModelsMax: number = 1
+  private routerEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
 
   // Backend discovery + router spawn run off the onLoad critical path; awaited
@@ -501,7 +499,41 @@ export default class llamacpp_extension extends AIEngine {
           logger.error('Router failed to start during onLoad:', e)
         }
       }
+      await this.bootstrapDefaultEmbedder()
     })()
+  }
+
+  /**
+   * One-shot startup install of the fallback embedder so the router reserves
+   * the +1 embedding slot from its first start instead of importing the model
+   * mid-session on the first RAG call. Runs after the router is up so the
+   * download never delays chat availability; the import's preset refresh then
+   * resizes models_max via an idle restart (nothing is loaded yet at startup).
+   * The persisted flag keeps this from resurrecting a model the user deleted,
+   * and is only set on success so a failed download retries next launch.
+   */
+  private async bootstrapDefaultEmbedder(): Promise<void> {
+    try {
+      if (await getBackendSetting(EMBEDDER_BOOTSTRAP_KEY)) return
+      const models = await this.list()
+      const hasEmbedder = models.some(
+        (m) => (m as { embedding?: boolean }).embedding === true
+      )
+      if (!hasEmbedder) {
+        await this.import(FALLBACK_EMBEDDING_MODEL_ID, {
+          modelPath: FALLBACK_EMBEDDING_MODEL_URL,
+        })
+        logger.info(
+          `Pre-installed fallback embedding model "${FALLBACK_EMBEDDING_MODEL_ID}" at startup`
+        )
+      }
+      await setBackendSetting(EMBEDDER_BOOTSTRAP_KEY, 'true')
+    } catch (e) {
+      logger.warn(
+        'Fallback embedder bootstrap failed (will import on demand):',
+        e
+      )
+    }
   }
 
   // True when config.version_backend names a backend that's already downloaded,
@@ -587,12 +619,16 @@ export default class llamacpp_extension extends AIEngine {
     await writeSettingsFile(settings)
   }
 
+  // The ONLY sanctioned localStorage use in this extension: a one-time read +
+  // clear migrating pre-backend llamacpp settings into the file store. All
+  // other persistence goes through backend-settings.ts. Guarded by
+  // no-localstorage.test.ts via the `localstorage-migration-allowed` markers.
   private async migrateLocalStorageToFile(): Promise<void> {
     if (await settingsFileExists()) return
     if (!this.name) return
     let raw: string | null = null
     try {
-      raw = localStorage.getItem(this.name)
+      raw = localStorage.getItem(this.name) // localstorage-migration-allowed
     } catch {
       raw = null
     }
@@ -610,7 +646,7 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
     try {
-      localStorage.removeItem(this.name)
+      localStorage.removeItem(this.name) // localstorage-migration-allowed
     } catch (e) {
       logger.warn('Failed to clear migrated localStorage entry:', e)
     }
@@ -668,7 +704,10 @@ export default class llamacpp_extension extends AIEngine {
       providerPath,
       janDataFolderPath,
       this.config,
-      { supportsMtp }
+      {
+        supportsMtp,
+        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
+      }
     )
 
     const backendExe = await getBackendExePath(backend, version)
@@ -694,10 +733,10 @@ export default class llamacpp_extension extends AIEngine {
     // stays unlimited.
     const userModelsMax = modelsMax
     this.userModelsMax = userModelsMax
-    const embeddingSlotBonus = embeddingCount > 0 ? 1 : 0
-    if (modelsMax > 0 && embeddingSlotBonus > 0) {
-      modelsMax += embeddingSlotBonus
-    }
+    const embeddingSlotBonus =
+      modelsMax > 0 && embeddingCount > 0 ? 1 : 0
+    modelsMax += embeddingSlotBonus
+    this.routerEmbeddingBonus = embeddingSlotBonus
 
     // Defensive: if a router is already running (hot reload / dev), stop it
     // first so start_router doesn't reject.
@@ -764,9 +803,29 @@ export default class llamacpp_extension extends AIEngine {
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
     const supportsMtp = build >= MTP_MIN_BUILD
-    await generatePreset(providerPath, janDataFolderPath, this.config, {
-      supportsMtp,
-    })
+    const { embeddingCount } = await generatePreset(
+      providerPath,
+      janDataFolderPath,
+      this.config,
+      {
+        supportsMtp,
+        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
+      }
+    )
+
+    // models_max is fixed at router spawn; a live reload can't grow it. If an
+    // embedder appeared (e.g. sentence-transformer-mini imported on demand) or
+    // the last one was removed, restart so the +1 embedding slot is applied —
+    // otherwise chat and embedding models evict each other on every RAG call.
+    const requiredBonus =
+      this.userModelsMax > 0 && embeddingCount > 0 ? 1 : 0
+    if (requiredBonus !== this.routerEmbeddingBonus) {
+      logger.info(
+        `Embedding slot bonus changed (${this.routerEmbeddingBonus} -> ${requiredBonus}); restarting router to resize models_max`
+      )
+      await this.startRouter()
+      return
+    }
 
     try {
       await reloadRouterModels()
@@ -877,7 +936,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private async migrateAutoUnloadToModelsMax(): Promise<void> {
     const MIGRATION_KEY = 'llamacpp_models_max_migrated_v1'
-    if (localStorage.getItem(MIGRATION_KEY)) return
+    if (await getBackendSetting(MIGRATION_KEY)) return
 
     try {
       const old = await this.getSetting<boolean | undefined>(
@@ -905,39 +964,26 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
 
-    localStorage.setItem(MIGRATION_KEY, '1')
+    await setBackendSetting(MIGRATION_KEY, '1')
   }
 
-  private getStoredBackendType(): string | null {
-    try {
-      return localStorage.getItem('llama_cpp_backend_type')
-    } catch (error) {
-      logger.warn('Failed to read backend type from localStorage:', error)
-      return null
-    }
+  private async getStoredBackendType(): Promise<string | null> {
+    return getBackendSetting('llama_cpp_backend_type')
   }
 
-  private setStoredBackendType(backendType: string): void {
-    try {
-      localStorage.setItem('llama_cpp_backend_type', backendType)
-      logger.info(`Stored backend type preference: ${backendType}`)
-    } catch (error) {
-      logger.warn('Failed to store backend type in localStorage:', error)
-    }
+  private async setStoredBackendType(backendType: string): Promise<void> {
+    await setBackendSetting('llama_cpp_backend_type', backendType)
+    logger.info(`Stored backend type preference: ${backendType}`)
   }
 
-  private clearStoredBackendType(): void {
-    try {
-      localStorage.removeItem('llama_cpp_backend_type')
-      logger.info('Cleared stored backend type preference')
-    } catch (error) {
-      logger.warn('Failed to clear backend type from localStorage:', error)
-    }
+  private async clearStoredBackendType(): Promise<void> {
+    await removeBackendSetting('llama_cpp_backend_type')
+    logger.info('Cleared stored backend type preference')
   }
 
   private async migrateFitOff(): Promise<void> {
     const MIGRATION_KEY = 'llamacpp_fit_off_v1'
-    if (localStorage.getItem(MIGRATION_KEY)) return
+    if (await getBackendSetting(MIGRATION_KEY)) return
 
     if (this.config.fit === true) {
       const settings = await this.getSettings()
@@ -953,15 +999,15 @@ export default class llamacpp_extension extends AIEngine {
       logger.info('Migrated fit setting: disabled')
     }
 
-    localStorage.setItem(MIGRATION_KEY, '1')
+    await setBackendSetting(MIGRATION_KEY, '1')
   }
 
   private async migratePersistedModelSettingsToYaml(): Promise<void> {
-    if (localStorage.getItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY)) return
+    if (await getBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY)) return
 
-    const persistedModels = readPersistedLlamacppModels()
+    const persistedModels = await readPersistedLlamacppModels()
     if (persistedModels.length === 0) {
-      localStorage.setItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
+      await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
       return
     }
 
@@ -1005,7 +1051,7 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
-    localStorage.setItem(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
+    await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
   }
 
   async configureBackends(): Promise<void> {
@@ -1041,7 +1087,7 @@ export default class llamacpp_extension extends AIEngine {
       }
 
       // Get stored backend preference
-      const storedBackendType = this.getStoredBackendType()
+      const storedBackendType = await this.getStoredBackendType()
       let bestAvailableBackendString = ''
 
       // "Recommended" is computed against upstream releases only — a
@@ -1068,7 +1114,7 @@ export default class llamacpp_extension extends AIEngine {
           logger.info(
             `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${migrationTarget}'`
           )
-          this.setStoredBackendType(migrationTarget)
+          await this.setStoredBackendType(migrationTarget)
         }
 
         const effectiveStoredBackendType = migrationTarget || storedBackendType
@@ -1091,7 +1137,7 @@ export default class llamacpp_extension extends AIEngine {
             `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
           )
           // Clear the invalid stored preference
-          this.clearStoredBackendType()
+          await this.clearStoredBackendType()
           // bestAvailableBackendString remains as the priority one calculated earlier
         }
       }
@@ -1157,18 +1203,18 @@ export default class llamacpp_extension extends AIEngine {
         ) {
           initialVersion = priorVersion
           initialBackend = normalizedBackend
-          const currentStoredBackend = this.getStoredBackendType()
+          const currentStoredBackend = await this.getStoredBackendType()
           if (currentStoredBackend !== normalizedBackend) {
-            this.setStoredBackendType(normalizedBackend)
+            await this.setStoredBackendType(normalizedBackend)
             logger.info(
               `Stored backend type preference from saved setting: ${normalizedBackend}`
             )
           }
         }
       } else if (bestBackend) {
-        const currentStoredBackend = this.getStoredBackendType()
+        const currentStoredBackend = await this.getStoredBackendType()
         if (currentStoredBackend !== bestBackend) {
-          this.setStoredBackendType(bestBackend)
+          await this.setStoredBackendType(bestBackend)
           logger.info(
             `Stored backend type preference from best available: ${bestBackend}`
           )
@@ -1464,7 +1510,7 @@ export default class llamacpp_extension extends AIEngine {
 
       // Map backend type for stored preference only (not for download/config)
       const effectiveBackendType = await mapOldBackendToNew(backend)
-      const currentStoredBackend = this.getStoredBackendType()
+      const currentStoredBackend = await this.getStoredBackendType()
 
       // Persist settings and stored preference before mutating in-memory config,
       // so that if any of these steps fail, config remains consistent.
@@ -1482,7 +1528,7 @@ export default class llamacpp_extension extends AIEngine {
       )
 
       if (currentStoredBackend !== effectiveBackendType) {
-        this.setStoredBackendType(effectiveBackendType)
+        await this.setStoredBackendType(effectiveBackendType)
         logger.info(
           `Updated stored backend type preference: ${effectiveBackendType}`
         )
@@ -1749,7 +1795,8 @@ export default class llamacpp_extension extends AIEngine {
 
           this.recomposeVersionBackend()
           const composite = this.config.version_backend
-          const currentStored = this.getStoredBackendType() || undefined
+          const currentStored =
+            (await this.getStoredBackendType()) || undefined
           const result = await handleSettingUpdate(
             'version_backend',
             composite,
@@ -1757,7 +1804,7 @@ export default class llamacpp_extension extends AIEngine {
           )
 
           if (result.backend_type_updated && result.effective_backend_type) {
-            this.setStoredBackendType(result.effective_backend_type)
+            await this.setStoredBackendType(result.effective_backend_type)
             logger.info(
               `Updated backend type preference to: ${result.effective_backend_type}`
             )
@@ -1823,6 +1870,10 @@ export default class llamacpp_extension extends AIEngine {
 
     const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
     await this.resolveMtpLayersConfig(modelId, modelConfig)
+    const templateKwargs = await this.resolveTemplateKwargsConfig(
+      modelId,
+      modelConfig
+    )
 
     return {
       id: modelId,
@@ -1832,6 +1883,7 @@ export default class llamacpp_extension extends AIEngine {
       port: 0, // port is not known until the model is loaded
       sizeBytes: modelConfig.size_bytes ?? 0,
       embedding: isEmbedding,
+      template_kwargs: templateKwargs,
     } as modelInfo
   }
 
@@ -1955,6 +2007,64 @@ export default class llamacpp_extension extends AIEngine {
     return mtpLayers
   }
 
+  /**
+   * Detect which chat-template kwargs (e.g. `preserve_thinking`) a model's
+   * embedded jinja template accepts, caching the result in model.yml. Migrates
+   * pre-existing models lazily the first time list() sees a stale check version.
+   */
+  private async resolveTemplateKwargsConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<TemplateKwarg[]> {
+    const cfg = modelConfig as ModelConfig & {
+      template_kwargs?: TemplateKwarg[]
+      template_kwargs_check_v?: number
+    }
+    if (
+      Array.isArray(cfg.template_kwargs) &&
+      cfg.template_kwargs_check_v === TEMPLATE_KWARGS_CHECK_VERSION
+    ) {
+      return cfg.template_kwargs
+    }
+
+    let kwargs: TemplateKwarg[] = []
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        kwargs = detectTemplateKwargsFromChatTemplate(
+          metadata.metadata?.['tokenizer.chat_template']
+        )
+      }
+    } catch (e) {
+      logger.warn(`Failed to check template kwargs for ${modelId}`, e)
+      return cfg.template_kwargs ?? []
+    }
+
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      cfg.template_kwargs = kwargs
+      cfg.template_kwargs_check_v = TEMPLATE_KWARGS_CHECK_VERSION
+      await invoke<void>('write_yaml', {
+        data: cfg,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to persist template kwargs for ${modelId}`, e)
+    }
+
+    return kwargs
+  }
+
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
@@ -2018,6 +2128,10 @@ export default class llamacpp_extension extends AIEngine {
           modelId,
           modelConfig
         )
+        const templateKwargs = await this.resolveTemplateKwargsConfig(
+          modelId,
+          modelConfig
+        )
 
         const capabilities: string[] = []
         if (modelConfig.mmproj_path) {
@@ -2045,6 +2159,7 @@ export default class llamacpp_extension extends AIEngine {
           embedding: isEmbedding,
           imported: isAbsolute,
           capabilities: capabilities.length > 0 ? capabilities : undefined,
+          template_kwargs: templateKwargs,
         } as modelInfo
         modelInfos.push(modelInfo)
       } catch (err) {
@@ -2057,7 +2172,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private async migrateLegacyModels() {
     // Attempt to migrate only once
-    if (localStorage.getItem('cortex_models_migrated') === 'true') return
+    if ((await getBackendSetting('cortex_models_migrated')) === 'true') return
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelsDir = await joinPath([janDataFolderPath, 'models'])
@@ -2132,7 +2247,7 @@ export default class llamacpp_extension extends AIEngine {
             }
           }
         } catch (error) {
-          console.error(`Error migrating model ${child}:`, error)
+          logger.error(`Error migrating model ${child}:`, error)
         }
       }
 
@@ -2157,7 +2272,7 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
     }
-    localStorage.setItem('cortex_models_migrated', 'true')
+    await setBackendSetting('cortex_models_migrated', 'true')
   }
 
   /*
@@ -2418,7 +2533,7 @@ export default class llamacpp_extension extends AIEngine {
         downloadItems.push({
           url: path,
           save_path: localPath,
-          proxy: getProxyConfig(),
+          proxy: await getProxyConfig(),
           sha256:
             saveName === 'model.gguf'
               ? opts.modelSha256
@@ -2533,6 +2648,7 @@ export default class llamacpp_extension extends AIEngine {
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
     try {
@@ -2546,6 +2662,9 @@ export default class llamacpp_extension extends AIEngine {
         isEmbedding = true
       }
       mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+      templateKwargs = detectTemplateKwargsFromChatTemplate(
+        modelMetadata.metadata?.['tokenizer.chat_template']
+      )
 
       const rawName = modelMetadata.metadata?.['general.name']
       if (typeof rawName === 'string') {
@@ -2611,6 +2730,8 @@ export default class llamacpp_extension extends AIEngine {
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+      template_kwargs: templateKwargs,
+      template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
       // A separate draft gguf is downloaded only to be used — enable MTP by
       // default. Embedded-MTP models keep MTP opt-in (no flag written here).
       ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
@@ -3050,6 +3171,9 @@ export default class llamacpp_extension extends AIEngine {
     // (chunk.prompt_progress?.processed / chunk.prompt_progress?.total) * 100
     // chunk.prompt_progress?.cache is for past tokens already in kv cache
     opts.return_progress = true
+    // Per-chunk timings so callers can track live token counts during
+    // generation instead of only once the stream finishes.
+    opts.timings_per_token = true
 
     const body = JSON.stringify(opts)
     if (opts.stream) {
@@ -3382,19 +3506,25 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  async embed(text: string[]): Promise<EmbeddingResponse> {
+  /**
+   * Resolves the default/preferred embedding model, importing and loading
+   * sentence-transformer-mini as the fallback, then ensures a session exists.
+   * Shared by embed() and getEmbeddingContextSize() so both agree on which
+   * model is "the" embedding model.
+   */
+  private async ensureEmbeddingModelLoaded(): Promise<SessionInfo> {
     const downloadedModelList = await this.list()
     const installedEmbedding = downloadedModelList.filter(
       (m) => (m as any).embedding === true
     )
     const hasMini = downloadedModelList.some(
-      (m) => m.id === 'sentence-transformer-mini'
+      (m) => m.id === FALLBACK_EMBEDDING_MODEL_ID
     )
-    let preferred = getDefaultEmbeddingModelId('llamacpp')
+    let preferred = await getDefaultEmbeddingModelId('llamacpp')
 
     if (!preferred && installedEmbedding.length === 1 && !hasMini) {
       preferred = installedEmbedding[0].id
-      setDefaultEmbeddingModelId('llamacpp', preferred)
+      await setDefaultEmbeddingModelId('llamacpp', preferred)
       logger.info(
         `Auto-promoted "${preferred}" as default embedding model (single installed model, sentence-transformer-mini not present)`
       )
@@ -3411,18 +3541,62 @@ export default class llamacpp_extension extends AIEngine {
 
     const targetModelId = preferredMatch
       ? (preferred as string)
-      : 'sentence-transformer-mini'
+      : FALLBACK_EMBEDDING_MODEL_ID
 
     let sInfo = await this.findSessionByModel(targetModelId)
     if (!sInfo) {
-      if (targetModelId === 'sentence-transformer-mini' && !hasMini) {
-        await this.import('sentence-transformer-mini', {
-          modelPath:
-            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+      if (targetModelId === FALLBACK_EMBEDDING_MODEL_ID && !hasMini) {
+        await this.import(FALLBACK_EMBEDDING_MODEL_ID, {
+          modelPath: FALLBACK_EMBEDDING_MODEL_URL,
         })
       }
       sInfo = await this.load(targetModelId, undefined, true)
     }
+    return sInfo as SessionInfo
+  }
+
+  /**
+   * Actual post-fit context window of the embedding model, read from the
+   * router's /props endpoint (the same source getModelProps uses for chat
+   * models). Used by RAG ingestion to size chunks so they don't exceed the
+   * model's n_ctx (e.g. sentence-transformer-mini natively caps at 256).
+   */
+  async getEmbeddingContextSize(): Promise<number | undefined> {
+    const sInfo = await this.ensureEmbeddingModelLoaded()
+    const props = await this.getModelProps(sInfo.model_id)
+    return props?.nCtx
+  }
+
+  /**
+   * Real token counts from the embedding model's own tokenizer via /tokenize
+   * on its session port. Char-based chunking can't reliably predict token
+   * count (subword tokenizers vary widely by content), so callers that need
+   * a hard guarantee against exceed_context_size_error should verify with
+   * this rather than estimating from character length.
+   */
+  async countEmbeddingTokens(texts: string[]): Promise<number[]> {
+    const sInfo = await this.ensureEmbeddingModelLoaded()
+    const counts: number[] = []
+    for (const text of texts) {
+      const res = await fetch(`http://localhost:${sInfo.port}/tokenize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sInfo.api_key}`,
+        },
+        body: JSON.stringify({ content: text, model: sInfo.model_id }),
+      })
+      if (!res.ok) {
+        throw new Error(`Tokenize request failed with status ${res.status}`)
+      }
+      const json = (await res.json()) as { tokens?: unknown[] }
+      counts.push(Array.isArray(json.tokens) ? json.tokens.length : 0)
+    }
+    return counts
+  }
+
+  async embed(text: string[]): Promise<EmbeddingResponse> {
+    const sInfo = await this.ensureEmbeddingModelLoaded()
 
     const ubatchSize =
       (this.config?.ubatch_size && this.config.ubatch_size > 0
@@ -3453,7 +3627,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const sendBatch = async (batchInput: string[]) => {
-      const response = await attemptRequest(sInfo as SessionInfo, batchInput)
+      const response = await attemptRequest(sInfo, batchInput)
       if (!response.ok) {
         const errorData = await response.json().catch(() => null)
         throw new Error(
@@ -3470,7 +3644,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     return mergeEmbedResponses(
-      (sInfo as SessionInfo).model_id,
+      sInfo.model_id,
       batchResults
     ) as EmbeddingResponse
   }

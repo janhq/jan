@@ -1,5 +1,4 @@
 import TextareaAutosize from 'react-textarea-autosize'
-import { invoke } from '@tauri-apps/api/core'
 import { cn, formatBytes } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
@@ -15,6 +14,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -39,6 +42,14 @@ import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useTokensCount } from '@/hooks/useTokensCount'
+import {
+  THINKING_BUDGET_LEVELS,
+  DEFAULT_THINKING_BUDGET_LEVEL,
+  tokensForThinkingBudgetLevel,
+  isThinkingBudgetLevelKey,
+  type ThinkingBudgetLevelKey,
+} from '@/lib/thinkingBudget'
 import { useReconcileVideoCapability } from '@/hooks/useReconcileVideoCapability'
 
 import { useAppState } from '@/hooks/useAppState'
@@ -120,6 +131,7 @@ const videoMimeForExt = (ext: string | undefined): string => {
   }
 }
 
+
 const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
@@ -191,6 +203,8 @@ const ChatInput = memo(function ChatInput({
     (state) => state.selectModelProvider
   )
   const updateProvider = useModelProvider((state) => state.updateProvider)
+  const { maxTokens: liveMaxTokens, configuredCtxLen } =
+    useTokensCount(threadMessages || [])
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipShown, setTooltipShown] = useState<
@@ -552,18 +566,8 @@ const ChatInput = memo(function ChatInput({
         abortControllers[threadId]?.abort()
       }
       cancelToolCall?.()
-      // Escalate: if the llama.cpp model is still processing after the HTTP
-      // abort, force-unload it so generation actually stops. KV cache is lost.
-      const modelId = selectedModel?.id
-      if (selectedProvider === 'llamacpp' && modelId) {
-        setTimeout(() => {
-          invoke('plugin:llamacpp|force_stop_model', { modelId }).catch((e) => {
-            console.warn('force_stop_model failed:', e)
-          })
-        }, 500)
-      }
     },
-    [abortControllers, cancelToolCall, onStop, selectedModel?.id, selectedProvider]
+    [abortControllers, cancelToolCall, onStop]
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -2219,12 +2223,25 @@ const ChatInput = memo(function ChatInput({
                 )}
 
                 {!effectiveAgentMode &&
-                  selectedProvider === 'llamacpp' &&
+                  (selectedProvider === 'llamacpp' ||
+                    selectedProvider === 'google' ||
+                    selectedProvider === 'gemini' ||
+                    selectedProvider === 'anthropic' ||
+                    selectedProvider === 'openai') &&
                   (() => {
+                    // The token-budget submenu only applies to local llama.cpp
+                    // (budget resolved against live n_ctx). Cloud providers size
+                    // their own budget dynamically, so on/off/auto is enough.
+                    const showThinkingBudget = selectedProvider === 'llamacpp'
                     const reasoningValue =
                       (selectedModel?.settings?.reasoning?.controller_props
                         ?.value as 'auto' | 'on' | 'off' | undefined) ?? 'auto'
-                    const setReasoning = (value: 'auto' | 'on' | 'off') => {
+                    const updateModelSetting = (
+                      settingKey: string,
+                      title: string,
+                      controllerType: string,
+                      value: unknown
+                    ) => {
                       if (!selectedProvider || !selectedModel) return
                       const providerObj = getProviderByName(selectedProvider)
                       if (!providerObj) return
@@ -2232,19 +2249,18 @@ const ChatInput = memo(function ChatInput({
                         (m) => m.id === selectedModel.id
                       )
                       if (modelIndex === -1) return
-                      const existing =
-                        selectedModel.settings?.reasoning ?? {
-                          key: 'reasoning',
-                          title: 'Reasoning',
-                          description: '',
-                          controller_type: 'dropdown',
-                          controller_props: { value },
-                        }
+                      const existing = selectedModel.settings?.[settingKey] ?? {
+                        key: settingKey,
+                        title,
+                        description: '',
+                        controller_type: controllerType,
+                        controller_props: { value },
+                      }
                       const updatedModel = {
                         ...selectedModel,
                         settings: {
                           ...selectedModel.settings,
-                          reasoning: {
+                          [settingKey]: {
                             ...existing,
                             controller_props: {
                               ...(existing.controller_props ?? {}),
@@ -2263,6 +2279,121 @@ const ChatInput = memo(function ChatInput({
                       // chat transport both observe the new value.
                       selectModelProvider(selectedProvider, selectedModel.id)
                     }
+                    const clearModelSetting = (settingKey: string) => {
+                      if (!selectedProvider || !selectedModel) return
+                      const providerObj = getProviderByName(selectedProvider)
+                      if (!providerObj) return
+                      const modelIndex = providerObj.models.findIndex(
+                        (m) => m.id === selectedModel.id
+                      )
+                      if (modelIndex === -1) return
+                      const nextSettings = { ...(selectedModel.settings ?? {}) }
+                      delete nextSettings[settingKey]
+                      const updatedModels = [...providerObj.models]
+                      updatedModels[modelIndex] = {
+                        ...selectedModel,
+                        settings: nextSettings,
+                      } as Model
+                      updateProvider(selectedProvider, { models: updatedModels })
+                      selectModelProvider(selectedProvider, selectedModel.id)
+                    }
+
+                    // OpenAI reasoning models expose a discrete effort (no
+                    // on/off, no token budget). Reuse the thinking_budget_tokens
+                    // level as the effort value; "Default" clears it so the
+                    // model uses its own default effort.
+                    if (selectedProvider === 'openai') {
+                      const rawEffort =
+                        selectedModel?.settings?.thinking_budget_tokens
+                          ?.controller_props?.value
+                      const currentEffort =
+                        isThinkingBudgetLevelKey(rawEffort) &&
+                        rawEffort !== 'unlimited'
+                          ? rawEffort
+                          : undefined
+                      const EFFORTS: ThinkingBudgetLevelKey[] = [
+                        'low',
+                        'medium',
+                        'high',
+                        'xhigh',
+                      ]
+                      const effortLabel = currentEffort
+                        ? THINKING_BUDGET_LEVELS.find(
+                            (l) => l.key === currentEffort
+                          )!.label
+                        : 'Default'
+                      return (
+                        <DropdownMenu>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  aria-label={`Reasoning effort: ${effortLabel}`}
+                                >
+                                  <IconBrain
+                                    size={18}
+                                    className={cn(
+                                      'text-muted-foreground',
+                                      currentEffort && 'text-primary'
+                                    )}
+                                  />
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Reasoning effort: {effortLabel}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem
+                              onClick={() =>
+                                clearModelSetting('thinking_budget_tokens')
+                              }
+                            >
+                              Default
+                              {!currentEffort && (
+                                <span className="ml-auto text-xs text-muted-foreground">
+                                  ✓
+                                </span>
+                              )}
+                            </DropdownMenuItem>
+                            {EFFORTS.map((key) => (
+                              <DropdownMenuItem
+                                key={key}
+                                onClick={() =>
+                                  updateModelSetting(
+                                    'thinking_budget_tokens',
+                                    'Reasoning Effort',
+                                    'dropdown',
+                                    key
+                                  )
+                                }
+                              >
+                                {
+                                  THINKING_BUDGET_LEVELS.find(
+                                    (l) => l.key === key
+                                  )!.label
+                                }
+                                {currentEffort === key && (
+                                  <span className="ml-auto text-xs text-muted-foreground">
+                                    ✓
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )
+                    }
+                    const setReasoning = (value: 'auto' | 'on' | 'off') =>
+                      updateModelSetting(
+                        'reasoning',
+                        'Reasoning',
+                        'dropdown',
+                        value
+                      )
                     const label =
                       reasoningValue === 'on'
                         ? 'On'
@@ -2274,7 +2405,36 @@ const ChatInput = memo(function ChatInput({
                         ? 'Reasoning forced on for every request.'
                         : reasoningValue === 'off'
                           ? 'Reasoning disabled for every request.'
-                          : "Reasoning auto-detected from the model's chat template."
+                          : "Reasoning uses the model's default."
+
+                    // Stored as a symbolic level, not an absolute token count:
+                    // the live context size (post auto-fit) is only known once
+                    // the model is actually loaded, so resolving to tokens
+                    // happens at send time (custom-chat-transport.ts) against
+                    // whatever the context size turns out to be then.
+                    const rawBudgetLevel =
+                      selectedModel?.settings?.thinking_budget_tokens
+                        ?.controller_props?.value
+                    const currentBudgetLevel = isThinkingBudgetLevelKey(
+                      rawBudgetLevel
+                    )
+                      ? rawBudgetLevel
+                      : DEFAULT_THINKING_BUDGET_LEVEL
+                    const setThinkingBudget = (level: ThinkingBudgetLevelKey) =>
+                      updateModelSetting(
+                        'thinking_budget_tokens',
+                        'Thinking Budget',
+                        'dropdown',
+                        level
+                      )
+                    const currentBudgetLabel = THINKING_BUDGET_LEVELS.find(
+                      (l) => l.key === currentBudgetLevel
+                    )!.label
+                    // Best-effort preview only; the request-time value may
+                    // differ once the model is loaded and fit settles n_ctx.
+                    const approxContextSize =
+                      liveMaxTokens || configuredCtxLen || 8192
+
                     return (
                       <DropdownMenu>
                         <Tooltip>
@@ -2325,6 +2485,53 @@ const ChatInput = memo(function ChatInput({
                               </span>
                             )}
                           </DropdownMenuItem>
+                          {showThinkingBudget && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  <span className="flex-1">Thinking Budget</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {currentBudgetLabel}
+                                  </span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent
+                                  collisionPadding={{ bottom: 16 }}
+                                >
+                                  {THINKING_BUDGET_LEVELS.map((level) => {
+                                    const approxTokens =
+                                      tokensForThinkingBudgetLevel(
+                                        level.key,
+                                        approxContextSize
+                                      )
+                                    return (
+                                      <DropdownMenuItem
+                                        key={level.key}
+                                        onClick={() =>
+                                          setThinkingBudget(level.key)
+                                        }
+                                        className="gap-2"
+                                      >
+                                        <span className="flex-1">
+                                          {level.label}
+                                        </span>
+                                        <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
+                                          {approxTokens === -1
+                                            ? ''
+                                            : `~${approxTokens}`}
+                                        </span>
+                                        <span className="w-3 shrink-0 text-xs text-muted-foreground">
+                                          {currentBudgetLevel === level.key
+                                            ? '✓'
+                                            : ''}
+                                        </span>
+                                      </DropdownMenuItem>
+                                    )
+                                  })}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )

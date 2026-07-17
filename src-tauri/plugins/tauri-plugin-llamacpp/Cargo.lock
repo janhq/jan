@@ -3418,6 +3418,7 @@ version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
+ "futures-util",
  "hmac",
  "jan-utils",
  "lddtree",

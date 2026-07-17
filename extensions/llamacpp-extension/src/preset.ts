@@ -47,6 +47,12 @@ type ModelYaml = ModelConfig & {
   mmproj_offload?: boolean
 }
 
+// One extra llama-server slot beyond the user-visible "Parallel Sequences"
+// count, reserved for background requests (e.g. thread auto-titling) that
+// must never be able to evict the user's own chat KV cache from its slot.
+// Hidden from the setting's UI value; see reservedSlotId in thread-title-summarizer.ts.
+export const RESERVED_BACKGROUND_SLOTS = 1
+
 export const MTP_MIN_BUILD = 9193
 
 const DEFAULT_EMBEDDING_UBATCH = 2048
@@ -70,9 +76,15 @@ export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
   config: LlamacppConfig,
-  opts: { supportsMtp?: boolean } = {}
+  opts: { supportsMtp?: boolean; reservedBackgroundSlots?: number } = {}
 ): Promise<{ path: string; embeddingCount: number }> {
   const supportsMtp = opts.supportsMtp === true
+  // Reserved background slot count (thread auto-titling). Disabling that
+  // feature drops it to 0 so no extra parallel slot is provisioned.
+  const reservedBackgroundSlots =
+    typeof opts.reservedBackgroundSlots === 'number'
+      ? opts.reservedBackgroundSlots
+      : RESERVED_BACKGROUND_SLOTS
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -182,9 +194,10 @@ export async function generatePreset(
   ) {
     lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
   }
-  // parallel default = -1 (auto); positive user value is intent.
+  // parallel default = -1 (auto); positive user value is intent. The reserved
+  // slot is added on top and never exposed in the setting's own value.
   if (typeof config.parallel === 'number' && config.parallel > 0) {
-    lines.push(`parallel = ${config.parallel}`)
+    lines.push(`parallel = ${config.parallel + reservedBackgroundSlots}`)
   }
   // cont-batching default = true; emit only the explicit-off case.
   if (config.cont_batching === false) {
@@ -284,9 +297,9 @@ export async function generatePreset(
   ) {
     lines.push(`rope-freq-scale = ${config.rope_freq_scale}`)
   }
-  // context-shift default = enabled
-  if (config.ctx_shift === false) {
-    lines.push('context-shift = false')
+  // context-shift default = disabled
+  if (config.ctx_shift === true) {
+    lines.push('context-shift = true')
   }
   // cache-ram default = 8192 MiB
   if (
@@ -306,6 +319,12 @@ export async function generatePreset(
   }
   if (config.swa_full === true) {
     lines.push('swa-full = true')
+  }
+  // auto = omit the flag, let llama.cpp decide based on slot count
+  if (config.kv_unified === 'on') {
+    lines.push('kv-unified = true')
+  } else if (config.kv_unified === 'off') {
+    lines.push('kv-unified = false')
   }
   // keep default = 0
   if (
@@ -381,7 +400,7 @@ export async function generatePreset(
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
     if (typeof mc.parallel === 'number' && mc.parallel > 0) {
-      lines.push(`parallel = ${mc.parallel}`)
+      lines.push(`parallel = ${mc.parallel + reservedBackgroundSlots}`)
     }
     if (mc.cont_batching === false) {
       lines.push('cont-batching = false')

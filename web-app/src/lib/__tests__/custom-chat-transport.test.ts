@@ -391,6 +391,60 @@ describe('buildLlamacppReasoningParams', () => {
       expect(JSON.stringify(value)).toMatch(/^(true|false)$/)
     }
   })
+
+  it('merges user kwargs with reasoning into one chat_template_kwargs object', () => {
+    const params = buildLlamacppReasoningParams('llamacpp', 'on', {
+      preserve_thinking: true,
+    })
+    expect(params).toEqual({
+      chat_template_kwargs: { preserve_thinking: true, enable_thinking: true },
+    })
+  })
+
+  it('emits user kwargs even when reasoning is auto (no enable_thinking)', () => {
+    const params = buildLlamacppReasoningParams('llamacpp', 'auto', {
+      preserve_thinking: false,
+      reasoning_effort: 'high',
+      max_turns: 4,
+    })
+    expect(params).toEqual({
+      chat_template_kwargs: {
+        preserve_thinking: false,
+        reasoning_effort: 'high',
+        max_turns: 4,
+      },
+    })
+  })
+
+  it('lets the reasoning control win over a user-supplied enable_thinking', () => {
+    const params = buildLlamacppReasoningParams('llamacpp', 'off', {
+      enable_thinking: true,
+    })
+    expect(params).toEqual({
+      chat_template_kwargs: { enable_thinking: false },
+    })
+  })
+
+  it('drops non-primitive user kwarg values', () => {
+    const params = buildLlamacppReasoningParams('llamacpp', 'auto', {
+      good: true,
+      bad: { nested: 1 } as unknown as boolean,
+    })
+    expect(params).toEqual({
+      chat_template_kwargs: { good: true },
+    })
+  })
+
+  it('returns {} for llamacpp when there are no kwargs at all', () => {
+    expect(buildLlamacppReasoningParams('llamacpp', 'auto', {})).toEqual({})
+    expect(buildLlamacppReasoningParams('llamacpp', 'auto')).toEqual({})
+  })
+
+  it('ignores user kwargs for non-llamacpp providers', () => {
+    expect(
+      buildLlamacppReasoningParams('openai', 'on', { preserve_thinking: true })
+    ).toEqual({})
+  })
 })
 
 describe('coalesceMessagesForAlternation', () => {

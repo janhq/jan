@@ -102,7 +102,7 @@
   {
     "key": "fit_ctx",
     "title": "Fit Minimum Context Size",
-    "description": "Minimum context size (tokens) that can be set by --fit option. (env: LLAMA_ARG_FIT_CTX)",
+    "description": "Minimum context size (tokens) that can be set by the auto-fit option.",
     "controllerType": "input",
     "controllerProps": {
       "value": 4096,
@@ -222,7 +222,7 @@
   {
     "key": "parallel",
     "title": "Parallel Sequences",
-    "description": "Number of parallel sequences to decode (0 = llama.cpp default of 1). Set to 1 to also enable -kvu for optimized single-request serving.",
+    "description": "Number of parallel sequences to decode for your own chat requests (0 = llama.cpp default of 4). Jan reserves one additional internal slot beyond this for background requests (e.g. thread auto-titling), so they don't evict your chat's KV cache.",
     "controllerType": "input",
     "controllerProps": {
       "value": 1,
@@ -356,7 +356,7 @@
   {
     "key": "cache_ram",
     "title": "Prompt Cache RAM (MiB)",
-    "description": "Maximum prompt cache size in MiB (--cache-ram). -1 = unlimited, 0 = disabled.",
+    "description": "Maximum prompt cache size in MiB. -1 = unlimited, 0 = disabled.",
     "controllerType": "input",
     "controllerProps": {
       "value": -1,
@@ -368,7 +368,7 @@
   {
     "key": "cache_reuse",
     "title": "Cache Reuse",
-    "description": "Min chunk size of matching prefix tokens to reuse from cache (--cache-reuse). 0 = disabled.",
+    "description": "Min chunk size of matching prefix tokens to reuse from cache. 0 = disabled.",
     "controllerType": "input",
     "controllerProps": {
       "value": 0,
@@ -381,16 +381,30 @@
   {
     "key": "swa_full",
     "title": "Full SWA Cache",
-    "description": "Use full-size SWA cache (--swa-full). May improve quality at the cost of memory.",
+    "description": "Use full-size KV cache for sliding-window-attention models (e.g. Gemma). Enable this if such a model reprocesses the entire prompt every turn instead of reusing cache; costs more memory.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": false
     }
   },
   {
+    "key": "kv_unified",
+    "title": "Unified KV Cache",
+    "description": "Use a single unified KV buffer shared across all slots. Saves memory when running multiple parallel slots.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        { "value": "auto", "name": "Auto" },
+        { "value": "on", "name": "On" },
+        { "value": "off", "name": "Off" }
+      ]
+    }
+  },
+  {
     "key": "keep",
     "title": "Keep First N Tokens",
-    "description": "Number of tokens from the initial prompt to keep when context is shifted (--keep). -1 = keep all.",
+    "description": "Number of tokens from the initial prompt to keep when context is shifted. -1 = keep all.",
     "controllerType": "input",
     "controllerProps": {
       "value": 0,

@@ -122,16 +122,6 @@ describe('DefaultThreadsService', () => {
       expect(result).toEqual([])
     })
 
-    it('should handle error and return empty array', async () => {
-      mockConversationalExtension.listThreads.mockRejectedValue(
-        new Error('API Error')
-      )
-
-      const result = await threadsService.fetchThreads()
-
-      expect(result).toEqual([])
-    })
-
     it('should handle null/undefined response', async () => {
       mockConversationalExtension.listThreads.mockResolvedValue(null)
 
@@ -246,14 +236,22 @@ describe('DefaultThreadsService', () => {
   })
 
   describe('edge cases and error handling', () => {
-    it('should handle fetchThreads when extension manager returns null', async () => {
+    it('should throw when the conversational extension is not ready (startup race)', async () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
         get: vi.fn().mockReturnValue(null),
       })
 
-      const result = await threadsService.fetchThreads()
+      await expect(threadsService.fetchThreads()).rejects.toThrow()
+    })
 
-      expect(result).toEqual([])
+    it('should propagate listThreads failures instead of resolving to an empty list', async () => {
+      mockConversationalExtension.listThreads.mockRejectedValue(
+        new Error('invoke failed')
+      )
+
+      await expect(threadsService.fetchThreads()).rejects.toThrow(
+        'invoke failed'
+      )
     })
 
     it('should handle createThread when extension manager returns null', async () => {

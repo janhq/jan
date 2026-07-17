@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { memo, useState, useCallback, useEffect } from 'react'
+import { memo, useState, useCallback, useEffect, cloneElement } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
@@ -43,6 +43,11 @@ import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
 import type { RagCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
 import { injectCitationMarkers } from '@/lib/grounding'
+import {
+  ReasoningActiveStep,
+  StepRow,
+} from '@/components/ai-elements/reasoning-timeline'
+import { splitReasoningParagraphs } from '@/lib/reasoning'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -95,9 +100,6 @@ export const MessageItem = memo(
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
-    const foldInterstitialReasoning = useInterfaceSettings(
-      (s) => s.foldInterstitialReasoning
-    )
     const metadata = message.metadata as Record<string, unknown> | undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
@@ -476,10 +478,6 @@ export const MessageItem = memo(
       const groupIsStreaming =
         isStreaming && lastEntryIndex === message.parts.length - 1
 
-      // Keep the trace expanded while a tool is still running or awaiting the
-      // user's approval — collapsing it would hide the approval controls.
-      const keepOpen = hasPendingToolCall || awaitingApproval
-
       // While streaming, surface only the latest step (current reasoning
       // paragraph or tool call) so each step replaces the previous one rather
       // than the whole trace scrolling by. The full trace renders once done.
@@ -510,89 +508,154 @@ export const MessageItem = memo(
         meaningful.length > 0 &&
         meaningful[meaningful.length - 1].part.type.startsWith('tool-')
 
+      // Only reasoning text is worth expanding for — a tool-only step collapses
+      // to the header. While streaming that means the current step is a
+      // reasoning paragraph that has completed at least once (something for
+      // ReasoningActiveStep to render); once done, any reasoning text qualifies.
+      const hasDisplayableContent = groupIsStreaming
+        ? lastMeaningful?.part.type === CONTENT_TYPE.REASONING &&
+          splitReasoningParagraphs(lastMeaningful.part.text ?? '').length >= 2
+        : entries.some(
+            (e) =>
+              e.part.type === CONTENT_TYPE.REASONING &&
+              Boolean(e.part.text && e.part.text.trim())
+          )
+
+      // Force open only while a tool awaits approval — its approve/deny controls
+      // live inside the collapsible and must stay mounted. A running (already
+      // approved) tool does not force it open, so tool-only steps collapse.
+      const forceOpen = awaitingApproval
+      const shouldCollapse = hasFollowingContent || !hasDisplayableContent
+
+      // Done/historical: flatten every entry (reasoning paragraphs, tool calls,
+      // interstitial text, files) into steps on a single continuous dotted rail,
+      // so a tool call between two reasoning paragraphs stays threaded instead of
+      // restarting the rail.
+      const renderTimeline = (rows: PartEntry[]) => {
+        const steps: React.ReactNode[] = []
+        for (const { part, index: partIndex } of rows) {
+          if (part.type === CONTENT_TYPE.REASONING) {
+            for (const [pi, para] of splitReasoningParagraphs(
+              part.text ?? ''
+            ).entries()) {
+              steps.push(
+                <StepRow key={`${message.id}-r-${partIndex}-${pi}`} text={para} />
+              )
+            }
+            continue
+          }
+          if (part.type === CONTENT_TYPE.TEXT) {
+            if (!part.text || part.text.trim() === '') continue
+            steps.push(
+              <StepRow key={`${message.id}-it-${partIndex}`} text={part.text} />
+            )
+            continue
+          }
+          if (part.type === CONTENT_TYPE.FILE) {
+            const node = renderFilePart(part, partIndex)
+            if (node)
+              steps.push(
+                <StepRow key={`${message.id}-f-${partIndex}`}>{node}</StepRow>
+              )
+            continue
+          }
+          const toolNode = renderToolInline(part, partIndex)
+          if (toolNode)
+            steps.push(
+              <StepRow key={`${message.id}-t-${partIndex}`}>{toolNode}</StepRow>
+            )
+        }
+        if (steps.length === 0) return null
+        return (
+          <ol className="relative flex flex-col gap-2.5">
+            {steps.map((step, i) =>
+              step && typeof step === 'object' && 'props' in step
+                ? cloneElement(step as React.ReactElement<{ connector?: boolean }>, {
+                    connector: i < steps.length - 1,
+                  })
+                : step
+            )}
+          </ol>
+        )
+      }
+
       return (
         <ChainOfThought
           key={groupKey}
           className="w-full text-muted-foreground"
           isStreaming={groupIsStreaming}
-          shouldCollapse={hasFollowingContent && !keepOpen}
-          forceOpen={keepOpen}
-          defaultOpen={true}
+          shouldCollapse={shouldCollapse}
+          forceOpen={forceOpen}
+          defaultOpen={hasDisplayableContent && !hasFollowingContent}
         >
           <ChainOfThoughtHeader
-            streamingLabel={currentStepIsTool ? 'Using tools...' : 'Reasoning...'}
+            streamingLabel={currentStepIsTool ? 'Using tools...' : 'Thinking'}
             completedVerb={hasTools ? 'Worked' : 'Thought'}
           />
           <ChainOfThoughtContent>
-            {visibleEntries.map(({ part, index: partIndex }) => {
-              if (part.type === CONTENT_TYPE.REASONING) {
-                const isLastMsgPart =
-                  partIndex === message.parts.length - 1
-                const partIsStreaming = isStreaming && isLastMsgPart
+            {groupIsStreaming
+              ? visibleEntries.map(({ part, index: partIndex }) => {
+                  if (part.type === CONTENT_TYPE.REASONING) {
+                    const partIsStreaming =
+                      isStreaming && partIndex === message.parts.length - 1
 
-                return (
-                  <div
-                    key={`${message.id}-r-${partIndex}`}
-                    className="relative"
-                  >
-                    {partIsStreaming && (
-                      <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-neutral-50 mask-t-from-98% dark:from-background to-transparent pointer-events-none z-10" />
-                    )}
-                    <div
-                      ref={partIsStreaming ? reasoningContainerRef : null}
-                      onScroll={
-                        partIsStreaming ? onReasoningScroll : undefined
-                      }
-                      className={twMerge(
-                        'w-full overflow-auto relative',
-                        partIsStreaming
-                          ? 'max-h-64 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
-                          : 'h-auto opacity-100'
-                      )}
-                    >
+                    // Streaming: show only the current paragraph as a single
+                    // active step (bounded height, swaps as each paragraph
+                    // completes).
+                    if (partIsStreaming) {
+                      return (
+                        <div
+                          key={`${message.id}-r-${partIndex}`}
+                          className="relative"
+                        >
+                          <div
+                            ref={reasoningContainerRef}
+                            onScroll={onReasoningScroll}
+                            className={twMerge(
+                              'w-full overflow-auto relative max-h-40',
+                              '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                            )}
+                          >
+                            <ReasoningActiveStep text={part.text} />
+                          </div>
+                          {!isReasoningAtBottom && (
+                            <Button
+                              className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+                              onClick={onReasoningScrollToBottom}
+                              size="icon"
+                              type="button"
+                              variant="outline"
+                            >
+                              <IconArrowDown className="size-3" />
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    return null
+                  }
+
+                  if (part.type === CONTENT_TYPE.TEXT) {
+                    if (!part.text || part.text.trim() === '') return null
+                    return (
                       <div
+                        key={`${message.id}-it-${partIndex}`}
                         dir="auto"
                         className="select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70"
                       >
                         {part.text}
                       </div>
-                    </div>
-                    {partIsStreaming && !isReasoningAtBottom && (
-                      <Button
-                        className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
-                        onClick={onReasoningScrollToBottom}
-                        size="icon"
-                        type="button"
-                        variant="outline"
-                      >
-                        <IconArrowDown className="size-3" />
-                      </Button>
-                    )}
-                  </div>
-                )
-              }
+                    )
+                  }
 
-              // Interstitial narration emitted between steps — fold into the trace
-              if (part.type === CONTENT_TYPE.TEXT) {
-                if (!part.text || part.text.trim() === '') return null
-                return (
-                  <div
-                    key={`${message.id}-it-${partIndex}`}
-                    dir="auto"
-                    className="select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70"
-                  >
-                    {part.text}
-                  </div>
-                )
-              }
+                  if (part.type === CONTENT_TYPE.FILE) {
+                    return renderFilePart(part, partIndex)
+                  }
 
-              if (part.type === CONTENT_TYPE.FILE) {
-                return renderFilePart(part, partIndex)
-              }
-
-              // Tool part inside CoT
-              return renderToolInline(part, partIndex)
-            })}
+                  return renderToolInline(part, partIndex)
+                })
+              : renderTimeline(visibleEntries)}
           </ChainOfThoughtContent>
         </ChainOfThought>
       )
@@ -604,98 +667,47 @@ export const MessageItem = memo(
       const isCotPart = (t: string) =>
         t === CONTENT_TYPE.REASONING || t.startsWith('tool-')
 
-      // Split mode: walk parts sequentially and flush the trace whenever a
+      // Walk parts sequentially and flush the reasoning/tool trace whenever a
       // non-empty answer (text/file) interrupts it, so content emitted between
-      // two reasoning blocks renders as a normal message instead of folding in.
-      if (!foldInterstitialReasoning) {
-        let cotEntries: PartEntry[] = []
-        let groupSeq = 0
-        const flushCot = (hasFollowing: boolean) => {
-          if (cotEntries.length === 0) return
-          elements.push(
-            renderCotGroup(
-              cotEntries,
-              `${message.id}-cot-${groupSeq++}`,
-              hasFollowing
-            )
-          )
-          cotEntries = []
-        }
-
-        for (let i = 0; i < parts.length; i++) {
-          const part = parts[i]
-          const t = part.type as string
-          if (isCotPart(t)) {
-            cotEntries.push({ part, index: i })
-            continue
-          }
-          if (t === CONTENT_TYPE.TEXT) {
-            if (!part.text || part.text.trim() === '') continue
-            flushCot(true)
-            elements.push(
-              renderTextPart(part as { type: 'text'; text: string }, i)
-            )
-            continue
-          }
-          if (t === CONTENT_TYPE.FILE) {
-            flushCot(true)
-            elements.push(renderFilePart(part as any, i))
-          }
-        }
-        flushCot(false)
-        return elements
-      }
-
-      // Fold mode (default): anchor the working trace at the last reasoning/tool
-      // part — everything up to it (reasoning, tools, step-start markers,
-      // interstitial narration) folds into a single collapsible CoT group; only
-      // the trailing answer text/files render in the main message body.
-      let lastCotAnchor = -1
-      for (let i = 0; i < parts.length; i++) {
-        if (isCotPart(parts[i].type)) {
-          lastCotAnchor = i
-        }
-      }
-
-      if (lastCotAnchor >= 0) {
-        const cotEntries: PartEntry[] = []
-        for (let i = 0; i <= lastCotAnchor; i++) {
-          cotEntries.push({ part: parts[i], index: i })
-        }
+      // two reasoning blocks renders as a normal message.
+      let cotEntries: PartEntry[] = []
+      let groupSeq = 0
+      const flushCot = (hasFollowing: boolean) => {
+        if (cotEntries.length === 0) return
         elements.push(
           renderCotGroup(
             cotEntries,
-            `${message.id}-cot`,
-            lastCotAnchor < parts.length - 1
+            `${message.id}-cot-${groupSeq++}`,
+            hasFollowing
           )
         )
+        cotEntries = []
       }
 
-      for (let i = lastCotAnchor + 1; i < parts.length; i++) {
+      for (let i = 0; i < parts.length; i++) {
         const part = parts[i]
-        switch (part.type) {
-          case CONTENT_TYPE.TEXT:
-            elements.push(
-              renderTextPart(part as { type: 'text'; text: string }, i)
-            )
-            break
-          case CONTENT_TYPE.FILE:
-            elements.push(renderFilePart(part as any, i))
-            break
-          default:
-            break
+        const t = part.type as string
+        if (isCotPart(t)) {
+          cotEntries.push({ part, index: i })
+          continue
+        }
+        if (t === CONTENT_TYPE.TEXT) {
+          if (!part.text || part.text.trim() === '') continue
+          flushCot(true)
+          elements.push(
+            renderTextPart(part as { type: 'text'; text: string }, i)
+          )
+          continue
+        }
+        if (t === CONTENT_TYPE.FILE) {
+          flushCot(true)
+          elements.push(renderFilePart(part as any, i))
         }
       }
-
+      flushCot(false)
       return elements
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-      message.parts,
-      isStreaming,
-      isReasoningAtBottom,
-      grounding,
-      foldInterstitialReasoning,
-    ])
+    }, [message.parts, isStreaming, isReasoningAtBottom, grounding])
 
     const versionNav =
       versionInfo && versionInfo.count > 1 && onSwitchVersion ? (
@@ -739,7 +751,9 @@ export const MessageItem = memo(
           message.role === 'assistant' &&
           !awaitingApproval &&
           (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
-            <PromptProgress hideIdle={hasPendingToolCall} />
+            <div className="mt-2">
+              <PromptProgress hideIdle={hasPendingToolCall} />
+            </div>
           )}
 
         {typeof messageError === 'string' && messageError.length > 0 && (

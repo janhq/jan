@@ -7,6 +7,11 @@ const mockGetTools = vi.fn()
 const mockUpdateTools = vi.fn()
 const mockListen = vi.fn()
 const mockUnsubscribe = vi.fn()
+const mockInvalidateCache = vi.fn()
+
+vi.mock('@/lib/mcp-orchestrator/mcp-orchestrator', () => ({
+  mcpOrchestrator: { invalidateCache: mockInvalidateCache },
+}))
 
 // Mock useAppState
 vi.mock('../useAppState', () => ({
@@ -106,6 +111,31 @@ describe('useTools', () => {
 
     expect(mockGetTools).toHaveBeenCalledTimes(1)
     expect(mockUpdateTools).toHaveBeenCalledWith(mockTools)
+  })
+
+  it('invalidates the MCP orchestrator tool cache on mount and on MCP_UPDATE, so a server connect/disconnect cannot serve stale tools to the next chat request', async () => {
+    const { useTools } = await import('../useTools')
+
+    let eventCallback: () => void
+    mockListen.mockImplementation((_event, callback) => {
+      eventCallback = callback
+      return Promise.resolve(mockUnsubscribe)
+    })
+
+    renderHook(() => useTools())
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(mockInvalidateCache).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      eventCallback()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(mockInvalidateCache).toHaveBeenCalledTimes(2)
   })
 
   it('should return unsubscribe function for cleanup', async () => {

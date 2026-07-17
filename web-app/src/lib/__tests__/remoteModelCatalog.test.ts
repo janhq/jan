@@ -46,6 +46,13 @@ describe('supportsRemoteCatalog', () => {
     expect(supportsRemoteCatalog('groq')).toBe(false)
     expect(supportsRemoteCatalog('mistral')).toBe(false)
   })
+
+  it('supports custom-named providers with api_type anthropic', () => {
+    expect(
+      supportsRemoteCatalog({ provider: 'my-gateway', api_type: 'anthropic' })
+    ).toBe(true)
+    expect(supportsRemoteCatalog({ provider: 'my-gateway' })).toBe(false)
+  })
 })
 
 describe('fetchTopRemoteModels gemini', () => {
@@ -193,5 +200,45 @@ describe('fetchTopRemoteModels anthropic', () => {
     expect(c35.capabilities).toEqual(['completion', 'tools', 'vision'])
     const c2 = result.find((m) => m.id === 'claude-2.1')!
     expect(c2.capabilities).toEqual(['completion', 'tools'])
+  })
+
+  it('infers claude capabilities for custom-named anthropic providers', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [{ id: 'claude-3-5-sonnet-20240620', created_at: '2024-06-20T00:00:00Z' }],
+      })
+    )
+    const provider = mkAnthropicProvider({
+      provider: 'my-gateway',
+      base_url: 'https://gateway.corp.com/v1',
+      api_type: 'anthropic',
+    })
+    const result = await fetchTopRemoteModels(provider, fetchImpl)
+    expect(result[0].id).toBe('claude-3-5-sonnet-20240620')
+    expect(result[0].capabilities).toEqual(['completion', 'tools', 'vision'])
+  })
+
+  it('sends default anthropic-version and browser-access headers', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
+    await fetchTopRemoteModels(mkAnthropicProvider(), fetchImpl)
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.anthropic.com/v1/models',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        }),
+      })
+    )
+  })
+
+  it('does not send anthropic headers for openai', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
+    await fetchTopRemoteModels(mkOpenAIProvider(), fetchImpl)
+    const headers = fetchImpl.mock.calls[0][1].headers as Record<string, string>
+    expect(headers).not.toHaveProperty('anthropic-version')
+    expect(headers).not.toHaveProperty(
+      'anthropic-dangerous-direct-browser-access'
+    )
   })
 })

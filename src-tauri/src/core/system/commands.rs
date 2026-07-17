@@ -684,6 +684,14 @@ pub fn install_jan_cli_sync<R: Runtime>(
     #[cfg(windows)]
     {
         if bundled.exists() {
+            // rename won't reliably clobber a stale jan.exe from a previous
+            // version (replace semantics / AV locks), so drop it first to
+            // guarantee a version upgrade actually overwrites the binary.
+            if dest.exists() {
+                if let Err(e) = std::fs::remove_file(&dest) {
+                    log::warn!("Could not remove stale {}: {}", dest.display(), e);
+                }
+            }
             if let Err(e) = std::fs::rename(&bundled, &dest) {
                 log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
             }

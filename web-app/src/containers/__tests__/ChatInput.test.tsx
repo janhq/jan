@@ -80,6 +80,18 @@ vi.mock('@/hooks/useModelProvider', () => ({
     }),
 }))
 
+vi.mock('@/hooks/useTokensCount', () => ({
+  useTokensCount: () => ({
+    maxTokens: undefined,
+    configuredCtxLen: undefined,
+    tokenCount: 0,
+    isNearLimit: false,
+    loading: false,
+    fitEnabled: false,
+    calculateTokens: vi.fn(),
+  }),
+}))
+
 vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({
     loading: false,

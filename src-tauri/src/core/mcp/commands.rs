@@ -25,10 +25,17 @@ async fn tool_call_timeout(state: &AppState) -> Duration {
 
 /// Shared implementation for listing MCP tools.
 ///
-/// - `server_filter: None` — every connected server (same behavior as `get_tools`).
-/// - `server_filter: Some(names)` — only connected servers in that set; unknown or
-///   disconnected names are skipped (logged). Transport / list failures use the same
-///   cleanup as `get_tools` (remove stale entry, emit `mcp-update` when needed).
+/// - `server_filter: None` — every enabled server (same behavior as `get_tools`).
+/// - `server_filter: Some(names)` — only enabled servers in that set; unknown names
+///   are skipped (logged).
+///
+/// A server counts as "enabled" if it's in `mcp_active_servers`, regardless of
+/// whether it's currently connected — a transiently disconnected server still
+/// contributes its last successfully listed tools (`mcp_last_known_tools`), so
+/// the tool schema Jan sends stays present and stable across reconnects instead
+/// of shrinking/growing and invalidating the downstream KV-cache prefix.
+/// `mcp_last_known_tools` is only cleared by explicit user deactivation
+/// (`deactivate_mcp_server`), never by a transient list-tools failure here.
 async fn collect_mcp_tools<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
@@ -39,20 +46,20 @@ async fn collect_mcp_tools<R: Runtime>(
     let mut removed_any = false;
 
     let server_names: Vec<String> = {
-        let servers = state.mcp_servers.lock().await;
+        let active_servers = state.mcp_active_servers.lock().await;
         match &server_filter {
-            None => servers.keys().cloned().collect(),
+            None => active_servers.keys().cloned().collect(),
             Some(filter) => {
                 for name in filter {
-                    if !servers.contains_key(name) {
+                    if !active_servers.contains_key(name) {
                         log::debug!(
-                            "collect_mcp_tools: requested server {name:?} is not connected (removed or never started); skipping"
+                            "collect_mcp_tools: requested server {name:?} is not enabled; skipping"
                         );
                     }
                 }
                 filter
                     .iter()
-                    .filter(|n| servers.contains_key(*n))
+                    .filter(|n| active_servers.contains_key(*n))
                     .cloned()
                     .collect()
             }
@@ -60,30 +67,33 @@ async fn collect_mcp_tools<R: Runtime>(
     };
 
     for server_name in server_names {
-        let list_result = {
+        // Snapshot the live service's list_all_tools() future while holding the
+        // lock, but resolve it after dropping the guard so a slow/hanging
+        // server doesn't hold `mcp_servers` locked for other callers.
+        let maybe_list_result = {
             let servers = state.mcp_servers.lock().await;
-            if let Some(service) = servers.get(&server_name) {
-                timeout(timeout_duration, service.list_all_tools()).await
-            } else {
-                log::debug!(
-                    "collect_mcp_tools: server {server_name:?} disappeared before list_tools; skipping"
-                );
-                continue;
+            match servers.get(&server_name) {
+                Some(service) => Some(timeout(timeout_duration, service.list_all_tools()).await),
+                None => None,
             }
         };
 
-        match list_result {
-            Ok(Ok(tools)) => {
-                for tool in tools {
-                    all_tools.push(ToolWithServer {
+        let fresh_tools = match maybe_list_result {
+            Some(Ok(Ok(tools))) => {
+                let mapped: Vec<ToolWithServer> = tools
+                    .into_iter()
+                    .map(|tool| ToolWithServer {
                         name: tool.name.to_string(),
                         description: tool.description.as_ref().map(|d| d.to_string()),
                         input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
                         server: server_name.clone(),
-                    });
-                }
+                    })
+                    .collect();
+                let mut last_known = state.mcp_last_known_tools.lock().await;
+                last_known.insert(server_name.clone(), mapped.clone());
+                Some(mapped)
             }
-            Ok(Err(e)) => {
+            Some(Ok(Err(e))) => {
                 let err_str = e.to_string();
                 log::warn!("MCP server {server_name} failed to list tools: {err_str}");
                 if is_transport_error(&err_str) {
@@ -92,14 +102,31 @@ async fn collect_mcp_tools<R: Runtime>(
                 if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
                     removed_any = true;
                 }
+                None
             }
-            Err(_) => {
+            Some(Err(_)) => {
                 log::warn!(
                     "MCP server {server_name}: listing tools timed out after {} seconds",
                     timeout_duration.as_secs()
                 );
+                None
             }
-        }
+            None => {
+                log::debug!(
+                    "collect_mcp_tools: server {server_name:?} not connected; using last-known tools if any"
+                );
+                None
+            }
+        };
+
+        let tools = match fresh_tools {
+            Some(tools) => tools,
+            None => {
+                let last_known = state.mcp_last_known_tools.lock().await;
+                last_known.get(&server_name).cloned().unwrap_or_default()
+            }
+        };
+        all_tools.extend(tools);
     }
 
     if removed_any {
@@ -171,6 +198,14 @@ pub async fn deactivate_mcp_server<R: Runtime>(
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.remove(&name);
         log::info!("Removed MCP server {name} from active servers list");
+    }
+
+    // Explicit deactivation is the only thing that should drop the last-known
+    // tool schema — a transient disconnect must not (collect_mcp_tools keeps
+    // serving it until the server is actually turned off).
+    {
+        let mut last_known = state.mcp_last_known_tools.lock().await;
+        last_known.remove(&name);
     }
 
     // Now remove and stop the server
@@ -324,20 +359,16 @@ pub async fn get_tools_for_servers<R: Runtime>(
     collect_mcp_tools(&app, &state, Some(filter)).await
 }
 
-/// Returns name, capability tags, and description for all connected MCP servers
+/// Returns name, capability tags, and description for all enabled MCP servers
+/// (regardless of live connection state — see `collect_mcp_tools`).
 #[tauri::command]
 pub async fn get_server_summaries(
     state: State<'_, AppState>,
 ) -> Result<Vec<ServerSummary>, String> {
-    let connected_servers: Vec<String> = {
-        let servers = state.mcp_servers.lock().await;
-        servers.keys().cloned().collect()
-    };
-
     let active_servers = state.mcp_active_servers.lock().await;
     let mut summaries = Vec::new();
 
-    for name in &connected_servers {
+    for name in active_servers.keys() {
         let config = active_servers.get(name);
 
         let capabilities: Vec<String> = config

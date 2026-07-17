@@ -23,6 +23,10 @@ pub struct RegisterProviderRequest {
     pub base_url: Option<String>,
     pub custom_headers: Vec<ProviderCustomHeader>,
     pub models: Vec<String>,
+    /// Upstream wire API (`"openai"` default, or `"openai-responses"` /
+    /// `"google"` / `"anthropic"` to engage a translating converter).
+    #[serde(default)]
+    pub api_type: Option<String>,
 }
 
 fn merge_register_api_keys(api_key: Option<String>, api_keys: Vec<String>) -> Vec<String> {
@@ -68,6 +72,7 @@ pub async fn register_provider_config(
             })
             .collect(),
         models: request.models, // Models will be added when they are configured
+        api_type: request.api_type,
     };
 
     // Persist the key chain to the OS keyring so it survives webview storage
@@ -94,7 +99,7 @@ pub async fn register_provider_config(
     let mut configs = provider_configs.lock().await;
     let provider_name = request.provider.clone();
     configs.insert(provider_name.clone(), config);
-    log::info!("Registered provider config: {provider_name}");
+    log::debug!("Registered provider config: {provider_name}");
     Ok(())
 }
 
@@ -201,6 +206,7 @@ mod tests {
             base_url: None,
             custom_headers: vec![],
             models: vec![],
+            api_type: None,
         }
     }
 

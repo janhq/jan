@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { SamplerDefaults } from '@/containers/SamplerDefaults'
+import { ChatTemplateKwargs } from '@/containers/ChatTemplateKwargs'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
@@ -202,6 +203,37 @@ export function ModelSetting({
     }
   }
 
+  // Chat-template kwargs are a per-request concern (sent as chat_template_kwargs),
+  // not a router preset arg — persist to the store only, like `reasoning`.
+  const handleTemplateKwargsChange = (
+    value: Record<string, boolean | number | string>
+  ) => {
+    if (!provider) return
+    const modelIndex = provider.models.findIndex((m) => m.id === model.id)
+    if (modelIndex === -1) return
+    const existing = model.settings?.chat_template_kwargs
+    const updatedModel = {
+      ...model,
+      settings: {
+        ...model.settings,
+        chat_template_kwargs: {
+          key: 'chat_template_kwargs',
+          title: 'Chat template options',
+          description: '',
+          controller_type: 'object',
+          ...(existing ?? {}),
+          controller_props: {
+            ...(existing?.controller_props ?? {}),
+            value,
+          },
+        },
+      },
+    } as unknown as Model
+    const updatedModels = [...provider.models]
+    updatedModels[modelIndex] = updatedModel
+    updateProvider(provider.provider, { models: updatedModels })
+  }
+
   const handleEngineSettingChange = (
     key: string,
     value: string | boolean | number
@@ -247,6 +279,12 @@ export function ModelSetting({
           {provider.provider === 'llamacpp' && (
             <MtpPanel modelId={model.id} provider={provider} />
           )}
+          {provider.provider === 'llamacpp' && model.embedding !== true && (
+            <ChatTemplateKwargs
+              model={model}
+              onChange={handleTemplateKwargsChange}
+            />
+          )}
           {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
             model.embedding !== true && (
               <SamplerDefaults
@@ -283,6 +321,8 @@ export function ModelSetting({
             return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'reasoning') return acc
+            // Rendered by the dedicated ChatTemplateKwargs section above.
+            if (entry[0] === 'chat_template_kwargs') return acc
             // Removed in v15 migration; defend against any pre-migration
             // localStorage state that still carries the orphan entry.
             if (entry[0] === 'auto_increase_ctx_len') return acc

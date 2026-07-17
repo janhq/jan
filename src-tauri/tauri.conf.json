@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
@@ -67,6 +67,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"]
+    "resources": ["resources/LICENSE"]
   }
 }

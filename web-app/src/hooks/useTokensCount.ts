@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ThreadMessage } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
 import { parseContextOverflow } from '@/utils/error'
+import {
+  getLlamacppExtension,
+  type LlamacppModelProps,
+} from '@/lib/llamacppRouterProps'
 import { useModelProvider } from './useModelProvider'
+import { useAppState } from './useAppState'
 
-export interface ModelProps {
-  nCtx: number
-  totalSlots?: number
-  modelAlias?: string
-  isSleeping?: boolean
-}
+export type ModelProps = LlamacppModelProps
 
 export interface TokenCountData {
   tokenCount: number
@@ -32,10 +31,6 @@ interface UsageMeta {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
-}
-
-interface LlamacppExtensionLike {
-  getModelProps?: (modelId: string) => Promise<ModelProps | undefined>
 }
 
 // The token-usage popup normally reflects the last *successful* turn. When a
@@ -62,22 +57,6 @@ const getLatestServerUsage = (messages: ThreadMessage[]): UsageMeta => {
   return {}
 }
 
-const getLlamacppExtension = (): LlamacppExtensionLike | undefined => {
-  const mgr = ExtensionManager.getInstance()
-  const candidates = [
-    mgr.getByName('@janhq/llamacpp-extension'),
-    mgr.getByName('llamacpp-extension'),
-  ]
-  for (const c of candidates) {
-    if (c && typeof (c as LlamacppExtensionLike).getModelProps === 'function')
-      return c as LlamacppExtensionLike
-  }
-  return mgr.listExtensions().find(
-    (ext) =>
-      typeof (ext as LlamacppExtensionLike).getModelProps === 'function'
-  ) as LlamacppExtensionLike | undefined
-}
-
 const readSettingNumber = (v: unknown): number | undefined => {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string') {
@@ -98,6 +77,20 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
 
   const modelId =
     selectedProvider === 'llamacpp' ? selectedModel?.id : undefined
+
+  const threadId = messages[0]?.thread_id
+  // Populated per-chunk while a llama.cpp turn is streaming (timings_per_token);
+  // cleared on stream start/finish/error, so its presence means "live now".
+  const liveStats = useAppState((s) =>
+    threadId ? s.liveTokenStatsByThread[threadId] : undefined
+  )
+  // getModelProps only succeeds once the router has autoloaded the model, which
+  // normally doesn't happen until the first turn is sent. Refetch as soon as that
+  // load finishes so the counter can appear mid-turn instead of waiting for the
+  // full response (and the resulting messages.length bump) to land.
+  const loadingModel = useAppState((s) =>
+    threadId ? s.loadingModels[threadId] : s.loadingModel
+  )
 
   useEffect(() => {
     if (!modelId) {
@@ -126,7 +119,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
         if (id !== reqId.current) return
         setLoading(false)
       })
-  }, [modelId, messages.length])
+  }, [modelId, messages.length, loadingModel])
 
   const tokenData: TokenCountData = useMemo(() => {
     if (selectedProvider !== 'llamacpp' || !modelId) {
@@ -138,7 +131,13 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
       }
     }
     const overflow = getActiveContextOverflow(messages)
-    const usage = getLatestServerUsage(messages)
+    const usage = liveStats
+      ? {
+          inputTokens: liveStats.promptTokens,
+          outputTokens: liveStats.completionTokens,
+          totalTokens: liveStats.promptTokens + liveStats.completionTokens,
+        }
+      : getLatestServerUsage(messages)
     const tokenCount = overflow?.requestTokens ?? usage.totalTokens ?? 0
     const maxTokens = overflow?.contextTokens ?? modelProps?.nCtx
     const percentage = maxTokens ? (tokenCount / maxTokens) * 100 : undefined
@@ -180,6 +179,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     selectedProvider,
     modelProps,
     loading,
+    liveStats,
     getProviderByName,
     selectedModel?.name,
     selectedModel?.capabilities,

@@ -330,6 +330,20 @@ pub async fn start_mcp_server<R: Runtime>(
     let app_state = app.state::<AppState>();
     let active_servers_state = app_state.mcp_active_servers.clone();
 
+    // Idempotency guard: never serve() the same server twice. Two serve() calls
+    // spin up two independent clients that each send an `initialize` (both with
+    // request id 0); the second is rejected by streamable-http servers with a
+    // 400, tearing down the connection (issue #8411). This can happen when boot
+    // startup and a frontend activation fire for the same server.
+    if servers_state.lock().await.contains_key(&name) {
+        log::debug!("MCP server {name} already running; skipping duplicate start");
+        return Ok(());
+    }
+    if !app_state.mcp_starting.lock().await.insert(name.clone()) {
+        log::debug!("MCP server {name} start already in progress; skipping duplicate start");
+        return Ok(());
+    }
+
     // Store active server config for restart purposes
     store_active_server_config(&active_servers_state, &name, &config).await;
 
@@ -342,6 +356,10 @@ pub async fn start_mcp_server<R: Runtime>(
         config.clone(),
     )
     .await;
+
+    // Start attempt finished (success or failure) — clear the in-flight marker so
+    // future (re)activations aren't blocked.
+    app_state.mcp_starting.lock().await.remove(&name);
 
     match first_start_result {
         Ok(_) => {

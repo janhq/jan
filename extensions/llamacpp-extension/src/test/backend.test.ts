@@ -17,6 +17,12 @@ const MOCK_JAN_PATH_STRING = '/path/to/jan'
 
 // Mock the core dependencies
 vi.mock('@janhq/core', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
   getJanDataFolderPath: vi.fn().mockResolvedValue('/path/to/jan'),
   fs: {
     existsSync: vi.fn(),
@@ -35,7 +41,7 @@ vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
   getSystemInfo: vi.fn(),
 }))
 vi.mock('../util', () => ({
-  getProxyConfig: vi.fn().mockReturnValue({ enabled: false }),
+  getProxyConfig: vi.fn().mockResolvedValue({ enabled: false }),
   basenameNoExt: vi.fn((name: string) => name.replace(/\.tar\.gz$/, '')),
 }))
 vi.mock('@tauri-apps/api/path', () => ({
@@ -99,7 +105,7 @@ describe('Backend functions', () => {
     vi.mocked(mockDownloadManager.downloadFiles).mockClear()
     // Re-apply after clearAllMocks wipes return values
     const { getProxyConfig } = await import('../util')
-    vi.mocked(getProxyConfig).mockReturnValue({ enabled: false } as any)
+    vi.mocked(getProxyConfig).mockResolvedValue({ enabled: false } as any)
   })
 
   afterEach(() => {

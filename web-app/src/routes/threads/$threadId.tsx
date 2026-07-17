@@ -16,6 +16,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
@@ -509,7 +510,13 @@ function ThreadDetail() {
           (assistantCount > 0 &&
             assistantCount % TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES === 0)
         const currentThread = useThreads.getState().threads[threadId]
-        if (isRefreshTick && !currentThread?.metadata?.titleSetManually) {
+        const autoGenerateTitle =
+          useInterfaceSettings.getState().autoGenerateTitle
+        if (
+          autoGenerateTitle &&
+          isRefreshTick &&
+          !currentThread?.metadata?.titleSetManually
+        ) {
           const TITLE_TRANSCRIPT_MAX_TURNS = 8
           const recent = localMessages.slice(-TITLE_TRANSCRIPT_MAX_TURNS)
           const inputText =

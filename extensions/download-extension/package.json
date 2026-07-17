@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "cpx": "1.5.0",
+    "jsdom": "^26.1.0",
     "rimraf": "6.0.1",
     "rolldown": "1.0.0-beta.1",
     "run-script-os": "1.1.6",
@@ -25,7 +26,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "workspace:*",
     "@tauri-apps/api": "2.8.0"
   },
   "bundleDependencies": [],

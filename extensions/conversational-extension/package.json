@@ -8,7 +8,8 @@
   "license": "MIT",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "test": "vitest run"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -16,13 +17,15 @@
   },
   "devDependencies": {
     "cpx": "1.5.0",
+    "jsdom": "^26.1.0",
     "rimraf": "6.0.1",
     "rolldown": "1.0.0-beta.1",
     "ts-loader": "^9.5.0",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz"
+    "@janhq/core": "workspace:*"
   },
   "engines": {
     "node": ">=18.0.0"

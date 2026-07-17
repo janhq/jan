@@ -119,6 +119,18 @@ describe('extension.ts', () => {
     it('should handle unloading extensions', () => {
       expect(() => manager.unload()).not.toThrow()
     })
+
+    it('notifies registration listeners on register and supports unsubscribe', () => {
+      const listener = vi.fn()
+      const unsubscribe = manager.onRegistrationChange(listener)
+
+      manager.register('ext-1', { type: () => undefined, onUnload: vi.fn() } as never)
+      expect(listener).toHaveBeenCalledTimes(1)
+
+      unsubscribe()
+      manager.register('ext-2', { type: () => undefined, onUnload: vi.fn() } as never)
+      expect(listener).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('Extension loading', () => {

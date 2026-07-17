@@ -9,26 +9,26 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "test": "vitest run"
   },
   "devDependencies": {
     "cpx": "1.5.0",
+    "jsdom": "^26.1.0",
     "rimraf": "6.0.1",
     "rolldown": "1.0.0-beta.1",
     "run-script-os": "1.1.6",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "workspace:*",
     "ts-loader": "^9.5.0"
   },
   "files": [
     "dist/*",
     "package.json",
     "README.md"
-  ],
-  "bundleDependencies": [
-    "@janhq/core"
   ],
   "installConfig": {
     "hoistingLimits": "workspaces"

@@ -2,6 +2,15 @@ import { VectorDBExtension, type SearchMode, type VectorDBStatus, type VectorChu
 import * as vecdb from '@janhq/tauri-plugin-vector-db-api'
 import * as ragApi from '@janhq/tauri-plugin-rag-api'
 
+// Conservative average for English/dense text; real tokenizers vary (CJK
+// runs closer to 1-2 chars/token), so this stays a deliberate underestimate
+// rather than an exact conversion.
+const CHARS_PER_TOKEN_ESTIMATE = 3
+const CONTEXT_SAFETY_MARGIN = 0.8
+const MIN_CHUNK_SIZE_CHARS = 64
+// Reserves room for BOS/special tokens the tokenizer adds beyond raw content.
+const EMBEDDING_CONTEXT_SAFETY_TOKENS = 8
+
 export default class VectorDBExt extends VectorDBExtension {
   async onLoad(): Promise<void> {
     // no-op
@@ -144,13 +153,99 @@ export default class VectorDBExt extends VectorDBExtension {
 
   // Optional helper for chunking
   private async chunkText(text: string, chunkSize: number, chunkOverlap: number): Promise<string[]> {
-    return await vecdb.chunkText(text, chunkSize, chunkOverlap)
+    const safeChunkSize = await this.clampToEmbeddingContext(chunkSize, chunkOverlap)
+    const rawChunks = await vecdb.chunkText(text, safeChunkSize, chunkOverlap)
+    return await this.ensureChunksFitEmbeddingContext(rawChunks)
+  }
+
+  /**
+   * chunk_text (Rust) splits by raw character count with no tokenizer
+   * awareness. Clamp the char budget to the embedding model's real n_ctx so
+   * most chunks fit on the first try (cheap, but only an estimate).
+   */
+  private async clampToEmbeddingContext(chunkSize: number, chunkOverlap: number): Promise<number> {
+    const llm = this.getEmbeddingEngine()
+    if (!llm?.getEmbeddingContextSize) return chunkSize
+    const ctxSize = await this.probeEmbeddingContextSize(llm)
+    if (!ctxSize || ctxSize <= 0) return chunkSize
+    const safeMaxChars = Math.floor(
+      ctxSize * CHARS_PER_TOKEN_ESTIMATE * CONTEXT_SAFETY_MARGIN
+    )
+    const budget = Math.max(MIN_CHUNK_SIZE_CHARS, safeMaxChars - chunkOverlap)
+    return Math.min(chunkSize, budget)
+  }
+
+  /**
+   * Character-based estimates can't be trusted for every tokenizer/content
+   * mix (subword tokenizers on dense text can run well under the assumed
+   * chars-per-token ratio). Verify each chunk against the embedding model's
+   * real tokenizer and recursively halve any chunk that still doesn't fit,
+   * so ingestion can never hit exceed_context_size_error.
+   */
+  private async ensureChunksFitEmbeddingContext(chunks: string[]): Promise<string[]> {
+    const llm = this.getEmbeddingEngine()
+    if (!llm?.getEmbeddingContextSize || !llm?.countEmbeddingTokens) return chunks
+    const ctxSize = await this.probeEmbeddingContextSize(llm)
+    if (!ctxSize || ctxSize <= 0) return chunks
+    const budget = Math.max(1, ctxSize - EMBEDDING_CONTEXT_SAFETY_TOKENS)
+
+    const out: string[] = []
+    for (const chunk of chunks) {
+      out.push(...(await this.splitChunkToFit(chunk, budget, llm)))
+    }
+    return out
+  }
+
+  /**
+   * A rejected probe/count means the embedding engine is unhealthy (e.g. the
+   * embedding model failed to load). Skipping verification here would let
+   * oversized chunks through and surface later as a confusing HTTP 400
+   * (exceed_context_size_error), so fail ingestion with the real cause.
+   */
+  private async probeEmbeddingContextSize(llm: {
+    getEmbeddingContextSize?: () => Promise<number | undefined>
+  }): Promise<number | undefined> {
+    try {
+      return await llm.getEmbeddingContextSize!()
+    } catch (e) {
+      throw new Error(
+        `Failed to determine embedding context size: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+  }
+
+  private async splitChunkToFit(
+    text: string,
+    budget: number,
+    llm: { countEmbeddingTokens: (texts: string[]) => Promise<number[]> }
+  ): Promise<string[]> {
+    if (!text) return []
+    let count: number
+    try {
+      ;[count] = await llm.countEmbeddingTokens([text])
+    } catch (e) {
+      throw new Error(
+        `Failed to count embedding tokens: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+    if (count <= budget || text.length <= MIN_CHUNK_SIZE_CHARS) return [text]
+    const mid = Math.floor(text.length / 2)
+    return [
+      ...(await this.splitChunkToFit(text.slice(0, mid), budget, llm)),
+      ...(await this.splitChunkToFit(text.slice(mid), budget, llm)),
+    ]
+  }
+
+  private getEmbeddingEngine() {
+    return window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
+      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
+      getEmbeddingContextSize?: () => Promise<number | undefined>
+      countEmbeddingTokens?: (texts: string[]) => Promise<number[]>
+    }
   }
 
   private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
-      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
-    }
+    const llm = this.getEmbeddingEngine()
     if (!llm?.embed) throw new Error('llamacpp extension not available')
 
     const res = await llm.embed(texts)

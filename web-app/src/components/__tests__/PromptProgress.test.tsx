@@ -57,6 +57,98 @@ describe('PromptProgress', () => {
     ).toBeInTheDocument()
   })
 
+  it('should show load percentage while loading model', () => {
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        loadingModel: true,
+        modelLoadProgress: { modelId: 'model-1', value: 0.42 },
+      })
+    )
+
+    render(<PromptProgress />)
+
+    expect(screen.getByText('Loading model: 42%')).toBeInTheDocument()
+  })
+
+  it('should not render a progress bar while loading a model', () => {
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        loadingModel: true,
+        modelLoadProgress: { modelId: 'model-1', value: 0.42 },
+      })
+    )
+
+    const { container } = render(<PromptProgress />)
+
+    expect(screen.getByText('Loading model: 42%')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="progress"]')).toBeNull()
+  })
+
+  it('should still render the progress bar while reading (unaffected by the load-bar removal)', () => {
+    const mockProgress = { cache: 0, processed: 50, time_ms: 500, total: 100 }
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: mockProgress, loadingModel: false })
+    )
+
+    const { container } = render(<PromptProgress />)
+
+    expect(container.querySelector('[data-slot="progress"]')).not.toBeNull()
+  })
+
+  it('should name the stage when a load has more than one (vision model)', () => {
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        loadingModel: true,
+        modelLoadProgress: {
+          modelId: 'model-1',
+          value: 0.8,
+          stage: 'mmproj_model',
+          stages: ['text_model', 'mmproj_model'],
+        },
+      })
+    )
+
+    render(<PromptProgress />)
+
+    expect(screen.getByText('Loading vision encoder: 80%')).toBeInTheDocument()
+  })
+
+  it('should not name the stage for a plain single-stage text-only load', () => {
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        loadingModel: true,
+        modelLoadProgress: {
+          modelId: 'model-1',
+          value: 0.5,
+          stage: 'text_model',
+          stages: ['text_model'],
+        },
+      })
+    )
+
+    render(<PromptProgress />)
+
+    expect(screen.getByText('Loading model: 50%')).toBeInTheDocument()
+  })
+
+  it('should fall back to generic loading label when no progress event has arrived yet', () => {
+    mockUseAppState.mockImplementation((selector) =>
+      selector({
+        promptProgress: undefined,
+        loadingModel: true,
+        modelLoadProgress: undefined,
+      })
+    )
+
+    render(<PromptProgress />)
+
+    expect(screen.getByText('Loading model…')).toBeInTheDocument()
+  })
+
   it('should handle zero total gracefully', () => {
     const mockProgress = {
       cache: 0,

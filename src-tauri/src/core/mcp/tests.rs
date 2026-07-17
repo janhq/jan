@@ -288,12 +288,16 @@ async fn test_get_server_summaries_with_capabilities_in_active_config() {
         );
     }
 
-    // Summaries are derived from the intersection of connected servers and active config.
-    // With no entries in mcp_servers the result should still be empty.
+    // Summaries are derived from enabled (active_servers) config, independent of
+    // live connection state, so a transiently disconnected server still appears
+    // and keeps contributing a stable tool schema.
     let result = get_server_summaries(state).await;
     assert!(result.is_ok());
     let summaries = result.unwrap();
-    assert!(summaries.is_empty(), "No connected servers → no summaries");
+    assert_eq!(summaries.len(), 1, "enabled server appears even when disconnected");
+    assert_eq!(summaries[0].name, "filesystem");
+    assert_eq!(summaries[0].capabilities, vec!["filesystem", "files"]);
+    assert_eq!(summaries[0].description, "Read and write local files");
 }
 
 #[tokio::test]
@@ -318,10 +322,93 @@ async fn test_get_server_summaries_missing_metadata_defaults() {
         );
     }
 
-    // No entries in mcp_servers → summaries list is empty
+    // Enabled server with no metadata still appears, with defaulted fields.
     let result = get_server_summaries(state).await;
     assert!(result.is_ok());
-    assert!(result.unwrap().is_empty());
+    let summaries = result.unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].name, "minimal_server");
+    assert!(summaries[0].capabilities.is_empty());
+    assert_eq!(summaries[0].description, "");
+}
+
+// ============================================================================
+// get_tools last-known-tools fallback tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_tools_falls_back_to_last_known_when_server_enabled_but_disconnected() {
+    use super::commands::get_tools;
+    use super::models::ToolWithServer;
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+
+    // Enabled (in active_servers) but not present in mcp_servers — simulates a
+    // transient disconnect of a remote MCP server.
+    {
+        let mut active = state.mcp_active_servers.lock().await;
+        active.insert("exa".to_string(), serde_json::json!({ "type": "http" }));
+    }
+    {
+        let mut last_known = state.mcp_last_known_tools.lock().await;
+        last_known.insert(
+            "exa".to_string(),
+            vec![ToolWithServer {
+                name: "web_search_exa".to_string(),
+                description: Some("search the web".to_string()),
+                input_schema: serde_json::json!({}),
+                server: "exa".to_string(),
+            }],
+        );
+    }
+
+    let result = get_tools(app.handle().clone(), state).await;
+    assert!(result.is_ok());
+    let tools = result.unwrap();
+    assert_eq!(tools.len(), 1, "disconnected-but-enabled server's last-known tools still present");
+    assert_eq!(tools[0].name, "web_search_exa");
+    assert_eq!(tools[0].server, "exa");
+}
+
+#[tokio::test]
+async fn test_get_tools_omits_disabled_server_even_with_stale_last_known_entry() {
+    use super::commands::get_tools;
+    use super::models::ToolWithServer;
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+
+    // Not in active_servers (disabled/never enabled this session) but a stale
+    // last-known entry lingers — must not leak into the tool list.
+    {
+        let mut last_known = state.mcp_last_known_tools.lock().await;
+        last_known.insert(
+            "old_server".to_string(),
+            vec![ToolWithServer {
+                name: "stale_tool".to_string(),
+                description: None,
+                input_schema: serde_json::json!({}),
+                server: "old_server".to_string(),
+            }],
+        );
+    }
+
+    let result = get_tools(app.handle().clone(), state).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_empty(), "disabled server must not contribute stale tools");
 }
 
 // ============================================================================

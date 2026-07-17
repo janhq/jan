@@ -23,6 +23,12 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { invoke } from '@tauri-apps/api/core'
 import { ExtensionManager } from '@/lib/extension'
+import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
+import {
+  tokensForThinkingBudgetLevel,
+  isThinkingBudgetLevelKey,
+} from '@/lib/thinkingBudget'
+import { buildReasoningProviderOptions } from '@/lib/reasoningProviderOptions'
 import {
   ExtensionTypeEnum,
   VectorDBExtension,
@@ -38,7 +44,6 @@ import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
 import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
-import { extractFilesFromPrompt, type FileMetadata } from '@/lib/fileMetadata'
 import { isPredefinedRemoteProvider, getProviderApiType } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
 
@@ -118,6 +123,65 @@ function extractModelSamplingDefaults(
     }
   }
   return out
+}
+
+/**
+ * Per-model chat-template kwargs the user set in the model settings sidebar,
+ * stored as an object under `settings.chat_template_kwargs`. Only primitive
+ * values are forwarded; `enable_thinking` is owned by the reasoning control
+ * and is dropped here.
+ */
+function extractModelTemplateKwargs(
+  model: Model | null | undefined
+): Record<string, boolean | number | string> {
+  const raw: unknown =
+    model?.settings?.chat_template_kwargs?.controller_props?.value
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, boolean | number | string> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'enable_thinking') continue
+    const t = typeof value
+    if (t === 'boolean' || t === 'number' || t === 'string') {
+      out[key] = value as boolean | number | string
+    }
+  }
+  return out
+}
+
+/**
+ * `thinking_budget_tokens` is stored as a symbolic level (low/medium/high/
+ * xhigh/unlimited), not a frozen absolute count — llama.cpp's --fit can pick
+ * a runtime n_ctx far from the configured/default size, and that's only known
+ * once the model is actually loaded. Resolve against the live n_ctx here, at
+ * send time, instead of whatever context size was in scope when the level
+ * was picked in ChatInput.
+ */
+async function resolveThinkingBudgetTokens(
+  model: Model | null | undefined,
+  modelId: string | undefined
+): Promise<number | undefined> {
+  const rawLevel = model?.settings?.thinking_budget_tokens?.controller_props?.value
+  if (!isThinkingBudgetLevelKey(rawLevel)) return undefined
+  if (rawLevel === 'unlimited') return -1
+
+  let contextSize: number | undefined
+  if (modelId) {
+    try {
+      contextSize = (await getLlamacppExtension()?.getModelProps?.(modelId))?.nCtx
+    } catch {
+      // Model not loaded yet or router unreachable; fall through to configured/default.
+    }
+  }
+  if (!contextSize) {
+    const configured = model?.settings?.ctx_len?.controller_props?.value
+    contextSize =
+      typeof configured === 'number'
+        ? configured
+        : typeof configured === 'string' && configured !== ''
+          ? Number(configured)
+          : undefined
+  }
+  return tokensForThinkingBudgetLevel(rawLevel, contextSize || 8192)
 }
 
 /**
@@ -485,24 +549,41 @@ export function normalizeToolInputSchema(
 }
 
 /** Text from the most recent user message (for MCP server routing). */
+type ChatTemplateKwargs = Record<string, boolean | number | string>
+
 /**
- * Build the per-request reasoning kwargs for llama-server's chat completions
- * endpoint. The server parses `chat_template_kwargs.enable_thinking` via
- * `json_value(...).dump()` (server-common.cpp:1056-1069) and rejects values
- * that serialize to a quoted JSON string — so this must emit a JSON boolean
- * (`true` / `false`), never the strings `"true"` / `"false"`. 'auto' omits
- * the kwarg entirely so the server falls back to its --reasoning-budget
- * default. The function is a no-op for non-llamacpp providers.
+ * Build the per-request `chat_template_kwargs` for llama-server's chat
+ * completions endpoint, merging the reasoning toggle with any user-set
+ * per-model template kwargs (e.g. `preserve_thinking`) into one object. The
+ * server parses each value via `json_value(...).dump()`
+ * (server-common.cpp:1056-1069) and rejects values that serialize to a quoted
+ * JSON string where a boolean/number is expected — so this emits real JSON
+ * types, never the strings `"true"` / `"false"`. Reasoning 'auto'/undefined
+ * omits `enable_thinking` so the server falls back to its --reasoning-budget
+ * default; `enable_thinking` from the reasoning control always wins over a
+ * user-supplied value. The function is a no-op for non-llamacpp providers.
  */
 export function buildLlamacppReasoningParams(
   providerName: string | null | undefined,
-  reasoning: 'auto' | 'on' | 'off' | undefined
-): { chat_template_kwargs?: { enable_thinking: boolean } } {
+  reasoning: 'auto' | 'on' | 'off' | undefined,
+  userKwargs?: ChatTemplateKwargs | null
+): { chat_template_kwargs?: ChatTemplateKwargs } {
   if (providerName !== 'llamacpp') return {}
-  if (reasoning !== 'on' && reasoning !== 'off') return {}
-  return {
-    chat_template_kwargs: { enable_thinking: reasoning === 'on' },
+  const kwargs: ChatTemplateKwargs = {}
+  if (userKwargs && typeof userKwargs === 'object') {
+    for (const [key, value] of Object.entries(userKwargs)) {
+      if (key === 'enable_thinking') continue
+      const t = typeof value
+      if (t === 'boolean' || t === 'number' || t === 'string') {
+        kwargs[key] = value
+      }
+    }
   }
+  if (reasoning === 'on' || reasoning === 'off') {
+    kwargs.enable_thinking = reasoning === 'on'
+  }
+  if (Object.keys(kwargs).length === 0) return {}
+  return { chat_template_kwargs: kwargs }
 }
 
 function extractLatestUserText(messages: UIMessage[]): string {
@@ -563,6 +644,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private routerModel: LanguageModel | null = null
   private routerModelKey = ''
   private tools: Record<string, Tool> = {}
+  // Smart tool routing selects tools from the latest user message, which would
+  // change the tool set (and thus the cached prompt prefix) every turn. Freeze
+  // the routed set for the thread's lifetime so the prefix stays stable;
+  // re-route only when the connected servers or disabled-tool set changes.
+  private frozenRoutedTools: MCPTool[] | null = null
+  private frozenRoutedSig = ''
   private onTokenUsage?: TokenUsageCallback
   private hasDocuments = false
   private modelSupportsTools = false
@@ -730,26 +817,37 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           mcpService.getToolsForServers &&
           mcpService.getServerSummaries
         ) {
-          const routerModel =
-            mcpSettings.useLightweightRouterModel &&
-            mcpSettings.routerModelProvider.trim() &&
-            mcpSettings.routerModelId.trim()
-              ? (await this.resolveRouterModel(mcpSettings)) ?? this.model
-              : this.model
-          mcpTools = await mcpOrchestrator.getRelevantTools(
-            this.lastUserMessage,
-            {
-              getTools: () => mcpService.getTools(),
-              getToolsForServers: (names) =>
-                mcpService.getToolsForServers!(names),
-              getServerSummaries: () => mcpService.getServerSummaries!(),
-            },
-            disabledToolKeys,
-            {
-              routerModel,
-              abortSignal,
-            }
-          )
+          const summaries = await mcpService.getServerSummaries!()
+          const routedSig = JSON.stringify({
+            servers: summaries.map((s) => s.name).sort(),
+            disabled: [...disabledToolKeys].sort(),
+          })
+          if (this.frozenRoutedTools && this.frozenRoutedSig === routedSig) {
+            mcpTools = this.frozenRoutedTools
+          } else {
+            const routerModel =
+              mcpSettings.useLightweightRouterModel &&
+              mcpSettings.routerModelProvider.trim() &&
+              mcpSettings.routerModelId.trim()
+                ? (await this.resolveRouterModel(mcpSettings)) ?? this.model
+                : this.model
+            mcpTools = await mcpOrchestrator.getRelevantTools(
+              this.lastUserMessage,
+              {
+                getTools: () => mcpService.getTools(),
+                getToolsForServers: (names) =>
+                  mcpService.getToolsForServers!(names),
+                getServerSummaries: () => Promise.resolve(summaries),
+              },
+              disabledToolKeys,
+              {
+                routerModel,
+                abortSignal,
+              }
+            )
+            this.frozenRoutedTools = mcpTools
+            this.frozenRoutedSig = routedSig
+          }
         } else {
           mcpTools = await mcpService.getTools()
         }
@@ -884,7 +982,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           | 'auto'
           | 'on'
           | 'off'
-          | undefined
+          | undefined,
+        extractModelTemplateKwargs(selectedModel)
       )
 
       if (providerId === 'llamacpp') {
@@ -895,6 +994,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (!loaded.includes(modelId)) {
             useAppState.getState().updateLoadingModel(true)
             useAppState.getState().updateThreadLoadingModel(threadId, true)
+            useAppState.getState().updateModelLoadProgress(undefined)
+            useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
           }
         } catch {
           // Ignore probe failures; the router will still load on demand
@@ -905,6 +1006,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // overrides (router mode can't bake them into CLI args). Assistant
       // params still win — they're the explicit per-conversation override.
       const modelSamplingDefaults = extractModelSamplingDefaults(selectedModel)
+      if (providerId === 'llamacpp') {
+        const thinkingBudgetTokens = await resolveThinkingBudgetTokens(
+          selectedModel,
+          modelId
+        )
+        if (thinkingBudgetTokens !== undefined) {
+          modelSamplingDefaults.thinking_budget_tokens = thinkingBudgetTokens
+        }
+      }
 
       // Create the model before refreshing tools so the MCP orchestrator can run
       // structured LLM routing when many servers are connected.
@@ -916,6 +1026,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
+      // Pin chat to slot 0 so llama-server reuses this thread's cached KV
+      // prefix across turns; title generation uses the reserved background
+      // slot (RESERVED_BACKGROUND_SLOTS) and can't evict it.
+      if (providerId === 'llamacpp') {
+        mergedParams.id_slot = 0
+      }
       this.model = await ModelFactory.createModel(
         modelId,
         updatedProvider ?? provider,
@@ -923,9 +1039,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       )
       useAppState.getState().updateLoadingModel(false)
       useAppState.getState().updateThreadLoadingModel(threadId, false)
+      useAppState.getState().updateModelLoadProgress(undefined)
+      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
     } catch (error) {
       useAppState.getState().updateLoadingModel(false)
       useAppState.getState().updateThreadLoadingModel(threadId, false)
+      useAppState.getState().updateModelLoadProgress(undefined)
+      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
       console.error('Failed to create model:', error)
       throw new Error(
         `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
@@ -940,7 +1060,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
     const effectiveApiType = getProviderApiType(provider)
-    let messagesToConvert = (() => {
+    const messagesToConvert = (() => {
       if (effectiveApiType !== 'anthropic') {
         return options.messages
       }
@@ -988,14 +1108,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const selectedModel = useModelProvider.getState().selectedModel
 
-    const { messages: strippedMessages, files: attachedFiles } =
-      this.extractFileMetadataForSystem(messagesToConvert)
-    messagesToConvert = strippedMessages
-    const filesAddendum = this.buildFilesSystemAddendum(attachedFiles)
-    const rawSystem = filesAddendum
+    const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
+    const rawSystem = filesInstruction
       ? this.systemMessage
-        ? `${this.systemMessage}\n\n${filesAddendum}`
-        : filesAddendum
+        ? `${this.systemMessage}\n\n${filesInstruction}`
+        : filesInstruction
       : this.systemMessage
     // Drop whitespace-only system prompts so we don't send a useless system
     // turn that some chat templates still wrap into special tokens.
@@ -1100,9 +1217,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
+    // Cloud providers take reasoning via the AI SDK's per-request
+    // providerOptions (native thinking config), not the raw body.
+    const reasoningProviderOptions = buildReasoningProviderOptions(
+      providerId,
+      useModelProvider.getState().selectedModel
+    )
+
     let streamStartTime: number | undefined
     useAppState.getState().updatePromptProgress(undefined)
     useAppState.getState().updateThreadPromptProgress(threadId, undefined)
+    useAppState.getState().updateLiveTokenStats(undefined)
+    useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
 
     const result = streamText({
       model: this.model,
@@ -1112,6 +1238,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
       ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      ...(reasoningProviderOptions
+        ? { providerOptions: reasoningProviderOptions }
+        : {}),
       experimental_repairToolCall: async ({ toolCall, error }) => {
         // Windows paths (`C:\Users\...`) contain invalid JSON escapes that make
         // the SDK's argument parse fail. Re-escape lone backslashes and retry
@@ -1197,6 +1326,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           useAppState.getState().updateLoadingModel(false)
           useAppState.getState().updateThreadPromptProgress(threadId, undefined)
           useAppState.getState().updateThreadLoadingModel(threadId, false)
+          useAppState.getState().updateLiveTokenStats(undefined)
+          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
           if (useAppState.getState().currentStreamThreadId === threadId) {
             useAppState.getState().setCurrentStreamThreadId(undefined)
           }
@@ -1223,6 +1354,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           useAppState.getState().updateLoadingModel(false)
           useAppState.getState().updateThreadPromptProgress(threadId, undefined)
           useAppState.getState().updateThreadLoadingModel(threadId, false)
+          useAppState.getState().updateLiveTokenStats(undefined)
+          useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
           if (useAppState.getState().currentStreamThreadId === threadId) {
             useAppState.getState().setCurrentStreamThreadId(undefined)
           }
@@ -1316,69 +1449,31 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   *  Map user messages to include inline attachments in the message parts
-   * @param messages
-   * @returns
+   * [ATTACHED_FILES] blocks stay on the user message that carries them (see
+   * fileMetadata.ts injectFilesIntoPrompt) so the model reads file_ids in the
+   * turn they belong to. Only a static, file-independent instruction is added
+   * to the system prompt - it never varies per attachment, so it doesn't
+   * defeat prompt caching.
    */
-  /**
-   * Strip persisted [ATTACHED_FILES] blocks from user message text and return
-   * the aggregated, deduped file metadata so it can be folded into the system
-   * prompt instead of the user turn. The stored ThreadMessages are untouched
-   * (UI still relies on the inline block for display); this only affects what
-   * is sent to the model.
-   */
-  extractFileMetadataForSystem(
-    messages: UIMessage[]
-  ): { messages: UIMessage[]; files: FileMetadata[] } {
-    const byId = new Map<string, FileMetadata>()
-    const next = messages.map((message) => {
-      if (message.role !== 'user' || !Array.isArray(message.parts)) return message
-      let touched = false
-      const parts = message.parts.map((part) => {
-        if (
-          part?.type === 'text' &&
-          typeof (part as { text?: string }).text === 'string' &&
-          (part as { text: string }).text.includes('[ATTACHED_FILES]')
-        ) {
-          const { files, cleanPrompt } = extractFilesFromPrompt(
-            (part as { text: string }).text
-          )
-          if (files.length === 0) return part
-          for (const f of files) {
-            if (!byId.has(f.id)) byId.set(f.id, f)
-          }
-          touched = true
-          return { ...part, text: cleanPrompt }
-        }
-        return part
-      })
-      if (!touched) return message
-      return { ...message, parts } as UIMessage
-    })
-    return { messages: next, files: Array.from(byId.values()) }
-  }
-
-  /**
-   * Format collected file metadata as a system-prompt addendum. The block is
-   * stable / parseable so models can reference file_ids when invoking RAG tools.
-   */
-  buildFilesSystemAddendum(files: FileMetadata[]): string {
-    if (files.length === 0) return ''
-    const lines = files.map((f) => {
-      const parts = [`file_id: ${f.id}`, `name: ${f.name}`]
-      if (f.type) parts.push(`type: ${f.type}`)
-      if (typeof f.size === 'number') parts.push(`size: ${f.size}`)
-      if (typeof f.chunkCount === 'number') parts.push(`chunks: ${f.chunkCount}`)
-      if (f.injectionMode) parts.push(`mode: ${f.injectionMode}`)
-      return `- ${parts.join(', ')}`
-    })
+  buildFilesSystemInstruction(messages: UIMessage[]): string {
+    const hasAttachedFiles = messages.some(
+      (message) =>
+        message.role === 'user' &&
+        Array.isArray(message.parts) &&
+        message.parts.some(
+          (part) =>
+            part?.type === 'text' &&
+            typeof (part as { text?: string }).text === 'string' &&
+            (part as { text: string }).text.includes('[ATTACHED_FILES]')
+        )
+    )
+    if (!hasAttachedFiles) return ''
     return [
-      'The user has attached the following files to this conversation.',
-      'Use the available retrieval tools with these file_ids when their contents are relevant.',
-      '[ATTACHED_FILES]',
-      ...lines,
-      '[/ATTACHED_FILES]',
-    ].join('\n')
+      'Some user messages contain an [ATTACHED_FILES] block listing files',
+      'attached to that turn (file_id, name, type, size, chunk count, mode).',
+      'Use the available retrieval tools with those file_ids when their',
+      'contents are relevant to the request.',
+    ].join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

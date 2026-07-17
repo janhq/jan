@@ -275,10 +275,22 @@ export class MCPOrchestrator {
   }
 
   private filterDisabled(tools: MCPTool[], disabledKeys: string[]): MCPTool[] {
-    if (disabledKeys.length === 0) return tools
-    return tools.filter((tool) => {
-      const key = `${(tool as { server?: string }).server ?? 'unknown'}::${tool.name}`
-      return !disabledKeys.includes(key)
+    const filtered =
+      disabledKeys.length === 0
+        ? tools
+        : tools.filter((tool) => {
+            const key = `${(tool as { server?: string }).server ?? 'unknown'}::${tool.name}`
+            return !disabledKeys.includes(key)
+          })
+    // Sort by (server, name) so transient fetch-order/count fluctuations from
+    // MCP servers (reconnects, TTL-driven re-fetches) can't reorder the
+    // serialized tool list and invalidate the llama-server KV-cache prefix
+    // when the underlying tool set is otherwise unchanged.
+    return [...filtered].sort((a, b) => {
+      const serverA = (a as { server?: string }).server ?? 'unknown'
+      const serverB = (b as { server?: string }).server ?? 'unknown'
+      if (serverA !== serverB) return serverA < serverB ? -1 : 1
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
     })
   }
 }

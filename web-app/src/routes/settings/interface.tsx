@@ -28,8 +28,8 @@ function InterfaceSettings() {
     setColoredUserBubble,
     renderHtmlArtifacts,
     setRenderHtmlArtifacts,
-    foldInterstitialReasoning,
-    setFoldInterstitialReasoning,
+    autoGenerateTitle,
+    setAutoGenerateTitle,
   } = useInterfaceSettings()
 
   return (
@@ -104,14 +104,12 @@ function InterfaceSettings() {
                 }
               />
               <CardItem
-                title={t('settings:interface.foldInterstitialReasoning')}
-                description={t(
-                  'settings:interface.foldInterstitialReasoningDesc'
-                )}
+                title={t('settings:interface.autoGenerateTitle')}
+                description={t('settings:interface.autoGenerateTitleDesc')}
                 actions={
                   <Switch
-                    checked={foldInterstitialReasoning}
-                    onCheckedChange={setFoldInterstitialReasoning}
+                    checked={autoGenerateTitle}
+                    onCheckedChange={setAutoGenerateTitle}
                   />
                 }
               />

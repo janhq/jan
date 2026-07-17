@@ -1,3 +1,10 @@
+import { logger } from '@janhq/core'
+import type {
+  TemplateKwarg,
+  TemplateKwargType,
+} from '@janhq/tauri-plugin-llamacpp-api'
+import { getBackendSetting, setBackendSetting } from './backend-settings'
+
 // File path utilities
 export function basenameNoExt(filePath: string): string {
   const VALID_EXTENSIONS = [".tar.gz", ".zip"];
@@ -32,11 +39,22 @@ interface ProxyState {
   noProxy: string
 }
 
-export function getDefaultEmbeddingModelId(
+const DEFAULT_EMBEDDING_MODEL_KEY = 'default-embedding-model'
+
+// The web-app's useDefaultEmbeddingModel store persists this key through
+// the Rust settings backend (settings_get/settings_set -> settings.json),
+// not webview localStorage, on desktop. Read/write the same backend so this
+// extension sees the model the user actually picked in Settings; localStorage
+// is only a fallback for `dev:web` (no Tauri shell).
+async function readDefaultEmbeddingModelRaw(): Promise<string | null> {
+  return getBackendSetting(DEFAULT_EMBEDDING_MODEL_KEY)
+}
+
+export async function getDefaultEmbeddingModelId(
   provider: string = 'llamacpp'
-): string | undefined {
+): Promise<string | undefined> {
   try {
-    const raw = localStorage.getItem('default-embedding-model')
+    const raw = await readDefaultEmbeddingModelRaw()
     if (!raw) return undefined
     const parsed = JSON.parse(raw)
     const map = parsed?.state?.defaultByProvider
@@ -47,28 +65,31 @@ export function getDefaultEmbeddingModelId(
   }
 }
 
-export function setDefaultEmbeddingModelId(provider: string, modelId: string) {
+export async function setDefaultEmbeddingModelId(
+  provider: string,
+  modelId: string
+) {
   try {
-    const raw = localStorage.getItem('default-embedding-model')
+    const raw = await readDefaultEmbeddingModelRaw()
     const parsed = raw ? JSON.parse(raw) : { state: {}, version: 0 }
     const state = parsed.state ?? {}
     const map = state.defaultByProvider ?? {}
     map[provider] = modelId
     parsed.state = { ...state, defaultByProvider: map }
     if (parsed.version === undefined) parsed.version = 0
-    localStorage.setItem('default-embedding-model', JSON.stringify(parsed))
+    const serialized = JSON.stringify(parsed)
+    await setBackendSetting(DEFAULT_EMBEDDING_MODEL_KEY, serialized)
   } catch {
-    /* localStorage write failed; non-fatal */
+    /* non-fatal */
   }
 }
 
-export function getProxyConfig(): Record<
+export async function getProxyConfig(): Promise<Record<
   string,
   string | string[] | boolean
-> | null {
+> | null> {
   try {
-    // Retrieve proxy configuration from localStorage
-    const proxyConfigString = localStorage.getItem('setting-proxy-config')
+    const proxyConfigString = await getBackendSetting('setting-proxy-config')
     if (!proxyConfigString) {
       return null
     }
@@ -111,8 +132,7 @@ export function getProxyConfig(): Record<
     proxyConfig.verify_peer_ssl = proxyState.verifyPeerSSL
     proxyConfig.verify_host_ssl = proxyState.verifyHostSSL
 
-    // Log proxy configuration for debugging
-    console.log('Using proxy configuration:', {
+    logger.info('Using proxy configuration:', {
       url: proxyState.proxyUrl,
       hasAuth: !!(proxyState.proxyUsername && proxyState.proxyPassword),
       noProxyCount: proxyConfig.no_proxy
@@ -127,7 +147,7 @@ export function getProxyConfig(): Record<
 
     return proxyConfig
   } catch (error) {
-    console.error('Failed to parse proxy configuration:', error)
+    logger.error('Failed to parse proxy configuration:', error)
     if (error instanceof SyntaxError) {
       // JSON parsing error - return null
       return null
@@ -210,6 +230,52 @@ export function detectMtpLayersFromGgufMeta(
     }
   }
   return 0
+}
+
+const TEMPLATE_KWARG_RE =
+  /\{%-?\s*set\s+([A-Za-z_]\w*)\s*=\s*\1\s*\|\s*default\(\s*([^)]*?)\s*\)/g
+
+function parseJinjaDefault(raw: string): {
+  type: TemplateKwargType
+  value: boolean | number | string
+} {
+  const trimmed = raw.trim()
+  if (trimmed === 'true' || trimmed === 'false') {
+    return { type: 'boolean', value: trimmed === 'true' }
+  }
+  const quoted = trimmed.match(/^(['"])(.*)\1$/)
+  if (quoted) {
+    return { type: 'string', value: quoted[2] }
+  }
+  const n = Number(trimmed)
+  if (trimmed.length > 0 && Number.isFinite(n)) {
+    return { type: 'number', value: n }
+  }
+  return { type: 'string', value: trimmed }
+}
+
+/**
+ * Extract chat-template kwargs a GGUF's embedded jinja template accepts. Matches
+ * the self-defaulting idiom `{%- set X = X | default(<v>) -%}`, from which the
+ * kwarg's control type is inferred. `enable_thinking` is owned by the reasoning
+ * control and is intentionally excluded from the generic list.
+ */
+export function detectTemplateKwargsFromChatTemplate(
+  template: unknown
+): TemplateKwarg[] {
+  if (typeof template !== 'string' || template.length === 0) return []
+  const seen = new Set<string>()
+  const out: TemplateKwarg[] = []
+  const re = new RegExp(TEMPLATE_KWARG_RE.source, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(template)) !== null) {
+    const name = m[1]
+    if (name === 'enable_thinking' || seen.has(name)) continue
+    seen.add(name)
+    const { type, value } = parseJinjaDefault(m[2])
+    out.push({ name, type, default: value })
+  }
+  return out
 }
 
 export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {

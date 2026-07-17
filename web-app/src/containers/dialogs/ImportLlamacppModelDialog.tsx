@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   IconLoader2,
@@ -19,6 +19,7 @@ import {
   IconCheck,
   IconAlertTriangle,
   IconCodeCircle2,
+  IconBolt,
 } from '@tabler/icons-react'
 
 type DetectedModalities = { vision: boolean; audio: boolean }
@@ -36,6 +37,90 @@ const EMBEDDING_GGUF_ARCHS = new Set([
   'pangu-embedded',
   'llama-embed',
 ])
+
+// Mirrors llama.cpp's common_speculative_are_compatible (common/speculative.cpp):
+// draft/target compatibility is decided by tokenizer type, BOS/EOS ids, and
+// vocab size - never by comparing general.architecture strings, which are
+// legitimately different for MTP draft heads (e.g. "gemma4-assistant" vs "gemma4").
+const SPEC_VOCAB_MAX_SIZE_DIFFERENCE = 128
+
+type TokenizerInfo = {
+  tokenizerModel?: string
+  addBos?: boolean
+  addEos?: boolean
+  bosTokenId?: number
+  eosTokenId?: number
+  vocabSize?: number
+}
+
+function extractTokenizerInfo(
+  meta: Record<string, string> | undefined
+): TokenizerInfo {
+  if (!meta) return {}
+  const truthy = (v: string | undefined) =>
+    typeof v === 'string' && v.toLowerCase() === 'true'
+  const num = (v: string | undefined) => {
+    if (typeof v !== 'string' || v === '') return undefined
+    const n = Number(v)
+    return Number.isFinite(n) ? n : undefined
+  }
+  const vocabSizeKey = Object.keys(meta).find((k) =>
+    k.endsWith('.vocab_size')
+  )
+  return {
+    tokenizerModel: meta['tokenizer.ggml.model'],
+    addBos:
+      meta['tokenizer.ggml.add_bos_token'] !== undefined
+        ? truthy(meta['tokenizer.ggml.add_bos_token'])
+        : undefined,
+    addEos:
+      meta['tokenizer.ggml.add_eos_token'] !== undefined
+        ? truthy(meta['tokenizer.ggml.add_eos_token'])
+        : undefined,
+    bosTokenId: num(meta['tokenizer.ggml.bos_token_id']),
+    eosTokenId: num(meta['tokenizer.ggml.eos_token_id']),
+    vocabSize: vocabSizeKey ? num(meta[vocabSizeKey]) : undefined,
+  }
+}
+
+function findTokenizerMismatch(
+  main: TokenizerInfo,
+  draft: TokenizerInfo
+): string | null {
+  if (
+    main.tokenizerModel &&
+    draft.tokenizerModel &&
+    main.tokenizerModel !== draft.tokenizerModel
+  ) {
+    return `tokenizer type "${draft.tokenizerModel}" does not match the main model's tokenizer type "${main.tokenizerModel}"`
+  }
+  if (
+    main.addBos &&
+    draft.addBos &&
+    main.bosTokenId !== undefined &&
+    draft.bosTokenId !== undefined &&
+    main.bosTokenId !== draft.bosTokenId
+  ) {
+    return `BOS token id ${draft.bosTokenId} does not match the main model's BOS token id ${main.bosTokenId}`
+  }
+  if (
+    main.addEos &&
+    draft.addEos &&
+    main.eosTokenId !== undefined &&
+    draft.eosTokenId !== undefined &&
+    main.eosTokenId !== draft.eosTokenId
+  ) {
+    return `EOS token id ${draft.eosTokenId} does not match the main model's EOS token id ${main.eosTokenId}`
+  }
+  if (
+    main.vocabSize !== undefined &&
+    draft.vocabSize !== undefined &&
+    Math.abs(main.vocabSize - draft.vocabSize) > SPEC_VOCAB_MAX_SIZE_DIFFERENCE
+  ) {
+    return `vocab size ${draft.vocabSize} differs from the main model's vocab size ${main.vocabSize} by more than ${SPEC_VOCAB_MAX_SIZE_DIFFERENCE} tokens`
+  }
+  return null
+}
 
 function detectEmbeddingFromMetadata(
   meta: Record<string, string> | undefined
@@ -80,15 +165,26 @@ export const ImportLlamacppModelDialog = ({
   const [detectedModalities, setDetectedModalities] =
     useState<DetectedModalities | null>(null)
   const [isEmbeddingModel, setIsEmbeddingModel] = useState(false)
+  const [isDraftModel, setIsDraftModel] = useState(false)
+  const [draftFile, setDraftFile] = useState<string | null>(null)
+  const [draftValidationError, setDraftValidationError] = useState<
+    string | null
+  >(null)
+  const [isValidatingDraft, setIsValidatingDraft] = useState(false)
+  const [modelTokenizerInfo, setModelTokenizerInfo] =
+    useState<TokenizerInfo | null>(null)
 
   const validateGgufFile = useCallback(
-    async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
+    async (filePath: string, fileType: 'model' | 'mmproj' | 'draft'): Promise<void> => {
       if (fileType === 'model') {
         setIsValidating(true)
         setValidationError(null)
-      } else {
+      } else if (fileType === 'mmproj') {
         setIsValidatingMmproj(true)
         setMmprojValidationError(null)
+      } else {
+        setIsValidatingDraft(true)
+        setDraftValidationError(null)
       }
 
       try {
@@ -104,6 +200,9 @@ export const ImportLlamacppModelDialog = ({
                 result.metadata.metadata?.['general.architecture']
 
               setModelName(await serviceHub.path().basename(filePath))
+              setModelTokenizerInfo(
+                extractTokenizerInfo(result.metadata.metadata)
+              )
 
               const embedding = detectEmbeddingFromMetadata(
                 result.metadata.metadata
@@ -115,6 +214,10 @@ export const ImportLlamacppModelDialog = ({
                 setMmprojValidationError(null)
                 setIsValidatingMmproj(false)
                 setDetectedModalities(null)
+                setIsDraftModel(false)
+                setDraftFile(null)
+                setDraftValidationError(null)
+                setIsValidatingDraft(false)
               }
 
               if (architecture === 'clip') {
@@ -133,7 +236,7 @@ export const ImportLlamacppModelDialog = ({
               console.error('Model validation failed:', result.error)
             }
           }
-        } else {
+        } else if (fileType === 'mmproj') {
           // For mmproj files, we need to manually validate since validateGgufFile rejects CLIP models
           try {
             // Import the readGgufMetadata function directly from Tauri
@@ -180,6 +283,35 @@ export const ImportLlamacppModelDialog = ({
             }`
             setMmprojValidationError(errorMessage)
           }
+        } else {
+          // Draft (speculative-decoding) models are ordinary causal-LM ggufs,
+          // not CLIP - reuse the standard validator and cross-check tokenizer
+          // compatibility (not architecture name; see findTokenizerMismatch).
+          if (typeof serviceHub.models().validateGgufFile === 'function') {
+            const result = await serviceHub.models().validateGgufFile(filePath)
+            const architecture =
+              result.metadata?.metadata?.['general.architecture']
+
+            if (architecture === 'clip') {
+              setDraftValidationError(
+                'This file has CLIP architecture and cannot be used as a draft model.'
+              )
+            } else if (!result.isValid) {
+              setDraftValidationError(
+                result.error || 'Draft model validation failed'
+              )
+            } else if (modelTokenizerInfo) {
+              const mismatch = findTokenizerMismatch(
+                modelTokenizerInfo,
+                extractTokenizerInfo(result.metadata?.metadata)
+              )
+              if (mismatch) {
+                setDraftValidationError(
+                  `Draft model is not compatible with the main model: ${mismatch}.`
+                )
+              }
+            }
+          }
         }
       } catch (error) {
         console.error(`Failed to validate ${fileType} file:`, error)
@@ -187,18 +319,22 @@ export const ImportLlamacppModelDialog = ({
 
         if (fileType === 'model') {
           setValidationError(errorMessage)
-        } else {
+        } else if (fileType === 'mmproj') {
           setMmprojValidationError(errorMessage)
+        } else {
+          setDraftValidationError(errorMessage)
         }
       } finally {
         if (fileType === 'model') {
           setIsValidating(false)
-        } else {
+        } else if (fileType === 'mmproj') {
           setIsValidatingMmproj(false)
+        } else {
+          setIsValidatingDraft(false)
         }
       }
     },
-    [serviceHub]
+    [serviceHub, modelTokenizerInfo]
   )
 
   const validateModelFile = useCallback(
@@ -215,7 +351,14 @@ export const ImportLlamacppModelDialog = ({
     [validateGgufFile]
   )
 
-  const handleFileSelect = async (type: 'model' | 'mmproj') => {
+  const validateDraftFile = useCallback(
+    async (filePath: string): Promise<void> => {
+      await validateGgufFile(filePath, 'draft')
+    },
+    [validateGgufFile]
+  )
+
+  const handleFileSelect = async (type: 'model' | 'mmproj' | 'draft') => {
     const selectedFile = await serviceHub.dialog().open({
       multiple: false,
       directory: false,
@@ -235,10 +378,14 @@ export const ImportLlamacppModelDialog = ({
 
         // Validate the selected model file (this will update model name with baseName from metadata)
         await validateModelFile(selectedFile)
-      } else {
+      } else if (type === 'mmproj') {
         setMmProjFile(selectedFile)
         // Validate the selected mmproj file
         await validateMmprojFile(selectedFile)
+      } else {
+        setDraftFile(selectedFile)
+        // Validate the selected draft model file
+        await validateDraftFile(selectedFile)
       }
     }
   }
@@ -251,6 +398,11 @@ export const ImportLlamacppModelDialog = ({
 
     if (isMultimodal && !mmProjFile) {
       toast.error('Please select both model and MMPROJ files for multimodal models')
+      return
+    }
+
+    if (isDraftModel && !draftFile) {
+      toast.error('Please select a draft model file')
       return
     }
 
@@ -274,20 +426,17 @@ export const ImportLlamacppModelDialog = ({
     setImporting(true)
 
     try {
-      if (isMultimodal && mmProjFile) {
-        // Import vision model with both files - let backend calculate SHA256 and sizes
-        await serviceHub.models().pullModel(
-          modelName,
-          modelFile,
-          undefined, // modelSha256 - calculated by backend
-          undefined, // modelSize - calculated by backend
-          mmProjFile // mmprojPath
-          // mmprojSha256 and mmprojSize omitted - calculated by backend
-        )
-      } else {
-        // Import regular model - let backend calculate SHA256 and size
-        await serviceHub.models().pullModel(modelName, modelFile)
-      }
+      // Let backend calculate SHA256 and sizes for all files
+      await serviceHub.models().pullModel(
+        modelName,
+        modelFile,
+        undefined, // modelSha256
+        undefined, // modelSize
+        isMultimodal && mmProjFile ? mmProjFile : undefined,
+        undefined, // mmprojSha256
+        undefined, // mmprojSize
+        isDraftModel && draftFile ? draftFile : undefined
+      )
 
       toast.success('Model imported successfully', {
         description: `${modelName} has been imported`,
@@ -319,13 +468,12 @@ export const ImportLlamacppModelDialog = ({
     setIsValidatingMmproj(false)
     setDetectedModalities(null)
     setIsEmbeddingModel(false)
+    setModelTokenizerInfo(null)
+    setIsDraftModel(false)
+    setDraftFile(null)
+    setDraftValidationError(null)
+    setIsValidatingDraft(false)
   }
-
-  useEffect(() => {
-    if (mmProjFile && modelName && isMultimodal) {
-      validateMmprojFile(mmProjFile)
-    }
-  }, [modelName, mmProjFile, isMultimodal, validateMmprojFile])
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!importing) {
@@ -350,8 +498,9 @@ export const ImportLlamacppModelDialog = ({
           </DialogTitle>
           <DialogDescription>
             Import a GGUF model file to add it to your collection. Enable
-            multimodal support to attach an mmproj for image or audio input.
-            Embedding models are detected automatically.
+            multimodal support to attach an mmproj for image or audio input,
+            or draft model support for speculative decoding. Embedding models
+            are detected automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -379,6 +528,36 @@ export const ImportLlamacppModelDialog = ({
                     setMmprojValidationError(null)
                     setIsValidatingMmproj(false)
                     setDetectedModalities(null)
+                  }
+                }}
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="border  rounded-lg p-4 space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="shrink-0 mt-0.5">
+                <IconBolt size={20} className="text-muted-foreground" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium">Draft Model Support</h3>
+                <p className="text-sm text-muted-foreground leading-normal">
+                  Attach a smaller draft model (including MTP draft heads) for
+                  speculative decoding. The draft model must share the main
+                  model&apos;s tokenizer and vocabulary.
+                </p>
+              </div>
+              <Switch
+                id="draft-model"
+                checked={isDraftModel}
+                disabled={isEmbeddingModel}
+                onCheckedChange={(checked) => {
+                  setIsDraftModel(checked)
+                  if (!checked) {
+                    setDraftFile(null)
+                    setDraftValidationError(null)
+                    setIsValidatingDraft(false)
                   }
                 }}
                 className="mt-1"
@@ -620,6 +799,92 @@ export const ImportLlamacppModelDialog = ({
                 )}
               </div>
             )}
+
+            {isDraftModel && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">Draft Model File (GGUF)</h3>
+                  <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
+                    Required for Draft Model
+                  </span>
+                </div>
+
+                {draftFile ? (
+                  <div className="space-y-2">
+                    <div className="bg-accent/10 border rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {isValidatingDraft ? (
+                            <IconLoader2 size={16} className="animate-spin" />
+                          ) : draftValidationError ? (
+                            <IconAlertTriangle
+                              size={16}
+                              className="text-destructive"
+                            />
+                          ) : (
+                            <IconCheck size={16} />
+                          )}
+                          <span className="text-sm font-medium">
+                            {draftFile.split(/[\\/]/).pop()}
+                          </span>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleFileSelect('draft')}
+                          disabled={importing || isValidatingDraft}
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    </div>
+
+                    {draftValidationError && (
+                      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <IconAlertTriangle
+                            size={16}
+                            className="text-destructive mt-0.5 shrink-0"
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-destructive">
+                              Draft Model Validation Error
+                            </p>
+                            <p className="text-sm text-destructive/90 mt-1">
+                              {draftValidationError}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {isValidatingDraft && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <IconLoader2
+                            size={16}
+                            className="text-blue-500 animate-spin"
+                          />
+                          <p className="text-sm text-blue-700">
+                            Validating draft model file...
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="link"
+                    onClick={() => handleFileSelect('draft')}
+                    disabled={importing}
+                    className="w-full h-12 border border-dashed text-muted-foreground"
+                  >
+                    Select Draft GGUF File
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -640,10 +905,13 @@ export const ImportLlamacppModelDialog = ({
               !modelFile ||
               !modelName ||
               (isMultimodal && !mmProjFile) ||
+              (isDraftModel && !draftFile) ||
               validationError !== null ||
               isValidating ||
               mmprojValidationError !== null ||
-              isValidatingMmproj
+              isValidatingMmproj ||
+              draftValidationError !== null ||
+              isValidatingDraft
             }
           >
             {importing && <IconLoader2 className="mr-2 size-4 animate-spin" />}

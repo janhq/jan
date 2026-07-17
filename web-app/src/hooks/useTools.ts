@@ -5,6 +5,7 @@ import { useAppState } from './useAppState'
 import { useToolAvailable } from './useToolAvailable'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
+import { mcpOrchestrator } from '@/lib/mcp-orchestrator/mcp-orchestrator'
 
 export const useTools = () => {
   const updateTools = useAppState((state) => state.updateTools)
@@ -15,6 +16,12 @@ export const useTools = () => {
   useEffect(() => {
     async function setTools() {
       try {
+        // A server connect/disconnect/tools-refresh fired this (mcp-update);
+        // the orchestrator's per-request tool cache would otherwise only
+        // notice via its own TTL, serving stale/reordered tools in the
+        // meantime and destabilizing the KV-cache prefix Jan sends.
+        mcpOrchestrator.invalidateCache()
+
         // Get MCP extension first
         const mcpExtension = ExtensionManager.getInstance().get<MCPExtension>(
           ExtensionTypeEnum.MCP

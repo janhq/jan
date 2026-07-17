@@ -11,6 +11,7 @@ type ProviderLike = {
   base_url?: string
   api_key?: string
   api_key_fallbacks?: string[]
+  api_type?: string
   custom_header?: { header: string; value: string }[] | null
 }
 
@@ -18,12 +19,72 @@ type FetchImpl = typeof fetch
 
 const TOP_N = 10
 
-export function supportsRemoteCatalog(providerName: string): boolean {
+const ANTHROPIC_VERSION_HEADER = 'anthropic-version'
+const ANTHROPIC_VERSION = '2023-06-01'
+const ANTHROPIC_BROWSER_ACCESS_HEADER =
+  'anthropic-dangerous-direct-browser-access'
+
+/// Whether a provider fronts Anthropic's API. The `api_type` discriminant is
+/// authoritative (matches the inference dispatch in model-factory); provider
+/// name and host are fallbacks for configs predating that field.
+function isAnthropicProvider(provider: {
+  provider?: string
+  base_url?: string
+  api_type?: string
+}): boolean {
   return (
-    providerName === 'openai' ||
-    providerName === 'anthropic' ||
-    providerName === 'gemini'
+    provider.api_type === 'anthropic' ||
+    (provider.provider ?? '').toLowerCase().includes('anthropic') ||
+    (provider.base_url ?? '').toLowerCase().includes('anthropic')
   )
+}
+
+function setDefaultHeader(
+  headers: Record<string, string>,
+  name: string,
+  value: string
+): void {
+  const present = Object.keys(headers).some(
+    (h) => h.toLowerCase() === name.toLowerCase()
+  )
+  if (!present) headers[name] = value
+}
+
+/// Anthropic rejects `/v1/models` (and any Anthropic-shaped proxy) without
+/// `anthropic-version`, and rejects requests carrying an `Origin` (Jan's
+/// webview is a browser context) without the browser-access opt-in header.
+/// Add both defaults for Anthropic providers when the caller hasn't set them;
+/// other providers are left untouched.
+export function ensureAnthropicHeaders(
+  provider: { provider?: string; base_url?: string; api_type?: string },
+  headers: Record<string, string>
+): void {
+  if (!isAnthropicProvider(provider)) return
+  setDefaultHeader(headers, ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION)
+  setDefaultHeader(headers, ANTHROPIC_BROWSER_ACCESS_HEADER, 'true')
+}
+
+type CatalogKind = 'openai' | 'anthropic' | 'gemini'
+
+/// Resolve which catalog shape a provider speaks. `api_type` is authoritative
+/// (a custom-named Anthropic gateway still lists Claude models), falling back
+/// to the built-in provider name.
+function resolveCatalogKind(
+  provider: string | { provider: string; api_type?: string }
+): CatalogKind | null {
+  const name = typeof provider === 'string' ? provider : provider.provider
+  const apiType = typeof provider === 'string' ? undefined : provider.api_type
+  if (apiType === 'anthropic') return 'anthropic'
+  if (name === 'openai' || name === 'anthropic' || name === 'gemini') {
+    return name
+  }
+  return null
+}
+
+export function supportsRemoteCatalog(
+  provider: string | { provider: string; api_type?: string }
+): boolean {
+  return resolveCatalogKind(provider) !== null
 }
 
 function inferOpenAICapabilities(id: string): string[] | null {
@@ -108,6 +169,7 @@ function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, 
   if (p.custom_header) {
     for (const h of p.custom_header) headers[h.header] = h.value
   }
+  ensureAnthropicHeaders(p, headers)
   return headers
 }
 
@@ -135,7 +197,8 @@ export async function fetchTopRemoteModels(
   provider: ProviderLike,
   fetchImpl: FetchImpl
 ): Promise<RemoteCatalogModel[]> {
-  if (!supportsRemoteCatalog(provider.provider)) {
+  const kind = resolveCatalogKind(provider)
+  if (!kind) {
     throw new Error(`Catalog not supported for ${provider.provider}`)
   }
   if (!provider.base_url) {
@@ -162,17 +225,17 @@ export async function fetchTopRemoteModels(
 
     const body = result.body as { data?: unknown }
     const rows = Array.isArray(body?.data) ? (body.data as unknown[]) : []
-    return normalizeCatalog(provider.provider, rows)
+    return normalizeCatalog(kind, rows)
   }
 
   throw new Error(`Failed to fetch models from ${provider.provider}: ${lastStatus} ${lastStatusText}`)
 }
 
-function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogModel[] {
+function normalizeCatalog(kind: CatalogKind, rows: unknown[]): RemoteCatalogModel[] {
   const inferCaps =
-    providerName === 'openai'
+    kind === 'openai'
       ? inferOpenAICapabilities
-      : providerName === 'gemini'
+      : kind === 'gemini'
         ? inferGeminiCapabilities
         : inferAnthropicCapabilities
 
@@ -188,7 +251,7 @@ function normalizeCatalog(providerName: string, rows: unknown[]): RemoteCatalogM
     parsed.push({ id, capabilities: caps, createdMs })
   }
 
-  if (providerName === 'gemini') {
+  if (kind === 'gemini') {
     parsed.sort((a, b) => {
       const va = geminiVersionScore(a.id)
       const vb = geminiVersionScore(b.id)
