@@ -5,12 +5,5 @@
     "description": "Automatically unload other models when loading a new one",
     "controllerType": "checkbox",
     "controllerProps": { "value": true }
-  },
-  {
-    "key": "strip_reasoning_from_context",
-    "title": "Strip reasoning from context",
-    "description": "Remove prior turns' thinking/reasoning content before resending history. Improves KV-cache reuse across turns, but some models (e.g. newer Qwen releases) recommend keeping it for better multi-turn reasoning.",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": true }
   }
 ]

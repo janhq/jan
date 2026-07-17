@@ -3,6 +3,7 @@ import { logger } from '@janhq/core'
 import {
   buildEmbedBatches,
   detectMtpLayersFromGgufMeta,
+  detectTemplateKwargsFromChatTemplate,
   estimateTokensFromText,
   getProxyConfig,
   truncateToTokenBudget,
@@ -624,5 +625,51 @@ describe('detectMtpLayersFromGgufMeta', () => {
         'glm.nextn_predict_layers': '2.7',
       })
     ).toBe(2)
+  })
+})
+
+describe('detectTemplateKwargsFromChatTemplate', () => {
+  it('returns [] for missing or empty templates', () => {
+    expect(detectTemplateKwargsFromChatTemplate(undefined)).toEqual([])
+    expect(detectTemplateKwargsFromChatTemplate('')).toEqual([])
+    expect(detectTemplateKwargsFromChatTemplate(123)).toEqual([])
+  })
+
+  it('detects the self-defaulting set idiom and infers types', () => {
+    const tpl = [
+      "{%- set enable_thinking = enable_thinking | default(false) -%}",
+      "{%- set preserve_thinking = preserve_thinking | default(false) -%}",
+      "{%- set reasoning_effort = reasoning_effort | default('medium') -%}",
+      "{%- set max_turns = max_turns | default(8) -%}",
+    ].join('\n')
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
+      { name: 'preserve_thinking', type: 'boolean', default: false },
+      { name: 'reasoning_effort', type: 'string', default: 'medium' },
+      { name: 'max_turns', type: 'number', default: 8 },
+    ])
+  })
+
+  it('excludes enable_thinking (owned by the reasoning control)', () => {
+    const tpl = '{%- set enable_thinking = enable_thinking | default(true) -%}'
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([])
+  })
+
+  it('deduplicates repeated kwargs and ignores non-self-defaulting sets', () => {
+    const tpl = [
+      '{%- set preserve_thinking = preserve_thinking | default(false) -%}',
+      '{%- set preserve_thinking = preserve_thinking | default(false) -%}',
+      '{%- set ns = namespace(x=1) -%}',
+      '{%- set role = message.role -%}',
+    ].join('\n')
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
+      { name: 'preserve_thinking', type: 'boolean', default: false },
+    ])
+  })
+
+  it('handles the {% %} form without the dash', () => {
+    const tpl = '{% set add_notes = add_notes | default(true) %}'
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
+      { name: 'add_notes', type: 'boolean', default: true },
+    ])
   })
 })

@@ -111,6 +111,16 @@ export interface ModelConfig {
   mmproj_sha256?: string
   mmproj_size_bytes?: number
   embedding?: boolean
+  template_kwargs?: TemplateKwarg[]
+  template_kwargs_check_v?: number
+}
+
+export type TemplateKwargType = 'boolean' | 'number' | 'string'
+
+export interface TemplateKwarg {
+  name: string
+  type: TemplateKwargType
+  default: boolean | number | string
 }
 
 export interface EmbeddingResponse {

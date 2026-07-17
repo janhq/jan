@@ -1,4 +1,8 @@
 import { logger } from '@janhq/core'
+import type {
+  TemplateKwarg,
+  TemplateKwargType,
+} from '@janhq/tauri-plugin-llamacpp-api'
 import { getBackendSetting, setBackendSetting } from './backend-settings'
 
 // File path utilities
@@ -226,6 +230,52 @@ export function detectMtpLayersFromGgufMeta(
     }
   }
   return 0
+}
+
+const TEMPLATE_KWARG_RE =
+  /\{%-?\s*set\s+([A-Za-z_]\w*)\s*=\s*\1\s*\|\s*default\(\s*([^)]*?)\s*\)/g
+
+function parseJinjaDefault(raw: string): {
+  type: TemplateKwargType
+  value: boolean | number | string
+} {
+  const trimmed = raw.trim()
+  if (trimmed === 'true' || trimmed === 'false') {
+    return { type: 'boolean', value: trimmed === 'true' }
+  }
+  const quoted = trimmed.match(/^(['"])(.*)\1$/)
+  if (quoted) {
+    return { type: 'string', value: quoted[2] }
+  }
+  const n = Number(trimmed)
+  if (trimmed.length > 0 && Number.isFinite(n)) {
+    return { type: 'number', value: n }
+  }
+  return { type: 'string', value: trimmed }
+}
+
+/**
+ * Extract chat-template kwargs a GGUF's embedded jinja template accepts. Matches
+ * the self-defaulting idiom `{%- set X = X | default(<v>) -%}`, from which the
+ * kwarg's control type is inferred. `enable_thinking` is owned by the reasoning
+ * control and is intentionally excluded from the generic list.
+ */
+export function detectTemplateKwargsFromChatTemplate(
+  template: unknown
+): TemplateKwarg[] {
+  if (typeof template !== 'string' || template.length === 0) return []
+  const seen = new Set<string>()
+  const out: TemplateKwarg[] = []
+  const re = new RegExp(TEMPLATE_KWARG_RE.source, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(template)) !== null) {
+    const name = m[1]
+    if (name === 'enable_thinking' || seen.has(name)) continue
+    seen.add(name)
+    const { type, value } = parseJinjaDefault(m[2])
+    out.push({ name, type, default: value })
+  }
+  return out
 }
 
 export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {

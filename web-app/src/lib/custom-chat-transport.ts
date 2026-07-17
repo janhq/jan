@@ -126,6 +126,28 @@ function extractModelSamplingDefaults(
 }
 
 /**
+ * Per-model chat-template kwargs the user set in the model settings sidebar,
+ * stored as an object under `settings.chat_template_kwargs`. Only primitive
+ * values are forwarded; `enable_thinking` is owned by the reasoning control
+ * and is dropped here.
+ */
+function extractModelTemplateKwargs(
+  model: Model | null | undefined
+): Record<string, boolean | number | string> {
+  const raw = model?.settings?.chat_template_kwargs?.controller_props?.value
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, boolean | number | string> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'enable_thinking') continue
+    const t = typeof value
+    if (t === 'boolean' || t === 'number' || t === 'string') {
+      out[key] = value as boolean | number | string
+    }
+  }
+  return out
+}
+
+/**
  * `thinking_budget_tokens` is stored as a symbolic level (low/medium/high/
  * xhigh/unlimited), not a frozen absolute count — llama.cpp's --fit can pick
  * a runtime n_ctx far from the configured/default size, and that's only known
@@ -526,24 +548,41 @@ export function normalizeToolInputSchema(
 }
 
 /** Text from the most recent user message (for MCP server routing). */
+type ChatTemplateKwargs = Record<string, boolean | number | string>
+
 /**
- * Build the per-request reasoning kwargs for llama-server's chat completions
- * endpoint. The server parses `chat_template_kwargs.enable_thinking` via
- * `json_value(...).dump()` (server-common.cpp:1056-1069) and rejects values
- * that serialize to a quoted JSON string — so this must emit a JSON boolean
- * (`true` / `false`), never the strings `"true"` / `"false"`. 'auto' omits
- * the kwarg entirely so the server falls back to its --reasoning-budget
- * default. The function is a no-op for non-llamacpp providers.
+ * Build the per-request `chat_template_kwargs` for llama-server's chat
+ * completions endpoint, merging the reasoning toggle with any user-set
+ * per-model template kwargs (e.g. `preserve_thinking`) into one object. The
+ * server parses each value via `json_value(...).dump()`
+ * (server-common.cpp:1056-1069) and rejects values that serialize to a quoted
+ * JSON string where a boolean/number is expected — so this emits real JSON
+ * types, never the strings `"true"` / `"false"`. Reasoning 'auto'/undefined
+ * omits `enable_thinking` so the server falls back to its --reasoning-budget
+ * default; `enable_thinking` from the reasoning control always wins over a
+ * user-supplied value. The function is a no-op for non-llamacpp providers.
  */
 export function buildLlamacppReasoningParams(
   providerName: string | null | undefined,
-  reasoning: 'auto' | 'on' | 'off' | undefined
-): { chat_template_kwargs?: { enable_thinking: boolean } } {
+  reasoning: 'auto' | 'on' | 'off' | undefined,
+  userKwargs?: ChatTemplateKwargs | null
+): { chat_template_kwargs?: ChatTemplateKwargs } {
   if (providerName !== 'llamacpp') return {}
-  if (reasoning !== 'on' && reasoning !== 'off') return {}
-  return {
-    chat_template_kwargs: { enable_thinking: reasoning === 'on' },
+  const kwargs: ChatTemplateKwargs = {}
+  if (userKwargs && typeof userKwargs === 'object') {
+    for (const [key, value] of Object.entries(userKwargs)) {
+      if (key === 'enable_thinking') continue
+      const t = typeof value
+      if (t === 'boolean' || t === 'number' || t === 'string') {
+        kwargs[key] = value
+      }
+    }
   }
+  if (reasoning === 'on' || reasoning === 'off') {
+    kwargs.enable_thinking = reasoning === 'on'
+  }
+  if (Object.keys(kwargs).length === 0) return {}
+  return { chat_template_kwargs: kwargs }
 }
 
 function extractLatestUserText(messages: UIMessage[]): string {
@@ -942,7 +981,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           | 'auto'
           | 'on'
           | 'off'
-          | undefined
+          | undefined,
+        extractModelTemplateKwargs(selectedModel)
       )
 
       if (providerId === 'llamacpp') {

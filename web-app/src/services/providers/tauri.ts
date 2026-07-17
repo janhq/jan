@@ -107,6 +107,8 @@ export class TauriProvidersService extends DefaultProvidersService {
                 capabilities,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
                 imported: (model as { imported?: boolean }).imported,
+                template_kwargs: (model as { template_kwargs?: TemplateKwarg[] })
+                  .template_kwargs,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {

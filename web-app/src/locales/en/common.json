@@ -261,6 +261,16 @@
       "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
       "pMin": "Min draft probability",
       "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+    },
+    "templateKwargs": {
+      "section": "Chat template options",
+      "description": "Extra options this model's chat template accepts. Sent as chat_template_kwargs on each request; leave a value at its default to let the template decide.",
+      "addCustom": "Add custom option",
+      "keyPlaceholder": "name",
+      "valuePlaceholder": "value",
+      "add": "Add",
+      "cancel": "Cancel",
+      "remove": "Remove"
     }
   },
   "dialogs": {

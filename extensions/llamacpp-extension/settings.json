@@ -260,15 +260,6 @@
     }
   },
   {
-    "key": "strip_reasoning_from_context",
-    "title": "Strip reasoning from context",
-    "description": "Remove prior turns' thinking/reasoning content before resending history. Improves KV-cache reuse across turns, but some models (e.g. newer Qwen releases) recommend keeping it for better multi-turn reasoning.",
-    "controllerType": "checkbox",
-    "controllerProps": {
-      "value": false
-    }
-  },
-  {
     "key": "cache_type_k",
     "title": "KV Cache K Type",
     "description": "KV cache data type for Keys (default: f16).",

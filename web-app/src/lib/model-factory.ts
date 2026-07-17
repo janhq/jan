@@ -75,6 +75,7 @@ import {
   getProviderApiType,
 } from '@/lib/providerCaps'
 import { useAppState } from '@/hooks/useAppState'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
 /**
@@ -597,13 +598,9 @@ export function stripAssistantReasoningInBody(
   }
 }
 
-/** Reads the per-provider "Strip reasoning from context" checkbox; defaults to false. */
-function shouldStripReasoningFromContext(provider?: ProviderObject): boolean {
-  const setting = provider?.settings?.find(
-    (s) => s.key === 'strip_reasoning_from_context'
-  )
-  const value = setting?.controller_props?.value
-  return typeof value === 'boolean' ? value : false
+/** Reads the global "Strip reasoning from context" toggle; defaults to false. */
+function shouldStripReasoningFromContext(): boolean {
+  return useGeneralSetting.getState().stripReasoningFromContext === true
 }
 
 /** Wraps `inner` to strip reasoning fields from assistant messages before send. */
@@ -930,7 +927,7 @@ export class ModelFactory {
       onLlamacppServerError,
       true
     )
-    if (shouldStripReasoningFromContext(provider)) {
+    if (shouldStripReasoningFromContext()) {
       customFetch = withAssistantReasoningStripped(customFetch)
     }
 
@@ -1004,7 +1001,7 @@ export class ModelFactory {
       undefined,
       true
     )
-    if (shouldStripReasoningFromContext(provider)) {
+    if (shouldStripReasoningFromContext()) {
       baseCustomFetch = withAssistantReasoningStripped(baseCustomFetch)
     }
     const customFetch: typeof globalThis.fetch = async (
@@ -1288,7 +1285,9 @@ export class ModelFactory {
           )
         : createCustomFetch(getRuntimeFetch(), parameters, false, undefined, true)
 
-    if (provider.provider === 'groq') {
+    // Groq's API rejects assistant `reasoning` fields, so it always strips
+    // regardless of the toggle; other providers honor the global setting.
+    if (provider.provider === 'groq' || shouldStripReasoningFromContext()) {
       fetchImpl = withAssistantReasoningStripped(fetchImpl)
     }
 

@@ -50,6 +50,7 @@ import {
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
   detectMtpLayersFromGgufMeta,
+  detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
@@ -70,6 +71,7 @@ import {
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
+  TemplateKwarg,
   EmbeddingResponse,
   ModelProps,
   DeviceList,
@@ -85,6 +87,7 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+const TEMPLATE_KWARGS_CHECK_VERSION = 1
 
 // Upstream build that added the `GET /models?reload=1` diff/reconcile path
 // (llama.cpp #21848). At/above this, a preset change can be hot-applied without
@@ -1867,6 +1870,10 @@ export default class llamacpp_extension extends AIEngine {
 
     const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
     await this.resolveMtpLayersConfig(modelId, modelConfig)
+    const templateKwargs = await this.resolveTemplateKwargsConfig(
+      modelId,
+      modelConfig
+    )
 
     return {
       id: modelId,
@@ -1876,6 +1883,7 @@ export default class llamacpp_extension extends AIEngine {
       port: 0, // port is not known until the model is loaded
       sizeBytes: modelConfig.size_bytes ?? 0,
       embedding: isEmbedding,
+      template_kwargs: templateKwargs,
     } as modelInfo
   }
 
@@ -1999,6 +2007,64 @@ export default class llamacpp_extension extends AIEngine {
     return mtpLayers
   }
 
+  /**
+   * Detect which chat-template kwargs (e.g. `preserve_thinking`) a model's
+   * embedded jinja template accepts, caching the result in model.yml. Migrates
+   * pre-existing models lazily the first time list() sees a stale check version.
+   */
+  private async resolveTemplateKwargsConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<TemplateKwarg[]> {
+    const cfg = modelConfig as ModelConfig & {
+      template_kwargs?: TemplateKwarg[]
+      template_kwargs_check_v?: number
+    }
+    if (
+      Array.isArray(cfg.template_kwargs) &&
+      cfg.template_kwargs_check_v === TEMPLATE_KWARGS_CHECK_VERSION
+    ) {
+      return cfg.template_kwargs
+    }
+
+    let kwargs: TemplateKwarg[] = []
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        kwargs = detectTemplateKwargsFromChatTemplate(
+          metadata.metadata?.['tokenizer.chat_template']
+        )
+      }
+    } catch (e) {
+      logger.warn(`Failed to check template kwargs for ${modelId}`, e)
+      return cfg.template_kwargs ?? []
+    }
+
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      cfg.template_kwargs = kwargs
+      cfg.template_kwargs_check_v = TEMPLATE_KWARGS_CHECK_VERSION
+      await invoke<void>('write_yaml', {
+        data: cfg,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to persist template kwargs for ${modelId}`, e)
+    }
+
+    return kwargs
+  }
+
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
@@ -2062,6 +2128,10 @@ export default class llamacpp_extension extends AIEngine {
           modelId,
           modelConfig
         )
+        const templateKwargs = await this.resolveTemplateKwargsConfig(
+          modelId,
+          modelConfig
+        )
 
         const capabilities: string[] = []
         if (modelConfig.mmproj_path) {
@@ -2089,6 +2159,7 @@ export default class llamacpp_extension extends AIEngine {
           embedding: isEmbedding,
           imported: isAbsolute,
           capabilities: capabilities.length > 0 ? capabilities : undefined,
+          template_kwargs: templateKwargs,
         } as modelInfo
         modelInfos.push(modelInfo)
       } catch (err) {
@@ -2577,6 +2648,7 @@ export default class llamacpp_extension extends AIEngine {
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
     try {
@@ -2590,6 +2662,9 @@ export default class llamacpp_extension extends AIEngine {
         isEmbedding = true
       }
       mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+      templateKwargs = detectTemplateKwargsFromChatTemplate(
+        modelMetadata.metadata?.['tokenizer.chat_template']
+      )
 
       const rawName = modelMetadata.metadata?.['general.name']
       if (typeof rawName === 'string') {
@@ -2655,6 +2730,8 @@ export default class llamacpp_extension extends AIEngine {
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+      template_kwargs: templateKwargs,
+      template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
       // A separate draft gguf is downloaded only to be used — enable MTP by
       // default. Embedded-MTP models keep MTP opt-in (no flag written here).
       ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
