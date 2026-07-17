@@ -18,7 +18,7 @@ const MENU_ITEMS = [
       { name: 'Jan Agent', href: '/docs/desktop/agents' },
     ],
   },
-  { name: 'Tokamak', href: 'https://tokamak.jan.ai', external: true },
+  { name: 'Tokamak', href: '/tokamak' },
   { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
   {

@@ -1,10 +1,18 @@
 {
   "index": {
     "type": "page",
-    "title": "Jan Overview"
+    "title": "Jan Docs",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
   },
   "desktop": {
     "type": "page",
     "title": "Jan Desktop"
+  },
+  "tokamak": {
+    "type": "page",
+    "title": "Tokamak"
   }
 }
