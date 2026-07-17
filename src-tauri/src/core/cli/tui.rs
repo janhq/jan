@@ -1958,6 +1958,9 @@ pub async fn run(
     let repo_root = git::repo_root(&project_root);
     let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
     app.args = Some(args.clone());
+    if args.yolo {
+        app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
+    }
     for path in &initial_images {
         match load_image_file(path) {
             Ok(img) => app.pending_images.push(img),
