@@ -9,11 +9,29 @@ import { Button } from './ui/button'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
 const MENU_ITEMS = [
+  {
+    name: 'Jan',
+    href: '/',
+    children: [
+      { name: 'Jan Desktop', href: '/docs/desktop' },
+      { name: 'Jan Agent', href: '/docs/desktop/agents' },
+    ],
+  },
+  { name: 'Tokamak', href: 'https://tokamak.jan.ai', external: true },
+  { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
-  { name: 'Changelog', href: '/changelog' },
-  { name: 'Blog', href: '/blog' },
-  { name: 'Handbook', href: '/handbook' },
+  {
+    name: 'Company',
+    href: '#',
+    children: [
+      { name: 'News', href: '/changelog' },
+      { name: 'Handbook', href: '/handbook' },
+      { name: 'Discord', href: 'https://discord.com/invite/FTk2MvZwJH', external: true },
+    ],
+  },
 ]
+
+const LOGIN_URL = 'https://tokamak.jan.ai'
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
   const router = useRouter()
@@ -79,9 +97,14 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
             {MENU_ITEMS.map((item) => {
               const isActive = currentPath === item.href
               return (
-                <li key={item.name}>
+                <li
+                  key={item.name}
+                  className={cn(item.children && 'group relative py-2')}
+                >
                   <a
                     href={item.href}
+                    target={item.external ? '_blank' : undefined}
+                    rel={item.external ? 'noopener noreferrer' : undefined}
                     className={cn(
                       'hover:opacity-70 transition-opacity',
                       !isLanding && '!text-black',
@@ -90,9 +113,42 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   >
                     {item.name}
                   </a>
+                  {item.children && (
+                    <div className="hidden group-hover:block absolute left-0 top-full pt-2 z-50">
+                      <div className="bg-white rounded-xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden min-w-[180px]">
+                        {item.children.map((child) => (
+                          <a
+                            key={child.name}
+                            href={child.href}
+                            target={child.external ? '_blank' : undefined}
+                            rel={
+                              child.external ? 'noopener noreferrer' : undefined
+                            }
+                            className="block px-4 py-2 whitespace-nowrap text-black hover:bg-[#E0EEFE] hover:text-[#0668D5] transition-colors"
+                          >
+                            {child.name}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </li>
               )
             })}
+            <li>
+              <a href={LOGIN_URL} target="_blank" rel="noopener noreferrer">
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    'text-base',
+                    !isLanding && '!text-black',
+                    isLanding && !isScrolled && !noScroll && 'text-white'
+                  )}
+                >
+                  Login
+                </Button>
+              </a>
+            </li>
             <li>
               <a
                 href="https://github.com/janhq/jan/releases/latest"
@@ -236,6 +292,8 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                       <li key={item.name}>
                         <a
                           href={item.href}
+                          target={item.external ? '_blank' : undefined}
+                          rel={item.external ? 'noopener noreferrer' : undefined}
                           className={cn(
                             'block text-lg font-medium text-black hover:text-gray-600 transition-colors py-2',
                             isActive && 'text-blue-600 font-bold'
@@ -244,10 +302,41 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                         >
                           {item.name}
                         </a>
+                        {item.children && (
+                          <ul className="pl-4 space-y-2">
+                            {item.children.map((child) => (
+                              <li key={child.name}>
+                                <a
+                                  href={child.href}
+                                  target={child.external ? '_blank' : undefined}
+                                  rel={
+                                    child.external
+                                      ? 'noopener noreferrer'
+                                      : undefined
+                                  }
+                                  className="block text-base text-gray-600 hover:text-black transition-colors py-1"
+                                  onClick={() => setIsMobileMenuOpen(false)}
+                                >
+                                  {child.name}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                     )
                   })}
-                  <li></li>
+                  <li>
+                    <a
+                      href={LOGIN_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-lg font-medium text-black hover:text-gray-600 transition-colors py-2"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      Login
+                    </a>
+                  </li>
                 </ul>
               </nav>
 
