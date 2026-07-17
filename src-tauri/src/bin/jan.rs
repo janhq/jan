@@ -212,6 +212,26 @@ enum AgentCommands {
         yolo: bool,
         #[command(flatten)]
         providers: ProviderArgs,
+    },
+    /// Open the interactive chat console (optionally seeded with a first message)
+    Ui {
+        /// Project root containing .jan/agent/agent.toml
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Optional first message; omit to start with an empty chat
+        task: Option<String>,
+        /// Model ID (overrides [agent].model in agent.toml)
+        #[arg(long)]
+        model: Option<String>,
+        /// Max turns per message (overrides [agent].max_turns; clamped 1..=400)
+        #[arg(long)]
+        max_turns: Option<u32>,
+        /// Image file to attach to the first message (repeatable)
+        #[arg(long = "image")]
+        images: Vec<String>,
+        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        #[arg(long)]
+        yolo: bool,
         #[command(flatten)]
         resume: ResumeRunArgs,
     },
@@ -377,23 +397,12 @@ async fn main() {
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
     let Some(command) = cli.command else {
-        // No stderr notice on this path: the TUI's alternate screen would wipe
-        // it, and blocking on the check here would delay the first frame. The
-        // TUI runs the same check itself and notes it in the transcript.
-        let overrides = cli.providers.into_overrides();
-        if let Err(e) = cli_agent_ui(
-            &cli.project,
-            cli.task,
-            cli.model,
-            cli.max_turns,
-            cli.images,
-            overrides,
-            cli.yolo,
-            cli.plan,
-            cli.resume.into_target(),
-        )
-        .await
-        {
+        let overrides = ProviderArgs {
+            provider: None,
+            api_key: None,
+        }
+        .into_overrides();
+        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, false).await {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
@@ -486,7 +495,26 @@ async fn handle_agent(cmd: AgentCommands) {
                 max_turns,
                 providers.into_overrides(),
                 yolo,
-                resume.into_target(),
+            )
+            .await
+        }
+        AgentCommands::Ui {
+            project,
+            task,
+            model,
+            max_turns,
+            images,
+            yolo,
+            providers,
+        } => {
+            cli_agent_ui(
+                &project,
+                task,
+                model,
+                max_turns,
+                images,
+                providers.into_overrides(),
+                yolo,
             )
             .await
         }

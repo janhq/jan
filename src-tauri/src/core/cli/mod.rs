@@ -773,8 +773,9 @@ pub async fn cli_agent_run(
     model: Option<String>,
     max_turns: Option<u32>,
     overrides: ProviderOverrides,
+    yolo: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, max_turns, overrides).await
+    run_agent_loop(project, task, model, max_turns, overrides, yolo).await
 }
 
 /// Single-turn run for debugging (`max_turns = 1`).
@@ -783,8 +784,9 @@ pub async fn cli_agent_step(
     task: &str,
     model: Option<String>,
     overrides: ProviderOverrides,
+    yolo: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, Some(1), overrides).await
+    run_agent_loop(project, task, model, Some(1), overrides, yolo).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -796,6 +798,7 @@ fn build_cli_orchestration_args(
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
+    yolo: bool,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
@@ -810,6 +813,7 @@ fn build_cli_orchestration_args(
         permission_requests,
         system_prompt_override: None,
         subagents_enabled: true,
+        yolo,
     }
 }
 
@@ -1023,11 +1027,18 @@ fn prepare_agent_session(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
+    yolo: bool,
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
+
+    if yolo {
+        eprintln!(
+            "WARNING: --yolo disables the sandbox. The agent can read, write, and run any command without asking for approval."
+        );
+    }
 
     // Resolution order: --model flag, then agent.toml [agent].model, then the
     // desktop app's currently-selected model (synced from settings.json).
@@ -1076,6 +1087,7 @@ fn prepare_agent_session(
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
+        yolo,
     );
 
     Ok(AgentSession {
@@ -1095,8 +1107,10 @@ fn prepare_agent_run(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
+    yolo: bool,
 ) -> Result<PreparedRun, String> {
-    let session = prepare_agent_session(project, model_override, max_turns_override, overrides)?;
+    let session =
+        prepare_agent_session(project, model_override, max_turns_override, overrides, yolo)?;
     let body = session.body(serde_json::json!([{ "role": "user", "content": task }]));
     Ok(PreparedRun {
         args: session.args,
@@ -1113,6 +1127,7 @@ async fn run_agent_loop(
     model_override: Option<String>,
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
+    yolo: bool,
 ) -> Result<(), String> {
     let PreparedRun {
         args,
@@ -1120,7 +1135,7 @@ async fn run_agent_loop(
         permission_requests,
         router_task,
         mcp_task,
-    } = prepare_agent_run(project, task, model_override, max_turns_override, overrides)?;
+    } = prepare_agent_run(project, task, model_override, max_turns_override, overrides, yolo)?;
 
     // Block until the local model is loaded (no-op for cloud models).
     await_router_task(router_task).await?;
@@ -1159,8 +1174,9 @@ pub async fn cli_agent_ui(
     max_turns: Option<u32>,
     images: Vec<String>,
     overrides: ProviderOverrides,
+    yolo: bool,
 ) -> Result<(), String> {
-    let session = prepare_agent_session(project, model, max_turns, overrides)?;
+    let session = prepare_agent_session(project, model, max_turns, overrides, yolo)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let project_root = resolve_project_root(project);
