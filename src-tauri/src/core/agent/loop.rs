@@ -65,6 +65,10 @@ pub(crate) struct OrchestrationArgs {
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
     pub subagents_enabled: bool,
+    /// `--yolo`: disable the sandbox/permission gate and auto-allow every tool
+    /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
+    /// dispatched subagents via the cloned parent args.
+    pub yolo: bool,
 }
 
 #[async_trait]
@@ -171,6 +175,7 @@ struct CompositeToolInvoker {
     permission_requests: PermissionRegistry,
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
+    yolo: bool,
 }
 
 impl CompositeToolInvoker {
@@ -359,7 +364,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     ));
                     continue;
                 }
-                if self.grants.lock().unwrap().covers_mcp(name) {
+                if self.yolo || self.grants.lock().unwrap().covers_mcp(name) {
                     mcp_calls.push(tc.clone());
                     continue;
                 }
@@ -396,6 +401,13 @@ impl ToolInvoker for CompositeToolInvoker {
                 &self.permissions,
                 &snapshot,
             );
+            // --yolo suppresses every prompt (sandbox escape, write, exec) but
+            // still honors HardDeny, so the `.jan/agent` restricted-path invariant
+            // and explicit agent.toml denies hold.
+            let decision = match decision {
+                Decision::Prompt(_) if self.yolo => Decision::Allow,
+                other => other,
+            };
             if matches!(decision, Decision::Allow) && tool.capability == Capability::Read {
                 let root = self.project_root.clone();
                 read_futures.push(async move {
@@ -529,6 +541,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
         system_prompt_override: None,
         subagents_enabled: false,
+        yolo: false,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
 }
@@ -647,6 +660,7 @@ async fn orchestrate_inner(
         permission_requests,
         system_prompt_override,
         subagents_enabled,
+        yolo,
     } = args;
 
     let messages_value = json_body
@@ -835,6 +849,7 @@ async fn orchestrate_inner(
             permission_requests: permission_requests.clone(),
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
             subagents,
+            yolo: *yolo,
         };
         let result = run_turn_cycle(
             events,
@@ -1426,6 +1441,7 @@ mod tests {
             permission_requests: registry,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
+            yolo: false,
         }
     }
 
@@ -1502,6 +1518,27 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn yolo_writes_without_prompting() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.yolo = true;
+
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].content.starts_with("ERROR"), "unexpected: {}", out[0].content);
+        assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
+        // No permission prompt should have been emitted.
+        assert!(
+            !matches!(rx.try_recv(), Ok(StreamEvent::PermissionRequest { .. })),
+            "yolo must not prompt for a write"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
