@@ -86,7 +86,7 @@ const Home = () => {
     <Fragment>
       {/* Hero */}
       <section className="px-3 pt-3">
-        <div className="bg-[#458edf] relative py-10 h-[760px] md:h-[900px] 2xl:h-[1080px] rounded-2xl overflow-hidden">
+        <div className="bg-[#458edf] relative py-10 h-[760px] md:h-[900px] 2xl:h-[1080px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="container mx-auto relative z-10">
             <div className="flex justify-center items-center mt-14 lg:mt-20 px-4">
               <a
@@ -208,7 +208,7 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="hidden size-4/5 xl:size-3/5 rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
+        <div className="hidden size-4/5 xl:size-3/5 max-w-[1200px] rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
           <div className="rounded-md size-full overflow-hidden">
             <img
               src={AppJanPNG.src}
@@ -241,7 +241,7 @@ const Home = () => {
 
       {/* Social tech */}
       <section className="px-3 mt-20">
-        <div className="bg-[#C6E09E] px-4 relative py-10 h-[640px] sm:h-[800px] lg:h-[900px] 2xl:h-[1040px] rounded-2xl overflow-hidden">
+        <div className="bg-[#C6E09E] px-4 relative py-10 h-[640px] sm:h-[800px] lg:h-[900px] 2xl:h-[1040px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="container mx-auto relative z-10">
             <div className="md:mt-10">
               <div className="lg:w-3/5 mx-auto">
@@ -572,7 +572,7 @@ const Home = () => {
 
       {/* Call to action */}
       <section className="px-3 pt-3">
-        <div className="bg-[#458edf] relative py-10 h-[480px] lg:h-[650px] rounded-2xl overflow-hidden">
+        <div className="bg-[#458edf] relative py-10 h-[480px] lg:h-[650px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="w-full lg:w-3/5 mx-auto">
             <div className="container relative z-10">
               <div className="mt-10 flex flex-col lg:flex-row justify-between items-center gap-8">
