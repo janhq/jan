@@ -144,6 +144,7 @@ describe('llamacpp_extension', () => {
           embedding: false,
           imported: false,
           capabilities: undefined,
+          template_kwargs: [],
         }
       ])
     })
