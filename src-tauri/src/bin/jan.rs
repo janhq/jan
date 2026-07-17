@@ -160,6 +160,9 @@ enum AgentCommands {
         /// Max turns (overrides [agent].max_turns; clamped 1..=400)
         #[arg(long)]
         max_turns: Option<u32>,
+        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        #[arg(long)]
+        yolo: bool,
         #[command(flatten)]
         providers: ProviderArgs,
     },
@@ -179,6 +182,9 @@ enum AgentCommands {
         /// Image file to attach to the first message (repeatable)
         #[arg(long = "image")]
         images: Vec<String>,
+        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        #[arg(long)]
+        yolo: bool,
         #[command(flatten)]
         providers: ProviderArgs,
     },
@@ -192,6 +198,9 @@ enum AgentCommands {
         /// Model ID (overrides [agent].model in agent.toml)
         #[arg(long)]
         model: Option<String>,
+        /// Disable the sandbox and auto-approve every tool call (no prompts)
+        #[arg(long)]
+        yolo: bool,
         #[command(flatten)]
         providers: ProviderArgs,
     },
@@ -387,7 +396,7 @@ async fn main() {
             api_key: None,
         }
         .into_overrides();
-        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides).await {
+        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, false).await {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
@@ -442,6 +451,7 @@ async fn handle_agent(cmd: AgentCommands) {
             task,
             model,
             max_turns,
+            yolo,
             providers,
         } => {
             cli_agent_run(
@@ -450,6 +460,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 model,
                 max_turns,
                 providers.into_overrides(),
+                yolo,
             )
             .await
         }
@@ -459,6 +470,7 @@ async fn handle_agent(cmd: AgentCommands) {
             model,
             max_turns,
             images,
+            yolo,
             providers,
         } => {
             cli_agent_ui(
@@ -468,6 +480,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 max_turns,
                 images,
                 providers.into_overrides(),
+                yolo,
             )
             .await
         }
@@ -475,8 +488,9 @@ async fn handle_agent(cmd: AgentCommands) {
             project,
             task,
             model,
+            yolo,
             providers,
-        } => cli_agent_step(&project, &task, model, providers.into_overrides()).await,
+        } => cli_agent_step(&project, &task, model, providers.into_overrides(), yolo).await,
         AgentCommands::Status { project, providers } => {
             match cli_agent_status(&project, &providers.into_overrides()) {
                 Ok(status) => {
