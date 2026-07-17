@@ -134,7 +134,8 @@ function extractModelSamplingDefaults(
 function extractModelTemplateKwargs(
   model: Model | null | undefined
 ): Record<string, boolean | number | string> {
-  const raw = model?.settings?.chat_template_kwargs?.controller_props?.value
+  const raw: unknown =
+    model?.settings?.chat_template_kwargs?.controller_props?.value
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const out: Record<string, boolean | number | string> = {}
   for (const [key, value] of Object.entries(raw)) {

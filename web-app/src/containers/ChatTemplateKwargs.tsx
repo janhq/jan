@@ -18,7 +18,8 @@ function coerceRawValue(raw: string): KwargValue {
 }
 
 function readBag(model: Model): KwargBag {
-  const raw = model.settings?.chat_template_kwargs?.controller_props?.value
+  const raw: unknown =
+    model.settings?.chat_template_kwargs?.controller_props?.value
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   return { ...(raw as KwargBag) }
 }

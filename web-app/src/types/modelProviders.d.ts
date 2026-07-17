@@ -2,7 +2,7 @@
  * The controller props for settings
  */
 type ControllerProps = {
-  value?: string | boolean | number | Record<string, boolean | number | string>
+  value?: string | boolean | number
   placeholder?: string
   type?: string
   options?: Array<{ value: number | string; name: string }>

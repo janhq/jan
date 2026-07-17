@@ -228,7 +228,7 @@ export function ModelSetting({
           },
         },
       },
-    } as Model
+    } as unknown as Model
     const updatedModels = [...provider.models]
     updatedModels[modelIndex] = updatedModel
     updateProvider(provider.provider, { models: updatedModels })
