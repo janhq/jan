@@ -1,0 +1,22 @@
+{
+  "index": {
+    "type": "page",
+    "title": "Research",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-v1": {
+    "title": "Jan V1",
+    "display": "hidden"
+  },
+  "jan-v3": {
+    "title": "Jan V3",
+    "display": "hidden"
+  },
+  "tokamak-1": {
+    "title": "Tokamak-1",
+    "display": "hidden"
+  }
+}
