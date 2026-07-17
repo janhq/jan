@@ -42,33 +42,10 @@ Models are served by remote providers configured in ~/.jan/config.toml\n\
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Project root containing .jan/agent/agent.toml (bare TUI only)
-    #[arg(long, default_value = ".")]
-    project: String,
-    /// Optional first message to seed the chat with (bare TUI only)
-    #[arg(long)]
-    task: Option<String>,
-    /// Model ID overriding [agent].model in agent.toml (bare TUI only)
-    #[arg(long)]
-    model: Option<String>,
-    /// Max turns per message, clamped 1..=400 (bare TUI only)
-    #[arg(long)]
-    max_turns: Option<u32>,
-    /// Image file to attach to the first message, repeatable (bare TUI only)
-    #[arg(long = "image")]
-    images: Vec<String>,
-    #[command(flatten)]
-    providers: ProviderArgs,
     /// Disable the sandbox and auto-approve every tool call in the default agent
     /// TUI (no prompts). Ignored when a subcommand is given.
     #[arg(long)]
     yolo: bool,
-    #[command(flatten)]
-    resume: ResumeArgs,
-    /// Start the default agent TUI in read-only plan mode (same as /plan).
-    /// Ignored when a subcommand is given.
-    #[arg(long)]
-    plan: bool,
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
@@ -402,7 +379,7 @@ async fn main() {
             api_key: None,
         }
         .into_overrides();
-        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, false).await {
+        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, cli.yolo).await {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
