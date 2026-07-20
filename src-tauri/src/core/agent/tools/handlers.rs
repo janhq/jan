@@ -109,6 +109,9 @@ pub async fn execute_builtin(
         "skill_list" => skill_list(project_root),
         "skill_read" => skill_read(args, project_root),
         "skill_write" => skill_write(args, project_root),
+        // Native web tools: compiled into the agent core, not an MCP server.
+        "web_search" => crate::core::agent::tools::web::web_search(args).await,
+        "web_fetch" => crate::core::agent::tools::web::web_fetch(args).await,
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }
