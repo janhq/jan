@@ -6,12 +6,17 @@ pub mod gate;
 pub mod handlers;
 pub mod sandbox;
 pub mod schema;
+pub mod web;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Capability {
     Read,
     Write,
     Exec,
+    /// Network egress (native web tools). Distinct from `Read`/`Exec` so the
+    /// gate can treat outbound web access as its own auto-allowed class rather
+    /// than a filesystem or shell operation.
+    Net,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -92,6 +97,19 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         capability: Capability::Write,
         path_args: &[],
     },
+    // Native, provider-neutral web tools. They are compiled into the agent
+    // core (NOT provided by an MCP server); Exa is only the default backend
+    // behind an adapter. They take no filesystem path, so `path_args` is empty.
+    BuiltinTool {
+        name: "web_search",
+        capability: Capability::Net,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "web_fetch",
+        capability: Capability::Net,
+        path_args: &[],
+    },
 ];
 
 /// Tools that act only on the agent's own `.jan/agent/{skills,memory}/`
@@ -143,8 +161,18 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 7 coding tools + 6 dedicated skill/memory tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 13);
+        // 7 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
+        assert_eq!(BUILTIN_TOOLS.len(), 15);
+    }
+
+    #[test]
+    fn web_tools_are_net_capability() {
+        let s = lookup("web_search").expect("web_search is builtin");
+        assert_eq!(s.capability, Capability::Net);
+        assert!(s.path_args.is_empty());
+        let f = lookup("web_fetch").expect("web_fetch is builtin");
+        assert_eq!(f.capability, Capability::Net);
+        assert!(f.path_args.is_empty());
     }
 
     #[test]
