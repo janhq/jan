@@ -23,6 +23,7 @@ use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs};
 use crate::core::agent::skill_hub;
 use crate::core::agent::skills as agent_skills;
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::agent::env_provider;
 use crate::core::state::AppState;
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
 use tauri_plugin_agent_tools::skills::{self, SkillMeta};
@@ -91,7 +92,7 @@ pub async fn agent_run<R: Runtime>(
     runs: State<'_, AgentRuns>,
     perms_registry: State<'_, AgentPermissions>,
     run_id: String,
-    body: serde_json::Value,
+    mut body: serde_json::Value,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     let mut args = build_orchestration_args(&app_handle, &state);
@@ -106,6 +107,30 @@ pub async fn agent_run<R: Runtime>(
         let cfg = load_agent_config(&project_root)?;
         args.permissions = permissions_from(&cfg);
         args.project_root = Some(project_root);
+    }
+
+    // `JAN_AGENT_MODEL_ID` overrides the body model at the highest priority
+    // (beats the UI selection, agent.toml, and --model); `JAN_AGENT_API_KEY` +
+    // `JAN_AGENT_BASE_URL` then inject a synthetic upstream for that model.
+    if let Some(env_model) = env_provider::env_model_id() {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert(
+                "model".to_string(),
+                serde_json::Value::String(env_model.clone()),
+            );
+        }
+        log::info!(
+            "Agent: JAN_AGENT_MODEL_ID overrides body model to '{}'",
+            env_model
+        );
+    }
+    let body_model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    {
+        let mut configs = args.provider_configs.lock().await;
+        env_provider::inject_env_provider(&mut configs, body_model.as_deref());
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
