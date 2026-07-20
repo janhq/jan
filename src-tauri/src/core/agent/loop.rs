@@ -1055,16 +1055,17 @@ async fn run_turn_cycle(
             });
         }
 
-        // Record the assistant's tool-call turn. We intentionally do NOT attach
-        // the OpenAI-style `tool_calls` array here, and (below) we feed each tool
-        // result back as a `role: "user"` message instead of `role: "tool"`.
+        // Record the assistant's tool-call turn using the standard OpenAI
+        // protocol: attach the `tool_calls` array here, and (below) feed each
+        // result back as a `role: "tool"` message carrying its `tool_call_id`.
         //
-        // Why: some served models (observed with `tokamak-1-preview`) do not
-        // actually attend to `role: "tool"` messages — the tool payload is present
-        // in the request but the model behaves as if the tool returned nothing,
-        // looping and hallucinating ("clean — nothing to commit"). Delivering the
-        // exact same bytes as a `user` message makes them fully visible and the
-        // model answers correctly on the next turn. See PR discussion / issue.
+        // A prior workaround delivered tool results as `role: "user"` because
+        // some served models (observed with `tokamak-1-preview`) didn't attend
+        // to `role: "tool"` messages with large content. That is now fixed
+        // server-side: the tokamak-1-preview facade rewrites role:tool -> user
+        // for the specific model that needs it (scoped, content preserved), so
+        // the agent can speak standard OpenAI tool protocol on the wire again.
+        // See janhq/jan-internal#238.
         if let Some(choice_message) = extract_choice_message(&completion) {
             let assistant_content = choice_message
                 .get("content")
@@ -1072,12 +1073,14 @@ async fn run_turn_cycle(
                 .unwrap_or(serde_json::Value::Null);
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
-                "content": assistant_content
+                "content": assistant_content,
+                "tool_calls": tool_calls.clone()
             }));
         } else {
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
-                "content": "(calling tools)"
+                "content": serde_json::Value::Null,
+                "tool_calls": tool_calls.clone()
             }));
         }
 
@@ -1099,7 +1102,8 @@ async fn run_turn_cycle(
                     diff: None,
                 });
                 conversation_messages.push(serde_json::json!({
-                    "role": "user",
+                    "role": "tool",
+                    "tool_call_id": id,
                     "content": content
                 }));
             }
@@ -1109,8 +1113,9 @@ async fn run_turn_cycle(
 
         let tool_results = tools.invoke(&tool_calls).await?;
 
-        // Feed tool results back as `user` messages (see note above the assistant
-        // push) so models that ignore `role: "tool"` still see the output.
+        // Standard OpenAI tool protocol: each result is a `role: "tool"` message
+        // carrying its `tool_call_id` (see note above the assistant push -- the
+        // tokamak-1-preview facade handles models that can't attend to it).
         for outcome in tool_results {
             let ToolOutcome { id, content, diff } = outcome;
             let _ = events.send(StreamEvent::ToolResult {
@@ -1120,7 +1125,8 @@ async fn run_turn_cycle(
                 diff,
             });
             conversation_messages.push(serde_json::json!({
-                "role": "user",
+                "role": "tool",
+                "tool_call_id": id,
                 "content": content
             }));
         }
