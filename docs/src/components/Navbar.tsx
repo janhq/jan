@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { FaDiscord, FaGithub } from 'react-icons/fa'
 import { FiDownload } from 'react-icons/fi'
 import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
+import { ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import DocSearch from './DocSearch'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
@@ -25,12 +26,11 @@ const MENU_ITEMS = [
     name: 'Company',
     href: '#',
     children: [
-      { name: 'News', href: '/changelog' },
+      { name: 'Changelog', href: '/changelog' },
       { name: 'Blog', href: '/blog' },
       { name: 'About Us', href: '/handbook/who/who-we-are' },
-      { name: 'Careers', href: 'https://menlo.bamboohr.com/careers/', external: true },
+      { name: 'Careers', href: 'https://jobs.ashbyhq.com/menlo', external: true },
       { name: 'Handbook', href: '/handbook' },
-      { name: 'Contact Us', href: '/support' },
     ],
   },
 ]
@@ -108,15 +108,21 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                     target={item.external ? '_blank' : undefined}
                     rel={item.external ? 'noopener noreferrer' : undefined}
                     className={cn(
-                      'hover:opacity-70 transition-opacity',
+                      'flex items-center gap-1 hover:opacity-70 transition-opacity',
                       !isLanding && '!text-black',
-                      isActive && 'text-blue-600 font-semibold'
+                      isActive && !isLanding && 'text-blue-600',
+                      isActive && 'font-semibold'
                     )}
                   >
                     {item.name}
+                    {item.children && (
+                      <ChevronDown className="size-3.5 transition-transform duration-200 group-hover:rotate-180" />
+                    )}
                   </a>
                   {item.children && (
-                    <div className="hidden group-hover:block absolute left-0 top-full pt-2 z-50">
+                    <div
+                      className="invisible opacity-0 translate-y-1 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 absolute left-0 top-full pt-2 z-50"
+                    >
                       <div className="bg-white rounded-xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden min-w-[180px]">
                         {item.children.map((child) => (
                           <a
