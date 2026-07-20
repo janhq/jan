@@ -27,8 +27,10 @@ const MENU_ITEMS = [
     children: [
       { name: 'News', href: '/changelog' },
       { name: 'Blog', href: '/blog' },
+      { name: 'About Us', href: '/handbook/who/who-we-are' },
+      { name: 'Careers', href: 'https://menlo.bamboohr.com/careers/', external: true },
       { name: 'Handbook', href: '/handbook' },
-      { name: 'Discord', href: 'https://discord.com/invite/FTk2MvZwJH', external: true },
+      { name: 'Contact Us', href: '/support' },
     ],
   },
 ]
