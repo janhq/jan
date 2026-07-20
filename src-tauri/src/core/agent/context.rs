@@ -102,10 +102,26 @@ pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
 /// capability. Per jan-internal#196 the tools are provider-neutral: the model
 /// must call `web_search`/`web_fetch`, never a provider-branded name like
 /// `exa_search`, and should cite the URLs it relies on.
-const WEB_TOOLS_GUIDE: &str = "# Web Access\n\nYou have native `web_search` and `web_fetch` tools built into the agent. \
-Use `web_search` to find current information and sources, then `web_fetch` to read a specific result's page. \
-These are provider-neutral built-in tools (the search backend is configured by Jan); do not look for or call a \
-provider-branded tool such as `exa_search`. Cite the source URLs you rely on.";
+const WEB_TOOLS_GUIDE: &str = "# Web Access\n\nYou have two native, built-in tools for the live web. They are provider-neutral \
+(the search backend is configured by Jan) and work out of the box — do NOT look for, ask for, or call a \
+provider-branded tool such as `exa_search`, and do not say you lack internet access.\n\n\
+## When to use them\n\n\
+Reach for the web whenever the answer depends on current, external, or fast-changing information: recent events, \
+library/API versions and docs, error messages, prices, people, or anything you are unsure about or that is outside \
+your training data. Prefer verifying over guessing.\n\n\
+## How to call them\n\n\
+- `web_search` — find sources. Arguments: `query` (required string; write a specific, natural-language description \
+of the ideal page, not just keywords) and optional `count` (integer, default 5, max 20). Returns a numbered list of \
+results with title, URL, and a snippet.\n\
+- `web_fetch` — read one page. Argument: `url` (required http(s) string, typically a URL returned by `web_search`). \
+Returns the page's readable text with its title and source URL (bounded in length).\n\n\
+## Workflow\n\n\
+1. Call `web_search` with a focused query.\n\
+2. Pick the most relevant result(s) and call `web_fetch` on their URLs to read the full content — don't rely on \
+snippets alone for anything important.\n\
+3. Base your answer on what you read and cite the source URLs you used. If results are thin, refine the query and \
+search again. If a tool returns text starting with `ERROR`, read it, adjust your arguments, and retry or tell the \
+user what's wrong.";
 
 /// Guidance injected only when subagent tools are actually available, so the
 /// model delegates context-heavy exploration instead of exhausting its own
@@ -234,6 +250,11 @@ mod tests {
         assert!(out.contains("web_fetch"));
         // Provider-neutral: the model must not be told to call a branded tool.
         assert!(out.contains("exa_search"), "guide names the anti-pattern to avoid");
+        // Teaches how to call the tools, not just that they exist.
+        assert!(out.contains("query"), "documents the web_search query arg");
+        assert!(out.contains("count"), "documents the web_search count arg");
+        assert!(out.contains("url"), "documents the web_fetch url arg");
+        assert!(out.contains("Workflow"), "describes the search->fetch->cite flow");
         let _ = std::fs::remove_dir_all(&root);
     }
 
