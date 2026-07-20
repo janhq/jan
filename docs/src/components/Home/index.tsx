@@ -229,6 +229,41 @@ const Home = () => {
         </div>
       </section>
 
+      {/* Products */}
+      <section className="px-3 pt-20">
+        <div className="container mx-auto">
+          <h2 className="text-[24px] lg:text-[40px] font-semibold text-center mb-10 -tracking-[1.3px]">
+            An open model ecosystem
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+            <div className="rounded-2xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] p-6">
+              <h3 className="text-xl font-semibold">Jan Agent</h3>
+              <p className="mt-2 text-black/60">
+                The core agent, distributed separately — run it on your own
+                VM or container.
+              </p>
+              <a href="/docs/desktop/agents" className="inline-block mt-4">
+                <Button variant="playful" size="lg">
+                  Install Jan Agent
+                </Button>
+              </a>
+            </div>
+            <div className="rounded-2xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] p-6">
+              <h3 className="text-xl font-semibold">Tokamak</h3>
+              <p className="mt-2 text-black/60">
+                Router, fusion model, and governance/audit — the self-hosted
+                backend Jan agents connect to.
+              </p>
+              <a href="/tokamak" className="inline-block mt-4">
+                <Button variant="playful" size="lg">
+                  Explore Tokamak
+                </Button>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Statistic and social */}
       <section className="pt-20">
         <div className="container mx-auto">
