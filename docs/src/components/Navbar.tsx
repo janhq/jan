@@ -18,7 +18,7 @@ const MENU_ITEMS = [
       { name: 'Jan Agent', href: '/docs/desktop/agents' },
     ],
   },
-  { name: 'Tokamak', href: 'https://tokamak.sh/docs/', external: true },
+  { name: 'Tokamak', href: 'https://tokamak.sh', external: true },
   { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
   {
