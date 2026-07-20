@@ -408,7 +408,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 Decision::Prompt(_) if self.yolo => Decision::Allow,
                 other => other,
             };
-            if matches!(decision, Decision::Allow) && tool.capability == Capability::Read {
+            // Read and Net tools are non-mutating and safe to run concurrently
+            // once allowed: reads hit the filesystem, web tools do outbound HTTP.
+            if matches!(decision, Decision::Allow)
+                && matches!(tool.capability, Capability::Read | Capability::Net)
+            {
                 let root = self.project_root.clone();
                 read_futures.push(async move {
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &root).await;
@@ -436,6 +440,9 @@ impl ToolInvoker for CompositeToolInvoker {
                         Capability::Read => "read",
                         Capability::Write => "write",
                         Capability::Exec => "exec",
+                        // Net tools resolve to Allow in the gate and never reach
+                        // this prompt arm; label defensively for completeness.
+                        Capability::Net => "net",
                     };
                     let prompt_kind = match kind {
                         PromptKind::ReadEscape => "read_escape",
