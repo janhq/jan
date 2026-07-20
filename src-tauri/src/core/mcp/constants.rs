@@ -26,7 +26,7 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "command": "",
       "args": [],
       "env": {},
-      "active": true
+      "active": false
     },
     "browsermcp": {
       "command": "npx",

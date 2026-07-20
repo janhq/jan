@@ -607,6 +607,10 @@ fn test_default_mcp_config_parses_as_valid_json() {
     assert!(value["mcpServers"]["fetch"].is_object());
     assert_eq!(value["mcpServers"]["fetch"]["command"], "uvx");
     assert_eq!(value["mcpServers"]["exa"]["type"], "http");
+    // Native cutover (jan-internal#196): new installs must NOT activate the Exa
+    // MCP as the default search capability; the built-in web_search/web_fetch
+    // tools own that. The server entry stays for users who opt back in.
+    assert_eq!(value["mcpServers"]["exa"]["active"], false);
     assert_eq!(
         value["mcpSettings"]["toolCallTimeoutSeconds"],
         super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS
