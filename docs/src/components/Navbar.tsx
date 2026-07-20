@@ -18,7 +18,7 @@ const MENU_ITEMS = [
       { name: 'Jan Agent', href: '/docs/desktop/agents' },
     ],
   },
-  { name: 'Tokamak', href: '/tokamak' },
+  { name: 'Tokamak', href: 'https://tokamak.sh/docs/', external: true },
   { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
   {
@@ -32,8 +32,6 @@ const MENU_ITEMS = [
     ],
   },
 ]
-
-const LOGIN_URL = 'https://tokamak.sh'
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
   const router = useRouter()
@@ -144,20 +142,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 <DocSearch />
               </li>
             )}
-            <li>
-              <a href={LOGIN_URL} target="_blank" rel="noopener noreferrer">
-                <Button
-                  variant="ghost"
-                  className={cn(
-                    'text-base',
-                    !isLanding && '!text-black',
-                    isLanding && !isScrolled && !noScroll && 'text-white'
-                  )}
-                >
-                  Login
-                </Button>
-              </a>
-            </li>
             <li>
               <a
                 href="https://github.com/janhq/jan/releases/latest"
@@ -344,17 +328,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                       </li>
                     )
                   })}
-                  <li>
-                    <a
-                      href={LOGIN_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block text-lg font-medium text-black hover:text-gray-600 transition-colors py-2"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                    >
-                      Login
-                    </a>
-                  </li>
                 </ul>
               </nav>
 
