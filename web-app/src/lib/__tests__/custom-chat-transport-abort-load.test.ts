@@ -11,7 +11,6 @@ import type { UIMessage } from '@ai-sdk/react'
 const h = vi.hoisted(() => ({
   serviceHub: null as unknown,
   invoke: vi.fn(async () => []),
-  unload: vi.fn(async () => ({ success: true })),
   resolveCreateModel: undefined as (() => void) | undefined,
   createModelMock: vi.fn(
     () =>
@@ -77,9 +76,6 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: h.invoke }))
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: { getInstance: () => ({ get: () => null }) },
 }))
-vi.mock('@/lib/llamacppRouterProps', () => ({
-  getLlamacppExtension: () => ({ unload: h.unload }),
-}))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: vi.fn() },
 }))
@@ -121,7 +117,6 @@ const user = (id: string, text: string): UIMessage =>
 describe('CustomChatTransport: abort during model load', () => {
   beforeEach(() => {
     h.invoke.mockClear()
-    h.unload.mockClear()
     h.resolveCreateModel = undefined
   })
 
@@ -144,7 +139,9 @@ describe('CustomChatTransport: abort during model load', () => {
     controller.abort()
 
     await expect(send).rejects.toMatchObject({ name: 'AbortError' })
-    expect(h.unload).toHaveBeenCalledWith('qwen3-4b')
+    expect(h.invoke).toHaveBeenCalledWith('plugin:llamacpp|unload_llama_model', {
+      modelId: 'qwen3-4b',
+    })
   })
 
   it('resolves normally when load finishes before any abort', async () => {
@@ -164,6 +161,9 @@ describe('CustomChatTransport: abort during model load', () => {
     h.resolveCreateModel?.()
 
     await expect(send).resolves.toBeDefined()
-    expect(h.unload).not.toHaveBeenCalled()
+    expect(h.invoke).not.toHaveBeenCalledWith(
+      'plugin:llamacpp|unload_llama_model',
+      expect.anything()
+    )
   })
 })

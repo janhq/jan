@@ -925,7 +925,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return new Promise<LanguageModel>((resolve, reject) => {
       const onAbort = () => {
         if (providerId === 'llamacpp') {
-          getLlamacppExtension()?.unload?.(modelId)?.catch(() => {
+          // Call the router unload directly instead of through the
+          // `unload()` extension method: that method first looks up an
+          // active *loaded* session and throws if none is found, but a
+          // model aborted mid-load is still in the "loading" state (not
+          // "loaded") and would never resolve to a session -- silently
+          // skipping the unload and leaking the still-loading llama-server.
+          // See https://github.com/janhq/jan/issues/8432.
+          invoke('plugin:llamacpp|unload_llama_model', { modelId }).catch(() => {
             // Best-effort: model may not have started loading yet, or may
             // already have finished/failed on its own.
           })
