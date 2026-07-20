@@ -98,6 +98,15 @@ pub(crate) fn load_skills(project_root: &Path) -> Option<String> {
     ))
 }
 
+/// Always-on guidance teaching the model that web access is a native built-in
+/// capability. Per jan-internal#196 the tools are provider-neutral: the model
+/// must call `web_search`/`web_fetch`, never a provider-branded name like
+/// `exa_search`, and should cite the URLs it relies on.
+const WEB_TOOLS_GUIDE: &str = "# Web Access\n\nYou have native `web_search` and `web_fetch` tools built into the agent. \
+Use `web_search` to find current information and sources, then `web_fetch` to read a specific result's page. \
+These are provider-neutral built-in tools (the search backend is configured by Jan); do not look for or call a \
+provider-branded tool such as `exa_search`. Cite the source URLs you rely on.";
+
 /// Guidance injected only when subagent tools are actually available, so the
 /// model delegates context-heavy exploration instead of exhausting its own
 /// (limited) context window reading files and tool output directly.
@@ -130,6 +139,7 @@ pub(crate) fn build_system_prompt(
         blocks.push(SUBAGENT_GUIDE.to_string());
     }
     blocks.push(DEFAULT_SKILL_GUIDE.trim().to_string());
+    blocks.push(WEB_TOOLS_GUIDE.to_string());
     if let Some(context) = load_context_files(project_root) {
         blocks.push(context);
     }
@@ -212,6 +222,18 @@ mod tests {
         let guide = out.find("Skills and Project Memory").unwrap();
         assert!(out.find("You are Jan.").unwrap() < guide);
         assert!(guide < out.find("Do the thing.").unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn build_system_prompt_advertises_native_web_tools() {
+        let root = scratch_project("web");
+        let out = build_system_prompt(None, &root, false).expect("prompt");
+        assert!(out.contains("# Web Access"));
+        assert!(out.contains("web_search"));
+        assert!(out.contains("web_fetch"));
+        // Provider-neutral: the model must not be told to call a branded tool.
+        assert!(out.contains("exa_search"), "guide names the anti-pattern to avoid");
         let _ = std::fs::remove_dir_all(&root);
     }
 

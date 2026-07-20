@@ -205,6 +205,35 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web and return a ranked list of results (title, URL, snippet, and optional publish date). Use this to find current information, documentation, or sources you can then read with web_fetch. Cite the URLs you rely on. This is a native, provider-neutral capability; do not look for a provider-branded search tool.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "The search query." },
+                        "count": { "type": "integer", "description": "Maximum number of results to return (default 5, max 20)." }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "web_fetch",
+                "description": "Fetch a web page by URL and return its readable text content along with the source URL and title. Output is bounded to avoid flooding the context. Use after web_search to read a specific result. This is a native, provider-neutral capability.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "The http(s) URL to fetch." }
+                    },
+                    "required": ["url"]
+                }
+            }
+        }),
     ]
 }
 
@@ -216,7 +245,7 @@ mod tests {
     #[test]
     fn schemas_match_builtin_tools() {
         let schemas = builtin_tool_schemas();
-        assert_eq!(schemas.len(), 13);
+        assert_eq!(schemas.len(), 15);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }
