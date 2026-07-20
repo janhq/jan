@@ -31,7 +31,7 @@ const MENU_ITEMS = [
   },
 ]
 
-const LOGIN_URL = 'https://tokamak.jan.ai'
+const LOGIN_URL = 'https://tokamak.sh'
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
   const router = useRouter()
