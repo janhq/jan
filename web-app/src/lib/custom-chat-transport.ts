@@ -925,7 +925,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return new Promise<LanguageModel>((resolve, reject) => {
       const onAbort = () => {
         if (providerId === 'llamacpp') {
-          invoke('plugin:llamacpp|unload_llama_model', { modelId }).catch(() => {
+          getLlamacppExtension()?.unload?.(modelId)?.catch(() => {
             // Best-effort: model may not have started loading yet, or may
             // already have finished/failed on its own.
           })

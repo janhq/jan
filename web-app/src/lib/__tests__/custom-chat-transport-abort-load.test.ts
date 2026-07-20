@@ -5,12 +5,13 @@ import type { UIMessage } from '@ai-sdk/react'
 // aborting a request while ModelFactory.createModel() is still awaiting
 // llama-server's "Loading model..." phase must (1) reject the in-flight
 // sendMessages() call and (2) unload the (possibly still-loading) model via
-// the Tauri command, instead of silently ignoring the abort until the model
-// finishes/times out.
+// the llamacpp extension, instead of silently ignoring the abort until the
+// model finishes/times out.
 
 const h = vi.hoisted(() => ({
   serviceHub: null as unknown,
   invoke: vi.fn(async () => []),
+  unload: vi.fn(async () => ({ success: true })),
   resolveCreateModel: undefined as (() => void) | undefined,
   createModelMock: vi.fn(
     () =>
@@ -77,7 +78,7 @@ vi.mock('@/lib/extension', () => ({
   ExtensionManager: { getInstance: () => ({ get: () => null }) },
 }))
 vi.mock('@/lib/llamacppRouterProps', () => ({
-  getLlamacppExtension: () => null,
+  getLlamacppExtension: () => ({ unload: h.unload }),
 }))
 vi.mock('@/lib/mcp-orchestrator', () => ({
   mcpOrchestrator: { getRelevantTools: vi.fn() },
@@ -120,6 +121,7 @@ const user = (id: string, text: string): UIMessage =>
 describe('CustomChatTransport: abort during model load', () => {
   beforeEach(() => {
     h.invoke.mockClear()
+    h.unload.mockClear()
     h.resolveCreateModel = undefined
   })
 
@@ -142,10 +144,7 @@ describe('CustomChatTransport: abort during model load', () => {
     controller.abort()
 
     await expect(send).rejects.toMatchObject({ name: 'AbortError' })
-    expect(h.invoke).toHaveBeenCalledWith(
-      'plugin:llamacpp|unload_llama_model',
-      { modelId: 'qwen3-4b' }
-    )
+    expect(h.unload).toHaveBeenCalledWith('qwen3-4b')
   })
 
   it('resolves normally when load finishes before any abort', async () => {
@@ -165,9 +164,6 @@ describe('CustomChatTransport: abort during model load', () => {
     h.resolveCreateModel?.()
 
     await expect(send).resolves.toBeDefined()
-    expect(h.invoke).not.toHaveBeenCalledWith(
-      'plugin:llamacpp|unload_llama_model',
-      expect.anything()
-    )
+    expect(h.unload).not.toHaveBeenCalled()
   })
 })

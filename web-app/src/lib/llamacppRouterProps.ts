@@ -9,6 +9,7 @@ export interface LlamacppModelProps {
 
 interface LlamacppExtensionLike {
   getModelProps?: (modelId: string) => Promise<LlamacppModelProps | undefined>
+  unload?: (modelId: string) => Promise<{ success: boolean; error?: string }>
 }
 
 /** Post-fit `nCtx` is only available once the router has actually loaded the
