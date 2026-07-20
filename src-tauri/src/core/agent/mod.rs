@@ -4,6 +4,7 @@
 pub mod commands;
 pub mod compaction;
 pub mod context;
+pub mod env_provider;
 pub mod events;
 #[cfg(feature = "cli")]
 pub mod git;
