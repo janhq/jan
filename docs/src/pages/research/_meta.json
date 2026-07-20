@@ -9,14 +9,23 @@
   },
   "jan-v1": {
     "title": "Jan V1",
-    "display": "hidden"
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-v2": {
+    "title": "Jan V2",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
   },
   "jan-v3": {
     "title": "Jan V3",
-    "display": "hidden"
-  },
-  "tokamak-1": {
-    "title": "Tokamak-1",
-    "display": "hidden"
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
   }
 }
