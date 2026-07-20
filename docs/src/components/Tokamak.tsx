@@ -30,13 +30,8 @@ const Tokamak = () => {
           your model, build your agent, run it yourself.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
-          <a href="https://tokamak.sh" target="_blank" rel="noopener noreferrer">
-            <Button size="xl">Login to Tokamak</Button>
-          </a>
           <a href="https://tokamak.sh/docs/" target="_blank" rel="noopener noreferrer">
-            <Button size="xl" variant="outline">
-              Read the docs
-            </Button>
+            <Button size="xl">Read the docs</Button>
           </a>
         </div>
       </div>
