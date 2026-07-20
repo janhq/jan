@@ -7,9 +7,10 @@ const SECTIONS = [
     icon: Computer,
     title: 'Jan',
     description:
-      'Jan Desktop and Jan Agent — the cowork-style app and the standalone agent.',
+      'Jan Desktop and Jan Agent, the cowork-style app and the standalone agent.',
     tags: 'Quickstart · Agents · CLI',
     href: '/docs/desktop',
+    chip: 'bg-[#E0EEFE] text-[#0668D5]',
   },
   {
     icon: BrainCircuit,
@@ -19,6 +20,7 @@ const SECTIONS = [
     tags: 'Install · Connect an agent',
     href: 'https://tokamak.sh/docs/',
     external: true,
+    chip: 'bg-[#C6E09E]/50 text-[#3F6212]',
   },
 ]
 
@@ -35,72 +37,88 @@ const COMMON_PATHS = [
 
 const DocsHome = () => {
   return (
-    <div className="nextra-wrap-container py-20">
-      <div className="text-center max-w-2xl mx-auto">
-        <div className="inline-flex items-center gap-2 border border-black/15 dark:border-white/15 rounded-lg px-3 py-1.5">
-          <img src={LogoJanSVG.src} alt="Jan" className="w-5 h-5" />
-          <span className="font-semibold">Jan</span>
-        </div>
-        <h1 className="text-5xl !font-normal leading-tight mt-4 font-serif inline">
-          {' '}Docs
+    <div className="nextra-wrap-container py-16 lg:py-24">
+      <div className="text-center max-w-2xl mx-auto px-4">
+        <h1 className="flex items-center justify-center gap-3 lg:gap-4 text-5xl lg:text-6xl !font-normal leading-none font-serif">
+          <img
+            src={LogoJanSVG.src}
+            alt=""
+            className="size-11 lg:size-14 animate-wave"
+          />
+          Jan Docs
         </h1>
-        <p className="text-lg mt-4 leading-relaxed text-black/60 dark:text-white/60">
+        <p className="text-lg mt-5 leading-relaxed text-black/60 dark:text-white/60">
           References for Jan Desktop, Jan Agent, and Tokamak.
         </p>
 
         <button
           type="button"
-          className="mt-8 w-full flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.06] px-4 py-3 text-black/40 dark:text-white/40 hover:border-black/20 dark:hover:border-white/20 transition-colors"
+          className="mt-8 w-full max-w-xl mx-auto flex items-center gap-3 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.06] px-4 py-3.5 text-black/40 dark:text-white/40 hover:border-black/25 dark:hover:border-white/25 hover:bg-black/[0.05] transition-all"
         >
-          <Search className="size-4" />
+          <Search className="size-4 shrink-0" />
           <span className="flex-1 text-left text-sm">Search docs...</span>
-          <kbd className="text-xs px-1.5 py-0.5 rounded border border-black/20 dark:border-white/20">
+          <kbd className="text-[11px] font-medium px-1.5 py-0.5 rounded-md border border-black/15 dark:border-white/15 bg-white dark:bg-white/10">
             ⌘K
           </kbd>
         </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6 mt-16 max-w-3xl mx-auto">
+      <div className="grid md:grid-cols-2 gap-5 mt-16 lg:mt-20 max-w-3xl mx-auto px-4">
         {SECTIONS.map((section) => (
           <a
             key={section.title}
             href={section.href}
             target={section.external ? '_blank' : undefined}
             rel={section.external ? 'noopener noreferrer' : undefined}
-            className="group flex flex-col rounded-2xl border border-black/10 dark:border-white/10 p-6 hover:border-black/30 dark:hover:border-white/30 transition-colors"
+            className="group flex flex-col rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] p-7 transition-all duration-200 hover:border-black hover:bg-white dark:hover:bg-white/[0.06] hover:shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
           >
-            <section.icon className="size-7 text-[#458edf]" />
-            <h3 className="text-lg font-semibold mt-4">{section.title}</h3>
-            <p className="mt-2 text-sm text-black/60 dark:text-white/60 flex-1">
+            <span
+              className={`inline-flex size-12 items-center justify-center rounded-xl ${section.chip}`}
+            >
+              <section.icon className="size-6" strokeWidth={2} />
+            </span>
+            <h3 className="text-xl font-semibold mt-5">{section.title}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-black/60 dark:text-white/60 flex-1">
               {section.description}
             </p>
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-black/10 dark:border-white/10">
+            <div className="flex items-center justify-between mt-6 pt-4 border-t border-black/[0.07] dark:border-white/[0.08]">
               <span className="text-xs text-black/40 dark:text-white/40">
                 {section.tags}
               </span>
-              <span className="text-xs font-medium group-hover:translate-x-0.5 transition-transform">
-                Read docs →
+              <span className="inline-flex items-center gap-1 text-sm font-medium">
+                Read docs
+                <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5">
+                  →
+                </span>
               </span>
             </div>
           </a>
         ))}
       </div>
 
-      <div className="max-w-3xl mx-auto mt-16">
-        <h2 className="text-sm font-semibold text-black/40 dark:text-white/40 uppercase tracking-wide">
+      <div className="max-w-3xl mx-auto mt-16 lg:mt-20 px-4">
+        <h2 className="text-xs font-semibold text-black/40 dark:text-white/40 uppercase tracking-widest">
           Common paths
         </h2>
-        <div className="grid sm:grid-cols-3 gap-4 mt-4">
+        <div className="grid sm:grid-cols-3 gap-4 mt-5">
           {COMMON_PATHS.map((path) => (
             <a
               key={path.href}
               href={path.href}
               target={path.external ? '_blank' : undefined}
               rel={path.external ? 'noopener noreferrer' : undefined}
-              className="flex flex-col gap-3 rounded-xl border border-black/10 dark:border-white/10 p-4 text-sm hover:border-black/30 dark:hover:border-white/30 transition-colors"
+              className="group flex items-center gap-3 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] p-4 text-sm font-medium transition-all duration-200 hover:border-black hover:bg-white dark:hover:bg-white/[0.06] hover:shadow-[0px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
             >
-              <path.icon className="size-5 text-black/50 dark:text-white/50" />
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-white dark:bg-white/10 border border-black/[0.07] dark:border-white/[0.08] text-black/60 dark:text-white/60">
+                <path.icon className="size-4" strokeWidth={2} />
+              </span>
               {path.title}
+              <span
+                aria-hidden
+                className="ml-auto text-black/30 dark:text-white/30 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-black dark:group-hover:text-white"
+              >
+                →
+              </span>
             </a>
           ))}
         </div>
