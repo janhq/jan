@@ -2056,12 +2056,8 @@ async fn chat_loop<B: Backend>(
 
         tokio::select! {
             _ = ticker.tick() => {
-                // Advance the throbber (~20fps) so awaiting/running rows animate.
-                if !app.awaiting.is_empty()
-                    || app.tool_group.as_ref().is_some_and(ToolGroup::is_running)
-                {
-                    app.spinner_frame = app.spinner_frame.wrapping_add(1);
-                }
+                // Advance the frame counter always so the cursor blinks even when idle.
+                app.spinner_frame = app.spinner_frame.wrapping_add(1);
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
@@ -3649,9 +3645,10 @@ fn input_box_height(app: &App, width: u16) -> u16 {
 }
 
 /// Visible input as styled lines: `› ` on the first line, 2-space hang on
-/// continuations, caret `▏` at the byte offset `cursor` (on the line that
-/// contains it). Wrapping is left to the Paragraph so long single lines fold
-/// within the box width.
+/// continuations, and a solid block cursor at the byte offset `cursor` (the
+/// character under the cursor is drawn in reverse video; at end of line a
+/// reversed space forms the block). Wrapping is left to the Paragraph so long
+/// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
     let arrow = Span::styled("› ", Style::new().cyan().bold());
     let segments: Vec<&str> = input.split('\n').collect();
@@ -3677,19 +3674,34 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
             } else {
                 Span::raw("  ")
             };
-            let text = if i == caret_seg {
+            let mut spans = vec![prefix];
+            if i == caret_seg {
                 let (a, b) = seg.split_at(caret_off);
-                format!("{a}▏{b}")
-            } else {
-                seg.to_string()
-            };
-            Line::from(vec![prefix, Span::raw(text)])
+                if !a.is_empty() {
+                    spans.push(Span::raw(a.to_string()));
+                }
+                // Big fixed block cursor: reverse-video the char under the
+                // cursor, or a reversed space when at the end of the line.
+                let mut chars = b.chars();
+                let under = chars.next().unwrap_or(' ');
+                spans.push(Span::styled(
+                    under.to_string(),
+                    Style::new().add_modifier(Modifier::REVERSED),
+                ));
+                let rest: String = chars.collect();
+                if !rest.is_empty() {
+                    spans.push(Span::raw(rest));
+                }
+            } else if !seg.is_empty() {
+                spans.push(Span::raw(seg.to_string()));
+            }
+            Line::from(spans)
         })
         .collect()
 }
 
 fn input_box(app: &App) -> Paragraph<'static> {
-    let block = Block::default().borders(Borders::ALL).title(" message ");
+    let block = Block::default();
     if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running {
@@ -3698,6 +3710,16 @@ fn input_box(app: &App) -> Paragraph<'static> {
             Style::new().dim().italic(),
         ))
         .block(block)
+    } else if app.input.is_empty() {
+        // Same `› ` arrow as the typing view, then a fixed (non-blinking)
+        // block cursor in front of the placeholder.
+        let cursor_spans: Vec<Span<'static>> = vec![
+            Span::styled("› ", Style::new().cyan().bold()),
+            Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
+            Span::raw(" "),
+            Span::styled("Type here to chat with agent", Style::new().dim().italic()),
+        ];
+        Paragraph::new(Line::from(cursor_spans)).block(block)
     } else {
         Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
