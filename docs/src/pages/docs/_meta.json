@@ -10,9 +10,5 @@
   "desktop": {
     "type": "page",
     "title": "Jan Desktop"
-  },
-  "tokamak": {
-    "type": "page",
-    "title": "Tokamak"
   }
 }

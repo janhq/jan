@@ -15,14 +15,19 @@ const SECTIONS = [
     description:
       'Self-hosted router, fusion model, and governance/audit. Jan agents connect here for model switching.',
     tags: 'Install · Connect an agent',
-    href: '/docs/tokamak',
+    href: 'https://tokamak.sh/docs/',
+    external: true,
   },
 ]
 
 const COMMON_PATHS = [
   { title: 'Quickstart', href: '/docs/desktop/quickstart' },
   { title: 'Jan Agent', href: '/docs/desktop/agents' },
-  { title: 'Tokamak install', href: '/docs/tokamak/install' },
+  {
+    title: 'Tokamak install',
+    href: 'https://tokamak.sh/docs/self-hosting/installation',
+    external: true,
+  },
 ]
 
 const DocsHome = () => {
@@ -45,6 +50,8 @@ const DocsHome = () => {
           <a
             key={section.title}
             href={section.href}
+            target={section.external ? '_blank' : undefined}
+            rel={section.external ? 'noopener noreferrer' : undefined}
             className="rounded-2xl border border-black/10 dark:border-white/10 p-6 hover:border-black/30 dark:hover:border-white/30 transition-colors"
           >
             <section.icon className="size-8" />
@@ -68,6 +75,8 @@ const DocsHome = () => {
             <a
               key={path.href}
               href={path.href}
+              target={path.external ? '_blank' : undefined}
+              rel={path.external ? 'noopener noreferrer' : undefined}
               className="rounded-xl border border-black/10 dark:border-white/10 p-4 text-sm hover:border-black/30 dark:hover:border-white/30 transition-colors"
             >
               {path.title}
