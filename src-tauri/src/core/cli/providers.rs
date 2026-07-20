@@ -15,6 +15,8 @@ use crate::core::state::ProviderConfig;
 const MODEL_PROVIDER_KEY: &str = "model-provider";
 const API_KEY_SETTING_KEYS: [&str; 2] = ["api-key", "api_key"];
 
+pub(crate) use crate::core::agent::env_provider::ENV_AGENT_MODEL_ID;
+
 /// CLI/env overrides applied after loading the persisted store.
 #[derive(Debug, Default, Clone)]
 pub struct ProviderOverrides {
@@ -131,6 +133,10 @@ pub fn load_provider_configs(
         crate::core::server::provider_secrets::load_provider_keys(p)
     });
     apply_overrides(&mut configs, overrides);
+    crate::core::agent::env_provider::inject_env_provider(
+        &mut configs,
+        crate::core::agent::env_provider::env_model_id().as_deref(),
+    );
     Ok(configs)
 }
 
