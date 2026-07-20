@@ -33,7 +33,7 @@ const Tokamak = () => {
           <a href="https://tokamak.jan.ai" target="_blank" rel="noopener noreferrer">
             <Button size="xl">Login to Tokamak</Button>
           </a>
-          <a href="/docs/tokamak">
+          <a href="https://tokamak.sh/docs/" target="_blank" rel="noopener noreferrer">
             <Button size="xl" variant="outline">
               Read the docs
             </Button>
@@ -58,7 +58,12 @@ const Tokamak = () => {
       <div className="text-center mt-16 text-sm text-black/50 dark:text-white/50">
         Jan agents connect to Tokamak for model switching, governance, and
         audit. See{' '}
-        <a href="/docs/tokamak/connect-agent" className="text-blue-600 dark:text-blue-400">
+        <a
+          href="https://tokamak.sh/docs/getting-started/coding-agents"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400"
+        >
           Connect an agent
         </a>
         .
