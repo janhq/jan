@@ -152,6 +152,11 @@ pub fn resolve_decision(
                 Decision::Prompt(PromptKind::ReadEscape)
             }
         }
+        // Native web tools (Net) touch no filesystem path and run no shell
+        // command; they only perform outbound HTTP through Jan's provider
+        // adapter. Treat them like read-only reads inside the project: allowed
+        // without a prompt (an explicit agent.toml deny above still wins).
+        Capability::Net => Decision::Allow,
         Capability::Write => gated(PromptKind::Write, grants),
         Capability::Exec => {
             // Polling a previously backgrounded command (job_id, no new
@@ -230,6 +235,41 @@ mod tests {
             &grants,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn web_tools_allow_without_prompt() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let grants = SessionGrants::default();
+        for tool in ["web_search", "web_fetch"] {
+            let d = resolve_decision(
+                lookup(tool).unwrap(),
+                &json!({}),
+                &root,
+                &perms,
+                &grants,
+            );
+            assert_eq!(d, Decision::Allow, "{tool} should be auto-allowed");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn web_tools_honor_explicit_deny() {
+        let root = unique_root();
+        let deny = s(&["web_search"]);
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &deny, &[]);
+        let grants = SessionGrants::default();
+        let d = resolve_decision(
+            lookup("web_search").unwrap(),
+            &json!({}),
+            &root,
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::HardDeny, "deny in agent.toml must win for web tools");
         let _ = std::fs::remove_dir_all(&root);
     }
 
