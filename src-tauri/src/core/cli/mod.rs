@@ -1018,9 +1018,15 @@ fn prepare_agent_session(
         );
     }
 
-    // Resolution order: --model flag, then agent.toml [agent].model, then the
-    // desktop app's currently-selected model (synced from settings.json).
-    let model = model_override
+    // Resolution order: JAN_AGENT_MODEL_ID env var (highest), then --model
+    // flag, then agent.toml [agent].model, then the desktop app's
+    // currently-selected model (synced from settings.json).
+    let env_model = std::env::var(crate::core::cli::providers::ENV_AGENT_MODEL_ID)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    let model = env_model
+        .or(model_override)
         .or_else(|| cfg.agent.model.clone())
         .or_else(|| crate::core::cli::providers::desktop_selection().model)
         .ok_or_else(|| {
