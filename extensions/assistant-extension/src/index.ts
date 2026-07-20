@@ -22,7 +22,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     // Run migrations if needed
     await this.runMigrations()
 
-    const assistants = await this.getAssistants()
+    const assistants = await this.readAssistantsFromDisk()
     if (assistants.length === 0) {
       // Add default parameters when creating the assistant
       const assistantWithParams = {
@@ -245,9 +245,13 @@ Current date: {{current_date}}`
    */
   onUnload(): void {}
 
-  async getAssistants(): Promise<Assistant[]> {
-    if (!(await fs.existsSync('file://assistants')))
-      return [this.defaultAssistant]
+  /**
+   * Reads only the assistants persisted on disk. May be empty; callers that
+   * need a guaranteed assistant use getAssistants (which falls back to the
+   * default), while onLoad uses this to decide whether to seed the default.
+   */
+  private async readAssistantsFromDisk(): Promise<Assistant[]> {
+    if (!(await fs.existsSync('file://assistants'))) return []
     const assistants = await fs.readdirSync('file://assistants')
     const assistantsData: Assistant[] = []
     for (const assistant of assistants) {
@@ -265,7 +269,12 @@ Current date: {{current_date}}`
         logger.error(`Failed to read assistant ${assistant}:`, error)
       }
     }
-    // Return loaded assistants, or fall back to default if none found
+    return assistantsData
+  }
+
+  async getAssistants(): Promise<Assistant[]> {
+    const assistantsData = await this.readAssistantsFromDisk()
+    // Fall back to the default if none are persisted yet.
     return assistantsData.length > 0 ? assistantsData : [this.defaultAssistant]
   }
 

@@ -2717,6 +2717,37 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/assistant-extension@workspace:extensions/assistant-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/assistant-extension@workspace:extensions/assistant-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:^26.1.0"
+    rimraf: "npm:6.0.1"
+    rolldown: "npm:1.0.0-beta.1"
+    run-script-os: "npm:1.1.6"
+    ts-loader: "npm:^9.5.0"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
+"@janhq/conversational-extension@workspace:extensions/conversational-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/conversational-extension@workspace:extensions/conversational-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:^26.1.0"
+    rimraf: "npm:6.0.1"
+    rolldown: "npm:1.0.0-beta.1"
+    ts-loader: "npm:^9.5.0"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/core@workspace:*, @janhq/core@workspace:core":
   version: 0.0.0-use.local
   resolution: "@janhq/core@workspace:core"
@@ -2741,6 +2772,22 @@ __metadata:
     vitest: "npm:^2.1.8"
   peerDependencies:
     react: 19.0.0
+  languageName: unknown
+  linkType: soft
+
+"@janhq/download-extension@workspace:extensions/download-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/download-extension@workspace:extensions/download-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    "@tauri-apps/api": "npm:2.8.0"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:^26.1.0"
+    rimraf: "npm:6.0.1"
+    rolldown: "npm:1.0.0-beta.1"
+    run-script-os: "npm:1.1.6"
+    typescript: "npm:5.8.3"
+    vitest: "npm:3.2.4"
   languageName: unknown
   linkType: soft
 
@@ -2782,6 +2829,62 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/llamacpp-extension@workspace:extensions/llamacpp-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/llamacpp-extension@workspace:extensions/llamacpp-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware"
+    "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp"
+    "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-http": "npm:2.5.9"
+    "@vitest/ui": "npm:2.1.9"
+    cpx: "npm:1.5.0"
+    fetch-retry: "npm:^5.0.6"
+    jsdom: "npm:26.1.0"
+    rimraf: "npm:3.0.2"
+    rolldown: "npm:1.0.0-beta.1"
+    ts-loader: "npm:^9.5.0"
+    typescript: "npm:5.9.2"
+    ulidx: "npm:2.4.1"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
+"@janhq/mlx-extension@workspace:extensions/mlx-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/mlx-extension@workspace:extensions/mlx-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp"
+    "@janhq/tauri-plugin-mlx-api": "link:../../src-tauri/plugins/tauri-plugin-mlx"
+    "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-http": "npm:2.5.9"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:^26.1.0"
+    rimraf: "npm:3.0.2"
+    rolldown: "npm:1.0.0-beta.1"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
+"@janhq/rag-extension@workspace:extensions/rag-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/rag-extension@workspace:extensions/rag-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    "@janhq/tauri-plugin-rag-api": "link:../../src-tauri/plugins/tauri-plugin-rag"
+    "@janhq/tauri-plugin-vector-db-api": "link:../../src-tauri/plugins/tauri-plugin-vector-db"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:^26.1.0"
+    rimraf: "npm:6.0.1"
+    rolldown: "npm:1.0.0-beta.1"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/remend@npm:@janhq/remend@^1.1.0, @janhq/remend@npm:^1.0.1":
   version: 1.1.0
   resolution: "@janhq/remend@npm:1.1.0"
@@ -2795,6 +2898,69 @@ __metadata:
   languageName: node
   linkType: soft
 
+"@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fmlx-extension%40workspace%3Aextensions%2Fmlx-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fmlx-extension%40workspace%3Aextensions%2Fmlx-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-mlx-api@link:../../src-tauri/plugins/tauri-plugin-mlx::locator=%40janhq%2Fmlx-extension%40workspace%3Aextensions%2Fmlx-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-mlx-api@link:../../src-tauri/plugins/tauri-plugin-mlx::locator=%40janhq%2Fmlx-extension%40workspace%3Aextensions%2Fmlx-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-rag-api@link:../../src-tauri/plugins/tauri-plugin-rag::locator=%40janhq%2Frag-extension%40workspace%3Aextensions%2Frag-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-rag-api@link:../../src-tauri/plugins/tauri-plugin-rag::locator=%40janhq%2Frag-extension%40workspace%3Aextensions%2Frag-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-rag-api@link:../../src-tauri/plugins/tauri-plugin-rag::locator=%40janhq%2Fvector-db-extension%40workspace%3Aextensions%2Fvector-db-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-rag-api@link:../../src-tauri/plugins/tauri-plugin-rag::locator=%40janhq%2Fvector-db-extension%40workspace%3Aextensions%2Fvector-db-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-vector-db-api@link:../../src-tauri/plugins/tauri-plugin-vector-db::locator=%40janhq%2Frag-extension%40workspace%3Aextensions%2Frag-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-vector-db-api@link:../../src-tauri/plugins/tauri-plugin-vector-db::locator=%40janhq%2Frag-extension%40workspace%3Aextensions%2Frag-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-vector-db-api@link:../../src-tauri/plugins/tauri-plugin-vector-db::locator=%40janhq%2Fvector-db-extension%40workspace%3Aextensions%2Fvector-db-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-vector-db-api@link:../../src-tauri/plugins/tauri-plugin-vector-db::locator=%40janhq%2Fvector-db-extension%40workspace%3Aextensions%2Fvector-db-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/vector-db-extension@workspace:extensions/vector-db-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/vector-db-extension@workspace:extensions/vector-db-extension"
+  dependencies:
+    "@janhq/core": "workspace:*"
+    "@janhq/tauri-plugin-rag-api": "link:../../src-tauri/plugins/tauri-plugin-rag"
+    "@janhq/tauri-plugin-vector-db-api": "link:../../src-tauri/plugins/tauri-plugin-vector-db"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:^26.1.0"
+    rimraf: "npm:6.0.1"
+    rolldown: "npm:1.0.0-beta.1"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
 "@janhq/web-app@workspace:web-app":
   version: 0.0.0-use.local
   resolution: "@janhq/web-app@workspace:web-app"
@@ -7464,7 +7630,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vitest/ui@npm:^2.1.8":
+"@vitest/ui@npm:2.1.9, @vitest/ui@npm:^2.1.8":
   version: 2.1.9
   resolution: "@vitest/ui@npm:2.1.9"
   dependencies:
@@ -8607,7 +8773,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"chalk@npm:^4.0.0, chalk@npm:^4.1.2":
+"chalk@npm:^4.0.0, chalk@npm:^4.1.0, chalk@npm:^4.1.2":
   version: 4.1.2
   resolution: "chalk@npm:4.1.2"
   dependencies:
@@ -9097,7 +9263,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cpx@npm:^1.5.0":
+"cpx@npm:1.5.0, cpx@npm:^1.5.0":
   version: 1.5.0
   resolution: "cpx@npm:1.5.0"
   dependencies:
@@ -10962,6 +11128,13 @@ __metadata:
     picomatch:
       optional: true
   checksum: 10c0/e345083c4306b3aed6cb8ec551e26c36bab5c511e99ea4576a16750ddc8d3240e63826cc624f5ae17ad4dc82e68a253213b60d556c11bfad064b7607847ed07f
+  languageName: node
+  linkType: hard
+
+"fetch-retry@npm:^5.0.6":
+  version: 5.0.6
+  resolution: "fetch-retry@npm:5.0.6"
+  checksum: 10c0/349f50db631039630e915f70c763469cb696f3ac92ca6f63823109334a2bc62f63670b8c5a5c7e0195c39df517e60ef385cc5264f4c4904d0c6707d371fa8999
   languageName: node
   linkType: hard
 
@@ -16096,6 +16269,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"picomatch@npm:^4.0.0":
+  version: 4.0.5
+  resolution: "picomatch@npm:4.0.5"
+  checksum: 10c0/947bc6b6e1ff1e6c5aaf95b107a0839d12802f4f7b867663f67d47accba939ca1cb582cf99dfc30438efa1c4648ac5990967e783e8929c36b03e8440704ef1bd
+  languageName: node
+  linkType: hard
+
 "picomatch@npm:^4.0.2, picomatch@npm:^4.0.3":
   version: 4.0.3
   resolution: "picomatch@npm:4.0.3"
@@ -17411,18 +17591,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rimraf@npm:^2.6.3":
-  version: 2.7.1
-  resolution: "rimraf@npm:2.7.1"
-  dependencies:
-    glob: "npm:^7.1.3"
-  bin:
-    rimraf: ./bin.js
-  checksum: 10c0/4eef73d406c6940927479a3a9dee551e14a54faf54b31ef861250ac815172bade86cc6f7d64a4dc5e98b65e4b18a2e1c9ff3b68d296be0c748413f092bb0dd40
-  languageName: node
-  linkType: hard
-
-"rimraf@npm:^3.0.2":
+"rimraf@npm:3.0.2, rimraf@npm:^3.0.2":
   version: 3.0.2
   resolution: "rimraf@npm:3.0.2"
   dependencies:
@@ -17433,7 +17602,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rimraf@npm:^6.0.1":
+"rimraf@npm:6.0.1, rimraf@npm:^6.0.1":
   version: 6.0.1
   resolution: "rimraf@npm:6.0.1"
   dependencies:
@@ -17442,6 +17611,17 @@ __metadata:
   bin:
     rimraf: dist/esm/bin.mjs
   checksum: 10c0/b30b6b072771f0d1e73b4ca5f37bb2944ee09375be9db5f558fcd3310000d29dfcfa93cf7734d75295ad5a7486dc8e40f63089ced1722a664539ffc0c3ece8c6
+  languageName: node
+  linkType: hard
+
+"rimraf@npm:^2.6.3":
+  version: 2.7.1
+  resolution: "rimraf@npm:2.7.1"
+  dependencies:
+    glob: "npm:^7.1.3"
+  bin:
+    rimraf: ./bin.js
+  checksum: 10c0/4eef73d406c6940927479a3a9dee551e14a54faf54b31ef861250ac815172bade86cc6f7d64a4dc5e98b65e4b18a2e1c9ff3b68d296be0c748413f092bb0dd40
   languageName: node
   linkType: hard
 
@@ -17720,7 +17900,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"run-script-os@npm:^1.1.6":
+"run-script-os@npm:1.1.6, run-script-os@npm:^1.1.6":
   version: 1.1.6
   resolution: "run-script-os@npm:1.1.6"
   bin:
@@ -19235,6 +19415,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ts-loader@npm:^9.5.0":
+  version: 9.6.2
+  resolution: "ts-loader@npm:9.6.2"
+  dependencies:
+    chalk: "npm:^4.1.0"
+    picomatch: "npm:^4.0.0"
+    source-map: "npm:^0.7.4"
+  peerDependencies:
+    loader-utils: "*"
+    typescript: "*"
+    webpack: ^4.0.0 || ^5.0.0
+  peerDependenciesMeta:
+    loader-utils:
+      optional: true
+  checksum: 10c0/6102336ee598124249e07cce6bb3d4ee0586f962697b7388d1957296a2c7d5164b95757797db237bdb7b8f0c5a52d2f22ca5013d3337823d8e9e0e731ce03c67
+  languageName: node
+  linkType: hard
+
 "tslib@npm:^2.0.0, tslib@npm:^2.0.1, tslib@npm:^2.1.0, tslib@npm:^2.4.0, tslib@npm:^2.6.2, tslib@npm:^2.8.0":
   version: 2.8.1
   resolution: "tslib@npm:2.8.1"
@@ -19407,6 +19605,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"typescript@npm:5.8.3, typescript@npm:^5.8.3":
+  version: 5.8.3
+  resolution: "typescript@npm:5.8.3"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 10c0/5f8bb01196e542e64d44db3d16ee0e4063ce4f3e3966df6005f2588e86d91c03e1fb131c2581baf0fb65ee79669eea6e161cd448178986587e9f6844446dbb48
+  languageName: node
+  linkType: hard
+
 "typescript@npm:5.9.2":
   version: 5.9.2
   resolution: "typescript@npm:5.9.2"
@@ -19417,13 +19625,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^5.8.3":
+"typescript@patch:typescript@npm%3A5.8.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>":
   version: 5.8.3
-  resolution: "typescript@npm:5.8.3"
+  resolution: "typescript@patch:typescript@npm%3A5.8.3#optional!builtin<compat/typescript>::version=5.8.3&hash=5786d5"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10c0/5f8bb01196e542e64d44db3d16ee0e4063ce4f3e3966df6005f2588e86d91c03e1fb131c2581baf0fb65ee79669eea6e161cd448178986587e9f6844446dbb48
+  checksum: 10c0/39117e346ff8ebd87ae1510b3a77d5d92dae5a89bde588c747d25da5c146603a99c8ee588c7ef80faaf123d89ed46f6dbd918d534d641083177d5fac38b8a1cb
   languageName: node
   linkType: hard
 
@@ -19434,16 +19642,6 @@ __metadata:
     tsc: bin/tsc
     tsserver: bin/tsserver
   checksum: 10c0/34d2a8e23eb8e0d1875072064d5e1d9c102e0bdce56a10a25c0b917b8aa9001a9cf5c225df12497e99da107dc379360bc138163c66b55b95f5b105b50578067e
-  languageName: node
-  linkType: hard
-
-"typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>":
-  version: 5.8.3
-  resolution: "typescript@patch:typescript@npm%3A5.8.3#optional!builtin<compat/typescript>::version=5.8.3&hash=5786d5"
-  bin:
-    tsc: bin/tsc
-    tsserver: bin/tsserver
-  checksum: 10c0/39117e346ff8ebd87ae1510b3a77d5d92dae5a89bde588c747d25da5c146603a99c8ee588c7ef80faaf123d89ed46f6dbd918d534d641083177d5fac38b8a1cb
   languageName: node
   linkType: hard
 

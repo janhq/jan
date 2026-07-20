@@ -358,6 +358,91 @@ describe('TauriProvidersService', () => {
       )
     })
 
+    it('adds default anthropic-version header for anthropic-shaped custom providers', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'anthropic_proxy',
+        base_url: 'https://anthropic.example.com/v1',
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'anthropic-version': '2023-06-01' }),
+        })
+      )
+    })
+
+    it('adds default anthropic-version header when api_type is anthropic despite non-anthropic name/host', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'my-gateway',
+        base_url: 'https://gateway.corp.com/v1',
+        api_type: 'anthropic',
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          }),
+        })
+      )
+    })
+
+    it('does not add anthropic-version for non-anthropic providers', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(baseProvider)
+      const headers = vi.mocked(fetchTauri).mock.calls[0][1]?.headers as Record<
+        string,
+        string
+      >
+      expect(headers).not.toHaveProperty('anthropic-version')
+      expect(headers).not.toHaveProperty(
+        'anthropic-dangerous-direct-browser-access'
+      )
+    })
+
+    it('does not override a caller-supplied anthropic-version', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'anthropic_proxy',
+        custom_header: [{ header: 'anthropic-version', value: '2099-01-01' }],
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'anthropic-version': '2099-01-01' }),
+        })
+      )
+    })
+
     it('retries with next key on 401 and succeeds', async () => {
       vi.mocked(providerRemoteApiKeyChain).mockReturnValue(['bad-key', 'good-key'])
       vi.mocked(fetchTauri)

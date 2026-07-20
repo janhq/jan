@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::core::{
     downloads::models::DownloadManagerState,
@@ -67,6 +70,10 @@ pub struct AppState {
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
     pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    /// Names of MCP servers whose initial start is currently in flight. Guards
+    /// against a server being `serve()`'d twice (e.g. boot startup racing a
+    /// frontend activation), which sends duplicate `initialize` requests.
+    pub mcp_starting: Arc<Mutex<HashSet<String>>>,
     pub background_cleanup_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
@@ -97,6 +104,7 @@ impl Default for AppState {
             mcp_settings: Default::default(),
             mcp_shutdown_in_progress: Default::default(),
             mcp_monitoring_tasks: Default::default(),
+            mcp_starting: Default::default(),
             background_cleanup_handle: Default::default(),
             mcp_server_pids: Default::default(),
             provider_configs: Default::default(),

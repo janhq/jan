@@ -5,7 +5,8 @@
   "workspaces": {
     "packages": [
       "core",
-      "web-app"
+      "web-app",
+      "extensions/*"
     ]
   },
   "scripts": {
@@ -17,7 +18,7 @@
     "test": "yarn test:core && yarn test:web && yarn test:ext",
     "test:core": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/core",
     "test:web": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/web-app",
-    "test:ext": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/llamacpp-extension",
+    "test:ext": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project '@janhq/*-extension'",
     "test:all": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest",
     "test:ui": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest --ui",
@@ -30,8 +31,8 @@
     "build:android": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_CLEAN=true yarn tauri android build -- --no-default-features --features mobile",
     "build:ios": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile",
     "build:ios:device": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile --export-method debugging",
-    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
-    "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
+    "copy:assets:tauri": "cpx \"LICENSE\" \"src-tauri/resources/\"",
+    "copy:assets:mobile": "cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
     "build:mlx-server": "make build-mlx-server",
@@ -47,10 +48,7 @@
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
-    "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && cd .. && run-script-os",
-    "build:extensions:darwin": "cd extensions && yarn workspaces foreach -Apt run build:publish",
-    "build:extensions:win32": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension run build:publish",
-    "build:extensions:linux": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension run build:publish",
+    "build:extensions": "yarn workspace @janhq/core build && yarn workspaces foreach -Apt --include '@janhq/*-extension' run build",
     "prepare": "husky"
   },
   "devDependencies": {

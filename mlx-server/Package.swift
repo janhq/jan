@@ -11,8 +11,11 @@ let package = Package(
         .executable(name: "mlx-server", targets: ["MLXServer"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.31.3")),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.31.4")),
+        // Pinned to a release tag, not `main`: main drifted onto mlx-swift 0.31.5+
+        // APIs (MLXArray.maskFill, DType.greatestFiniteMagnitudeArray) our floor
+        // doesn't guarantee. 3.31.4 matches main's loadModel/ChatSession APIs.
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.4"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
         // Pin transitive swift-jinja: 2.4.0 changed Value.object keys from String to
         // ObjectKey, which fails to build against swift-transformers 1.3.3's jinjaValue().

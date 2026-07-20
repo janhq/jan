@@ -101,9 +101,57 @@ fn parse_load_progress_event(block: &str, model_id: &str) -> Option<LoadProgress
     None
 }
 
+/// A `status_change` transition for the model currently being loaded, parsed
+/// from one `/models/sse` event block. Upstream marks a load failure as a
+/// transition to `unloaded` with a nonzero `exit_code`
+/// (`server_model_meta::is_failed`); SSE events are ordered, so an unloaded
+/// transition seen *after* our model entered `loading` on the same stream is
+/// definitively this load attempt's outcome — unlike a `/models` snapshot,
+/// which can carry a stale failure from a previous attempt or an eviction.
+#[derive(Debug, PartialEq)]
+enum LoadStatusChange {
+    Loading,
+    Loaded,
+    Unloaded { exit_code: Option<i64> },
+}
+
+fn parse_load_status_change(block: &str, model_id: &str) -> Option<LoadStatusChange> {
+    for line in block.lines() {
+        let data = line
+            .strip_prefix("data: ")
+            .or_else(|| line.strip_prefix("data:"))?;
+        let json: serde_json::Value = serde_json::from_str(data).ok()?;
+        if json.get("model").and_then(|v| v.as_str()) != Some(model_id) {
+            continue;
+        }
+        if json.get("event").and_then(|v| v.as_str()) != Some("status_change") {
+            continue;
+        }
+        let status = json
+            .get("data")
+            .and_then(|d| d.get("status"))
+            .and_then(|v| v.as_str())?;
+        return match status {
+            "loading" => Some(LoadStatusChange::Loading),
+            "loaded" => Some(LoadStatusChange::Loaded),
+            "unloaded" => Some(LoadStatusChange::Unloaded {
+                exit_code: json
+                    .get("data")
+                    .and_then(|d| d.get("exit_code"))
+                    .and_then(|v| v.as_i64()),
+            }),
+            _ => None,
+        };
+    }
+    None
+}
+
 /// Subscribes to the router's `/models/sse` feed and re-emits `progress`
 /// updates for `model_id` as Tauri events, until the connection drops or the
-/// task is aborted by the caller once loading finishes.
+/// task is aborted by the caller once loading finishes. Additionally reports
+/// a definitive load failure over `fail_tx` (the observed exit code) when the
+/// model transitions `loading` -> `unloaded` with a nonzero exit code; the
+/// caller races this against the `/models` polling fallback.
 ///
 /// `/models/sse` was introduced upstream in build b9747 (server: real-time
 /// model load progress tracking, #24828); this plugin doesn't track backend
@@ -117,6 +165,7 @@ fn spawn_load_progress_listener<R: Runtime>(
     port: u16,
     api_key: String,
     model_id: String,
+    fail_tx: tokio::sync::oneshot::Sender<Option<i64>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         use futures_util::StreamExt;
@@ -141,6 +190,8 @@ fn spawn_load_progress_listener<R: Runtime>(
 
         let mut stream = resp.bytes_stream();
         let mut buf = String::new();
+        let mut fail_tx = Some(fail_tx);
+        let mut saw_loading = false;
         while let Some(chunk) = stream.next().await {
             let Ok(bytes) = chunk else { break };
             buf.push_str(&String::from_utf8_lossy(&bytes));
@@ -149,6 +200,17 @@ fn spawn_load_progress_listener<R: Runtime>(
                 let event_block: String = buf.drain(..pos + 2).collect();
                 if let Some(payload) = parse_load_progress_event(&event_block, &model_id) {
                     let _ = app_handle.emit("llamacpp-model-load-progress", payload);
+                }
+                match parse_load_status_change(&event_block, &model_id) {
+                    Some(LoadStatusChange::Loading) => saw_loading = true,
+                    Some(LoadStatusChange::Unloaded { exit_code })
+                        if saw_loading && exit_code.unwrap_or(0) != 0 =>
+                    {
+                        if let Some(tx) = fail_tx.take() {
+                            let _ = tx.send(exit_code);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -300,19 +362,96 @@ async fn post_load<R: Runtime>(
         }
     }
 
+    let (fail_tx, fail_rx) = tokio::sync::oneshot::channel();
     let progress_task = spawn_load_progress_listener(
         app_handle.clone(),
         port,
         api_key.to_string(),
         model_id.to_string(),
+        fail_tx,
     );
+
+    // Definitive failure signal from the SSE stream; pends forever if the
+    // listener ends without one (older backend, dropped connection) so the
+    // polling arm below always remains the fallback.
+    let sse_failure = async {
+        match fail_rx.await {
+            Ok(exit_code) => exit_code,
+            Err(_) => std::future::pending().await,
+        }
+    };
 
     // /models/load returns success once loading is *initiated*; poll /models
     // until the entry transitions from "loading" to "loaded" (or fails).
-    let result = wait_until_loaded(port, api_key, model_id, Duration::from_secs(600)).await;
+    let result = tokio::select! {
+        r = wait_until_loaded(port, api_key, model_id, Duration::from_secs(600)) => r,
+        exit_code = sse_failure => Err(ServerError::Llamacpp(LlamacppError::new(
+            ErrorCode::InternalError,
+            format!("Model {} failed to load", model_id),
+            Some(format!("exit_code={:?}", exit_code)),
+        ))),
+    };
     progress_task.abort();
     result
 }
+
+#[derive(Debug, PartialEq)]
+enum LoadPoll {
+    Loaded,
+    Pending,
+    Failed { exit_code: Option<i64> },
+}
+
+/// The router keeps the last failure (`failed`/`exit_code`) on a `/models`
+/// entry across load attempts, and an LRU eviction force-kill can also leave
+/// a failed state behind. A failed flag observed before this attempt ever
+/// reached "loading" is therefore stale and must not be attributed to the
+/// model being loaded now; trust it only once the attempt was seen loading,
+/// or after `grace_elapsed` with no loading transition at all.
+fn evaluate_load_poll(
+    entry: Option<&serde_json::Value>,
+    saw_loading: &mut bool,
+    grace_elapsed: bool,
+) -> LoadPoll {
+    let Some(entry) = entry else {
+        return LoadPoll::Pending;
+    };
+    let status = entry.get("status");
+    let value = status
+        .and_then(|s| s.get("value"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    match value {
+        "loaded" => LoadPoll::Loaded,
+        "loading" => {
+            *saw_loading = true;
+            LoadPoll::Pending
+        }
+        "unloaded" | "sleeping" => {
+            let failed = status
+                .and_then(|s| s.get("failed"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if failed && (*saw_loading || grace_elapsed) {
+                let exit_code = status
+                    .and_then(|s| s.get("exit_code"))
+                    .and_then(|v| v.as_i64());
+                LoadPoll::Failed { exit_code }
+            } else {
+                LoadPoll::Pending
+            }
+        }
+        other => {
+            log::warn!("Unknown model status value: {}", other);
+            LoadPoll::Pending
+        }
+    }
+}
+
+/// How long a pre-existing `failed` flag is treated as stale while waiting
+/// for the fresh attempt to enter "loading". Longer than the router's 10s
+/// force-kill timeout so an in-flight eviction can finish first.
+const STALE_FAILURE_GRACE: Duration = Duration::from_secs(20);
 
 async fn wait_until_loaded(
     port: u16,
@@ -324,6 +463,7 @@ async fn wait_until_loaded(
     let url = format!("http://127.0.0.1:{}/models", port);
     let start = std::time::Instant::now();
     let poll_interval = Duration::from_millis(250);
+    let mut saw_loading = false;
 
     loop {
         let resp = client
@@ -355,34 +495,19 @@ async fn wait_until_loaded(
                     .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
             });
 
-        if let Some(entry) = entry {
-            let status = entry.get("status");
-            let value = status
-                .and_then(|s| s.get("value"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            match value {
-                "loaded" => return Ok(()),
-                "loading" => {}
-                "unloaded" | "sleeping" => {
-                    let failed = status
-                        .and_then(|s| s.get("failed"))
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    if failed {
-                        let exit_code = status
-                            .and_then(|s| s.get("exit_code"))
-                            .and_then(|v| v.as_i64());
-                        return Err(ServerError::Llamacpp(LlamacppError::new(
-                            ErrorCode::InternalError,
-                            format!("Model {} failed to load", model_id),
-                            Some(format!("exit_code={:?}", exit_code)),
-                        )));
-                    }
-                }
-                other => {
-                    log::warn!("Unknown model status value: {}", other);
-                }
+        match evaluate_load_poll(
+            entry,
+            &mut saw_loading,
+            start.elapsed() >= STALE_FAILURE_GRACE,
+        ) {
+            LoadPoll::Loaded => return Ok(()),
+            LoadPoll::Pending => {}
+            LoadPoll::Failed { exit_code } => {
+                return Err(ServerError::Llamacpp(LlamacppError::new(
+                    ErrorCode::InternalError,
+                    format!("Model {} failed to load", model_id),
+                    Some(format!("exit_code={:?}", exit_code)),
+                )));
             }
         }
 
@@ -896,6 +1021,126 @@ pub async fn force_kill_router_tree<R: Runtime>(
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod load_poll_tests {
+    use super::{evaluate_load_poll, LoadPoll};
+
+    fn entry(status: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({ "id": "m", "status": status })
+    }
+
+    #[test]
+    fn loaded_wins() {
+        let e = entry(serde_json::json!({ "value": "loaded" }));
+        let mut saw = false;
+        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, false), LoadPoll::Loaded);
+    }
+
+    #[test]
+    fn loading_marks_attempt_observed() {
+        let e = entry(serde_json::json!({ "value": "loading" }));
+        let mut saw = false;
+        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, false), LoadPoll::Pending);
+        assert!(saw);
+    }
+
+    #[test]
+    fn stale_failure_before_loading_is_ignored() {
+        // failed/exit_code left over from a previous attempt or an LRU
+        // eviction force-kill must not be attributed to this load.
+        let e = entry(serde_json::json!({
+            "value": "unloaded", "failed": true, "exit_code": 1
+        }));
+        let mut saw = false;
+        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, false), LoadPoll::Pending);
+    }
+
+    #[test]
+    fn failure_after_loading_is_reported() {
+        let e = entry(serde_json::json!({
+            "value": "unloaded", "failed": true, "exit_code": 137
+        }));
+        let mut saw = true;
+        assert_eq!(
+            evaluate_load_poll(Some(&e), &mut saw, false),
+            LoadPoll::Failed { exit_code: Some(137) }
+        );
+    }
+
+    #[test]
+    fn persistent_failure_past_grace_is_reported_even_without_loading() {
+        let e = entry(serde_json::json!({
+            "value": "unloaded", "failed": true, "exit_code": 1
+        }));
+        let mut saw = false;
+        assert_eq!(
+            evaluate_load_poll(Some(&e), &mut saw, true),
+            LoadPoll::Failed { exit_code: Some(1) }
+        );
+    }
+
+    #[test]
+    fn unloaded_without_failure_keeps_polling() {
+        let e = entry(serde_json::json!({ "value": "unloaded" }));
+        let mut saw = true;
+        assert_eq!(evaluate_load_poll(Some(&e), &mut saw, true), LoadPoll::Pending);
+    }
+
+    #[test]
+    fn missing_entry_keeps_polling() {
+        let mut saw = false;
+        assert_eq!(evaluate_load_poll(None, &mut saw, true), LoadPoll::Pending);
+    }
+}
+
+#[cfg(test)]
+mod load_status_change_tests {
+    use super::{parse_load_status_change, LoadStatusChange};
+
+    fn sse_block(model: &str, event: &str, data: serde_json::Value) -> String {
+        let payload = serde_json::json!({ "model": model, "event": event, "data": data });
+        format!("data: {}\n\n", payload)
+    }
+
+    #[test]
+    fn parses_loading_loaded_and_failed_unloaded() {
+        let b = sse_block("m", "status_change", serde_json::json!({ "status": "loading" }));
+        assert_eq!(parse_load_status_change(&b, "m"), Some(LoadStatusChange::Loading));
+
+        let b = sse_block("m", "status_change", serde_json::json!({ "status": "loaded" }));
+        assert_eq!(parse_load_status_change(&b, "m"), Some(LoadStatusChange::Loaded));
+
+        let b = sse_block(
+            "m",
+            "status_change",
+            serde_json::json!({ "status": "unloaded", "exit_code": 1 }),
+        );
+        assert_eq!(
+            parse_load_status_change(&b, "m"),
+            Some(LoadStatusChange::Unloaded { exit_code: Some(1) })
+        );
+    }
+
+    #[test]
+    fn ignores_other_models_and_events() {
+        let b = sse_block(
+            "other-model",
+            "status_change",
+            serde_json::json!({ "status": "unloaded", "exit_code": 1 }),
+        );
+        assert_eq!(parse_load_status_change(&b, "m"), None);
+
+        let b = sse_block("m", "model_status", serde_json::json!({ "status": "unloaded" }));
+        assert_eq!(parse_load_status_change(&b, "m"), None);
+    }
+
+    #[test]
+    fn tolerates_malformed_blocks() {
+        assert_eq!(parse_load_status_change("data: not-json\n\n", "m"), None);
+        assert_eq!(parse_load_status_change(": keepalive\n\n", "m"), None);
+    }
 }
 
 #[cfg(test)]

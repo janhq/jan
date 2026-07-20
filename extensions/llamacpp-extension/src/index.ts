@@ -50,6 +50,7 @@ import {
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
   detectMtpLayersFromGgufMeta,
+  detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
@@ -70,6 +71,7 @@ import {
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
+  TemplateKwarg,
   EmbeddingResponse,
   ModelProps,
   DeviceList,
@@ -85,6 +87,7 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+const TEMPLATE_KWARGS_CHECK_VERSION = 1
 
 // Upstream build that added the `GET /models?reload=1` diff/reconcile path
 // (llama.cpp #21848). At/above this, a preset change can be hot-applied without
@@ -159,6 +162,10 @@ type PersistedModelState = {
 
 const MODEL_PROVIDER_STORE_KEY = 'model-provider'
 const INTERFACE_SETTINGS_STORE_KEY = 'setting-appearance'
+const EMBEDDER_BOOTSTRAP_KEY = 'llamacpp-embedder-bootstrapped'
+const FALLBACK_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
+const FALLBACK_EMBEDDING_MODEL_URL =
+  'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
   'llamacpp_model_yaml_backfill_v1'
 
@@ -369,6 +376,7 @@ export default class llamacpp_extension extends AIEngine {
   private routerPort?: number
   private routerApiKey?: string
   private userModelsMax: number = 1
+  private routerEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
 
   // Backend discovery + router spawn run off the onLoad critical path; awaited
@@ -491,7 +499,41 @@ export default class llamacpp_extension extends AIEngine {
           logger.error('Router failed to start during onLoad:', e)
         }
       }
+      await this.bootstrapDefaultEmbedder()
     })()
+  }
+
+  /**
+   * One-shot startup install of the fallback embedder so the router reserves
+   * the +1 embedding slot from its first start instead of importing the model
+   * mid-session on the first RAG call. Runs after the router is up so the
+   * download never delays chat availability; the import's preset refresh then
+   * resizes models_max via an idle restart (nothing is loaded yet at startup).
+   * The persisted flag keeps this from resurrecting a model the user deleted,
+   * and is only set on success so a failed download retries next launch.
+   */
+  private async bootstrapDefaultEmbedder(): Promise<void> {
+    try {
+      if (await getBackendSetting(EMBEDDER_BOOTSTRAP_KEY)) return
+      const models = await this.list()
+      const hasEmbedder = models.some(
+        (m) => (m as { embedding?: boolean }).embedding === true
+      )
+      if (!hasEmbedder) {
+        await this.import(FALLBACK_EMBEDDING_MODEL_ID, {
+          modelPath: FALLBACK_EMBEDDING_MODEL_URL,
+        })
+        logger.info(
+          `Pre-installed fallback embedding model "${FALLBACK_EMBEDDING_MODEL_ID}" at startup`
+        )
+      }
+      await setBackendSetting(EMBEDDER_BOOTSTRAP_KEY, 'true')
+    } catch (e) {
+      logger.warn(
+        'Fallback embedder bootstrap failed (will import on demand):',
+        e
+      )
+    }
   }
 
   // True when config.version_backend names a backend that's already downloaded,
@@ -691,10 +733,10 @@ export default class llamacpp_extension extends AIEngine {
     // stays unlimited.
     const userModelsMax = modelsMax
     this.userModelsMax = userModelsMax
-    const embeddingSlotBonus = embeddingCount > 0 ? 1 : 0
-    if (modelsMax > 0 && embeddingSlotBonus > 0) {
-      modelsMax += embeddingSlotBonus
-    }
+    const embeddingSlotBonus =
+      modelsMax > 0 && embeddingCount > 0 ? 1 : 0
+    modelsMax += embeddingSlotBonus
+    this.routerEmbeddingBonus = embeddingSlotBonus
 
     // Defensive: if a router is already running (hot reload / dev), stop it
     // first so start_router doesn't reject.
@@ -761,10 +803,29 @@ export default class llamacpp_extension extends AIEngine {
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
     const supportsMtp = build >= MTP_MIN_BUILD
-    await generatePreset(providerPath, janDataFolderPath, this.config, {
-      supportsMtp,
-      reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
-    })
+    const { embeddingCount } = await generatePreset(
+      providerPath,
+      janDataFolderPath,
+      this.config,
+      {
+        supportsMtp,
+        reservedBackgroundSlots: (await readAutoGenerateTitleSetting()) ? 1 : 0,
+      }
+    )
+
+    // models_max is fixed at router spawn; a live reload can't grow it. If an
+    // embedder appeared (e.g. sentence-transformer-mini imported on demand) or
+    // the last one was removed, restart so the +1 embedding slot is applied —
+    // otherwise chat and embedding models evict each other on every RAG call.
+    const requiredBonus =
+      this.userModelsMax > 0 && embeddingCount > 0 ? 1 : 0
+    if (requiredBonus !== this.routerEmbeddingBonus) {
+      logger.info(
+        `Embedding slot bonus changed (${this.routerEmbeddingBonus} -> ${requiredBonus}); restarting router to resize models_max`
+      )
+      await this.startRouter()
+      return
+    }
 
     try {
       await reloadRouterModels()
@@ -1809,6 +1870,10 @@ export default class llamacpp_extension extends AIEngine {
 
     const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
     await this.resolveMtpLayersConfig(modelId, modelConfig)
+    const templateKwargs = await this.resolveTemplateKwargsConfig(
+      modelId,
+      modelConfig
+    )
 
     return {
       id: modelId,
@@ -1818,6 +1883,7 @@ export default class llamacpp_extension extends AIEngine {
       port: 0, // port is not known until the model is loaded
       sizeBytes: modelConfig.size_bytes ?? 0,
       embedding: isEmbedding,
+      template_kwargs: templateKwargs,
     } as modelInfo
   }
 
@@ -1941,6 +2007,64 @@ export default class llamacpp_extension extends AIEngine {
     return mtpLayers
   }
 
+  /**
+   * Detect which chat-template kwargs (e.g. `preserve_thinking`) a model's
+   * embedded jinja template accepts, caching the result in model.yml. Migrates
+   * pre-existing models lazily the first time list() sees a stale check version.
+   */
+  private async resolveTemplateKwargsConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<TemplateKwarg[]> {
+    const cfg = modelConfig as ModelConfig & {
+      template_kwargs?: TemplateKwarg[]
+      template_kwargs_check_v?: number
+    }
+    if (
+      Array.isArray(cfg.template_kwargs) &&
+      cfg.template_kwargs_check_v === TEMPLATE_KWARGS_CHECK_VERSION
+    ) {
+      return cfg.template_kwargs
+    }
+
+    let kwargs: TemplateKwarg[] = []
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        kwargs = detectTemplateKwargsFromChatTemplate(
+          metadata.metadata?.['tokenizer.chat_template']
+        )
+      }
+    } catch (e) {
+      logger.warn(`Failed to check template kwargs for ${modelId}`, e)
+      return cfg.template_kwargs ?? []
+    }
+
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      cfg.template_kwargs = kwargs
+      cfg.template_kwargs_check_v = TEMPLATE_KWARGS_CHECK_VERSION
+      await invoke<void>('write_yaml', {
+        data: cfg,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to persist template kwargs for ${modelId}`, e)
+    }
+
+    return kwargs
+  }
+
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
@@ -2004,6 +2128,10 @@ export default class llamacpp_extension extends AIEngine {
           modelId,
           modelConfig
         )
+        const templateKwargs = await this.resolveTemplateKwargsConfig(
+          modelId,
+          modelConfig
+        )
 
         const capabilities: string[] = []
         if (modelConfig.mmproj_path) {
@@ -2031,6 +2159,7 @@ export default class llamacpp_extension extends AIEngine {
           embedding: isEmbedding,
           imported: isAbsolute,
           capabilities: capabilities.length > 0 ? capabilities : undefined,
+          template_kwargs: templateKwargs,
         } as modelInfo
         modelInfos.push(modelInfo)
       } catch (err) {
@@ -2519,6 +2648,7 @@ export default class llamacpp_extension extends AIEngine {
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+    let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
     try {
@@ -2532,6 +2662,9 @@ export default class llamacpp_extension extends AIEngine {
         isEmbedding = true
       }
       mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+      templateKwargs = detectTemplateKwargsFromChatTemplate(
+        modelMetadata.metadata?.['tokenizer.chat_template']
+      )
 
       const rawName = modelMetadata.metadata?.['general.name']
       if (typeof rawName === 'string') {
@@ -2597,6 +2730,8 @@ export default class llamacpp_extension extends AIEngine {
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+      template_kwargs: templateKwargs,
+      template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
       // A separate draft gguf is downloaded only to be used — enable MTP by
       // default. Embedded-MTP models keep MTP opt-in (no flag written here).
       ...(mtpModelPath ? { mtp_model_path: mtpModelPath, mtp: true } : {}),
@@ -3383,7 +3518,7 @@ export default class llamacpp_extension extends AIEngine {
       (m) => (m as any).embedding === true
     )
     const hasMini = downloadedModelList.some(
-      (m) => m.id === 'sentence-transformer-mini'
+      (m) => m.id === FALLBACK_EMBEDDING_MODEL_ID
     )
     let preferred = await getDefaultEmbeddingModelId('llamacpp')
 
@@ -3406,14 +3541,13 @@ export default class llamacpp_extension extends AIEngine {
 
     const targetModelId = preferredMatch
       ? (preferred as string)
-      : 'sentence-transformer-mini'
+      : FALLBACK_EMBEDDING_MODEL_ID
 
     let sInfo = await this.findSessionByModel(targetModelId)
     if (!sInfo) {
-      if (targetModelId === 'sentence-transformer-mini' && !hasMini) {
-        await this.import('sentence-transformer-mini', {
-          modelPath:
-            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+      if (targetModelId === FALLBACK_EMBEDDING_MODEL_ID && !hasMini) {
+        await this.import(FALLBACK_EMBEDDING_MODEL_ID, {
+          modelPath: FALLBACK_EMBEDDING_MODEL_URL,
         })
       }
       sInfo = await this.load(targetModelId, undefined, true)
@@ -3450,7 +3584,7 @@ export default class llamacpp_extension extends AIEngine {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${sInfo.api_key}`,
         },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ content: text, model: sInfo.model_id }),
       })
       if (!res.ok) {
         throw new Error(`Tokenize request failed with status ${res.status}`)

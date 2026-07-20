@@ -166,7 +166,7 @@ export default class VectorDBExt extends VectorDBExtension {
   private async clampToEmbeddingContext(chunkSize: number, chunkOverlap: number): Promise<number> {
     const llm = this.getEmbeddingEngine()
     if (!llm?.getEmbeddingContextSize) return chunkSize
-    const ctxSize = await llm.getEmbeddingContextSize().catch(() => undefined)
+    const ctxSize = await this.probeEmbeddingContextSize(llm)
     if (!ctxSize || ctxSize <= 0) return chunkSize
     const safeMaxChars = Math.floor(
       ctxSize * CHARS_PER_TOKEN_ESTIMATE * CONTEXT_SAFETY_MARGIN
@@ -185,7 +185,7 @@ export default class VectorDBExt extends VectorDBExtension {
   private async ensureChunksFitEmbeddingContext(chunks: string[]): Promise<string[]> {
     const llm = this.getEmbeddingEngine()
     if (!llm?.getEmbeddingContextSize || !llm?.countEmbeddingTokens) return chunks
-    const ctxSize = await llm.getEmbeddingContextSize().catch(() => undefined)
+    const ctxSize = await this.probeEmbeddingContextSize(llm)
     if (!ctxSize || ctxSize <= 0) return chunks
     const budget = Math.max(1, ctxSize - EMBEDDING_CONTEXT_SAFETY_TOKENS)
 
@@ -196,13 +196,38 @@ export default class VectorDBExt extends VectorDBExtension {
     return out
   }
 
+  /**
+   * A rejected probe/count means the embedding engine is unhealthy (e.g. the
+   * embedding model failed to load). Skipping verification here would let
+   * oversized chunks through and surface later as a confusing HTTP 400
+   * (exceed_context_size_error), so fail ingestion with the real cause.
+   */
+  private async probeEmbeddingContextSize(llm: {
+    getEmbeddingContextSize?: () => Promise<number | undefined>
+  }): Promise<number | undefined> {
+    try {
+      return await llm.getEmbeddingContextSize!()
+    } catch (e) {
+      throw new Error(
+        `Failed to determine embedding context size: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+  }
+
   private async splitChunkToFit(
     text: string,
     budget: number,
     llm: { countEmbeddingTokens: (texts: string[]) => Promise<number[]> }
   ): Promise<string[]> {
     if (!text) return []
-    const [count] = await llm.countEmbeddingTokens([text]).catch(() => [0])
+    let count: number
+    try {
+      ;[count] = await llm.countEmbeddingTokens([text])
+    } catch (e) {
+      throw new Error(
+        `Failed to count embedding tokens: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
     if (count <= budget || text.length <= MIN_CHUNK_SIZE_CHARS) return [text]
     const mid = Math.floor(text.length / 2)
     return [

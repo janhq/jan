@@ -67,6 +67,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"]
+    "resources": ["resources/LICENSE"]
   }
 }
