@@ -1,4 +1,6 @@
-import { Computer, BrainCircuit } from 'lucide-react'
+/* eslint-disable @next/next/no-img-element */
+import { Computer, BrainCircuit, Search, Rocket, Bot, Share2 } from 'lucide-react'
+import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
 const SECTIONS = [
   {
@@ -21,9 +23,10 @@ const SECTIONS = [
 ]
 
 const COMMON_PATHS = [
-  { title: 'Quickstart', href: '/docs/desktop/quickstart' },
-  { title: 'Jan Agent', href: '/docs/desktop/agents' },
+  { icon: Rocket, title: 'Quickstart', href: '/docs/desktop/quickstart' },
+  { icon: Bot, title: 'Jan Agent', href: '/docs/desktop/agents' },
   {
+    icon: Share2,
     title: 'Tokamak install',
     href: 'https://tokamak.sh/docs/self-hosting/installation',
     external: true,
@@ -34,15 +37,27 @@ const DocsHome = () => {
   return (
     <div className="nextra-wrap-container py-20">
       <div className="text-center max-w-2xl mx-auto">
-        <h1 className="text-6xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
-          Jan Docs
+        <div className="inline-flex items-center gap-2 border border-black/15 dark:border-white/15 rounded-lg px-3 py-1.5">
+          <img src={LogoJanSVG.src} alt="Jan" className="w-5 h-5" />
+          <span className="font-semibold">Jan</span>
+        </div>
+        <h1 className="text-5xl !font-normal leading-tight mt-4 font-serif inline">
+          {' '}Docs
         </h1>
-        <p className="text-xl mt-2 leading-relaxed text-black/60 dark:text-white/60">
+        <p className="text-lg mt-4 leading-relaxed text-black/60 dark:text-white/60">
           References for Jan Desktop, Jan Agent, and Tokamak.
         </p>
-        <p className="text-sm mt-4 text-black/40 dark:text-white/40">
-          Press <kbd className="px-1.5 py-0.5 rounded border border-black/20 dark:border-white/20">⌘K</kbd> to search
-        </p>
+
+        <button
+          type="button"
+          className="mt-8 w-full flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.06] px-4 py-3 text-black/40 dark:text-white/40 hover:border-black/20 dark:hover:border-white/20 transition-colors"
+        >
+          <Search className="size-4" />
+          <span className="flex-1 text-left text-sm">Search docs...</span>
+          <kbd className="text-xs px-1.5 py-0.5 rounded border border-black/20 dark:border-white/20">
+            ⌘K
+          </kbd>
+        </button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mt-16 max-w-3xl mx-auto">
@@ -52,16 +67,21 @@ const DocsHome = () => {
             href={section.href}
             target={section.external ? '_blank' : undefined}
             rel={section.external ? 'noopener noreferrer' : undefined}
-            className="rounded-2xl border border-black/10 dark:border-white/10 p-6 hover:border-black/30 dark:hover:border-white/30 transition-colors"
+            className="group flex flex-col rounded-2xl border border-black/10 dark:border-white/10 p-6 hover:border-black/30 dark:hover:border-white/30 transition-colors"
           >
-            <section.icon className="size-8" />
+            <section.icon className="size-7 text-[#458edf]" />
             <h3 className="text-lg font-semibold mt-4">{section.title}</h3>
-            <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+            <p className="mt-2 text-sm text-black/60 dark:text-white/60 flex-1">
               {section.description}
             </p>
-            <p className="mt-4 text-xs text-black/40 dark:text-white/40">
-              {section.tags}
-            </p>
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-black/10 dark:border-white/10">
+              <span className="text-xs text-black/40 dark:text-white/40">
+                {section.tags}
+              </span>
+              <span className="text-xs font-medium group-hover:translate-x-0.5 transition-transform">
+                Read docs →
+              </span>
+            </div>
           </a>
         ))}
       </div>
@@ -77,8 +97,9 @@ const DocsHome = () => {
               href={path.href}
               target={path.external ? '_blank' : undefined}
               rel={path.external ? 'noopener noreferrer' : undefined}
-              className="rounded-xl border border-black/10 dark:border-white/10 p-4 text-sm hover:border-black/30 dark:hover:border-white/30 transition-colors"
+              className="flex flex-col gap-3 rounded-xl border border-black/10 dark:border-white/10 p-4 text-sm hover:border-black/30 dark:hover:border-white/30 transition-colors"
             >
+              <path.icon className="size-5 text-black/50 dark:text-white/50" />
               {path.title}
             </a>
           ))}
