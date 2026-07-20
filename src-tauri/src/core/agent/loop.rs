@@ -1055,6 +1055,16 @@ async fn run_turn_cycle(
             });
         }
 
+        // Record the assistant's tool-call turn. We intentionally do NOT attach
+        // the OpenAI-style `tool_calls` array here, and (below) we feed each tool
+        // result back as a `role: "user"` message instead of `role: "tool"`.
+        //
+        // Why: some served models (observed with `tokamak-1-preview`) do not
+        // actually attend to `role: "tool"` messages — the tool payload is present
+        // in the request but the model behaves as if the tool returned nothing,
+        // looping and hallucinating ("clean — nothing to commit"). Delivering the
+        // exact same bytes as a `user` message makes them fully visible and the
+        // model answers correctly on the next turn. See PR discussion / issue.
         if let Some(choice_message) = extract_choice_message(&completion) {
             let assistant_content = choice_message
                 .get("content")
@@ -1062,14 +1072,12 @@ async fn run_turn_cycle(
                 .unwrap_or(serde_json::Value::Null);
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
-                "content": assistant_content,
-                "tool_calls": tool_calls.clone()
+                "content": assistant_content
             }));
         } else {
             conversation_messages.push(serde_json::json!({
                 "role": "assistant",
-                "content": serde_json::Value::Null,
-                "tool_calls": tool_calls.clone()
+                "content": "(calling tools)"
             }));
         }
 
@@ -1091,8 +1099,7 @@ async fn run_turn_cycle(
                     diff: None,
                 });
                 conversation_messages.push(serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": id,
+                    "role": "user",
                     "content": content
                 }));
             }
@@ -1102,6 +1109,8 @@ async fn run_turn_cycle(
 
         let tool_results = tools.invoke(&tool_calls).await?;
 
+        // Feed tool results back as `user` messages (see note above the assistant
+        // push) so models that ignore `role: "tool"` still see the output.
         for outcome in tool_results {
             let ToolOutcome { id, content, diff } = outcome;
             let _ = events.send(StreamEvent::ToolResult {
@@ -1111,8 +1120,7 @@ async fn run_turn_cycle(
                 diff,
             });
             conversation_messages.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": id,
+                "role": "user",
                 "content": content
             }));
         }
