@@ -25,6 +25,7 @@ const MENU_ITEMS = [
     href: '#',
     children: [
       { name: 'News', href: '/changelog' },
+      { name: 'Blog', href: '/blog' },
       { name: 'Handbook', href: '/handbook' },
       { name: 'Discord', href: 'https://discord.com/invite/FTk2MvZwJH', external: true },
     ],
