@@ -21,7 +21,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
-import { invoke } from '@tauri-apps/api/core'
+import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -925,14 +925,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return new Promise<LanguageModel>((resolve, reject) => {
       const onAbort = () => {
         if (providerId === 'llamacpp') {
-          // Call the router unload directly instead of through the
-          // `unload()` extension method: that method first looks up an
+          // Call the plugin's unload command directly instead of through the
+          // extension's `unload()` method: that method first looks up an
           // active *loaded* session and throws if none is found, but a
           // model aborted mid-load is still in the "loading" state (not
           // "loaded") and would never resolve to a session -- silently
           // skipping the unload and leaking the still-loading llama-server.
           // See https://github.com/janhq/jan/issues/8432.
-          invoke('plugin:llamacpp|unload_llama_model', { modelId }).catch(() => {
+          unloadLlamaModel(modelId).catch(() => {
             // Best-effort: model may not have started loading yet, or may
             // already have finished/failed on its own.
           })
@@ -1003,9 +1003,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
       if (providerId === 'llamacpp') {
         try {
-          const loaded = await invoke<string[]>(
-            'plugin:llamacpp|get_loaded_models'
-          )
+          const loaded = await getLoadedModels()
           if (!loaded.includes(modelId)) {
             useAppState.getState().updateLoadingModel(true)
             useAppState.getState().updateThreadLoadingModel(threadId, true)

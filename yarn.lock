@@ -2789,6 +2789,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/tauri-plugin-llamacpp-api@link:../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-llamacpp-api@link:../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
+  languageName: node
+  linkType: soft
+
 "@janhq/web-app@workspace:web-app":
   version: 0.0.0-use.local
   resolution: "@janhq/web-app@workspace:web-app"
@@ -2806,6 +2812,7 @@ __metadata:
     "@eslint/js": "npm:8.57.0"
     "@janhq/core": "workspace:*"
     "@janhq/interfaces": "npm:0.0.2"
+    "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp"
     "@radix-ui/react-accordion": "npm:1.2.11"
     "@radix-ui/react-avatar": "npm:1.1.10"
     "@radix-ui/react-collapsible": "npm:^1.1.12"
