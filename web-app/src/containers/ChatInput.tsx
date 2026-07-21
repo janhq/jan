@@ -114,6 +114,10 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  // Overrides the message-queue key (default: useThreads' currentThreadId).
+  // Callers outside the general chat (e.g. Code UI, keyed by session id)
+  // pass their own id here so each gets its own independent queue.
+  queueKey?: string
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -141,6 +145,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  queueKey,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -305,17 +310,20 @@ const ChatInput = memo(function ChatInput({
     total: number
   } | null>(null)
 
-  // Queued messages for this thread (shown as chips in the input area)
+  // Queued messages for this thread/session (shown as chips in the input
+  // area). queueKey lets a non-general-chat caller (e.g. Code UI) supply its
+  // own id instead of useThreads' currentThreadId.
+  const queueId = queueKey ?? currentThreadId ?? ''
   const queuedMessages = useMessageQueue(
-    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+    useShallow((s) => s.getQueue(queueId))
   )
   const queueLength = queuedMessages.length
 
   const removeQueuedMessage = useCallback(
     (id: string) => {
-      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+      useMessageQueue.getState().removeMessage(queueId, id)
     },
-    [currentThreadId]
+    [queueId]
   )
 
   const lastTransferredThreadId = useRef<string | null>(null)
@@ -379,8 +387,8 @@ const ChatInput = memo(function ChatInput({
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // When the model is still streaming, queue the message for later
-      if (isStreaming && currentThreadId) {
-        useMessageQueue.getState().enqueue(currentThreadId, {
+      if (isStreaming && queueId) {
+        useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: prompt,
           createdAt: Date.now(),
@@ -2578,16 +2586,21 @@ const ChatInput = memo(function ChatInput({
                       size="icon-sm"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
-                        // The message queue is a general-chat concept keyed by
-                        // useThreads' currentThreadId; a caller that supplies
-                        // onStop directly (e.g. Code UI) has no queue to check —
-                        // same signal stopStreaming itself branches on.
-                        if (!onStop && currentThreadId) {
-                          const queue = useMessageQueue.getState().getQueue(currentThreadId)
+                        // Stopping with messages queued just clears the queue
+                        // (nothing to interrupt yet) instead of stopping the
+                        // active stream. Falls through to onStop (Code UI's own
+                        // cancel) when supplied, else the general chat's
+                        // stopStreaming keyed by currentThreadId.
+                        if (queueId) {
+                          const queue = useMessageQueue.getState().getQueue(queueId)
                           if (queue.length > 0) {
-                            useMessageQueue.getState().clearQueue(currentThreadId)
+                            useMessageQueue.getState().clearQueue(queueId)
                             return
                           }
+                        }
+                        if (onStop) {
+                          onStop()
+                          return
                         }
                         stopStreaming(currentThreadId ?? '')
                       }}

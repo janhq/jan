@@ -21,6 +21,7 @@ import {
   type SubagentRun,
 } from '@/hooks/useCodeSessions'
 import { useCodeRun, makeToolCallTurn, type StreamEvent } from '@/hooks/useCodeRun'
+import { useMessageQueue } from '@/stores/message-queue-store'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { TokenCountOnly } from '@/components/TokenCounter'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -389,14 +390,16 @@ function CodePage() {
     }
   }
 
-  const handleSubmit = async (text: string) => {
+  // Takes an explicit sid (never ensureCurrentSession()) so the queue's
+  // auto-resend below can target the session whose run just finished even if
+  // the user has since switched to viewing a different one.
+  const submitTurn = async (text: string, sid: string) => {
     // Slash commands are client-side actions; they never reach the agent.
     if (text.trim().startsWith('/')) {
       runCommand(text)
       return
     }
 
-    const sid = ensureCurrentSession()
     const run = useCodeRun.getState()
     // Per-session guard: only block if THIS session is already running. A run in
     // another session no longer locks this one.
@@ -576,8 +579,27 @@ function CodePage() {
         .getState()
         .commitTurns(sid, finalTurns, history, finalSubs, finalUsage)
       run.clearCodeRun(sid)
+
+      // Message queue: send the next queued message now that this session's
+      // run is done. A failed run discards anything queued instead, mirroring
+      // the general chat (errors mean the conversation needs attention, not
+      // more unattended sends).
+      if (runError) {
+        useMessageQueue.getState().clearQueue(sid)
+      } else {
+        const next = useMessageQueue.getState().dequeue(sid)
+        if (next) {
+          submitTurn(next.text, sid).catch((err) => {
+            console.error('Failed to send queued message:', err)
+          })
+        }
+      }
     }
   }
+
+  // Matches ChatInput's onSubmit shape (text, files?) — Code UI has no file
+  // attachments today, so files is accepted and ignored, not threaded through.
+  const handleSubmit = (text: string) => submitTurn(text, ensureCurrentSession())
 
   const handleStop = () => {
     const rid = currentId ? useCodeRun.getState().runId[currentId] : undefined
@@ -729,6 +751,7 @@ function CodePage() {
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}
+                  queueKey={currentId ?? undefined}
                 />
               </div>
             </div>
