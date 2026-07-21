@@ -150,11 +150,20 @@ function CodePage() {
   const liveSubagents = useCodeRun((s) =>
     currentId ? (s.subagents[currentId] ?? EMPTY_SUBAGENTS) : EMPTY_SUBAGENTS
   )
-  // While running, show this session's live subagents; once idle, show the
-  // committed snapshot on the session (which survives session switch + restart).
-  const subagents = running
-    ? liveSubagents
-    : (current?.subagents ?? EMPTY_SUBAGENTS)
+  // While running, the live map only holds THIS turn's subagents (it starts
+  // fresh each run) — merge in the committed set from earlier turns so a
+  // second turn's new dispatches don't make the first turn's finished ones
+  // disappear from the panel. Once idle, the committed snapshot alone is
+  // authoritative (survives session switch + restart).
+  const committedSubagents = current?.subagents ?? EMPTY_SUBAGENTS
+  const subagents = useMemo(() => {
+    if (!running) return committedSubagents
+    const liveIds = new Set(liveSubagents.map((r) => r.runId))
+    return [
+      ...committedSubagents.filter((r) => !liveIds.has(r.runId)),
+      ...liveSubagents,
+    ]
+  }, [running, committedSubagents, liveSubagents])
   const liveUsage = useCodeRun((s) =>
     currentId ? s.usage[currentId] : undefined
   )
@@ -575,6 +584,17 @@ function CodePage() {
     if (rid) invoke('agent_cancel', { runId: rid }).catch(() => {})
   }
 
+  // Cancelling one subagent never gets a real SubagentEnd back (same as when
+  // the whole parent run tears down) — mark it done locally right away
+  // instead of leaving it stuck showing "running" forever.
+  const handleCancelSubagent = (subagentRunId: string) => {
+    if (!currentId) return
+    const rid = useCodeRun.getState().runId[currentId]
+    if (!rid) return
+    invoke('agent_cancel_subagent', { runId: rid, subagentRunId }).catch(() => {})
+    useCodeRun.getState().endSubagent(currentId, subagentRunId, null)
+  }
+
   const runningSubagentCount = subagents.filter(
     (s) => s.status === 'running'
   ).length
@@ -614,9 +634,11 @@ function CodePage() {
                       onReasoningScrollToBottom={forceScrollReasoningToBottom}
                     />
                   ))}
-                  {/* Shared load card; renders only while a local model is loading
-                      (hideIdle suppresses the generic "Working…" fallback). */}
-                  {running && <PromptProgress hideIdle />}
+                  {/* Mirrors the regular chat's own gate ($threadId.tsx): show the
+                      shared card, unsuppressed, only before this turn's first
+                      visible content has arrived — once liveTurns has something,
+                      that content is itself the "it's working" signal. */}
+                  {running && liveTurns.length === 0 && <PromptProgress />}
                 </ConversationContent>
                 <ConversationScrollButton />
               </Conversation>
@@ -717,6 +739,7 @@ function CodePage() {
             subagents={subagents}
             awaitingInputRunIds={awaitingInputRunIds}
             onClose={() => setTasksPanelOpen(false)}
+            onCancel={handleCancelSubagent}
           />
         )}
       </div>

@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, X, Loader2, Sparkles, AlertCircle } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronDown,
+  X,
+  Loader2,
+  Sparkles,
+  AlertCircle,
+  Square,
+} from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
 import type { SubagentRun } from '@/hooks/useCodeSessions'
@@ -17,10 +25,12 @@ function TaskRow({
   run,
   needsInput,
   onSelect,
+  onCancel,
 }: {
   run: SubagentRun
   needsInput: boolean
   onSelect: () => void
+  onCancel?: () => void
 }) {
   const running = run.status === 'running'
   const { t } = useTranslation()
@@ -30,12 +40,36 @@ function TaskRow({
     ? 0
     : run.turns.filter((tn) => tn.role === 'tool').length
   return (
-    <button
-      type="button"
+    // A plain div (not <button>) because the cancel button below has to be a
+    // real, independently-clickable <button> nested inside it — two nested
+    // <button>s are invalid HTML and behave unpredictably on click/focus.
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className="flex w-full flex-col gap-1 rounded-lg border bg-main-view-fg/2 px-3 py-2.5 text-left hover:bg-main-view-fg/5"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+      className="relative flex w-full cursor-pointer flex-col gap-1 rounded-lg border bg-main-view-fg/2 px-3 py-2.5 text-left hover:bg-main-view-fg/5"
     >
-      <div className="flex items-center gap-2">
+      {running && onCancel && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onCancel()
+          }}
+          className="absolute right-2 top-2.5 rounded border border-main-view-fg/20 p-0.5 text-main-view-fg/50 hover:border-main-view-fg/40 hover:text-main-view-fg"
+          aria-label={t('common:cancelSubagent')}
+          title={t('common:cancelSubagent')}
+        >
+          <Square size={10} />
+        </button>
+      )}
+      <div className="flex items-center gap-2 pr-6">
         {needsInput ? (
           <AlertCircle size={14} className="shrink-0 text-amber-500" />
         ) : running ? (
@@ -65,7 +99,7 @@ function TaskRow({
           <span className="text-accent">{t('common:viewTranscript')}</span>
         </span>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -120,10 +154,12 @@ export function SubagentTasksPanel({
   subagents,
   awaitingInputRunIds,
   onClose,
+  onCancel,
 }: {
   subagents: SubagentRun[]
   awaitingInputRunIds: Set<string>
   onClose: () => void
+  onCancel: (runId: string) => void
 }) {
   const { t } = useTranslation()
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
@@ -185,19 +221,24 @@ export function SubagentTasksPanel({
           ) : (
             <div className="flex flex-col gap-4">
               {runningRuns.length > 0 && (
-                <Section label={`${t('common:running')} ${runningRuns.length}`}>
+                <Section label={t('common:running')} count={runningRuns.length}>
                   {runningRuns.map((run) => (
                     <TaskRow
                       key={run.runId}
                       run={run}
                       needsInput={awaitingInputRunIds.has(run.runId)}
                       onSelect={() => setSelectedRunId(run.runId)}
+                      onCancel={() => onCancel(run.runId)}
                     />
                   ))}
                 </Section>
               )}
               {finishedRuns.length > 0 && (
-                <Section label={`${t('common:finished')} ${finishedRuns.length}`}>
+                <Section
+                  label={t('common:finished')}
+                  count={finishedRuns.length}
+                  collapsible
+                >
                   {finishedRuns.map((run) => (
                     <TaskRow
                       key={run.runId}
@@ -218,17 +259,43 @@ export function SubagentTasksPanel({
 
 function Section({
   label,
+  count,
+  collapsible = false,
   children,
 }: {
   label: string
+  count: number
+  collapsible?: boolean
   children: React.ReactNode
 }) {
+  const [open, setOpen] = useState(true)
+  const labelRow = (
+    <span className="flex items-center gap-1">
+      {label} {count}
+      {collapsible && (
+        <ChevronDown
+          size={12}
+          className={cn('transition-transform', !open && '-rotate-90')}
+        />
+      )}
+    </span>
+  )
   return (
     <div className="flex flex-col gap-2">
-      <span className={cn('px-1 text-xs font-medium uppercase tracking-wide text-main-view-fg/50')}>
-        {label}
-      </span>
-      {children}
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="px-1 text-xs font-medium uppercase tracking-wide text-main-view-fg/50 hover:text-main-view-fg/70 text-left"
+        >
+          {labelRow}
+        </button>
+      ) : (
+        <span className="px-1 text-xs font-medium uppercase tracking-wide text-main-view-fg/50">
+          {labelRow}
+        </span>
+      )}
+      {(!collapsible || open) && children}
     </div>
   )
 }

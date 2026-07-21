@@ -585,5 +585,6 @@
   "running": "Running",
   "finished": "Finished",
   "viewTranscript": "View transcript",
+  "cancelSubagent": "Cancel",
   "needsInput": "Needs input"
 }
