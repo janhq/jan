@@ -714,7 +714,7 @@ pub fn cli_agent_status(
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
-    let provider_configs = load_provider_configs(overrides)?;
+    let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
 
     let mut providers: Vec<serde_json::Value> = provider_configs
         .values()
@@ -1009,6 +1009,9 @@ fn prepare_agent_session(
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
+    if let Err(e) = crate::core::agent::global_config::ensure_global_config() {
+        log::warn!("Agent: could not scaffold ~/.jan/config.toml: {e}");
+    }
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
 
@@ -1018,15 +1021,10 @@ fn prepare_agent_session(
         );
     }
 
-    // Resolution order: JAN_AGENT_MODEL_ID env var (highest), then --model
-    // flag, then agent.toml [agent].model, then the desktop app's
-    // currently-selected model (synced from settings.json).
-    let env_model = std::env::var(crate::core::cli::providers::ENV_AGENT_MODEL_ID)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    let model = env_model
-        .or(model_override)
+    // Resolution order: --model flag, then agent.toml [agent].model, then the
+    // desktop app's currently-selected model (synced from settings.json, if
+    // present - purely an inherit, never required).
+    let model = model_override
         .or_else(|| cfg.agent.model.clone())
         .or_else(|| crate::core::cli::providers::desktop_selection().model)
         .ok_or_else(|| {
@@ -1037,7 +1035,7 @@ fn prepare_agent_session(
         .or(cfg.agent.max_turns)
         .unwrap_or(DEFAULT_MAX_TURNS);
 
-    let provider_configs = load_provider_configs(&overrides)?;
+    let provider_configs = load_provider_configs(Some(&project_root), &overrides)?;
 
     // A local llamacpp model needs its router started; cloud models are plain
     // HTTP upstreams. Start it off-thread so setup/render isn't blocked on the
