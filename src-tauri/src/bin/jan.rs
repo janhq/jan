@@ -14,6 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::providers::ProviderOverrides;
 use app_lib::core::cli::{
+    cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
     discover_llamacpp_binary, download_hf_model, ensure_router_and_load, fetch_hf_gguf_files,
@@ -216,6 +217,46 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
     },
+    /// Manage standalone provider credentials in ~/.jan/config.toml (no Desktop needed)
+    Config {
+        #[command(subcommand)]
+        cmd: AgentConfigCommands,
+    },
+}
+
+/// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
+/// self-sufficient config surface for a standalone Jan Agent: every command is
+/// headless and persists across runs.
+#[derive(Subcommand)]
+enum AgentConfigCommands {
+    /// Set or update a provider's API key, base URL, models, or API type
+    Set {
+        /// Provider id (e.g. openai, anthropic, groq)
+        #[arg(long)]
+        provider: String,
+        /// API key for the provider
+        #[arg(long)]
+        api_key: Option<String>,
+        /// Base URL (e.g. https://api.openai.com/v1)
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Model id to expose (repeatable; replaces any existing list)
+        #[arg(long = "model")]
+        models: Vec<String>,
+        /// Wire API type (e.g. openai, anthropic); defaults to OpenAI-compatible
+        #[arg(long)]
+        api_type: Option<String>,
+    },
+    /// Remove a provider entry
+    Unset {
+        /// Provider id to remove
+        #[arg(long)]
+        provider: String,
+    },
+    /// List configured providers as JSON (API keys redacted)
+    List,
+    /// Print the config file path (scaffolding a template if absent)
+    Path,
 }
 
 // ── Threads subcommands ────────────────────────────────────────────────────
@@ -504,10 +545,46 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
+        AgentCommands::Config { cmd } => handle_agent_config(cmd),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
+    }
+}
+
+fn handle_agent_config(cmd: AgentConfigCommands) -> Result<(), String> {
+    match cmd {
+        AgentConfigCommands::Set {
+            provider,
+            api_key,
+            base_url,
+            models,
+            api_type,
+        } => {
+            let models = (!models.is_empty()).then_some(models);
+            let path = cli_agent_config_set(&provider, api_key, base_url, models, api_type)?;
+            println!("Updated provider '{provider}' in {}", path.display());
+            Ok(())
+        }
+        AgentConfigCommands::Unset { provider } => {
+            if cli_agent_config_unset(&provider)? {
+                println!("Removed provider '{provider}'");
+            } else {
+                println!("Provider '{provider}' was not configured");
+            }
+            Ok(())
+        }
+        AgentConfigCommands::List => {
+            let list = cli_agent_config_list()?;
+            println!("{}", serde_json::to_string_pretty(&list).unwrap());
+            Ok(())
+        }
+        AgentConfigCommands::Path => {
+            let path = cli_agent_config_path()?;
+            println!("{}", path.display());
+            Ok(())
+        }
     }
 }
 
