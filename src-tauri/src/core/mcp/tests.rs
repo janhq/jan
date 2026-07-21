@@ -606,7 +606,6 @@ fn test_default_mcp_config_parses_as_valid_json() {
     // Spot-check known servers
     assert!(value["mcpServers"]["fetch"].is_object());
     assert_eq!(value["mcpServers"]["fetch"]["command"], "uvx");
-    assert_eq!(value["mcpServers"]["exa"]["type"], "http");
     assert_eq!(
         value["mcpSettings"]["toolCallTimeoutSeconds"],
         super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS

@@ -532,20 +532,14 @@ fn normalize_tavily_extract(body: &Value, requested_url: &str) -> Result<Fetched
         .and_then(|v| v.as_str())
         .unwrap_or(requested_url)
         .to_string();
-    let title = first
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
     let raw = first
         .get("raw_content")
-        .or_else(|| first.get("content"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let (content, truncated) = bound_text(raw);
     Ok(FetchedPage {
         url,
-        title,
+        title: String::new(),
         content,
         truncated,
     })
@@ -823,11 +817,11 @@ mod tests {
     fn normalize_tavily_extract_reads_raw_content() {
         let body = json!({
             "results": [
-                { "url": "https://example.com", "title": "T", "raw_content": "hello world" }
+                { "url": "https://example.com", "raw_content": "hello world" }
             ]
         });
         let page = normalize_tavily_extract(&body, "https://example.com").unwrap();
-        assert_eq!(page.title, "T");
+        assert!(page.title.is_empty());
         assert_eq!(page.content, "hello world");
         assert!(!page.truncated);
     }
