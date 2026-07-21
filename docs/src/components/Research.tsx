@@ -8,7 +8,7 @@ type Post = {
   slug: string
   title: string
   description: string
-  category: string
+  tags: string[]
   cover: string
   date: string | null
 }
@@ -19,7 +19,7 @@ const POSTS: Post[] = [
     title: 'Jan-v3.5-4B',
     description:
       'The first Jan personality — a 4B model fine-tuned for math reasoning with a distinct conversational identity.',
-    category: 'reasoning',
+    tags: ['personality', 'reasoning'],
     cover: '/assets/images/research/jan-v3-5-4b-banner.png',
     date: null,
   },
@@ -28,7 +28,7 @@ const POSTS: Post[] = [
     title: 'Jan-Code-4B',
     description:
       'Lightweight 4B code-tuned model for fast local coding assistance and agentic workflows.',
-    category: 'code',
+    tags: ['code'],
     cover: '/assets/images/research/jan-code-4b.png',
     date: null,
   },
@@ -37,7 +37,7 @@ const POSTS: Post[] = [
     title: 'Jan-v3-4B',
     description:
       '4B parameter instruct model distilled from a larger teacher, optimized as a fine-tuning base.',
-    category: 'language',
+    tags: ['instruct'],
     cover: '/assets/images/research/jan-v3-4b.png',
     date: null,
   },
@@ -46,7 +46,7 @@ const POSTS: Post[] = [
     title: 'Jan-v2-VL',
     description:
       '8B vision-language model for long-horizon agentic automation in real software environments.',
-    category: 'vision',
+    tags: ['vision'],
     cover: '/assets/images/research/jan-v2-vl.png',
     date: null,
   },
@@ -55,7 +55,7 @@ const POSTS: Post[] = [
     title: 'Jan-v1',
     description:
       '4B parameter model with strong performance on reasoning benchmarks.',
-    category: 'reasoning',
+    tags: ['reasoning'],
     cover: '/assets/images/research/jan-v1.png',
     date: '2025-08-22',
   },
@@ -64,7 +64,7 @@ const POSTS: Post[] = [
     title: 'Jan Nano 128k',
     description:
       'Compact model with a 128k context window for long-document research and tool use.',
-    category: 'compact',
+    tags: ['deep research', 'edge'],
     cover: '/assets/images/research/jan-nano-128.png',
     date: null,
   },
@@ -73,7 +73,7 @@ const POSTS: Post[] = [
     title: 'Jan Nano 32k',
     description:
       'Compact 32k-context model for fast local research and tool calling.',
-    category: 'compact',
+    tags: ['deep research', 'edge'],
     cover: '/assets/images/research/jan-nano-32.png',
     date: null,
   },
@@ -81,13 +81,22 @@ const POSTS: Post[] = [
     slug: 'lucy',
     title: 'Lucy',
     description: 'Compact 1.7B model optimized for web search with tool calling.',
-    category: 'compact',
+    tags: ['edge', 'deep research'],
     cover: '/assets/images/research/lucy.png',
     date: null,
   },
 ]
 
-const CATEGORIES = ['all', 'reasoning', 'language', 'code', 'vision', 'compact']
+const CATEGORIES = [
+  'all',
+  'reasoning',
+  'instruct',
+  'code',
+  'vision',
+  'deep research',
+  'personality',
+  'edge',
+]
 
 const INITIAL_COUNT = 7
 const LOAD_MORE_COUNT = 6
@@ -106,9 +115,18 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 function Meta({ post }: { post: Post }) {
   return (
-    <div className="flex gap-3 text-xs font-medium uppercase tracking-widest">
-      <span className="text-[#ff5c00]">{post.category}</span>
-      {post.date && <span className="text-black/40 dark:text-white/40">{formatDate(post.date)}</span>}
+    <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-widest">
+      {post.tags.map((tag) => (
+        <span
+          key={tag}
+          className="rounded-md bg-[#E0EEFE] px-2 py-0.5 text-[#0668D5] dark:bg-[#0668D5]/15 dark:text-[#6ba6e8]"
+        >
+          {tag}
+        </span>
+      ))}
+      {post.date && (
+        <span className="text-black/40 dark:text-white/40">{formatDate(post.date)}</span>
+      )}
     </div>
   )
 }
@@ -135,7 +153,7 @@ const Research = () => {
     () =>
       selectedCategory === 'all'
         ? POSTS
-        : POSTS.filter((p) => p.category === selectedCategory),
+        : POSTS.filter((p) => p.tags.includes(selectedCategory)),
     [selectedCategory]
   )
 
