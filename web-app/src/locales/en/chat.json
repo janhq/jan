@@ -17,5 +17,6 @@
     "regenerate": "Regenerate response",
     "continue": "Continue generating"
   },
-  "done": "Done"
+  "done": "Done",
+  "webSources": "{{count}} source(s)"
 }

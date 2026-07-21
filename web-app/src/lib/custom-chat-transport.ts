@@ -20,6 +20,13 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import {
+  WEB_SEARCH_DESCRIPTION,
+  WEB_SEARCH_INPUT_SCHEMA,
+  WEB_FETCH_DESCRIPTION,
+  WEB_FETCH_INPUT_SCHEMA,
+} from '@/lib/webSearchTool'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { ExtensionManager } from '@/lib/extension'
@@ -949,6 +956,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       } catch (error) {
         console.warn('Failed to load MCP tools:', error)
       }
+
+      // Native web tools, provided by the websearch plugin (not an MCP server).
+      // Advertised whenever the user has web search enabled.
+      if (useWebSearchConfig.getState().webSearchEnabled) {
+        toolsRecord['web_search'] = {
+          description: WEB_SEARCH_DESCRIPTION,
+          inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA),
+        } as Tool
+        toolsRecord['web_fetch'] = {
+          description: WEB_FETCH_DESCRIPTION,
+          inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA),
+        } as Tool
+      }
     }
 
     this.tools = toolsRecord
@@ -1203,11 +1223,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const selectedModel = useModelProvider.getState().selectedModel
 
     const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
-    const rawSystem = filesInstruction
-      ? this.systemMessage
-        ? `${this.systemMessage}\n\n${filesInstruction}`
-        : filesInstruction
-      : this.systemMessage
+    const webSearchInstruction = this.buildWebSearchSystemInstruction()
+    const rawSystem =
+      [this.systemMessage, filesInstruction, webSearchInstruction]
+        .filter((s) => typeof s === 'string' && s.trim().length > 0)
+        .join('\n\n') || undefined
     // Drop whitespace-only system prompts so we don't send a useless system
     // turn that some chat templates still wrap into special tokens.
     const effectiveSystem =
@@ -1585,6 +1605,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       'attached to that turn (file_id, name, type, size, chunk count, mode).',
       'Use the available retrieval tools with those file_ids when their',
       'contents are relevant to the request.',
+    ].join(' ')
+  }
+
+  /**
+   * Static instruction teaching the model to use the native web tools and cite
+   * sources inline with [[cite:URL]] markers (rendered as favicon chips). Only
+   * added when web search is enabled so it doesn't affect prompt caching for
+   * users who keep it off.
+   */
+  buildWebSearchSystemInstruction(): string {
+    if (!useWebSearchConfig.getState().webSearchEnabled) return ''
+    return [
+      '# Web Access',
+      'You can search the web with web_search and read pages with web_fetch.',
+      'Use them whenever the request needs current, external, or verifiable',
+      'information, then base your answer on what you find. When a statement',
+      'relies on a web source, cite it inline immediately after that statement',
+      'using the exact marker [[cite:URL]], where URL is the full source URL',
+      'from a web_search result (for example: [[cite:https://example.com/page]]).',
+      'Cite each distinct source you rely on; do not add a separate references',
+      'or sources section.',
     ].join(' ')
   }
 

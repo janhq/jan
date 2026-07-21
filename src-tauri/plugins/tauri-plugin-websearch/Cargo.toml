@@ -1,0 +1,24 @@
+[package]
+name = "tauri-plugin-websearch"
+version = "0.8.3"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin providing native, provider-neutral web_search / web_fetch tools (Exa backend by default)"
+license = "MIT"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-websearch"
+
+[dependencies]
+async-trait = "0.1"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.5.0", default-features = false, features = [] }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }

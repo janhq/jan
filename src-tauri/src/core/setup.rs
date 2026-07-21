@@ -61,11 +61,17 @@ pub fn migrate_mcp_servers(
     }
     if mcp_version < 3 {
         log::info!("Migrating MCP schema version 3: Updating Exa to streamable HTTP");
-        if let Err(e) = migrate_exa_to_http(app_handle) {
+        if let Err(e) = migrate_exa_to_http(app_handle.clone()) {
             log::error!("Failed to migrate Exa to HTTP: {e}");
         }
     }
-    store.set("mcp_version", 3);
+    if mcp_version < 4 {
+        log::info!("Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)");
+        if let Err(e) = remove_exa_server(app_handle) {
+            log::error!("Failed to remove Exa MCP server: {e}");
+        }
+    }
+    store.set("mcp_version", 4);
     store.save().expect("Failed to save store");
     Ok(())
 }
@@ -100,6 +106,50 @@ fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to write MCP config: {e}"))?;
 
+    Ok(())
+}
+
+/// One-time cutover to native web search: drop the default Exa MCP server so the
+/// built-in web_search/web_fetch tools own web search. Only removes the entry if
+/// it is still the inactive default (hosted HTTP endpoint, no API key); a user who
+/// activated it or supplied their own key keeps their configuration.
+fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    if !config_path.exists() {
+        return Ok(());
+    }
+    let config_str =
+        fs::read_to_string(&config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
+    let mut config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
+
+    let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) else {
+        return Ok(());
+    };
+
+    let is_default_exa = servers
+        .get("exa")
+        .and_then(|exa| exa.as_object())
+        .map(|exa| {
+            let inactive = exa.get("active").and_then(|v| v.as_bool()) != Some(true);
+            let no_key = exa
+                .get("env")
+                .and_then(|env| env.as_object())
+                .map(|env| env.is_empty())
+                .unwrap_or(true);
+            inactive && no_key
+        })
+        .unwrap_or(false);
+
+    if is_default_exa {
+        servers.remove("exa");
+        fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&config)
+                .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+        )
+        .map_err(|e| format!("Failed to write MCP config: {e}"))?;
+    }
     Ok(())
 }
 

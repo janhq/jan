@@ -31,7 +31,7 @@ import {
   IconX,
   IconPaperclip,
   IconLoader2,
-  IconWorld,
+  IconWorldSearch,
   IconBrandChrome,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
@@ -100,6 +100,7 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 
 type ChatInputProps = {
   className?: string
@@ -183,6 +184,8 @@ const ChatInput = memo(function ChatInput({
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+  const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
+  const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -2215,18 +2218,30 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
-                        <IconWorld
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className={cn(webSearchEnabled && 'text-primary')}
+                        onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                      >
+                        <IconWorldSearch
                           size={18}
-                          className="text-muted-foreground"
+                          className={cn(
+                            'text-muted-foreground',
+                            webSearchEnabled && 'text-primary'
+                          )}
                         />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Web Search</p>
+                      <p>
+                        {webSearchEnabled
+                          ? t('common:web_search') + ' (Active)'
+                          : t('common:web_search')}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 )}

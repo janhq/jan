@@ -43,8 +43,10 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
-import type { RagCitation } from '@/components/Citations'
+import type { RagCitation, WebCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
+import { useWebCitationStore } from '@/stores/web-citation-store'
+import { WebSourcesRow } from '@/components/WebSourcesRow'
 import { injectCitationMarkers } from '@/lib/grounding'
 import {
   ReasoningActiveStep,
@@ -62,6 +64,14 @@ const CONTENT_TYPE = {
   FILE: 'file',
   REASONING: 'reasoning',
 } as const
+
+// Turn a tool identifier (e.g. "web_search", "exa_search") into a readable
+// label for the streaming step header (e.g. "Web search").
+function humanizeToolName(name: string): string {
+  const spaced = name.replace(/[_-]+/g, ' ').trim()
+  if (!spaced) return 'tool'
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
 
 export type MessageItemProps = {
   message: UIMessage
@@ -183,8 +193,9 @@ export const MessageItem = memo(
     // Aggregate RAG citations in part order and record each rag tool part's
     // base offset, so its card numbers/anchors continue the same global
     // sequence the inline superscript markers use.
-    const { ragCitations, citationOffsets } = useMemo(() => {
+    const { ragCitations, citationOffsets, webCitations } = useMemo(() => {
       const out: RagCitation[] = []
+      const web: WebCitation[] = []
       const offsets = new Map<number, number>()
       if (message.role === 'assistant') {
         const parts = message.parts as any[]
@@ -196,10 +207,12 @@ export const MessageItem = memo(
           if (parsed?.kind === 'rag') {
             offsets.set(i, out.length)
             out.push(...parsed.citations)
+          } else if (parsed?.kind === 'web') {
+            web.push(...parsed.citations)
           }
         }
       }
-      return { ragCitations: out, citationOffsets: offsets }
+      return { ragCitations: out, citationOffsets: offsets, webCitations: web }
     }, [message.parts, message.role])
 
     const serviceHub = useServiceHub()
@@ -233,6 +246,12 @@ export const MessageItem = memo(
       ensureGrounding,
       serviceHub,
     ])
+
+    const setWebCitations = useWebCitationStore((s) => s.setForMessage)
+    useEffect(() => {
+      if (!webCitations.length) return
+      setWebCitations(message.id, webCitations)
+    }, [webCitations, message.id, setWebCitations])
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -520,6 +539,15 @@ export const MessageItem = memo(
         meaningful.length > 0 &&
         meaningful[meaningful.length - 1].part.type.startsWith('tool-')
 
+      const currentToolLabel = currentStepIsTool
+        ? humanizeToolName(
+            meaningful[meaningful.length - 1].part.type
+              .split('-')
+              .slice(1)
+              .join('-')
+          )
+        : ''
+
       // Only reasoning text is worth expanding for — a tool-only step collapses
       // to the header. While streaming that means the current step is a
       // reasoning paragraph that has completed at least once (something for
@@ -610,7 +638,9 @@ export const MessageItem = memo(
           defaultOpen={hasDisplayableContent && !hasFollowingContent}
         >
           <ChainOfThoughtHeader
-            streamingLabel={currentStepIsTool ? 'Using tools...' : 'Thinking'}
+            streamingLabel={
+              currentStepIsTool ? `${currentToolLabel}...` : 'Thinking'
+            }
             completedVerb={hasTools ? 'Worked' : 'Thought'}
           />
           <ChainOfThoughtContent>
@@ -767,6 +797,10 @@ export const MessageItem = memo(
 
         {/* Render message parts */}
         {renderedParts}
+
+        {message.role === 'assistant' && !isStreaming && webCitations.length > 0 && (
+          <WebSourcesRow citations={webCitations} />
+        )}
 
         {isLastMessage &&
           message.role === 'assistant' &&

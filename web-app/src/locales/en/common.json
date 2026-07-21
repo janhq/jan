@@ -13,6 +13,7 @@
   "experimental": "Experimental",
   "claude_code": "Claude Code",
   "https_proxy": "HTTPS Proxy",
+  "web_search": "Web Search",
   "extensions": "Extensions",
   "attachments": "Attachments",
   "general": "General",

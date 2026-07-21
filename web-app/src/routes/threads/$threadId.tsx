@@ -74,6 +74,7 @@ import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -471,8 +472,9 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Built-in RAG tools are internal and should not require approval.
-            const approved = ragToolNames.has(toolName)
+            // Built-in RAG and native web tools are internal and auto-allowed.
+            const approved = ragToolNames.has(toolName) ||
+              WEB_TOOL_NAMES.has(toolName)
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
@@ -492,7 +494,9 @@ function ThreadDetail() {
 
             let result
 
-            if (ragToolNames.has(toolName)) {
+            if (WEB_TOOL_NAMES.has(toolName)) {
+              result = await executeWebTool(toolName, toolCall.input)
+            } else if (ragToolNames.has(toolName)) {
               result = await serviceHub.rag().callTool({
                 toolName,
                 arguments: toolCall.input,
@@ -632,6 +636,7 @@ function ThreadDetail() {
       const ragToolNames = useAppState.getState().ragToolNames
       if (
         !ragToolNames.has(toolCall.toolName) &&
+        !WEB_TOOL_NAMES.has(toolCall.toolName) &&
         !toolApprovalPromises.current.has(toolCall.toolCallId)
       ) {
         toolApprovalPromises.current.set(

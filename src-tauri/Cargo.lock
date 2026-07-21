@@ -65,6 +65,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "tauri-plugin-vector-db",
+ "tauri-plugin-websearch",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -7097,6 +7098,21 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "tauri-plugin-websearch"
+version = "0.8.3"
+dependencies = [
+ "async-trait",
+ "log",
+ "reqwest 0.12.23",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
