@@ -189,7 +189,9 @@ export function SubagentTasksPanel({
     <div
       className={cn(
         'flex h-full shrink-0 flex-col border-l bg-main-view',
-        expanded ? 'w-[32rem]' : 'w-80'
+        // max-w caps growth so the panel can never squeeze the chat column's
+        // min-w-0 sibling down to invisible on a narrower window.
+        expanded ? 'w-[32rem] max-w-[60vw]' : 'w-80'
       )}
     >
       <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
