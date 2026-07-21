@@ -98,6 +98,12 @@ pub async fn agent_run<R: Runtime>(
         args.project_root = Some(project_root);
     }
 
+    // Mirrors the CLI's `--yolo` flag: an explicit per-request opt-in to
+    // disable the permission gate and auto-allow every tool call. Omitted or
+    // non-bool keeps the safe `false` default set above.
+    if let Some(yolo) = body.get("yolo").and_then(|v| v.as_bool()) {
+        args.yolo = yolo;
+    }
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let forward = tokio::spawn(async move {
         while let Some(ev) = rx.recv().await {
