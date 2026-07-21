@@ -519,7 +519,14 @@ async fn run_subagent(
     drop(child_tx);
     let _ = forwarder.await;
 
-    let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
+    // The child's own terminal Done (and its usage) is swallowed by
+    // forward_to_parent, so this is the only place its usage can reach a
+    // consumer — fold it into the bracket event the parent does see.
+    let usage = match &result {
+        Ok(completion) => crate::core::agent::events::Usage::from_completion(completion),
+        Err(_) => None,
+    };
+    let _ = events.send(StreamEvent::SubagentEnd { run_id, name, usage });
 
     match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),

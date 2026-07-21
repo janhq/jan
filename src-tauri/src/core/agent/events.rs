@@ -33,8 +33,15 @@ pub enum StreamEvent {
     /// events with `SubagentEnd`.
     SubagentStart { run_id: String, name: String },
     /// A backgrounded subagent run finished (success or error). Pairs with the
-    /// `SubagentStart` of the same `run_id`.
-    SubagentEnd { run_id: String, name: String },
+    /// `SubagentStart` of the same `run_id`. `usage` is the child's own final
+    /// completion usage (`None` on error, or if the provider didn't report it) —
+    /// the child's terminal Done is never forwarded to the parent, so this is
+    /// the only way its token spend reaches a consumer.
+    SubagentEnd {
+        run_id: String,
+        name: String,
+        usage: Option<Usage>,
+    },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -313,11 +320,12 @@ mod tests {
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            usage: None,
         })
         .unwrap();
         assert_eq!(
             end,
-            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer" })
+            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer", "usage": null })
         );
     }
 
