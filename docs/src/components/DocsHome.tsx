@@ -26,7 +26,7 @@ const SECTIONS = [
 
 const COMMON_PATHS = [
   { icon: Rocket, title: 'Quickstart', href: '/docs/desktop/quickstart' },
-  { icon: Bot, title: 'Jan Agent', href: '/docs/desktop/agents' },
+  { icon: Bot, title: 'Jan Agent', href: '/jan-agent' },
   {
     icon: Share2,
     title: 'Tokamak install',

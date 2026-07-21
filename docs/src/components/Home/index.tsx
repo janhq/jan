@@ -242,9 +242,9 @@ const Home = () => {
                 The core agent, distributed separately — run it on your own
                 VM or container.
               </p>
-              <a href="/docs/desktop/agents" className="inline-block mt-4">
+              <a href="/jan-agent" className="inline-block mt-4">
                 <Button variant="playful" size="lg">
-                  Install Jan Agent
+                  Explore Jan Agent
                 </Button>
               </a>
             </div>
