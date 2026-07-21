@@ -2,22 +2,59 @@ import { FlaskConical } from 'lucide-react'
 
 const POSTS = [
   {
-    slug: 'jan-v1',
-    title: 'Jan V1',
+    slug: 'jan-v3-5-4b',
+    title: 'Jan-v3.5-4B',
     description:
-      'Agentic reasoning model in the Jan family, built for research and tool use.',
-    date: '2025-08-22',
-  },
-  {
-    slug: 'jan-v2',
-    title: 'Jan V2',
-    description: 'Model report coming soon.',
+      'The first Jan personality — a 4B model fine-tuned for math reasoning with a distinct conversational identity.',
     date: null,
   },
   {
-    slug: 'jan-v3',
-    title: 'Jan V3',
-    description: 'Model report coming soon.',
+    slug: 'jan-code-4b',
+    title: 'Jan-Code-4B',
+    description:
+      'Lightweight 4B code-tuned model for fast local coding assistance and agentic workflows.',
+    date: null,
+  },
+  {
+    slug: 'jan-v3-4b',
+    title: 'Jan-v3-4B',
+    description:
+      '4B parameter instruct model distilled from a larger teacher, optimized as a fine-tuning base.',
+    date: null,
+  },
+  {
+    slug: 'jan-v2-vl',
+    title: 'Jan-v2-VL',
+    description:
+      '8B vision-language model for long-horizon agentic automation in real software environments.',
+    date: null,
+  },
+  {
+    slug: 'jan-v1',
+    title: 'Jan-v1',
+    description:
+      '4B parameter model with strong performance on reasoning benchmarks.',
+    date: '2025-08-22',
+  },
+  {
+    slug: 'jan-nano-128',
+    title: 'Jan Nano 128k',
+    description:
+      'Compact model with a 128k context window for long-document research and tool use.',
+    date: null,
+  },
+  {
+    slug: 'jan-nano-32',
+    title: 'Jan Nano 32k',
+    description:
+      'Compact 32k-context model for fast local research and tool calling.',
+    date: null,
+  },
+  {
+    slug: 'lucy',
+    title: 'Lucy',
+    description:
+      'Compact 1.7B model optimized for web search with tool calling.',
     date: null,
   },
 ]

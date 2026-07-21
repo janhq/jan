@@ -1,0 +1,82 @@
+---
+title: Jan-v3.5-4B
+description: The first Jan personality — a 4B model fine-tuned for math reasoning with a distinct conversational identity.
+---
+
+import ResearchPostLayout from '@/components/ResearchPostLayout'
+
+<ResearchPostLayout title="Jan-v3.5-4B">
+
+![Jan-v3.5-4B](/assets/images/research/jan-v3-5-4b-banner.png)
+
+Jan-v3.5-4B is the first Jan personality: a 4-billion parameter fine-tuned
+variant of [Jan-v3-4B-base-instruct](/research/jan-v3-4b), specialized in
+mathematical reasoning while incorporating a distinct conversational personality
+developed by Menlo Research.
+
+This model enhances the base Qwen3-4B architecture with improved math
+problem-solving capabilities and a deliberately crafted identity. Rather than
+functioning as a neutral assistant, Jan-v3.5-4B uses casual, direct language
+with lowercase-by-default styling and maintains an authentic conversational
+tone.
+
+<a
+  href="https://huggingface.co/janhq/Jan-v3.5-4B"
+  style={{
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    backgroundColor: '#000',
+    color: '#fff',
+    borderRadius: '8px',
+    fontWeight: '600',
+    fontSize: '15px',
+    textDecoration: 'none',
+    marginTop: '8px',
+  }}
+>
+  View on Hugging Face →
+</a>
+
+## Key Features
+
+- **Base architecture**: Qwen3-4B with 36 layers and 4.0B parameters (3.6B non-embedding)
+- **Context length**: 262,144 tokens natively supported
+- **Training focus**: math reasoning datasets and curated identity/personality datasets
+- **Distinctive voice**: self-aware humor, direct communication style, avoids corporate phrasing
+- **Attention mechanism**: 32 query heads with 8 key-value heads (GQA)
+
+![Jan-v3.5-4B before/after comparison](/assets/images/research/jan-v3-5-4b-comparison.png)
+
+## Recommended Parameters
+
+```
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+```
+
+## Usage
+
+Jan-v3.5-4B supports deployment via:
+
+- Transformers library with pipeline or direct model loading
+- vLLM server with tool-calling capabilities
+- llama.cpp with quantized variants
+- Jan Desktop application integration
+
+## Limitations & Scope
+
+- Optimized specifically for math-heavy tasks over general purpose
+- Personality training may not align with all use cases
+- Intended as a starting point for downstream fine-tuning
+
+## Links
+
+- [Hugging Face model card](https://huggingface.co/janhq/Jan-v3.5-4B)
+- [GitHub](https://github.com/janhq/jan)
+- [Jan App](https://jan.ai/)
+- License: Apache 2.0
+
+</ResearchPostLayout>
