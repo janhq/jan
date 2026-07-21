@@ -4279,6 +4279,24 @@ mod tests {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
+    /// Like `line_text`, but marks the reverse-video block cursor with `▏` at its
+    /// left edge so caret-position assertions survive the styled-space rendering.
+    /// The synthetic end-of-line filler space is represented by the marker alone.
+    fn caret_text(line: &ratatui::text::Line) -> String {
+        let mut out = String::new();
+        for s in &line.spans {
+            if s.style.add_modifier.contains(Modifier::REVERSED) {
+                out.push('▏');
+                if s.content.as_ref() != " " {
+                    out.push_str(s.content.as_ref());
+                }
+            } else {
+                out.push_str(s.content.as_ref());
+            }
+        }
+        out
+    }
+
     #[test]
     fn image_mime_infers_from_extension() {
         assert_eq!(image_mime("a.png"), "image/png");
@@ -4876,7 +4894,7 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(line_text(&lines[0]), "› hello▏");
+        assert_eq!(caret_text(&lines[0]), "› hello▏");
     }
 
     #[test]
@@ -4885,7 +4903,7 @@ mod tests {
         assert_eq!(lines.len(), 3);
         assert_eq!(line_text(&lines[0]), "› one");
         assert_eq!(line_text(&lines[1]), "  two");
-        assert_eq!(line_text(&lines[2]), "  three▏");
+        assert_eq!(caret_text(&lines[2]), "  three▏");
     }
 
     #[test]
@@ -4893,7 +4911,7 @@ mod tests {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
         assert_eq!(line_text(&lines[0]), "› hi");
-        assert_eq!(line_text(&lines[1]), "  ▏");
+        assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
     #[test]
@@ -4901,14 +4919,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(line_text(&lines[0]), "› he▏llo");
+        assert_eq!(caret_text(&lines[0]), "› he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(line_text(&lines[0]), "› o▏ne");
+        assert_eq!(caret_text(&lines[0]), "› o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
