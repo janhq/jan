@@ -55,7 +55,13 @@ impl std::fmt::Display for SubagentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SubagentError::UnknownSubagent(n) => {
-                write!(f, "unknown subagent '{n}': no matching definition in the user or project scope")
+                write!(
+                    f,
+                    "unknown subagent '{n}': no matching definition in the user or \
+                     project scope. For a one-off subagent, retry with a `system_prompt` \
+                     describing its role (required for any subagent_name that isn't already \
+                     saved); to check saved names first, call list_subagents."
+                )
             }
             SubagentError::PermissionDenied(m) => write!(f, "permission denied: {m}"),
             SubagentError::Upstream(m) => write!(f, "{m}"),
@@ -697,9 +703,9 @@ pub fn subagent_tool_schemas(registry: &SubagentRegistry) -> Vec<serde_json::Val
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "subagent_name": { "type": "string", "description": "Name of a saved subagent to run, or a short descriptive name for a one-off (paired with system_prompt)." },
+                        "subagent_name": { "type": "string", "description": "Name of a saved subagent to run. For a one-off (no saved definition), pick a short descriptive name here AND pass system_prompt in the same call -- an unrecognized name with no system_prompt fails." },
                         "description": { "type": "string", "description": "The task for the subagent, as its sole user message. Include everything it needs; it does not see this conversation." },
-                        "system_prompt": { "type": "string", "description": "Inline system prompt for a one-off subagent when subagent_name is not a saved one. Omit to run a saved subagent." },
+                        "system_prompt": { "type": "string", "description": "Required alongside subagent_name whenever that name isn't already saved -- defines the one-off subagent's role. Omit only when subagent_name matches a saved subagent." },
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
