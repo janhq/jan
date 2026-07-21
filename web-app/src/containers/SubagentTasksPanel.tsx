@@ -8,6 +8,8 @@ import {
   Sparkles,
   AlertCircle,
   Square,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
@@ -163,6 +165,7 @@ export function SubagentTasksPanel({
 }) {
   const { t } = useTranslation()
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   // Tick once a second while anything is running so the elapsed counters move.
   // Skipped while a detail view is open — that view doesn't render the
@@ -183,7 +186,12 @@ export function SubagentTasksPanel({
   const finishedRuns = subagents.filter((s) => s.status === 'done')
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col border-l bg-main-view">
+    <div
+      className={cn(
+        'flex h-full shrink-0 flex-col border-l bg-main-view',
+        expanded ? 'w-[32rem]' : 'w-80'
+      )}
+    >
       <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
         {selected ? (
           <button
@@ -198,6 +206,15 @@ export function SubagentTasksPanel({
         <span className="flex-1 truncate text-sm font-medium">
           {selected ? selected.name : t('common:backgroundTasks')}
         </span>
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="text-main-view-fg/60 hover:text-main-view-fg"
+          aria-label={expanded ? t('common:collapse') : t('common:expand')}
+          title={expanded ? t('common:collapse') : t('common:expand')}
+        >
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
         <button
           type="button"
           onClick={onClose}

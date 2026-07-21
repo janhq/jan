@@ -586,5 +586,7 @@
   "finished": "Finished",
   "viewTranscript": "View transcript",
   "cancelSubagent": "Cancel",
-  "needsInput": "Needs input"
+  "needsInput": "Needs input",
+  "expand": "Expand",
+  "collapse": "Collapse"
 }
