@@ -76,6 +76,7 @@ macro_rules! invoke_commands_with_extras {
         // Agent commands
         core::agent::commands::agent_run,
         core::agent::commands::agent_cancel,
+        core::agent::commands::agent_cancel_subagent,
         core::agent::commands::agent_permission_respond,
         core::agent::commands::agent_skill_list,
         core::agent::commands::agent_skill_read,
