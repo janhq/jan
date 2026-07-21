@@ -1249,6 +1249,39 @@ mod tests {
         handle.abort();
     }
 
+    /// Regression test for #254: `await_subagent` used to remove the registry
+    /// entry (and its AbortHandle) before awaiting the result, so a subagent
+    /// became unreachable to `abort_all` the instant it started being awaited —
+    /// making it uncancellable if the parent was cancelled mid-await.
+    #[tokio::test]
+    async fn cancelling_mid_await_keeps_the_entry_abortable() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (_tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        bg.inner.lock().unwrap().insert(
+            "r1".to_string(),
+            BackgroundEntry {
+                result: Some(rx),
+                abort: handle.abort_handle(),
+            },
+        );
+
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        cancel_tx.send(()).unwrap();
+
+        tokio::select! {
+            biased;
+            _ = await_subagent(&bg, "r1") => unreachable!("_tx is never sent; await_subagent never resolves on its own"),
+            _ = cancel_rx => {}
+        }
+
+        assert!(
+            bg.inner.lock().unwrap().contains_key("r1"),
+            "cancelling mid-await must not remove the entry — abort_all still needs it"
+        );
+        handle.abort();
+    }
+
     #[tokio::test]
     async fn abort_on_drop_cancels_and_clears_children() {
         let bg = Arc::new(BackgroundSubagents::default());
