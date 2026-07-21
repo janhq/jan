@@ -7624,12 +7624,12 @@ version = "0.8.3"
 dependencies = [
  "async-trait",
  "log",
- "reqwest 0.12.23",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
  "tauri-plugin",
- "thiserror 2.0.17",
+ "thiserror 2.0.18",
  "tokio",
 ]
 
