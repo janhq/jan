@@ -69,6 +69,12 @@ pub(crate) struct OrchestrationArgs {
     /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
     /// dispatched subagents via the cloned parent args.
     pub yolo: bool,
+    /// Externally-tracked background-subagent registry for this run, so a
+    /// Tauri command can cancel one specific dispatched subagent by run_id
+    /// from outside the loop. `None` falls back to a fresh, purely-local
+    /// registry (the CLI/TUI/proxy paths, and every subagent child run, which
+    /// must never share the parent's — see `run_subagent`).
+    pub background_subagents: Option<Arc<crate::core::agent::subagent::BackgroundSubagents>>,
 }
 
 #[async_trait]
@@ -549,6 +555,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
+        background_subagents: None,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
 }
@@ -668,6 +675,7 @@ async fn orchestrate_inner(
         system_prompt_override,
         subagents_enabled,
         yolo,
+        background_subagents,
     } = args;
 
     let messages_value = json_body
@@ -840,7 +848,12 @@ async fn orchestrate_inner(
         }
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        // Use the externally-tracked registry when the caller supplied one (so
+        // a Tauri command can cancel one specific subagent from outside), else
+        // a fresh local one exactly as before.
+        let bg = background_subagents.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default())
+        });
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),

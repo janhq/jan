@@ -25,10 +25,18 @@ use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 
-/// Registry of in-flight agent runs keyed by client-supplied `run_id`, holding a
-/// one-shot cancel sender per run. Managed via `app.manage(AgentRuns::default())`.
+/// One in-flight `agent_run`'s cancel sender plus its background-subagent
+/// registry, so `agent_cancel_subagent` can reach a specific dispatched
+/// subagent from outside the loop without cancelling the whole run.
+pub struct RunEntry {
+    pub cancel_tx: oneshot::Sender<()>,
+    pub background_subagents: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+}
+
+/// Registry of in-flight agent runs keyed by client-supplied `run_id`.
+/// Managed via `app.manage(AgentRuns::default())`.
 #[derive(Default)]
-pub struct AgentRuns(pub Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>);
+pub struct AgentRuns(pub Arc<Mutex<HashMap<String, RunEntry>>>);
 
 /// Registry of in-flight permission prompts keyed by request_id, shared with the
 /// agent loop so `agent_permission_respond` can resolve the awaiting tool call.
@@ -68,6 +76,7 @@ fn build_orchestration_args<R: Runtime>(
         system_prompt_override: None,
         subagents_enabled: true,
         yolo: false,
+        background_subagents: None,
     }
 }
 
@@ -86,6 +95,9 @@ pub async fn agent_run<R: Runtime>(
 ) -> Result<(), String> {
     let mut args = build_orchestration_args(&app_handle, &state);
     args.permission_requests = perms_registry.0.clone();
+    let background_subagents =
+        Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+    args.background_subagents = Some(background_subagents.clone());
 
     // When a project is explicitly named, its agent.toml governs tool permissions.
     // The project is auto-managed: scaffold a `.jan/agent/` on first use, then
@@ -114,7 +126,13 @@ pub async fn agent_run<R: Runtime>(
     });
 
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    runs.0.lock().await.insert(run_id.clone(), cancel_tx);
+    runs.0.lock().await.insert(
+        run_id.clone(),
+        RunEntry {
+            cancel_tx,
+            background_subagents,
+        },
+    );
 
     // Cancellation is a normal terminal state: emit one `cancelled` event and
     // resolve Ok so the invoke promise does not also surface as an error.
@@ -140,8 +158,25 @@ pub async fn agent_run<R: Runtime>(
 /// finished or never existed.
 #[tauri::command]
 pub async fn agent_cancel(runs: State<'_, AgentRuns>, run_id: String) -> Result<(), String> {
-    if let Some(cancel_tx) = runs.0.lock().await.remove(&run_id) {
-        let _ = cancel_tx.send(());
+    if let Some(entry) = runs.0.lock().await.remove(&run_id) {
+        let _ = entry.cancel_tx.send(());
+    }
+    Ok(())
+}
+
+/// Cancel one background subagent within an in-flight `agent_run`, without
+/// affecting the parent run or any other dispatched subagent. No-op if the
+/// parent run or the subagent has already finished (or never existed) — the
+/// subagent's own terminal SubagentEnd is never sent when aborted this way,
+/// same as when the whole parent run tears down.
+#[tauri::command]
+pub async fn agent_cancel_subagent(
+    runs: State<'_, AgentRuns>,
+    run_id: String,
+    subagent_run_id: String,
+) -> Result<(), String> {
+    if let Some(entry) = runs.0.lock().await.get(&run_id) {
+        entry.background_subagents.abort_one(&subagent_run_id);
     }
     Ok(())
 }
