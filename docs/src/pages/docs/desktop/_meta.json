@@ -12,7 +12,6 @@
     "title": "Core concepts",
     "type": "separator"
   },
-  "agents": "Agents",
   "projects": "Projects",
   "assistants": "Assistants",
   "file-upload": "File Upload",

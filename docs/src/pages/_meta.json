@@ -58,6 +58,13 @@
       "layout": "raw"
     }
   },
+  "jan-agent": {
+    "type": "page",
+    "title": "Jan Agent",
+    "theme": {
+      "layout": "raw"
+    }
+  },
   "research": {
     "type": "page",
     "title": "Research"

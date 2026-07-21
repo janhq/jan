@@ -251,3 +251,5 @@
 /guides/changelog/*                             /changelog/:splat 302
 /guides                                         /docs 302
 /guides/*                                       /docs/:splat 302
+
+/docs/desktop/agents                            /jan-agent 302

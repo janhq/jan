@@ -15,7 +15,7 @@ const MENU_ITEMS = [
     href: '/',
     children: [
       { name: 'Jan Desktop', href: '/docs/desktop' },
-      { name: 'Jan Agent', href: '/docs/desktop/agents' },
+      { name: 'Jan Agent', href: '/jan-agent' },
     ],
   },
   { name: 'Tokamak', href: 'https://tokamak.sh', external: true },
