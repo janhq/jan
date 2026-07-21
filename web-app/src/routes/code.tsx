@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { Laptop, Folder, Sparkles } from 'lucide-react'
+import { Folder, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -22,6 +22,7 @@ import {
 } from '@/hooks/useCodeSessions'
 import { useCodeRun, type StreamEvent } from '@/hooks/useCodeRun'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { TokenCountOnly } from '@/components/TokenCounter'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import CodePermissionDialog, {
@@ -30,6 +31,7 @@ import CodePermissionDialog, {
 } from '@/containers/dialogs/CodePermissionDialog'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
+import CodeModeSelector from '@/containers/CodeModeSelector'
 import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { PromptProgress } from '@/components/PromptProgress'
@@ -133,6 +135,7 @@ function CodePage() {
 
   const folder = current?.folder ?? null
   const folderName = folder ? folder.split(/[/\\]/).pop() : undefined
+  const mode = current?.mode ?? 'normal'
 
   // Per-session run state (transient, keyed by session id — see useCodeRun).
   // Reads here are for the VIEWED session (currentId); during a run, writes
@@ -152,6 +155,12 @@ function CodePage() {
   const subagents = running
     ? liveSubagents
     : (current?.subagents ?? EMPTY_SUBAGENTS)
+  const liveUsage = useCodeRun((s) =>
+    currentId ? s.usage[currentId] : undefined
+  )
+  // Same live-vs-committed split as subagents: while running, the number can
+  // still bump on later turns; once idle, show what actually got persisted.
+  const usage = running ? liveUsage : current?.lastUsage
   const [tasksPanelOpen, setTasksPanelOpen] = useState(false)
 
   // Local (llamacpp) models can take a while to load before the first token.
@@ -189,6 +198,18 @@ function CodePage() {
     if (currentId)
       useCodeRun.getState().removePendingPerm(currentId, requestId)
   }
+
+  // Subagents (of the viewed session) currently blocked on a permission
+  // prompt — the tasks panel shows these as "needs input" instead of "running".
+  const awaitingInputRunIds = useMemo(
+    () =>
+      new Set(
+        pendingPerms
+          .map((p) => p.subagentRunId)
+          .filter((id): id is string => id != null)
+      ),
+    [pendingPerms]
+  )
 
   const displayedTurns: CodeTurn[] = useMemo(
     () => [...(current?.turns ?? []), ...liveTurns],
@@ -418,6 +439,24 @@ function CodePage() {
     // in the transcript (not just a transient toast).
     let runError: string | null = null
 
+    // subagentRunId is set when this request came from inside a subagent's
+    // wrapped stream, so the tasks panel can flag that run as needing input.
+    const addPerm = (
+      ev: Extract<StreamEvent, { type: 'permission_request' }>,
+      subagentRunId?: string
+    ) =>
+      run.addPendingPerm(sid, {
+        requestId: ev.request_id,
+        toolName: ev.tool_name,
+        capability: ev.capability,
+        path: ev.path,
+        command: ev.command,
+        diff: ev.diff,
+        promptKind: ev.prompt_kind,
+        offersAlways: ev.offers_always,
+        subagentRunId,
+      })
+
     // Every write targets `sid` — the session that OWNS this run — never the
     // viewed session, so a background session keeps updating while another is
     // viewed. Recurses for the event wrapped inside a 'subagent' event.
@@ -458,16 +497,7 @@ function CodePage() {
           break
         }
         case 'permission_request':
-          run.addPendingPerm(sid, {
-            requestId: ev.request_id,
-            toolName: ev.tool_name,
-            capability: ev.capability,
-            path: ev.path,
-            command: ev.command,
-            diff: ev.diff,
-            promptKind: ev.prompt_kind,
-            offersAlways: ev.offers_always,
-          })
+          addPerm(ev)
           break
         case 'error':
           if (ev.code !== 'cancelled') {
@@ -476,12 +506,13 @@ function CodePage() {
           }
           break
         case 'done':
+          run.setUsage(sid, ev.usage)
           break
         case 'subagent_start':
           run.startSubagent(sid, ev.run_id, ev.name)
           break
         case 'subagent_end':
-          run.endSubagent(sid, ev.run_id)
+          run.endSubagent(sid, ev.run_id, ev.usage)
           break
         case 'subagent': {
           finishModelLoad()
@@ -490,7 +521,7 @@ function CodePage() {
           // otherwise the subagent (and the whole run) hangs on a decision the
           // user is never shown. Everything else goes into the subagent's lane.
           if (inner.type === 'permission_request') {
-            handleEvent(inner)
+            addPerm(inner, ev.run_id)
           } else {
             run.startSubagent(sid, ev.run_id, ev.name) // idempotent; guards reordering
             run.routeIntoSubagent(sid, ev.run_id, inner)
@@ -513,6 +544,7 @@ function CodePage() {
           max_turns: 0,
           max_session_tokens: MAX_SESSION_TOKENS,
           model: selectedModel.id,
+          yolo: session.mode === 'yolo',
         },
       })
     } catch (e) {
@@ -529,6 +561,7 @@ function CodePage() {
       // run state.
       const finalTurns = useCodeRun.getState().liveTurns[sid] ?? []
       const finalSubs = useCodeRun.getState().subagents[sid] ?? []
+      const finalUsage = useCodeRun.getState().usage[sid]
       const assistantText = finalTurns
         .filter((tn) => tn.role === 'assistant')
         .map((tn) => tn.content)
@@ -538,7 +571,7 @@ function CodePage() {
         : outgoing
       useCodeSessions
         .getState()
-        .commitTurns(sid, finalTurns, history, finalSubs)
+        .commitTurns(sid, finalTurns, history, finalSubs, finalUsage)
       run.clearCodeRun(sid)
     }
   }
@@ -600,10 +633,13 @@ function CodePage() {
         <div className="pb-4 shrink-0">
           <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
             <div className="flex items-center gap-2 px-1 pb-2">
-              <Button variant="outline" size="sm" className="h-7 gap-1.5 rounded-full">
-                <Laptop size={14} className="text-muted-foreground" />
-                <span>{t('common:local')}</span>
-              </Button>
+              <CodeModeSelector
+                mode={mode}
+                onChange={(m) => {
+                  const sid = currentId ?? ensureCurrentSession()
+                  useCodeSessions.getState().setMode(sid, m)
+                }}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -632,7 +668,15 @@ function CodePage() {
                   </span>
                 </Button>
               )}
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                {usage?.total_tokens ? (
+                  <TokenCountOnly
+                    totalTokens={usage.total_tokens}
+                    inputTokens={usage.prompt_tokens}
+                    outputTokens={usage.completion_tokens}
+                    modelDisplayName={selectedModel?.name || selectedModel?.id}
+                  />
+                ) : null}
                 <SkillSelector folder={folder} />
               </div>
             </div>
@@ -677,6 +721,7 @@ function CodePage() {
         {tasksPanelOpen && (
           <SubagentTasksPanel
             subagents={subagents}
+            awaitingInputRunIds={awaitingInputRunIds}
             onClose={() => setTasksPanelOpen(false)}
           />
         )}

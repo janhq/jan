@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, memo } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
+import { cn, formatTokenCount as formatNumber } from '@/lib/utils'
 import {
   Tooltip,
   TooltipContent,
@@ -31,12 +31,6 @@ interface TokenCounterProps {
 
 const WARN_PCT = 85
 const OVER_PCT = 100
-
-const formatNumber = (num: number) => {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
-  return num.toString()
-}
 
 const formatExact = (num: number) => num.toLocaleString()
 
@@ -332,7 +326,7 @@ export const TokenCounter = memo(function TokenCounter({
   )
 })
 
-function TokenCountOnly({
+export function TokenCountOnly({
   totalTokens,
   inputTokens,
   outputTokens,

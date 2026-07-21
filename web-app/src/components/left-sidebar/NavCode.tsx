@@ -26,15 +26,21 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import {
-  MessageSquarePlus,
   Box,
   SlidersHorizontal,
   MoreHorizontal,
   Trash2,
+  AlertCircle,
+  Loader2,
   type LucideIcon,
 } from 'lucide-react'
+import {
+  MessageCircleIcon,
+  type MessageCircleIconHandle,
+} from '@/components/animated-icon/message-circle'
 import { useCodeSessions } from '@/hooks/useCodeSessions'
-import { useState } from 'react'
+import { useCodeRun } from '@/hooks/useCodeRun'
+import { useRef, useState } from 'react'
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 
 type CodeNavItem = {
@@ -49,6 +55,12 @@ export function NavCode() {
   const { isMobile } = useSidebar()
   const sessions = useCodeSessions((s) => s.sessions)
   const currentId = useCodeSessions((s) => s.currentId)
+  // Sessions with a run blocked on a permission prompt, so a backgrounded
+  // session's gated tool call doesn't hang silently with no visual cue.
+  const pendingPerms = useCodeRun((s) => s.pendingPerms)
+  // Same busy-thread spinner the regular chat's ThreadList uses, keyed by
+  // Code session id instead of thread id.
+  const runningSessions = useCodeRun((s) => s.running)
   const [skillsOpen, setSkillsOpen] = useState(false)
   // Session pending deletion; drives the confirm dialog (null = closed).
   const [pendingDelete, setPendingDelete] = useState<{
@@ -57,16 +69,13 @@ export function NavCode() {
   } | null>(null)
 
   const goCode = () => navigate({ to: route.code })
+  const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
+  const newSession = () => {
+    useCodeSessions.getState().createSession()
+    goCode()
+  }
 
   const items: CodeNavItem[] = [
-    {
-      title: t('common:newSession'),
-      icon: MessageSquarePlus,
-      onClick: () => {
-        useCodeSessions.getState().createSession()
-        goCode()
-      },
-    },
     {
       title: t('common:artifacts'),
       icon: Box,
@@ -87,6 +96,20 @@ export function NavCode() {
   return (
     <>
       <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            onClick={newSession}
+            onMouseEnter={() => newSessionIconRef.current?.startAnimation()}
+            onMouseLeave={() => newSessionIconRef.current?.stopAnimation()}
+          >
+            <MessageCircleIcon
+              ref={newSessionIconRef}
+              className="text-foreground/70"
+              size={16}
+            />
+            <span>{t('common:newSession')}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
         {items.map((item) => {
           const Icon = item.icon
           return (
@@ -104,7 +127,12 @@ export function NavCode() {
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>{t('common:sessions')}</SidebarGroupLabel>
           <SidebarMenu>
-            {sessions.map((session) => (
+            {sessions.map((session) => {
+              const needsInput =
+                session.id !== currentId &&
+                (pendingPerms[session.id]?.length ?? 0) > 0
+              const isRunning = runningSessions[session.id] ?? false
+              return (
               <SidebarMenuItem key={session.id}>
                 <SidebarMenuButton
                   isActive={session.id === currentId}
@@ -113,7 +141,19 @@ export function NavCode() {
                     goCode()
                   }}
                 >
+                  {isRunning && !needsInput && (
+                    <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+                  )}
                   <span className="truncate">{session.title}</span>
+                  {needsInput && (
+                    <AlertCircle
+                      size={14}
+                      className="ml-auto shrink-0 text-amber-500"
+                      aria-label={t('common:needsInput')}
+                    >
+                      <title>{t('common:needsInput')}</title>
+                    </AlertCircle>
+                  )}
                 </SidebarMenuButton>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -145,7 +185,8 @@ export function NavCode() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </SidebarMenuItem>
-            ))}
+              )
+            })}
           </SidebarMenu>
         </SidebarGroup>
       )}

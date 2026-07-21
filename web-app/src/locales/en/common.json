@@ -37,6 +37,10 @@
   "local": "Local",
   "selectFolder": "Select folder",
   "selectModel": "Select a model first",
+  "modeNormal": "Normal",
+  "modeNormalDesc": "Prompts before risky tool calls",
+  "modeYolo": "Bypass permissions",
+  "modeYoloDesc": "Auto-allow every tool call — no prompts",
   "commands": "Commands",
   "cmdHelp": "List available commands",
   "cmdClear": "Clear this session",
@@ -579,5 +583,7 @@
   "backgroundTasks": "Background tasks",
   "noBackgroundTasks": "No background tasks yet.",
   "running": "Running",
-  "finished": "Finished"
+  "finished": "Finished",
+  "viewTranscript": "View transcript",
+  "needsInput": "Needs input"
 }

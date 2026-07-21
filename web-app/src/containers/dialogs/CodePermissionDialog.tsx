@@ -18,6 +18,10 @@ export type PendingPermission = {
   diff?: string
   promptKind: string
   offersAlways: boolean
+  // Set when this request came from inside a subagent's wrapped event stream,
+  // so the tasks panel can flag that specific run as needing input instead of
+  // just "running".
+  subagentRunId?: string
 }
 
 // The shared dialog speaks hyphenated decisions; the Rust command

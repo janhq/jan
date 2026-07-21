@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CodeTurn, SubagentRun } from '@/hooks/useCodeSessions'
+import type { CodeTurn, SubagentRun, Usage } from '@/hooks/useCodeSessions'
 import type { PendingPermission } from '@/containers/dialogs/CodePermissionDialog'
 
 // StreamEvent shapes emitted by the Rust agent loop (events.rs, tag = "type").
@@ -9,7 +9,7 @@ export type StreamEvent =
   | { type: 'step'; index: number; max: number }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
   | { type: 'tool_result'; id: string; content: string; is_error: boolean; diff?: string }
-  | { type: 'done'; stop_reason: string; usage: unknown }
+  | { type: 'done'; stop_reason: string; usage: Usage | null }
   | { type: 'error'; code: string; message: string }
   | {
       type: 'permission_request'
@@ -23,7 +23,7 @@ export type StreamEvent =
       offers_always: boolean
     }
   | { type: 'subagent_start'; run_id: string; name: string }
-  | { type: 'subagent_end'; run_id: string; name: string }
+  | { type: 'subagent_end'; run_id: string; name: string; usage: Usage | null }
   | { type: 'subagent'; run_id: string; name: string; event: StreamEvent }
 
 // Apply one wrapped inner subagent event to that subagent's own turn lane
@@ -86,16 +86,21 @@ type CodeRunState = {
   runId: Record<string, string>
   awaitCallToRunId: Record<string, Record<string, string>>
   pendingPerms: Record<string, PendingPermission[]>
+  // Usage from the latest `done` event, per session. Set once per run (the
+  // terminal event); untouched by a `null` usage so a provider that doesn't
+  // report it on a given turn doesn't blank out the last known value.
+  usage: Record<string, Usage>
 
   beginRun: (sid: string, runId: string, userText: string) => void
   appendToken: (sid: string, text: string) => void
   pushToolTurn: (sid: string, turn: CodeTurn) => void
   updateToolTurn: (sid: string, callId: string, patch: Partial<CodeTurn>) => void
   startSubagent: (sid: string, runId: string, name: string) => void
-  endSubagent: (sid: string, runId: string) => void
+  endSubagent: (sid: string, runId: string, usage?: Usage | null) => void
   routeIntoSubagent: (sid: string, runId: string, inner: StreamEvent) => void
   attachSubagentOutput: (sid: string, runId: string, content: string) => void
   recordAwait: (sid: string, callId: string, runId: string) => void
+  setUsage: (sid: string, usage: Usage | null) => void
   addPendingPerm: (sid: string, perm: PendingPermission) => void
   removePendingPerm: (sid: string, requestId: string) => void
   // Mark running tool turns + subagents done (interrupted), append an error turn
@@ -112,6 +117,7 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
   runId: {},
   awaitCallToRunId: {},
   pendingPerms: {},
+  usage: {},
 
   beginRun: (sid, runId, userText) =>
     set((s) => ({
@@ -171,13 +177,18 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
       }
     }),
 
-  endSubagent: (sid, runId) =>
+  endSubagent: (sid, runId, usage) =>
     set((s) => ({
       subagents: {
         ...s.subagents,
         [sid]: (s.subagents[sid] ?? []).map((r) =>
           r.runId === runId && r.status === 'running'
-            ? { ...r, status: 'done' as const, endedAt: Date.now() }
+            ? {
+                ...r,
+                status: 'done' as const,
+                endedAt: Date.now(),
+                usage: usage ?? undefined,
+              }
             : r
         ),
       },
@@ -210,6 +221,9 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
         [sid]: { ...(s.awaitCallToRunId[sid] ?? {}), [callId]: runId },
       },
     })),
+
+  setUsage: (sid, usage) =>
+    set((s) => (usage ? { usage: { ...s.usage, [sid]: usage } } : {})),
 
   addPendingPerm: (sid, perm) =>
     set((s) => ({
@@ -265,5 +279,6 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
       runId: omitKey(s.runId, sid),
       awaitCallToRunId: omitKey(s.awaitCallToRunId, sid),
       pendingPerms: omitKey(s.pendingPerms, sid),
+      usage: omitKey(s.usage, sid),
     })),
 }))
