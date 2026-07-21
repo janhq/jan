@@ -14,10 +14,31 @@ pub(crate) struct AgentToml {
     #[cfg(feature = "cli")]
     #[serde(default)]
     pub agent: AgentSection,
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub provider: Option<ProviderSection>,
     #[serde(default)]
     pub tools: ToolsSection,
     #[serde(default)]
     pub skills: SkillsSection,
+}
+
+/// `[provider]` — project-local override of a single provider's config,
+/// highest priority in the resolution chain (wins over the global
+/// `~/.jan/config.toml` and the desktop-inherited config). Optional: most
+/// projects rely on the global scope instead. CLI-only, like `AgentSection`.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct ProviderSection {
+    pub name: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub api_type: Option<String>,
 }
 
 /// `[skills]` — which project skills are advertised to the model. An empty
@@ -56,6 +77,15 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
 max_turns = 400
 instructions_file = "AGENT.md"
+
+# Project-local provider override. Wins over ~/.jan/config.toml and any
+# provider inherited from Jan Desktop's settings.json. Most projects don't
+# need this and should rely on the global scope instead.
+# [provider]
+# name = "openai"
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# models = ["gpt-4o"]
 
 [budget]
 max_steps = 40
@@ -237,6 +267,36 @@ mod tests {
     fn load_missing_errors() {
         let root = unique_root("missing");
         assert!(load_agent_config(&root).is_err());
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn template_provider_section_absent_by_default() {
+        let root = unique_root("provider_absent");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert!(cfg.provider.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn provider_section_parses_when_present() {
+        let root = unique_root("provider_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str(
+            "\n[provider]\nname = \"openai\"\napi_key = \"sk-test\"\nmodels = [\"gpt-4o\"]\n",
+        );
+        std::fs::write(&path, raw).unwrap();
+
+        let cfg = load_agent_config(&root).expect("load");
+        let provider = cfg.provider.expect("provider section present");
+        assert_eq!(provider.name, "openai");
+        assert_eq!(provider.api_key.as_deref(), Some("sk-test"));
+        assert_eq!(provider.models, vec!["gpt-4o".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
