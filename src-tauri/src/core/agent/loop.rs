@@ -366,7 +366,10 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by project policy"),
+                        format!(
+                            "ERROR: tool '{name}' denied by project policy (see \
+                             [tools] deny in .jan/agent/agent.toml)"
+                        ),
                     ));
                     continue;
                 }
@@ -433,7 +436,10 @@ impl ToolInvoker for CompositeToolInvoker {
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
                 Decision::HardDeny => {
-                    (format!("ERROR: tool '{name}' denied by project policy"), None)
+                    (format!(
+                            "ERROR: tool '{name}' denied by project policy (see \
+                             [tools] deny in .jan/agent/agent.toml)"
+                        ), None)
                 }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
