@@ -4,6 +4,7 @@ description: Jan-Nano-Gguf Model
 ---
 
 import ResearchPostLayout from '@/components/ResearchPostLayout'
+import OpenInJanButton from '@/components/OpenInJanButton'
 import { Callout } from 'nextra/components'
 
 <ResearchPostLayout title="Jan Nano 32k">
@@ -16,24 +17,7 @@ Most language models face a fundamental tradeoff where powerful capabilities req
 Nano breaks this constraint through a focused design philosophy where instead of trying to know everything, it excels at
 knowing how to find anything.
 
-<a
-  href="jan://models/huggingface/Menlo/Jan-nano-gguf"
-  style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 20px',
-    backgroundColor: '#000',
-    color: '#fff',
-    borderRadius: '8px',
-    fontWeight: '600',
-    fontSize: '15px',
-    textDecoration: 'none',
-    marginTop: '8px',
-  }}
->
-  Open in Jan
-</a>
+<OpenInJanButton href="jan://models/huggingface/Menlo/Jan-nano-gguf" />
 
 ## What is Jan Nano?
 

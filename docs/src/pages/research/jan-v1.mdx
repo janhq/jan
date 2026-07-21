@@ -4,6 +4,7 @@ description: 4B parameter model with strong performance on reasoning benchmarks
 ---
 
 import ResearchPostLayout from '@/components/ResearchPostLayout'
+import OpenInJanButton from '@/components/OpenInJanButton'
 import { Callout } from 'nextra/components'
 
 <ResearchPostLayout title="Jan-v1" date="2025-08-22">
@@ -12,24 +13,7 @@ import { Callout } from 'nextra/components'
 
 Jan-v1 is a 4B parameter model based on Qwen3-4B-thinking, designed for reasoning and problem-solving tasks. The model achieves 91.1% accuracy on SimpleQA through model scaling and fine-tuning approaches.
 
-<a
-  href="jan://models/huggingface/janhq/Jan-v1-4B-GGUF"
-  style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 20px',
-    backgroundColor: '#000',
-    color: '#fff',
-    borderRadius: '8px',
-    fontWeight: '600',
-    fontSize: '15px',
-    textDecoration: 'none',
-    marginTop: '8px',
-  }}
->
-  Open in Jan
-</a>
+<OpenInJanButton href="jan://models/huggingface/janhq/Jan-v1-4B-GGUF" />
 
 ## Performance
 
