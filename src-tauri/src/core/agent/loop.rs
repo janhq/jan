@@ -870,6 +870,12 @@ async fn orchestrate_inner(
             &tools,
         )
         .await;
+        // On a clean exit, wait for any subagents the model dispatched but never
+        // explicitly awaited, so their in-flight work isn't aborted and lost by
+        // `_bg_guard`. On an error, teardown still aborts them.
+        if result.is_ok() {
+            bg.join_all().await;
+        }
         if index_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion)
