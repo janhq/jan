@@ -2578,13 +2578,18 @@ const ChatInput = memo(function ChatInput({
                       size="icon-sm"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
-                        if (!currentThreadId) return
-                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
-                        if (queue.length > 0) {
-                          useMessageQueue.getState().clearQueue(currentThreadId)
-                        } else {
-                          stopStreaming(currentThreadId)
+                        // The message queue is a general-chat concept keyed by
+                        // useThreads' currentThreadId; consumers without a thread
+                        // (e.g. Code UI, which supplies `onStop` directly) have no
+                        // queue to check and should just stop.
+                        if (currentThreadId) {
+                          const queue = useMessageQueue.getState().getQueue(currentThreadId)
+                          if (queue.length > 0) {
+                            useMessageQueue.getState().clearQueue(currentThreadId)
+                            return
+                          }
                         }
+                        stopStreaming(currentThreadId ?? '')
                       }}
                     >
                       <IconPlayerStopFilled />
