@@ -25,12 +25,32 @@ export type CodeMessage = {
   content: string
 }
 
+// One background subagent run, bucketed by its own run_id so concurrent
+// subagents never share a transcript lane. Lives transiently in useCodeRun
+// while running, then the finished set is committed onto its session so it
+// survives a session switch and app restart.
+export type SubagentRun = {
+  runId: string
+  name: string
+  status: 'running' | 'done'
+  startedAt: number
+  endedAt?: number
+  // The subagent's own trace (wrapped token/tool events). The final answer is
+  // NOT here — it's captured into `finalOutput` from the parent's
+  // await_subagent result.
+  turns: CodeTurn[]
+  finalOutput?: string
+}
+
 export type CodeSession = {
   id: string
   title: string
   folder: string | null
   turns: CodeTurn[]
   history: CodeMessage[]
+  // Finished subagents from the most recent run in this session (replace, not
+  // append). Undefined for sessions that never spawned any.
+  subagents?: SubagentRun[]
   updated: number
 }
 
@@ -42,7 +62,12 @@ type CodeSessionsState = {
   deleteSession: (id: string) => void
   setFolder: (id: string, folder: string) => void
   setTitle: (id: string, title: string) => void
-  commitTurns: (id: string, turns: CodeTurn[], history: CodeMessage[]) => void
+  commitTurns: (
+    id: string,
+    turns: CodeTurn[],
+    history: CodeMessage[],
+    subagents: SubagentRun[]
+  ) => void
   clearSession: (id: string) => void
 }
 
@@ -90,7 +115,7 @@ export const useCodeSessions = create<CodeSessionsState>()(
           sessions: s.sessions.map((x) => (x.id === id ? { ...x, title } : x)),
         })),
 
-      commitTurns: (id, turns, history) =>
+      commitTurns: (id, turns, history, subagents) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
             x.id === id
@@ -98,6 +123,8 @@ export const useCodeSessions = create<CodeSessionsState>()(
                   ...x,
                   turns: [...x.turns, ...turns],
                   history,
+                  // Replace with this run's subagents (latest run only).
+                  subagents,
                   updated: now(),
                 }
               : x
@@ -107,7 +134,9 @@ export const useCodeSessions = create<CodeSessionsState>()(
       clearSession: (id) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, turns: [], history: [], updated: now() } : x
+            x.id === id
+              ? { ...x, turns: [], history: [], subagents: [], updated: now() }
+              : x
           ),
         })),
     }),

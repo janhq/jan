@@ -575,5 +575,9 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "backgroundTasks": "Background tasks",
+  "noBackgroundTasks": "No background tasks yet.",
+  "running": "Running",
+  "finished": "Finished"
 }
