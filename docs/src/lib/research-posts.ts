@@ -40,7 +40,7 @@ export const POSTS: Post[] = [
     title: 'Jan-v2-VL',
     description:
       '8B vision-language model for long-horizon agentic automation in real software environments.',
-    tags: ['vision'],
+    tags: ['vision', 'reasoning'],
     cover: '/assets/images/research/jan-v2-vl.png',
     date: '2025-11-06',
   },
