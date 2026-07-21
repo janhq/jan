@@ -19,7 +19,7 @@ const POSTS: Post[] = [
     title: 'Jan-v3.5-4B',
     description:
       'The first Jan personality — a 4B model fine-tuned for math reasoning with a distinct conversational identity.',
-    tags: ['personality', 'reasoning'],
+    tags: ['personality', 'reasoning', 'vision'],
     cover: '/assets/images/research/jan-v3-5-4b-banner.png',
     date: null,
   },
@@ -28,7 +28,7 @@ const POSTS: Post[] = [
     title: 'Jan-Code-4B',
     description:
       'Lightweight 4B code-tuned model for fast local coding assistance and agentic workflows.',
-    tags: ['code'],
+    tags: ['code', 'vision'],
     cover: '/assets/images/research/jan-code-4b.png',
     date: null,
   },
@@ -37,7 +37,7 @@ const POSTS: Post[] = [
     title: 'Jan-v3-4B',
     description:
       '4B parameter instruct model distilled from a larger teacher, optimized as a fine-tuning base.',
-    tags: ['instruct'],
+    tags: ['instruct', 'vision'],
     cover: '/assets/images/research/jan-v3-4b.png',
     date: null,
   },
@@ -81,7 +81,7 @@ const POSTS: Post[] = [
     slug: 'lucy',
     title: 'Lucy',
     description: 'Compact 1.7B model optimized for web search with tool calling.',
-    tags: ['edge', 'deep research'],
+    tags: ['edge', 'deep research', 'vision'],
     cover: '/assets/images/research/lucy.png',
     date: null,
   },
