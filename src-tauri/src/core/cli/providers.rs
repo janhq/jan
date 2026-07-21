@@ -1,21 +1,27 @@
 //! Cloud provider credential loader for the CLI.
 //!
-//! The desktop app never persists provider configs from Rust: the frontend
-//! holds them in a zustand store mirrored to `<jan_data>/settings.json` under
-//! the `"model-provider"` key (a stringified `{"state":{"providers":[...]}}`
-//! blob). The CLI has no `AppHandle` and no in-memory store, so it reconstructs
-//! `ProviderConfig`s by reading that file directly, then layers CLI/env
-//! overrides on top.
+//! Jan Agent runs standalone, without Jan Desktop, so provider config is
+//! resolved from two `.jan` scopes rather than desktop's `settings.json`:
+//!
+//! 1. Global `~/.jan/config.toml` (user-wide, [`crate::core::agent::global_config`]) - the base.
+//! 2. Desktop `settings.json`, if present, is layered in as an **inherit-only**
+//!    additive source (never overwrites a Global entry, never written back to).
+//! 3. Project-local `agent.toml` `[provider]` override
+//!    ([`crate::core::agent::project::ProviderSection`]) - highest of the
+//!    three, since it's an explicit per-project choice.
+//! 4. `--provider`/`--api-key` CLI flags (+ `JAN_API_KEY`/`{PROVIDER}_API_KEY`
+//!    env fallback via [`ProviderOverrides::with_env`]) win over all of the
+//!    above - the most explicit, most ephemeral signal.
 
 use std::collections::HashMap;
 
+use crate::core::agent::global_config::load_global_config;
+use crate::core::agent::project::ProviderSection;
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::state::ProviderConfig;
 
 const MODEL_PROVIDER_KEY: &str = "model-provider";
 const API_KEY_SETTING_KEYS: [&str; 2] = ["api-key", "api_key"];
-
-pub(crate) use crate::core::agent::env_provider::ENV_AGENT_MODEL_ID;
 
 /// CLI/env overrides applied after loading the persisted store.
 #[derive(Debug, Default, Clone)]
@@ -114,30 +120,76 @@ pub fn list_provider_models() -> Vec<(String, String)> {
     out
 }
 
-/// Load cloud provider configs from the persisted desktop store, applying
-/// `overrides`. A missing/malformed store is not fatal: it yields an empty map
-/// so `--provider`/`--api-key`/env can still stand up a config on their own.
+/// Load provider configs by layering the four `.jan`-based scopes (see module
+/// docs for the priority order): Global `~/.jan/config.toml` -> Desktop
+/// `settings.json` (inherit-only, additive) -> project `agent.toml`
+/// `[provider]` override -> `--provider`/`--api-key` CLI/env overrides.
 ///
-/// Secrets no longer live in `settings.json` (moved to the OS keyring /
-/// encrypted fallback file by #8388), so keys are seeded from
-/// `provider_secrets::load_provider_keys` before overrides are applied.
+/// `project_root` is `None` when no project context is available (e.g.
+/// `jan agent status` without `--project`); the local override is then
+/// skipped. A missing/malformed Desktop store is not fatal: it's simply not
+/// layered in, since Global config alone is a valid standalone setup.
 pub fn load_provider_configs(
+    project_root: Option<&std::path::Path>,
     overrides: &ProviderOverrides,
 ) -> Result<HashMap<String, ProviderConfig>, String> {
+    let mut configs = load_global_config()?;
+
+    inherit_desktop_providers(&mut configs);
+
+    if let Some(root) = project_root {
+        apply_local_override(&mut configs, root)?;
+    }
+
+    apply_overrides(&mut configs, overrides);
+    Ok(configs)
+}
+
+/// Layer in providers from Desktop's `settings.json` that Global doesn't
+/// already define. Read-only inherit: never overwrites a Global entry, never
+/// writes back to `settings.json`. Secrets are seeded from the OS keyring /
+/// encrypted fallback file (#8388) since they no longer live in the JSON blob.
+fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) {
     let path = resolve_jan_data_folder().join("settings.json");
-    let mut configs = match std::fs::read_to_string(&path) {
+    let mut desktop_configs = match std::fs::read_to_string(&path) {
         Ok(raw) => parse_provider_store(&raw),
-        Err(_) => HashMap::new(),
+        Err(_) => return,
     };
-    seed_keys_from_store(&mut configs, |p| {
+    seed_keys_from_store(&mut desktop_configs, |p| {
         crate::core::server::provider_secrets::load_provider_keys(p)
     });
-    apply_overrides(&mut configs, overrides);
-    crate::core::agent::env_provider::inject_env_provider(
-        &mut configs,
-        crate::core::agent::env_provider::env_model_id().as_deref(),
-    );
-    Ok(configs)
+    for (name, cfg) in desktop_configs {
+        configs.entry(name).or_insert(cfg);
+    }
+}
+
+/// Apply the project's `agent.toml` `[provider]` section, if present. Highest
+/// priority of the three `.jan`-based sources: always wins over Global and the
+/// Desktop inherit for the named provider.
+fn apply_local_override(
+    configs: &mut HashMap<String, ProviderConfig>,
+    project_root: &std::path::Path,
+) -> Result<(), String> {
+    let cfg = match crate::core::agent::project::load_agent_config(project_root) {
+        Ok(cfg) => cfg,
+        Err(_) => return Ok(()),
+    };
+    if let Some(section) = cfg.provider {
+        configs.insert(section.name.clone(), provider_config_from_section(section));
+    }
+    Ok(())
+}
+
+fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
+    ProviderConfig {
+        provider: section.name,
+        api_keys: section.api_key.iter().cloned().collect(),
+        api_key: section.api_key,
+        base_url: section.base_url,
+        custom_headers: Vec::new(),
+        models: section.models,
+        api_type: section.api_type,
+    }
 }
 
 /// Seed each config's key chain from the secret store when the settings blob
