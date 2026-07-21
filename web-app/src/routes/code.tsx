@@ -61,6 +61,13 @@ type StreamEvent =
       prompt_kind: string
       offers_always: boolean
     }
+  | { type: 'subagent_start'; run_id: string; name: string }
+  | { type: 'subagent_end'; run_id: string; name: string }
+  // A backgrounded subagent's own event, wrapped with its run/name so it can be
+  // routed through the same handling as a top-level event (see handleEvent's
+  // 'subagent' case) — critically including a nested permission_request, which
+  // otherwise never reaches the approval dialog and hangs the run.
+  | { type: 'subagent'; run_id: string; name: string; event: StreamEvent }
 
 // Per-run token ceiling. `max_turns: 0` lets a multi-step task run to completion;
 // this budget is the real bound that stops a runaway loop (see loop.rs).
@@ -438,8 +445,11 @@ function CodePage() {
     // in the transcript (not just a transient toast).
     let runError: string | null = null
 
-    const onEvent = new Channel<StreamEvent>()
-    onEvent.onmessage = (ev) => {
+    // Handles one StreamEvent. Also called recursively for the event wrapped
+    // inside a 'subagent' event, so a subagent's tool calls/results/permission
+    // requests are routed exactly like a top-level run's — the fix for the
+    // subagent hang (a wrapped permission_request used to be silently dropped).
+    const handleEvent = (ev: StreamEvent) => {
       switch (ev.type) {
         case 'token':
           // First actual output means the model finished loading and is now
@@ -491,8 +501,30 @@ function CodePage() {
           break
         case 'done':
           break
+        case 'subagent_start':
+          pushLive({
+            role: 'tool',
+            content: '',
+            callId: ev.run_id,
+            name: 'subagent',
+            args: { name: ev.name },
+            status: 'running',
+          })
+          break
+        case 'subagent_end':
+          updateToolTurn(ev.run_id, {
+            result: `Subagent "${ev.name}" finished.`,
+            status: 'done',
+          })
+          break
+        case 'subagent':
+          handleEvent(ev.event)
+          break
       }
     }
+
+    const onEvent = new Channel<StreamEvent>()
+    onEvent.onmessage = handleEvent
 
     try {
       await invoke('agent_run', {
