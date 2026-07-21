@@ -962,11 +962,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (useWebSearchConfig.getState().webSearchEnabled) {
         toolsRecord['web_search'] = {
           description: WEB_SEARCH_DESCRIPTION,
-          inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA),
+          inputSchema: jsonSchema(WEB_SEARCH_INPUT_SCHEMA as Record<string, unknown>),
         } as Tool
         toolsRecord['web_fetch'] = {
           description: WEB_FETCH_DESCRIPTION,
-          inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA),
+          inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA as Record<string, unknown>),
         } as Tool
       }
     }
