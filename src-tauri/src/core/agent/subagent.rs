@@ -413,6 +413,8 @@ impl BackgroundSubagents {
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
+                // Aborted mid-flight: the child never reported terminal usage.
+                usage: None,
             });
         }
     }
@@ -519,7 +521,14 @@ async fn run_subagent(
     drop(child_tx);
     let _ = forwarder.await;
 
-    let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
+    // The child's own terminal Done (and its usage) is swallowed by
+    // forward_to_parent, so this is the only place its usage can reach a
+    // consumer — fold it into the bracket event the parent does see.
+    let usage = match &result {
+        Ok(completion) => crate::core::agent::events::Usage::from_completion(completion),
+        Err(_) => None,
+    };
+    let _ = events.send(StreamEvent::SubagentEnd { run_id, name, usage });
 
     match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
@@ -1303,9 +1312,10 @@ mod tests {
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         match ev_rx.try_recv() {
-            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name }) => {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name, usage }) => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(name, "reviewer");
+                assert!(usage.is_none(), "aborted child reports no usage");
             }
             other => panic!("expected SubagentEnd on abort, got {other:?}"),
         }
