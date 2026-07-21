@@ -38,9 +38,9 @@ import {
   MessageCircleIcon,
   type MessageCircleIconHandle,
 } from '@/components/animated-icon/message-circle'
-import { useCodeSessions } from '@/hooks/useCodeSessions'
-import { useCodeRun } from '@/hooks/useCodeRun'
-import { useRef, useState } from 'react'
+import { useCodeSessions, type CodeSession } from '@/hooks/useCodeSessions'
+import { useIsSessionActive, useSessionHasPendingPerms } from '@/hooks/useCodeRun'
+import { memo, useCallback, useRef, useState } from 'react'
 import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 
 type CodeNavItem = {
@@ -49,18 +49,87 @@ type CodeNavItem = {
   onClick: () => void
 }
 
+// Own component (not inlined in a .map()) so it can be memoized: each row's
+// running/needs-input state now comes from its own per-session selector
+// (useIsSessionActive/useSessionHasPendingPerms), so a session starting or
+// stopping a run only re-renders its own row, not the whole session list —
+// mirroring ThreadList.tsx's memoized ThreadItem + useIsThreadActive.
+const SessionItem = memo(function SessionItem({
+  session,
+  isCurrent,
+  isMobile,
+  onSelect,
+  onRequestDelete,
+}: {
+  session: CodeSession
+  isCurrent: boolean
+  isMobile: boolean
+  onSelect: (id: string) => void
+  onRequestDelete: (pending: { id: string; title: string }) => void
+}) {
+  const { t } = useTranslation()
+  const isRunning = useIsSessionActive(session.id)
+  const hasPendingPerms = useSessionHasPendingPerms(session.id)
+  // Don't flag the currently-viewed session — its approval dialog is already
+  // on screen, so the sidebar indicator would be redundant.
+  const needsInput = !isCurrent && hasPendingPerms
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isCurrent}
+        onClick={() => onSelect(session.id)}
+      >
+        {isRunning && !needsInput && (
+          <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+        )}
+        <span className="truncate">{session.title}</span>
+        {needsInput && (
+          <AlertCircle
+            size={14}
+            className="ml-auto shrink-0 text-amber-500"
+            aria-label={t('common:needsInput')}
+          >
+            <title>{t('common:needsInput')}</title>
+          </AlertCircle>
+        )}
+      </SidebarMenuButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarMenuAction
+            showOnHover
+            className="hover:bg-sidebar-foreground/8"
+          >
+            <MoreHorizontal />
+            <span className="sr-only">More</span>
+          </SidebarMenuAction>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          className="w-48"
+          side={isMobile ? 'bottom' : 'right'}
+          align={isMobile ? 'end' : 'start'}
+        >
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() =>
+              onRequestDelete({ id: session.id, title: session.title })
+            }
+          >
+            <Trash2 />
+            <span>{t('common:deleteSession')}</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SidebarMenuItem>
+  )
+})
+
 export function NavCode() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { isMobile } = useSidebar()
   const sessions = useCodeSessions((s) => s.sessions)
   const currentId = useCodeSessions((s) => s.currentId)
-  // Sessions with a run blocked on a permission prompt, so a backgrounded
-  // session's gated tool call doesn't hang silently with no visual cue.
-  const pendingPerms = useCodeRun((s) => s.pendingPerms)
-  // Same busy-thread spinner the regular chat's ThreadList uses, keyed by
-  // Code session id instead of thread id.
-  const runningSessions = useCodeRun((s) => s.running)
   const [skillsOpen, setSkillsOpen] = useState(false)
   // Session pending deletion; drives the confirm dialog (null = closed).
   const [pendingDelete, setPendingDelete] = useState<{
@@ -68,12 +137,19 @@ export function NavCode() {
     title: string
   } | null>(null)
 
-  const goCode = () => navigate({ to: route.code })
+  const goCode = useCallback(() => navigate({ to: route.code }), [navigate])
   const newSessionIconRef = useRef<MessageCircleIconHandle>(null)
   const newSession = () => {
     useCodeSessions.getState().createSession()
     goCode()
   }
+  const selectSession = useCallback(
+    (id: string) => {
+      useCodeSessions.getState().selectSession(id)
+      goCode()
+    },
+    [goCode]
+  )
 
   const items: CodeNavItem[] = [
     {
@@ -127,66 +203,16 @@ export function NavCode() {
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>{t('common:sessions')}</SidebarGroupLabel>
           <SidebarMenu>
-            {sessions.map((session) => {
-              const needsInput =
-                session.id !== currentId &&
-                (pendingPerms[session.id]?.length ?? 0) > 0
-              const isRunning = runningSessions[session.id] ?? false
-              return (
-              <SidebarMenuItem key={session.id}>
-                <SidebarMenuButton
-                  isActive={session.id === currentId}
-                  onClick={() => {
-                    useCodeSessions.getState().selectSession(session.id)
-                    goCode()
-                  }}
-                >
-                  {isRunning && !needsInput && (
-                    <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
-                  )}
-                  <span className="truncate">{session.title}</span>
-                  {needsInput && (
-                    <AlertCircle
-                      size={14}
-                      className="ml-auto shrink-0 text-amber-500"
-                      aria-label={t('common:needsInput')}
-                    >
-                      <title>{t('common:needsInput')}</title>
-                    </AlertCircle>
-                  )}
-                </SidebarMenuButton>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <SidebarMenuAction
-                      showOnHover
-                      className="hover:bg-sidebar-foreground/8"
-                    >
-                      <MoreHorizontal />
-                      <span className="sr-only">More</span>
-                    </SidebarMenuAction>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    className="w-48"
-                    side={isMobile ? 'bottom' : 'right'}
-                    align={isMobile ? 'end' : 'start'}
-                  >
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() =>
-                        setPendingDelete({
-                          id: session.id,
-                          title: session.title,
-                        })
-                      }
-                    >
-                      <Trash2 />
-                      <span>{t('common:deleteSession')}</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </SidebarMenuItem>
-              )
-            })}
+            {sessions.map((session) => (
+              <SessionItem
+                key={session.id}
+                session={session}
+                isCurrent={session.id === currentId}
+                isMobile={isMobile}
+                onSelect={selectSession}
+                onRequestDelete={setPendingDelete}
+              />
+            ))}
           </SidebarMenu>
         </SidebarGroup>
       )}

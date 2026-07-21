@@ -326,7 +326,7 @@ export const TokenCounter = memo(function TokenCounter({
   )
 })
 
-export function TokenCountOnly({
+export const TokenCountOnly = memo(function TokenCountOnly({
   totalTokens,
   inputTokens,
   outputTokens,
@@ -398,7 +398,7 @@ export function TokenCountOnly({
       </Tooltip>
     </TooltipProvider>
   )
-}
+})
 
 function Row({
   icon,

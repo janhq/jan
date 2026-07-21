@@ -26,43 +26,61 @@ export type StreamEvent =
   | { type: 'subagent_end'; run_id: string; name: string; usage: Usage | null }
   | { type: 'subagent'; run_id: string; name: string; event: StreamEvent }
 
+// Append a streamed token to the last assistant turn, or start a new one.
+// Shared by the main stream (appendToken) and a subagent's wrapped stream
+// (applyInnerToTurns) — same merge, different turn lane.
+function appendAssistantToken(turns: CodeTurn[], text: string): CodeTurn[] {
+  const last = turns[turns.length - 1]
+  if (last && last.role === 'assistant')
+    return [...turns.slice(0, -1), { ...last, content: last.content + text }]
+  return [...turns, { role: 'assistant', content: text }]
+}
+
+// A freshly-dispatched tool call's turn. Shared by the main stream's
+// pushToolTurn call site (code.tsx) and a subagent's wrapped tool_call.
+export function makeToolCallTurn(ev: {
+  id: string
+  name: string
+  args: unknown
+}): CodeTurn {
+  return {
+    role: 'tool',
+    content: '',
+    callId: ev.id,
+    name: ev.name,
+    args: ev.args,
+    status: 'running',
+  }
+}
+
+// Find the tool turn by callId and merge patch onto it; returns the same
+// array reference (no-op) when there's no match, so callers can cheaply
+// detect "nothing changed". Shared by updateToolTurn and applyInnerToTurns.
+function mergeToolResult(
+  turns: CodeTurn[],
+  callId: string,
+  patch: Partial<CodeTurn>
+): CodeTurn[] {
+  const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === callId)
+  if (idx === -1) return turns
+  return [...turns.slice(0, idx), { ...turns[idx], ...patch }, ...turns.slice(idx + 1)]
+}
+
 // Apply one wrapped inner subagent event to that subagent's own turn lane
 // (token append / tool_call push / tool_result merge). Pure.
 function applyInnerToTurns(turns: CodeTurn[], inner: StreamEvent): CodeTurn[] {
   switch (inner.type) {
-    case 'token': {
-      const last = turns[turns.length - 1]
-      if (last && last.role === 'assistant')
-        return [...turns.slice(0, -1), { ...last, content: last.content + inner.text }]
-      return [...turns, { role: 'assistant', content: inner.text }]
-    }
+    case 'token':
+      return appendAssistantToken(turns, inner.text)
     case 'tool_call':
-      return [
-        ...turns,
-        {
-          role: 'tool',
-          content: '',
-          callId: inner.id,
-          name: inner.name,
-          args: inner.args,
-          status: 'running',
-        },
-      ]
-    case 'tool_result': {
-      const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === inner.id)
-      if (idx === -1) return turns
-      return [
-        ...turns.slice(0, idx),
-        {
-          ...turns[idx],
-          result: inner.content,
-          isError: inner.is_error,
-          diff: inner.diff,
-          status: 'done',
-        },
-        ...turns.slice(idx + 1),
-      ]
-    }
+      return [...turns, makeToolCallTurn(inner)]
+    case 'tool_result':
+      return mergeToolResult(turns, inner.id, {
+        result: inner.content,
+        isError: inner.is_error,
+        diff: inner.diff,
+        status: 'done',
+      })
     default:
       return turns // step / anything else: no visible turn
   }
@@ -79,12 +97,14 @@ function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
 // mirroring useAppState's per-thread Record<id, T> maps. This is what lets a run
 // keep updating a background session while another is viewed: every stream write
 // targets the session id captured at submit, and rendering reads the viewed id.
+//
+// No separate `running` flag: a session is running iff it has a runId, so
+// that's read directly (runId[sid] != null) instead of a second map that
+// would need to be kept in sync with it.
 type CodeRunState = {
-  running: Record<string, boolean>
   liveTurns: Record<string, CodeTurn[]>
   subagents: Record<string, SubagentRun[]>
   runId: Record<string, string>
-  awaitCallToRunId: Record<string, Record<string, string>>
   pendingPerms: Record<string, PendingPermission[]>
   // Usage from the latest `done` event, per session. Set once per run (the
   // terminal event); untouched by a `null` usage so a provider that doesn't
@@ -99,46 +119,42 @@ type CodeRunState = {
   endSubagent: (sid: string, runId: string, usage?: Usage | null) => void
   routeIntoSubagent: (sid: string, runId: string, inner: StreamEvent) => void
   attachSubagentOutput: (sid: string, runId: string, content: string) => void
-  recordAwait: (sid: string, callId: string, runId: string) => void
   setUsage: (sid: string, usage: Usage | null) => void
   addPendingPerm: (sid: string, perm: PendingPermission) => void
   removePendingPerm: (sid: string, requestId: string) => void
   // Mark running tool turns + subagents done (interrupted), append an error turn
-  // if the run failed, and flip running off. Leaves liveTurns/subagents in place
-  // so the caller can commit them before clearCodeRun.
-  finalizeRun: (sid: string, errorMessage: string | null) => void
+  // if the run failed. Leaves liveTurns/subagents in place and returns the final
+  // values so the caller can commit them before clearCodeRun without a second
+  // round of store reads.
+  finalizeRun: (
+    sid: string,
+    errorMessage: string | null
+  ) => { turns: CodeTurn[]; subagents: SubagentRun[] }
   clearCodeRun: (sid: string) => void
 }
 
-export const useCodeRun = create<CodeRunState>()((set) => ({
-  running: {},
+export const useCodeRun = create<CodeRunState>()((set, get) => ({
   liveTurns: {},
   subagents: {},
   runId: {},
-  awaitCallToRunId: {},
   pendingPerms: {},
   usage: {},
 
   beginRun: (sid, runId, userText) =>
     set((s) => ({
-      running: { ...s.running, [sid]: true },
       runId: { ...s.runId, [sid]: runId },
       liveTurns: { ...s.liveTurns, [sid]: [{ role: 'user', content: userText }] },
       subagents: { ...s.subagents, [sid]: [] },
-      awaitCallToRunId: { ...s.awaitCallToRunId, [sid]: {} },
       pendingPerms: { ...s.pendingPerms, [sid]: [] },
     })),
 
   appendToken: (sid, text) =>
-    set((s) => {
-      const turns = s.liveTurns[sid] ?? []
-      const last = turns[turns.length - 1]
-      const next =
-        last && last.role === 'assistant'
-          ? [...turns.slice(0, -1), { ...last, content: last.content + text }]
-          : [...turns, { role: 'assistant' as const, content: text }]
-      return { liveTurns: { ...s.liveTurns, [sid]: next } }
-    }),
+    set((s) => ({
+      liveTurns: {
+        ...s.liveTurns,
+        [sid]: appendAssistantToken(s.liveTurns[sid] ?? [], text),
+      },
+    })),
 
   pushToolTurn: (sid, turn) =>
     set((s) => ({
@@ -148,18 +164,8 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
   updateToolTurn: (sid, callId, patch) =>
     set((s) => {
       const turns = s.liveTurns[sid] ?? []
-      const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === callId)
-      if (idx === -1) return {}
-      return {
-        liveTurns: {
-          ...s.liveTurns,
-          [sid]: [
-            ...turns.slice(0, idx),
-            { ...turns[idx], ...patch },
-            ...turns.slice(idx + 1),
-          ],
-        },
-      }
+      const next = mergeToolResult(turns, callId, patch)
+      return next === turns ? {} : { liveTurns: { ...s.liveTurns, [sid]: next } }
     }),
 
   startSubagent: (sid, runId, name) =>
@@ -214,14 +220,6 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
       },
     })),
 
-  recordAwait: (sid, callId, runId) =>
-    set((s) => ({
-      awaitCallToRunId: {
-        ...s.awaitCallToRunId,
-        [sid]: { ...(s.awaitCallToRunId[sid] ?? {}), [callId]: runId },
-      },
-    })),
-
   setUsage: (sid, usage) =>
     set((s) => (usage ? { usage: { ...s.usage, [sid]: usage } } : {})),
 
@@ -241,44 +239,50 @@ export const useCodeRun = create<CodeRunState>()((set) => ({
       },
     })),
 
-  finalizeRun: (sid, errorMessage) =>
-    set((s) => {
-      let turns: CodeTurn[] = (s.liveTurns[sid] ?? []).map((tn) =>
-        tn.role === 'tool' && tn.status === 'running'
-          ? { ...tn, status: 'done' as const, isError: true, result: tn.result || '(interrupted)' }
-          : tn
-      )
-      if (errorMessage) {
-        turns = [
-          ...turns,
-          {
-            role: 'tool',
-            content: '',
-            name: 'error',
-            result: errorMessage,
-            isError: true,
-            status: 'done',
-          },
-        ]
-      }
-      const subs = (s.subagents[sid] ?? []).map((r) =>
-        r.status === 'running' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
-      )
-      return {
-        running: { ...s.running, [sid]: false },
-        liveTurns: { ...s.liveTurns, [sid]: turns },
-        subagents: { ...s.subagents, [sid]: subs },
-      }
-    }),
+  finalizeRun: (sid, errorMessage) => {
+    let turns: CodeTurn[] = (get().liveTurns[sid] ?? []).map((tn) =>
+      tn.role === 'tool' && tn.status === 'running'
+        ? { ...tn, status: 'done' as const, isError: true, result: tn.result || '(interrupted)' }
+        : tn
+    )
+    if (errorMessage) {
+      turns = [
+        ...turns,
+        {
+          role: 'tool',
+          content: '',
+          name: 'error',
+          result: errorMessage,
+          isError: true,
+          status: 'done',
+        },
+      ]
+    }
+    const subs = (get().subagents[sid] ?? []).map((r) =>
+      r.status === 'running' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
+    )
+    set((s) => ({
+      liveTurns: { ...s.liveTurns, [sid]: turns },
+      subagents: { ...s.subagents, [sid]: subs },
+    }))
+    return { turns, subagents: subs }
+  },
 
   clearCodeRun: (sid) =>
     set((s) => ({
-      running: omitKey(s.running, sid),
       liveTurns: omitKey(s.liveTurns, sid),
       subagents: omitKey(s.subagents, sid),
       runId: omitKey(s.runId, sid),
-      awaitCallToRunId: omitKey(s.awaitCallToRunId, sid),
       pendingPerms: omitKey(s.pendingPerms, sid),
       usage: omitKey(s.usage, sid),
     })),
 }))
+
+// Per-session selectors, mirroring useAppState's useIsThreadActive — a
+// component reading only one session's slice re-renders on that session's
+// changes, not on every other session's.
+export const useIsSessionActive = (sid: string | undefined) =>
+  useCodeRun((s) => (sid ? s.runId[sid] != null : false))
+
+export const useSessionHasPendingPerms = (sid: string | undefined) =>
+  useCodeRun((s) => (sid ? (s.pendingPerms[sid]?.length ?? 0) > 0 : false))

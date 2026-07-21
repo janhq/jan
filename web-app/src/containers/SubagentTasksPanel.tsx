@@ -24,7 +24,11 @@ function TaskRow({
 }) {
   const running = run.status === 'running'
   const { t } = useTranslation()
-  const toolUses = run.turns.filter((tn) => tn.role === 'tool').length
+  // Only rendered for finished rows below — skip the scan while running (it
+  // would just be recomputed and discarded on every tick/stream re-render).
+  const toolUses = running
+    ? 0
+    : run.turns.filter((tn) => tn.role === 'tool').length
   return (
     <button
       type="button"
@@ -125,13 +129,16 @@ export function SubagentTasksPanel({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
 
   // Tick once a second while anything is running so the elapsed counters move.
+  // Skipped while a detail view is open — that view doesn't render the
+  // duration text, so ticking would just re-render the whole panel (including
+  // the mounted transcript) for nothing.
   const [, tick] = useState(0)
   const anyRunning = subagents.some((s) => s.status === 'running')
   useEffect(() => {
-    if (!anyRunning) return
+    if (!anyRunning || selectedRunId) return
     const id = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(id)
-  }, [anyRunning])
+  }, [anyRunning, selectedRunId])
 
   const selected = selectedRunId
     ? subagents.find((s) => s.runId === selectedRunId) ?? null

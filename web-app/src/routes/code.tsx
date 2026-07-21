@@ -20,7 +20,7 @@ import {
   type CodeMessage,
   type SubagentRun,
 } from '@/hooks/useCodeSessions'
-import { useCodeRun, type StreamEvent } from '@/hooks/useCodeRun'
+import { useCodeRun, makeToolCallTurn, type StreamEvent } from '@/hooks/useCodeRun'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { TokenCountOnly } from '@/components/TokenCounter'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -142,7 +142,7 @@ function CodePage() {
   // target the session id captured at submit, so a background session keeps
   // updating while another is viewed.
   const running = useCodeRun((s) =>
-    currentId ? (s.running[currentId] ?? false) : false
+    currentId ? s.runId[currentId] != null : false
   )
   const liveTurns = useCodeRun((s) =>
     currentId ? (s.liveTurns[currentId] ?? EMPTY_TURNS) : EMPTY_TURNS
@@ -279,7 +279,7 @@ function CodePage() {
       case '/clear':
         // Clearing mid-run would wipe the session the in-flight run is about to
         // commit its transcript into, leaving it inconsistent.
-        if (currentId && useCodeRun.getState().running[currentId]) {
+        if (currentId && useCodeRun.getState().runId[currentId] != null) {
           toast.error(t('common:cmdBusy'))
           break
         }
@@ -391,7 +391,7 @@ function CodePage() {
     const run = useCodeRun.getState()
     // Per-session guard: only block if THIS session is already running. A run in
     // another session no longer locks this one.
-    if (run.running[sid]) return
+    if (run.runId[sid] != null) return
 
     const store = useCodeSessions.getState()
     const session = store.sessions.find((s) => s.id === sid)
@@ -469,25 +469,19 @@ function CodePage() {
           break
         case 'tool_call':
           finishModelLoad()
-          // Remember which subagent an await_subagent call is collecting, so its
-          // result (the subagent's final answer) can be routed to the panel.
-          if (ev.name === 'await_subagent') {
-            const rid = argRunId(ev.args)
-            if (rid) run.recordAwait(sid, ev.id, rid)
-          }
-          run.pushToolTurn(sid, {
-            role: 'tool',
-            content: '',
-            callId: ev.id,
-            name: ev.name,
-            args: ev.args,
-            status: 'running',
-          })
+          run.pushToolTurn(sid, makeToolCallTurn(ev))
           break
         case 'tool_result': {
-          const awaitedRunId =
-            useCodeRun.getState().awaitCallToRunId[sid]?.[ev.id]
-          if (awaitedRunId) run.attachSubagentOutput(sid, awaitedRunId, ev.content)
+          // If this call was an await_subagent, its run_id is already sitting on
+          // the tool_call turn's own args — no separate map needed to carry it
+          // from tool_call time to tool_result time.
+          const turn = (useCodeRun.getState().liveTurns[sid] ?? []).find(
+            (tn) => tn.role === 'tool' && tn.callId === ev.id
+          )
+          if (turn?.name === 'await_subagent') {
+            const rid = argRunId(turn.args)
+            if (rid) run.attachSubagentOutput(sid, rid, ev.content)
+          }
           run.updateToolTurn(sid, ev.id, {
             result: ev.content,
             isError: ev.is_error,
@@ -554,13 +548,13 @@ function CodePage() {
       // Drop the load card if the run ended before any stream event.
       finishModelLoad()
       // Finalize interrupted tool turns + subagents, append an error turn if the
-      // run failed, flip running off — all keyed to `sid`.
-      run.finalizeRun(sid, runError)
-      // Commit the finalized transcript + finished subagents onto the session so
-      // they survive a session switch and app restart, then drop the transient
+      // run failed — all keyed to `sid`. Commit the result onto the session so
+      // it survives a session switch and app restart, then drop the transient
       // run state.
-      const finalTurns = useCodeRun.getState().liveTurns[sid] ?? []
-      const finalSubs = useCodeRun.getState().subagents[sid] ?? []
+      const { turns: finalTurns, subagents: finalSubs } = run.finalizeRun(
+        sid,
+        runError
+      )
       const finalUsage = useCodeRun.getState().usage[sid]
       const assistantText = finalTurns
         .filter((tn) => tn.role === 'assistant')
@@ -595,129 +589,129 @@ function CodePage() {
 
       <div className="flex flex-1 flex-row h-full overflow-hidden">
         <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
-        {/* Scroll area fills the remaining space; absolute inset-0 keeps message
-            volume from ever pushing the fixed input off-screen. */}
-        <div className="flex-1 relative">
-          {displayedTurns.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
-              <h1 className="text-2xl font-studio font-medium">
-                {t('common:newSession')}
-              </h1>
-            </div>
-          ) : (
-            <Conversation className="absolute inset-0 text-start">
-              <ConversationContent className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}>
-                {uiMessages.map((message, i) => (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={i === 0}
-                    isLastMessage={i === uiMessages.length - 1}
-                    status={running ? 'streaming' : 'ready'}
-                    reasoningContainerRef={reasoningContainerRef}
-                    isReasoningAtBottom={isReasoningAtBottom}
-                    onReasoningScroll={handleReasoningScroll}
-                    onReasoningScrollToBottom={forceScrollReasoningToBottom}
-                  />
-                ))}
-                {/* Shared load card; renders only while a local model is loading
-                    (hideIdle suppresses the generic "Working…" fallback). */}
-                {running && <PromptProgress hideIdle />}
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
-          )}
-        </div>
+          {/* Scroll area fills the remaining space; absolute inset-0 keeps message
+              volume from ever pushing the fixed input off-screen. */}
+          <div className="flex-1 relative">
+            {displayedTurns.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
+                <h1 className="text-2xl font-studio font-medium">
+                  {t('common:newSession')}
+                </h1>
+              </div>
+            ) : (
+              <Conversation className="absolute inset-0 text-start">
+                <ConversationContent className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}>
+                  {uiMessages.map((message, i) => (
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      isFirstMessage={i === 0}
+                      isLastMessage={i === uiMessages.length - 1}
+                      status={running ? 'streaming' : 'ready'}
+                      reasoningContainerRef={reasoningContainerRef}
+                      isReasoningAtBottom={isReasoningAtBottom}
+                      onReasoningScroll={handleReasoningScroll}
+                      onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                    />
+                  ))}
+                  {/* Shared load card; renders only while a local model is loading
+                      (hideIdle suppresses the generic "Working…" fallback). */}
+                  {running && <PromptProgress hideIdle />}
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+            )}
+          </div>
 
-        {/* Fixed input dock at the bottom. */}
-        <div className="pb-4 shrink-0">
-          <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
-            <div className="flex items-center gap-2 px-1 pb-2">
-              <CodeModeSelector
-                mode={mode}
-                onChange={(m) => {
-                  const sid = currentId ?? ensureCurrentSession()
-                  useCodeSessions.getState().setMode(sid, m)
-                }}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 rounded-full max-w-[220px]"
-                onClick={handleSelectFolder}
-                title={folder ?? undefined}
-              >
-                <Folder size={14} className="text-muted-foreground" />
-                <span className="truncate">
-                  {folderName ?? t('common:selectFolder')}
-                </span>
-              </Button>
-              {subagents.length > 0 && (
+          {/* Fixed input dock at the bottom. */}
+          <div className="pb-4 shrink-0">
+            <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+              <div className="flex items-center gap-2 px-1 pb-2">
+                <CodeModeSelector
+                  mode={mode}
+                  onChange={(m) => {
+                    const sid = currentId ?? ensureCurrentSession()
+                    useCodeSessions.getState().setMode(sid, m)
+                  }}
+                />
                 <Button
-                  variant={tasksPanelOpen ? 'default' : 'outline'}
+                  variant="outline"
                   size="sm"
-                  className="h-7 gap-1.5 rounded-full"
-                  onClick={() => setTasksPanelOpen((o) => !o)}
-                  title={t('common:backgroundTasks')}
+                  className="h-7 gap-1.5 rounded-full max-w-[220px]"
+                  onClick={handleSelectFolder}
+                  title={folder ?? undefined}
                 >
-                  <Sparkles size={14} className={tasksPanelOpen ? undefined : 'text-muted-foreground'} />
-                  <span>
-                    {runningSubagentCount > 0
-                      ? `${runningSubagentCount} running`
-                      : `${subagents.length} tasks`}
+                  <Folder size={14} className="text-muted-foreground" />
+                  <span className="truncate">
+                    {folderName ?? t('common:selectFolder')}
                   </span>
                 </Button>
-              )}
-              <div className="ml-auto flex items-center gap-2">
-                {usage?.total_tokens ? (
-                  <TokenCountOnly
-                    totalTokens={usage.total_tokens}
-                    inputTokens={usage.prompt_tokens}
-                    outputTokens={usage.completion_tokens}
-                    modelDisplayName={selectedModel?.name || selectedModel?.id}
-                  />
-                ) : null}
-                <SkillSelector folder={folder} />
+                {subagents.length > 0 && (
+                  <Button
+                    variant={tasksPanelOpen ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-full"
+                    onClick={() => setTasksPanelOpen((o) => !o)}
+                    title={t('common:backgroundTasks')}
+                  >
+                    <Sparkles size={14} className={tasksPanelOpen ? undefined : 'text-muted-foreground'} />
+                    <span>
+                      {runningSubagentCount > 0
+                        ? `${runningSubagentCount} running`
+                        : `${subagents.length} tasks`}
+                    </span>
+                  </Button>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {usage?.total_tokens ? (
+                    <TokenCountOnly
+                      totalTokens={usage.total_tokens}
+                      inputTokens={usage.prompt_tokens}
+                      outputTokens={usage.completion_tokens}
+                      modelDisplayName={selectedModel?.name || selectedModel?.id}
+                    />
+                  ) : null}
+                  <SkillSelector folder={folder} />
+                </div>
+              </div>
+              <div className="relative" onKeyDownCapture={onMenuKeyDown}>
+                {menuItems.length > 0 && (
+                  <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
+                    {menuItems.map((item, i) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        ref={
+                          i === menuIndex
+                            ? (el) => el?.scrollIntoView({ block: 'nearest' })
+                            : undefined
+                        }
+                        onClick={item.onSelect}
+                        onMouseEnter={() => setMenuIndex(i)}
+                        className={cn(
+                          'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
+                          i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
+                        )}
+                      >
+                        <span className="font-mono font-medium">{item.label}</span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {item.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <ChatInput
+                  showSpeedToken={false}
+                  initialMessage={true}
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                  chatStatus={running ? 'streaming' : 'ready'}
+                />
               </div>
             </div>
-            <div className="relative" onKeyDownCapture={onMenuKeyDown}>
-              {menuItems.length > 0 && (
-                <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
-                  {menuItems.map((item, i) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      ref={
-                        i === menuIndex
-                          ? (el) => el?.scrollIntoView({ block: 'nearest' })
-                          : undefined
-                      }
-                      onClick={item.onSelect}
-                      onMouseEnter={() => setMenuIndex(i)}
-                      className={cn(
-                        'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
-                        i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
-                      )}
-                    >
-                      <span className="font-mono font-medium">{item.label}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {item.description}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <ChatInput
-                showSpeedToken={false}
-                initialMessage={true}
-                onSubmit={handleSubmit}
-                onStop={handleStop}
-                chatStatus={running ? 'streaming' : 'ready'}
-              />
-            </div>
-          </div>
         </div>
-        </div>
+      </div>
         {tasksPanelOpen && (
           <SubagentTasksPanel
             subagents={subagents}
