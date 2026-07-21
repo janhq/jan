@@ -323,6 +323,46 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
     },
+    /// Manage standalone provider credentials in ~/.jan/config.toml (no Desktop needed)
+    Config {
+        #[command(subcommand)]
+        cmd: AgentConfigCommands,
+    },
+}
+
+/// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
+/// self-sufficient config surface for a standalone Jan Agent: every command is
+/// headless and persists across runs.
+#[derive(Subcommand)]
+enum AgentConfigCommands {
+    /// Set or update a provider's API key, base URL, models, or API type
+    Set {
+        /// Provider id (e.g. openai, anthropic, groq)
+        #[arg(long)]
+        provider: String,
+        /// API key for the provider
+        #[arg(long)]
+        api_key: Option<String>,
+        /// Base URL (e.g. https://api.openai.com/v1)
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Model id to expose (repeatable; replaces any existing list)
+        #[arg(long = "model")]
+        models: Vec<String>,
+        /// Wire API type (e.g. openai, anthropic); defaults to OpenAI-compatible
+        #[arg(long)]
+        api_type: Option<String>,
+    },
+    /// Remove a provider entry
+    Unset {
+        /// Provider id to remove
+        #[arg(long)]
+        provider: String,
+    },
+    /// List configured providers as JSON (API keys redacted)
+    List,
+    /// Print the config file path (scaffolding a template if absent)
+    Path,
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -747,6 +787,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
+        AgentCommands::Config { cmd } => handle_agent_config(cmd),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
