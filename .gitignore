@@ -72,6 +72,7 @@ test-data
 llm-docs
 .claude/agents
 .claude
+.omp
 CLAUDE.md
 
 ## agent
