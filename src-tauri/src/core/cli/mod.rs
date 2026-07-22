@@ -1030,6 +1030,8 @@ pub(crate) struct AgentSession {
     pub args: OrchestrationArgs,
     pub permission_requests: PermissionRegistry,
     pub model: String,
+    /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
+    pub smol_model: String,
     pub max_turns: u32,
     /// Background local-router startup, awaited before the first turn. `None`
     /// for cloud models.
@@ -1094,6 +1096,13 @@ fn prepare_agent_session(
         .or(cfg.agent.max_turns)
         .unwrap_or(DEFAULT_MAX_TURNS);
 
+    // The `smol` role (used by /goal evaluation): an explicit smol_model in
+    // ~/.jan/config.toml, else reuse the main model so evaluation always works.
+    let smol_model = crate::core::agent::global_config::smol_model()
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| model.clone());
+
     let provider_configs = load_provider_configs(Some(&project_root), &overrides)?;
 
     // A local llamacpp model needs its router started; cloud models are plain
@@ -1135,6 +1144,7 @@ fn prepare_agent_session(
         args,
         permission_requests,
         model,
+        smol_model,
         max_turns,
         router_task,
         mcp_servers,
