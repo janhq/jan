@@ -146,11 +146,11 @@ impl ToolInvoker for McpToolInvoker {
             &self.mcp_servers,
             &self.mcp_settings,
         )
-        .await?;
+        .await;
         Ok(results
             .into_iter()
             .map(|(id, content)| ToolOutcome::plain(id, content))
-            .collect())
+            .collect::<Vec<_>>())
     }
 }
 
