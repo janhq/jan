@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { events } from '@janhq/core'
+import { BaseExtension, events } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
@@ -68,6 +68,16 @@ export interface BackendUpdateState {
   autoUpdateEnabled: boolean
 }
 
+/** Try scoped name first, then unscoped fallback for backward compat. */
+function getLlamacppExtension(): BaseExtension | undefined {
+  const mgr = ExtensionManager.getInstance()
+  return (
+    mgr.getByName('@janhq/llamacpp-extension') ??
+    mgr.getByName('llamacpp-extension') ??
+    undefined
+  )
+}
+
 export const useBackendUpdater = () => {
   const [updateState, setUpdateState] = useState<BackendUpdateState>({
     isUpdateAvailable: false,
@@ -97,21 +107,7 @@ export const useBackendUpdater = () => {
   useEffect(() => {
     const checkAutoUpdateSetting = async () => {
       try {
-        // Get llamacpp extension instance
-        const allExtensions = ExtensionManager.getInstance().listExtensions()
-        let llamacppExtension =
-          ExtensionManager.getInstance().getByName('llamacpp-extension')
-
-        if (!llamacppExtension) {
-          // Try to find by type or other properties
-          llamacppExtension =
-            allExtensions.find(
-              (ext) =>
-                ext.constructor.name.toLowerCase().includes('llamacpp') ||
-                (ext.type &&
-                  ext.type()?.toString().toLowerCase().includes('inference'))
-            ) || undefined
-        }
+        const llamacppExtension = getLlamacppExtension()
 
         if (llamacppExtension && 'getSettings' in llamacppExtension) {
           const extension = llamacppExtension as LlamacppExtension
@@ -170,30 +166,7 @@ export const useBackendUpdater = () => {
           return null
         }
 
-        // Get llamacpp extension instance
-        const allExtensions = ExtensionManager.getInstance().listExtensions()
-
-        const llamacppExtension =
-          ExtensionManager.getInstance().getByName('llamacpp-extension')
-
-        let extensionToUse = llamacppExtension
-
-        if (!llamacppExtension) {
-          // Try to find by type or other properties
-          const possibleExtension = allExtensions.find(
-            (ext) =>
-              ext.constructor.name.toLowerCase().includes('llamacpp') ||
-              (ext.type &&
-                ext.type()?.toString().toLowerCase().includes('inference'))
-          )
-
-          if (!possibleExtension) {
-            console.error('LlamaCpp extension not found')
-            return null
-          }
-
-          extensionToUse = possibleExtension
-        }
+        const extensionToUse = getLlamacppExtension()
 
         if (!extensionToUse || !('checkBackendForUpdates' in extensionToUse)) {
           console.error(
@@ -292,28 +265,7 @@ export const useBackendUpdater = () => {
         isUpdating: true,
       }))
 
-      // Get llamacpp extension instance
-      const allExtensions = ExtensionManager.getInstance().listExtensions()
-      const llamacppExtension =
-        ExtensionManager.getInstance().getByName('llamacpp-extension')
-
-      let extensionToUse = llamacppExtension
-
-      if (!llamacppExtension) {
-        // Try to find by type or other properties
-        const possibleExtension = allExtensions.find(
-          (ext) =>
-            ext.constructor.name.toLowerCase().includes('llamacpp') ||
-            (ext.type &&
-              ext.type()?.toString().toLowerCase().includes('inference'))
-        )
-
-        if (!possibleExtension) {
-          throw new Error('LlamaCpp extension not found')
-        }
-
-        extensionToUse = possibleExtension
-      }
+      const extensionToUse = getLlamacppExtension()
 
       if (
         !extensionToUse ||
@@ -402,28 +354,7 @@ export const useBackendUpdater = () => {
 
   const installBackend = useCallback(async (filePath: string) => {
     try {
-      // Get llamacpp extension instance
-      const allExtensions = ExtensionManager.getInstance().listExtensions()
-      const llamacppExtension =
-        ExtensionManager.getInstance().getByName('llamacpp-extension')
-
-      let extensionToUse = llamacppExtension
-
-      if (!llamacppExtension) {
-        // Try to find by type or other properties
-        const possibleExtension = allExtensions.find(
-          (ext) =>
-            ext.constructor.name.toLowerCase().includes('llamacpp') ||
-            (ext.type &&
-              ext.type()?.toString().toLowerCase().includes('inference'))
-        )
-
-        if (!possibleExtension) {
-          throw new Error('LlamaCpp extension not found')
-        }
-
-        extensionToUse = possibleExtension
-      }
+      const extensionToUse = getLlamacppExtension()
 
       if (!extensionToUse || !('installBackend' in extensionToUse)) {
         throw new Error('Extension does not support backend installation')
@@ -448,9 +379,7 @@ export const useBackendUpdater = () => {
   }, [])
 
   const installCudaRuntime = useCallback(async (filePath: string) => {
-    const extension = ExtensionManager.getInstance().getByName(
-      'llamacpp-extension'
-    ) as LlamacppExtension | undefined
+    const extension = getLlamacppExtension() as LlamacppExtension | undefined
     if (!extension || !('installCudaRuntime' in extension)) {
       throw new Error('Extension does not support CUDA runtime installation')
     }
