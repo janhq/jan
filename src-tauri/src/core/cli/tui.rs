@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::path_refs;
+
 use ratatui::crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -812,7 +814,15 @@ impl App {
         self.ensure_base_snapshot();
         let images = std::mem::take(&mut self.pending_images);
         let names: Vec<String> = images.iter().map(|i| i.name.clone()).collect();
-        self.history.push(build_user_message(&text, &images));
+        // Resolve @path file references before sending
+        let (clean_text, injected_contents) =
+            path_refs::resolve_references(&text, &self.project_root);
+        let final_text = if injected_contents.is_empty() {
+            clean_text
+        } else {
+            format!("{clean_text}\n\n---\nReferenced file contents:\n\n{injected_contents}")
+        };
+        self.history.push(build_user_message(&final_text, &images));
         self.push_user_line(&text, &names);
         self.status = Status::Running;
         self.run_started = Some(Instant::now());

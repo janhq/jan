@@ -5,6 +5,7 @@
 pub mod mcp;
 pub mod preset;
 pub mod providers;
+mod path_refs;
 mod tui;
 
 use std::path::PathBuf;
@@ -1162,7 +1163,18 @@ fn prepare_agent_run(
 ) -> Result<PreparedRun, String> {
     let session =
         prepare_agent_session(project, model_override, max_turns_override, overrides, yolo)?;
-    let body = session.body(serde_json::json!([{ "role": "user", "content": task }]));
+    let project_root = resolve_project_root(project);
+    let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
+    let final_task = if injected.is_empty() {
+        clean_task
+    } else {
+        format!("{clean_task}\n\n---\nReferenced file contents:\n\n{injected}")
+    };
+    let body = session.body(serde_json::json!([{ "role": "user", "content": final_task }]));
+    // Emit resolved references stderr so the user sees what was injected
+    if !injected.is_empty() {
+        eprintln!("(resolved @path references)");
+    }
     Ok(PreparedRun {
         args: session.args,
         body,
