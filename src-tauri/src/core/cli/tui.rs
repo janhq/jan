@@ -838,14 +838,6 @@ impl App {
         Some(after_at.to_string())
     }
 
-    /// Whether the path-hint popup is eligible to show right now.
-    fn path_hints_active(&self) -> bool {
-        if self.path_hint_dismissed || self.status != Status::Idle {
-            return false;
-        }
-        self.path_hint_query().is_some()
-    }
-
     /// Refresh path hints from the input buffer: detect `@query`, search files.
     fn refresh_path_hints(&mut self) {
         if self.path_hint_dismissed || self.status != Status::Idle {
