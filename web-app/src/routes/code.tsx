@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { Laptop, Folder } from 'lucide-react'
+import { GitBranch, Laptop, Folder } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -139,6 +139,19 @@ function CodePage() {
 
   const folder = current?.folder ?? null
   const folderName = folder ? folder.split(/[/\\]/).pop() : undefined
+  const [gitBranch, setGitBranch] = useState<string | null>(null)
+
+  // Fetch git branch when the folder changes.
+  useEffect(() => {
+    if (!folder) {
+      setGitBranch(null)
+      return
+    }
+    setGitBranch(null)
+    invoke<string | null>('agent_git_branch', { project: folder })
+      .then(setGitBranch)
+      .catch(() => setGitBranch(null))
+  }, [folder])
 
   // In-flight transcript for the active run; committed to the store on `done`.
   const [liveTurns, setLiveTurns] = useState<CodeTurn[]>([])
@@ -613,18 +626,31 @@ function CodePage() {
                 <Laptop size={14} className="text-muted-foreground" />
                 <span>{t('common:local')}</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 rounded-full max-w-[220px]"
-                onClick={handleSelectFolder}
-                title={folder ?? undefined}
-              >
-                <Folder size={14} className="text-muted-foreground" />
-                <span className="truncate">
-                  {folderName ?? t('common:selectFolder')}
-                </span>
-              </Button>
+              <div className="flex items-center gap-1 min-w-0 max-w-[460px]">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 rounded-full shrink-0"
+                  onClick={handleSelectFolder}
+                  title={folder ?? t('common:selectFolder')}
+                >
+                  <Folder size={14} className="text-muted-foreground shrink-0" />
+                  <span className="truncate max-w-[140px]">
+                    {folderName ?? t('common:selectFolder')}
+                  </span>
+                </Button>
+                {folder && (
+                  <span className="text-xs text-muted-foreground truncate" title={folder}>
+                    {folder}
+                  </span>
+                )}
+                {gitBranch && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground shrink-0">
+                    <GitBranch size={10} />
+                    {gitBranch}
+                  </span>
+                )}
+              </div>
               <div className="ml-auto">
                 <SkillSelector folder={folder} />
               </div>
