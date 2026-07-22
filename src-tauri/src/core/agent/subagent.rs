@@ -424,6 +424,7 @@ impl BackgroundSubagents {
                 name: entry.name,
                 // Aborted mid-flight: the child never reported terminal usage.
                 usage: None,
+                error: Some("cancelled".to_string()),
             });
         }
     }
@@ -545,11 +546,19 @@ async fn run_subagent(
     // The child's own terminal Done (and its usage) is swallowed by
     // forward_to_parent, so this is the only place its usage can reach a
     // consumer — fold it into the bracket event the parent does see.
-    let usage = match &result {
-        Ok(completion) => crate::core::agent::events::Usage::from_completion(completion),
-        Err(_) => None,
+    let (usage, error) = match &result {
+        Ok(completion) => (
+            crate::core::agent::events::Usage::from_completion(completion),
+            None,
+        ),
+        Err(message) => (None, Some(message.clone())),
     };
-    let _ = events.send(StreamEvent::SubagentEnd { run_id, name, usage });
+    let _ = events.send(StreamEvent::SubagentEnd {
+        run_id,
+        name,
+        usage,
+        error,
+    });
 
     match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
@@ -1337,10 +1346,16 @@ mod tests {
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         match ev_rx.try_recv() {
-            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name, usage }) => {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd {
+                run_id,
+                name,
+                usage,
+                error,
+            }) => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(name, "reviewer");
                 assert!(usage.is_none(), "aborted child reports no usage");
+                assert_eq!(error.as_deref(), Some("cancelled"), "abort surfaces reason");
             }
             other => panic!("expected SubagentEnd on abort, got {other:?}"),
         }
