@@ -82,19 +82,27 @@ impl Pending {
         format!("{} via '{}'{target}", self.capability, self.tool_name)
     }
 
-    /// Base command of an exec prompt (`git status` -> `git`), if any.
-    fn command_base(&self) -> Option<&str> {
-        self.command
-            .as_deref()
-            .and_then(crate::core::agent::tools::gate::command_base)
-    }
-
     /// Label for the "allow always" option: command-scoped for exec (thread
-    /// only), capability-scoped otherwise. All grants are thread-scoped.
+    /// only), capability-scoped otherwise. All grants are thread-scoped. For an
+    /// exec prompt the label names every base the command runs, so the user
+    /// sees exactly what a grant covers (`git status && rm foo` -> git AND rm);
+    /// commands that can't be decomposed grant only their exact text.
     fn always_label(&self) -> String {
-        match self.command_base() {
-            Some(base) => format!("Allow all '{base}' commands (this thread)"),
-            None => "Allow always (this thread)".to_string(),
+        use crate::core::agent::tools::cmdscan::{scan_command, CommandScan};
+        let Some(command) = self.command.as_deref() else {
+            return "Allow always (this thread)".to_string();
+        };
+        match scan_command(command) {
+            CommandScan::Bases(bases) if !bases.is_empty() => {
+                let list = bases
+                    .iter()
+                    .map(|b| format!("'{b}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Allow all {list} commands (this thread)")
+            }
+            CommandScan::Bases(_) => "Allow always (this thread)".to_string(),
+            CommandScan::Opaque => "Allow this exact command (this thread)".to_string(),
         }
     }
 
