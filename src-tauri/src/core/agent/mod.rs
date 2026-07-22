@@ -5,6 +5,7 @@ pub mod commands;
 pub mod compaction;
 pub mod context;
 pub mod events;
+pub mod goal;
 #[cfg(feature = "cli")]
 pub mod global_config;
 #[cfg(feature = "cli")]
