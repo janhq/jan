@@ -29,6 +29,7 @@ import { usePrompt } from '@/hooks/usePrompt'
 import CodePermissionDialog, {
   type PendingPermission,
   type PermissionDecision,
+  WIRE,
 } from '@/containers/dialogs/CodePermissionDialog'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
@@ -36,6 +37,8 @@ import CodeModeSelector from '@/containers/CodeModeSelector'
 import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { PromptProgress } from '@/components/PromptProgress'
+import { useMessageErrors } from '@/stores/message-errors'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useAppState } from '@/hooks/useAppState'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
@@ -90,12 +93,17 @@ function capHistory(messages: CodeMessage[]): CodeMessage[] {
 const normalizeAlternating = (messages: CodeMessage[]): CodeMessage[] => {
   const out: CodeMessage[] = []
   for (const m of messages) {
-    if (!m.content.trim()) continue
+    if (typeof m.content === 'string' && !m.content.trim()) continue
     // The template also requires the conversation to START with user; drop any
     // leading assistant message (e.g. after aggressive trimming).
     if (out.length === 0 && m.role !== 'user') continue
     const last = out[out.length - 1]
-    if (last && last.role === m.role) {
+    if (
+      last &&
+      last.role === m.role &&
+      typeof last.content === 'string' &&
+      typeof m.content === 'string'
+    ) {
       last.content = `${last.content}\n\n${m.content}`
     } else {
       out.push({ role: m.role, content: m.content })
@@ -111,6 +119,8 @@ const normalizeAlternating = (messages: CodeMessage[]): CodeMessage[] => {
 const SLASH_COMMANDS = [
   { name: '/help', descKey: 'common:cmdHelp', mode: 'run' },
   { name: '/clear', descKey: 'common:cmdClear', mode: 'run' },
+  { name: '/compact', descKey: 'common:cmdCompact', mode: 'run' },
+  { name: '/goal', descKey: 'common:cmdGoal', mode: 'args' },
   { name: '/models', descKey: 'common:cmdModels', mode: 'args' },
 ] as const
 
@@ -205,8 +215,18 @@ function CodePage() {
 
   const respondPermission = (requestId: string, decision: PermissionDecision) => {
     invoke('agent_permission_respond', { requestId, decision }).catch(() => {})
-    if (currentId)
-      useCodeRun.getState().removePendingPerm(currentId, requestId)
+    if (currentId) useCodeRun.getState().removePendingPerm(currentId, requestId)
+    // The modal and the inline tool-card approval (`ToolApprovalActions`)
+    // both resolve the same request; whichever fires first wins. Drop the
+    // other's pending entry so its buttons don't linger on a decided call.
+    const toolCallId = pendingPerms.find((p) => p.requestId === requestId)?.toolCallId
+    if (toolCallId) {
+      useToolApprovalRequests.setState((s) => {
+        const next = { ...s.pending }
+        delete next[toolCallId]
+        return { pending: next }
+      })
+    }
   }
 
   // Subagents (of the viewed session) currently blocked on a permission
@@ -289,7 +309,7 @@ function CodePage() {
       case '/clear':
         // Clearing mid-run would wipe the session the in-flight run is about to
         // commit its transcript into, leaving it inconsistent.
-        if (currentId && useCodeRun.getState().runId[currentId] != null) {
+        if (running) {
           toast.error(t('common:cmdBusy'))
           break
         }
@@ -298,6 +318,80 @@ function CodePage() {
           useCodeRun.getState().clearCodeRun(currentId)
         }
         break
+      case '/compact': {
+        if (running) {
+          toast.error(t('common:cmdBusy'))
+          break
+        }
+        if (!currentId || !selectedModel?.id) {
+          toast.error(t('common:selectModel'))
+          break
+        }
+        const session = useCodeSessions
+          .getState()
+          .sessions.find((s) => s.id === currentId)
+        const before = session?.history.length ?? 0
+        invoke<CodeMessage[]>('agent_compact', {
+          modelId: selectedModel.id,
+          messages: session?.history ?? [],
+        })
+          .then((compacted) => {
+            if (compacted.length < before) {
+              useCodeSessions.getState().setHistory(currentId, compacted)
+              toast.success(
+                t('common:cmdCompacted', {
+                  before,
+                  after: compacted.length,
+                })
+              )
+            } else {
+              toast(t('common:cmdNothingToCompact'))
+            }
+          })
+          .catch((e) =>
+            toast.error(t('common:cmdCompactFailed', { error: String(e) }))
+          )
+        break
+      }
+      case '/goal': {
+        if (!currentId) break
+        const goal = useCodeSessions
+          .getState()
+          .sessions.find((s) => s.id === currentId)?.goal
+        const condition = arg.trim()
+        if (condition === 'clear') {
+          useCodeSessions.getState().setGoal(currentId, null)
+          toast(goal ? t('common:cmdGoalCleared') : t('common:cmdGoalNone'))
+          break
+        }
+        if (!condition) {
+          if (!goal) {
+            toast(t('common:cmdGoalNone'))
+          } else {
+            toast(
+              t('common:cmdGoalStatus', {
+                status: goal.status,
+                condition: goal.condition,
+                turns: goal.turns,
+                reason: goal.lastReason || '—',
+              })
+            )
+          }
+          break
+        }
+        if (condition.length > 4096) {
+          toast.error(t('common:cmdGoalTooLong'))
+          break
+        }
+        useCodeSessions.getState().setGoal(currentId, {
+          condition,
+          turns: 0,
+          status: 'active',
+          lastReason: '',
+        })
+        toast.success(t('common:cmdGoalSet', { condition }))
+        break
+      }
       case '/models': {
         const q = arg.toLowerCase()
         const found = allModels.find(
@@ -393,7 +487,11 @@ function CodePage() {
   // Takes an explicit sid (never ensureCurrentSession()) so the queue's
   // auto-resend below can target the session whose run just finished even if
   // the user has since switched to viewing a different one.
-  const submitTurn = async (text: string, sid: string) => {
+  const submitTurn = async (
+    text: string,
+    sid: string,
+    files?: Array<{ type: string; mediaType: string; url: string }>
+  ) => {
     // Slash commands are client-side actions; they never reach the agent.
     if (text.trim().startsWith('/')) {
       runCommand(text)
@@ -423,13 +521,31 @@ function CodePage() {
     // coarse sliding window against runaway growth). normalizeAlternating is the
     // one guard the CLI lacks — it keeps roles strictly alternating so a turn
     // that produced no assistant text can't leave two user messages adjacent.
+    const images = (files ?? [])
+      .filter((f) => f.mediaType.startsWith('image/'))
+      .map((f) => f.url)
+    const content: CodeMessage['content'] =
+      images.length > 0
+        ? [
+            { type: 'text' as const, text },
+            ...images.map((url) => ({
+              type: 'image_url' as const,
+              image_url: { url },
+            })),
+          ]
+        : text
     const outgoing: CodeMessage[] = normalizeAlternating([
       ...capHistory(session.history),
-      { role: 'user', content: text },
+      { role: 'user', content },
     ])
 
     const runId = crypto.randomUUID()
-    run.beginRun(sid, runId, text)
+    run.beginRun(sid, runId, text, images.length > 0 ? images : undefined)
+    // Clear any stale failure banner from a prior run in this session — a new
+    // submit means the user is moving past whatever previously failed.
+    codeTurnsToUIMessages(session.turns, 'c')
+      .filter((m) => m.role === 'assistant')
+      .forEach((m) => useMessageErrors.getState().clearError(m.id))
 
     // Local models load before the first token — but only on a cold start.
     // Probe the router (as the chat transport does) so the load card shows only
@@ -456,9 +572,10 @@ function CodePage() {
     const addPerm = (
       ev: Extract<StreamEvent, { type: 'permission_request' }>,
       subagentRunId?: string
-    ) =>
+    ) => {
       run.addPendingPerm(sid, {
         requestId: ev.request_id,
+        toolCallId: ev.tool_call_id,
         toolName: ev.tool_name,
         capability: ev.capability,
         path: ev.path,
@@ -468,6 +585,21 @@ function CodePage() {
         offersAlways: ev.offers_always,
         subagentRunId,
       })
+      // Also register with the shared tool-approval store keyed by
+      // tool_call_id, so `ToolApprovalActions` (rendered inline on the
+      // matching tool card by `MessageItem`, same component the regular
+      // chat uses) shows Allow/Deny buttons there too — the modal
+      // (`CodePermissionDialog`) stays as the primary surface (has
+      // command/diff/path detail the compact inline card doesn't); either
+      // resolving the same `requestId` via `respondPermission`.
+      if (ev.tool_call_id) {
+        useToolApprovalRequests
+          .getState()
+          .registerPending(ev.tool_call_id, ev.tool_name, sid, (decision) =>
+            respondPermission(ev.request_id, WIRE[decision])
+          )
+      }
+    }
 
     // Every write targets `sid` — the session that OWNS this run — never the
     // viewed session, so a background session keeps updating while another is
@@ -563,10 +695,8 @@ function CodePage() {
       // run failed — all keyed to `sid`. Commit the result onto the session so
       // it survives a session switch and app restart, then drop the transient
       // run state.
-      const { turns: finalTurns, subagents: finalSubs } = run.finalizeRun(
-        sid,
-        runError
-      )
+      const { turns: finalTurns, subagents: finalSubs } = run.finalizeRun(sid)
+      useToolApprovalRequests.getState().clearPendingForThread(sid)
       const finalUsage = useCodeRun.getState().usage[sid]
       const assistantText = finalTurns
         .filter((tn) => tn.role === 'assistant')
@@ -580,12 +710,76 @@ function CodePage() {
         .commitTurns(sid, finalTurns, history, finalSubs, finalUsage)
       run.clearCodeRun(sid)
 
+      // Run-level failure -> standard "Generation failed" banner (with
+      // Regenerate) on the turn's assistant message, matching Home UI —
+      // instead of a tool-error card (see codeTurns.ts for id scheme: 'c'
+      // prefix once committed, matching how `committedMessages` renders it).
+      if (runError) {
+        const committed = codeTurnsToUIMessages(finalTurns, 'c')
+        const lastAssistant = [...committed]
+          .reverse()
+          .find((m) => m.role === 'assistant')
+        if (lastAssistant) {
+          useMessageErrors.getState().setError(lastAssistant.id, runError)
+        }
+      }
+
+      // `/goal`: after a successful turn, check whether the active goal's
+      // condition is met (mirrors the TUI's in-loop evaluator, goal.rs). Runs
+      // before the message-queue dequeue below so an auto-continuation
+      // doesn't race a queued user message for the same session.
+      const activeGoal = useCodeSessions
+        .getState()
+        .sessions.find((s) => s.id === sid)?.goal
+      let goalContinuation: string | null = null
+      if (!runError && activeGoal?.status === 'active' && selectedModel?.id) {
+        const turns = activeGoal.turns + 1
+        try {
+          const verdict = await invoke<{ met: boolean; reason: string }>(
+            'agent_goal_evaluate',
+            {
+              smolModelId: selectedModel.id,
+              condition: activeGoal.condition,
+              messages: history,
+            }
+          )
+          useCodeSessions.getState().setGoal(sid, {
+            ...activeGoal,
+            turns,
+            status: verdict.met ? 'achieved' : 'active',
+            lastReason: verdict.reason,
+          })
+          if (verdict.met) {
+            toast.success(
+              t('common:cmdGoalStatus', {
+                status: 'achieved',
+                condition: activeGoal.condition,
+                turns,
+                reason: verdict.reason,
+              })
+            )
+          } else {
+            goalContinuation = `Continue working toward this goal: ${activeGoal.condition}\n\nThe goal is not yet met: ${verdict.reason}`
+          }
+        } catch {
+          // Evaluator call failed (model unavailable, etc.) — leave the goal
+          // active and let the user retry or /goal clear rather than looping
+          // forever on a broken evaluator.
+          useCodeSessions.getState().setGoal(sid, { ...activeGoal, turns })
+        }
+      }
+
       // Message queue: send the next queued message now that this session's
       // run is done. A failed run discards anything queued instead, mirroring
       // the general chat (errors mean the conversation needs attention, not
-      // more unattended sends).
+      // more unattended sends). An unmet goal takes priority over the queue,
+      // same as the TUI driving its own next turn before user input.
       if (runError) {
         useMessageQueue.getState().clearQueue(sid)
+      } else if (goalContinuation) {
+        submitTurn(goalContinuation, sid).catch((err) => {
+          console.error('Failed to continue toward goal:', err)
+        })
       } else {
         const next = useMessageQueue.getState().dequeue(sid)
         if (next) {
@@ -597,13 +791,26 @@ function CodePage() {
     }
   }
 
-  // Matches ChatInput's onSubmit shape (text, files?) — Code UI has no file
-  // attachments today, so files is accepted and ignored, not threaded through.
-  const handleSubmit = (text: string) => submitTurn(text, ensureCurrentSession())
+  const handleSubmit = (
+    text: string,
+    files?: Array<{ type: string; mediaType: string; url: string }>
+  ) => submitTurn(text, ensureCurrentSession(), files)
 
   const handleStop = () => {
     const rid = currentId ? useCodeRun.getState().runId[currentId] : undefined
     if (rid) invoke('agent_cancel', { runId: rid }).catch(() => {})
+  }
+
+  // Regenerate: re-send the last user turn as a new run. Code UI's transcript
+  // is a flat append-only log (no branching), so "regenerate" retries rather
+  // than replacing in place — same net effect for the common "run failed,
+  // try again" case the banner exists for.
+  const handleRegenerate = () => {
+    if (!currentId) return
+    const lastUser = [...(current?.turns ?? [])]
+      .reverse()
+      .find((tn) => tn.role === 'user')
+    if (lastUser) submitTurn(lastUser.content, currentId)
   }
 
   // Cancelling one subagent never gets a real SubagentEnd back (same as when
@@ -626,6 +833,15 @@ function CodePage() {
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <DropdownModelProvider useLastUsedModel />
+          {current?.goal && (
+            <span
+              className="text-xs text-muted-foreground truncate max-w-[40%]"
+              title={current.goal.condition}
+            >
+              {current.goal.status === 'achieved' ? '✓' : '◎'}{' '}
+              {current.goal.condition}
+            </span>
+          )}
         </div>
       </HeaderPage>
 
@@ -654,6 +870,7 @@ function CodePage() {
                       isReasoningAtBottom={isReasoningAtBottom}
                       onReasoningScroll={handleReasoningScroll}
                       onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                      onRegenerate={handleRegenerate}
                     />
                   ))}
                   {/* Mirrors the regular chat's own gate ($threadId.tsx): show the

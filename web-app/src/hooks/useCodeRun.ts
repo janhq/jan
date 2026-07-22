@@ -14,6 +14,7 @@ export type StreamEvent =
   | {
       type: 'permission_request'
       request_id: string
+      tool_call_id?: string
       tool_name: string
       capability: string
       path?: string
@@ -111,7 +112,7 @@ type CodeRunState = {
   // report it on a given turn doesn't blank out the last known value.
   usage: Record<string, Usage>
 
-  beginRun: (sid: string, runId: string, userText: string) => void
+  beginRun: (sid: string, runId: string, userText: string, images?: string[]) => void
   appendToken: (sid: string, text: string) => void
   pushToolTurn: (sid: string, turn: CodeTurn) => void
   updateToolTurn: (sid: string, callId: string, patch: Partial<CodeTurn>) => void
@@ -122,14 +123,12 @@ type CodeRunState = {
   setUsage: (sid: string, usage: Usage | null) => void
   addPendingPerm: (sid: string, perm: PendingPermission) => void
   removePendingPerm: (sid: string, requestId: string) => void
-  // Mark running tool turns + subagents done (interrupted), append an error turn
-  // if the run failed. Leaves liveTurns/subagents in place and returns the final
-  // values so the caller can commit them before clearCodeRun without a second
-  // round of store reads.
-  finalizeRun: (
-    sid: string,
-    errorMessage: string | null
-  ) => { turns: CodeTurn[]; subagents: SubagentRun[] }
+  // Mark running tool turns + subagents done (interrupted). Leaves
+  // liveTurns/subagents in place and returns the final values so the caller
+  // can commit them before clearCodeRun without a second round of store
+  // reads. Run-level failure is surfaced separately via `useMessageErrors`,
+  // not through this function.
+  finalizeRun: (sid: string) => { turns: CodeTurn[]; subagents: SubagentRun[] }
   clearCodeRun: (sid: string) => void
 }
 
@@ -140,10 +139,13 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
   pendingPerms: {},
   usage: {},
 
-  beginRun: (sid, runId, userText) =>
+  beginRun: (sid, runId, userText, images) =>
     set((s) => ({
       runId: { ...s.runId, [sid]: runId },
-      liveTurns: { ...s.liveTurns, [sid]: [{ role: 'user', content: userText }] },
+      liveTurns: {
+        ...s.liveTurns,
+        [sid]: [{ role: 'user', content: userText, images }],
+      },
       subagents: { ...s.subagents, [sid]: [] },
       pendingPerms: { ...s.pendingPerms, [sid]: [] },
     })),
@@ -239,25 +241,15 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       },
     })),
 
-  finalizeRun: (sid, errorMessage) => {
-    let turns: CodeTurn[] = (get().liveTurns[sid] ?? []).map((tn) =>
+  finalizeRun: (sid) => {
+    // Run-level failure surfaces via `useMessageErrors` (Generation-failed
+    // banner), not as a synthetic tool-error turn — that used to render a
+    // misleading error-styled tool card even though no tool call failed.
+    const turns: CodeTurn[] = (get().liveTurns[sid] ?? []).map((tn) =>
       tn.role === 'tool' && tn.status === 'running'
         ? { ...tn, status: 'done' as const, isError: true, result: tn.result || '(interrupted)' }
         : tn
     )
-    if (errorMessage) {
-      turns = [
-        ...turns,
-        {
-          role: 'tool',
-          content: '',
-          name: 'error',
-          result: errorMessage,
-          isError: true,
-          status: 'done',
-        },
-      ]
-    }
     const subs = (get().subagents[sid] ?? []).map((r) =>
       r.status === 'running' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
     )

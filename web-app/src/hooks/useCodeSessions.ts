@@ -9,6 +9,8 @@ import { backendStorage } from '@/lib/backendStorage'
 export type CodeTurn = {
   role: 'user' | 'assistant' | 'tool'
   content: string
+  // User-row only: data URLs of images attached via paste/file picker.
+  images?: string[]
   // Tool-row only: merged from the `tool_call` + matching `tool_result` events.
   callId?: string
   name?: string
@@ -20,9 +22,17 @@ export type CodeTurn = {
 }
 
 // OpenAI-style history replayed to the agent on the next turn (no tool rows).
+// `content` is a plain string for text-only turns; a multimodal array (mirrors
+// the OpenAI chat content-parts shape the Rust side already accepts verbatim,
+// see upstream.rs::parse_openai_messages) when images are attached.
 export type CodeMessage = {
   role: 'user' | 'assistant'
-  content: string
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+      >
 }
 
 // One background subagent run, bucketed by its own run_id so concurrent
@@ -75,7 +85,18 @@ export type CodeSession = {
   // Usage from the most recent run's terminal `done` event. Undefined until a
   // run completes with a provider that reports usage.
   lastUsage?: Usage
+  // `/goal` state (mirrors the TUI's in-loop evaluator, see goal.rs) — set by
+  // `/goal <condition>`, checked after each turn completes, cleared by
+  // `/goal clear` or once the evaluator reports it met.
+  goal?: CodeGoal
   updated: number
+}
+
+export type CodeGoal = {
+  condition: string
+  turns: number
+  status: 'active' | 'achieved'
+  lastReason: string
 }
 
 type CodeSessionsState = {
@@ -87,6 +108,8 @@ type CodeSessionsState = {
   setFolder: (id: string, folder: string) => void
   setTitle: (id: string, title: string) => void
   setMode: (id: string, mode: CodeRunMode) => void
+  setHistory: (id: string, history: CodeMessage[]) => void
+  setGoal: (id: string, goal: CodeGoal | null) => void
   commitTurns: (
     id: string,
     turns: CodeTurn[],
@@ -150,6 +173,20 @@ export const useCodeSessions = create<CodeSessionsState>()(
       setMode: (id, mode) =>
         set((s) => ({
           sessions: s.sessions.map((x) => (x.id === id ? { ...x, mode } : x)),
+        })),
+
+      setHistory: (id, history) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, history, updated: now() } : x
+          ),
+        })),
+
+      setGoal: (id, goal) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, goal: goal ?? undefined } : x
+          ),
         })),
 
       commitTurns: (id, turns, history, subagents, usage) =>
