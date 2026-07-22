@@ -939,6 +939,7 @@ pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
+    keep_recent: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         model_id,
@@ -956,7 +957,7 @@ pub(crate) async fn compact_history(
         messages,
         model_id,
         &model,
-        crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+        keep_recent,
     )
     .await)
 }
