@@ -381,10 +381,15 @@ fn next_subagent_run_id(name: &str) -> String {
 }
 
 /// One in-flight background subagent: the channel that will carry its final
-/// result, and the handle to abort it on parent cancellation/teardown.
+/// result, the handle to abort it on parent cancellation/teardown, and the
+/// identity + event sink needed to close out its `SubagentStart` bracket if it
+/// is aborted before its own task can emit `SubagentEnd`.
 struct BackgroundEntry {
     result: Option<tokio::sync::oneshot::Receiver<Result<String, SubagentError>>>,
     abort: tokio::task::AbortHandle,
+    run_id: String,
+    name: String,
+    events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
 }
 
 /// Registry of a single parent run's background subagents, keyed by `run_id`.
@@ -396,11 +401,33 @@ pub(crate) struct BackgroundSubagents {
 }
 
 impl BackgroundSubagents {
-    /// Abort and forget every registered child. Called on parent teardown.
+    /// Abort and forget every registered child. Called on parent teardown when
+    /// the run is cancelled. Emits a closing `SubagentEnd` for each aborted
+    /// child (its own task is cancelled inside its await and never reaches its
+    /// emit), so consumers never see an unbracketed `SubagentStart`.
     pub(crate) fn abort_all(&self) {
+        use crate::core::agent::events::StreamEvent;
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            let _ = entry.events.send(StreamEvent::SubagentEnd {
+                run_id: entry.run_id,
+                name: entry.name,
+            });
+        }
+    }
+
+    /// Wait for every still-registered child to finish on its own, rather than
+    /// aborting it. Called on a clean parent exit so dispatched work that the
+    /// model never explicitly awaited is not silently discarded mid-flight.
+    /// Each child emits its own `SubagentEnd` as it completes.
+    pub(crate) async fn join_all(&self) {
+        let receivers: Vec<_> = {
+            let mut guard = self.inner.lock().unwrap();
+            guard.drain().filter_map(|(_, entry)| entry.result).collect()
+        };
+        for rx in receivers {
+            let _ = rx.await;
         }
     }
 }
@@ -525,11 +552,13 @@ pub(crate) fn spawn_subagent(
     let registry = SubagentRegistry::load(project_root);
     let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
 
-    let run_id = next_subagent_run_id(&resolved.definition.name);
+    let name = resolved.definition.name.clone();
+    let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
 
     let parent_args = parent_args.clone();
-    let events = events.clone();
+    let task_events = events.clone();
+    let entry_events = events.clone();
     let model = parent_model.to_string();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
@@ -540,7 +569,7 @@ pub(crate) fn spawn_subagent(
             description,
             model,
             budget_remaining,
-            events,
+            task_events,
             run_id_task,
         )
         .await;
@@ -552,6 +581,9 @@ pub(crate) fn spawn_subagent(
         BackgroundEntry {
             result: Some(rx),
             abort: handle.abort_handle(),
+            run_id: run_id.clone(),
+            name,
+            events: entry_events,
         },
     );
     Ok(run_id)
@@ -567,10 +599,7 @@ pub(crate) async fn await_subagent(
     let rx = {
         let mut guard = bg.inner.lock().unwrap();
         match guard.get_mut(run_id).and_then(|e| e.result.take()) {
-            Some(rx) => {
-                guard.remove(run_id);
-                rx
-            }
+            Some(rx) => rx,
             None => {
                 return Err(SubagentError::Upstream(format!(
                     "unknown or already-collected subagent run '{run_id}'"
@@ -578,7 +607,13 @@ pub(crate) async fn await_subagent(
             }
         }
     };
-    rx.await.unwrap_or(Err(SubagentError::Cancelled))
+    // Keep the entry (and its abort handle) in the registry while awaiting, so a
+    // parent cancellation mid-await can still reach this child via `abort_all`.
+    // Taking `result` above already makes a second await error out. Remove the
+    // now-spent entry once the await resolves (a no-op if teardown drained it).
+    let outcome = rx.await.unwrap_or(Err(SubagentError::Cancelled));
+    bg.inner.lock().unwrap().remove(run_id);
+    outcome
 }
 
 /// The model-callable subagent tools, handled by the loop's tool invoker ahead
@@ -1197,11 +1232,15 @@ mod tests {
         let bg = Arc::new(BackgroundSubagents::default());
         let (tx, rx) = tokio::sync::oneshot::channel();
         let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
             BackgroundEntry {
                 result: Some(rx),
                 abort: handle.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
             },
         );
         tx.send(Ok("done".to_string())).unwrap();
@@ -1215,17 +1254,99 @@ mod tests {
         let bg = Arc::new(BackgroundSubagents::default());
         let (_tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
         let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        let (ev_tx, mut ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
             BackgroundEntry {
                 result: Some(rx),
                 abort: handle.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
             },
         );
         let guard = AbortOnDrop(bg.clone());
         drop(guard);
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
+        match ev_rx.try_recv() {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name }) => {
+                assert_eq!(run_id, "r1");
+                assert_eq!(name, "reviewer");
+            }
+            other => panic!("expected SubagentEnd on abort, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn join_all_waits_for_outstanding_children_instead_of_aborting() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
+        // A child that finishes shortly, mimicking still-in-flight work the model
+        // never awaited. join_all must wait for it, not abort it.
+        let handle = tokio::spawn(async move {
+            let _ = tx.send(Ok("late-result".to_string()));
+        });
+        let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
+        bg.inner.lock().unwrap().insert(
+            "r1".to_string(),
+            BackgroundEntry {
+                result: Some(rx),
+                abort: handle.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
+            },
+        );
+        bg.join_all().await;
+        assert!(bg.inner.lock().unwrap().is_empty(), "join_all drains the map");
+        assert!(!handle.is_finished() || handle.await.is_ok(), "child ran to completion");
+    }
+
+    #[tokio::test]
+    async fn awaited_child_stays_cancellable_via_teardown() {
+        // Regression for #254: await_subagent must not sever the abort handle from
+        // the registry, or a parent cancelled mid-await can no longer stop the
+        // child and its live event-sender clone hangs the run.
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
+        // The sender lives inside the task (as in `spawn_subagent`), so aborting the
+        // task drops it and the awaited receiver resolves to Cancelled.
+        let handle = tokio::spawn(async move {
+            let _tx = tx;
+            std::future::pending::<()>().await;
+        });
+        let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
+        bg.inner.lock().unwrap().insert(
+            "r1".to_string(),
+            BackgroundEntry {
+                result: Some(rx),
+                abort: handle.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
+            },
+        );
+
+        let bg_await = bg.clone();
+        let awaiting = tokio::spawn(async move { await_subagent(&bg_await, "r1").await });
+        // Let the await take the receiver and park on it.
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        // The entry (with its abort handle) must still be reachable for teardown.
+        assert!(
+            bg.inner.lock().unwrap().contains_key("r1"),
+            "entry must remain registered while being awaited"
+        );
+
+        AbortOnDrop(bg.clone()); // constructs + drops -> abort_all
+        assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
+        assert!(
+            matches!(awaiting.await.unwrap(), Err(SubagentError::Cancelled)),
+            "await resolves to Cancelled once the child is aborted"
+        );
+        assert!(bg.inner.lock().unwrap().is_empty(), "teardown drained the map");
     }
 
     #[test]

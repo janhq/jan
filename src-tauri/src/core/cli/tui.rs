@@ -131,6 +131,8 @@ enum PickerKind {
     RewindMessage,
     /// Second step of a rewind: restore conversation only, or + workspace.
     RewindScope,
+    /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
+    ViewConfig,
 }
 
 /// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
@@ -149,6 +151,7 @@ impl Picker {
             PickerKind::ToggleMcp => " mcp servers ",
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
+            PickerKind::ViewConfig => " provider config ",
         }
     }
 
@@ -159,6 +162,7 @@ impl Picker {
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
+            PickerKind::ViewConfig => " set via: jan agent config set --provider <id> ...   Esc close",
         }
     }
 }
@@ -2313,6 +2317,7 @@ async fn handle_key(
                             rewind_to(app, idx, value == "workspace");
                         }
                     }
+                    PickerKind::ViewConfig => {}
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
@@ -2520,6 +2525,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Enable/disable MCP servers",
     },
     SlashCommand {
+        name: "/config",
+        hint: "",
+        description: "View provider config (~/.jan/config.toml)",
+    },
+    SlashCommand {
         name: "/quit",
         hint: "",
         description: "Exit the TUI",
@@ -2610,6 +2620,7 @@ async fn run_command(app: &mut App, line: &str) {
             }
         }
         "mcp" => open_mcp_picker(app),
+        "config" => open_config_screen(app),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
     }
@@ -2751,6 +2762,48 @@ fn open_mcp_picker(app: &mut App) {
         .collect();
     app.picker = Some(Picker {
         kind: PickerKind::ToggleMcp,
+        items,
+        selected: 0,
+    });
+}
+
+/// Open the `/config` screen: a read-only view of the providers configured in
+/// `~/.jan/config.toml` (the standalone-agent credential store), with API keys
+/// redacted. Editing is headless via `jan agent config set/unset` (shown in the
+/// footer), since a TUI is not the safe place to type secrets.
+fn open_config_screen(app: &mut App) {
+    let configs = match crate::core::agent::global_config::load_global_config() {
+        Ok(c) => c,
+        Err(e) => return app.note(&format!("failed to read ~/.jan/config.toml: {e}")),
+    };
+    let mut providers: Vec<_> = configs.into_values().collect();
+    providers.sort_by(|a, b| a.provider.cmp(&b.provider));
+
+    let items: Vec<PickerItem> = if providers.is_empty() {
+        vec![PickerItem {
+            label: "no providers configured - run: jan agent config set --provider <id> --api-key <key>"
+                .to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }]
+    } else {
+        providers
+            .into_iter()
+            .map(|c| {
+                let key = if c.api_key.is_some() { "key set" } else { "no key" };
+                let base = c.base_url.as_deref().unwrap_or("default url");
+                PickerItem {
+                    label: format!("{key}  {base}  {} model(s)", c.models.len()),
+                    value: c.provider.clone(),
+                    hint: Some(c.provider),
+                    checkbox: None,
+                }
+            })
+            .collect()
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::ViewConfig,
         items,
         selected: 0,
     });
@@ -3794,10 +3847,11 @@ mod tests {
     use super::{
         build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
         group_summary, handle_key, handle_mouse, image_mime, input_content_lines, is_table_separator, load_image_file,
-        message_text, parse_command, render_table, run_command, running_group_row, split_reasoning,
-        subagent_activity, subagent_name_from_run_id, summarize_result, tool_activity,
-        tool_finished, transcript_top_padding, user_content_parts, App, CurrentRun, Pending,
-        PendingImage, SnapshotJob, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
+        message_text, open_config_screen, parse_command, render_table, run_command,
+        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
+        summarize_result, tool_activity, tool_finished, transcript_top_padding,
+        user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, SnapshotJob,
+        DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
     };
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -3885,6 +3939,18 @@ mod tests {
         let text: String = preview.iter().map(line_text).collect();
         assert!(text.contains('┌') && text.contains('┘'), "no box frame: {text}");
         assert!(text.contains("+ hi"), "diff content missing: {text}");
+    }
+
+    #[test]
+    fn config_screen_opens_as_readonly_viewer() {
+        let mut app = test_app();
+        open_config_screen(&mut app);
+        let picker = app.picker.as_ref().expect("config screen opens a picker");
+        assert!(picker.kind == PickerKind::ViewConfig);
+        // Always at least one row: real providers, or the "no providers" hint.
+        assert!(!picker.items.is_empty());
+        // Enter is a no-op close (never mutates model/thread), matching the arm.
+        assert!(picker.title().contains("config"));
     }
 
     #[test]
@@ -4211,6 +4277,24 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    /// Like `line_text`, but marks the reverse-video block cursor with `▏` at its
+    /// left edge so caret-position assertions survive the styled-space rendering.
+    /// The synthetic end-of-line filler space is represented by the marker alone.
+    fn caret_text(line: &ratatui::text::Line) -> String {
+        let mut out = String::new();
+        for s in &line.spans {
+            if s.style.add_modifier.contains(Modifier::REVERSED) {
+                out.push('▏');
+                if s.content.as_ref() != " " {
+                    out.push_str(s.content.as_ref());
+                }
+            } else {
+                out.push_str(s.content.as_ref());
+            }
+        }
+        out
     }
 
     #[test]
@@ -4810,7 +4894,7 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(line_text(&lines[0]), "› hello▏");
+        assert_eq!(caret_text(&lines[0]), "› hello▏");
     }
 
     #[test]
@@ -4819,7 +4903,7 @@ mod tests {
         assert_eq!(lines.len(), 3);
         assert_eq!(line_text(&lines[0]), "› one");
         assert_eq!(line_text(&lines[1]), "  two");
-        assert_eq!(line_text(&lines[2]), "  three▏");
+        assert_eq!(caret_text(&lines[2]), "  three▏");
     }
 
     #[test]
@@ -4827,7 +4911,7 @@ mod tests {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
         assert_eq!(line_text(&lines[0]), "› hi");
-        assert_eq!(line_text(&lines[1]), "  ▏");
+        assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
     #[test]
@@ -4835,14 +4919,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(line_text(&lines[0]), "› he▏llo");
+        assert_eq!(caret_text(&lines[0]), "› he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(line_text(&lines[0]), "› o▏ne");
+        assert_eq!(caret_text(&lines[0]), "› o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 

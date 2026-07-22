@@ -714,7 +714,7 @@ pub fn cli_agent_status(
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
-    let provider_configs = load_provider_configs(overrides)?;
+    let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
 
     let mut providers: Vec<serde_json::Value> = provider_configs
         .values()
@@ -740,6 +740,62 @@ pub fn cli_agent_status(
             "deny": cfg.tools.deny,
             "allow_write": cfg.tools.allow_write,
         },
+        "providers": providers,
+    }))
+}
+
+/// Set (create or merge) a provider entry in the global `~/.jan/config.toml`,
+/// the standalone-agent credential store. Returns the config path so the caller
+/// can report where the value landed. Headless: no Desktop app required.
+pub fn cli_agent_config_set(
+    provider: &str,
+    api_key: Option<String>,
+    base_url: Option<String>,
+    models: Option<Vec<String>>,
+    api_type: Option<String>,
+) -> Result<PathBuf, String> {
+    crate::core::agent::global_config::set_provider(
+        provider,
+        crate::core::agent::global_config::ProviderUpdate {
+            api_key,
+            base_url,
+            models,
+            api_type,
+        },
+    )
+}
+
+/// Remove a provider entry from `~/.jan/config.toml`. `Ok(false)` means it was
+/// already absent.
+pub fn cli_agent_config_unset(provider: &str) -> Result<bool, String> {
+    crate::core::agent::global_config::remove_provider(provider)
+}
+
+/// The global config file path, scaffolding a commented template if it doesn't
+/// exist yet so `jan agent config path` always points at a real file.
+pub fn cli_agent_config_path() -> Result<PathBuf, String> {
+    crate::core::agent::global_config::ensure_global_config()
+}
+
+/// Providers configured in `~/.jan/config.toml`, as JSON with API keys redacted.
+/// Reflects only the global store (what the user set), not Desktop inherit.
+pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
+    let configs = crate::core::agent::global_config::load_global_config()?;
+    let mut providers: Vec<serde_json::Value> = configs
+        .values()
+        .map(|c| {
+            serde_json::json!({
+                "provider": c.provider,
+                "base_url": c.base_url,
+                "has_api_key": c.api_key.is_some(),
+                "api_type": c.api_type,
+                "models": c.models,
+            })
+        })
+        .collect();
+    providers.sort_by(|a, b| a["provider"].as_str().cmp(&b["provider"].as_str()));
+    Ok(serde_json::json!({
+        "config_path": crate::core::agent::global_config::global_config_path()?.to_string_lossy(),
         "providers": providers,
     }))
 }
@@ -1009,6 +1065,9 @@ fn prepare_agent_session(
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
+    if let Err(e) = crate::core::agent::global_config::ensure_global_config() {
+        log::warn!("Agent: could not scaffold ~/.jan/config.toml: {e}");
+    }
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
 
@@ -1018,26 +1077,24 @@ fn prepare_agent_session(
         );
     }
 
-    // Resolution order: JAN_AGENT_MODEL_ID env var (highest), then --model
-    // flag, then agent.toml [agent].model, then the desktop app's
-    // currently-selected model (synced from settings.json).
-    let env_model = std::env::var(crate::core::cli::providers::ENV_AGENT_MODEL_ID)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    let model = env_model
-        .or(model_override)
+    // Resolution order: --model flag, then agent.toml [agent].model, then the
+    // standalone global config (~/.jan/config.toml default_model / first provider
+    // model), then the desktop app's currently-selected model (settings.json
+    // inherit). Global config outranks desktop so a standalone agent is
+    // self-sufficient without a desktop install.
+    let model = model_override
         .or_else(|| cfg.agent.model.clone())
+        .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
         .or_else(|| crate::core::cli::providers::desktop_selection().model)
         .ok_or_else(|| {
-            "no model specified: pass --model, set [agent].model in agent.toml, or select a model in the desktop app"
+            "no model specified: pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
                 .to_string()
         })?;
     let max_turns = max_turns_override
         .or(cfg.agent.max_turns)
         .unwrap_or(DEFAULT_MAX_TURNS);
 
-    let provider_configs = load_provider_configs(&overrides)?;
+    let provider_configs = load_provider_configs(Some(&project_root), &overrides)?;
 
     // A local llamacpp model needs its router started; cloud models are plain
     // HTTP upstreams. Start it off-thread so setup/render isn't blocked on the
