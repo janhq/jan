@@ -18,6 +18,7 @@ pub(crate) const DEFAULT_KEEP_RECENT: usize = 8;
 
 /// Recent tail kept when the user explicitly runs `/compact`. Smaller than the
 /// automatic threshold so a deliberate compaction is honoured on short threads.
+#[cfg(feature = "cli")]
 pub(crate) const MANUAL_KEEP_RECENT: usize = 2;
 
 const SUMMARY_SYSTEM_PROMPT: &str = "You are compacting an AI agent conversation that grew too long for \

@@ -17,9 +17,12 @@
 //! ref. The user's `git status`, current branch, and staged changes are never
 //! touched. Shelling out keeps us free of a libgit2 dependency.
 
+#[cfg(not(feature = "cli"))]
+use std::path::Path;
+#[cfg(feature = "cli")]
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
+
 
 /// Run `git` with literal args (callers pass their own `-C`). Returns trimmed
 /// stdout on success, trimmed stderr (or a generic message) on failure.
@@ -67,13 +70,13 @@ fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, Strin
     }
 }
 
-static IDX_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 /// A unique throwaway index path so one-off git operations (restore) never
 /// disturb the real index.
 #[cfg(feature = "cli")]
 fn temp_index() -> PathBuf {
-    let n = IDX_COUNTER.fetch_add(1, Ordering::SeqCst);
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
     std::env::temp_dir().join(format!("jan-agent-idx-{}-{n}", std::process::id()))
 }
 
@@ -97,6 +100,7 @@ pub(crate) fn snapshot_ref(thread_id: &str) -> String {
 /// The repository top-level for `path`, or `None` when `path` is not inside a
 /// git work tree (workspace-restore is unavailable then; the agent still edits
 /// in place). Also `None` when `git` is not installed.
+#[cfg(any(feature = "cli", test))]
 pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {
     let p = path.to_string_lossy();
     git(&["-C", &p, "rev-parse", "--show-toplevel"])
@@ -225,6 +229,7 @@ pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
     use std::sync::atomic::AtomicU32;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
