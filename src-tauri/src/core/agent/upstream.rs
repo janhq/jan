@@ -282,7 +282,7 @@ pub(crate) async fn execute_mcp_tool_calls(
     tool_to_server: &HashMap<String, String>,
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
-) -> Result<Vec<(String, String)>, String> {
+) -> Vec<(String, String)> {
     let timeout_duration = mcp_settings.lock().await.tool_call_timeout_duration();
     let servers = mcp_servers.lock().await;
 
@@ -317,13 +317,21 @@ pub(crate) async fn execute_mcp_tool_calls(
                 serde_json::Map::new()
             };
 
-        let server_name = tool_to_server
-            .get(&tool_name)
-            .ok_or_else(|| format!("No MCP server registered for tool '{tool_name}'"))?;
+        let Some(server_name) = tool_to_server.get(&tool_name) else {
+            results.push((
+                tool_call_id,
+                format!("ERROR: No MCP server registered for tool '{tool_name}'"),
+            ));
+            continue;
+        };
 
-        let service = servers
-            .get(server_name)
-            .ok_or_else(|| format!("MCP server '{server_name}' not found in runtime state"))?;
+        let Some(service) = servers.get(server_name) else {
+            results.push((
+                tool_call_id,
+                format!("ERROR: MCP server '{server_name}' not found in runtime state"),
+            ));
+            continue;
+        };
 
         let tool_call = service.call_tool(CallToolRequestParam {
             name: tool_name.clone().into(),
@@ -346,7 +354,7 @@ pub(crate) async fn execute_mcp_tool_calls(
         results.push((tool_call_id, tool_result_string));
     }
 
-    Ok(results)
+    results
 }
 
 pub(crate) async fn call_openai_chat_completions(

@@ -1572,27 +1572,13 @@ async fn proxy_request(
                     }));
                 }
 
-                let tool_results = match execute_mcp_tool_calls(
+                let tool_results = execute_mcp_tool_calls(
                     &tool_calls,
                     &tool_to_server,
                     &mcp_servers,
                     &mcp_settings,
                 )
-                .await
-                {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let mut error_response =
-                            Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
-                        error_response = add_cors_headers_with_host_and_origin(
-                            error_response,
-                            &host_header,
-                            &origin_header,
-                            &config.trusted_hosts,
-                        );
-                        return Ok(error_response.body(full(e)).unwrap());
-                    }
-                };
+                .await;
 
                 for (tool_call_id, result_text) in tool_results {
                     conversation_messages.push(serde_json::json!({
