@@ -236,6 +236,30 @@ else
 	install -m755 src-tauri/target/debug/jan src-tauri/resources/bin/jan
 endif
 
+# Build the Jan agent CLI (the `jan` binary with the `cli` feature)
+# The compiled binary lives at two locations after build:
+#   1. src-tauri/resources/bin/jan[.exe] (bundled copy)
+#   2. src-tauri/target/<triple>/release/jan[.exe] (Cargo output)
+agent: build-agent
+
+# Build the jan agent CLI binary (release, platform-aware)
+# The binary is compiled into src-tauri/target/<triple>/release/jan[.exe]
+# and then installed to src-tauri/resources/bin/jan[.exe] for bundling.
+build-agent:
+ifeq ($(DETECTED_OS),Windows)
+	cd src-tauri && cargo build --release --features cli --bin jan
+	copy src-tauri\target\release\jan.exe src-tauri\resources\bin\jan.exe
+	@echo "Jan agent built at:"
+	@echo "  src-tauri/resources/bin/jan.exe"
+	@echo "  src-tauri/target/release/jan.exe"
+else
+	cd src-tauri && cargo build --release --features cli --bin jan
+	install -m755 src-tauri/target/release/jan src-tauri/resources/bin/jan
+	@echo "Jan agent built at:"
+	@echo "  src-tauri/resources/bin/jan"
+	@echo "  src-tauri/target/release/jan"
+endif
+
 # Build
 build: install-and-build install-rust-targets
 	yarn build
