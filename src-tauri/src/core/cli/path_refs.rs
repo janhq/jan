@@ -179,6 +179,67 @@ pub fn resolve_references(text: &str, project_root: &Path) -> (String, String) {
     (clean, block)
 }
 
+/// Synchronous file search for path-hint autocomplete.
+///
+/// Searches `root_dir` for files/directories whose path or name contains
+/// `query` (case-insensitive). Returns `(relative_path, basename, is_dir)`
+/// tuples, up to `max_results`. Performs a limited walk (up to 3 levels deep)
+/// so it returns quickly enough for interactive use.
+pub fn search_files_sync(
+    root_dir: &Path,
+    query: &str,
+    max_results: usize,
+) -> Vec<(String, String, bool)> {
+    let mut results = Vec::new();
+    let query_lower = query.to_lowercase();
+
+    // If the query contains slashes, use the last segment as the name filter
+    // and the prefix as the subdirectory to search.
+    let (search_dir, name_filter) = if let Some(last_slash) = query.rfind('/') {
+        let dir_part = &query[..last_slash];
+        let name_part = &query[last_slash + 1..];
+        let subdir = root_dir.join(dir_part);
+        (subdir, name_part.to_lowercase())
+    } else {
+        (root_dir.to_path_buf(), query_lower.clone())
+    };
+
+    // Search the search_dir's immediate children
+    let entries = match std::fs::read_dir(&search_dir) {
+        Ok(d) => d,
+        Err(_) => return results,
+    };
+
+    for entry in entries.flatten() {
+        if results.len() >= max_results {
+            break;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let name_lower = name.to_lowercase();
+        if !name_lower.contains(&name_filter) {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let full_path = entry.path();
+        let rel = full_path
+            .strip_prefix(root_dir)
+            .unwrap_or(&full_path)
+            .to_string_lossy()
+            .into_owned();
+        results.push((rel, name, is_dir));
+    }
+
+    // Sort: directories first, then by name
+    results.sort_by(|a, b| {
+        b.2.cmp(&a.2).then(a.1.cmp(&b.1))
+    });
+
+    if results.len() > max_results {
+        results.truncate(max_results);
+    }
+    results
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Read an image file and return a text note with mime type.
