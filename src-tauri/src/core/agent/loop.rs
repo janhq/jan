@@ -322,6 +322,15 @@ impl CompositeToolInvoker {
     }
 }
 
+/// Message for a tool blocked by the project's own deny list, naming the
+/// exact config file so the block is actionable, not mysterious.
+fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
+    format!(
+        "ERROR: tool '{name}' denied by project policy (see [tools] deny in {})",
+        crate::core::agent::project::agent_toml_path(project_root).display()
+    )
+}
+
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
     async fn invoke(
@@ -366,10 +375,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!(
-                            "ERROR: tool '{name}' denied by project policy (see \
-                             [tools] deny in .jan/agent/agent.toml)"
-                        ),
+                        denied_by_policy_msg(name, &self.project_root),
                     ));
                     continue;
                 }
@@ -435,12 +441,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
-                Decision::HardDeny => {
-                    (format!(
-                            "ERROR: tool '{name}' denied by project policy (see \
-                             [tools] deny in .jan/agent/agent.toml)"
-                        ), None)
-                }
+                Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
                     let (tx, rx) = tokio::sync::oneshot::channel();
