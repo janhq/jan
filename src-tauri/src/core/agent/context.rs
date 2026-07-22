@@ -14,7 +14,11 @@ running commands, editing code, and writing new files.";
 
 /// Always-on behavioral guidelines. Kept short and model-facing.
 const GUIDELINES: &str =
-    "# Guidelines\n\n- Be concise in your responses.\n- Show file paths clearly when working with files.";
+    "# Guidelines\n\n- Be concise in your responses.\n- Show file paths clearly when working with files.\n\
+- Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
+missing output: when output is cut it always carries an explicit `[output truncated ...]` notice, so \
+its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
+`[exit 0]` is success even if there is text on stderr (many tools write normal status there).";
 
 /// Context-file names discovered by walking from the project root up to the
 /// filesystem root, most general (top ancestor) first so the nearest file wins.
@@ -281,6 +285,8 @@ mod tests {
         assert!(out.starts_with("You are Jan, an AI coding agent."));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
+        assert!(out.contains("Tool output is complete and verbatim"));
+        assert!(out.contains("Do not re-run a command to check"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
