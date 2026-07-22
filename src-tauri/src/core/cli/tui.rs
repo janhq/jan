@@ -2952,7 +2952,14 @@ async fn compact_command(app: &mut App) {
         return;
     };
     let before = app.history.len();
-    match crate::core::agent::r#loop::compact_history(&args, &app.model, &app.history).await {
+    match crate::core::agent::r#loop::compact_history(
+        &args,
+        &app.model,
+        &app.history,
+        crate::core::agent::compaction::MANUAL_KEEP_RECENT,
+    )
+    .await
+    {
         Ok(compacted) if compacted.len() < before => {
             app.history = compacted;
             app.persist();
