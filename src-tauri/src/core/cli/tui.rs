@@ -14,8 +14,9 @@ use std::time::{Duration, Instant};
 
 use ratatui::crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
+        MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -2076,7 +2077,8 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
+        .map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -2108,7 +2110,12 @@ pub async fn run(
     .await;
 
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen,
+    );
     let _ = terminal.show_cursor();
     res
 }
@@ -2209,6 +2216,13 @@ async fn chat_loop<B: Backend>(
                                 } else {
                                     execute!(stdout, DisableMouseCapture)
                                 };
+                            }
+                        }
+                        Ok(Event::Paste(text)) => {
+                            if app.status == Status::Idle {
+                                for c in text.chars() {
+                                    app.input_insert(c);
+                                }
                             }
                         }
                         Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
