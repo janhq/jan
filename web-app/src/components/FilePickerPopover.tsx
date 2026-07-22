@@ -196,3 +196,53 @@ export function FilePickerPopover({
     </div>
   )
 }
+
+// ─── Expose imperative controls for the parent to forward keyboard events ────
+export type FilePickerHandle = {
+  handleKeyDown: (e: React.KeyboardEvent) => void
+  activeIndex: number
+  entries: FilePickerEntry[]
+}
+
+export function useFilePickerKeyboard(open: boolean) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [entries, setEntries] = useState<FilePickerEntry[]>([])
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!open || entries.length === 0) return
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          setActiveIndex((prev) => Math.min(prev + 1, entries.length - 1))
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          setActiveIndex((prev) => Math.max(prev - 1, 0))
+          break
+        case 'Enter':
+        case 'Tab': {
+          if (entries[activeIndex]) {
+            e.preventDefault()
+            return { selected: entries[activeIndex] } as const
+          }
+          break
+        }
+        case 'Escape':
+          e.preventDefault()
+          return { dismissed: true } as const
+      }
+      return undefined
+    },
+    [open, entries, activeIndex]
+  )
+
+  return {
+    activeIndex,
+    setActiveIndex,
+    entries,
+    setEntries,
+    handleKeyDown,
+  }
+}
