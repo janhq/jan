@@ -102,15 +102,16 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { usePathReferences } from '@/stores/path-references'
 import {
   parsePromptForReferences,
   resolvePathReference,
+  formatPathReferenceText,
   searchFiles,
-  stripPromptReferences,
+  REFERENCE_PATTERN,
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 type ChatInputProps = {
   className?: string
@@ -341,6 +342,155 @@ const ChatInput = memo(function ChatInput({
       // Remove @ references from the prompt text (they'll be replaced by the
       // resolved contents above so the model sees the content directly)
       const cleanText = stripPromptReferences(text)
+
+      return { text: cleanText, resolvedContents }
+    },
+    [workingDir]
+  )
+
+  // ── @path file reference state ──────────────────────────────────────────
+  const pathRefs = usePathReferences((s) => s.references)
+  const setPathRefs = usePathReferences((s) => s.setReferences)
+  const clearPathRefs = usePathReferences((s) => s.clearReferences)
+
+  const [filePickerOpen, setFilePickerOpen] = useState(false)
+  const [filePickerQuery, setFilePickerQuery] = useState('')
+  const [filePickerEntries, setFilePickerEntries] = useState<FileEntry[]>([])
+  const [filePickerPosition, setFilePickerPosition] = useState<{
+    top: number
+    left: number
+  } | null>(null)
+  const [workingDir, setWorkingDir] = useState<string | undefined>(undefined)
+  // Textarea cursor position snapshot at the time @ was typed
+  const filePickerCursorPos = useRef<number | null>(null)
+
+  // Pre-load working directory
+  useEffect(() => {
+    const loadWorkingDir = async () => {
+      try {
+        // Try to get project home directory
+        const { homeDir, documentDir } = await import('@tauri-apps/api/path')
+        const home = await homeDir()
+        setWorkingDir(home)
+      } catch {
+        setWorkingDir(undefined)
+      }
+    }
+    if (effectiveAgentMode) {
+      loadWorkingDir()
+    }
+  }, [effectiveAgentMode])
+
+  // Detect `@` in the prompt text and open the file picker
+  const handlePromptChange = useCallback(
+    (value: string) => {
+      setPrompt(value)
+
+      // Only enable in agent mode
+      if (!effectiveAgentMode) {
+        setFilePickerOpen(false)
+        return
+      }
+
+      const cursorIdx = filePickerCursorPos.current ?? value.length
+
+      // Look backwards from current cursor to find the last word starting with @
+      const beforeCursor = value.slice(0, cursorIdx)
+      const atMatch = beforeCursor.match(/@([\w.\/-]*)$/)
+
+      if (atMatch) {
+        const query = atMatch[1] ?? ''
+        setFilePickerQuery(query)
+
+        // If we have a working directory, search files
+        if (workingDir) {
+          searchFiles(workingDir, query)
+            .then((entries) => setFilePickerEntries(entries.slice(0, 50)))
+            .catch(() => setFilePickerEntries([]))
+        } else {
+          setFilePickerEntries([])
+        }
+
+        // Position the picker above the text
+        if (textareaRef.current) {
+          const lineHeight = 22
+          const lines = beforeCursor.split('\n').length
+          const pos = {
+            top: -Math.min(lines * lineHeight + 40, 300),
+            left: 0,
+          }
+          setFilePickerPosition(pos)
+        }
+        setFilePickerOpen(true)
+      } else {
+        setFilePickerOpen(false)
+      }
+    },
+    [effectiveAgentMode, workingDir, setPrompt]
+  )
+
+  // Insert a selected file reference into the prompt
+  const handleFilePickerSelect = useCallback(
+    (entry: FileEntry) => {
+      if (filePickerCursorPos.current == null) return
+
+      const beforeCursor = prompt.slice(0, filePickerCursorPos.current)
+      const afterCursor = prompt.slice(filePickerCursorPos.current)
+
+      // Replace the `@query` with `path/to/file` (the resolved reference)
+      const textBefore = beforeCursor.replace(/@[\w.\/-]*$/, '')
+      const refText = entry.path
+      const newPrompt = textBefore + refText + afterCursor
+
+      setPrompt(newPrompt)
+      setFilePickerOpen(false)
+      filePickerCursorPos.current = null
+
+      // Focus back on textarea
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    },
+    [prompt, setPrompt]
+  )
+
+  const handleFilePickerClose = useCallback(() => {
+    setFilePickerOpen(false)
+    filePickerCursorPos.current = null
+  }, [])
+
+  // Resolve @path references in the prompt text, returning the resolved content
+  const resolvePromptReferences = useCallback(
+    async (text: string): Promise<{
+      text: string
+      resolvedContents: string
+    }> => {
+      const refs = parsePromptForReferences(text)
+      if (refs.length === 0) return { text, resolvedContents: '' }
+
+      const parts: string[] = []
+      for (const ref of refs) {
+        const resolved = await resolvePathReference(ref, workingDir)
+        if (resolved) {
+          if (resolved.kind === 'file') {
+            parts.push(
+              `--- File: ${resolved.absolutePath} ---\n${resolved.content}`
+            )
+          } else if (resolved.kind === 'directory') {
+            parts.push(
+              `--- Directory: ${resolved.absolutePath} ---\n${resolved.content}`
+            )
+          }
+        } else {
+          parts.push(
+            `[File not found or too large: ${ref.rawPath}]`
+          )
+        }
+      }
+
+      const resolvedContents = parts.join('\n\n')
+
+      // Remove @ references from the prompt text (they'll be replaced by the
+      // resolved contents above so the model sees the content directly)
+      const cleanText = text.replace(REFERENCE_PATTERN, '').replace(/\s+/g, ' ').trim()
 
       return { text: cleanText, resolvedContents }
     },
