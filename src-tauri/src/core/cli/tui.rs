@@ -252,6 +252,16 @@ struct PendingImage {
     data_url: String,
 }
 
+/// One entry in the file-path hint popup triggered by typing `@`.
+struct PathHintItem {
+    /// Display path (relative to project root).
+    path: String,
+    /// Basename for display.
+    name: String,
+    /// Whether this is a directory.
+    is_dir: bool,
+}
+
 struct App {
     model: String,
     /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
@@ -331,6 +341,12 @@ struct App {
     /// Set by Esc to hide the hint popup without clearing the buffer; cleared on
     /// the next keystroke that edits the input so typing re-shows it.
     slash_dismissed: bool,
+    /// File-path hint entries matching the current `@query` in the input buffer.
+    path_hints: Vec<PathHintItem>,
+    /// Highlighted row in the path-hint popup (clamped to matches).
+    path_hint_selected: usize,
+    /// Set by Esc to dismiss the path-hint popup; cleared on next char edit.
+    path_hint_dismissed: bool,
     status: Status,
     turn: (u32, u32),
     tokens: u64,
@@ -471,6 +487,9 @@ impl App {
             cursor: 0,
             slash_selected: 0,
             slash_dismissed: false,
+            path_hints: Vec::new(),
+            path_hint_selected: 0,
+            path_hint_dismissed: false,
             status: Status::Idle,
             turn: (0, 0),
             tokens: 0,
@@ -724,12 +743,16 @@ impl App {
         self.input.clear();
         self.cursor = 0;
         self.reset_slash_hint();
+        self.path_hints.clear();
+        self.path_hint_selected = 0;
     }
 
     fn input_insert(&mut self, c: char) {
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.reset_slash_hint();
+        // Refresh path hints on any character edit
+        self.refresh_path_hints();
     }
 
     /// Delete the char before the caret (Backspace).
@@ -739,6 +762,7 @@ impl App {
             self.input.remove(self.cursor);
         }
         self.reset_slash_hint();
+        self.refresh_path_hints();
     }
 
     /// Delete the char at the caret (Delete); caret stays put.
@@ -747,12 +771,14 @@ impl App {
             self.input.remove(self.cursor);
         }
         self.reset_slash_hint();
+        self.refresh_path_hints();
     }
 
     /// Reset hint selection and un-dismiss so an edited buffer re-shows the popup.
     fn reset_slash_hint(&mut self) {
         self.slash_selected = 0;
         self.slash_dismissed = false;
+        self.path_hint_dismissed = false;
     }
 
     /// Slash commands whose name prefixes the current buffer, or empty when the
@@ -793,6 +819,92 @@ impl App {
         self.input = format!("{name} ");
         self.cursor = self.input.len();
         self.slash_selected = 0;
+    }
+
+    /// Extract the current `@query` from the input buffer, if any.
+    /// Returns `None` when the cursor is not inside or immediately after
+    /// a `@`-prefixed token (no space since the `@`).
+    fn path_hint_query(&self) -> Option<String> {
+        let before = &self.input[..self.cursor];
+        let at_idx = before.rfind('@')?;
+        let after_at = &before[at_idx + 1..];
+        if after_at.contains(' ') {
+            return None; // space after @ means the token ended
+        }
+        if after_at.is_empty() {
+            return Some(String::new());
+        }
+        Some(after_at.to_string())
+    }
+
+    /// Whether the path-hint popup is eligible to show right now.
+    fn path_hints_active(&self) -> bool {
+        if self.path_hint_dismissed || self.status != Status::Idle {
+            return false;
+        }
+        self.path_hint_query().is_some()
+    }
+
+    /// Refresh path hints from the input buffer: detect `@query`, search files.
+    fn refresh_path_hints(&mut self) {
+        if self.path_hint_dismissed || self.status != Status::Idle {
+            self.path_hints.clear();
+            return;
+        }
+        let Some(query) = self.path_hint_query() else {
+            self.path_hints.clear();
+            return;
+        };
+
+        let entries = path_refs::search_files_sync(&self.project_root, &query, 30);
+        self.path_hints = entries
+            .into_iter()
+            .map(|(path, name, is_dir)| PathHintItem {
+                path,
+                name,
+                is_dir,
+            })
+            .collect();
+        self.path_hint_selected = 0;
+    }
+
+    /// Accept the highlighted path hint: replace the `@query` token with the
+    /// selected path.
+    fn accept_path_hint(&mut self) {
+        if self.path_hints.is_empty() {
+            return;
+        }
+        let sel = self.path_hint_selected.min(self.path_hints.len() - 1);
+        let selected = &self.path_hints[sel];
+        let before = &self.input[..self.cursor];
+        let at_idx = match before.rfind('@') {
+            Some(i) => i,
+            None => return,
+        };
+        let after = &self.input[self.cursor..];
+        let replacement = &selected.path;
+        let new_input = format!("{}{}{}", &self.input[..at_idx], replacement, after);
+        self.input = new_input;
+        self.cursor = at_idx + replacement.len();
+        self.path_hints.clear();
+        self.path_hint_dismissed = false;
+    }
+
+    fn path_hint_move(&mut self, delta: isize) {
+        if self.path_hints.is_empty() {
+            return;
+        }
+        let len = self.path_hints.len();
+        let cur = self.path_hint_selected.min(len - 1) as isize;
+        self.path_hint_selected = (cur + delta).rem_euclid(len as isize) as usize;
+    }
+
+    /// True when the path-hint popup has entries to show.
+    fn has_path_hints(&self) -> bool {
+        if self.path_hint_dismissed || self.status != Status::Idle {
+            return false;
+        }
+        self.path_hint_query().is_some() && !self.path_hints.is_empty()
     }
 
     fn cursor_left(&mut self) {
@@ -2517,6 +2629,31 @@ async fn handle_key(
         }
     }
 
+    // Path-hint popup: while `@query` is active with at least one match,
+    // it owns Up/Down/Tab/Esc/Enter in the same pattern as slash hints.
+    if app.has_path_hints() {
+        match key.code {
+            KeyCode::Up => {
+                app.path_hint_move(-1);
+                return;
+            }
+            KeyCode::Down => {
+                app.path_hint_move(1);
+                return;
+            }
+            KeyCode::Tab | KeyCode::Enter => {
+                app.accept_path_hint();
+                return;
+            }
+            KeyCode::Esc => {
+                app.path_hint_dismissed = true;
+                app.path_hints.clear();
+                return;
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
         KeyCode::Esc => {
             // Esc cancels a run or clears typed input; it never quits (that's
@@ -3752,6 +3889,18 @@ fn draw(f: &mut Frame, app: &mut App) {
                 height,
             };
             draw_slash_hints(f, rect, &matches, app.slash_selected);
+        } else if app.has_path_hints() {
+            // Dock the file-path hints above the input box, same layout as
+            // slash hints. Only shows when no slash hints are active.
+            let height = (app.path_hints.len() as u16 + 2).min(chunks[1].height);
+            let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+            let rect = ratatui::layout::Rect {
+                x: chunks[2].x,
+                y,
+                width: chunks[2].width,
+                height,
+            };
+            draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
         }
     }
 }
@@ -3789,6 +3938,52 @@ fn draw_slash_hints(
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(selected.min(matches.len().saturating_sub(1))));
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+/// File-path hint popup docked above the input when typing `@query`.
+/// Shows matching files/directories; arrow keys to navigate, Tab/Enter to
+/// select, Esc to dismiss.
+fn draw_path_hints(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    entries: &[PathHintItem],
+    selected: usize,
+) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let dim = Style::new().dark_gray();
+    let items: Vec<ListItem> = entries
+        .iter()
+        .map(|e| {
+            let icon = if e.is_dir {
+                Span::styled("", Style::new().yellow())
+            } else {
+                Span::styled("", Style::new().cyan())
+            };
+            let mut spans = vec![
+                icon,
+                Span::raw(" "),
+                Span::styled(&e.name, Style::new().bold()),
+            ];
+            let rel = &e.path;
+            if rel != &e.name {
+                spans.push(Span::styled(format!("  ({rel})"), dim));
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().dark_gray())
+        .title(Span::styled(" path ", dim));
+    f.render_widget(Clear, area);
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::new().reversed())
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(selected.min(entries.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
 }
 
