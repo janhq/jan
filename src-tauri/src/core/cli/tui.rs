@@ -31,7 +31,7 @@ use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
 use crate::core::agent::tools::gate::PermissionDecision;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Status {
     Idle,
     Running,
@@ -252,6 +252,16 @@ struct PendingImage {
 
 struct App {
     model: String,
+    /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
+    /// `model` when no smol model is configured.
+    smol_model: String,
+    /// Active `/goal`, if any: the loop keeps firing turns until the evaluator
+    /// judges the condition met. Persisted with the thread so it survives
+    /// restart/resume. `None` = no goal.
+    goal: Option<crate::core::agent::goal::GoalState>,
+    /// Set after a turn finishes while a goal is active: the chat loop runs the
+    /// evaluator off the render loop, then auto-continues or returns control.
+    goal_eval_pending: bool,
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
@@ -428,7 +438,10 @@ impl App {
         repo_root: Option<PathBuf>,
     ) -> Self {
         Self {
+            smol_model: model.clone(),
             model,
+            goal: None,
+            goal_eval_pending: false,
             args: None,
             max_turns,
             repo_root,
@@ -518,6 +531,9 @@ impl App {
     fn reset_session(&mut self) {
         self.history.clear();
         self.thread_id = None;
+        // A fresh session drops any active goal along with the conversation.
+        self.goal = None;
+        self.goal_eval_pending = false;
         // Detach snapshots; the next submit arms a fresh base + thread id.
         self.base_snapshot = None;
         self.checkpoints.clear();
@@ -871,11 +887,23 @@ impl App {
     /// per-turn checkpoints, so `/resume` can restore and rewind. `None` when
     /// snapshots are inactive (keeps a plain `{}` metadata block).
     fn thread_metadata(&self) -> Option<serde_json::Value> {
-        let base = self.base_snapshot.as_ref()?;
-        Some(serde_json::json!({
-            "base_snapshot": base,
-            "checkpoints": self.checkpoints,
-        }))
+        // Persist metadata when either snapshots or a goal are present; a goal
+        // must survive restart/resume even in a non-git project (no snapshots).
+        if self.base_snapshot.is_none() && self.goal.is_none() {
+            return None;
+        }
+        let mut meta = serde_json::Map::new();
+        if let Some(base) = self.base_snapshot.as_ref() {
+            meta.insert("base_snapshot".to_string(), serde_json::json!(base));
+            meta.insert("checkpoints".to_string(), serde_json::json!(self.checkpoints));
+        }
+        if let Some(goal) = self.goal.as_ref() {
+            meta.insert(
+                "goal".to_string(),
+                serde_json::to_value(goal).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        Some(serde_json::Value::Object(meta))
     }
 
     /// Queue a checkpoint of the working tree produced by the just-finished turn,
@@ -1218,6 +1246,17 @@ impl App {
             self.push(Line::styled(msg, Style::new().yellow().bold()));
         }
         self.checkpoint_turn();
+        // A turn just completed under an active goal: count it and queue an
+        // evaluation. The chat loop runs the (stateless) evaluator off the
+        // render loop, then auto-continues or hands control back.
+        if let Some(goal) = self.goal.as_mut() {
+            if goal.is_active() {
+                goal.turns = goal.turns.saturating_add(1);
+                // Only evaluate on a normal completion; an early/no-answer finish
+                // is surfaced above and the user decides what to do next.
+                self.goal_eval_pending = normal && !no_answer;
+            }
+        }
         self.persist();
     }
 
@@ -1237,6 +1276,81 @@ impl App {
             Style::new().red().bold(),
         ));
         self.scrollback = 0;
+        // An errored turn halts the goal loop; the user decides how to recover.
+        self.goal_eval_pending = false;
+        if let Some(goal) = self.goal.as_ref() {
+            if goal.is_active() {
+                self.note("goal paused (turn errored); /goal to review, /goal clear to stop");
+            }
+        }
+    }
+
+    /// Run one goal evaluation and act on the verdict. Called by the chat loop
+    /// when a turn finished under an active goal (`goal_eval_pending`). Makes one
+    /// stateless `smol`-model call (no tools), then either auto-submits the next
+    /// turn (goal unmet) or marks the goal achieved and returns control (goal
+    /// met). Runs only while idle; blocks the loop for the single eval call.
+    async fn run_goal_evaluation(&mut self) {
+        self.goal_eval_pending = false;
+        let Some(goal) = self.goal.clone() else {
+            return;
+        };
+        if !goal.is_active() {
+            return;
+        }
+        let Some(args) = self.args.clone() else {
+            // No live session (e.g. tests): cannot evaluate. Leave control with
+            // the user rather than looping blindly.
+            return;
+        };
+        self.note("◎ evaluating goal...");
+        let verdict = crate::core::agent::r#loop::evaluate_goal(
+            &args,
+            &self.smol_model,
+            &goal.condition,
+            &self.history,
+        )
+        .await;
+
+        match verdict {
+            Ok(v) => {
+                if let Some(g) = self.goal.as_mut() {
+                    g.last_reason = v.reason.clone();
+                }
+                if v.met {
+                    if let Some(g) = self.goal.as_mut() {
+                        g.status = crate::core::agent::goal::GoalStatus::Achieved;
+                    }
+                    let turns = self.goal.as_ref().map(|g| g.turns).unwrap_or(0);
+                    let elapsed = self.goal.as_ref().map(|g| g.elapsed_secs()).unwrap_or(0);
+                    self.gap(Kind::Meta);
+                    self.push(Line::styled(
+                        format!(
+                            "◎ goal achieved in {turns} turn(s), {}",
+                            fmt_duration(elapsed)
+                        ),
+                        Style::new().green().bold(),
+                    ));
+                    self.push(Line::styled(format!("  {}", v.reason), Style::new().dim()));
+                    self.persist();
+                } else {
+                    // Goal unmet: surface the reason as guidance and start the
+                    // next turn automatically, no user prompt needed.
+                    self.note(&format!("◎ goal not met: {} — continuing", v.reason));
+                    let prompt =
+                        crate::core::agent::goal::continuation_prompt(&goal.condition, &v.reason);
+                    self.submit_user(prompt);
+                }
+            }
+            Err(e) => {
+                // Evaluation failed: don't loop blindly. Keep the goal so the
+                // user can retry, and hand control back.
+                self.note(&format!(
+                    "◎ goal evaluation failed: {e} (goal kept; /goal clear to stop)"
+                ));
+                self.persist();
+            }
+        }
     }
 
     /// Cancel the in-flight run, keeping the conversation intact.
@@ -1256,6 +1370,9 @@ impl App {
         self.scrollback = 0;
         self.gap(Kind::Meta);
         self.push(Line::styled("cancelled", Style::new().yellow()));
+        // A cancel stops the goal loop mid-flight; the goal itself is kept so
+        // the user can inspect it (/goal) or clear it (/goal clear).
+        self.goal_eval_pending = false;
         self.persist();
     }
 }
@@ -1944,6 +2061,7 @@ pub async fn run(
         args,
         permission_requests,
         model,
+        smol_model,
         max_turns,
         router_task,
         mcp_servers,
@@ -1961,6 +2079,7 @@ pub async fn run(
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
     let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
+    app.smol_model = smol_model;
     app.args = Some(args.clone());
     if args.yolo {
         app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
@@ -2033,6 +2152,14 @@ async fn chat_loop<B: Backend>(
                     break;
                 }
             }
+        }
+
+        // A turn finished under an active goal: run the (stateless) evaluator
+        // before anything else. It either auto-submits the next turn (setting
+        // want_start) or hands control back. Gated on an idle, run-free state so
+        // it never races an in-flight turn.
+        if app.goal_eval_pending && current.is_none() && !app.want_start {
+            app.run_goal_evaluation().await;
         }
 
         // Kick off a queued run once the previous one has cleared, the local
@@ -2505,6 +2632,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Summarize older turns to free up context",
     },
     SlashCommand {
+        name: "/goal",
+        hint: "[condition|clear]",
+        description: "Keep working until a condition is met (bare: status)",
+    },
+    SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
@@ -2621,6 +2753,7 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "mcp" => open_mcp_picker(app),
         "config" => open_config_screen(app),
+        "goal" => goal_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
     }
@@ -2643,6 +2776,98 @@ async fn compact_command(app: &mut App) {
         }
         Ok(_) => app.note("nothing to compact yet"),
         Err(e) => app.note(&format!("compaction failed: {e}")),
+    }
+}
+
+/// `/goal` dispatcher: `clear` removes an active goal, a bare command shows
+/// status, and any other argument sets a new goal and starts a turn toward it.
+/// Runs only while idle (the caller gates on `Status::Idle`).
+fn goal_command(app: &mut App, arg: &str) {
+    let arg = arg.trim();
+    match arg {
+        "clear" => {
+            if app.goal.take().is_some() {
+                app.goal_eval_pending = false;
+                app.persist();
+                app.note("goal cleared");
+            } else {
+                app.note("no active goal");
+            }
+        }
+        "" => show_goal_status(app),
+        condition => set_goal(app, condition),
+    }
+}
+
+/// Print the active goal's condition, turn count, duration, and the evaluator's
+/// latest reason. Notes when there is no goal.
+fn show_goal_status(app: &mut App) {
+    use crate::core::agent::goal::GoalStatus;
+    let Some(goal) = app.goal.clone() else {
+        app.note("no active goal (set one with /goal <condition>)");
+        return;
+    };
+    let state = match goal.status {
+        GoalStatus::Active => "active",
+        GoalStatus::Achieved => "achieved",
+    };
+    app.gap(Kind::Meta);
+    app.push(Line::styled(
+        format!("◎ goal [{state}]"),
+        Style::new().cyan().bold(),
+    ));
+    app.push(Line::styled(
+        format!("  condition: {}", goal.condition),
+        Style::new().dim(),
+    ));
+    app.push(Line::styled(
+        format!(
+            "  turns: {}   duration: {}",
+            goal.turns,
+            fmt_duration(goal.elapsed_secs())
+        ),
+        Style::new().dim(),
+    ));
+    let reason = if goal.last_reason.is_empty() {
+        "(not evaluated yet)"
+    } else {
+        &goal.last_reason
+    };
+    app.push(Line::styled(
+        format!("  evaluator: {reason}"),
+        Style::new().dim(),
+    ));
+}
+
+/// Set a new goal from `condition` and immediately start a turn toward it (the
+/// condition is the first prompt). Replaces any existing goal.
+fn set_goal(app: &mut App, condition: &str) {
+    use crate::core::agent::goal::GoalState;
+    if app.status != Status::Idle {
+        app.note("cannot set a goal while a turn is running");
+        return;
+    }
+    let goal = GoalState::new(condition);
+    let cond = goal.condition.clone();
+    app.goal = Some(goal);
+    app.goal_eval_pending = false;
+    app.note(&format!("◎ goal set: {cond}"));
+    // Start the first turn with the condition as the prompt; on_done triggers
+    // the evaluator, which drives the loop from there.
+    app.submit_user(cond);
+}
+
+/// Format a duration in whole seconds as `Nh Nm Ns` / `Nm Ns` / `Ns`.
+fn fmt_duration(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}h {m}m {s}s")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
     }
 }
 
@@ -2873,6 +3098,23 @@ fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
     app.base_requested = true;
 }
 
+/// Reload an active `/goal` for a resumed thread from its persisted metadata.
+/// An old thread with no goal (or a malformed one) simply clears the goal.
+fn restore_goal(app: &mut App, metadata: Option<&serde_json::Value>) {
+    app.goal = None;
+    app.goal_eval_pending = false;
+    let Some(meta) = metadata else { return };
+    if let Some(goal) = meta
+        .get("goal")
+        .and_then(|v| serde_json::from_value::<crate::core::agent::goal::GoalState>(v.clone()).ok())
+    {
+        if goal.is_active() {
+            app.note(&format!("resumed active goal: {}", goal.condition));
+        }
+        app.goal = Some(goal);
+    }
+}
+
 /// Open the double-Esc rewind picker listing the conversation's user messages.
 fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
@@ -3048,6 +3290,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.tokens = 0;
     app.scrollback = 0;
     restore_snapshots(app, thread.get("metadata"));
+    restore_goal(app, thread.get("metadata"));
 
     // Adopt the thread's model so continuation stays coherent.
     if let Some(model) = thread
@@ -3666,15 +3909,29 @@ fn header(app: &App) -> Paragraph<'static> {
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
         .unwrap_or_default();
-    Paragraph::new(Line::from(vec![
+    let mut spans = vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
         Span::styled(dir.to_string(), Style::new().dark_gray()),
         Span::raw(format!("  {turn}tokens {}", app.tokens)),
         Span::styled(elapsed, Style::new().dim()),
-        Span::raw("  "),
-        Span::styled(format!("[{status}]"), style),
-    ]))
+    ];
+    // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
+    // green once achieved), so an unattended run shows the goal is still live.
+    if let Some(goal) = app.goal.as_ref() {
+        use crate::core::agent::goal::GoalStatus;
+        let (label, gstyle) = match goal.status {
+            GoalStatus::Active => (
+                format!("  ◎ /goal active {}", fmt_duration(goal.elapsed_secs())),
+                Style::new().cyan().bold(),
+            ),
+            GoalStatus::Achieved => ("  ◎ /goal done".to_string(), Style::new().green()),
+        };
+        spans.push(Span::styled(label, gstyle));
+    }
+    spans.push(Span::raw("  "));
+    spans.push(Span::styled(format!("[{status}]"), style));
+    Paragraph::new(Line::from(spans))
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
@@ -3848,10 +4105,10 @@ mod tests {
         build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
         group_summary, handle_key, handle_mouse, image_mime, input_content_lines, is_table_separator, load_image_file,
         message_text, open_config_screen, parse_command, render_table, run_command,
-        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tool_activity, tool_finished, transcript_top_padding,
-        user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, SnapshotJob,
-        DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
+        restore_goal, running_group_row, split_reasoning, subagent_activity,
+        subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
+        transcript_top_padding, user_content_parts, App, CurrentRun, Pending, PendingImage,
+        PickerKind, SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
     };
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -5814,6 +6071,134 @@ mod tests {
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
+    }
+
+    #[test]
+    fn goal_is_a_registered_command() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/goal"));
+    }
+
+    #[tokio::test]
+    async fn goal_set_stores_condition_and_starts_a_turn() {
+        let mut app = test_app();
+        run_command(&mut app, "goal all tests in test/auth pass").await;
+        let goal = app.goal.as_ref().expect("goal should be set");
+        assert_eq!(goal.condition, "all tests in test/auth pass");
+        assert!(goal.is_active());
+        // Setting a goal starts the first turn with the condition as the prompt.
+        assert!(app.want_start, "a turn should be queued");
+        assert_eq!(app.status, Status::Running);
+        let last = app.history.last().expect("history has the condition prompt");
+        assert_eq!(
+            last.get("content").and_then(|c| c.as_str()),
+            Some("all tests in test/auth pass")
+        );
+    }
+
+    #[tokio::test]
+    async fn goal_clear_removes_active_goal() {
+        let mut app = test_app();
+        app.goal = Some(crate::core::agent::goal::GoalState::new("x"));
+        run_command(&mut app, "goal clear").await;
+        assert!(app.goal.is_none());
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("goal cleared"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn goal_clear_with_no_goal_notes() {
+        let mut app = test_app();
+        run_command(&mut app, "goal clear").await;
+        assert!(app.goal.is_none());
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("no active goal"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn goal_status_reports_active_goal() {
+        let mut app = test_app();
+        let mut goal = crate::core::agent::goal::GoalState::new("make git status clean");
+        goal.turns = 3;
+        goal.last_reason = "two files still modified".into();
+        app.goal = Some(goal);
+        run_command(&mut app, "goal").await;
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("make git status clean"), "condition: {text}");
+        assert!(text.contains("turns: 3"), "turn count: {text}");
+        assert!(text.contains("two files still modified"), "reason: {text}");
+    }
+
+    #[tokio::test]
+    async fn goal_status_with_no_goal_notes() {
+        let mut app = test_app();
+        run_command(&mut app, "goal").await;
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("no active goal"), "missing note: {text}");
+    }
+
+    #[test]
+    fn on_done_counts_turn_and_queues_eval_under_active_goal() {
+        let mut app = test_app();
+        app.goal = Some(crate::core::agent::goal::GoalState::new("cond"));
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token {
+            text: "did some work".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert_eq!(app.goal.as_ref().unwrap().turns, 1);
+        assert!(app.goal_eval_pending, "evaluation should be queued");
+    }
+
+    #[test]
+    fn on_done_without_goal_does_not_queue_eval() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token { text: "done".into() });
+        app.on_done("stop".into(), None);
+        assert!(!app.goal_eval_pending);
+    }
+
+    #[test]
+    fn on_done_early_finish_does_not_queue_goal_eval() {
+        // An early/truncated finish under a goal counts the turn but leaves
+        // control with the user rather than auto-continuing.
+        let mut app = test_app();
+        app.goal = Some(crate::core::agent::goal::GoalState::new("cond"));
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token { text: "partial".into() });
+        app.on_done("length".into(), None);
+        assert_eq!(app.goal.as_ref().unwrap().turns, 1);
+        assert!(!app.goal_eval_pending, "early finish should not auto-continue");
+    }
+
+    #[test]
+    fn cancel_run_stops_goal_eval_but_keeps_goal() {
+        let mut app = test_app();
+        app.goal = Some(crate::core::agent::goal::GoalState::new("cond"));
+        app.goal_eval_pending = true;
+        app.status = Status::Running;
+        app.cancel_run();
+        assert!(!app.goal_eval_pending, "cancel stops the loop");
+        assert!(app.goal.is_some(), "the goal itself is kept for inspection");
+    }
+
+    #[test]
+    fn goal_persists_and_restores_via_thread_metadata() {
+        let mut app = test_app();
+        let mut goal = crate::core::agent::goal::GoalState::new("tests pass");
+        goal.turns = 2;
+        goal.last_reason = "one failing".into();
+        app.goal = Some(goal);
+        let meta = app.thread_metadata().expect("metadata present with a goal");
+        assert!(meta.get("goal").is_some());
+
+        let mut restored = test_app();
+        restore_goal(&mut restored, Some(&meta));
+        let g = restored.goal.expect("goal restored");
+        assert_eq!(g.condition, "tests pass");
+        assert_eq!(g.turns, 2);
+        assert_eq!(g.last_reason, "one failing");
+        assert!(g.is_active());
     }
 
     #[tokio::test]
