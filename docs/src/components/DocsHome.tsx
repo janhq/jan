@@ -5,12 +5,21 @@ import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 const SECTIONS = [
   {
     icon: Computer,
-    title: 'Jan',
+    title: 'Jan Desktop',
     description:
-      'Jan Desktop and Jan Agent, the cowork-style app and the standalone agent.',
-    tags: 'Quickstart · Agents · CLI',
+      'The cowork-style desktop app — chat, models, MCP connectors, and local API server.',
+    tags: 'Quickstart · Models · CLI',
     href: '/docs/desktop',
     chip: 'bg-[#E0EEFE] text-[#0668D5]',
+  },
+  {
+    icon: Bot,
+    title: 'Jan Agent',
+    description:
+      'The standalone agent, distributed separately — launch autonomous coding agents against a local model.',
+    tags: 'Quickstart · How it works',
+    href: '/docs/agent',
+    chip: 'bg-[#FDE68A]/60 text-[#92400E]',
   },
   {
     icon: BrainCircuit,
@@ -25,8 +34,8 @@ const SECTIONS = [
 ]
 
 const COMMON_PATHS = [
-  { icon: Rocket, title: 'Quickstart', href: '/docs/desktop/quickstart' },
-  { icon: Bot, title: 'Jan Agent', href: '/docs/desktop/agents' },
+  { icon: Rocket, title: 'Desktop Quickstart', href: '/docs/desktop/quickstart' },
+  { icon: Bot, title: 'Jan Agent Quickstart', href: '/docs/agent/quickstart' },
   {
     icon: Share2,
     title: 'Tokamak install',
@@ -63,7 +72,7 @@ const DocsHome = () => {
         </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-5 mt-16 lg:mt-20 max-w-3xl mx-auto px-4">
+      <div className="grid md:grid-cols-3 gap-5 mt-16 lg:mt-20 max-w-4xl mx-auto px-4">
         {SECTIONS.map((section) => (
           <a
             key={section.title}

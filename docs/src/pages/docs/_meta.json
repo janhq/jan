@@ -10,5 +10,9 @@
   "desktop": {
     "type": "page",
     "title": "Jan Desktop"
+  },
+  "agent": {
+    "type": "page",
+    "title": "Jan Agent"
   }
 }
