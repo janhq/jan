@@ -1437,6 +1437,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               totalTokens:
                 usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
             },
+            duration: Math.max(1, Math.ceil(durationSec)),
             tokenSpeed: {
               tokenSpeed: Math.round(tokenSpeed * 100) / 100,
               promptSpeed: promptPerSecond

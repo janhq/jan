@@ -368,6 +368,9 @@ export function convertThreadMessageToUIMessage(
     metadata: {
       ...(threadMessage.metadata || {}),
       createdAt: new Date(threadMessage.created_at || Date.now()),
+      completedAt: threadMessage.completed_at
+        ? new Date(threadMessage.completed_at)
+        : undefined,
     },
   } as UIMessage
 }

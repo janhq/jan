@@ -190,6 +190,12 @@ export const MessageItem = memo(
           status === CHAT_STATUS.SUBMITTED)) ||
       hasPendingToolCall
 
+    // Pre-computed duration (seconds) written to JSONL metadata at stream
+    // completion, surviving remount when navigating between threads.
+    const persistedDuration = !isStreaming
+      ? (metadata?.duration as number | undefined)
+      : undefined
+
     // Aggregate RAG citations in part order and record each rag tool part's
     // base offset, so its card numbers/anchors continue the same global
     // sequence the inline superscript markers use.
@@ -633,6 +639,7 @@ export const MessageItem = memo(
           key={groupKey}
           className="w-full text-muted-foreground"
           isStreaming={groupIsStreaming}
+          duration={persistedDuration}
           shouldCollapse={shouldCollapse}
           forceOpen={forceOpen}
           defaultOpen={hasDisplayableContent && !hasFollowingContent}
