@@ -1288,11 +1288,15 @@ mod tests {
         let bg = Arc::new(BackgroundSubagents::default());
         let (_tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
         let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
             BackgroundEntry {
                 result: Some(rx),
                 abort: handle.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
             },
         );
 
@@ -1420,11 +1424,15 @@ mod tests {
         let (_tx2, rx2) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
         let handle1 = tokio::spawn(async { std::future::pending::<()>().await });
         let handle2 = tokio::spawn(async { std::future::pending::<()>().await });
+        let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
             BackgroundEntry {
                 result: Some(rx1),
                 abort: handle1.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx.clone(),
             },
         );
         bg.inner.lock().unwrap().insert(
@@ -1432,6 +1440,9 @@ mod tests {
             BackgroundEntry {
                 result: Some(rx2),
                 abort: handle2.abort_handle(),
+                run_id: "r2".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
             },
         );
 
