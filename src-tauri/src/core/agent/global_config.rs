@@ -14,17 +14,14 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # Applies to every project unless overridden by that project's
 # .jan/agent/agent.toml [provider] section.
 #
-# default_model = "gpt-4o"   # used when no --model / agent.toml model is set
-# smol_model = "gpt-4o-mini" # fast model for the `smol` role (/goal evaluation)
+# default_model = "my-model"        # used when no --model / agent.toml model is set
+# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
+#                                     # defaults to `default_model` when unset
 #
-# [providers.openai]
+# [providers.my-provider]
 # api_key = "sk-..."
-# base_url = "https://api.openai.com/v1"
-# models = ["gpt-4o"]
-#
-# [providers.anthropic]
-# api_key = "sk-ant-..."
-# models = ["claude-sonnet-5"]
+# base_url = "https://api.example.com/v1"
+# models = ["my-model"]
 "#;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
