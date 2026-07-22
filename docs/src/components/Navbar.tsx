@@ -13,7 +13,7 @@ import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 const MENU_ITEMS = [
   {
     name: 'Jan',
-    href: '/',
+    href: '/docs/desktop/quickstart',
     children: [
       { name: 'Jan Desktop', href: '/docs/desktop/quickstart' },
       { name: 'Jan Agent', href: '/docs/desktop/agents/quickstart' },
