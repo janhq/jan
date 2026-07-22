@@ -1003,6 +1003,10 @@ async fn run_turn_cycle(
     // mid-task by a fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // Set on any turn where compaction ran, so the final return can emit
+    // `MessagesUpdated` even when compaction happened on a prior (tool-call)
+    // turn and the final turn itself didn't need retry.
+    let mut did_compact = false;
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
@@ -1041,6 +1045,7 @@ async fn run_turn_cycle(
                             attempts + 1
                         );
                         conversation_messages = compacted;
+                        did_compact = true;
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
@@ -1054,6 +1059,11 @@ async fn run_turn_cycle(
         let tool_calls = extract_tool_calls(&completion);
 
         if tool_calls.is_empty() {
+            if did_compact {
+                let _ = events.send(StreamEvent::MessagesUpdated {
+                    messages: conversation_messages.clone(),
+                });
+            }
             return Ok(completion);
         }
 

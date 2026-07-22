@@ -1170,6 +1170,10 @@ impl App {
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+            StreamEvent::MessagesUpdated { messages } => {
+                self.history = messages;
+                self.persist();
+            }
         }
     }
 

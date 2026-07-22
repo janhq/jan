@@ -1280,6 +1280,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Error { code, message } => {
             eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
         }
+        // The non-interactive CLI doesn't persist session state, so
+        // MessagesUpdated is a no-op here.
+        StreamEvent::MessagesUpdated { .. } => {}
         StreamEvent::PermissionRequest {
             request_id,
             tool_name,
