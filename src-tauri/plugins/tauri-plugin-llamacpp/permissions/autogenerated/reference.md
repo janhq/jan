@@ -11,7 +11,6 @@ Default permissions for the llamacpp plugin
 - `allow-stop-router`
 - `allow-try-graceful-stop-router`
 - `allow-force-kill-router-tree`
-- `allow-force-stop-model`
 - `allow-get-router-info`
 - `allow-reload-router-models`
 - `allow-router-slots-idle`
@@ -340,32 +339,6 @@ Enables the force_kill_router_tree command without any pre-configured scope.
 <td>
 
 Denies the force_kill_router_tree command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:allow-force-stop-model`
-
-</td>
-<td>
-
-Enables the force_stop_model command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp:deny-force-stop-model`
-
-</td>
-<td>
-
-Denies the force_stop_model command without any pre-configured scope.
 
 </td>
 </tr>

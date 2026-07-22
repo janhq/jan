@@ -223,6 +223,7 @@
     "delete": "Smazat"
   },
   "modelSettings": {
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "Nastavení modelu - {{modelId}}",
     "description": "Nakonfigurujte nastavení modelu pro optimalizaci výkonu a chování."
   },

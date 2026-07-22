@@ -10,5 +10,8 @@
   "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
   "apiKeyLabel": "API key",
   "apiKeyPlaceholder": "Paste your API key",
-  "invalidBaseUrl": "Base URL must be a valid http(s) URL"
+  "invalidBaseUrl": "Base URL must be a valid http(s) URL",
+  "globalSettings": "Global settings",
+  "stripReasoning": "Strip reasoning from context",
+  "stripReasoningDesc": "Remove prior turns' thinking/reasoning content before resending history, across all providers. Improves KV-cache reuse for local models, but some models (e.g. newer Qwen releases) recommend keeping it for better multi-turn reasoning."
 }

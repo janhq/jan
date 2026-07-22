@@ -102,8 +102,8 @@
     "coloredUserBubbleDesc": "Use the accent color as the background of your messages. When off, they match assistant messages with plain text on a neutral background.",
     "renderHtmlArtifacts": "Render HTML & SVG artifacts",
     "renderHtmlArtifactsDesc": "Add a Preview tab to HTML and SVG code blocks. HTML runs the model-generated page in a sandboxed frame that executes its own scripts but cannot access Jan, your files, or the network; SVG renders statically with scripts disabled. Off by default.",
-    "foldInterstitialReasoning": "Fold interim text into reasoning",
-    "foldInterstitialReasoningDesc": "When on, any answer text a model emits between two reasoning steps is folded into the collapsible reasoning trace, and only the final answer shows in the message body. Turn off to show that interim text as a normal message.",
+    "autoGenerateTitle": "Auto-generate chat title",
+    "autoGenerateTitleDesc": "Automatically summarize new conversations into a thread title. Turn off to keep the default title until you rename it yourself.",
     "windowBackground": "Window Background",
     "windowBackgroundDesc": "Set the app window's background color.",
     "appMainView": "App Main View",
@@ -182,6 +182,21 @@
     "peerSslDesc": "Validate the SSL certificates of peer connections.",
     "hostSsl": "Host SSL",
     "hostSslDesc": "Validate the SSL certificates of destination hosts."
+  },
+  "webSearch": {
+    "title": "Web Search",
+    "description": "Let models search and read the web using Jan's built-in tools.",
+    "enable": "Enable Web Search",
+    "enableDesc": "Advertise the web_search and web_fetch tools to models that support tool use. Works out of the box with no API key.",
+    "provider": "Search Provider",
+    "providerDesc": "Choose the backend that answers web_search and web_fetch.",
+    "apiKey": "{{provider}} API Key",
+    "apiKeyOptional": "Optional. Provide a {{provider}} API key for higher rate limits and structured results. Leave empty to use the free keyless endpoint.",
+    "apiKeyRequired": "Required. {{provider}} needs an API key to return results.",
+    "apiKeyPlaceholder": "Enter your {{provider}} API key",
+    "endpoint": "{{provider}} Instance URL",
+    "endpointDesc": "Required. The base URL of your {{provider}} instance, with the JSON API enabled.",
+    "endpointPlaceholder": "https://searx.example.com"
   },
   "localApiServer": {
     "title": "Local API Server",

@@ -4,6 +4,12 @@ const writtenFiles: Record<string, string> = {}
 const modelYamls: Record<string, unknown> = {}
 
 vi.mock('@janhq/core', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
   fs: {
     existsSync: vi.fn(async (p: string) => p === '/p/models' || p in modelYamls),
     mkdir: vi.fn(async () => undefined),
@@ -159,6 +165,51 @@ describe('generatePreset MTP emission', () => {
   })
 })
 
+describe('generatePreset parallel reservation', () => {
+  it('adds one reserved background slot on top of the global parallel value', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { parallel: 1 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('parallel = 2')
+  })
+
+  it('adds one reserved background slot on top of a per-model parallel override', async () => {
+    setupModel('llama', { parallel: 3 })
+    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('parallel = 4')
+  })
+
+  it('omits parallel when unset, leaving llama.cpp auto-default untouched', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('parallel =')
+  })
+
+  it('reserves no extra slot when reservedBackgroundSlots is 0 (global)', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { parallel: 1 } as any, {
+      supportsMtp: false,
+      reservedBackgroundSlots: 0,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('parallel = 1')
+  })
+
+  it('reserves no extra slot when reservedBackgroundSlots is 0 (per-model)', async () => {
+    setupModel('llama', { parallel: 3 })
+    await generatePreset('/p', '/jan', {} as any, {
+      supportsMtp: false,
+      reservedBackgroundSlots: 0,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('parallel = 3')
+  })
+})
+
 describe('generatePreset ctx-size default', () => {
   it('emits ctx-size = 8192 in [*] when fit is off and no ctx_size is set', async () => {
     setupModel('llama', {})
@@ -207,6 +258,64 @@ describe('generatePreset ctx-size default', () => {
     // [*] keeps the global, but the per-model section overrides to native.
     expect(ini).toContain('ctx-size = 16384')
     expect(ini).toContain('ctx-size = 0')
+  })
+})
+
+describe('generatePreset n-gpu-layers under fit', () => {
+  it('emits global n-gpu-layers when fit is off', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: false, n_gpu_layers: 20 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('n-gpu-layers = 20')
+  })
+
+  it('omits global n-gpu-layers when auto-fit is enabled so fit owns offload', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: true, n_gpu_layers: 20 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('n-gpu-layers')
+  })
+
+  it('emits per-model n-gpu-layers when fit is off', async () => {
+    setupModel('llama', { n_gpu_layers: 33 })
+    await generatePreset('/p', '/jan', { fit: false } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('n-gpu-layers = 33')
+  })
+
+  it('omits per-model n-gpu-layers when auto-fit is enabled', async () => {
+    setupModel('llama', { n_gpu_layers: 33 })
+    await generatePreset('/p', '/jan', { fit: true } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('n-gpu-layers')
+  })
+})
+
+describe('generatePreset context-shift', () => {
+  it('emits context-shift = true when ctx_shift is enabled', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { ctx_shift: true } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('context-shift = true')
+  })
+
+  it('omits context-shift when disabled, matching llama.cpp own default', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { ctx_shift: false } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('context-shift')
   })
 })
 

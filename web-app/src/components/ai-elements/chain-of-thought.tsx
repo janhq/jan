@@ -73,7 +73,7 @@ export const ChainOfThought = memo(
   ({
     className,
     isStreaming = false,
-    shouldCollapse = false,
+    shouldCollapse,
     forceOpen = false,
     open,
     defaultOpen = true,
@@ -87,14 +87,16 @@ export const ChainOfThought = memo(
       onChange: onOpenChange,
     })
 
-    // Auto-collapse once text content appears after this CoT group, unless
-    // something inside still needs the user's attention (forceOpen).
+    // Follow the caller's open intent. forceOpen pins it open (e.g. a tool
+    // awaiting approval). When shouldCollapse is a boolean, track it two-way so
+    // the trace opens as a step gains content and collapses when it has none or
+    // the answer begins; when undefined the caller isn't controlling collapse,
+    // so defaultOpen / manual toggle is left untouched. Re-applied only on
+    // input change, preserving a manual toggle between changes.
     useEffect(() => {
-      if (forceOpen) {
-        setIsOpen(true)
-      } else if (shouldCollapse) {
-        setIsOpen(false)
-      }
+      if (forceOpen) setIsOpen(true)
+      else if (shouldCollapse === true) setIsOpen(false)
+      else if (shouldCollapse === false) setIsOpen(true)
     }, [forceOpen, shouldCollapse, setIsOpen])
 
     const handleOpenChange = (newOpen: boolean) => {
@@ -123,7 +125,12 @@ export const ChainOfThought = memo(
     return (
       <ChainOfThoughtContext.Provider value={contextValue}>
         <Collapsible
-          className={cn('not-prose', className)}
+          className={cn(
+            'not-prose rounded-2xl transition-colors',
+            // Card frame only while expanded; collapsed shows a bare summary row.
+            'data-[state=open]:border data-[state=open]:border-border/50 data-[state=open]:bg-main-view-fg/2 data-[state=open]:p-3',
+            className
+          )}
           onOpenChange={handleOpenChange}
           open={isOpen}
           {...props}
@@ -209,9 +216,7 @@ export const ChainOfThoughtContent = memo(
       )}
       {...props}
     >
-      <div className="ml-2 pl-4 border-l-2 border-dotted space-y-3">
-        {children}
-      </div>
+      <div className="space-y-3">{children}</div>
     </CollapsibleContent>
   )
 )

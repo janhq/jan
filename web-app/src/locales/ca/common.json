@@ -216,6 +216,7 @@
     "delete": "Suprimeix"
   },
   "modelSettings": {
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "Paràmetres del model - {{modelId}}",
     "description": "Configura els paràmetres del model per optimitzar el rendiment i el comportament."
   },

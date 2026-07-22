@@ -11,6 +11,8 @@ import { useAppState } from '@/hooks/useAppState'
 
 type ThreadState = {
   threads: Record<string, Thread>
+  isLoadingThreads: boolean
+  setThreadsLoading: (loading: boolean) => void
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
@@ -58,6 +60,8 @@ const cleanupVectorDB = async (threadId: string) => {
 
 export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
+  isLoadingThreads: true,
+  setThreadsLoading: (loading) => set({ isLoadingThreads: loading }),
   searchIndex: null,
   setThreads: (threads) => {
     const threadMap = threads.reduce(

@@ -12,7 +12,10 @@ use core::{
 #[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
 #[cfg(not(feature = "cli"))]
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 #[cfg(not(feature = "cli"))]
 use tauri::{Emitter, Manager, RunEvent};
 #[cfg(not(feature = "cli"))]
@@ -54,10 +57,6 @@ macro_rules! invoke_commands_with_extras {
         core::app::settings_store::settings_remove,
         core::server::provider_secrets::set_secret,
         core::server::provider_secrets::get_secret,
-        // Extension commands
-        core::extensions::commands::get_jan_extensions_path,
-        core::extensions::commands::install_extensions,
-        core::extensions::commands::get_active_extensions,
         // System commands
         core::system::commands::relaunch,
         core::system::commands::open_app_directory,
@@ -151,6 +150,14 @@ fn is_llamacpp_router_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> b
         .unwrap_or(false)
 }
 
+#[cfg(all(not(feature = "cli"), not(target_os = "macos")))]
+fn is_proxy_server_running<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    app.try_state::<AppState>()
+        .and_then(|s| s.server_handle.try_lock().ok().map(|g| g.is_some()))
+        .unwrap_or(false)
+}
+
 #[cfg(not(feature = "cli"))]
 fn reemit_busy_if_any<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) {
     let busy = BUSY_MODELS.lock().map(|g| g.clone()).unwrap_or_default();
@@ -229,7 +236,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_vector_db::init())
-        .plugin(tauri_plugin_rag::init());
+        .plugin(tauri_plugin_rag::init())
+        .plugin(tauri_plugin_websearch::init());
 
     #[cfg(feature = "deep-link")]
     {
@@ -272,11 +280,13 @@ pub fn run() {
             mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
+            mcp_starting: Arc::new(Mutex::new(HashSet::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
             model_param_defaults: Arc::new(Mutex::new(HashMap::new())),
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
+            mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -308,12 +318,6 @@ pub fn run() {
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default();
             let app_version = app.config().version.clone().unwrap_or_default();
-            // Migrate extensions
-            if let Err(e) =
-                setup::install_extensions(app.handle().clone(), stored_version != app_version)
-            {
-                log::error!("Failed to install extensions: {e}");
-            }
 
             // Migrate MCP servers
             if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
@@ -365,22 +369,38 @@ pub fn run() {
             ..
         } = &event
         {
-            if label == "main"
-                && !SHUTTING_DOWN.load(Ordering::SeqCst)
-                && is_llamacpp_router_running(app)
-            {
-                api.prevent_close();
-                let _ = app.emit("llamacpp-close-attempt", ());
-                if GRACEFUL_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-                    reemit_busy_if_any(app);
+            if label == "main" && !SHUTTING_DOWN.load(Ordering::SeqCst) {
+                // macOS: closing the window hides it; the app (and background
+                // services) keep running. Quit happens via Cmd+Q / dock / tray,
+                // which routes through RunEvent::ExitRequested.
+                #[cfg(target_os = "macos")]
+                {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
                     return;
                 }
-                let app_handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    handle_graceful_exit(app_handle, "CloseRequested", 0).await;
-                    GRACEFUL_IN_PROGRESS.store(false, Ordering::SeqCst);
-                });
-                return;
+                // Windows/Linux: hide to tray only while the Local API Server is
+                // running; otherwise fall through to the normal quit-on-close.
+                // The llamacpp router is not a reason to keep the app resident
+                // (normal chat usage keeps it alive), so it gets torn down via
+                // the ExitRequested path on quit.
+                #[cfg(not(target_os = "macos"))]
+                if is_proxy_server_running(app) {
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                    return;
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = &event {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
             }
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {

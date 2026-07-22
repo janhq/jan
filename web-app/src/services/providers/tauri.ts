@@ -16,6 +16,7 @@ import {
   API_KEY_FALLBACKS_SETTING_KEY,
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
+import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -106,6 +107,8 @@ export class TauriProvidersService extends DefaultProvidersService {
                 capabilities,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
                 imported: (model as { imported?: boolean }).imported,
+                template_kwargs: (model as { template_kwargs?: TemplateKwarg[] })
+                  .template_kwargs,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
@@ -177,6 +180,8 @@ export class TauriProvidersService extends DefaultProvidersService {
             headers[header.header] = header.value
           })
         }
+
+        ensureAnthropicHeaders(provider, headers)
 
         const response = await fetchTauri(`${provider.base_url}/models`, {
           method: 'GET',

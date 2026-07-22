@@ -8,6 +8,7 @@ import {
   type SettingComponentProps,
   AIEngine,
   type AttachmentFileInfo,
+  logger,
 } from '@janhq/core'
 import './env.d'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
@@ -30,7 +31,7 @@ export default class RagExtension extends RAGExtension {
     try {
       await this.configure()
     } catch (e) {
-      console.error('[RAG] configure() failed during onLoad:', e)
+      logger.error('[RAG] configure() failed during onLoad:', e)
     }
     // Check ANN availability on load (already self-contained try/catch)
     this.checkANNAvailability()
@@ -82,18 +83,18 @@ export default class RagExtension extends RAGExtension {
       ) as unknown as VectorDBExtension
       if (vec?.getStatus) {
         const status = await vec.getStatus()
-        console.log(
+        logger.info(
           '[RAG] Vector DB ANN support:',
           status.ann_available ? '✓ AVAILABLE' : '✗ NOT AVAILABLE'
         )
         if (!status.ann_available) {
-          console.warn(
+          logger.warn(
             '[RAG] Warning: sqlite-vec not loaded. Collections will use slower linear search.'
           )
         }
       }
     } catch (e) {
-      console.error('[RAG] Failed to check ANN status:', e)
+      logger.error('[RAG] Failed to check ANN status:', e)
     }
   }
 
@@ -280,7 +281,7 @@ export default class RagExtension extends RAGExtension {
         content: [{ type: 'text', text: JSON.stringify(payload) }],
       }
     } catch (e) {
-      console.error('[RAG] Retrieve error:', e)
+      logger.error('[RAG] Retrieve error:', e)
       let msg = 'Unknown error'
       if (e instanceof Error) {
         msg = e.message
@@ -460,7 +461,7 @@ export default class RagExtension extends RAGExtension {
       // Preferred/required path: let Vector DB extension handle full file ingestion
       const canIngestFile = typeof (vec as any)?.ingestFile === 'function'
       if (!canIngestFile) {
-        console.error(
+        logger.error(
           '[RAG] Vector DB extension missing ingestFile; cannot ingest document'
         )
         continue

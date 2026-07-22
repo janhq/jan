@@ -20,14 +20,6 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "active": false,
       "official": true
     },
-    "exa": {
-      "type": "http",
-      "url": "https://mcp.exa.ai/mcp",
-      "command": "",
-      "args": [],
-      "env": {},
-      "active": true
-    },
     "browsermcp": {
       "command": "npx",
       "args": ["@browsermcp/mcp"],

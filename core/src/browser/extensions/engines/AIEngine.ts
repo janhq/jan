@@ -175,7 +175,18 @@ export interface modelInfo {
   // True if the model was imported from a user-supplied local file
   // (path lives outside the provider's managed models directory).
   imported?: boolean
+  // Chat-template kwargs the model's embedded jinja template accepts
+  // (e.g. `preserve_thinking`), detected from the GGUF at import/list time.
+  template_kwargs?: TemplateKwarg[]
   [key: string]: any
+}
+
+export type TemplateKwargType = 'boolean' | 'number' | 'string'
+
+export interface TemplateKwarg {
+  name: string
+  type: TemplateKwargType
+  default: boolean | number | string
 }
 
 // 1. /list

@@ -45,6 +45,7 @@ vi.mock('@ai-sdk/openai', () => ({
     ;(globalThis as any).__capturedOpenAICfg = config
     const fn: any = vi.fn(() => ({ type: 'openai' }))
     fn.chat = vi.fn(() => ({ type: 'openai' }))
+    fn.responses = vi.fn(() => ({ type: 'openai' }))
     return fn
   }),
 }))
@@ -143,7 +144,15 @@ describe('model-factory deep coverage', () => {
     it('extractMetadata handles missing fields in timings', async () => {
       const ext = await getExtractor()
       const result = await ext.extractMetadata({ parsedBody: { timings: {} } })
-      expect(result.providerMetadata.promptTokens).toBeNull()
+      expect(result.providerMetadata.promptTokens).toBe(0)
+    })
+
+    it('extractMetadata sums prompt_n and cache_n (KV-cache-reused tokens) into promptTokens', async () => {
+      const ext = await getExtractor()
+      const result = await ext.extractMetadata({
+        parsedBody: { timings: { prompt_n: 21, cache_n: 200, predicted_n: 95 } },
+      })
+      expect(result.providerMetadata.promptTokens).toBe(221)
     })
 
     it('createStreamExtractor processes chunks and builds metadata', async () => {
@@ -159,6 +168,58 @@ describe('model-factory deep coverage', () => {
       const s = ext.createStreamExtractor()
       s.processChunk({})
       expect(s.buildMetadata()).toBeUndefined()
+    })
+
+    it('createStreamExtractor publishes live token stats globally and per-thread on every chunk', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().setCurrentStreamThreadId('thread-live')
+
+      const ext = await getExtractor()
+      const s = ext.createStreamExtractor()
+      s.processChunk({
+        timings: { prompt_n: 5, predicted_n: 15, predicted_per_second: 35, prompt_per_second: 65 },
+      })
+
+      expect(useAppState.getState().liveTokenStats).toEqual({
+        promptTokens: 5,
+        completionTokens: 15,
+        tokensPerSecond: 35,
+        promptPerSecond: 65,
+      })
+      expect(useAppState.getState().liveTokenStatsByThread['thread-live']).toEqual({
+        promptTokens: 5,
+        completionTokens: 15,
+        tokensPerSecond: 35,
+        promptPerSecond: 65,
+      })
+
+      s.processChunk({
+        timings: { prompt_n: 5, predicted_n: 20, predicted_per_second: 40, prompt_per_second: 65 },
+      })
+      expect(useAppState.getState().liveTokenStatsByThread['thread-live'].completionTokens).toBe(20)
+
+      useAppState.getState().setCurrentStreamThreadId(undefined)
+      useAppState.getState().updateThreadLiveTokenStats('thread-live', undefined)
+    })
+
+    it('live promptTokens includes cache_n so context usage does not reset on cached turns', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().setCurrentStreamThreadId('thread-cached')
+
+      const ext = await getExtractor()
+      const s = ext.createStreamExtractor()
+      // Deep into a conversation: only 21 tokens are freshly processed this
+      // turn, the other 20,935 are served from the KV cache.
+      s.processChunk({
+        timings: { prompt_n: 21, cache_n: 20935, predicted_n: 95, predicted_per_second: 30 },
+      })
+
+      expect(useAppState.getState().liveTokenStatsByThread['thread-cached'].promptTokens).toBe(
+        20956
+      )
+
+      useAppState.getState().setCurrentStreamThreadId(undefined)
+      useAppState.getState().updateThreadLiveTokenStats('thread-cached', undefined)
     })
   })
 
@@ -254,6 +315,53 @@ describe('model-factory deep coverage', () => {
     it('xai passes custom headers', async () => {
       await ModelFactory.createModel('x', mkProvider('xai', { custom_header: [{ header: 'X-X', value: 'v' }] }), {})
       expect((globalThis as any).__capturedXaiCfg.headers).toEqual({ 'X-X': 'v' })
+    })
+  })
+
+  /* google api-key rotation */
+  describe('google api-key rotation', () => {
+    it('rotates to the next key via x-goog-api-key on 429', async () => {
+      const realFetch = globalThis.fetch
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 429 }))
+        .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+      try {
+        await ModelFactory.createModel(
+          'gemini-pro',
+          mkProvider('google', { api_key: 'key1', api_key_fallbacks: ['key2'] }),
+          {}
+        )
+        // The native @ai-sdk/google client always sends the primary key in
+        // this header; the rotating fetch must OVERRIDE it, not append.
+        const { fetch: rotatingFetch } = (globalThis as any).__capturedGoogleCfg
+        await rotatingFetch('https://g/v1beta/models', {
+          method: 'POST',
+          headers: { 'x-goog-api-key': 'key1' },
+          body: JSON.stringify({ messages: [] }),
+        })
+
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        const firstHeaders = new Headers(fetchMock.mock.calls[0][1].headers)
+        const secondHeaders = new Headers(fetchMock.mock.calls[1][1].headers)
+        expect(firstHeaders.get('x-goog-api-key')).toBe('key1')
+        expect(secondHeaders.get('x-goog-api-key')).toBe('key2')
+        // single header, not a duplicated/appended value
+        expect(secondHeaders.get('x-goog-api-key')).not.toContain('key1')
+      } finally {
+        globalThis.fetch = realFetch
+      }
+    })
+
+    it('uses a plain custom fetch (no rotation) with a single key', async () => {
+      await ModelFactory.createModel(
+        'gemini-pro',
+        mkProvider('google', { api_key: 'only', api_key_fallbacks: [] }),
+        {}
+      )
+      const { apiKey } = (globalThis as any).__capturedGoogleCfg
+      expect(apiKey).toBe('only')
     })
   })
 

@@ -40,14 +40,6 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/plugin-log', () => ({
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-  trace: vi.fn(),
-}))
-
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn().mockResolvedValue(() => undefined),
   emit: vi.fn(),
@@ -63,6 +55,12 @@ vi.mock('@tauri-apps/api/path', () => ({
 
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
   getJanDataFolderPath: vi.fn(),
   fs: {
     existsSync: vi.fn(),

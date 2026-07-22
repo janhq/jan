@@ -4,6 +4,10 @@ import '@testing-library/jest-dom'
 
 // ---- Module mocks ----------------------------------------------------------
 
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({ t: (k: string) => k }),
+}))
+
 const selectedModelRef = vi.hoisted(() => ({ current: { id: 'm1' } as any }))
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
@@ -112,7 +116,6 @@ vi.mock('@/hooks/useToolApprovalRequests', () => ({
 
 // Import after mocks
 import { MessageItem } from '../MessageItem'
-import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 
 const makeMsg = (overrides: any = {}) => ({
   id: 'msg-1',
@@ -127,7 +130,6 @@ describe('MessageItem', () => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
     pendingApprovalsRef.current = {}
-    useInterfaceSettings.setState({ foldInterstitialReasoning: true })
   })
 
   it('renders assistant text via RenderMarkdown', () => {
@@ -184,7 +186,7 @@ describe('MessageItem', () => {
         onRegenerate={onRegenerate}
       />
     )
-    const regenBtn = screen.getByTitle('Regenerate response')
+    const regenBtn = screen.getByTitle('chat:actions.regenerate')
     fireEvent.click(regenBtn)
     expect(onRegenerate).toHaveBeenCalledWith('msg-1')
   })
@@ -200,7 +202,53 @@ describe('MessageItem', () => {
         onRegenerate={onRegenerate}
       />
     )
-    expect(screen.queryByTitle('Regenerate response')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('chat:actions.regenerate')).not.toBeInTheDocument()
+  })
+
+  it('shows Continue button on a stopped last assistant message', () => {
+    const onContinue = vi.fn()
+    render(
+      <MessageItem
+        message={
+          makeMsg({ metadata: { createdAt: new Date(), stopped: true } }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onContinue={onContinue}
+      />
+    )
+    const btn = screen.getByTitle('chat:actions.continue')
+    fireEvent.click(btn)
+    expect(onContinue).toHaveBeenCalledWith('msg-1')
+  })
+
+  it('hides Continue button when the turn finished normally', () => {
+    render(
+      <MessageItem
+        message={makeMsg() as any}
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onContinue={vi.fn()}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.continue')).not.toBeInTheDocument()
+  })
+
+  it('hides Continue button on a stopped message that is not last', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({ metadata: { createdAt: new Date(), stopped: true } }) as any
+        }
+        isFirstMessage
+        isLastMessage={false}
+        status={'ready' as any}
+        onContinue={vi.fn()}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.continue')).not.toBeInTheDocument()
   })
 
   it('fires onEdit when edit dialog saves', () => {
@@ -338,7 +386,7 @@ describe('MessageItem', () => {
     expect(screen.getByTestId('cot')).toBeInTheDocument()
   })
 
-  describe('foldInterstitialReasoning toggle', () => {
+  describe('interim reasoning text', () => {
     const interstitialMsg = () =>
       makeMsg({
         parts: [
@@ -349,28 +397,7 @@ describe('MessageItem', () => {
         ],
       }) as any
 
-    it('folds interim text between reasoning blocks into the trace when on', () => {
-      useInterfaceSettings.setState({ foldInterstitialReasoning: true })
-      render(
-        <MessageItem
-          message={interstitialMsg()}
-          isFirstMessage
-          isLastMessage
-          status={'ready' as any}
-        />
-      )
-      // Single trace anchored at the last reasoning part.
-      expect(screen.getAllByTestId('cot')).toHaveLength(1)
-      // Interim text is folded in, so only the final answer hits the body renderer.
-      const bodies = screen.getAllByTestId('render-markdown')
-      expect(bodies).toHaveLength(1)
-      expect(bodies[0]).toHaveTextContent('final answer')
-      // Interim narration is present, but inside the trace (not a body message).
-      expect(screen.getByText('interim answer')).toBeInTheDocument()
-    })
-
-    it('renders interim text as a normal message and splits the trace when off', () => {
-      useInterfaceSettings.setState({ foldInterstitialReasoning: false })
+    it('renders interim text as a normal message and splits the trace', () => {
       render(
         <MessageItem
           message={interstitialMsg()}
@@ -388,8 +415,7 @@ describe('MessageItem', () => {
       expect(bodies[1]).toHaveTextContent('final answer')
     })
 
-    it('skips empty interim text parts when split mode is off', () => {
-      useInterfaceSettings.setState({ foldInterstitialReasoning: false })
+    it('skips empty interim text parts', () => {
       render(
         <MessageItem
           message={
@@ -553,6 +579,6 @@ describe('MessageItem', () => {
         onRegenerate={onRegenerate}
       />
     )
-    expect(screen.queryByTitle('Regenerate response')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('chat:actions.regenerate')).not.toBeInTheDocument()
   })
 })

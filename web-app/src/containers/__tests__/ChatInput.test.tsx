@@ -67,17 +67,30 @@ let selectedModelOverride: any = {
   capabilities: ['tools'],
   provider: 'llamacpp',
 }
+let selectedProviderOverride: any = 'llamacpp'
 const getProviderByNameMock = vi.fn()
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
     selector({
       selectedModel: selectedModelOverride,
-      selectedProvider: { provider: 'llamacpp' },
+      selectedProvider: selectedProviderOverride,
       providers: [],
       selectModelProvider: vi.fn(),
       updateProvider: vi.fn(),
       getProviderByName: getProviderByNameMock,
     }),
+}))
+
+vi.mock('@/hooks/useTokensCount', () => ({
+  useTokensCount: () => ({
+    maxTokens: undefined,
+    configuredCtxLen: undefined,
+    tokenCount: 0,
+    isNearLimit: false,
+    loading: false,
+    fitEnabled: false,
+    calculateTokens: vi.fn(),
+  }),
 }))
 
 vi.mock('@/hooks/useAssistant', () => ({
@@ -185,6 +198,8 @@ vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: () => ({
       get: () => undefined,
+      getByName: () => undefined,
+      listExtensions: () => [],
     }),
   },
 }))
@@ -257,6 +272,7 @@ vi.mock('@/components/ui/dropdown-menu', () => {
       </button>
     ),
     DropdownMenuTrigger: Pass,
+    DropdownMenuSeparator: () => null,
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
@@ -291,6 +307,7 @@ const resetAll = () => {
     capabilities: ['tools'],
     provider: 'llamacpp',
   }
+  selectedProviderOverride = { provider: 'llamacpp' }
   setPromptMock.mockClear()
   addToHistoryMock.mockClear()
   navigateHistoryMock.mockClear()
@@ -516,5 +533,39 @@ describe('ChatInput', () => {
     // dismiss icon (svg) sits alongside
     const svg = container.querySelector('.text-destructive svg')
     expect(svg).toBeTruthy()
+  })
+
+  describe('token counter visibility', () => {
+    // Regression: llama.cpp is a string provider ('llamacpp') and loads lazily,
+    // so it is never present in `activeModels` during a chat turn. The counter
+    // must still render off model selection + prompt/messages alone.
+    it('renders for llama.cpp even when activeModels is empty', () => {
+      selectedProviderOverride = { provider: 'llamacpp' }
+      appStateOverrides = { activeModels: [] }
+      promptState = 'hello'
+      renderInput()
+      expect(screen.getByTestId('stub-token-counter')).toBeInTheDocument()
+    })
+
+    it('renders for a remote provider (openai) with a selected model', () => {
+      selectedProviderOverride = 'openai'
+      appStateOverrides = { activeModels: [] }
+      promptState = 'hello'
+      renderInput()
+      expect(screen.getByTestId('stub-token-counter')).toBeInTheDocument()
+    })
+
+    it('does not render when no model is selected', () => {
+      selectedModelOverride = null
+      promptState = 'hello'
+      renderInput()
+      expect(screen.queryByTestId('stub-token-counter')).not.toBeInTheDocument()
+    })
+
+    it('does not render with no messages and an empty prompt', () => {
+      promptState = ''
+      renderInput()
+      expect(screen.queryByTestId('stub-token-counter')).not.toBeInTheDocument()
+    })
   })
 })

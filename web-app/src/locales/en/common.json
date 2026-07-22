@@ -13,6 +13,7 @@
   "experimental": "Experimental",
   "claude_code": "Claude Code",
   "https_proxy": "HTTPS Proxy",
+  "web_search": "Web Search",
   "extensions": "Extensions",
   "attachments": "Attachments",
   "general": "General",
@@ -246,6 +247,7 @@
   "modelSettings": {
     "title": "Model Settings - {{modelId}}",
     "description": "Configure model settings to optimize performance and behavior.",
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "samplingDefaults": {
       "title": "Default sampling parameters",
       "description": "Default sampler settings for this model. Used unless overridden by per-assistant or per-request values."
@@ -261,6 +263,16 @@
       "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
       "pMin": "Min draft probability",
       "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+    },
+    "templateKwargs": {
+      "section": "Chat template options",
+      "description": "Extra options this model's chat template accepts. Sent as chat_template_kwargs on each request; leave a value at its default to let the template decide.",
+      "addCustom": "Add custom option",
+      "keyPlaceholder": "name",
+      "valuePlaceholder": "value",
+      "add": "Add",
+      "cancel": "Cancel",
+      "remove": "Remove"
     }
   },
   "dialogs": {

@@ -109,7 +109,7 @@ export default class JanConversationalExtension extends ConversationalExtension 
     threadId: string,
     assistant: ThreadAssistantInfo
   ): Promise<ThreadAssistantInfo> {
-    return window.core.api.createThreadAssistant(threadId, assistant)
+    return window.core.api.createThreadAssistant({ threadId, assistant })
   }
 
   /**

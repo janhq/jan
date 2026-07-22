@@ -16,6 +16,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
@@ -43,6 +44,7 @@ import {
   getVersionInfo,
   hasBranching,
   repairDetachedAssistants,
+  planContinuation,
 } from '@/lib/message-branching'
 import {
   ThreadMessage,
@@ -72,6 +74,7 @@ import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -240,6 +243,9 @@ function ThreadDetail() {
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
     null
   )
+  const setChatMessagesRef = useRef<
+    ((updater: (prev: UIMessage[]) => UIMessage[]) => void) | null
+  >(null)
   // Holds the partial assistant output captured when the model stops with
   // `finishReason === 'length'`. Consumed by `handleContextSizeIncrease` so
   // the manual "Increase Context Size" button resumes from where the stream
@@ -251,6 +257,10 @@ function ThreadDetail() {
   // Set before a generation when the resulting assistant message should be
   // linked to a specific parent (versioning). Consumed once in onFinish.
   const pendingAssistantParentId = useRef<string | null>(null)
+  // Holds the id of a stopped assistant message being resumed. Continuing must
+  // extend the turn in place, not fork a new version, so onFinish deletes this
+  // stale partial once the continued reply is persisted.
+  const continueReplaceIdRef = useRef<string | null>(null)
 
   // Use the AI SDK chat hook
   const {
@@ -272,6 +282,10 @@ function ThreadDetail() {
     onFinish: ({ message, isAbort }) => {
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
+      // Consume once per generation so a skipped persist (error/empty) can't
+      // leak the replace target into a later, unrelated turn.
+      const continueReplaceId = continueReplaceIdRef.current
+      continueReplaceIdRef.current = null
 
       // Context limit hit: send partial content as prefill so the model continues
       // from where it stopped. The stream wrapper injects it as the first text-delta
@@ -301,28 +315,61 @@ function ThreadDetail() {
           }
           stampContextErrorOnThread(threadId)
           setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+          return
         }
-        return
+        // Non-context-limit length truncation: fall through and persist the
+        // partial marked as stopped so the "Continue" button can resume it.
       }
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
+
+      // The turn ended before completion (user hit Stop, or the model hit its
+      // output-token cap). Persist the partial marked `stopped` so the UI can
+      // offer a "Continue" affordance, and stamp the live message so the button
+      // appears without waiting for a reload.
+      const isStoppedTurn = isAbort || finishReason === 'length'
 
       // Persist assistant message to backend (skip if aborted).
       // For continuations, message.parts already contains partial + new content
       // because the stream wrapper prepended the partial text as the first delta.
       if (
-        !isAbort &&
         message.role === 'assistant' &&
         uiMessageHasMeaningfulContent(message)
       ) {
         const contentParts = extractContentPartsFromUIMessage(message)
-        const messageMetadata = (message.metadata || {}) as Record<
-          string,
-          unknown
-        >
+        const messageMetadata = {
+          ...((message.metadata || {}) as Record<string, unknown>),
+          ...(isStoppedTurn ? { stopped: true } : {}),
+        }
 
-        let parentForAssistant = pendingAssistantParentId.current
+        if (isStoppedTurn) {
+          setChatMessagesRef.current?.((prev) =>
+            prev.map((m) =>
+              m.id === message.id
+                ? {
+                    ...m,
+                    metadata: {
+                      ...(m.metadata as Record<string, unknown> | undefined),
+                      stopped: true,
+                    },
+                  }
+                : m
+            )
+          )
+        }
+
+        // A continuation resumes a stopped turn: the stale partial is deleted
+        // below so the continued reply takes its place instead of forking a new
+        // version. Inherit the partial's parent so the branch link holds.
+        const continuation = planContinuation(
+          useMessages.getState().getMessages(threadId),
+          message.id,
+          continueReplaceId,
+          pendingAssistantParentId.current
+        )
         pendingAssistantParentId.current = null
+
+        let parentForAssistant = continuation.parentId
 
         // Never persist a detached assistant in a branched thread: if the
         // pending link was lost (e.g. a multi-step turn consumed the ref before
@@ -383,6 +430,13 @@ function ThreadDetail() {
           }
         }
 
+        // Drop the stale partial so the resumed turn replaces it in place
+        // rather than appearing as a separate version of the same reply.
+        if (continuation.deletePartialId) {
+          deleteMessage(threadId, continuation.deletePartialId)
+          useMessageErrors.getState().clearError(continuation.deletePartialId)
+        }
+
         for (const m of existingMessages) {
           const meta = m.metadata as Record<string, unknown> | undefined
           if (meta?.error) {
@@ -418,8 +472,9 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Built-in RAG tools are internal and should not require approval.
-            const approved = ragToolNames.has(toolName)
+            // Built-in RAG and native web tools are internal and auto-allowed.
+            const approved = ragToolNames.has(toolName) ||
+              WEB_TOOL_NAMES.has(toolName)
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
@@ -439,7 +494,9 @@ function ThreadDetail() {
 
             let result
 
-            if (ragToolNames.has(toolName)) {
+            if (WEB_TOOL_NAMES.has(toolName)) {
+              result = await executeWebTool(toolName, toolCall.input)
+            } else if (ragToolNames.has(toolName)) {
               result = await serviceHub.rag().callTool({
                 toolName,
                 arguments: toolCall.input,
@@ -509,7 +566,13 @@ function ThreadDetail() {
           (assistantCount > 0 &&
             assistantCount % TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES === 0)
         const currentThread = useThreads.getState().threads[threadId]
-        if (isRefreshTick && !currentThread?.metadata?.titleSetManually) {
+        const autoGenerateTitle =
+          useInterfaceSettings.getState().autoGenerateTitle
+        if (
+          autoGenerateTitle &&
+          isRefreshTick &&
+          !currentThread?.metadata?.titleSetManually
+        ) {
           const TITLE_TRANSCRIPT_MAX_TURNS = 8
           const recent = localMessages.slice(-TITLE_TRANSCRIPT_MAX_TURNS)
           const inputText =
@@ -573,6 +636,7 @@ function ThreadDetail() {
       const ragToolNames = useAppState.getState().ragToolNames
       if (
         !ragToolNames.has(toolCall.toolName) &&
+        !WEB_TOOL_NAMES.has(toolCall.toolName) &&
         !toolApprovalPromises.current.has(toolCall.toolCallId)
       ) {
         toolApprovalPromises.current.set(
@@ -1246,6 +1310,29 @@ function ThreadDetail() {
     ]
   )
 
+  // Resume a turn that was stopped before it finished: replay the partial text
+  // as an assistant prefill so the model continues from where it left off. The
+  // transport re-emits the partial as the first delta, so the regenerated
+  // message reconstitutes partial + new content and the KV cache is reused.
+  const handleContinue = useCallback(
+    (messageId: string) => {
+      const msg = chatMessages.find((m) => m.id === messageId)
+      if (!msg) return
+      const collect = (type: 'text' | 'reasoning') =>
+        msg.parts
+          .filter((p) => p.type === type)
+          .map((p) => (p as { text: string }).text)
+          .join('')
+      const text = collect('text')
+      const reasoning = collect('reasoning')
+      if (!text && !reasoning) return
+      setContinueFromContent({ text, reasoning })
+      continueReplaceIdRef.current = messageId
+      handleRegenerate(messageId)
+    },
+    [chatMessages, setContinueFromContent, handleRegenerate]
+  )
+
   // Editing forks a new sibling version (the original + its subtree are kept).
   // User edits regenerate a reply for the new branch; assistant edits don't.
   const handleEditMessage = useCallback(
@@ -1404,6 +1491,7 @@ function ThreadDetail() {
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
   setContinueFromContentRef.current = setContinueFromContent
+  setChatMessagesRef.current = setChatMessages
 
   useEffect(() => {
     if (
@@ -1588,6 +1676,7 @@ function ThreadDetail() {
                     onReasoningScroll={handleReasoningScroll}
                     onReasoningScrollToBottom={forceScrollReasoningToBottom}
                     onRegenerate={handleRegenerate}
+                    onContinue={handleContinue}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
                     versionInfo={versionInfoById[message.id]}

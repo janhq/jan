@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
 import { normalizeLlamacppConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { getBackendSetting, setBackendSetting } from '../backend-settings'
+
+vi.mock('../backend-settings')
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -33,7 +36,13 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
     }),
     loadLlamaModel: vi.fn(),
     unloadLlamaModel: vi.fn(),
+    reloadRouterModels: vi.fn(),
   }
+})
+
+vi.mock('../preset', async () => {
+  const actual = await vi.importActual<typeof import('../preset')>('../preset')
+  return { ...actual, generatePreset: vi.fn() }
 })
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
@@ -135,6 +144,7 @@ describe('llamacpp_extension', () => {
           embedding: false,
           imported: false,
           capabilities: undefined,
+          template_kwargs: [],
         }
       ])
     })
@@ -428,11 +438,11 @@ describe('llamacpp_extension', () => {
 
   describe('migrateFitOff', () => {
     beforeEach(() => {
-      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      vi.mocked(getBackendSetting).mockResolvedValue(null)
     })
 
     it('should skip migration if already migrated', async () => {
-      vi.mocked(localStorage.getItem).mockReturnValue('1')
+      vi.mocked(getBackendSetting).mockResolvedValue('1')
       extension['config'] = { fit: true } as any
       extension['getSettings'] = vi.fn()
 
@@ -450,7 +460,7 @@ describe('llamacpp_extension', () => {
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
       expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
+      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
 
     it('should disable fit when it is true', async () => {
@@ -467,7 +477,7 @@ describe('llamacpp_extension', () => {
       expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
       expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
       expect(extension['config'].fit).toBe(false)
-      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
+      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
     })
 
     it('should not modify other settings during fit migration', async () => {
@@ -825,5 +835,155 @@ describe('normalizeLlamacppConfig', () => {
       const result = normalizeLlamacppConfig({ parallel: 0 })
       expect(result.parallel).toBe(0)
     })
+  })
+})
+describe('refreshRouterPreset embedding slot reservation', () => {
+  let extension: llamacpp_extension
+
+  const setupRunningRouter = (opts: {
+    userModelsMax: number
+    routerEmbeddingBonus: number
+    embeddingCount: number
+  }) => {
+    extension = new llamacpp_extension()
+    extension['routerPort'] = 12345
+    extension['routerApiKey'] = 'key'
+    extension['config'] = { version_backend: 'b9100/cpu' } as never
+    extension['userModelsMax'] = opts.userModelsMax
+    extension['routerEmbeddingBonus'] = opts.routerEmbeddingBonus
+    return (async () => {
+      const { generatePreset } = await import('../preset')
+      vi.mocked(generatePreset).mockResolvedValue({
+        path: '/p/router.preset.ini',
+        embeddingCount: opts.embeddingCount,
+      })
+      const { getJanDataFolderPath } = await import('@janhq/core')
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
+      vi.spyOn(extension, 'getProviderPath').mockResolvedValue('/jan/llamacpp')
+      const startRouter = vi
+        .spyOn(extension as never, 'startRouter' as never)
+        .mockResolvedValue(undefined as never)
+      const { reloadRouterModels } = await import(
+        '@janhq/tauri-plugin-llamacpp-api'
+      )
+      vi.mocked(reloadRouterModels).mockResolvedValue(undefined as never)
+      return { startRouter, reloadRouterModels: vi.mocked(reloadRouterModels) }
+    })()
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('restarts the router when an embedder appears after start (bonus 0 -> 1)', async () => {
+    const { startRouter, reloadRouterModels } = await setupRunningRouter({
+      userModelsMax: 1,
+      routerEmbeddingBonus: 0,
+      embeddingCount: 1,
+    })
+    await extension['refreshRouterPreset']()
+    expect(startRouter).toHaveBeenCalledTimes(1)
+    expect(reloadRouterModels).not.toHaveBeenCalled()
+  })
+
+  it('live-reloads when the embedding bonus is unchanged', async () => {
+    const { startRouter, reloadRouterModels } = await setupRunningRouter({
+      userModelsMax: 1,
+      routerEmbeddingBonus: 1,
+      embeddingCount: 1,
+    })
+    await extension['refreshRouterPreset']()
+    expect(startRouter).not.toHaveBeenCalled()
+    expect(reloadRouterModels).toHaveBeenCalledTimes(1)
+  })
+
+  it('restarts when the last embedder is removed (bonus 1 -> 0)', async () => {
+    const { startRouter, reloadRouterModels } = await setupRunningRouter({
+      userModelsMax: 1,
+      routerEmbeddingBonus: 1,
+      embeddingCount: 0,
+    })
+    await extension['refreshRouterPreset']()
+    expect(startRouter).toHaveBeenCalledTimes(1)
+    expect(reloadRouterModels).not.toHaveBeenCalled()
+  })
+
+  it('does not restart when models_max is unlimited (0)', async () => {
+    const { startRouter, reloadRouterModels } = await setupRunningRouter({
+      userModelsMax: 0,
+      routerEmbeddingBonus: 0,
+      embeddingCount: 1,
+    })
+    await extension['refreshRouterPreset']()
+    expect(startRouter).not.toHaveBeenCalled()
+    expect(reloadRouterModels).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('bootstrapDefaultEmbedder', () => {
+  let extension: llamacpp_extension
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    extension = new llamacpp_extension()
+  })
+
+  it('imports the fallback embedder when none is installed, then marks the bootstrap done', async () => {
+    vi.mocked(getBackendSetting).mockResolvedValue(null)
+    const list = vi
+      .spyOn(extension, 'list')
+      .mockResolvedValue([{ id: 'chat-model', embedding: false }] as never)
+    const importSpy = vi
+      .spyOn(extension, 'import')
+      .mockResolvedValue(undefined as never)
+
+    await extension['bootstrapDefaultEmbedder']()
+
+    expect(list).toHaveBeenCalled()
+    expect(importSpy).toHaveBeenCalledWith(
+      'sentence-transformer-mini',
+      expect.objectContaining({ modelPath: expect.stringContaining('MiniLM') })
+    )
+    expect(setBackendSetting).toHaveBeenCalledWith(
+      'llamacpp-embedder-bootstrapped',
+      'true'
+    )
+  })
+
+  it('skips the download when an embedder is already installed but still marks done', async () => {
+    vi.mocked(getBackendSetting).mockResolvedValue(null)
+    vi.spyOn(extension, 'list').mockResolvedValue([
+      { id: 'custom-embedder', embedding: true },
+    ] as never)
+    const importSpy = vi.spyOn(extension, 'import')
+
+    await extension['bootstrapDefaultEmbedder']()
+
+    expect(importSpy).not.toHaveBeenCalled()
+    expect(setBackendSetting).toHaveBeenCalledWith(
+      'llamacpp-embedder-bootstrapped',
+      'true'
+    )
+  })
+
+  it('does nothing when the bootstrap already ran (respects user deletion)', async () => {
+    vi.mocked(getBackendSetting).mockResolvedValue('true')
+    const list = vi.spyOn(extension, 'list')
+
+    await extension['bootstrapDefaultEmbedder']()
+
+    expect(list).not.toHaveBeenCalled()
+    expect(setBackendSetting).not.toHaveBeenCalled()
+  })
+
+  it('does not mark done when the download fails, so it retries next launch', async () => {
+    vi.mocked(getBackendSetting).mockResolvedValue(null)
+    vi.spyOn(extension, 'list').mockResolvedValue([] as never)
+    vi.spyOn(extension, 'import').mockRejectedValue(new Error('offline'))
+
+    await expect(
+      extension['bootstrapDefaultEmbedder']()
+    ).resolves.toBeUndefined()
+    expect(setBackendSetting).not.toHaveBeenCalled()
   })
 })

@@ -15,7 +15,6 @@
   "bundle": {
     "active": true,
     "resources": [
-      "resources/pre-install/**/*",
       "resources/LICENSE"
     ],
     "externalBin": [],

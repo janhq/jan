@@ -1,5 +1,6 @@
 import {
   CustomChatTransport,
+  type ContinuationContent,
 } from '@/lib/custom-chat-transport'
 import {
   Chat,
@@ -115,9 +116,12 @@ export function useChat(
     }
   }, [mcpToolNames, ragToolNames])
 
-  const setContinueFromContent = useCallback((content: string) => {
-    transportRef.current?.setContinueFromContent(content)
-  }, [])
+  const setContinueFromContent = useCallback(
+    (content: string | ContinuationContent) => {
+      transportRef.current?.setContinueFromContent(content)
+    },
+    []
+  )
 
   // Expose method to update RAG tools availability
   const updateRagToolsAvailability = useCallback(

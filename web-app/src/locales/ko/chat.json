@@ -8,5 +8,6 @@
   },
   "sendMessage": "메시지 보내기",
   "newConversation": "새 대화",
-  "clearHistory": "대화 기록 삭제"
+  "clearHistory": "대화 기록 삭제",
+  "done": "Done"
 }

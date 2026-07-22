@@ -246,6 +246,7 @@
   "modelSettings": {
     "title": "モデル設定 - {{modelId}}",
     "description": "パフォーマンスと動作を最適化するためにモデル設定を構成します。",
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "samplingDefaults": {
       "title": "デフォルトのサンプリングパラメータ",
       "description": "このモデルのデフォルトのサンプラー設定です。アシスタントごとまたはリクエストごとの値で上書きされない限り使用されます。"

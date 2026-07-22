@@ -314,32 +314,6 @@ Denies the memory_clear command without any pre-configured scope.
 <tr>
 <td>
 
-`vector-db:allow-memory-delete-message`
-
-</td>
-<td>
-
-Enables the memory_delete_message command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`vector-db:deny-memory-delete-message`
-
-</td>
-<td>
-
-Denies the memory_delete_message command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `vector-db:allow-memory-index`
 
 </td>

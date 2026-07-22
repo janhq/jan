@@ -8,5 +8,6 @@
   },
   "sendMessage": "Gửi tin nhắn",
   "newConversation": "Cuộc trò chuyện mới",
-  "clearHistory": "Xóa lịch sử"
+  "clearHistory": "Xóa lịch sử",
+  "done": "Done"
 }

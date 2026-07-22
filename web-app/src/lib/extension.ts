@@ -67,6 +67,10 @@ export class ExtensionManager {
   // Registered inference engines
   private engines = new Map<string, AIEngine>()
 
+  // Notified whenever an extension registers, so consumers waiting on a
+  // not-yet-ready extension (startup race) can re-attempt instead of polling.
+  private registrationListeners = new Set<() => void>()
+
   /**
    * Registers an extension.
    * @param extension - The extension to register.
@@ -82,6 +86,16 @@ export class ExtensionManager {
         extension as unknown as AIEngine
       )
     }
+
+    this.registrationListeners.forEach((cb) => cb())
+  }
+
+  /**
+   * Subscribes to extension registrations. Returns an unsubscribe function.
+   */
+  onRegistrationChange(cb: () => void): () => void {
+    this.registrationListeners.add(cb)
+    return () => this.registrationListeners.delete(cb)
   }
 
   /**

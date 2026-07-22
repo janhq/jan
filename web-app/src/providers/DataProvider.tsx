@@ -12,6 +12,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { ExtensionManager } from '@/lib/extension'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
@@ -58,7 +59,7 @@ async function registerRemoteProvider(provider: ModelProvider) {
 
   try {
     await invoke('register_provider_config', { request })
-    console.log(`Registered remote provider: ${provider.provider}`)
+    console.debug(`Registered remote provider: ${provider.provider}`)
   } catch (error) {
     console.error(`Failed to register provider ${provider.provider}:`, error)
   }
@@ -184,6 +185,7 @@ export function DataProvider() {
   const { setServers, setSettings } = useMCPServers()
   const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
+  const setThreadsLoading = useThreads((s) => s.setThreadsLoading)
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
 
@@ -278,13 +280,58 @@ export function DataProvider() {
   }, [serviceHub])
 
   useEffect(() => {
-    serviceHub
-      .threads()
-      .fetchThreads()
-      .then((threads) => {
-        setThreads(threads)
-      })
-  }, [serviceHub, setThreads])
+    // fetchThreads throws while the Conversational extension is still loading
+    // (startup race, e.g. reload mid-stream). Retry with backoff instead of
+    // letting a single failed fetch leave the thread list permanently empty.
+    let cancelled = false
+    let attempt = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const load = () => {
+      serviceHub
+        .threads()
+        .fetchThreads()
+        .then((threads) => {
+          if (cancelled) return
+          // Never overwrite a populated list with an empty fetch result: an
+          // empty array here is more likely a transient not-ready state than
+          // the user having zero threads.
+          if (
+            threads.length === 0 &&
+            Object.keys(useThreads.getState().threads).length > 0
+          ) {
+            return
+          }
+          setThreads(threads)
+          setThreadsLoading(false)
+        })
+        .catch(() => {
+          if (cancelled) return
+          if (attempt >= 20) {
+            setThreadsLoading(false)
+            return
+          }
+          attempt += 1
+          timer = setTimeout(load, Math.min(1000, 150 * attempt))
+        })
+    }
+    // A late (or re-)registration re-arms the fetch even after the bounded
+    // retries above are exhausted, e.g. when extension setup itself failed
+    // and only recovers later.
+    const unsubscribe = ExtensionManager.getInstance().onRegistrationChange(
+      () => {
+        if (cancelled) return
+        attempt = 0
+        clearTimeout(timer)
+        load()
+      }
+    )
+    load()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      unsubscribe()
+    }
+  }, [serviceHub, setThreads, setThreadsLoading])
 
   // Sync remote providers with backend when providers change
   const providers = useModelProvider((s) => s.providers)

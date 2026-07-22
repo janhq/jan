@@ -63,5 +63,8 @@
     "prettier": "^3.2.5",
     "typescript": "^5"
   },
+  "resolutions": {
+    "handlebars": "^4.7.9"
+  },
   "packageManager": "yarn@1.22.22"
 }

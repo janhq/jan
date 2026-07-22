@@ -9,7 +9,6 @@ const COMMANDS: &[&str] = &[
     "stop_router",
     "try_graceful_stop_router",
     "force_kill_router_tree",
-    "force_stop_model",
     "get_router_info",
     "reload_router_models",
     "router_slots_idle",

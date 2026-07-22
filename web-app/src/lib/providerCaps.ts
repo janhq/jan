@@ -110,7 +110,10 @@ const LLAMACPP: ProviderCaps = {
     'top_n_sigma',
     'grammar',
     'json_schema',
-    'ignore_eos'
+    'ignore_eos',
+    'sampler_order',
+    'backend_sampling',
+    'thinking_budget'
   ),
   maybe: new Set(),
 }
@@ -141,6 +144,9 @@ const CUSTOM_PERMISSIVE: ProviderCaps = {
     'grammar',
     'json_schema',
     'ignore_eos',
+    'sampler_order',
+    'backend_sampling',
+    'thinking_budget',
   ]),
 }
 

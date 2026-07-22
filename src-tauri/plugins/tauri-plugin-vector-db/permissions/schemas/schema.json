@@ -427,18 +427,6 @@
           "markdownDescription": "Denies the memory_clear command without any pre-configured scope."
         },
         {
-          "description": "Enables the memory_delete_message command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-memory-delete-message",
-          "markdownDescription": "Enables the memory_delete_message command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the memory_delete_message command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-memory-delete-message",
-          "markdownDescription": "Denies the memory_delete_message command without any pre-configured scope."
-        },
-        {
           "description": "Enables the memory_index command without any pre-configured scope.",
           "type": "string",
           "const": "allow-memory-index",

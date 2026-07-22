@@ -280,7 +280,7 @@ function ProviderDetail() {
   const autoCatalogAttempted = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!provider) return
-    if (!supportsRemoteCatalog(provider.provider)) return
+    if (!supportsRemoteCatalog(provider)) return
     if (provider.models.length > 0) return
     if (!providerHasRemoteApiKeys(provider)) return
     if (autoCatalogAttempted.current.has(provider.provider)) return
@@ -530,7 +530,7 @@ function ProviderDetail() {
     setRefreshingModels(true)
     try {
       let newModels: Model[]
-      if (supportsRemoteCatalog(provider.provider)) {
+      if (supportsRemoteCatalog(provider)) {
         const catalog = await fetchTopRemoteModels(provider, serviceHub.providers().fetch())
         newModels = catalog.map((m) => ({
           id: m.id,
@@ -552,7 +552,7 @@ function ProviderDetail() {
         }))
       }
 
-      if (supportsRemoteCatalog(provider.provider)) {
+      if (supportsRemoteCatalog(provider)) {
         const importedModels = provider.models.filter((m) => m.imported)
         const importedIds = new Set(importedModels.map((m) => m.id))
         const fresh = newModels.filter((m) => !importedIds.has(m.id))
@@ -789,7 +789,7 @@ function ProviderDetail() {
 
             {provider &&
               !isLocalProvider(provider.provider) &&
-              !supportsRemoteCatalog(provider.provider) && (
+              !supportsRemoteCatalog(provider) && (
                 <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
                   <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
                   <span>

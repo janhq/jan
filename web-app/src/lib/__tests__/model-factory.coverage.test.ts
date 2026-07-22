@@ -43,6 +43,7 @@ vi.mock('@ai-sdk/openai', () => ({
   createOpenAI: vi.fn(() => {
     const fn: any = vi.fn(() => ({ type: 'openai' }))
     fn.chat = vi.fn(() => ({ type: 'openai' }))
+    fn.responses = vi.fn(() => ({ type: 'openai' }))
     return fn
   }),
 }))

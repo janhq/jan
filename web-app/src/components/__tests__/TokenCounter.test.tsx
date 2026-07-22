@@ -110,6 +110,21 @@ describe('TokenCounter', () => {
     expect(container.firstChild).toBeNull()
   })
 
+  it('renders a count-only badge (no percentage) when maxTokens is unavailable but tokens exist', () => {
+    mockTokens({
+      tokenCount: 1400,
+      maxTokens: undefined,
+      inputTokens: 1000,
+      outputTokens: 400,
+      modelDisplayName: 'GPT X',
+    })
+    render(<TokenCounter />)
+    expect(screen.queryByText(/%/)).toBeNull()
+    expect(screen.getAllByText('1.4K').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('GPT X')).toBeTruthy()
+    expect(screen.getByText('1,400')).toBeTruthy()
+  })
+
   describe('formatNumber helper (via rendered output)', () => {
     it('formats thousands as K', () => {
       mockTokens({ tokenCount: 1000, maxTokens: 2000 })

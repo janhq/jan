@@ -8,5 +8,6 @@
   },
   "sendMessage": "Enviar Mensagem",
   "newConversation": "Nova Conversa",
-  "clearHistory": "Limpar Histórico"
+  "clearHistory": "Limpar Histórico",
+  "done": "Done"
 }

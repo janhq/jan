@@ -9,7 +9,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal } from "lucide-react"
+import { MoreHorizontal, Loader2 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from "@/hooks/useThreads"
@@ -20,6 +20,7 @@ export function NavChats() {
   const { t } = useTranslation()
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
+  const isLoadingThreads = useThreads((state) => state.isLoadingThreads)
   const deleteAllThreads = useThreads((state) => state.deleteAllThreads)
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
@@ -29,6 +30,16 @@ export function NavChats() {
   }, [getFilteredThreads, threads])
 
   if (threadsWithoutProject.length === 0) {
+    if (isLoadingThreads) {
+      return (
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          </div>
+        </SidebarGroup>
+      )
+    }
     return null
   }
 

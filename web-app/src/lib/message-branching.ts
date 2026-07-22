@@ -203,6 +203,32 @@ export const repairDetachedAssistants = (
   return [...writes.values()]
 }
 
+export type ContinuationPlan = {
+  parentId: string | null
+  deletePartialId: string | null
+}
+
+/**
+ * Resume a stopped assistant turn in place. The continued reply inherits the
+ * stale partial's parent, and that partial is dropped, so the reply replaces it
+ * rather than forking a sibling version. Falls back to `fallbackParentId` when
+ * no partial is targeted or its id is stale.
+ */
+export const planContinuation = (
+  messages: ThreadMessage[],
+  replyId: string,
+  partialId: string | null | undefined,
+  fallbackParentId: string | null
+): ContinuationPlan => {
+  const partial = partialId
+    ? messages.find((m) => m.id === partialId)
+    : undefined
+  const parentId = (partial ? getParentId(partial) : null) ?? fallbackParentId
+  const deletePartialId =
+    partial && partial.id !== replyId ? partial.id : null
+  return { parentId, deletePartialId }
+}
+
 /**
  * Build a new sibling version of `source`: fresh id/timestamp, same parent,
  * no children, optional text override. Used for edit-user / edit-assistant forks.

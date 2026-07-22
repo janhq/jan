@@ -33,3 +33,9 @@ export * from './extensions'
  * @module
  */
 export * from './models'
+
+/**
+ * Export shared logger.
+ * @module
+ */
+export * from './logger'

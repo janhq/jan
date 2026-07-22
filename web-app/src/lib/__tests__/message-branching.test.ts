@@ -11,6 +11,7 @@ import {
   makeSibling,
   withActiveChild,
   repairDetachedAssistants,
+  planContinuation,
 } from '../message-branching'
 
 let clock = 1000
@@ -189,6 +190,59 @@ describe('message-branching', () => {
       expect(repaired.map((r) => r.id).sort()).toEqual(['a1', 'a2'])
       expect(parentOf('a1')).toBe('u1')
       expect(parentOf('a2')).toBe('u2')
+    })
+  })
+
+  describe('planContinuation', () => {
+    it('inherits the stopped partial parent and marks it for deletion', () => {
+      const u = msg('u1', 'user', 'q', { parentId: null })
+      const partial = msg('a1', 'assistant', 'half', {
+        parentId: 'u1',
+        stopped: true,
+      })
+      const plan = planContinuation([u, partial], 'a2', 'a1', null)
+      expect(plan).toEqual({ parentId: 'u1', deletePartialId: 'a1' })
+    })
+
+    it('applying the plan leaves the parent with a single child (no fork)', () => {
+      const u = msg('u1', 'user', 'q', { parentId: null })
+      const partial = msg('a1', 'assistant', 'half', {
+        parentId: 'u1',
+        stopped: true,
+      })
+      const reply = msg('a2', 'assistant', 'half and rest', { parentId: 'u1' })
+      const plan = planContinuation([u, partial], reply.id, 'a1', null)
+
+      let messages = [u, partial, reply]
+      messages = messages.map((m) =>
+        m.id === plan.parentId ? withActiveChild(m, reply.id) : m
+      )
+      if (plan.deletePartialId) {
+        messages = messages.filter((m) => m.id !== plan.deletePartialId)
+      }
+
+      expect(getSiblings(messages, reply)).toHaveLength(1)
+      expect(getVersionInfo(messages, reply)).toEqual({ index: 1, count: 1 })
+      expect(ids(computeActivePath(messages))).toEqual(['u1', 'a2'])
+    })
+
+    it('falls back to the pending parent when no partial is targeted', () => {
+      const u = msg('u1', 'user', 'q', { parentId: null })
+      const plan = planContinuation([u], 'a2', null, 'u1')
+      expect(plan).toEqual({ parentId: 'u1', deletePartialId: null })
+    })
+
+    it('does not delete when the partial id is stale (not found)', () => {
+      const u = msg('u1', 'user', 'q', { parentId: null })
+      const plan = planContinuation([u], 'a2', 'gone', 'u1')
+      expect(plan).toEqual({ parentId: 'u1', deletePartialId: null })
+    })
+
+    it('does not delete when the reply reuses the partial id', () => {
+      const u = msg('u1', 'user', 'q', { parentId: null })
+      const partial = msg('a1', 'assistant', 'half', { parentId: 'u1' })
+      const plan = planContinuation([u, partial], 'a1', 'a1', null)
+      expect(plan).toEqual({ parentId: 'u1', deletePartialId: null })
     })
   })
 })

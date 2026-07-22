@@ -11,7 +11,6 @@ permissions = [
     "allow-stop-router",
     "allow-try-graceful-stop-router",
     "allow-force-kill-router-tree",
-    "allow-force-stop-model",
     "allow-get-router-info",
     "allow-reload-router-models",
     "allow-router-slots-idle",

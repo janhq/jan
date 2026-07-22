@@ -12,5 +12,11 @@
   "embeddings": {
     "title": "Preparing your documents",
     "description": "Indexing the attached files so they can be searched and cited. This may take a moment for large documents."
-  }
+  },
+  "actions": {
+    "regenerate": "Regenerate response",
+    "continue": "Continue generating"
+  },
+  "done": "Done",
+  "webSources": "{{count}} source(s)"
 }

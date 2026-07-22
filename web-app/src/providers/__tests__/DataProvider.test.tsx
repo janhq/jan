@@ -16,6 +16,9 @@ const h = vi.hoisted(() => {
     setSettings: vi.fn(),
     setAssistants: vi.fn(),
     setThreads: vi.fn(),
+    setThreadsLoading: vi.fn(),
+    threadsInStore: {} as Record<string, unknown>,
+    registrationListeners: new Set<() => void>(),
     setLastServerModels: vi.fn(),
     setServerPort: vi.fn(),
     setServerStatus: vi.fn(),
@@ -71,9 +74,32 @@ vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({ setAssistants: h.setAssistants }),
 }))
 
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: () => ({ setThreads: h.setThreads }),
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: {
+    getInstance: () => ({
+      onRegistrationChange: (cb: () => void) => {
+        h.registrationListeners.add(cb)
+        return () => h.registrationListeners.delete(cb)
+      },
+    }),
+  },
 }))
+
+vi.mock('@/hooks/useThreads', () => {
+  const state = () => ({
+    setThreads: h.setThreads,
+    setThreadsLoading: h.setThreadsLoading,
+    threads: h.threadsInStore,
+  })
+  const useThreads = vi.fn((selector?: (s: unknown) => unknown) =>
+    selector ? selector(state()) : state()
+  ) as unknown as {
+    (selector?: (s: unknown) => unknown): unknown
+    getState: () => { threads: Record<string, unknown> }
+  }
+  useThreads.getState = () => ({ threads: h.threadsInStore })
+  return { useThreads }
+})
 
 vi.mock('@/hooks/useLocalApiServer', () => ({
   useLocalApiServer: () => ({
@@ -190,6 +216,8 @@ describe('DataProvider', () => {
     vi.clearAllMocks()
     resetHubState()
     h.providers = []
+    h.threadsInStore = {}
+    h.registrationListeners.clear()
     h.isDev.mockReturnValue(false)
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
@@ -236,6 +264,74 @@ describe('DataProvider', () => {
       expect(h.setAssistants).toHaveBeenCalledWith([{ id: 'a1' }])
       expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
     })
+  })
+
+  it('retries fetchThreads when it throws (extension not ready) and never wipes the list on failure', async () => {
+    hubState.fetchThreads
+      .mockRejectedValueOnce(new Error('Conversational extension not available yet'))
+      .mockResolvedValueOnce([{ id: 't1' }])
+
+    render(<DataProvider />)
+
+    await waitFor(() => {
+      expect(hubState.fetchThreads).toHaveBeenCalledTimes(2)
+    })
+    // The failed first attempt must not push an empty array.
+    expect(h.setThreads).not.toHaveBeenCalledWith([])
+    await waitFor(() => {
+      expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
+    })
+  })
+
+  it('does not wipe a populated thread list when fetchThreads resolves empty', async () => {
+    h.threadsInStore = { t1: { id: 't1' } }
+    hubState.fetchThreads.mockResolvedValue([])
+
+    render(<DataProvider />)
+
+    await waitFor(() => {
+      expect(hubState.fetchThreads).toHaveBeenCalled()
+    })
+    expect(h.setThreads).not.toHaveBeenCalled()
+  })
+
+  it('writes an empty thread list when the store is also empty', async () => {
+    hubState.fetchThreads.mockResolvedValue([])
+
+    render(<DataProvider />)
+
+    await waitFor(() => {
+      expect(h.setThreads).toHaveBeenCalledWith([])
+    })
+  })
+
+  it('refetches threads when an extension registers after retries are exhausted', async () => {
+    vi.useFakeTimers()
+    try {
+      hubState.fetchThreads.mockRejectedValue(new Error('not ready'))
+
+      const { unmount } = render(<DataProvider />)
+
+      // 1 initial attempt + 20 bounded retries (backoff capped at 1s).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000)
+      })
+      expect(hubState.fetchThreads).toHaveBeenCalledTimes(21)
+      expect(h.setThreads).not.toHaveBeenCalled()
+
+      // A late extension registration re-arms the fetch.
+      hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])
+      await act(async () => {
+        h.registrationListeners.forEach((cb) => cb())
+      })
+      expect(hubState.fetchThreads).toHaveBeenCalledTimes(22)
+      expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
+
+      unmount()
+      expect(h.registrationListeners.size).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('passes DEFAULT_MCP_SETTINGS when mcp config lacks values', async () => {

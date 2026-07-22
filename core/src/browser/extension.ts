@@ -1,5 +1,6 @@
 import { Model, SettingComponentProps } from '../types'
 import { ModelManager } from './models'
+import { logger } from './logger'
 
 export enum ExtensionTypeEnum {
   Assistant = 'assistant',
@@ -113,7 +114,7 @@ export abstract class BaseExtension implements ExtensionType {
    */
   async registerSettings(settings: SettingComponentProps[]): Promise<void> {
     if (!this.name) {
-      console.error('Extension name is not defined')
+      logger.error('Extension name is not defined')
       return
     }
 
@@ -150,7 +151,7 @@ export abstract class BaseExtension implements ExtensionType {
       }
       localStorage.setItem(this.name, JSON.stringify(settings))
     } catch (err) {
-      console.error(err)
+      logger.error(err)
     }
   }
 
@@ -193,7 +194,7 @@ export abstract class BaseExtension implements ExtensionType {
       const settings: SettingComponentProps[] = JSON.parse(settingsString)
       return settings
     } catch (err) {
-      console.warn(err)
+      logger.warn(err)
       return []
     }
   }

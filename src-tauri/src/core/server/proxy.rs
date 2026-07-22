@@ -19,6 +19,7 @@ use std::sync::Arc;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::Mutex;
 
+use crate::core::server::converters::{converter_for, SseAccumulator, StreamState, UpstreamConverter};
 use crate::core::{
     mcp::models::McpSettings,
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
@@ -1559,6 +1560,9 @@ async fn proxy_request(
     let mut buffered_body: Option<Bytes> = None;
     let mut target_base_url: Option<String> = None;
     let mut is_anthropic_messages = false;
+    // Set when the resolved remote provider fronts a non-chat/completions native
+    // API; drives request rewrite + response translation back to chat shape.
+    let mut upstream_converter: Option<Box<dyn UpstreamConverter>> = None;
     // Model id when the request resolves to an MLX session — MLX has no preset,
     // so sampling defaults are injected into the body before forwarding.
     let mut mlx_model_id: Option<String> = None;
@@ -2224,11 +2228,23 @@ async fn proxy_request(
                             drop(pc2);
 
                             if let Some(provider_cfg) = provider_config {
+                                // A converter only applies to chat/completions; other
+                                // paths keep verbatim forwarding.
+                                let converter = if destination_path == "/chat/completions" {
+                                    converter_for(provider_cfg.api_type.as_deref())
+                                } else {
+                                    None
+                                };
                                 if let Some(api_url) = provider_cfg.base_url.clone() {
-                                    target_base_url = Some(format!("{api_url}{destination_path}"));
+                                    let path = converter
+                                        .as_ref()
+                                        .map(|c| c.upstream_path(&json_body))
+                                        .unwrap_or_else(|| destination_path.clone());
+                                    target_base_url = Some(format!("{api_url}{path}"));
                                 } else {
                                     target_base_url = None;
                                 }
+                                upstream_converter = converter;
                                 session_api_keys = provider_cfg.bearer_key_chain();
                             } else {
                                 log::error!("Provider config not found for '{provider}'");
@@ -2586,6 +2602,16 @@ async fn proxy_request(
         }
     };
 
+    // Rewrite the chat/completions body into the provider's native request shape.
+    if let Some(converter) = &upstream_converter {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&body_bytes_for_proxy) {
+            let native = converter.convert_request(&v);
+            if let Ok(bytes) = serde_json::to_vec(&native) {
+                body_bytes_for_proxy = Bytes::from(bytes);
+            }
+        }
+    }
+
     // MLX targets carry no router preset, so apply the model's stored sampling
     // defaults here for keys the caller omitted (llamacpp uses the preset;
     // remote providers are intentionally left untouched).
@@ -2629,9 +2655,21 @@ async fn proxy_request(
         }
 
         if let Some(key) = key_opt {
-            outbound_req = outbound_req.header("Authorization", format!("Bearer {key}"));
+            // The converter decides the auth scheme (Google uses x-goog-api-key).
+            let (auth_name, auth_value) = match &upstream_converter {
+                Some(conv) => conv.auth_header(key),
+                None => ("authorization", format!("Bearer {key}")),
+            };
+            outbound_req = outbound_req.header(auth_name, auth_value);
         } else {
             log::debug!("No session API key for this attempt");
+        }
+
+        // Fixed headers the native API requires (Anthropic: anthropic-version).
+        if let Some(conv) = &upstream_converter {
+            for (name, value) in conv.extra_headers() {
+                outbound_req = outbound_req.header(name, value);
+            }
         }
 
         let outbound_req_with_body = outbound_req.body(body_bytes_for_proxy.clone());
@@ -2816,6 +2854,27 @@ async fn proxy_request(
                 &origin_header,
                 &config.trusted_hosts,
             );
+
+            // When the provider fronts a non-chat/completions API, translate the
+            // response back to chat shape; otherwise forward bytes verbatim.
+            if let Some(converter) = upstream_converter.take() {
+                let is_sse = response
+                    .headers()
+                    .get(hyper::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|ct| ct.contains("event-stream"))
+                    .unwrap_or(false);
+                let (sender, body) = body_channel();
+                tokio::spawn(async move {
+                    if is_sse {
+                        forward_converted_stream(response.bytes_stream(), sender, converter).await;
+                    } else {
+                        forward_converted_non_streaming(response.bytes().await, sender, converter)
+                            .await;
+                    }
+                });
+                return Ok(builder.body(body).unwrap());
+            }
 
             let mut stream = response.bytes_stream();
             let (mut sender, body) = body_channel();
@@ -3083,6 +3142,67 @@ pub(crate) fn sse_event(data: &serde_json::Value) -> Bytes {
 
 /// Transform and forward streaming OpenAI response as Anthropic /messages chunks.
 /// Handles both text content and tool_calls streaming.
+/// Stream a native upstream response through an [`UpstreamConverter`], emitting
+/// chat/completions SSE chunks. Uses [`SseAccumulator`] so events split across
+/// network chunks are reassembled before translation.
+async fn forward_converted_stream<S>(
+    mut stream: S,
+    mut sender: BodySender,
+    converter: Box<dyn UpstreamConverter>,
+) where
+    S: futures_util::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
+{
+    let mut acc = SseAccumulator::new();
+    let mut state = StreamState::default();
+    'outer: while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                let text = String::from_utf8_lossy(&chunk);
+                for event in acc.push(&text) {
+                    for payload in converter.convert_stream_event(&event, &mut state) {
+                        let framed = Bytes::from(format!("data: {payload}\n\n"));
+                        if sender.send_data(framed).await.is_err() {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Converter stream error: {e}");
+                break;
+            }
+        }
+    }
+    if let Some(event) = acc.finish() {
+        for payload in converter.convert_stream_event(&event, &mut state) {
+            let framed = Bytes::from(format!("data: {payload}\n\n"));
+            if sender.send_data(framed).await.is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// Translate a non-streaming native upstream response into a chat.completion
+/// object and forward it as a single body frame.
+async fn forward_converted_non_streaming(
+    body: Result<Bytes, reqwest::Error>,
+    mut sender: BodySender,
+    converter: Box<dyn UpstreamConverter>,
+) {
+    match body {
+        Ok(bytes) => {
+            let out = match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(v) => serde_json::to_vec(&converter.convert_response(&v))
+                    .unwrap_or_else(|_| bytes.to_vec()),
+                Err(_) => bytes.to_vec(),
+            };
+            let _ = sender.send_data(Bytes::from(out)).await;
+        }
+        Err(e) => log::error!("Converter non-streaming error: {e}"),
+    }
+}
+
 async fn transform_and_forward_stream<S>(
     mut stream: S,
     mut sender: BodySender,

@@ -1,4 +1,4 @@
-import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
+import { getJanDataFolderPath, fs, joinPath, events, logger } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig } from './util'
 import { dirname } from '@tauri-apps/api/path'
@@ -54,10 +54,10 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
   try {
     return await invoke<BackendVersion[]>(
       'plugin:llamacpp|fetch_remote_supported_backends',
-      { supportedBackends, proxy: getProxyConfig() }
+      { supportedBackends, proxy: await getProxyConfig() }
     )
   } catch (e) {
-    console.debug(
+    logger.debug(
       `Not able to get remote backends, Jan might be offline or network problem: ${String(e)}`
     )
     return []
@@ -139,7 +139,7 @@ export async function downloadBackend(
 ): Promise<void> {
   const janDataFolderPath = await getJanDataFolderPath()
   const sysInfo = await getSystemInfo()
-  const proxyConfig = getProxyConfig()
+  const proxyConfig = await getProxyConfig()
 
   const downloadItems: Array<{
     url: string
@@ -166,7 +166,7 @@ export async function downloadBackend(
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
-  console.log(
+  logger.info(
     `Downloading backend ${backend} version ${version} from ${source}: ${JSON.stringify(itemsWithProxy)}`
   )
 
@@ -203,10 +203,10 @@ export async function downloadBackend(
       source === 'github' &&
       error?.toString() !== 'Error: Download cancelled'
     ) {
-      console.warn(`GitHub download failed, falling back to CDN:`, error)
+      logger.warn(`GitHub download failed, falling back to CDN:`, error)
       return await downloadBackend(backend, version, 'cdn')
     }
-    console.error(`Failed to download backend ${backend}: `, error)
+    logger.error(`Failed to download backend ${backend}: `, error)
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
     throw error
   }

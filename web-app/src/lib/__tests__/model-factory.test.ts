@@ -282,6 +282,57 @@ describe('createCustomFetch — transport error wrapping', () => {
   })
 })
 
+describe('ModelFactory — missing API key guard', () => {
+  it('throws an actionable error instead of sending an empty credential', async () => {
+    const provider = {
+      provider: 'anthropic',
+      base_url: 'https://api.anthropic.com/v1',
+      api_key: '',
+      models: [],
+    } as unknown as ProviderObject
+    await expect(
+      ModelFactory.createModel('claude-opus-4-8', provider)
+    ).rejects.toThrow(/No API key configured for anthropic/)
+  })
+})
+
+describe('createCustomFetch — named SSE event filtering scope', () => {
+  const NAMED_EVENT_STREAM = [
+    'event: message_start',
+    'data: {"type":"message_start"}',
+    '',
+    'event: content_block_delta',
+    'data: {"type":"content_block_delta"}',
+    '',
+  ].join('\n')
+
+  function sseFetch(): typeof globalThis.fetch {
+    return (async () =>
+      new Response(NAMED_EVENT_STREAM, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })) as typeof globalThis.fetch
+  }
+
+  it('passes named SSE events through untouched by default (native protocols)', async () => {
+    const wrapped = createCustomFetch(sseFetch(), {})
+    const res = await wrapped('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(await res.text()).toBe(NAMED_EVENT_STREAM)
+  })
+
+  it('strips named SSE events when filterNamedSseEvents is enabled', async () => {
+    const wrapped = createCustomFetch(sseFetch(), {}, false, undefined, true)
+    const res = await wrapped('http://localhost:1337/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(await res.text()).not.toContain('message_start')
+  })
+})
+
 describe('createCustomFetch — max_tokens coercion', () => {
   async function captureSentBody(
     parameters: Record<string, unknown>,
@@ -312,6 +363,37 @@ describe('createCustomFetch — max_tokens coercion', () => {
   it('does not coerce when keepLlamacppOnly is false (non-llamacpp providers)', async () => {
     const sent = await captureSentBody({}, false, { max_tokens: 0 })
     expect(sent.max_tokens).toBe(0)
+  })
+
+  it('sets timings_per_token when keepLlamacppOnly and streaming', async () => {
+    const sent = await captureSentBody({}, true, { stream: true })
+    expect(sent.timings_per_token).toBe(true)
+    expect(sent.return_progress).toBe(true)
+  })
+
+  it('does not set timings_per_token when not streaming', async () => {
+    const sent = await captureSentBody({}, true, { stream: false })
+    expect(sent.timings_per_token).toBeUndefined()
+  })
+
+  it('does not set timings_per_token for non-llamacpp providers', async () => {
+    const sent = await captureSentBody({}, false, { stream: true })
+    expect(sent.timings_per_token).toBeUndefined()
+  })
+
+  it('sets cache_prompt=true when keepLlamacppOnly is true', async () => {
+    const sent = await captureSentBody({}, true, {})
+    expect(sent.cache_prompt).toBe(true)
+  })
+
+  it('does not set cache_prompt for non-llamacpp providers', async () => {
+    const sent = await captureSentBody({}, false, {})
+    expect(sent.cache_prompt).toBeUndefined()
+  })
+
+  it('preserves an explicit id_slot passed via parameters (title-gen path)', async () => {
+    const sent = await captureSentBody({ id_slot: 3 }, true, {})
+    expect(sent.id_slot).toBe(3)
   })
 
   it('leaves non-zero max_tokens alone', async () => {
@@ -350,6 +432,45 @@ describe('createCustomFetch — max_tokens coercion', () => {
       messages: [],
     })
     expect(sent.max_tokens).toBe('')
+  })
+
+  it('remaps dynatemp_exp to the llama-server wire name dynatemp_exponent', async () => {
+    const sent = await captureSentBody({ dynatemp_exp: 1.5 }, true, {
+      messages: [],
+    })
+    expect(sent.dynatemp_exponent).toBe(1.5)
+    expect(sent.dynatemp_exp).toBeUndefined()
+  })
+
+  it('splits the samplers string param into an array on the wire', async () => {
+    const sent = await captureSentBody(
+      { samplers: 'top_k, typ_p ;top_p' },
+      true,
+      { messages: [] }
+    )
+    expect(sent.samplers).toEqual(['top_k', 'typ_p', 'top_p'])
+  })
+
+  it('omits samplers entirely when the string is empty', async () => {
+    const sent = await captureSentBody({ samplers: '' }, true, {
+      messages: [],
+    })
+    expect(sent.samplers).toBeUndefined()
+  })
+
+  it('forwards repeat_last_n, backend_sampling, and thinking_budget_tokens as-is', async () => {
+    const sent = await captureSentBody(
+      {
+        repeat_last_n: 128,
+        backend_sampling: true,
+        thinking_budget_tokens: 4096,
+      },
+      true,
+      { messages: [] }
+    )
+    expect(sent.repeat_last_n).toBe(128)
+    expect(sent.backend_sampling).toBe(true)
+    expect(sent.thinking_budget_tokens).toBe(4096)
   })
 })
 

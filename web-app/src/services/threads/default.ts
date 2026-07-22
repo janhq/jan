@@ -23,55 +23,56 @@ function fromModelResponse(
 
 export class DefaultThreadsService implements ThreadsService {
   async fetchThreads(): Promise<Thread[]> {
-    return (
-      ExtensionManager.getInstance()
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.listThreads()
-        .then((threads) => {
-          if (!Array.isArray(threads)) return []
-
-          // new String("id") !== "id"
-          threads.forEach((e) => {
-            e.id = e.id?.toString()
-            e.assistants?.forEach((a) => {
-              a.id = a.id?.toString()
-              if (a.model) a.model.id = a.model.id?.toString()
-            })
-          })
-
-          // Filter out temporary threads from the list
-          const filteredThreads = threads.filter(
-            (e) => e.id !== TEMPORARY_CHAT_ID
-          )
-
-          return filteredThreads.map((e) => {
-            const model = fromModelResponse(e.assistants?.[0]?.model)
-            const assistants = e.assistants
-
-            return {
-              ...e,
-              updated:
-                typeof e.updated === 'number' && e.updated > 1e12
-                  ? Math.floor(e.updated / 1000)
-                  : (e.updated ?? 0),
-              order: e.metadata?.order,
-              isFavorite: e.metadata?.is_favorite,
-              model,
-              assistants,
-              metadata: {
-                ...e.metadata,
-                // Override extracted fields to avoid duplication
-                order: e.metadata?.order,
-                is_favorite: e.metadata?.is_favorite,
-              },
-            } as Thread
-          })
-        })
-        ?.catch((e) => {
-          console.error('Error fetching threads:', e)
-          return []
-        }) ?? []
+    const ext = ExtensionManager.getInstance().get<ConversationalExtension>(
+      ExtensionTypeEnum.Conversational
     )
+    // The extension may not be registered yet during a startup race (e.g. a
+    // reload while the llamacpp router is busy). Throw so the caller can retry
+    // instead of treating "not ready" as "no threads" and wiping the list.
+    if (!ext) {
+      throw new Error('Conversational extension not available yet')
+    }
+
+    // Let listThreads failures propagate: a rejected invoke means "backend not
+    // ready / errored", not "no threads" — the caller retries instead of
+    // wiping the list with [].
+    const threads = await ext.listThreads()
+    if (!Array.isArray(threads)) return []
+
+    // new String("id") !== "id"
+    threads.forEach((e) => {
+      e.id = e.id?.toString()
+      e.assistants?.forEach((a) => {
+        a.id = a.id?.toString()
+        if (a.model) a.model.id = a.model.id?.toString()
+      })
+    })
+
+    // Filter out temporary threads from the list
+    const filteredThreads = threads.filter((e) => e.id !== TEMPORARY_CHAT_ID)
+
+    return filteredThreads.map((e) => {
+      const model = fromModelResponse(e.assistants?.[0]?.model)
+      const assistants = e.assistants
+
+      return {
+        ...e,
+        updated:
+          typeof e.updated === 'number' && e.updated > 1e12
+            ? Math.floor(e.updated / 1000)
+            : (e.updated ?? 0),
+        order: e.metadata?.order,
+        isFavorite: e.metadata?.is_favorite,
+        model,
+        assistants,
+        metadata: {
+          ...e.metadata,
+          // Override extracted fields to avoid duplication
+          order: e.metadata?.order,
+          is_favorite: e.metadata?.is_favorite,
+        },
+      } as Thread
+    })
   }
 
   async createThread(thread: Thread): Promise<Thread> {
