@@ -422,6 +422,7 @@ impl BackgroundSubagents {
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
+                usage: None,
             });
         }
     }
@@ -1331,7 +1332,7 @@ mod tests {
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         match ev_rx.try_recv() {
-            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name }) => {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name, .. }) => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(name, "reviewer");
             }
