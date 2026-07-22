@@ -90,6 +90,27 @@ fn cap_output(s: &str, max_lines: usize, max_bytes: usize, note: &str) -> String
     out
 }
 
+/// Collapse carriage-return redraws (`git`/`curl`-style progress lines) to what
+/// a terminal would actually show: text after the last `\r` on each line wins.
+/// Without this, thousands of `\r`-separated progress frames read as one giant
+/// line and blow past the byte cap, so tiny visible output looks truncated.
+fn collapse_carriage_returns(s: &str) -> String {
+    if !s.contains('\r') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    for line in s.split_inclusive('\n') {
+        let (body, nl) = match line.strip_suffix('\n') {
+            Some(b) => (b, "\n"),
+            None => (line, ""),
+        };
+        let body = body.strip_suffix('\r').unwrap_or(body);
+        out.push_str(body.rsplit('\r').next().unwrap_or(body));
+        out.push_str(nl);
+    }
+    out
+}
+
 /// Execute a built-in tool. Returns the tool-result text. Errors are returned
 /// as a String STARTING WITH "ERROR" rather than as Err.
 pub async fn execute_builtin(
@@ -577,11 +598,19 @@ async fn await_bash_job(job_id: &str) -> String {
 fn format_bash_output(output: std::io::Result<std::process::Output>) -> String {
     match output {
         Ok(out) => {
-            let mut combined = String::new();
-            combined.push_str(&String::from_utf8_lossy(&out.stdout));
-            combined.push_str(&String::from_utf8_lossy(&out.stderr));
+            let mut combined = collapse_carriage_returns(&format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            ));
+            // Always emit an explicit exit marker on its own line. A bare exit
+            // code (including 0) is the only reliable success signal: commands
+            // like `git push` write their normal status to stderr on success,
+            // so the presence of stderr text must not be read as failure.
+            if !combined.is_empty() && !combined.ends_with('\n') {
+                combined.push('\n');
+            }
             match out.status.code() {
-                Some(0) => {}
                 Some(code) => combined.push_str(&format!("[exit {code}]")),
                 None => combined.push_str("[terminated by signal]"),
             }
@@ -1273,6 +1302,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bash_success_emits_exit_0_marker() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "echo done"}),
+            &root,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
+        assert!(out.contains("done"), "unexpected: {out}");
+        assert!(out.contains("[exit 0]"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_exit_marker_is_on_its_own_line() {
+        let root = unique_root();
+        // stderr-only output with no trailing newline (mirrors `git push`).
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "printf 'to remote' 1>&2"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("\n[exit 0]"), "marker not on its own line: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
     async fn bash_output_past_old_64kb_cap_survives_intact() {
         let root = unique_root();
         // ~128KB of output: over the shared 64KB cap, under the bash cap.
@@ -1285,6 +1343,24 @@ mod tests {
         assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(!out.contains("[truncated"), "should not truncate: len={}", out.len());
         assert!(out.len() > 64 * 1024, "expected >64KB, got {}", out.len());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_cr_progress_is_collapsed_not_truncated() {
+        let root = unique_root();
+        // Mimics git progress: one logical line redrawn thousands of times with
+        // \r (no \n). Raw bytes exceed the byte cap, but only the final redraw
+        // is visible, so the model must see it intact with no truncation notice.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 30000); do printf 'Receiving objects: %d\\r' \"$i\"; done 1>&2"}),
+            &root,
+        )
+        .await;
+        assert!(!out.contains("output truncated"), "spurious truncation: {out}");
+        assert!(out.contains("Receiving objects: 30000"), "final redraw lost: {out}");
+        assert!(out.contains("[exit 0]"), "unexpected: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
