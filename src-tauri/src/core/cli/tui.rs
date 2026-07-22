@@ -282,6 +282,8 @@ struct App {
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
+    /// Current git branch name, if the project is inside a git repo.
+    git_branch: Option<String>,
     /// Directory tool paths (`edit`/`write` "path" args) are resolved against.
     project_root: PathBuf,
     /// Absolute paths touched by `edit`/`write` tool calls so far this turn;
@@ -400,6 +402,9 @@ struct App {
     /// this against its previous value each tick to (de)activate it, since
     /// crossterm's enable/disable calls need the real terminal handle.
     mouse_capture: bool,
+    /// Messages queued while a run is in progress, dequeued automatically
+    /// when the current turn finishes.
+    message_queue: std::collections::VecDeque<String>,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -464,6 +469,7 @@ impl App {
             args: None,
             max_turns,
             repo_root,
+            git_branch: git::current_branch(&project_root),
             project_root,
             turn_touched: Vec::new(),
             base_snapshot: None,
@@ -511,6 +517,7 @@ impl App {
             row_index: Vec::new(),
             run_started: None,
             mouse_capture: true,
+            message_queue: std::collections::VecDeque::new(),
         }
     }
 
@@ -571,6 +578,7 @@ impl App {
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
+        self.message_queue.clear();
         self.pending_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
@@ -923,7 +931,15 @@ impl App {
     /// Queue a user message: record it in history and the transcript, and ask
     /// the loop to start a run. Flips to `Running` synchronously so further keys
     /// in the same input batch can't slip through as a second submit.
+    /// When already running, the message is enqueued instead and auto-submitted
+    /// when the current turn finishes.
     fn submit_user(&mut self, text: String) {
+        // If a turn is already in progress, enqueue the message instead
+        if self.status == Status::Running {
+            self.message_queue.push_back(text.clone());
+            self.note(&format!("⏳ message queued ({} in queue)", self.message_queue.len()));
+            return;
+        }
         self.ensure_base_snapshot();
         let images = std::mem::take(&mut self.pending_images);
         let names: Vec<String> = images.iter().map(|i| i.name.clone()).collect();
@@ -943,6 +959,22 @@ impl App {
         self.scrollback = 0;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Dequeue the next message from the queue and submit it. Called after
+    /// `on_done` / `on_error` / `cancel_run` to continue processing.
+    fn dequeue_next(&mut self) {
+        if self.message_queue.is_empty() {
+            return;
+        }
+        let next = self.message_queue.pop_front().expect("checked non-empty above");
+        if !next.is_empty() {
+            self.note(&format!(
+                "⏩ dequeuing next message ({} remaining)",
+                self.message_queue.len()
+            ));
+            self.submit_user(next);
+        }
     }
 
     /// Render a user turn: the prompt line, then one dotted connector row per
@@ -1389,6 +1421,8 @@ impl App {
                 self.goal_eval_pending = normal && !no_answer;
             }
         }
+        // Auto-dequeue the next queued message, if any
+        self.dequeue_next();
         self.persist();
     }
 
@@ -1415,6 +1449,8 @@ impl App {
                 self.note("goal paused (turn errored); /goal to review, /goal clear to stop");
             }
         }
+        // Auto-dequeue the next queued message, if any
+        self.dequeue_next();
     }
 
     /// Run one goal evaluation and act on the verdict. Called by the chat loop
@@ -1505,6 +1541,8 @@ impl App {
         // A cancel stops the goal loop mid-flight; the goal itself is kept so
         // the user can inspect it (/goal) or clear it (/goal clear).
         self.goal_eval_pending = false;
+        // Auto-dequeue the next queued message, if any
+        self.dequeue_next();
         self.persist();
     }
 }
@@ -2367,10 +2405,8 @@ async fn chat_loop<B: Backend>(
                             }
                         }
                         Ok(Event::Paste(text)) => {
-                            if app.status == Status::Idle {
-                                for c in text.chars() {
-                                    app.input_insert(c);
-                                }
+                            for c in text.chars() {
+                                app.input_insert(c);
                             }
                         }
                         Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
@@ -2435,6 +2471,8 @@ async fn chat_loop<B: Backend>(
                         app.status = Status::Idle;
                         app.run_started = None;
                     }
+                    // Auto-dequeue the next queued message
+                    app.dequeue_next();
                     current = None;
                 }
             },
@@ -2719,10 +2757,10 @@ async fn handle_key(
         }
         // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
         // Enter submits.
-        KeyCode::Enter if app.status == Status::Idle && key.modifiers.contains(KeyModifiers::ALT) => {
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
             app.input_insert('\n');
         }
-        KeyCode::Char('j') if app.status == Status::Idle && ctrl => {
+        KeyCode::Char('j') if ctrl => {
             app.input_insert('\n');
         }
         // Ctrl-O expands/collapses all folded regions (tool groups and reasoning
@@ -2732,39 +2770,39 @@ async fn handle_key(
         }
         // Ctrl-V stages an image from the OS clipboard (terminal paste is
         // text-only, so we read the clipboard directly) for the next message.
-        KeyCode::Char('v') if app.status == Status::Idle && ctrl => {
+        KeyCode::Char('v') if ctrl => {
             app.attach_clipboard_image();
         }
         KeyCode::Enter => {
-            if app.status == Status::Idle {
-                let text = app.input.trim().to_string();
-                app.input_clear();
+            let text = app.input.trim().to_string();
+            app.input_clear();
+            if !text.is_empty() {
                 if let Some(cmd) = text.strip_prefix('/') {
                     run_command(app, cmd).await;
-                } else if !text.is_empty() {
+                } else {
                     app.submit_user(text);
                 }
             }
         }
-        KeyCode::Backspace if app.status == Status::Idle => {
+        KeyCode::Backspace => {
             app.input_backspace();
         }
-        KeyCode::Delete if app.status == Status::Idle => {
+        KeyCode::Delete => {
             app.input_delete();
         }
-        KeyCode::Left if app.status == Status::Idle => {
+        KeyCode::Left => {
             app.cursor_left();
         }
-        KeyCode::Right if app.status == Status::Idle => {
+        KeyCode::Right => {
             app.cursor_right();
         }
-        KeyCode::Home if app.status == Status::Idle => {
+        KeyCode::Home => {
             app.cursor = 0;
         }
-        KeyCode::End if app.status == Status::Idle => {
+        KeyCode::End => {
             app.cursor = app.input.len();
         }
-        KeyCode::Char(c) if app.status == Status::Idle && !ctrl => {
+        KeyCode::Char(c) if !ctrl => {
             app.input_insert(c);
         }
         KeyCode::Up | KeyCode::PageUp => {
@@ -2847,6 +2885,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/mcp",
         hint: "",
         description: "Enable/disable MCP servers",
+    },
+    SlashCommand {
+        name: "/cancel",
+        hint: "[N]",
+        description: "Cancel queued messages (bare: all, or index)",
     },
     SlashCommand {
         name: "/config",
@@ -2946,6 +2989,7 @@ async fn run_command(app: &mut App, line: &str) {
         "mcp" => open_mcp_picker(app),
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
+        "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
     }
@@ -2989,6 +3033,45 @@ fn goal_command(app: &mut App, arg: &str) {
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
     }
+}
+
+/// `/cancel` handler: without an argument, clears ALL queued messages.
+/// With a numeric argument `/cancel N` (1-indexed), removes the Nth queued
+/// message. Notes the result or when the queue is empty.
+fn cancel_command(app: &mut App, arg: &str) {
+    if app.message_queue.is_empty() {
+        app.note("no queued messages to cancel");
+        return;
+    }
+    if arg.is_empty() {
+        let n = app.message_queue.len();
+        app.message_queue.clear();
+        app.note(&format!("cancelled all {n} queued message(s)"));
+        return;
+    }
+    // Try to parse as a 1-indexed position
+    if let Ok(idx) = arg.parse::<usize>() {
+        if idx == 0 || idx > app.message_queue.len() {
+            app.note(&format!(
+                "no message at position {idx} (queue has {} messages)",
+                app.message_queue.len()
+            ));
+            return;
+        }
+        let removed = app.message_queue.remove(idx - 1);
+        if let Some(text) = removed {
+            let preview = truncate(&text, 40);
+            app.note(&format!(
+                "cancelled message #{idx}: \"{preview}\" ({} remaining)",
+                app.message_queue.len()
+            ));
+        }
+        return;
+    }
+    app.note(&format!(
+        "usage: /cancel [N]  — cancel all or the Nth queued message (queue has {})",
+        app.message_queue.len()
+    ));
 }
 
 /// Print the active goal's condition, turn count, duration, and the evaluator's
@@ -3481,6 +3564,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.turn = (0, 0);
     app.tokens = 0;
     app.scrollback = 0;
+    app.message_queue.clear();
     restore_snapshots(app, thread.get("metadata"));
     restore_goal(app, thread.get("metadata"));
 
@@ -4150,11 +4234,7 @@ fn header(app: &App) -> Paragraph<'static> {
         (n, 0) => format!("turn {n}  "),
         (n, m) => format!("turn {n}/{m}  "),
     };
-    let dir = app
-        .project_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(".");
+    let project_str = app.project_root.to_string_lossy();
     let elapsed = app
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
@@ -4162,10 +4242,16 @@ fn header(app: &App) -> Paragraph<'static> {
     let mut spans = vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
-        Span::styled(dir.to_string(), Style::new().dark_gray()),
-        Span::raw(format!("  {turn}tokens {}", app.tokens)),
-        Span::styled(elapsed, Style::new().dim()),
+        Span::styled(format!("📂 {}", &project_str as &str), Style::new().dark_gray()),
     ];
+    if let Some(branch) = app.git_branch.as_ref() {
+        spans.push(Span::styled(
+            format!(" ⎇ {}", branch),
+            Style::new().dark_gray(),
+        ));
+    }
+    spans.push(Span::raw(format!("  {turn}tokens {}", app.tokens)));
+    spans.push(Span::styled(elapsed, Style::new().dim()));
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
     // green once achieved), so an unattended run shows the goal is still live.
     if let Some(goal) = app.goal.as_ref() {
@@ -4191,7 +4277,7 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// idle/working placeholder, or the wrapped input height clamped to
 /// `MAX_INPUT_ROWS` while editing.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.status == Status::Idle && app.picker.is_none() {
+    let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
         let inner = width.saturating_sub(2).max(1);
         let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
@@ -4264,20 +4350,32 @@ fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default();
     if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
-    } else if app.status == Status::Running {
-        Paragraph::new(Line::styled(
-            "working… (Esc to cancel)",
-            Style::new().dim().italic(),
-        ))
-        .block(block)
+    } else if app.status == Status::Running && app.input.is_empty() {
+        // Show queue status when running with empty input
+        if app.message_queue.is_empty() {
+            Paragraph::new(Line::styled(
+                "working… (Esc to cancel, type to queue next message)",
+                Style::new().dim().italic(),
+            ))
+            .block(block)
+        } else {
+            let n = app.message_queue.len();
+            let msg = format!("⏳ Queued ({n}) — Esc to cancel, type to add more");
+            Paragraph::new(Line::styled(msg, Style::new().yellow())).block(block)
+        }
     } else if app.input.is_empty() {
         // Same `› ` arrow as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
+        let placeholder = if app.status == Status::Running {
+            "Type to queue next message"
+        } else {
+            "Type here to chat with agent"
+        };
         let cursor_spans: Vec<Span<'static>> = vec![
             Span::styled("› ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
-            Span::styled("Type here to chat with agent", Style::new().dim().italic()),
+            Span::styled(placeholder, Style::new().dim().italic()),
         ];
         Paragraph::new(Line::from(cursor_spans)).block(block)
     } else {
@@ -4319,26 +4417,45 @@ fn footer(app: &App) -> Paragraph<'static> {
         return Paragraph::new(Line::styled(picker.action_hint(), Style::new().dim()));
     }
     let key_style = Style::new().cyan().bold();
+    let queue_count = app.message_queue.len();
     let mut spans = match app.status {
-        Status::Running => hint_spans(
-            key_style,
-            &[
-                ("Esc/Ctrl-C", "cancel"),
-                ("↑/↓", "scroll"),
-                ("Ctrl-O", "expand all"),
-            ],
-        ),
-        Status::Idle => hint_spans(
-            key_style,
-            &[
-                ("Enter", "send"),
-                ("Alt+Enter", "newline"),
-                ("/help", ""),
-                ("↑/↓", "scroll"),
-                ("Ctrl-O", "expand all"),
-                ("Ctrl-D", "quit"),
-            ],
-        ),
+        Status::Running => {
+            let mut s = hint_spans(
+                key_style,
+                &[
+                    ("Esc/Ctrl-C", "cancel"),
+                    ("↑/↓", "scroll"),
+                    ("Ctrl-O", "expand all"),
+                ],
+            );
+            if queue_count > 0 {
+                s.insert(0, Span::styled(
+                    format!("⏳ Queued ({queue_count})  "),
+                    Style::new().yellow().bold(),
+                ));
+            }
+            s
+        }
+        Status::Idle => {
+            let mut s = hint_spans(
+                key_style,
+                &[
+                    ("Enter", "send"),
+                    ("Alt+Enter", "newline"),
+                    ("/help", ""),
+                    ("↑/↓", "scroll"),
+                    ("Ctrl-O", "expand all"),
+                    ("Ctrl-D", "quit"),
+                ],
+            );
+            if queue_count > 0 {
+                s.insert(0, Span::styled(
+                    format!("⏳ Queued ({queue_count})  "),
+                    Style::new().yellow().bold(),
+                ));
+            }
+            s
+        }
     };
     if !app.detail.is_empty() {
         spans.push(Span::styled(
