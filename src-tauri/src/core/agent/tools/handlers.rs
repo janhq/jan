@@ -18,6 +18,10 @@ use crate::core::agent::tools::BuiltinTool;
 
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_LINES: usize = 2000;
+/// bash output caps: generous enough that typical command output reaches the
+/// model intact on a large-context run, spilling to a temp file only past this.
+const BASH_MAX_BYTES: usize = 256 * 1024;
+const BASH_MAX_LINES: usize = 10_000;
 const GREP_MAX_LINE: usize = 500;
 const LS_DEFAULT_LIMIT: usize = 500;
 const FIND_DEFAULT_LIMIT: usize = 1000;
@@ -68,13 +72,13 @@ fn rel_to(base: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// Truncate `s` to the smaller of the line cap or the byte cap, appending
+/// Truncate `s` to the smaller of `max_lines` or `max_bytes`, appending
 /// `note` when truncation occurred.
-fn cap_output(s: &str, max_lines: usize, note: &str) -> String {
+fn cap_output(s: &str, max_lines: usize, max_bytes: usize, note: &str) -> String {
     let mut out = String::new();
     let mut truncated = false;
     for (lines, line) in s.split_inclusive('\n').enumerate() {
-        if lines >= max_lines || out.len() + line.len() > MAX_BYTES {
+        if lines >= max_lines || out.len() + line.len() > max_bytes {
             truncated = true;
             break;
         }
@@ -408,6 +412,7 @@ async fn read(args: &serde_json::Value, root: &Path) -> String {
     cap_output(
         &selected,
         MAX_LINES,
+        MAX_BYTES,
         "\n[truncated: use offset/limit to read more]",
     )
 }
@@ -442,7 +447,7 @@ async fn ls(args: &serde_json::Value, root: &Path) -> String {
     if entry_limited {
         joined.push_str(&format!("\n[truncated: {limit} entry limit]"));
     }
-    cap_output(&joined, usize::MAX, "\n[truncated: 64KB limit]")
+    cap_output(&joined, usize::MAX, MAX_BYTES, "\n[truncated: 64KB limit]")
 }
 
 async fn write(args: &serde_json::Value, root: &Path) -> String {
@@ -567,8 +572,8 @@ async fn await_bash_job(job_id: &str) -> String {
 
 /// Format a finished command's output the same way for foreground and
 /// backgrounded runs: combined stdout/stderr, an exit-code marker, then
-/// capped to `MAX_LINES` with the full text spilled to a temp file when it
-/// doesn't fit.
+/// capped to the bash line/byte limits with the full text spilled to a temp
+/// file when it doesn't fit.
 fn format_bash_output(output: std::io::Result<std::process::Output>) -> String {
     match output {
         Ok(out) => {
@@ -580,12 +585,22 @@ fn format_bash_output(output: std::io::Result<std::process::Output>) -> String {
                 Some(code) => combined.push_str(&format!("[exit {code}]")),
                 None => combined.push_str("[terminated by signal]"),
             }
-            let capped = cap_output(&combined, MAX_LINES, "");
+            let capped = cap_output(&combined, BASH_MAX_LINES, BASH_MAX_BYTES, "");
             if capped.len() < combined.len() {
                 let full_path = write_temp_output(&combined);
                 match full_path {
-                    Some(p) => format!("{capped}\n[truncated; full output at {p}]"),
-                    None => format!("{capped}\n[truncated]"),
+                    Some(p) => format!(
+                        "{capped}\n[output truncated at {} of {} bytes; \
+                         full output written to {p}. Use the read tool \
+                         (with offset/limit) on that path to see the rest]",
+                        capped.len(),
+                        combined.len(),
+                    ),
+                    None => format!(
+                        "{capped}\n[output truncated at {} of {} bytes]",
+                        capped.len(),
+                        combined.len(),
+                    ),
                 }
             } else {
                 capped
@@ -767,7 +782,12 @@ async fn grep(args: &serde_json::Value, root: &Path) -> String {
         if matches.is_empty() {
             "No matches.".to_string()
         } else {
-            cap_output(&matches.join("\n"), usize::MAX, "\n[truncated: 64KB limit]")
+            cap_output(
+                &matches.join("\n"),
+                usize::MAX,
+                MAX_BYTES,
+                "\n[truncated: 64KB limit]",
+            )
         }
     })
     .await;
@@ -1249,6 +1269,50 @@ mod tests {
         assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(out.contains("hi"), "unexpected: {out}");
         assert!(out.contains("[exit 3]"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_output_past_old_64kb_cap_survives_intact() {
+        let root = unique_root();
+        // ~128KB of output: over the shared 64KB cap, under the bash cap.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 2000); do printf '%064d\\n' \"$i\"; done"}),
+            &root,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
+        assert!(!out.contains("[truncated"), "should not truncate: len={}", out.len());
+        assert!(out.len() > 64 * 1024, "expected >64KB, got {}", out.len());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_output_overflow_spills_to_readable_temp_file() {
+        let root = unique_root();
+        // ~1MB of output: over the bash cap, so it must spill to a temp file
+        // and tell the agent how to read the rest.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("output truncated at"), "unexpected: end of {out}");
+        assert!(out.contains("Use the read tool"), "should guide the agent: {out}");
+        let path = out
+            .rsplit("full output written to ")
+            .next()
+            .and_then(|s| s.split(". Use the read tool").next())
+            .unwrap_or("");
+        let full = execute_builtin(
+            lookup("read").unwrap(),
+            &json!({"path": path, "offset": 15999, "limit": 1}),
+            &root,
+        )
+        .await;
+        assert!(full.contains("015999") || full.contains("016000"), "tail readable: {full}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
