@@ -14,16 +14,14 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # Applies to every project unless overridden by that project's
 # .jan/agent/agent.toml [provider] section.
 #
-# default_model = "gpt-4o"   # used when no --model / agent.toml model is set
+# default_model = "my-model"        # used when no --model / agent.toml model is set
+# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
+#                                     # defaults to `default_model` when unset
 #
-# [providers.openai]
+# [providers.my-provider]
 # api_key = "sk-..."
-# base_url = "https://api.openai.com/v1"
-# models = ["gpt-4o"]
-#
-# [providers.anthropic]
-# api_key = "sk-ant-..."
-# models = ["claude-sonnet-5"]
+# base_url = "https://api.example.com/v1"
+# models = ["my-model"]
 "#;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -32,6 +30,10 @@ struct GlobalConfigToml {
     /// flag nor `agent.toml` names one. Takes precedence over any derived guess.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_model: Option<String>,
+    /// Fast, cheap model for the `smol` role: goal evaluation and other
+    /// lightweight side calls. Falls back to `default_model` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    smol_model: Option<String>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -120,6 +122,14 @@ pub(crate) fn default_model() -> Result<Option<String>, String> {
     Ok(providers
         .into_iter()
         .find_map(|(_, entry)| entry.models.into_iter().next()))
+}
+
+/// Resolve the `smol` role model from `~/.jan/config.toml`: the explicit
+/// `smol_model` key if set. `None` when unset (callers fall back to the
+/// session's main model). Errors only on a malformed file.
+pub(crate) fn smol_model() -> Result<Option<String>, String> {
+    let config = load_raw()?;
+    Ok(config.smol_model.filter(|m| !m.trim().is_empty()))
 }
 
 /// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file

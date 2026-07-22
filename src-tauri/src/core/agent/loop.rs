@@ -981,6 +981,31 @@ pub(crate) async fn compact_history(
     .await)
 }
 
+/// Run one stateless `/goal` evaluation against `smol_model_id` (the session's
+/// fast "smol" role). Mirrors [`compact_history`]: resolve the upstream for the
+/// evaluator model, then make a single tool-free model call that judges whether
+/// `condition` is satisfied by `messages`. No tools, no streaming to the user.
+pub(crate) async fn evaluate_goal(
+    args: &OrchestrationArgs,
+    smol_model_id: &str,
+    condition: &str,
+    messages: &[serde_json::Value],
+) -> Result<crate::core::agent::goal::GoalVerdict, String> {
+    let (upstream_url, api_keys) = resolve_upstream_for_model(
+        smol_model_id,
+        args.provider_configs.clone(),
+        args.llama_state.clone(),
+        args.mlx_sessions.clone(),
+    )
+    .await?;
+    let model = HttpModelInvoker {
+        client: args.client.clone(),
+        upstream_url,
+        api_keys,
+    };
+    crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
