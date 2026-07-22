@@ -16,19 +16,18 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use once_cell::sync::Lazy;
 
 /// Regex matching `@path` references.
-/// The path stops at whitespace or common punctuation characters.
-/// Regex matching `@path` references. Path stops at whitespace or common punctuation.
-static REFERENCE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+/// The path stops at whitespace or common punctuation.
+static REFERENCE_RE: Lazy<regex::Regex> = Lazy::new(|| {
     // Using a raw string with hash delimiters avoids escaping quotes and backticks.
     // The negated character class excludes tokens that would make bad paths.
     regex::Regex::new(r###"@([^\s,;:!?'"`\[\](){}<>)\)]+)"###).unwrap()
 });
 
 /// Maximum bytes we will read from a single file.
-const MAX_FILE_BYTES: u64 = 1 * 1024 * 1024;
+const MAX_FILE_BYTES: u64 = 1024 * 1024;
 
 /// Maximum characters in a directory listing sent to the model.
 const MAX_DIR_CHARS: usize = 20_000;
