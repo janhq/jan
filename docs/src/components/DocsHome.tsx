@@ -17,7 +17,7 @@ const SECTIONS = [
     title: 'Jan Agent',
     description:
       'The standalone agent, distributed separately — launch autonomous coding agents against a local model.',
-    tags: 'Quickstart · How it works',
+    tags: 'Coming soon',
     href: '/docs/agent',
     chip: 'bg-[#FDE68A]/60 text-[#92400E]',
   },
