@@ -1596,25 +1596,47 @@ fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<
 fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     let max = width.saturating_sub(8) as usize;
     let mut out = Vec::new();
+    // A single-call group's summary row already IS that call's `done` label, so
+    // repeating it here would duplicate it; only multi-call groups (whose
+    // summary is a counted breakdown) need the per-call headers.
+    let show_headers = group.calls.len() > 1;
+    let (tag_gutter, cont_gutter) = if show_headers {
+        ("│     ", "│       ")
+    } else {
+        ("│   ", "│     ")
+    };
     for call in &group.calls {
-        out.push(Line::from(vec![
-            Span::styled("│   ", Style::new().dark_gray()),
-            Span::styled("▸ ", Style::new().cyan()),
-            Span::styled(call.done.clone(), Style::new().dim()),
-        ]));
+        if show_headers {
+            out.push(Line::from(vec![
+                Span::styled("│   ", Style::new().dark_gray()),
+                Span::styled("▸ ", Style::new().cyan()),
+                Span::styled(call.done.clone(), Style::new().dim()),
+            ]));
+        }
         if let Some(content) = &call.content {
             let (tag, tag_style) = if call.is_error {
                 ("✗", Style::new().red())
             } else {
                 ("✓", Style::new().green())
             };
+            // Expanded view shows the full output verbatim (one row per line,
+            // width-clamped): the tag rides the first line, the rest indent to
+            // align under it. Empty content still gets a bare tag row.
+            let mut content_lines = content.lines();
+            let first = content_lines.next().unwrap_or("");
             out.push(Line::from(vec![
-                Span::styled("│     ", Style::new().dark_gray()),
+                Span::styled(tag_gutter, Style::new().dark_gray()),
                 Span::styled(format!("{tag} "), tag_style),
-                Span::styled(summarize_result(content, max), Style::new().dim()),
+                Span::styled(truncate(first, max), Style::new().dim()),
             ]));
+            for line in content_lines {
+                out.push(Line::from(vec![
+                    Span::styled(cont_gutter, Style::new().dark_gray()),
+                    Span::styled(truncate(line, max), Style::new().dim()),
+                ]));
+            }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, "│       ") {
+                for line in diff_lines(diff, max, cont_gutter) {
                     out.push(line);
                 }
             }
@@ -5340,6 +5362,37 @@ mod tests {
         assert!(row.contains("✓") && row.contains("Ran: grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
+    }
+
+    #[test]
+    fn expanded_bash_group_shows_full_output_not_summary() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "git push" }),
+        });
+        let content = "To github.com:janhq/jan.git\n   a1b2c3d..e4f5g6h  main -> main\nremote line\n[exit 0]";
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: content.into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let joined = group_detail_lines(&app.groups[0], 120)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("main -> main"), "middle line lost: {joined}");
+        assert!(joined.contains("remote line"), "line lost: {joined}");
+        assert!(joined.contains("[exit 0]"), "exit marker lost: {joined}");
+        assert!(!joined.contains("(+"), "must not summarize when expanded: {joined}");
+        // Single-call group: the command header must not be repeated inside the
+        // expansion (the summary row above already shows it).
+        assert!(!joined.contains("▸"), "duplicate command header: {joined}");
+        assert!(!joined.contains("git push"), "duplicate command label: {joined}");
     }
 
     #[test]
