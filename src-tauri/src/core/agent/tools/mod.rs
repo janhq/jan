@@ -2,8 +2,10 @@
 //! coding-agent exposes. Handlers and loop wiring land in a later phase; this
 //! module is the pure metadata + gate surface.
 
+pub mod cmdscan;
 pub mod gate;
 pub mod handlers;
+pub mod proc;
 pub mod sandbox;
 pub mod schema;
 pub mod web;
