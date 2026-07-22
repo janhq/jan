@@ -63,6 +63,12 @@ pub enum StreamEvent {
     /// the `agent_permission_respond` command referencing `request_id`.
     PermissionRequest {
         request_id: String,
+        /// The originating tool call's id, so the UI can render the approval
+        /// inline on that tool card (see `web-app` `ToolApprovalActions`)
+        /// instead of only in the modal. `None` for prompts with no single
+        /// correlated tool call (e.g. subagent-create).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
         tool_name: String,
         capability: String,
         path: Option<String>,
@@ -282,6 +288,7 @@ mod tests {
     fn permission_request_serializes_to_wire_shape() {
         let v = serde_json::to_value(StreamEvent::PermissionRequest {
             request_id: "perm-1".into(),
+            tool_call_id: Some("call-1".into()),
             tool_name: "write".into(),
             capability: "write".into(),
             path: Some("out.txt".into()),
@@ -296,6 +303,7 @@ mod tests {
             json!({
                 "type": "permission_request",
                 "request_id": "perm-1",
+                "tool_call_id": "call-1",
                 "tool_name": "write",
                 "capability": "write",
                 "path": "out.txt",

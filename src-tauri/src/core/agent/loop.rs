@@ -196,6 +196,7 @@ impl CompositeToolInvoker {
             .insert(request_id.clone(), tx);
         let _ = self.events.send(StreamEvent::PermissionRequest {
             request_id: request_id.clone(),
+            tool_call_id: None,
             tool_name: tool_name.to_string(),
             capability: "run".to_string(),
             path: None,
@@ -220,6 +221,7 @@ impl CompositeToolInvoker {
             .insert(request_id.clone(), tx);
         let _ = self.events.send(StreamEvent::PermissionRequest {
             request_id: request_id.clone(),
+            tool_call_id: None,
             tool_name: "create_subagent".to_string(),
             capability: "write".to_string(),
             path: Some(name.to_string()),
@@ -475,6 +477,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     let diff = preview_diff(tool, &args, &self.project_root).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
+                        tool_call_id: Some(id.clone()),
                         tool_name: name.to_string(),
                         capability: capability.to_string(),
                         path,
@@ -950,11 +953,10 @@ fn build_completion_request(
     serde_json::Value::Object(completion_map)
 }
 
-/// Manually compact `messages` for the given model, resolving the upstream from
+/// Manually compact `messages` for a model, resolving the upstream from
 /// `args` and reusing the same summarization path as the reactive loop. Used by
-/// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
-/// no `ModelInvoker`.
-#[cfg(feature = "cli")]
+/// the TUI `/compact` command and the Code UI's `/compact` slash command, both
+/// of which hold `OrchestrationArgs` + a model id but no `ModelInvoker`.
 pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,

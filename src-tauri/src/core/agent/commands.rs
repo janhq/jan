@@ -194,6 +194,38 @@ pub async fn agent_permission_respond(
     Ok(())
 }
 
+/// Manually compact a conversation's history for the given model, mirroring
+/// the TUI's `/compact` command (see `compact_history` in loop.rs). Takes the
+/// same `messages` shape the Code UI already persists as session history.
+#[tauri::command]
+pub async fn agent_compact<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+    model_id: String,
+    messages: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let args = build_orchestration_args(&app_handle, &state);
+    crate::core::agent::r#loop::compact_history(&args, &model_id, &messages).await
+}
+
+/// Run one stateless `/goal` completion check for `condition` against
+/// `messages`, using `smol_model_id` (the session's fast "smol" role model).
+/// Mirrors `agent_compact`: same `OrchestrationArgs` resolution, no
+/// streaming, no tools. Used by the Code UI's `/goal` slash command after
+/// each turn to decide whether to keep nudging the agent or hand control
+/// back (mirrors the TUI's in-loop evaluator, see `goal.rs`).
+#[tauri::command]
+pub async fn agent_goal_evaluate<R: Runtime>(
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+    smol_model_id: String,
+    condition: String,
+    messages: Vec<serde_json::Value>,
+) -> Result<crate::core::agent::goal::GoalVerdict, String> {
+    let args = build_orchestration_args(&app_handle, &state);
+    crate::core::agent::r#loop::evaluate_goal(&args, &smol_model_id, &condition, &messages).await
+}
+
 /// Strip the internal `ERROR: ` prefix (an agent-tool-output convention) so the
 /// message reads cleanly in a UI toast.
 fn ui_error(e: String) -> String {
