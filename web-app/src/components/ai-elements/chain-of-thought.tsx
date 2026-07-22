@@ -67,6 +67,8 @@ export type ChainOfThoughtProps = ComponentProps<typeof Collapsible> & {
   open?: boolean
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
+  /** Pre-computed duration in seconds. When provided, overrides the internal timer. */
+  duration?: number
 }
 
 export const ChainOfThought = memo(
@@ -78,6 +80,7 @@ export const ChainOfThought = memo(
     open,
     defaultOpen = true,
     onOpenChange,
+    duration: durationProp,
     children,
     ...props
   }: ChainOfThoughtProps) => {
@@ -104,18 +107,28 @@ export const ChainOfThought = memo(
     }
 
     const [startTime, setStartTime] = useState<number | null>(null)
-    const [duration, setDuration] = useState<number | undefined>(undefined)
+    const [internalDuration, setInternalDuration] = useState<number | undefined>(
+      undefined
+    )
+
+    // Use the prop when provided, otherwise fall back to the internal timer.
+    // This allows a persisted duration (e.g. from message timestamps) to survive
+    // remount when navigating between threads.
+    const duration = durationProp ?? internalDuration
 
     useEffect(() => {
+      // When durationProp is provided externally, don't run the internal timer.
+      if (durationProp !== undefined) return
+
       if (isStreaming) {
         if (startTime === null) {
           setStartTime(Date.now())
         }
       } else if (startTime !== null) {
-        setDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
+        setInternalDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
         setStartTime(null)
       }
-    }, [isStreaming, startTime])
+    }, [isStreaming, startTime, durationProp])
 
     const contextValue = useMemo(
       () => ({ isStreaming, isOpen, setIsOpen, duration }),
