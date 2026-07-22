@@ -185,6 +185,9 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     exit_code: i32,
 ) {
     use std::sync::atomic::Ordering;
+    // Reap any still-running agent bash command trees before we tear down, so
+    // no shell (or child it spawned) outlives the app.
+    crate::core::agent::tools::proc::kill_all();
     let mut emitted = false;
     loop {
         if SHUTTING_DOWN.load(Ordering::SeqCst) {
