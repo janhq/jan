@@ -990,6 +990,11 @@ impl App {
                 // (advanced each render tick) instead of a static grouped row,
                 // cleared when its result arrives.
                 if name == "await_subagent" {
+                    // Commit any buffered reasoning/prose the model emitted
+                    // before awaiting so it folds to its summary row instead of
+                    // lingering fully expanded in the live tail behind the
+                    // throbber (matches the grouped-call path below).
+                    self.flush_assistant();
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
                     self.awaiting.push((id, run_id.to_string(), sub));
@@ -4515,6 +4520,26 @@ mod tests {
             "awaiting throbber must render below prose:\n{}",
             rows.join("\n")
         );
+    }
+
+    #[test]
+    fn reasoning_folds_before_await_subagent() {
+        // A reasoning model that thinks and then awaits a subagent must fold
+        // its <think> block to a summary row, not leave it fully expanded in
+        // the live tail behind the throbber.
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>collecting the subagent answers</think>".into(),
+        });
+        assert!(app.reasoning_blocks.is_empty());
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-reviewer-1" }),
+        });
+        assert_eq!(app.reasoning_blocks.len(), 1);
+        assert!(app.assistant_buf.is_empty());
+        assert_eq!(app.awaiting.len(), 1);
     }
 
     #[test]
