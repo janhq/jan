@@ -8,7 +8,6 @@ pub mod events;
 pub mod goal;
 #[cfg(feature = "cli")]
 pub mod global_config;
-#[cfg(feature = "cli")]
 pub mod git;
 pub mod r#loop;
 pub mod memory;
