@@ -2588,19 +2588,15 @@ const ChatInput = memo(function ChatInput({
                       onClick={() => {
                         // Stopping with messages queued just clears the queue
                         // (nothing to interrupt yet) instead of stopping the
-                        // active stream. Falls through to onStop (Code UI's own
-                        // cancel) when supplied, else the general chat's
-                        // stopStreaming keyed by currentThreadId.
+                        // active stream. stopStreaming itself already falls
+                        // through to onStop (Code UI's own cancel) when
+                        // supplied, else the general chat's abort.
                         if (queueId) {
                           const queue = useMessageQueue.getState().getQueue(queueId)
                           if (queue.length > 0) {
                             useMessageQueue.getState().clearQueue(queueId)
                             return
                           }
-                        }
-                        if (onStop) {
-                          onStop()
-                          return
                         }
                         stopStreaming(currentThreadId ?? '')
                       }}
