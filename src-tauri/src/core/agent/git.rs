@@ -43,6 +43,7 @@ fn git(args: &[&str]) -> Result<String, String> {
 /// Run a repo-scoped `git` (`-C <repo>`), optionally against a throwaway index,
 /// with a fixed agent identity so `commit-tree` never needs user config and
 /// never triggers commit signing.
+#[cfg(feature = "cli")]
 fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).args(args);
@@ -70,6 +71,7 @@ static IDX_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A unique throwaway index path so one-off git operations (restore) never
 /// disturb the real index.
+#[cfg(feature = "cli")]
 fn temp_index() -> PathBuf {
     let n = IDX_COUNTER.fetch_add(1, Ordering::SeqCst);
     std::env::temp_dir().join(format!("jan-agent-idx-{}-{n}", std::process::id()))
@@ -80,12 +82,14 @@ fn temp_index() -> PathBuf {
 /// prior stat cache instead of a fresh empty one, so unchanged files are only
 /// stat'd (cheap) rather than re-hashed and re-inserted like every other file
 /// touched this turn.
+#[cfg(feature = "cli")]
 fn snapshot_index(thread_id: &str) -> PathBuf {
     std::env::temp_dir().join(format!("jan-agent-snap-idx-{thread_id}"))
 }
 
 /// Hidden ref that keeps a thread's snapshot chain reachable across GC. One ref
 /// per thread; each snapshot parents the previous, so the whole chain is live.
+#[cfg(feature = "cli")]
 pub(crate) fn snapshot_ref(thread_id: &str) -> String {
     format!("refs/jan/agent/snapshots/{thread_id}")
 }
@@ -101,13 +105,27 @@ pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The current branch name for the repo containing `path`, or `None` when
+/// `path` is not inside a git work tree, `git` is not installed, or `HEAD` is
+/// detached (no symbolic branch). A detached `HEAD` yields the empty string
+/// from `--abbrev-ref`, filtered out here.
+pub(crate) fn current_branch(path: &Path) -> Option<String> {
+    let p = path.to_string_lossy();
+    git(&["-C", &p, "rev-parse", "--abbrev-ref", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "HEAD")
+}
+
 /// The canonical empty tree object every git repo has, without needing a
 /// commit to hash it from -- used as the base tree when `HEAD` is unborn.
+#[cfg(feature = "cli")]
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// Stage a single relative path into `idx`: `add` if it still exists on disk,
 /// `rm --cached` (ignoring paths not currently tracked) if it was deleted.
 /// Never touches any other path, so cost is O(1) per call, not O(repo size).
+#[cfg(feature = "cli")]
 fn stage_path(repo: &Path, idx: &Path, rel: &Path) -> Result<(), String> {
     let rel_str = rel.to_string_lossy();
     if repo.join(rel).exists() {
@@ -130,6 +148,7 @@ fn stage_path(repo: &Path, idx: &Path, rel: &Path) -> Result<(), String> {
 /// diff --name-only HEAD`, which compares only tracked paths -- no untracked
 /// scan). Every later checkpoint reuses that same index and stages only
 /// `changed`.
+#[cfg(feature = "cli")]
 pub(crate) fn snapshot(
     repo: &Path,
     parent: Option<&str>,
@@ -167,11 +186,13 @@ pub(crate) fn snapshot(
 /// Drop a thread's persistent snapshot index (e.g. once the thread is done or
 /// after a workspace restore invalidates it). Safe to call even if it was
 /// never created.
+#[cfg(feature = "cli")]
 pub(crate) fn cleanup_snapshot_index(thread_id: &str) {
     let _ = std::fs::remove_file(snapshot_index(thread_id));
 }
 
 /// Point the thread's snapshot ref at `sha` (create or update).
+#[cfg(feature = "cli")]
 pub(crate) fn update_ref(repo: &Path, thread_id: &str, sha: &str) -> Result<(), String> {
     run(repo, None, &["update-ref", &snapshot_ref(thread_id), sha]).map(|_| ())
 }
@@ -179,6 +200,7 @@ pub(crate) fn update_ref(repo: &Path, thread_id: &str, sha: &str) -> Result<(), 
 /// Restore the working tree to snapshot `target`, discarding changes made after
 /// it. `latest` (the newest snapshot) is used only to find files added since
 /// `target` so they can be removed. Files matching `.gitignore` are untouched.
+#[cfg(feature = "cli")]
 pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), String> {
     let idx = temp_index();
     let result = (|| {
@@ -209,6 +231,7 @@ mod tests {
 
     /// Init a throwaway repo with one commit, or `None` if git is unavailable so
     /// the suite skips instead of failing on a box without git.
+    #[cfg(feature = "cli")]
     fn init_repo() -> Option<PathBuf> {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let root = std::env::temp_dir().join(format!("jan_snap_test_{}_{n}", std::process::id()));
@@ -226,6 +249,7 @@ mod tests {
         repo_root(&root)
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn snapshot_restore_roundtrip() {
         let Some(root) = init_repo() else { return };
@@ -257,6 +281,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn snapshot_is_invisible_to_user_state() {
         let Some(root) = init_repo() else { return };
@@ -271,6 +296,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn base_snapshot_picks_up_preexisting_dirty_tracked_file() {
         let Some(root) = init_repo() else { return };
@@ -289,6 +315,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn checkpoint_only_stages_reported_paths() {
         let Some(root) = init_repo() else { return };
@@ -319,6 +346,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn repo_root_is_none_outside_git() {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
