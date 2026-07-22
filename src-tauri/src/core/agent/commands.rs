@@ -13,6 +13,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::core::agent::events::StreamEvent;
+use crate::core::agent::git;
 use crate::core::agent::permissions::ToolPermissions;
 use crate::core::agent::project::{
     agent_toml_path, ensure_project, load_agent_config, permissions_from,
@@ -231,4 +232,12 @@ pub async fn agent_skill_enabled_set(
     let root = std::path::PathBuf::from(&project);
     ensure_project(&root)?;
     set_skills_enabled_in_agent_toml(&agent_toml_path(&root), &enabled).map_err(ui_error)
+}
+
+/// Return the git branch name for the project at `project`, or `None` when the
+/// folder is not inside a git repo (or git is not installed). Used by the Code
+/// UI to display the current branch alongside the working directory.
+#[tauri::command]
+pub fn agent_git_branch(project: String) -> Option<String> {
+    git::current_branch(std::path::Path::new(&project))
 }
