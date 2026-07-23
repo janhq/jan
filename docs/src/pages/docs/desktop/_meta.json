@@ -15,6 +15,7 @@
   "agents": "Agents",
   "projects": "Projects",
   "assistants": "Assistants",
+  "web-search": "Web Search",
   "file-upload": "File Upload",
   "manage-models": "Hub",
   "api-server": "Local API Server",
