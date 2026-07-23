@@ -511,7 +511,7 @@ impl App {
             path_hint_dismissed: false,
             status: Status::Idle,
             turn: (0, 0),
-            context_window: 128_000,
+            context_window: 128_000, // TODO: read from model metadata once available; 128K is a safe default for modern models (Llama 3, Qwen 2.5, DeepSeek)
             reserve_tokens: 16_384,
             tokens: 0,
             detail: String::new(),
@@ -1571,6 +1571,26 @@ fn truncate(s: &str, max: usize) -> String {
 /// Summarize tool output to one transcript line: first non-empty line with its
 /// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
 /// suffix when more follow.
+/// Rough token count from message content characters (~4 chars ≈ 1 token).
+fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
+    let mut total_chars: usize = 0;
+    for msg in messages {
+        if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+            total_chars += content.len();
+        }
+        if let Some(calls) = msg.get("tool_calls") {
+            if let Some(arr) = calls.as_array() {
+                for call in arr {
+                    if let Some(args) = call.get("arguments") {
+                        total_chars += args.to_string().len();
+                    }
+                }
+            }
+        }
+    }
+    (total_chars / 4).max(1) as u64
+}
+
 fn summarize_result(s: &str, max: usize) -> String {
     let mut lines = s.lines().filter(|l| !l.trim().is_empty());
     let first = lines.next().unwrap_or("");
@@ -2472,15 +2492,24 @@ async fn chat_loop<B: Backend>(
                         let model = app.model.clone();
                         let mut history = std::mem::take(&mut app.history);
                         let before = history.len();
+                        // Show feedback immediately before the blocking model call.
+                        app.note("auto-compacting...");
                         let compacted = crate::core::agent::r#loop::compact_history(
                             args, &model, &history,
                             crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                         )
                         .await;
+                        // Remove the "auto-compacting..." note.
+                        app.transcript.retain(|l| {
+                            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                            !text.contains("auto-compacting")
+                        });
                         match compacted {
                             Ok(c) if c.len() < before => {
                                 history = c;
                                 app.history = history;
+                                // Update token estimate from compacted content.
+                                app.tokens = estimate_token_count(&app.history);
                                 app.persist();
                                 app.note(&format!(
                                     "auto-compacted {} -> {} messages (ctx {}K/{}K)",
@@ -3059,8 +3088,8 @@ async fn compact_command(app: &mut App) {
         Ok(compacted) if compacted.len() < before => {
             app.history = compacted;
             app.persist();
-            // Rough token estimate after compaction (assume ~30% of original).
-            app.tokens = (app.tokens as f64 * 0.3) as u64;
+            // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
+            app.tokens = estimate_token_count(&app.history);
             app.note(&format!(
                 "compacted {before} -> {} messages (ctx {}K/{}K)",
                 app.history.len(),
@@ -4307,7 +4336,8 @@ fn header(app: &App) -> Paragraph<'static> {
     if app.tokens > 0 {
         spans.push(Span::raw(format!(
             "ctx {}K/{}K  ",
-            app.tokens / 1000,
+            // Round to nearest K for display clarity.
+            (app.tokens + 500) / 1000,
             app.context_window / 1000
         )));
     } else {
