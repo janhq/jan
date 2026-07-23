@@ -909,7 +909,7 @@ function CodePage() {
                 {current.goal.condition}
               </span>
             )}
-            <div className="flex items-center gap-1">
+            <div className="relative z-30 flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
