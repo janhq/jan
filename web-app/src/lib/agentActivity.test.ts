@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   toolActivityText,
+  completedToolLabel,
+  usedSkillNames,
   activeToolPart,
   subagentActivityLabel,
 } from './agentActivity'
@@ -19,9 +21,9 @@ describe('toolActivityText', () => {
     )
   })
   it('formats write with Windows-style path basename only', () => {
-    expect(toolActivityText('write', { path: 'C:\\Users\\x\\report.html' })).toBe(
-      'Writing report.html'
-    )
+    expect(
+      toolActivityText('write', { path: 'C:\\Users\\x\\report.html' })
+    ).toBe('Writing report.html')
   })
 
   it('formats bash with truncated command', () => {
@@ -50,6 +52,15 @@ describe('toolActivityText', () => {
     expect(toolActivityText('memory_list', {})).toBe('Reading memory')
   })
 
+  it('names the skill being read', () => {
+    expect(toolActivityText('skill_read', { name: 'pptx' })).toBe(
+      'Reading pptx'
+    )
+    expect(
+      completedToolLabel('skill_read', { name: 'pptx' }, 'output-available')
+    ).toBe('Used pptx')
+  })
+
   it('falls back to humanized tool name for unknown tools', () => {
     expect(toolActivityText('web_search', { query: 'x' })).toBe('Web search')
   })
@@ -57,6 +68,30 @@ describe('toolActivityText', () => {
   it('falls back gracefully when path/command arg is missing', () => {
     expect(toolActivityText('write', {})).toBe('Writing')
     expect(toolActivityText('bash', {})).toBe('Running')
+  })
+})
+
+describe('usedSkillNames', () => {
+  it('returns unique successfully loaded skill names only', () => {
+    expect(
+      usedSkillNames([
+        {
+          type: 'tool-skill_read',
+          state: 'output-available',
+          input: { name: 'pptx' },
+        },
+        {
+          type: 'tool-skill_read',
+          state: 'output-available',
+          input: { name: 'pptx' },
+        },
+        {
+          type: 'tool-skill_read',
+          state: 'output-error',
+          input: { name: 'broken' },
+        },
+      ])
+    ).toEqual(['pptx'])
   })
 })
 
@@ -99,7 +134,13 @@ describe('activeToolPart', () => {
 describe('subagentActivityLabel', () => {
   it('returns null when no subagent is running', () => {
     const subagents: SubagentRun[] = [
-      { runId: 'r1', name: 'Researcher', status: 'done', startedAt: 1, turns: [] },
+      {
+        runId: 'r1',
+        name: 'Researcher',
+        status: 'done',
+        startedAt: 1,
+        turns: [],
+      },
     ]
     expect(subagentActivityLabel(subagents)).toBeNull()
   })
@@ -130,7 +171,13 @@ describe('subagentActivityLabel', () => {
 
   it('labels a single running subagent with "working" when it has no tool turn', () => {
     const subagents: SubagentRun[] = [
-      { runId: 'r1', name: 'Researcher', status: 'running', startedAt: 1000, turns: [] },
+      {
+        runId: 'r1',
+        name: 'Researcher',
+        status: 'running',
+        startedAt: 1000,
+        turns: [],
+      },
     ]
     expect(subagentActivityLabel(subagents)).toEqual({
       text: 'Researcher: working',

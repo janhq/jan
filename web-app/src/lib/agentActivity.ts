@@ -47,6 +47,11 @@ export function toolActivityText(toolName: string, input: unknown): string {
   const fixed = NO_DETAIL_TOOLS[toolName]
   if (fixed) return fixed
 
+  if (toolName === 'skill_read') {
+    const name = stringArg(input, 'name')
+    return name ? `Reading ${name}` : 'Reading skill'
+  }
+
   const verb = VERB_BY_TOOL[toolName]
   if (!verb) return humanizeToolName(toolName)
 
@@ -57,6 +62,18 @@ export function toolActivityText(toolName: string, input: unknown): string {
 
   const path = stringArg(input, 'path')
   return path ? `${verb} ${basename(path)}` : verb
+}
+
+export function completedToolLabel(
+  toolName: string,
+  input: unknown,
+  state: string
+): string {
+  if (toolName === 'skill_read' && state === 'output-available') {
+    const name = stringArg(input, 'name')
+    return name ? `Used ${name}` : 'Used skill'
+  }
+  return toolActivityText(toolName, input)
 }
 
 type ToolPartLike = {
@@ -84,6 +101,18 @@ export function activeToolPart(
     }
   }
   return null
+}
+
+export function usedSkillNames(parts: ToolPartLike[]): string[] {
+  const names = new Set<string>()
+  for (const part of parts) {
+    if (part.type !== 'tool-skill_read' || part.state !== 'output-available') {
+      continue
+    }
+    const name = stringArg(part.input, 'name')
+    if (name) names.add(name)
+  }
+  return [...names]
 }
 
 function lastRunningToolTurn(turns: CodeTurn[]): CodeTurn | undefined {

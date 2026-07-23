@@ -6,7 +6,9 @@ import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/utils'
 import {
   activeToolPart,
+  completedToolLabel,
   subagentActivityLabel,
+  usedSkillNames,
   type ActivityLabel,
 } from '@/lib/agentActivity'
 import type { SubagentRun } from '@/hooks/useCodeSessions'
@@ -207,6 +209,10 @@ export const MessageItem = memo(
       if (!isLastMessage || message.role !== 'assistant') return null
       return activeToolPart(message.parts as never)
     }, [isLastMessage, message.role, message.parts])
+    const usedSkills = useMemo(
+      () => usedSkillNames(message.parts as never),
+      [message.parts]
+    )
 
     useEffect(() => {
       const map = toolStartedAtRef.current
@@ -529,6 +535,10 @@ export const MessageItem = memo(
       }
 
       const toolName = part.type.split('-').slice(1).join('-')
+      const title =
+        toolName === 'skill_read'
+          ? completedToolLabel(toolName, part.input, part.state)
+          : toolName
       return (
         <Tool
           key={`${message.id}-${partIndex}`}
@@ -538,11 +548,11 @@ export const MessageItem = memo(
           className="mb-1"
         >
           <ToolHeader
-            title={toolName}
+            title={title}
             type={`tool-${toolName}` as `tool-${string}`}
             state={part.state}
           />
-          <ToolContent title={toolName}>
+          <ToolContent title={title}>
             {part.input && <ToolInput input={part.input} />}
             <ToolApprovalActions />
             {part.output && (
@@ -869,6 +879,15 @@ export const MessageItem = memo(
 
         {message.role === 'assistant' && !isStreaming && webCitations.length > 0 && (
           <WebSourcesRow citations={webCitations} />
+        )}
+
+        {message.role === 'assistant' && !isStreaming && usedSkills.length > 0 && (
+          <div
+            aria-label="Skills used"
+            className="mt-2 inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+          >
+            Skills used: {usedSkills.join(', ')}
+          </div>
         )}
 
         {isLastMessage &&
