@@ -17,10 +17,9 @@
 //! ref. The user's `git status`, current branch, and staged changes are never
 //! touched. Shelling out keeps us free of a libgit2 dependency.
 
-#[cfg(not(feature = "cli"))]
 use std::path::Path;
-#[cfg(feature = "cli")]
-use std::path::{Path, PathBuf};
+#[cfg(any(feature = "cli", test))]
+use std::path::PathBuf;
 use std::process::Command;
 
 
