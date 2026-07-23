@@ -57,7 +57,7 @@ pub async fn web_search(args: &Value) -> String {
             format!("No web search results found for query: {query}")
         }
         Ok(results) => render_search_results(&results),
-        Err(e) => e,
+        Err(e) => format!("ERROR: {e}"),
     }
 }
 
@@ -79,7 +79,7 @@ pub async fn web_fetch(args: &Value) -> String {
     };
     match provider.fetch(url).await {
         Ok(page) => render_fetched_page(&page),
-        Err(e) => e,
+        Err(e) => format!("ERROR: {e}"),
     }
 }
 
