@@ -70,6 +70,11 @@ pub(crate) struct AgentSection {
     /// heuristic only — it is NOT sent to the API as `max_tokens`.
     #[serde(default)]
     pub compaction_reserve_tokens: Option<u64>,
+    /// Per-request output cap forwarded to the model as the OpenAI-compatible
+    /// `max_tokens` field. Limits how many tokens the model may generate in a
+    /// single response. Omitted from the request when unset (model default).
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -89,6 +94,7 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 max_turns = 400
 # context_window = 128000  # tokens; defaults to 128K if unset
 # compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
+# max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 instructions_file = "AGENT.md"
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
@@ -367,6 +373,28 @@ mod tests {
         std::fs::write(&path, raw).unwrap();
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.compaction_reserve_tokens, Some(8192));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn max_tokens_defaults_to_none_when_unset() {
+        let root = unique_root("maxtok_unset");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_tokens, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn max_tokens_parses_when_present() {
+        let root = unique_root("maxtok_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let raw = raw.replace("[agent]", "[agent]\nmax_tokens = 4096");
+        std::fs::write(&path, raw).unwrap();
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_tokens, Some(4096));
         let _ = std::fs::remove_dir_all(&root);
     }
 

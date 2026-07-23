@@ -1040,6 +1040,9 @@ pub(crate) struct AgentSession {
     /// Tokens reserved for the model's response. Defaults to 16K if unset.
     /// Compaction triggers at `context_window - reserve_tokens`.
     pub reserve_tokens: u64,
+    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
+    /// `None` omits the field (model default).
+    pub max_tokens: Option<u64>,
     /// Background local-router startup, awaited before the first turn. `None`
     /// for cloud models.
     pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
@@ -1054,12 +1057,18 @@ pub(crate) struct AgentSession {
 impl AgentSession {
     /// Build a streaming request body for the given conversation history.
     pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
-        serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": messages,
             "max_turns": self.max_turns,
             "stream": true,
-        })
+        });
+        // Forward the per-request output cap only when configured; it flows to
+        // the upstream via `copy_optional_chat_params`.
+        if let Some(max) = self.max_tokens {
+            body["max_tokens"] = serde_json::json!(max);
+        }
+        body
     }
 }
 
@@ -1155,6 +1164,7 @@ fn prepare_agent_session(
         max_turns,
         context_window: cfg.agent.context_window.unwrap_or(128_000),
         reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
+        max_tokens: cfg.agent.max_tokens,
         router_task,
         mcp_servers,
         mcp_task,

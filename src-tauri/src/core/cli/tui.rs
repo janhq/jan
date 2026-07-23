@@ -291,6 +291,9 @@ struct App {
     context_window: u64,
     /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
     reserve_tokens: u64,
+    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
+    /// `None` omits the field (model default).
+    max_tokens: Option<u64>,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -471,6 +474,7 @@ impl App {
         max_turns: u32,
         context_window: u64,
         reserve_tokens: u64,
+        max_tokens: Option<u64>,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
@@ -484,6 +488,7 @@ impl App {
             max_turns,
             context_window,
             reserve_tokens,
+            max_tokens,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -1022,12 +1027,18 @@ impl App {
     }
 
     fn body(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": self.history,
             "max_turns": self.max_turns,
             "stream": true,
-        })
+        });
+        // Forward the per-request output cap only when configured; it reaches
+        // the upstream via `copy_optional_chat_params`.
+        if let Some(max) = self.max_tokens {
+            body["max_tokens"] = serde_json::json!(max);
+        }
+        body
     }
 
     /// Arm workspace snapshots by queuing the base capture before the first turn.
@@ -2291,6 +2302,7 @@ pub async fn run(
         max_turns,
         context_window,
         reserve_tokens,
+        max_tokens,
         router_task,
         mcp_servers,
         mcp_task,
@@ -2307,7 +2319,7 @@ pub async fn run(
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, context_window, reserve_tokens, agent_dir, project_root, repo_root);
+    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     if args.yolo {
@@ -4609,7 +4621,7 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, 128_000, 16_384, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        App::new("m".into(), 8, 128_000, 16_384, None, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
     fn pending(offers_always: bool) -> Pending {
@@ -6912,5 +6924,20 @@ mod tests {
         }
         // limit = u64::MAX - 16384 ≈ u64::MAX, so tokens=120K is well below
         assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn body_omits_max_tokens_when_unset() {
+        let app = test_app();
+        let body = app.body();
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn body_includes_max_tokens_when_set() {
+        let mut app = test_app();
+        app.max_tokens = Some(4096);
+        let body = app.body();
+        assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }
