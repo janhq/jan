@@ -1034,6 +1034,9 @@ pub(crate) struct AgentSession {
     /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
     pub smol_model: String,
     pub max_turns: u32,
+    /// Context window limit in tokens for the model. Defaults to 128K if agent.toml
+    /// doesn't set it. Used to display `ctx N/K` in the header and trigger compaction.
+    pub context_window: u64,
     /// Background local-router startup, awaited before the first turn. `None`
     /// for cloud models.
     pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
@@ -1147,6 +1150,7 @@ fn prepare_agent_session(
         model,
         smol_model,
         max_turns,
+        context_window: cfg.agent.context_window.unwrap_or(128_000),
         router_task,
         mcp_servers,
         mcp_task,

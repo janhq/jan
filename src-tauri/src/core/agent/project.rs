@@ -59,6 +59,11 @@ pub(crate) struct AgentSection {
     pub model: Option<String>,
     #[serde(default)]
     pub max_turns: Option<u32>,
+    /// Context window limit in tokens for the model (defaults to 128K if unset).
+    /// Set this to match your model's actual context length so compaction
+    /// triggers at the right threshold.
+    #[serde(default)]
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -76,6 +81,7 @@ pub(crate) struct ToolsSection {
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
 max_turns = 400
+# context_window = 128000  # tokens; defaults to 128K if unset
 instructions_file = "AGENT.md"
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
@@ -307,6 +313,31 @@ mod tests {
         // parsing must succeed and read [tools].
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn context_window_defaults_to_none_when_unset() {
+        // The scaffolded template leaves context_window commented out, so the
+        // parsed value is None and callers fall back to their default (128K).
+        let root = unique_root("ctx_unset");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.context_window, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn context_window_parses_when_present() {
+        let root = unique_root("ctx_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        // Prepend an explicit context_window under [agent].
+        let raw = raw.replace("[agent]", "[agent]\ncontext_window = 32000");
+        std::fs::write(&path, raw).unwrap();
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.context_window, Some(32000));
         let _ = std::fs::remove_dir_all(&root);
     }
 
