@@ -18,6 +18,11 @@ describe('toolActivityText', () => {
       'Editing config.ts'
     )
   })
+  it('formats write with Windows-style path basename only', () => {
+    expect(toolActivityText('write', { path: 'C:\\Users\\x\\report.html' })).toBe(
+      'Writing report.html'
+    )
+  })
 
   it('formats bash with truncated command', () => {
     expect(toolActivityText('bash', { command: 'ls -la' })).toBe(

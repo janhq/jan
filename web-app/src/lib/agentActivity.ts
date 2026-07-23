@@ -5,9 +5,9 @@ export type ActivityLabel = { text: string; startedAt: number } | null
 const MAX_COMMAND_LEN = 60
 
 function basename(path: string): string {
-  const trimmed = path.replace(/\/+$/, '')
-  const idx = trimmed.lastIndexOf('/')
-  return idx === -1 ? trimmed : trimmed.slice(idx + 1) || trimmed
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? normalized : normalized.slice(idx + 1) || normalized
 }
 
 function truncate(text: string, max: number): string {
