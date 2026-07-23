@@ -470,6 +470,7 @@ impl App {
         model: String,
         max_turns: u32,
         context_window: u64,
+        reserve_tokens: u64,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
@@ -482,6 +483,7 @@ impl App {
             args: None,
             max_turns,
             context_window,
+            reserve_tokens,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -513,7 +515,6 @@ impl App {
             path_hint_dismissed: false,
             status: Status::Idle,
             turn: (0, 0),
-            reserve_tokens: 16_384,
             tokens: 0,
             detail: String::new(),
             pending_queue: std::collections::VecDeque::new(),
@@ -2289,6 +2290,7 @@ pub async fn run(
         smol_model,
         max_turns,
         context_window,
+        reserve_tokens,
         router_task,
         mcp_servers,
         mcp_task,
@@ -2305,7 +2307,7 @@ pub async fn run(
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, context_window, agent_dir, project_root, repo_root);
+    let mut app = App::new(model, max_turns, context_window, reserve_tokens, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     if args.yolo {
@@ -4607,7 +4609,7 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, 128_000, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        App::new("m".into(), 8, 128_000, 16_384, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
     fn pending(offers_always: bool) -> Pending {
