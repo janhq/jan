@@ -22,7 +22,7 @@ Pull-request creation and keyboard shortcuts are explicitly out of scope.
 
 Project existing agent-core diff events into a session-level Diff view. Do not introduce a Git-status backend, mutate the user's index, infer a base branch, or add remote-provider behavior.
 
-The view represents **agent edit operations**, not a net branch/worktree diff. Repeated edits to the same path remain chronological diff blocks under one file. Additions and deletions are operation totals from focused diff lines; they are not presented as net Git totals.
+The view represents **agent edit operations**, not a net branch/worktree diff. Repeated edits to the same path remain separate diff blocks. Order is exact within the main trace and within each subagent trace. `CodeTurn` has no cross-lane timestamp, so the projection lists main-trace operations first and then subagent traces in their current run order; it does not claim a global chronology. Additions and deletions are operation totals from focused diff lines, not net Git totals.
 
 ## Panel Architecture
 
@@ -74,7 +74,7 @@ Projection rules:
 
 1. Read main committed/live turns and committed/live subagent turns already selected by `CodePage`.
 2. Keep successful tool turns with a non-empty `diff` and a string `args.path`.
-3. Group by normalized displayed path while preserving first-seen file order and chronological operation order.
+3. Group by displayed path while preserving first-seen file order and operation order within each source trace. Process the main trace first, then subagent traces in their current run order.
 4. Count lines beginning with `+ ` as additions and `- ` as deletions. Ignore `@@` headers and all other lines.
 5. Ignore malformed legacy turns, error turns, and unsupported tools without crashing the panel.
 6. Do not deduplicate repeated operations: each is an actual agent-core edit event.
@@ -92,7 +92,7 @@ The body contains one collapsed row per changed file:
 - disclosure indicator;
 - click/keyboard activation.
 
-Expanding a row renders its chronological operation blocks with the existing `DiffView`/shared diff syntax highlighting. A subagent operation identifies its source. Large content scrolls inside the panel; rows remain collapsed until selected.
+Expanding a row renders its ordered operation blocks with the existing `DiffView`/shared diff syntax highlighting. A subagent operation identifies its source. Large content scrolls inside the panel; rows remain collapsed until selected.
 
 Empty state: explain that successful agent `write`/`edit` changes will appear here. A session without a selected folder remains usable because projection is session-event based.
 
