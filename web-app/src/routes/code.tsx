@@ -383,6 +383,22 @@ function CodePage() {
           toast.error(t('common:cmdGoalTooLong'))
           break
         }
+        // Mirror the TUI's `set_goal` (tui.rs): setting a goal both arms it and
+        // immediately starts the first turn with the condition as the prompt.
+        // Gate on the same preconditions a real run needs so the "Goal set"
+        // toast never lies about work that can't actually start.
+        if (running) {
+          toast.error(t('common:cmdBusy'))
+          break
+        }
+        if (!current?.folder) {
+          toast.error(t('common:selectFolder'))
+          break
+        }
+        if (!selectedModel?.id) {
+          toast.error(t('common:selectModel'))
+          break
+        }
         useCodeSessions.getState().setGoal(currentId, {
           condition,
           turns: 0,
@@ -390,6 +406,12 @@ function CodePage() {
           lastReason: '',
         })
         toast.success(t('common:cmdGoalSet', { condition }))
+        // The condition is the first prompt; on_done triggers the evaluator,
+        // which drives auto-continuation from there (see the goal block after
+        // agent_run below).
+        submitTurn(condition, currentId).catch((err) => {
+          console.error('Failed to start goal turn:', err)
+        })
         break
       }
       case '/models': {
