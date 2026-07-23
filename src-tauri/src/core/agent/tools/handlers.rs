@@ -735,6 +735,18 @@ impl BashCapture {
     }
 }
 
+impl Drop for BashCapture {
+    /// Reclaim the spill file on any path that drops the capture without
+    /// consuming it via `finish` (e.g. `child.wait()` erroring). `finish`
+    /// clears `spill_path` for files it keeps or deletes itself, so this only
+    /// fires on the leak paths.
+    fn drop(&mut self) {
+        if let Some(p) = self.spill_path.take() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
 fn bytecount_newlines(bytes: &[u8]) -> usize {
     bytes.iter().filter(|&&b| b == b'\n').count()
 }
@@ -772,9 +784,22 @@ fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
     out
 }
 
+/// Directory holding bash-output spill files. Purged once on first use so
+/// files retained by a previous (possibly crashed) run don't accumulate.
+fn spill_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join("jan-bash");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    })
+    .as_path()
+}
+
 fn new_temp_path() -> PathBuf {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    std::env::temp_dir().join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
+    spill_dir().join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on success.
