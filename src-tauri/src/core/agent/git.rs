@@ -100,7 +100,7 @@ pub(crate) fn snapshot_ref(thread_id: &str) -> String {
 /// The repository top-level for `path`, or `None` when `path` is not inside a
 /// git work tree (workspace-restore is unavailable then; the agent still edits
 /// in place). Also `None` when `git` is not installed.
-#[cfg(any(feature = "cli", test))]
+#[cfg(feature = "cli")]
 pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {
     let p = path.to_string_lossy();
     git(&["-C", &p, "rev-parse", "--show-toplevel"])
@@ -226,7 +226,7 @@ pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), Str
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
@@ -236,7 +236,6 @@ mod tests {
 
     /// Init a throwaway repo with one commit, or `None` if git is unavailable so
     /// the suite skips instead of failing on a box without git.
-    #[cfg(feature = "cli")]
     fn init_repo() -> Option<PathBuf> {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let root = std::env::temp_dir().join(format!("jan_snap_test_{}_{n}", std::process::id()));
@@ -254,7 +253,6 @@ mod tests {
         repo_root(&root)
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn snapshot_restore_roundtrip() {
         let Some(root) = init_repo() else { return };
@@ -286,7 +284,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn snapshot_is_invisible_to_user_state() {
         let Some(root) = init_repo() else { return };
@@ -301,7 +298,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn base_snapshot_picks_up_preexisting_dirty_tracked_file() {
         let Some(root) = init_repo() else { return };
@@ -320,7 +316,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn checkpoint_only_stages_reported_paths() {
         let Some(root) = init_repo() else { return };
@@ -351,7 +346,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn repo_root_is_none_outside_git() {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);

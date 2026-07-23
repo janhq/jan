@@ -1534,6 +1534,10 @@ impl App {
         }
         self.status = Status::Idle;
         self.run_started = None;
+        // Drop any run queued but not yet spawned (still gated on model/MCP/
+        // snapshot readiness); otherwise the loop starts it once ready and the
+        // cancel is silently undone.
+        self.want_start = false;
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -5637,6 +5641,22 @@ mod tests {
         // The tail sits just above the closing border.
         let tail = line_text(&out[out.len() - 2]);
         assert!(tail.contains("(+10 more)"), "tail: {tail}");
+    }
+
+    #[test]
+    fn cancel_clears_pending_run_start() {
+        let mut app = test_app();
+        // Submit while the run is still gated on model/MCP/snapshot readiness:
+        // want_start is armed but no run has spawned yet.
+        app.submit_user("do a thing".into());
+        assert!(app.want_start, "submit should arm want_start");
+        assert_eq!(app.status, Status::Running);
+        app.cancel_run();
+        assert!(
+            !app.want_start,
+            "cancel must drop the pending start or the loop re-spawns it"
+        );
+        assert_eq!(app.status, Status::Idle);
     }
 
     #[test]
