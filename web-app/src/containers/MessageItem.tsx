@@ -1,8 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { memo, useState, useCallback, useEffect, cloneElement } from 'react'
+import { memo, useState, useCallback, useEffect, useRef, cloneElement } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
+import { formatDuration } from '@/lib/utils'
+import {
+  activeToolPart,
+  subagentActivityLabel,
+  type ActivityLabel,
+} from '@/lib/agentActivity'
+import type { SubagentRun } from '@/hooks/useCodeSessions'
+import { Loader } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 import {
   ChainOfThought,
@@ -88,6 +96,9 @@ export type MessageItemProps = {
   onDelete?: (messageId: string) => void
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
+  // Cowork only: the session's background subagent runs. Omitted in regular
+  // chat threads, which never spawn subagents.
+  subagents?: SubagentRun[]
   assistant?: { avatar?: React.ReactNode; name?: string }
   showAssistant?: boolean
   isAnimating?: boolean
@@ -102,6 +113,7 @@ export const MessageItem = memo(
     status,
     isAnimating,
     hideActions,
+    subagents,
     reasoningContainerRef,
     isReasoningAtBottom,
     onReasoningScroll,
@@ -183,6 +195,50 @@ export const MessageItem = memo(
         return Boolean(toolCallId && pendingApprovals[toolCallId])
       })
     }, [hasPendingToolCall, message.parts, pendingApprovals])
+
+    // Tool parts carry no start timestamp; track first-seen time per
+    // toolCallId locally so the elapsed-time readout is stable across
+    // re-renders (not reset every render, not reused across a new call
+    // with the same id after a session reset -- cleared once a step
+    // becomes non-pending in the effect below).
+    const toolStartedAtRef = useRef<Map<string, number>>(new Map())
+
+    const pendingTool = useMemo(() => {
+      if (!isLastMessage || message.role !== 'assistant') return null
+      return activeToolPart(message.parts as never)
+    }, [isLastMessage, message.role, message.parts])
+
+    useEffect(() => {
+      const map = toolStartedAtRef.current
+      if (pendingTool && !map.has(pendingTool.toolCallId)) {
+        map.set(pendingTool.toolCallId, Date.now())
+      }
+      if (!pendingTool) {
+        map.clear()
+      }
+    }, [pendingTool])
+
+    const subagentLabel = useMemo<ActivityLabel>(() => {
+      if (pendingTool || !subagents || subagents.length === 0) return null
+      return subagentActivityLabel(subagents)
+    }, [pendingTool, subagents])
+
+    const activityLabel: ActivityLabel = pendingTool
+      ? {
+          text: pendingTool.text,
+          startedAt:
+            toolStartedAtRef.current.get(pendingTool.toolCallId) ?? Date.now(),
+        }
+      : subagentLabel
+
+    // Re-render once a second while a label is showing, purely to advance the
+    // elapsed-time readout -- no state carried, just a tick.
+    const [, forceTick] = useState(0)
+    useEffect(() => {
+      if (!activityLabel) return
+      const id = setInterval(() => forceTick((n) => n + 1), 1000)
+      return () => clearInterval(id)
+    }, [activityLabel])
 
     const isStreaming =
       (isLastMessage &&
@@ -807,7 +863,23 @@ export const MessageItem = memo(
           !awaitingApproval &&
           (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
             <div className="mt-2">
-              <PromptProgress hideIdle={hasPendingToolCall} />
+              {activityLabel ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="font-medium text-foreground">
+                    {activityLabel.text}
+                  </span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {formatDuration(activityLabel.startedAt)}
+                  </span>
+                </div>
+              ) : (
+                <PromptProgress hideIdle={hasPendingToolCall} />
+              )}
             </div>
           )}
 
