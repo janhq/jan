@@ -395,6 +395,10 @@ struct App {
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
     awaiting: Vec<(String, String, String)>,
+    /// Tool calls whose arguments are still streaming, `(tool_call_id, name)`.
+    /// Rendered as a live throbber and cleared on the matching `ToolCall` (full
+    /// args) or on the next `Step`, whichever comes first.
+    starting: Vec<(String, String)>,
     /// Monotonic frame counter advanced each render tick; drives the throbber.
     spinner_frame: usize,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
@@ -532,6 +536,7 @@ impl App {
             subagents: Vec::new(),
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
+            starting: Vec::new(),
             spinner_frame: 0,
             transcript_rect: Rect::default(),
             last_scroll: 0,
@@ -593,6 +598,7 @@ impl App {
         self.transcript.clear();
         self.tool_group = None;
         self.grouped_ids.clear();
+        self.starting.clear();
         self.groups.clear();
         self.reasoning_blocks.clear();
         self.subagent_blocks.clear();
@@ -1185,9 +1191,21 @@ impl App {
                 if has_answer_text(&self.assistant_buf) {
                     self.flush_assistant();
                 }
+                self.starting.clear();
                 self.turn = (index, max);
             }
+            StreamEvent::ToolCallStarted { id, name } => {
+                // Commit buffered prose/reasoning so it renders above the
+                // in-progress throbber, matching the grouped-call ordering.
+                self.flush_assistant();
+                if !self.starting.iter().any(|(sid, _)| sid == &id) {
+                    self.starting.push((id, name));
+                }
+            }
             StreamEvent::ToolCall { id, name, args } => {
+                // The full call (with parsed args) supersedes its in-progress
+                // throbber.
+                self.starting.retain(|(sid, _)| sid != &id);
                 // Awaiting a subagent is a long block: show a live throbber row
                 // (advanced each render tick) instead of a static grouped row,
                 // cleared when its result arrives.
@@ -3607,6 +3625,7 @@ fn rebuild_transcript(app: &mut App) {
     app.transcript.clear();
     app.tool_group = None;
     app.grouped_ids.clear();
+    app.starting.clear();
     app.groups.clear();
     app.reasoning_blocks.clear();
     app.subagent_blocks.clear();
@@ -4017,6 +4036,19 @@ fn draw(f: &mut Frame, app: &mut App) {
             Span::styled(format!("{frame} "), Style::new().cyan()),
             Span::styled(
                 format!("Awaiting subagent: {name}"),
+                Style::new().cyan().dim(),
+            ),
+        ]));
+    }
+    // In-progress tool calls whose arguments are still streaming: a throbber
+    // trails the prose until the full call (with args) arrives and renders its
+    // own row.
+    for (_, name) in &app.starting {
+        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        lines.push(Line::from(vec![
+            Span::styled(format!("{frame} "), Style::new().cyan()),
+            Span::styled(
+                format!("Preparing {name}"),
                 Style::new().cyan().dim(),
             ),
         ]));
@@ -5267,6 +5299,50 @@ mod tests {
             "awaiting throbber must render below prose:\n{}",
             rows.join("\n")
         );
+    }
+
+    #[test]
+    fn tool_call_started_throbber_shows_then_clears_on_full_call() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let render = |app: &mut App| -> Vec<String> {
+            let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect()
+        };
+
+        let mut app = test_app();
+        // Arguments still streaming: only the in-progress signal has arrived.
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        let rows = render(&mut app);
+        assert!(
+            rows.iter().any(|r| r.contains("Preparing write")),
+            "throbber must show while args stream:\n{}",
+            rows.join("\n")
+        );
+
+        // Full call (parsed args) supersedes the throbber and renders its row.
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt", "content": "hi" }),
+        });
+        let rows = render(&mut app);
+        assert!(
+            !rows.iter().any(|r| r.contains("Preparing write")),
+            "throbber must clear once the full call arrives:\n{}",
+            rows.join("\n")
+        );
+        assert!(app.starting.is_empty());
     }
 
     #[test]

@@ -529,6 +529,9 @@ struct ToolCallAccum {
     id: String,
     name: String,
     arguments: String,
+    /// A `ToolCallStarted` was already emitted for this call; guards the
+    /// once-per-call in-progress signal against later argument deltas.
+    started_emitted: bool,
 }
 
 /// Accumulates OpenAI SSE deltas into a single reconstructed completion. Kept
@@ -544,6 +547,11 @@ struct SseAccumulator {
     /// closed. Reasoning is display-only (dimmed in the TUI) and deliberately
     /// kept out of `content` so it is never resent to the model as history.
     reasoning_open: bool,
+    /// An error object delivered inside the stream (`data: {"error": {...}}`).
+    /// OpenAI-compatible upstreams can fail mid-stream after a `200 OK`; without
+    /// capturing it the run would end as a silent "no answer" instead of
+    /// surfacing the failure. Propagated as an `Err` by `consume_openai_sse`.
+    error: Option<String>,
 }
 
 impl SseAccumulator {
@@ -574,6 +582,20 @@ impl SseAccumulator {
             Ok(v) => v,
             Err(_) => return,
         };
+
+        if let Some(err) = json.get("error").filter(|e| !e.is_null()) {
+            let message = err
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| err.to_string());
+            let kind = err.get("type").and_then(|v| v.as_str());
+            self.error = Some(match kind {
+                Some(t) if !t.is_empty() => format!("{t}: {message}"),
+                _ => message,
+            });
+            return;
+        }
 
         if let Some(u) = json.get("usage") {
             if !u.is_null() {
@@ -643,6 +665,17 @@ impl SseAccumulator {
                     if let Some(arg) = func.get("arguments").and_then(|v| v.as_str()) {
                         slot.arguments.push_str(arg);
                     }
+                }
+
+                // Signal the in-progress tool call the instant both id and name
+                // are known, so consumers can show activity while arguments are
+                // still streaming (a long window for large write/edit calls).
+                if !slot.started_emitted && !slot.id.is_empty() && !slot.name.is_empty() {
+                    slot.started_emitted = true;
+                    let _ = events.send(StreamEvent::ToolCallStarted {
+                        id: slot.id.clone(),
+                        name: slot.name.clone(),
+                    });
                 }
             }
         }
@@ -743,6 +776,15 @@ async fn consume_openai_sse(
         drain_complete_lines(&mut buf, &mut acc, events);
     }
     flush_trailing_line(&buf, &mut acc, events);
+
+    if let Some(err) = acc.error.take() {
+        let msg = format!("Upstream stream error: {err}");
+        return Err(if is_context_overflow_body(&err) {
+            format!("[{CONTEXT_OVERFLOW_MARKER}] {msg}")
+        } else {
+            msg
+        });
+    }
 
     Ok(acc.into_completion())
 }
@@ -964,6 +1006,91 @@ mod tests {
         assert_eq!(tc["function"]["arguments"], "{\"q\":\"rust\"}");
         assert_eq!(completion["choices"][0]["finish_reason"], "tool_calls");
         assert_eq!(completion["usage"]["total_tokens"], 12);
+    }
+
+    #[test]
+    fn emits_tool_call_started_once_when_id_and_name_first_known() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        // First delta carries id + name; arguments arrive later, split across
+        // deltas -- the in-progress signal must fire on this first delta only.
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "id": "call_1", "function": { "name": "write", "arguments": "{\"path\":" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "function": { "arguments": "\"a.txt\"}" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+
+        drop(tx);
+        let started: Vec<(String, String)> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::ToolCallStarted { id, name } => Some((id, name)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started, vec![("call_1".to_string(), "write".to_string())]);
+    }
+
+    #[test]
+    fn emits_tool_call_started_per_parallel_call() {
+        let (tx, mut rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "id": "call_a", "function": { "name": "read", "arguments": "" } },
+                { "index": 1, "id": "call_b", "function": { "name": "grep", "arguments": "" } }
+            ] } }] })
+            .to_string(),
+            &tx,
+        );
+
+        drop(tx);
+        let mut names: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|ev| match ev {
+                StreamEvent::ToolCallStarted { name, .. } => Some(name),
+                _ => None,
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["grep".to_string(), "read".to_string()]);
+    }
+
+    #[test]
+    fn captures_mid_stream_error_object_with_type_prefix() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "choices": [{ "delta": { "content": "partial" } }] }).to_string(),
+            &tx,
+        );
+        acc.ingest(
+            &json!({ "error": { "message": "upstream exploded", "type": "server_error" } })
+                .to_string(),
+            &tx,
+        );
+        assert_eq!(
+            acc.error.as_deref(),
+            Some("server_error: upstream exploded")
+        );
+    }
+
+    #[test]
+    fn mid_stream_error_falls_back_to_message_without_type() {
+        let (tx, _rx) = sink();
+        let mut acc = SseAccumulator::default();
+        acc.ingest(
+            &json!({ "error": { "message": "boom" } }).to_string(),
+            &tx,
+        );
+        assert_eq!(acc.error.as_deref(), Some("boom"));
     }
 
     #[test]
