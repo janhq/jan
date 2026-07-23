@@ -16,9 +16,9 @@ import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
 
 **Settings and credentials now live in a backend store, not browser localStorage.**
 
-Provider settings and credentials previously persisted in the webview's `localStorage`. In 0.8.4, Jan reads and writes them from a backend-managed store instead (secrets go to the OS keyring). Your existing settings and API keys are copied over automatically on first launch — no manual action is needed, and from this version on all new changes are saved to the backend store.
+Provider settings and credentials previously persisted in the webview's `localStorage`. In 0.8.4, Jan reads and writes them from a backend-managed store instead (secrets go to the OS keyring). Your existing settings and API keys are copied over automatically on first launch - no manual action is needed, and from this version on all new changes are saved to the backend store.
 
-Your old `localStorage` data is **not deleted** — it's kept as a snapshot so you can downgrade to a pre-0.8.4 build and still have your previous settings. Note that any changes you make in 0.8.4+ live only in the backend store, so a downgrade sees the older snapshot, not your latest settings. The migration runs once and is guarded by a backend flag, so re-upgrading never re-imports the stale `localStorage` copy over newer backend data.
+Your old `localStorage` data is **not deleted** - it's kept as a snapshot so you can downgrade to a pre-0.8.4 build and still have your previous settings. Note that any changes you make in 0.8.4+ live only in the backend store, so a downgrade sees the older snapshot, not your latest settings. The migration runs once and is guarded by a backend flag, so re-upgrading never re-imports the stale `localStorage` copy over newer backend data.
 
 ---
 
