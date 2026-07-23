@@ -3795,7 +3795,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(input_h),
-        Constraint::Length(1),
+        Constraint::Length(1),  // path line
+        Constraint::Length(1),  // footer
     ])
     .split(f.area());
 
@@ -3810,7 +3811,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         app.row_index.clear();
         draw_picker(f, chunks[1], picker);
         f.render_widget(input_box(app), chunks[2]);
-        f.render_widget(footer(app), chunks[3]);
+        f.render_widget(path_line(app), chunks[3]);
+        f.render_widget(footer(app), chunks[4]);
         return;
     }
 
@@ -3986,7 +3988,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         0
     };
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
-    f.render_widget(footer(app), chunks[3]);
+    f.render_widget(path_line(app), chunks[3]);
+    f.render_widget(footer(app), chunks[4]);
 
     // Dock the permission prompt directly above the input box, growing upward
     // and clamped to the body area so it never overruns the transcript.
@@ -4241,7 +4244,6 @@ fn header(app: &App) -> Paragraph<'static> {
         (n, 0) => format!("turn {n}  "),
         (n, m) => format!("turn {n}/{m}  "),
     };
-    let project_str = app.project_root.to_string_lossy();
     let elapsed = app
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
@@ -4249,14 +4251,7 @@ fn header(app: &App) -> Paragraph<'static> {
     let mut spans = vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
-        Span::styled(format!("📂 {}", &project_str as &str), Style::new().dark_gray()),
     ];
-    if let Some(branch) = app.git_branch.as_ref() {
-        spans.push(Span::styled(
-            format!(" ⎇ {}", branch),
-            Style::new().dark_gray(),
-        ));
-    }
     spans.push(Span::raw(format!("  {turn}tokens {}", app.tokens)));
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
@@ -4406,6 +4401,22 @@ fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
         }
     }
     spans
+}
+
+/// One-line path display shown below the input box.
+fn path_line(app: &App) -> Paragraph<'static> {
+    let path = app.project_root.to_string_lossy();
+    let mut spans = vec![
+        Span::styled("📂 ", Style::new().dark_gray()),
+        Span::styled(path.to_string(), Style::new().dark_gray()),
+    ];
+    if let Some(branch) = app.git_branch.as_ref() {
+        spans.push(Span::styled(
+            format!(" ⎇ {}", branch),
+            Style::new().dark_gray(),
+        ));
+    }
+    Paragraph::new(Line::from(spans))
 }
 
 fn footer(app: &App) -> Paragraph<'static> {
