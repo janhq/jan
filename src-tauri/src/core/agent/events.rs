@@ -62,6 +62,11 @@ pub enum StreamEvent {
         request_id: String,
         request: crate::core::agent::interaction::AskRequest,
     },
+    /// The canonical todo list changed (tool mutation or user edit in the
+    /// TUI). Carries the full resulting snapshot for reconstruction.
+    TodoUpdate {
+        list: crate::core::agent::todo::TodoList,
+    },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,

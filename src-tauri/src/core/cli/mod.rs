@@ -530,6 +530,7 @@ fn build_cli_orchestration_args(
         project_root: Some(project_root),
         permission_requests,
         ask_requests: None,
+        todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: true,
         yolo,
@@ -961,6 +962,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::AskRequest { .. } => {
             eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
         }
+        // The non-interactive CLI doesn't persist session state; a todo update
+        // is silently dropped here (mirrors MessagesUpdated below).
+        StreamEvent::TodoUpdate { .. } => {}
         // The non-interactive CLI doesn't persist session state, so
         // MessagesUpdated is a no-op here.
         StreamEvent::MessagesUpdated { .. } => {}

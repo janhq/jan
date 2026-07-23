@@ -553,6 +553,9 @@ struct App {
     /// Messages queued while a run is in progress, dequeued automatically
     /// when the current turn finishes.
     message_queue: std::collections::VecDeque<String>,
+    /// Canonical session todo list projection, kept in sync via
+    /// `StreamEvent::TodoUpdate`. Empty = no todos declared this session.
+    todos: crate::core::agent::todo::TodoList,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -675,6 +678,7 @@ impl App {
             run_started: None,
             mouse_capture: true,
             message_queue: std::collections::VecDeque::new(),
+            todos: crate::core::agent::todo::TodoList::default(),
         }
     }
 
@@ -1502,6 +1506,9 @@ impl App {
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
                 self.persist();
+            }
+            StreamEvent::TodoUpdate { list } => {
+                self.todos = list;
             }
         }
     }
@@ -2452,6 +2459,8 @@ pub async fn run(
     } = session;
     let ask_requests = crate::core::agent::interaction::new_registry();
     args.ask_requests = Some(ask_requests.clone());
+    let todo_registry = crate::core::agent::todo::new_registry();
+    args.todo_registry = Some(todo_registry.clone());
     let args = Arc::new(args);
 
     enable_raw_mode().map_err(|e| e.to_string())?;

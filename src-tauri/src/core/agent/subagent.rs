@@ -500,6 +500,9 @@ async fn run_subagent(
     // conversation, not a client waiting on this child's ask_requests -- and
     // no client is attached to a background/child run anyway.
     child_args.ask_requests = None;
+    // Subagents cannot read or mutate the parent's todo list (isolated child
+    // context, matching ask_requests above).
+    child_args.todo_registry = None;
 
     let body = child_body(&resolved, &description, &parent_model, budget_remaining);
 

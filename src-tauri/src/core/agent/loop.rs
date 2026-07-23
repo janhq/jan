@@ -65,6 +65,10 @@ pub(crate) struct OrchestrationArgs {
     pub permission_requests: PermissionRegistry,
     /// Present only when a client can render and answer structured questions.
     pub ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
+    /// Session's canonical todo list. Present for the top-level run only;
+    /// subagent/child runs never receive it (they cannot read or mutate the
+    /// parent's list).
+    pub todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     /// When set, used verbatim as the system prompt, bypassing project-context
     /// assembly and memory recall/indexing. Set for subagent child runs so a
     /// dispatched subagent gets exactly its definition prompt with no parent
@@ -182,6 +186,7 @@ struct CompositeToolInvoker {
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
     ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
+    todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
     yolo: bool,
@@ -364,6 +369,98 @@ impl CompositeToolInvoker {
             }
         }
     }
+
+    /// Applies one todo mutation and emits `StreamEvent::TodoUpdate` with the
+    /// full resulting snapshot so session history can reconstruct state.
+    async fn handle_todo_tool(&self, args: &serde_json::Value) -> String {
+        use crate::core::agent::todo::{parse_target, render_result, TodoPhase};
+        let Some(registry) = &self.todo_registry else {
+            return "ERROR [todo_unavailable]: todo tool requires an attached session"
+                .to_string();
+        };
+        let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("");
+        let mut list = registry.lock().await;
+        let result: Result<(), String> = match op {
+            "init" => {
+                let phases = if let Some(list_val) = args.get("list").and_then(|v| v.as_array()) {
+                    list_val
+                        .iter()
+                        .map(|p| {
+                            let name = p.get("phase").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let items = p
+                                .get("items")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str())
+                                        .map(|s| crate::core::agent::todo::TodoItem {
+                                            content: s.to_string(),
+                                            status: crate::core::agent::todo::TodoStatus::Pending,
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            TodoPhase { name, tasks: items }
+                        })
+                        .collect()
+                } else if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
+                    vec![TodoPhase {
+                        name: String::new(),
+                        tasks: items
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| crate::core::agent::todo::TodoItem {
+                                content: s.to_string(),
+                                status: crate::core::agent::todo::TodoStatus::Pending,
+                            })
+                            .collect(),
+                    }]
+                } else {
+                    return "ERROR: init requires 'list' or 'items'".to_string();
+                };
+                list.init(phases)
+            }
+            "start" => match args.get("task").and_then(|v| v.as_str()) {
+                Some(task) => list.start(task),
+                None => return "ERROR: start requires 'task'".to_string(),
+            },
+            "done" => match parse_target(args) {
+                Ok(target) => list.done(target),
+                Err(e) => return format!("ERROR: {e}"),
+            },
+            "drop" => match parse_target(args) {
+                Ok(target) => list.drop_target(target),
+                Err(e) => return format!("ERROR: {e}"),
+            },
+            "rm" => match parse_target(args) {
+                Ok(target) => list.rm(target),
+                Err(e) => return format!("ERROR: {e}"),
+            },
+            "append" => {
+                let phase = args.get("phase").and_then(|v| v.as_str()).unwrap_or("");
+                let items: Vec<String> = args
+                    .get("items")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(String::from).collect())
+                    .unwrap_or_default();
+                if phase.is_empty() || items.is_empty() {
+                    return "ERROR: append requires 'phase' and non-empty 'items'".to_string();
+                }
+                list.append(phase, items)
+            }
+            "view" => Ok(()),
+            other => return format!("ERROR: unknown todo op '{other}'"),
+        };
+        match result {
+            Ok(()) => {
+                let snapshot = list.clone();
+                drop(list);
+                let _ = self.events.send(StreamEvent::TodoUpdate { list: snapshot.clone() });
+                render_result(&snapshot)
+            }
+            Err(error) => format!("ERROR: {error}"),
+        }
+    }
 }
 
 #[async_trait]
@@ -403,6 +500,22 @@ impl ToolInvoker for CompositeToolInvoker {
                     .and_then(|value| serde_json::from_str(value).ok())
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 let content = self.handle_ask_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
+            if name == "todo" {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|value| serde_json::from_str(value).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_todo_tool(&args).await;
                 out.push(ToolOutcome::plain(id, content));
                 continue;
             }
@@ -615,6 +728,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
         ask_requests: None,
+        todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
@@ -737,6 +851,7 @@ async fn orchestrate_inner(
         project_root,
         permission_requests,
         ask_requests,
+        todo_registry,
         system_prompt_override,
         subagents_enabled,
         yolo,
@@ -884,6 +999,15 @@ async fn orchestrate_inner(
     {
         openai_tools.push(crate::core::agent::interaction::ask_tool_schema());
     }
+    // Todo bookkeeping is session metadata, not filesystem access, so like
+    // `ask` it's advertised independent of the project_root gate above.
+    if todo_registry.is_some()
+        && allowed_names
+            .as_ref()
+            .is_none_or(|allowed| allowed.contains("todo"))
+    {
+        openai_tools.push(crate::core::agent::todo::todo_tool_schema());
+    }
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
         &model_id,
@@ -943,6 +1067,7 @@ async fn orchestrate_inner(
             events: events.clone(),
             permission_requests: permission_requests.clone(),
             ask_requests: ask_requests.clone(),
+            todo_registry: todo_registry.clone(),
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
             subagents,
             yolo: *yolo,
@@ -1686,6 +1811,7 @@ mod tests {
             events,
             permission_requests: registry,
             ask_requests: None,
+            todo_registry: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
             yolo: false,
@@ -1780,6 +1906,117 @@ mod tests {
         let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
         assert_eq!(result[0]["id"], "scope");
         assert_eq!(result[0]["selected"][0], "Small");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn todo_call(id: &str, args: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": {
+                "name": "todo",
+                "arguments": serde_json::to_string(&args).unwrap()
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn todo_unavailable_without_an_attached_session() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, permissions);
+
+        let out = invoker
+            .invoke(&[todo_call("t1", json!({"op": "view"}))])
+            .await
+            .unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("todo_unavailable"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn todo_init_promotes_first_task_and_emits_snapshot() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        let todos = crate::core::agent::todo::new_registry();
+        invoker.todo_registry = Some(todos.clone());
+
+        let out = invoker
+            .invoke(&[todo_call(
+                "t1",
+                json!({"op": "init", "list": [{"phase": "Setup", "items": ["a", "b"]}]}),
+            )])
+            .await
+            .unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        let result: crate::core::agent::todo::TodoList =
+            serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result.active().unwrap().1.content, "a");
+
+        match rx.recv().await.unwrap() {
+            StreamEvent::TodoUpdate { list } => assert_eq!(list, result),
+            event => panic!("expected todo_update, got {event:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn todo_done_advances_active_task() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        let todos = crate::core::agent::todo::new_registry();
+        invoker.todo_registry = Some(todos.clone());
+
+        invoker
+            .invoke(&[todo_call(
+                "t1",
+                json!({"op": "init", "items": ["a", "b"]}),
+            )])
+            .await
+            .unwrap();
+        let _ = rx.recv().await; // drain init's TodoUpdate
+
+        let out = invoker
+            .invoke(&[todo_call("t2", json!({"op": "done", "task": "a"}))])
+            .await
+            .unwrap();
+        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        let result: crate::core::agent::todo::TodoList =
+            serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result.active().unwrap().1.content, "b");
+        assert_eq!(result.done_total(), (1, 2));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn todo_rm_unknown_task_reports_error() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        let todos = crate::core::agent::todo::new_registry();
+        invoker.todo_registry = Some(todos.clone());
+
+        invoker
+            .invoke(&[todo_call("t1", json!({"op": "init", "items": ["a"]}))])
+            .await
+            .unwrap();
+        let _ = rx.recv().await;
+
+        let out = invoker
+            .invoke(&[todo_call("t2", json!({"op": "rm", "task": "missing"}))])
+            .await
+            .unwrap();
+        assert!(out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
         let _ = std::fs::remove_dir_all(&root);
     }
 
