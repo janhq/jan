@@ -27,11 +27,6 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 #[cfg(target_os = "macos")]
 use tauri_plugin_mlx::state::MlxState;
 
-#[cfg(target_os = "macos")]
-pub use tauri_plugin_mlx::state::SessionInfo;
-#[cfg(target_os = "macos")]
-pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
-
 // ── State constructors ─────────────────────────────────────────────────────
 
 pub fn init_llamacpp_state() -> LlamacppState {
@@ -334,7 +329,7 @@ pub fn resolve_model_engine(model_id: &str) -> Result<(String, PathBuf, Option<P
     }
     Err(format!(
         "Model '{}' not found for any engine. \
-        Run `jan models list` to see available models.",
+        Run `jan cli models list` to see available models.",
         model_id
     ))
 }
@@ -359,7 +354,7 @@ pub fn resolve_model_by_id(
     if !yml_path.exists() {
         return Err(format!(
             "Model '{}' not found for engine '{}'. \
-            Run `jan models list` to see available models.",
+            Run `jan cli models list` to see available models.",
             model_id, engine
         ));
     }
@@ -445,220 +440,6 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
     None
 }
 
-/// Find the mlx-server binary.
-///
-/// Checks standard locations in order:
-///   1. `/Applications/Jan.app/Contents/Resources/bin/mlx-server` (installed app)
-///   2. Next to the running binary (for dev/custom installs)
-#[cfg(target_os = "macos")]
-pub fn discover_mlx_binary() -> Option<PathBuf> {
-    // 1. Standard macOS app bundle locations (try both path variants)
-    for candidate in &[
-        "/Applications/Jan.app/Contents/Resources/resources/bin/mlx-server",
-        "/Applications/Jan.app/Contents/Resources/bin/mlx-server",
-    ] {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // 2. Next to the current executable (useful for dev builds / custom installs)
-    if let Ok(exe_dir) =
-        std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default())
-    {
-        let next_to_bin = exe_dir.join("mlx-server");
-        if next_to_bin.exists() {
-            return Some(next_to_bin);
-        }
-    }
-
-    None
-}
-
-// ── HuggingFace download ───────────────────────────────────────────────────
-
-/// A single file entry from a HuggingFace repository.
-#[derive(Debug, Clone)]
-pub struct HfFileInfo {
-    /// Original filename in the repo (e.g. `qwen3-30b.Q4_K_M.gguf`)
-    pub filename: String,
-    /// Total size in bytes (from HF metadata or LFS pointer)
-    pub size: u64,
-    /// SHA-256 from the LFS pointer, used for integrity validation
-    pub sha256: Option<String>,
-    /// Direct download URL (`https://huggingface.co/{repo}/resolve/main/{file}`)
-    pub download_url: String,
-}
-
-/// Return `true` if `s` looks like a HuggingFace repo ID (`owner/repo`).
-///
-/// A valid HF repo ID has exactly one `/`, both parts non-empty, no
-/// filesystem path markers, and only alphanumeric / `-` / `_` / `.` chars.
-pub fn looks_like_hf_repo(s: &str) -> bool {
-    if s.starts_with('/') || s.starts_with('.') || s.starts_with('~') {
-        return false;
-    }
-    let Some((owner, name)) = s.split_once('/') else {
-        return false;
-    };
-    if owner.is_empty() || name.is_empty() || name.contains('/') {
-        return false;
-    }
-    let ok = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.');
-    owner.chars().all(ok) && name.chars().all(ok)
-}
-
-/// Fetch the list of GGUF files available in a HuggingFace repository.
-///
-/// Results are sorted by size ascending so smaller quantizations appear first.
-/// Passes `hf_token` as a Bearer token when provided.
-pub async fn fetch_hf_gguf_files(
-    repo_id: &str,
-    hf_token: Option<&str>,
-) -> Result<Vec<HfFileInfo>, String> {
-    let url = format!(
-        "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
-        repo_id
-    );
-
-    let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
-
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    let status = resp.status();
-
-    if !status.is_success() {
-        return Err(match status.as_u16() {
-            401 | 403 => format!(
-                "HuggingFace returned {status} for '{repo_id}'. \
-                The repo may be gated — set the HF_TOKEN environment variable."
-            ),
-            404 => format!(
-                "HuggingFace repo '{repo_id}' not found. \
-                Check the repo ID or run `jan models list` to see local models."
-            ),
-            _ => format!("HuggingFace API error {status} for '{repo_id}'."),
-        });
-    }
-
-    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    let siblings = body["siblings"]
-        .as_array()
-        .ok_or_else(|| "Unexpected HuggingFace API response format".to_string())?;
-
-    let mut files: Vec<HfFileInfo> = siblings
-        .iter()
-        .filter_map(|s| {
-            let name = s["rfilename"].as_str()?;
-            if !name.to_lowercase().ends_with(".gguf") {
-                return None;
-            }
-            // Prefer LFS size, fall back to top-level size field
-            let size = s["lfs"]["size"]
-                .as_u64()
-                .or_else(|| s["size"].as_u64())
-                .unwrap_or(0);
-            let sha256 = s["lfs"]["sha256"].as_str().map(str::to_owned);
-            let download_url = format!("https://huggingface.co/{}/resolve/main/{}", repo_id, name);
-            Some(HfFileInfo {
-                filename: name.to_owned(),
-                size,
-                sha256,
-                download_url,
-            })
-        })
-        .collect();
-
-    if files.is_empty() {
-        return Err(format!(
-            "No GGUF files found in HuggingFace repo '{repo_id}'. \
-            For MLX/safetensors repos use `jan models load-mlx`."
-        ));
-    }
-
-    // Smaller quantizations first
-    files.sort_by_key(|f| f.size);
-    Ok(files)
-}
-
-/// Download one GGUF file from HuggingFace and write a `model.yml` for it.
-///
-/// The model is stored at:
-/// `<data_folder>/llamacpp/models/<repo_id>/<filename>`
-///
-/// `on_progress(downloaded, total)` is called after each chunk.
-/// Returns the local model ID (same as `repo_id`).
-pub async fn download_hf_model(
-    repo_id: &str,
-    file: &HfFileInfo,
-    hf_token: Option<&str>,
-    on_progress: impl Fn(u64, u64) + Send,
-) -> Result<String, String> {
-    use futures_util::StreamExt;
-    use tokio::io::AsyncWriteExt;
-
-    let data_folder = resolve_jan_data_folder();
-    let model_dir = data_folder.join("llamacpp").join("models").join(repo_id);
-    tokio::fs::create_dir_all(&model_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let dest_path = model_dir.join(&file.filename);
-
-    // ── Download ──────────────────────────────────────────────────────────
-    let client = reqwest::Client::new();
-    let mut req = client.get(&file.download_url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
-
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("Download request failed: {}", resp.status()));
-    }
-
-    // Use the server-reported content-length, fall back to metadata size
-    let total = resp.content_length().unwrap_or(file.size);
-    let mut downloaded: u64 = 0;
-
-    let mut dest = tokio::fs::File::create(&dest_path)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
-        dest.write_all(&chunk).await.map_err(|e| e.to_string())?;
-        downloaded += chunk.len() as u64;
-        on_progress(downloaded, total);
-    }
-    dest.flush().await.map_err(|e| e.to_string())?;
-
-    // ── Write model.yml ───────────────────────────────────────────────────
-    // model_path is relative to the Jan data folder
-    let rel_path = format!("llamacpp/models/{}/{}", repo_id, file.filename);
-    let display_name = repo_id.split('/').next_back().unwrap_or(repo_id);
-
-    let mut yml = format!(
-        "model_path: {rel_path}\nname: {display_name}\nsize_bytes: {}\nembedding: false\n",
-        file.size
-    );
-    if let Some(sha) = &file.sha256 {
-        yml.push_str(&format!("model_sha256: {sha}\n"));
-    }
-
-    tokio::fs::write(model_dir.join("model.yml"), yml)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(repo_id.to_string())
-}
-
 // ── App config ────────────────────────────────────────────────────────────
 
 pub fn cli_get_data_folder() -> PathBuf {
@@ -707,7 +488,7 @@ fn resolve_project_root(project: &str) -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(project))
 }
 
-/// Resolved-config + provider snapshot for `jan agent status`.
+/// Resolved-config + provider snapshot for `jan cli agent status`.
 pub fn cli_agent_status(
     project: &str,
     overrides: &ProviderOverrides,
@@ -773,7 +554,7 @@ pub fn cli_agent_config_unset(provider: &str) -> Result<bool, String> {
 }
 
 /// The global config file path, scaffolding a commented template if it doesn't
-/// exist yet so `jan agent config path` always points at a real file.
+/// exist yet so `jan config path` always points at a real file.
 pub fn cli_agent_config_path() -> Result<PathBuf, String> {
     crate::core::agent::global_config::ensure_global_config()
 }
@@ -928,8 +709,8 @@ pub struct RouterServeInfo {
 }
 
 /// Start the llama-server router (if not already running) against the generated
-/// preset, then POST `/models/load` for `model_id`. Shared by `jan serve` and
-/// the agent path so a local model has a live upstream to talk to. The preset is
+/// preset, then POST `/models/load` for `model_id`. Used by the agent path so a
+/// local model has a live upstream to talk to. The preset is
 /// generated on demand (see [`preset::ensure_router_preset`]) when the desktop
 /// app hasn't produced one.
 #[allow(clippy::too_many_arguments)]
@@ -1245,7 +1026,7 @@ async fn run_agent_loop(
     result.map(|_| ())
 }
 
-/// Launch the interactive chat console (`jan agent ui`). An optional `task`
+/// Launch the interactive chat console (bare `jan`). An optional `task`
 /// seeds the first turn; otherwise the user types the first message. Shares the
 /// engine with `run_agent_loop` via `AgentSession` — only presentation differs.
 pub async fn cli_agent_ui(
@@ -1465,53 +1246,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    // ── looks_like_hf_repo ─────────────────────────────────────────────────
-
-    #[test]
-    fn hf_repo_valid_basic() {
-        assert!(looks_like_hf_repo("janhq/Jan-code-4b-gguf"));
-        assert!(looks_like_hf_repo("openai/whisper"));
-        assert!(looks_like_hf_repo("a/b"));
-    }
-
-    #[test]
-    fn hf_repo_valid_with_dots_dashes_underscores() {
-        assert!(looks_like_hf_repo("user.name/repo-name"));
-        assert!(looks_like_hf_repo("user_name/repo.v2"));
-        assert!(looks_like_hf_repo("Org-1/Model_2.gguf"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_paths() {
-        assert!(!looks_like_hf_repo("/abs/path"));
-        assert!(!looks_like_hf_repo("./relative"));
-        assert!(!looks_like_hf_repo("~/home"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_no_slash() {
-        assert!(!looks_like_hf_repo("noslashhere"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_empty_components() {
-        assert!(!looks_like_hf_repo("/repo"));
-        assert!(!looks_like_hf_repo("owner/"));
-        assert!(!looks_like_hf_repo("/"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_multiple_slashes() {
-        assert!(!looks_like_hf_repo("owner/repo/extra"));
-    }
-
-    #[test]
-    fn hf_repo_rejects_invalid_chars() {
-        assert!(!looks_like_hf_repo("owner/repo name"));
-        assert!(!looks_like_hf_repo("own*er/repo"));
-        assert!(!looks_like_hf_repo("owner/re@po"));
-    }
-
     // ── ModelYml deserialization ──────────────────────────────────────────
 
     #[test]
@@ -1548,22 +1282,6 @@ mod tests {
         let yml = "name: bad\n";
         let parsed: Result<ModelYml, _> = serde_yaml::from_str(yml);
         assert!(parsed.is_err());
-    }
-
-    // ── HfFileInfo construction ───────────────────────────────────────────
-
-    #[test]
-    fn hf_file_info_clone() {
-        let f = HfFileInfo {
-            filename: "x.gguf".into(),
-            size: 100,
-            sha256: Some("abc".into()),
-            download_url: "https://hf.co/x".into(),
-        };
-        let c = f.clone();
-        assert_eq!(c.filename, "x.gguf");
-        assert_eq!(c.size, 100);
-        assert_eq!(c.sha256.as_deref(), Some("abc"));
     }
 
     // ── State constructors ────────────────────────────────────────────────
