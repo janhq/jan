@@ -152,11 +152,11 @@ impl ToolInvoker for McpToolInvoker {
             &self.mcp_servers,
             &self.mcp_settings,
         )
-        .await?;
+        .await;
         Ok(results
             .into_iter()
             .map(|(id, content)| ToolOutcome::plain(id, content))
-            .collect())
+            .collect::<Vec<_>>())
     }
 }
 
@@ -961,6 +961,7 @@ pub(crate) async fn compact_history(
     args: &OrchestrationArgs,
     model_id: &str,
     messages: &[serde_json::Value],
+    keep_recent: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         model_id,
@@ -978,7 +979,7 @@ pub(crate) async fn compact_history(
         messages,
         model_id,
         &model,
-        crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+        keep_recent,
     )
     .await)
 }
@@ -1025,6 +1026,10 @@ async fn run_turn_cycle(
     // mid-task by a fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // Set on any turn where compaction ran, so the final return can emit
+    // `MessagesUpdated` even when compaction happened on a prior (tool-call)
+    // turn and the final turn itself didn't need retry.
+    let mut did_compact = false;
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
@@ -1063,6 +1068,7 @@ async fn run_turn_cycle(
                             attempts + 1
                         );
                         conversation_messages = compacted;
+                        did_compact = true;
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
                     }
@@ -1076,6 +1082,11 @@ async fn run_turn_cycle(
         let tool_calls = extract_tool_calls(&completion);
 
         if tool_calls.is_empty() {
+            if did_compact {
+                let _ = events.send(StreamEvent::MessagesUpdated {
+                    messages: conversation_messages.clone(),
+                });
+            }
             return Ok(completion);
         }
 

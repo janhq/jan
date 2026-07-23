@@ -13,6 +13,7 @@ use tokio::sync::oneshot;
 
 use crate::core::agent::project::load_agent_config;
 use crate::core::agent::skills;
+use crate::core::agent::tools::proc;
 use crate::core::agent::tools::sandbox::is_restricted_agent_path;
 use crate::core::agent::tools::BuiltinTool;
 
@@ -86,6 +87,27 @@ fn cap_output(s: &str, max_lines: usize, max_bytes: usize, note: &str) -> String
     }
     if truncated {
         out.push_str(note);
+    }
+    out
+}
+
+/// Collapse carriage-return redraws (`git`/`curl`-style progress lines) to what
+/// a terminal would actually show: text after the last `\r` on each line wins.
+/// Without this, thousands of `\r`-separated progress frames read as one giant
+/// line and blow past the byte cap, so tiny visible output looks truncated.
+fn collapse_carriage_returns(s: &str) -> String {
+    if !s.contains('\r') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    for line in s.split_inclusive('\n') {
+        let (body, nl) = match line.strip_suffix('\n') {
+            Some(b) => (b, "\n"),
+            None => (line, ""),
+        };
+        let body = body.strip_suffix('\r').unwrap_or(body);
+        out.push_str(body.rsplit('\r').next().unwrap_or(body));
+        out.push_str(nl);
     }
     out
 }
@@ -521,26 +543,31 @@ async fn bash(args: &serde_json::Value, root: &Path) -> String {
     };
     let timeout_secs = arg_u64(args, "timeout").unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
-    let child = match tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-    {
+    if !root.is_dir() {
+        return format!(
+            "ERROR: working directory does not exist: {}",
+            root.display()
+        );
+    }
+
+    let child = match proc::spawn(proc::shell(), command, root).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };
+    let pid = child.id();
 
     // The child is handed to a detached task immediately so it keeps running
     // (and its output keeps being collected) no matter what the race below
     // does; only the *receiver* end is at risk of being dropped on timeout.
+    // The child's pid stays registered until the task ends so a shutdown can
+    // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
     tokio::spawn(async move {
-        let out = child.wait_with_output().await;
-        let _ = tx.send(format_bash_output(out));
+        let out = collect_and_format(child).await;
+        if let Some(pid) = pid {
+            proc::unregister(pid);
+        }
+        let _ = tx.send(out);
     });
 
     tokio::select! {
@@ -570,50 +597,189 @@ async fn await_bash_job(job_id: &str) -> String {
     }
 }
 
-/// Format a finished command's output the same way for foreground and
-/// backgrounded runs: combined stdout/stderr, an exit-code marker, then
-/// capped to the bash line/byte limits with the full text spilled to a temp
-/// file when it doesn't fit.
-fn format_bash_output(output: std::io::Result<std::process::Output>) -> String {
-    match output {
-        Ok(out) => {
-            let mut combined = String::new();
-            combined.push_str(&String::from_utf8_lossy(&out.stdout));
-            combined.push_str(&String::from_utf8_lossy(&out.stderr));
-            match out.status.code() {
-                Some(0) => {}
-                Some(code) => combined.push_str(&format!("[exit {code}]")),
-                None => combined.push_str("[terminated by signal]"),
-            }
-            let capped = cap_output(&combined, BASH_MAX_LINES, BASH_MAX_BYTES, "");
-            if capped.len() < combined.len() {
-                let full_path = write_temp_output(&combined);
-                match full_path {
-                    Some(p) => format!(
-                        "{capped}\n[output truncated at {} of {} bytes; \
-                         full output written to {p}. Use the read tool \
-                         (with offset/limit) on that path to see the rest]",
-                        capped.len(),
-                        combined.len(),
-                    ),
-                    None => format!(
-                        "{capped}\n[output truncated at {} of {} bytes]",
-                        capped.len(),
-                        combined.len(),
-                    ),
-                }
-            } else {
-                capped
-            }
+/// Drain a running child's stdout+stderr into a bounded rolling buffer (so a
+/// runaway command cannot exhaust memory), then format the result. Output is
+/// combined chronologically and spilled to a temp file once it outgrows the
+/// in-memory window, so the full text stays readable even though only a bounded
+/// tail is kept in RAM.
+async fn collect_and_format(mut child: tokio::process::Child) -> String {
+    use tokio::io::AsyncReadExt;
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    let mut cap = BashCapture::new();
+    let mut bo = vec![0u8; 8192];
+    let mut be = vec![0u8; 8192];
+    let mut out_open = stdout.is_some();
+    let mut err_open = stderr.is_some();
+    while out_open || err_open {
+        tokio::select! {
+            r = stdout.as_mut().unwrap().read(&mut bo), if out_open => match r {
+                Ok(0) | Err(_) => out_open = false,
+                Ok(n) => cap.push(&bo[..n]),
+            },
+            r = stderr.as_mut().unwrap().read(&mut be), if err_open => match r {
+                Ok(0) | Err(_) => err_open = false,
+                Ok(n) => cap.push(&be[..n]),
+            },
         }
+    }
+    match child.wait().await {
+        Ok(status) => cap.finish(status.code()),
         Err(e) => format!("ERROR: failed to run command: {e}"),
     }
 }
 
+/// Bounded, tail-preserving accumulator for a command's combined output.
+/// Keeps only the last [`BASH_MAX_BYTES`] raw bytes in memory; once total
+/// output exceeds that window it spills every byte to a temp file so nothing
+/// is lost while memory stays bounded.
+struct BashCapture {
+    tail: std::collections::VecDeque<u8>,
+    total_bytes: usize,
+    total_newlines: usize,
+    spill: Option<std::io::BufWriter<std::fs::File>>,
+    spill_path: Option<PathBuf>,
+}
+
+impl BashCapture {
+    fn new() -> Self {
+        BashCapture {
+            tail: std::collections::VecDeque::new(),
+            total_bytes: 0,
+            total_newlines: 0,
+            spill: None,
+            spill_path: None,
+        }
+    }
+
+    fn push(&mut self, chunk: &[u8]) {
+        use std::io::Write;
+        // Open the spill file the moment the window would overflow: at that
+        // point `tail` still holds every byte seen so far (nothing dropped
+        // yet), so dumping it captures the full prefix before we start
+        // dropping from the front.
+        if self.spill.is_none() && self.tail.len() + chunk.len() > BASH_MAX_BYTES {
+            let path = new_temp_path();
+            if let Ok(file) = std::fs::File::create(&path) {
+                let mut w = std::io::BufWriter::new(file);
+                let (a, b) = self.tail.as_slices();
+                let _ = w.write_all(a);
+                let _ = w.write_all(b);
+                self.spill = Some(w);
+                self.spill_path = Some(path);
+            }
+        }
+        if let Some(w) = self.spill.as_mut() {
+            let _ = w.write_all(chunk);
+        }
+        self.total_bytes += chunk.len();
+        self.total_newlines += bytecount_newlines(chunk);
+        self.tail.extend(chunk.iter().copied());
+        while self.tail.len() > BASH_MAX_BYTES {
+            self.tail.pop_front();
+        }
+    }
+
+    fn finish(mut self, code: Option<i32>) -> String {
+        use std::io::Write;
+        if let Some(w) = self.spill.as_mut() {
+            let _ = w.flush();
+        }
+        let retained = String::from_utf8_lossy(self.tail.make_contiguous()).into_owned();
+        let collapsed = sanitize_control(&collapse_carriage_returns(&retained));
+        let capped = tail_cap(&collapsed, BASH_MAX_LINES, BASH_MAX_BYTES);
+        let shown_lines = capped.matches('\n').count();
+        // Truncated when the model-facing output lost real lines (front dropped)
+        // or bytes (tail cap). CR-only progress redraws collapse to a single
+        // line, so they read as complete rather than truncated.
+        let truncated = self.total_newlines > shown_lines || capped.len() < collapsed.len();
+
+        // Always emit an explicit exit marker on its own line. A bare exit code
+        // (including 0) is the only reliable success signal: commands like
+        // `git push` write their normal status to stderr on success, so stderr
+        // text must not be read as failure.
+        let mut body = capped;
+        if !body.is_empty() && !body.ends_with('\n') {
+            body.push('\n');
+        }
+        match code {
+            Some(code) => body.push_str(&format!("[exit {code}]")),
+            None => body.push_str("[terminated by signal]"),
+        }
+
+        if !truncated {
+            if let Some(p) = self.spill_path.take() {
+                let _ = std::fs::remove_file(p);
+            }
+            return body;
+        }
+
+        let path = match self.spill_path.take() {
+            Some(p) => Some(p.to_string_lossy().into_owned()),
+            None => write_temp_output(&collapsed),
+        };
+        match path {
+            Some(p) => format!(
+                "{body}\n[output truncated at {} of {} bytes; full output written \
+                 to {p}. Use the read tool (with offset/limit) on that path to see \
+                 the rest]",
+                body.len(),
+                self.total_bytes,
+            ),
+            None => format!(
+                "{body}\n[output truncated at {} of {} bytes]",
+                body.len(),
+                self.total_bytes,
+            ),
+        }
+    }
+}
+
+fn bytecount_newlines(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|&&b| b == b'\n').count()
+}
+
+/// Drop control characters that would corrupt the model's view of the output
+/// (NUL, bell, ANSI escapes, etc.), keeping only tab and newline. Carriage
+/// returns are already resolved by [`collapse_carriage_returns`] beforehand.
+fn sanitize_control(s: &str) -> String {
+    if !s.chars().any(|c| c.is_control() && c != '\t' && c != '\n') {
+        return s.to_string();
+    }
+    s.chars()
+        .filter(|&c| !c.is_control() || c == '\t' || c == '\n')
+        .collect()
+}
+
+/// Keep the last `max_lines` lines and last `max_bytes` bytes of `s` (trimming
+/// at a UTF-8 boundary). Unlike [`cap_output`], this preserves the *end* of the
+/// output so a command's final result and error lines survive truncation.
+fn tail_cap(s: &str, max_lines: usize, max_bytes: usize) -> String {
+    let lines: Vec<&str> = s.split_inclusive('\n').collect();
+    let kept = if lines.len() > max_lines {
+        &lines[lines.len() - max_lines..]
+    } else {
+        &lines[..]
+    };
+    let mut out: String = kept.concat();
+    if out.len() > max_bytes {
+        let mut cut = out.len() - max_bytes;
+        while cut < out.len() && !out.is_char_boundary(cut) {
+            cut += 1;
+        }
+        out = out[cut..].to_string();
+    }
+    out
+}
+
+fn new_temp_path() -> PathBuf {
+    let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+    std::env::temp_dir().join(format!("jan-bash-{}-{}.txt", std::process::id(), n))
+}
+
 /// Write `content` to a uniquely named temp file, returning its path on success.
 fn write_temp_output(content: &str) -> Option<String> {
-    let n = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = std::env::temp_dir().join(format!("jan-bash-{}-{}.txt", std::process::id(), n));
+    let path = new_temp_path();
     std::fs::write(&path, content).ok()?;
     Some(path.to_string_lossy().into_owned())
 }
@@ -1273,6 +1439,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bash_success_emits_exit_0_marker() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "echo done"}),
+            &root,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
+        assert!(out.contains("done"), "unexpected: {out}");
+        assert!(out.contains("[exit 0]"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_exit_marker_is_on_its_own_line() {
+        let root = unique_root();
+        // stderr-only output with no trailing newline (mirrors `git push`).
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "printf 'to remote' 1>&2"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("\n[exit 0]"), "marker not on its own line: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
     async fn bash_output_past_old_64kb_cap_survives_intact() {
         let root = unique_root();
         // ~128KB of output: over the shared 64KB cap, under the bash cap.
@@ -1285,6 +1480,24 @@ mod tests {
         assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(!out.contains("[truncated"), "should not truncate: len={}", out.len());
         assert!(out.len() > 64 * 1024, "expected >64KB, got {}", out.len());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_cr_progress_is_collapsed_not_truncated() {
+        let root = unique_root();
+        // Mimics git progress: one logical line redrawn thousands of times with
+        // \r (no \n). Raw bytes exceed the byte cap, but only the final redraw
+        // is visible, so the model must see it intact with no truncation notice.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 30000); do printf 'Receiving objects: %d\\r' \"$i\"; done 1>&2"}),
+            &root,
+        )
+        .await;
+        assert!(!out.contains("output truncated"), "spurious truncation: {out}");
+        assert!(out.contains("Receiving objects: 30000"), "final redraw lost: {out}");
+        assert!(out.contains("[exit 0]"), "unexpected: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1314,6 +1527,77 @@ mod tests {
         .await;
         assert!(full.contains("015999") || full.contains("016000"), "tail readable: {full}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_line_overflow_keeps_the_tail_not_the_head() {
+        let root = unique_root();
+        // 12000 short lines: over the 10000-line cap but under the byte cap.
+        // Tail truncation must keep the LAST lines (final result/errors) and
+        // drop the earliest ones.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 12000); do echo \"L$i\"; done"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("output truncated at"), "should truncate: end of {out}");
+        assert!(out.contains("\nL12000\n"), "last line must survive: end of {out}");
+        assert!(!out.contains("\nL5\n"), "earliest lines must be dropped");
+        assert!(out.contains("[exit 0]"), "exit marker must survive: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_strips_control_chars_but_keeps_text() {
+        let root = unique_root();
+        // NUL and bell around visible text plus an ANSI color escape.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "printf 'a\\000b\\007\\033[31mred\\033[0m\\n'"}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("red"), "text must survive sanitization: {out:?}");
+        assert!(!out.contains('\u{0}'), "NUL must be stripped");
+        assert!(!out.contains('\u{7}'), "bell must be stripped");
+        assert!(!out.contains('\u{1b}'), "escape must be stripped");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_command_reading_stdin_does_not_hang() {
+        let root = unique_root();
+        // stdin is /dev/null, so a command that reads it gets immediate EOF and
+        // returns instead of blocking the agent loop forever (e.g. a `sudo`
+        // password prompt). The failure/output comes back as a normal result.
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            execute_builtin(
+                lookup("bash").unwrap(),
+                &json!({"command": "cat"}),
+                &root,
+            ),
+        )
+        .await
+        .expect("must not hang on stdin read");
+        assert!(out.contains("[exit 0]"), "unexpected: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn bash_missing_working_dir_errors() {
+        let root = unique_root().join("does-not-exist");
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "echo hi"}),
+            &root,
+        )
+        .await;
+        assert!(
+            out.starts_with("ERROR: working directory does not exist"),
+            "unexpected: {out}"
+        );
     }
 
     #[tokio::test]

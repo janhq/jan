@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { Folder, Sparkles } from 'lucide-react'
+import { GitBranch, Laptop, Folder, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -147,6 +147,19 @@ function CodePage() {
   const folder = current?.folder ?? null
   const folderName = folder ? folder.split(/[/\\]/).pop() : undefined
   const mode = current?.mode ?? 'normal'
+  const [gitBranch, setGitBranch] = useState<string | null>(null)
+
+  // Fetch git branch when the folder changes.
+  useEffect(() => {
+    if (!folder) {
+      setGitBranch(null)
+      return
+    }
+    setGitBranch(null)
+    invoke<string | null>('agent_git_branch', { project: folder })
+      .then(setGitBranch)
+      .catch(() => setGitBranch(null))
+  }, [folder])
 
   // Per-session run state (transient, keyed by session id — see useCodeRun).
   // Reads here are for the VIEWED session (currentId); during a run, writes
@@ -906,92 +919,104 @@ function CodePage() {
             )}
           </div>
 
-          {/* Fixed input dock at the bottom. */}
-          <div className="pb-4 shrink-0">
-            <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
-              <div className="flex items-center gap-2 px-1 pb-2">
-                <CodeModeSelector
-                  mode={mode}
-                  onChange={(m) => {
-                    const sid = currentId ?? ensureCurrentSession()
-                    useCodeSessions.getState().setMode(sid, m)
-                  }}
-                />
+        {/* Fixed input dock at the bottom. */}
+        <div className="pb-4 shrink-0">
+          <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+            <div className="flex items-center gap-2 px-1 pb-2">
+              <CodeModeSelector
+                mode={mode}
+                onChange={(m) => {
+                  const sid = currentId ?? ensureCurrentSession()
+                  useCodeSessions.getState().setMode(sid, m)
+                }}
+              />
+              <Button variant="outline" size="sm" className="h-7 gap-1.5 rounded-full">
+                <Laptop size={14} className="text-muted-foreground" />
+                <span>{t('common:local')}</span>
+              </Button>
+              <div className="flex items-center gap-1 min-w-0 max-w-[460px]">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 gap-1.5 rounded-full max-w-[220px]"
+                  className="h-7 gap-1.5 rounded-full shrink-0"
                   onClick={handleSelectFolder}
-                  title={folder ?? undefined}
+                  title={folder ?? t('common:selectFolder')}
                 >
-                  <Folder size={14} className="text-muted-foreground" />
-                  <span className="truncate">
+                  <Folder size={14} className="text-muted-foreground shrink-0" />
+                  <span className="truncate max-w-[140px]">
                     {folderName ?? t('common:selectFolder')}
                   </span>
                 </Button>
-                {subagents.length > 0 && (
-                  <Button
-                    variant={tasksPanelOpen ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-full"
-                    onClick={() => setTasksPanelOpen((o) => !o)}
-                    title={t('common:backgroundTasks')}
-                  >
-                    <Sparkles size={14} className={tasksPanelOpen ? undefined : 'text-muted-foreground'} />
-                    <span>
-                      {runningSubagentCount > 0
-                        ? `${runningSubagentCount} running`
-                        : `${subagents.length} tasks`}
-                    </span>
-                  </Button>
+                {gitBranch && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground shrink-0">
+                    <GitBranch size={10} />
+                    {gitBranch}
+                  </span>
                 )}
-                <div className="ml-auto flex items-center gap-2">
-                  {usage?.total_tokens ? (
-                    <TokenCountOnly
-                      totalTokens={usage.total_tokens}
-                      inputTokens={usage.prompt_tokens}
-                      outputTokens={usage.completion_tokens}
-                      modelDisplayName={selectedModel?.name || selectedModel?.id}
-                    />
-                  ) : null}
-                  <SkillSelector folder={folder} />
-                </div>
               </div>
-              <div className="relative" onKeyDownCapture={onMenuKeyDown}>
-                {menuItems.length > 0 && (
-                  <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
-                    {menuItems.map((item, i) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        ref={
-                          i === menuIndex
-                            ? (el) => el?.scrollIntoView({ block: 'nearest' })
-                            : undefined
-                        }
-                        onClick={item.onSelect}
-                        onMouseEnter={() => setMenuIndex(i)}
-                        className={cn(
-                          'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
-                          i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
-                        )}
-                      >
-                        <span className="font-mono font-medium">{item.label}</span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {item.description}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <ChatInput
-                  showSpeedToken={false}
-                  initialMessage={true}
-                  onSubmit={handleSubmit}
-                  onStop={handleStop}
-                  chatStatus={running ? 'streaming' : 'ready'}
-                  queueKey={currentId ?? undefined}
-                />
+              {subagents.length > 0 && (
+                <Button
+                  variant={tasksPanelOpen ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 gap-1.5 rounded-full"
+                  onClick={() => setTasksPanelOpen((o) => !o)}
+                  title={t('common:backgroundTasks')}
+                >
+                  <Sparkles size={14} className={tasksPanelOpen ? undefined : 'text-muted-foreground'} />
+                  <span>
+                    {runningSubagentCount > 0
+                      ? `${runningSubagentCount} running`
+                      : `${subagents.length} tasks`}
+                  </span>
+                </Button>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                {usage?.total_tokens ? (
+                  <TokenCountOnly
+                    totalTokens={usage.total_tokens}
+                    inputTokens={usage.prompt_tokens}
+                    outputTokens={usage.completion_tokens}
+                    modelDisplayName={selectedModel?.name || selectedModel?.id}
+                  />
+                ) : null}
+                <SkillSelector folder={folder} />
+              </div>
+            </div>
+            <div className="relative" onKeyDownCapture={onMenuKeyDown}>
+              {menuItems.length > 0 && (
+                <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
+                  {menuItems.map((item, i) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      ref={
+                        i === menuIndex
+                          ? (el) => el?.scrollIntoView({ block: 'nearest' })
+                          : undefined
+                      }
+                      onClick={item.onSelect}
+                      onMouseEnter={() => setMenuIndex(i)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
+                        i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
+                      )}
+                    >
+                      <span className="font-mono font-medium">{item.label}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {item.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <ChatInput
+                showSpeedToken={false}
+                initialMessage={true}
+                onSubmit={handleSubmit}
+                onStop={handleStop}
+                chatStatus={running ? 'streaming' : 'ready'}
+                queueKey={currentId ?? undefined}
+              />
               </div>
             </div>
         </div>

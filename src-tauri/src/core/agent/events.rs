@@ -52,6 +52,12 @@ pub enum StreamEvent {
         name: String,
         event: Box<StreamEvent>,
     },
+    /// The loop's compaction reduced the conversation while retrying a
+    /// context overflow. The client should replace its session history with
+    /// `messages` for subsequent turns.
+    MessagesUpdated {
+        messages: Vec<serde_json::Value>,
+    },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,

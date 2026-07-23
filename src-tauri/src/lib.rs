@@ -88,6 +88,7 @@ macro_rules! invoke_commands_with_extras {
         core::agent::commands::agent_skill_hub_import,
         core::agent::commands::agent_skill_enabled_get,
         core::agent::commands::agent_skill_enabled_set,
+        core::agent::commands::agent_git_branch,
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
@@ -187,6 +188,9 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     exit_code: i32,
 ) {
     use std::sync::atomic::Ordering;
+    // Reap any still-running agent bash command trees before we tear down, so
+    // no shell (or child it spawned) outlives the app.
+    crate::core::agent::tools::proc::kill_all();
     let mut emitted = false;
     loop {
         if SHUTTING_DOWN.load(Ordering::SeqCst) {

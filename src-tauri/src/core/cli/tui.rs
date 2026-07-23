@@ -12,10 +12,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::path_refs;
+
 use ratatui::crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
+        MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -79,19 +82,27 @@ impl Pending {
         format!("{} via '{}'{target}", self.capability, self.tool_name)
     }
 
-    /// Base command of an exec prompt (`git status` -> `git`), if any.
-    fn command_base(&self) -> Option<&str> {
-        self.command
-            .as_deref()
-            .and_then(crate::core::agent::tools::gate::command_base)
-    }
-
     /// Label for the "allow always" option: command-scoped for exec (thread
-    /// only), capability-scoped otherwise. All grants are thread-scoped.
+    /// only), capability-scoped otherwise. All grants are thread-scoped. For an
+    /// exec prompt the label names every base the command runs, so the user
+    /// sees exactly what a grant covers (`git status && rm foo` -> git AND rm);
+    /// commands that can't be decomposed grant only their exact text.
     fn always_label(&self) -> String {
-        match self.command_base() {
-            Some(base) => format!("Allow all '{base}' commands (this thread)"),
-            None => "Allow always (this thread)".to_string(),
+        use crate::core::agent::tools::cmdscan::{scan_command, CommandScan};
+        let Some(command) = self.command.as_deref() else {
+            return "Allow always (this thread)".to_string();
+        };
+        match scan_command(command) {
+            CommandScan::Bases(bases) if !bases.is_empty() => {
+                let list = bases
+                    .iter()
+                    .map(|b| format!("'{b}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Allow all {list} commands (this thread)")
+            }
+            CommandScan::Bases(_) => "Allow always (this thread)".to_string(),
+            CommandScan::Opaque => "Allow this exact command (this thread)".to_string(),
         }
     }
 
@@ -250,6 +261,16 @@ struct PendingImage {
     data_url: String,
 }
 
+/// One entry in the file-path hint popup triggered by typing `@`.
+struct PathHintItem {
+    /// Display path (relative to project root).
+    path: String,
+    /// Basename for display.
+    name: String,
+    /// Whether this is a directory.
+    is_dir: bool,
+}
+
 struct App {
     model: String,
     /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
@@ -266,9 +287,18 @@ struct App {
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
     max_turns: u32,
+    /// Context window limit for the current model (default 128K).
+    context_window: u64,
+    /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
+    reserve_tokens: u64,
+    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
+    /// `None` omits the field (model default).
+    max_tokens: Option<u64>,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
+    /// Current git branch name, if the project is inside a git repo.
+    git_branch: Option<String>,
     /// Directory tool paths (`edit`/`write` "path" args) are resolved against.
     project_root: PathBuf,
     /// Absolute paths touched by `edit`/`write` tool calls so far this turn;
@@ -329,6 +359,12 @@ struct App {
     /// Set by Esc to hide the hint popup without clearing the buffer; cleared on
     /// the next keystroke that edits the input so typing re-shows it.
     slash_dismissed: bool,
+    /// File-path hint entries matching the current `@query` in the input buffer.
+    path_hints: Vec<PathHintItem>,
+    /// Highlighted row in the path-hint popup (clamped to matches).
+    path_hint_selected: usize,
+    /// Set by Esc to dismiss the path-hint popup; cleared on next char edit.
+    path_hint_dismissed: bool,
     status: Status,
     turn: (u32, u32),
     tokens: u64,
@@ -381,6 +417,9 @@ struct App {
     /// this against its previous value each tick to (de)activate it, since
     /// crossterm's enable/disable calls need the real terminal handle.
     mouse_capture: bool,
+    /// Messages queued while a run is in progress, dequeued automatically
+    /// when the current turn finishes.
+    message_queue: std::collections::VecDeque<String>,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -433,6 +472,9 @@ impl App {
     fn new(
         model: String,
         max_turns: u32,
+        context_window: u64,
+        reserve_tokens: u64,
+        max_tokens: Option<u64>,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
@@ -444,7 +486,11 @@ impl App {
             goal_eval_pending: false,
             args: None,
             max_turns,
+            context_window,
+            reserve_tokens,
+            max_tokens,
             repo_root,
+            git_branch: git::current_branch(&project_root),
             project_root,
             turn_touched: Vec::new(),
             base_snapshot: None,
@@ -469,6 +515,9 @@ impl App {
             cursor: 0,
             slash_selected: 0,
             slash_dismissed: false,
+            path_hints: Vec::new(),
+            path_hint_selected: 0,
+            path_hint_dismissed: false,
             status: Status::Idle,
             turn: (0, 0),
             tokens: 0,
@@ -489,6 +538,7 @@ impl App {
             row_index: Vec::new(),
             run_started: None,
             mouse_capture: true,
+            message_queue: std::collections::VecDeque::new(),
         }
     }
 
@@ -549,6 +599,7 @@ impl App {
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
+        self.message_queue.clear();
         self.pending_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
@@ -722,12 +773,16 @@ impl App {
         self.input.clear();
         self.cursor = 0;
         self.reset_slash_hint();
+        self.path_hints.clear();
+        self.path_hint_selected = 0;
     }
 
     fn input_insert(&mut self, c: char) {
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.reset_slash_hint();
+        // Refresh path hints on any character edit
+        self.refresh_path_hints();
     }
 
     /// Delete the char before the caret (Backspace).
@@ -737,6 +792,7 @@ impl App {
             self.input.remove(self.cursor);
         }
         self.reset_slash_hint();
+        self.refresh_path_hints();
     }
 
     /// Delete the char at the caret (Delete); caret stays put.
@@ -745,12 +801,14 @@ impl App {
             self.input.remove(self.cursor);
         }
         self.reset_slash_hint();
+        self.refresh_path_hints();
     }
 
     /// Reset hint selection and un-dismiss so an edited buffer re-shows the popup.
     fn reset_slash_hint(&mut self) {
         self.slash_selected = 0;
         self.slash_dismissed = false;
+        self.path_hint_dismissed = false;
     }
 
     /// Slash commands whose name prefixes the current buffer, or empty when the
@@ -793,6 +851,84 @@ impl App {
         self.slash_selected = 0;
     }
 
+    /// Extract the current `@query` from the input buffer, if any.
+    /// Returns `None` when the cursor is not inside or immediately after
+    /// a `@`-prefixed token (no space since the `@`).
+    fn path_hint_query(&self) -> Option<String> {
+        let before = &self.input[..self.cursor];
+        let at_idx = before.rfind('@')?;
+        let after_at = &before[at_idx + 1..];
+        if after_at.contains(' ') {
+            return None; // space after @ means the token ended
+        }
+        if after_at.is_empty() {
+            return Some(String::new());
+        }
+        Some(after_at.to_string())
+    }
+
+    /// Refresh path hints from the input buffer: detect `@query`, search files.
+    fn refresh_path_hints(&mut self) {
+        if self.path_hint_dismissed || self.status != Status::Idle {
+            self.path_hints.clear();
+            return;
+        }
+        let Some(query) = self.path_hint_query() else {
+            self.path_hints.clear();
+            return;
+        };
+
+        let entries = path_refs::search_files_sync(&self.project_root, &query, 30);
+        self.path_hints = entries
+            .into_iter()
+            .map(|(path, name, is_dir)| PathHintItem {
+                path,
+                name,
+                is_dir,
+            })
+            .collect();
+        self.path_hint_selected = 0;
+    }
+
+    /// Accept the highlighted path hint: replace the `@query` token with the
+    /// selected path.
+    fn accept_path_hint(&mut self) {
+        if self.path_hints.is_empty() {
+            return;
+        }
+        let sel = self.path_hint_selected.min(self.path_hints.len() - 1);
+        let selected = &self.path_hints[sel];
+        let before = &self.input[..self.cursor];
+        let at_idx = match before.rfind('@') {
+            Some(i) => i,
+            None => return,
+        };
+        let after = &self.input[self.cursor..];
+        let replacement = &selected.path;
+        let new_input = format!("{}{}{}", &self.input[..at_idx], replacement, after);
+        self.input = new_input;
+        self.cursor = at_idx + replacement.len();
+        self.path_hints.clear();
+        self.path_hint_dismissed = false;
+    }
+
+    fn path_hint_move(&mut self, delta: isize) {
+        if self.path_hints.is_empty() {
+            return;
+        }
+        let len = self.path_hints.len();
+        let cur = self.path_hint_selected.min(len - 1) as isize;
+        self.path_hint_selected = (cur + delta).rem_euclid(len as isize) as usize;
+    }
+
+    /// True when the path-hint popup has entries to show.
+    fn has_path_hints(&self) -> bool {
+        if self.path_hint_dismissed || self.status != Status::Idle {
+            return false;
+        }
+        self.path_hint_query().is_some() && !self.path_hints.is_empty()
+    }
+
     fn cursor_left(&mut self) {
         if let Some(prev) = self.input[..self.cursor].chars().next_back() {
             self.cursor -= prev.len_utf8();
@@ -808,11 +944,27 @@ impl App {
     /// Queue a user message: record it in history and the transcript, and ask
     /// the loop to start a run. Flips to `Running` synchronously so further keys
     /// in the same input batch can't slip through as a second submit.
+    /// When already running, the message is enqueued instead and auto-submitted
+    /// when the current turn finishes.
     fn submit_user(&mut self, text: String) {
+        // If a turn is already in progress, enqueue the message instead
+        if self.status == Status::Running {
+            self.message_queue.push_back(text.clone());
+            self.note(&format!("⏳ message queued ({} in queue)", self.message_queue.len()));
+            return;
+        }
         self.ensure_base_snapshot();
         let images = std::mem::take(&mut self.pending_images);
         let names: Vec<String> = images.iter().map(|i| i.name.clone()).collect();
-        self.history.push(build_user_message(&text, &images));
+        // Resolve @path file references before sending
+        let (clean_text, injected_contents) =
+            path_refs::resolve_references(&text, &self.project_root);
+        let final_text = if injected_contents.is_empty() {
+            clean_text
+        } else {
+            format!("{clean_text}\n\n---\nReferenced file contents:\n\n{injected_contents}")
+        };
+        self.history.push(build_user_message(&final_text, &images));
         self.push_user_line(&text, &names);
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
@@ -820,6 +972,22 @@ impl App {
         self.scrollback = 0;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Dequeue the next message from the queue and submit it. Called after
+    /// `on_done` / `on_error` / `cancel_run` to continue processing.
+    fn dequeue_next(&mut self) {
+        if self.message_queue.is_empty() {
+            return;
+        }
+        let next = self.message_queue.pop_front().expect("checked non-empty above");
+        if !next.is_empty() {
+            self.note(&format!(
+                "⏩ dequeuing next message ({} remaining)",
+                self.message_queue.len()
+            ));
+            self.submit_user(next);
+        }
     }
 
     /// Render a user turn: the prompt line, then one dotted connector row per
@@ -859,12 +1027,18 @@ impl App {
     }
 
     fn body(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": self.history,
             "max_turns": self.max_turns,
             "stream": true,
-        })
+        });
+        // Forward the per-request output cap only when configured; it reaches
+        // the upstream via `copy_optional_chat_params`.
+        if let Some(max) = self.max_tokens {
+            body["max_tokens"] = serde_json::json!(max);
+        }
+        body
     }
 
     /// Arm workspace snapshots by queuing the base capture before the first turn.
@@ -1169,6 +1343,10 @@ impl App {
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+            StreamEvent::MessagesUpdated { messages } => {
+                self.history = messages;
+                self.persist();
+            }
         }
     }
 
@@ -1262,7 +1440,15 @@ impl App {
                 self.goal_eval_pending = normal && !no_answer;
             }
         }
+        // Auto-dequeue the next queued message, if any
+        self.dequeue_next();
         self.persist();
+    }
+
+    /// Whether auto-compaction should trigger after a turn completes.
+    fn should_auto_compact(&self) -> bool {
+        let limit = self.context_window.saturating_sub(self.reserve_tokens);
+        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
     }
 
     fn on_error(&mut self, code: String, message: String) {
@@ -1288,6 +1474,8 @@ impl App {
                 self.note("goal paused (turn errored); /goal to review, /goal clear to stop");
             }
         }
+        // Auto-dequeue the next queued message, if any
+        self.dequeue_next();
     }
 
     /// Run one goal evaluation and act on the verdict. Called by the chat loop
@@ -1371,6 +1559,10 @@ impl App {
         }
         self.status = Status::Idle;
         self.run_started = None;
+        // Drop any run queued but not yet spawned (still gated on model/MCP/
+        // snapshot readiness); otherwise the loop starts it once ready and the
+        // cancel is silently undone.
+        self.want_start = false;
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -1378,6 +1570,8 @@ impl App {
         // A cancel stops the goal loop mid-flight; the goal itself is kept so
         // the user can inspect it (/goal) or clear it (/goal clear).
         self.goal_eval_pending = false;
+        // Auto-dequeue the next queued message, if any
+        self.dequeue_next();
         self.persist();
     }
 }
@@ -1394,6 +1588,26 @@ fn truncate(s: &str, max: usize) -> String {
 /// Summarize tool output to one transcript line: first non-empty line with its
 /// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
 /// suffix when more follow.
+/// Rough token count from message content characters (~4 chars ≈ 1 token).
+fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
+    let mut total_chars: usize = 0;
+    for msg in messages {
+        if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+            total_chars += content.len();
+        }
+        if let Some(calls) = msg.get("tool_calls") {
+            if let Some(arr) = calls.as_array() {
+                for call in arr {
+                    if let Some(args) = call.get("arguments") {
+                        total_chars += args.to_string().len();
+                    }
+                }
+            }
+        }
+    }
+    (total_chars / 4).max(1) as u64
+}
+
 fn summarize_result(s: &str, max: usize) -> String {
     let mut lines = s.lines().filter(|l| !l.trim().is_empty());
     let first = lines.next().unwrap_or("");
@@ -1591,25 +1805,47 @@ fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<
 fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     let max = width.saturating_sub(8) as usize;
     let mut out = Vec::new();
+    // A single-call group's summary row already IS that call's `done` label, so
+    // repeating it here would duplicate it; only multi-call groups (whose
+    // summary is a counted breakdown) need the per-call headers.
+    let show_headers = group.calls.len() > 1;
+    let (tag_gutter, cont_gutter) = if show_headers {
+        ("│     ", "│       ")
+    } else {
+        ("│   ", "│     ")
+    };
     for call in &group.calls {
-        out.push(Line::from(vec![
-            Span::styled("│   ", Style::new().dark_gray()),
-            Span::styled("▸ ", Style::new().cyan()),
-            Span::styled(call.done.clone(), Style::new().dim()),
-        ]));
+        if show_headers {
+            out.push(Line::from(vec![
+                Span::styled("│   ", Style::new().dark_gray()),
+                Span::styled("▸ ", Style::new().cyan()),
+                Span::styled(call.done.clone(), Style::new().dim()),
+            ]));
+        }
         if let Some(content) = &call.content {
             let (tag, tag_style) = if call.is_error {
                 ("✗", Style::new().red())
             } else {
                 ("✓", Style::new().green())
             };
+            // Expanded view shows the full output verbatim (one row per line,
+            // width-clamped): the tag rides the first line, the rest indent to
+            // align under it. Empty content still gets a bare tag row.
+            let mut content_lines = content.lines();
+            let first = content_lines.next().unwrap_or("");
             out.push(Line::from(vec![
-                Span::styled("│     ", Style::new().dark_gray()),
+                Span::styled(tag_gutter, Style::new().dark_gray()),
                 Span::styled(format!("{tag} "), tag_style),
-                Span::styled(summarize_result(content, max), Style::new().dim()),
+                Span::styled(truncate(first, max), Style::new().dim()),
             ]));
+            for line in content_lines {
+                out.push(Line::from(vec![
+                    Span::styled(cont_gutter, Style::new().dark_gray()),
+                    Span::styled(truncate(line, max), Style::new().dim()),
+                ]));
+            }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, "│       ") {
+                for line in diff_lines(diff, max, cont_gutter) {
                     out.push(line);
                 }
             }
@@ -2068,6 +2304,9 @@ pub async fn run(
         model,
         smol_model,
         max_turns,
+        context_window,
+        reserve_tokens,
+        max_tokens,
         router_task,
         mcp_servers,
         mcp_task,
@@ -2076,14 +2315,15 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
+        .map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
+    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     if args.yolo {
@@ -2108,7 +2348,12 @@ pub async fn run(
     .await;
 
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen,
+    );
     let _ = terminal.show_cursor();
     res
 }
@@ -2211,6 +2456,11 @@ async fn chat_loop<B: Backend>(
                                 };
                             }
                         }
+                        Ok(Event::Paste(text)) => {
+                            for c in text.chars() {
+                                app.input_insert(c);
+                            }
+                        }
                         Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
                         _ => {}
                     }
@@ -2257,6 +2507,47 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Done { stop_reason, usage }) => {
                     app.on_done(stop_reason, usage);
                     current = None;
+                    // Auto-compact when approaching the context limit.
+                    if app.should_auto_compact() {
+                        let model = app.model.clone();
+                        let mut history = std::mem::take(&mut app.history);
+                        let before = history.len();
+                        // Show feedback immediately before the blocking model call.
+                        app.note("auto-compacting...");
+                        let compacted = crate::core::agent::r#loop::compact_history(
+                            args, &model, &history,
+                            crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                        )
+                        .await;
+                        // Remove the "auto-compacting..." note.
+                        app.transcript.retain(|l| {
+                            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                            !text.contains("auto-compacting")
+                        });
+                        match compacted {
+                            Ok(c) if c.len() < before => {
+                                history = c;
+                                app.history = history;
+                                // Update token estimate from compacted content.
+                                app.tokens = estimate_token_count(&app.history);
+                                app.persist();
+                                app.note(&format!(
+                                    "auto-compacted {} -> {} messages (ctx {}K/{}K)",
+                                    before,
+                                    app.history.len(),
+                                    app.tokens / 1000,
+                                    app.context_window / 1000,
+                                ));
+                            }
+                            Ok(_) => {
+                                app.history = history;
+                            }
+                            Err(e) => {
+                                app.history = history;
+                                app.note(&format!("auto-compaction failed: {e}"));
+                            }
+                        }
+                    }
                 }
                 Some(StreamEvent::Error { code, message }) => {
                     app.on_error(code, message);
@@ -2273,6 +2564,8 @@ async fn chat_loop<B: Backend>(
                         app.status = Status::Idle;
                         app.run_started = None;
                     }
+                    // Auto-dequeue the next queued message
+                    app.dequeue_next();
                     current = None;
                 }
             },
@@ -2507,6 +2800,31 @@ async fn handle_key(
         }
     }
 
+    // Path-hint popup: while `@query` is active with at least one match,
+    // it owns Up/Down/Tab/Esc/Enter in the same pattern as slash hints.
+    if app.has_path_hints() {
+        match key.code {
+            KeyCode::Up => {
+                app.path_hint_move(-1);
+                return;
+            }
+            KeyCode::Down => {
+                app.path_hint_move(1);
+                return;
+            }
+            KeyCode::Tab | KeyCode::Enter => {
+                app.accept_path_hint();
+                return;
+            }
+            KeyCode::Esc => {
+                app.path_hint_dismissed = true;
+                app.path_hints.clear();
+                return;
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
         KeyCode::Esc => {
             // Esc cancels a run or clears typed input; it never quits (that's
@@ -2532,10 +2850,10 @@ async fn handle_key(
         }
         // Alt+Enter (or Ctrl+J) inserts a newline for multi-line input; plain
         // Enter submits.
-        KeyCode::Enter if app.status == Status::Idle && key.modifiers.contains(KeyModifiers::ALT) => {
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
             app.input_insert('\n');
         }
-        KeyCode::Char('j') if app.status == Status::Idle && ctrl => {
+        KeyCode::Char('j') if ctrl => {
             app.input_insert('\n');
         }
         // Ctrl-O expands/collapses all folded regions (tool groups and reasoning
@@ -2545,39 +2863,39 @@ async fn handle_key(
         }
         // Ctrl-V stages an image from the OS clipboard (terminal paste is
         // text-only, so we read the clipboard directly) for the next message.
-        KeyCode::Char('v') if app.status == Status::Idle && ctrl => {
+        KeyCode::Char('v') if ctrl => {
             app.attach_clipboard_image();
         }
         KeyCode::Enter => {
-            if app.status == Status::Idle {
-                let text = app.input.trim().to_string();
-                app.input_clear();
+            let text = app.input.trim().to_string();
+            app.input_clear();
+            if !text.is_empty() {
                 if let Some(cmd) = text.strip_prefix('/') {
                     run_command(app, cmd).await;
-                } else if !text.is_empty() {
+                } else {
                     app.submit_user(text);
                 }
             }
         }
-        KeyCode::Backspace if app.status == Status::Idle => {
+        KeyCode::Backspace => {
             app.input_backspace();
         }
-        KeyCode::Delete if app.status == Status::Idle => {
+        KeyCode::Delete => {
             app.input_delete();
         }
-        KeyCode::Left if app.status == Status::Idle => {
+        KeyCode::Left => {
             app.cursor_left();
         }
-        KeyCode::Right if app.status == Status::Idle => {
+        KeyCode::Right => {
             app.cursor_right();
         }
-        KeyCode::Home if app.status == Status::Idle => {
+        KeyCode::Home => {
             app.cursor = 0;
         }
-        KeyCode::End if app.status == Status::Idle => {
+        KeyCode::End => {
             app.cursor = app.input.len();
         }
-        KeyCode::Char(c) if app.status == Status::Idle && !ctrl => {
+        KeyCode::Char(c) if !ctrl => {
             app.input_insert(c);
         }
         KeyCode::Up | KeyCode::PageUp => {
@@ -2660,6 +2978,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/mcp",
         hint: "",
         description: "Enable/disable MCP servers",
+    },
+    SlashCommand {
+        name: "/cancel",
+        hint: "[N]",
+        description: "Cancel queued messages (bare: all, or index)",
     },
     SlashCommand {
         name: "/config",
@@ -2759,6 +3082,7 @@ async fn run_command(app: &mut App, line: &str) {
         "mcp" => open_mcp_picker(app),
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
+        "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
     }
@@ -2773,11 +3097,25 @@ async fn compact_command(app: &mut App) {
         return;
     };
     let before = app.history.len();
-    match crate::core::agent::r#loop::compact_history(&args, &app.model, &app.history).await {
+    match crate::core::agent::r#loop::compact_history(
+        &args,
+        &app.model,
+        &app.history,
+        crate::core::agent::compaction::MANUAL_KEEP_RECENT,
+    )
+    .await
+    {
         Ok(compacted) if compacted.len() < before => {
             app.history = compacted;
             app.persist();
-            app.note(&format!("compacted {before} -> {} messages", app.history.len()));
+            // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
+            app.tokens = estimate_token_count(&app.history);
+            app.note(&format!(
+                "compacted {before} -> {} messages (ctx {}K/{}K)",
+                app.history.len(),
+                app.tokens / 1000,
+                app.context_window / 1000,
+            ));
         }
         Ok(_) => app.note("nothing to compact yet"),
         Err(e) => app.note(&format!("compaction failed: {e}")),
@@ -2802,6 +3140,45 @@ fn goal_command(app: &mut App, arg: &str) {
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
     }
+}
+
+/// `/cancel` handler: without an argument, clears ALL queued messages.
+/// With a numeric argument `/cancel N` (1-indexed), removes the Nth queued
+/// message. Notes the result or when the queue is empty.
+fn cancel_command(app: &mut App, arg: &str) {
+    if app.message_queue.is_empty() {
+        app.note("no queued messages to cancel");
+        return;
+    }
+    if arg.is_empty() {
+        let n = app.message_queue.len();
+        app.message_queue.clear();
+        app.note(&format!("cancelled all {n} queued message(s)"));
+        return;
+    }
+    // Try to parse as a 1-indexed position
+    if let Ok(idx) = arg.parse::<usize>() {
+        if idx == 0 || idx > app.message_queue.len() {
+            app.note(&format!(
+                "no message at position {idx} (queue has {} messages)",
+                app.message_queue.len()
+            ));
+            return;
+        }
+        let removed = app.message_queue.remove(idx - 1);
+        if let Some(text) = removed {
+            let preview = truncate(&text, 40);
+            app.note(&format!(
+                "cancelled message #{idx}: \"{preview}\" ({} remaining)",
+                app.message_queue.len()
+            ));
+        }
+        return;
+    }
+    app.note(&format!(
+        "usage: /cancel [N]  — cancel all or the Nth queued message (queue has {})",
+        app.message_queue.len()
+    ));
 }
 
 /// Print the active goal's condition, turn count, duration, and the evaluator's
@@ -3294,6 +3671,7 @@ fn resume_thread(app: &mut App, id_arg: &str) {
     app.turn = (0, 0);
     app.tokens = 0;
     app.scrollback = 0;
+    app.message_queue.clear();
     restore_snapshots(app, thread.get("metadata"));
     restore_goal(app, thread.get("metadata"));
 
@@ -3517,7 +3895,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(input_h),
-        Constraint::Length(1),
+        Constraint::Length(1),  // path line
+        Constraint::Length(1),  // footer
     ])
     .split(f.area());
 
@@ -3532,7 +3911,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         app.row_index.clear();
         draw_picker(f, chunks[1], picker);
         f.render_widget(input_box(app), chunks[2]);
-        f.render_widget(footer(app), chunks[3]);
+        f.render_widget(path_line(app), chunks[3]);
+        f.render_widget(footer(app), chunks[4]);
         return;
     }
 
@@ -3708,7 +4088,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         0
     };
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
-    f.render_widget(footer(app), chunks[3]);
+    f.render_widget(path_line(app), chunks[3]);
+    f.render_widget(footer(app), chunks[4]);
 
     // Dock the permission prompt directly above the input box, growing upward
     // and clamped to the body area so it never overruns the transcript.
@@ -3742,6 +4123,18 @@ fn draw(f: &mut Frame, app: &mut App) {
                 height,
             };
             draw_slash_hints(f, rect, &matches, app.slash_selected);
+        } else if app.has_path_hints() {
+            // Dock the file-path hints above the input box, same layout as
+            // slash hints. Only shows when no slash hints are active.
+            let height = (app.path_hints.len() as u16 + 2).min(chunks[1].height);
+            let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+            let rect = ratatui::layout::Rect {
+                x: chunks[2].x,
+                y,
+                width: chunks[2].width,
+                height,
+            };
+            draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
         }
     }
 }
@@ -3779,6 +4172,52 @@ fn draw_slash_hints(
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(selected.min(matches.len().saturating_sub(1))));
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+/// File-path hint popup docked above the input when typing `@query`.
+/// Shows matching files/directories; arrow keys to navigate, Tab/Enter to
+/// select, Esc to dismiss.
+fn draw_path_hints(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    entries: &[PathHintItem],
+    selected: usize,
+) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let dim = Style::new().dark_gray();
+    let items: Vec<ListItem> = entries
+        .iter()
+        .map(|e| {
+            let icon = if e.is_dir {
+                Span::styled("", Style::new().yellow())
+            } else {
+                Span::styled("", Style::new().cyan())
+            };
+            let mut spans = vec![
+                icon,
+                Span::raw(" "),
+                Span::styled(&e.name, Style::new().bold()),
+            ];
+            let rel = &e.path;
+            if rel != &e.name {
+                spans.push(Span::styled(format!("  ({rel})"), dim));
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().dark_gray())
+        .title(Span::styled(" path ", dim));
+    f.render_widget(Clear, area);
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::new().reversed())
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(selected.min(entries.len().saturating_sub(1))));
     f.render_stateful_widget(list, area, &mut state);
 }
 
@@ -3905,11 +4344,6 @@ fn header(app: &App) -> Paragraph<'static> {
         (n, 0) => format!("turn {n}  "),
         (n, m) => format!("turn {n}/{m}  "),
     };
-    let dir = app
-        .project_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(".");
     let elapsed = app
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
@@ -3917,10 +4351,19 @@ fn header(app: &App) -> Paragraph<'static> {
     let mut spans = vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
-        Span::styled(dir.to_string(), Style::new().dark_gray()),
-        Span::raw(format!("  {turn}tokens {}", app.tokens)),
-        Span::styled(elapsed, Style::new().dim()),
     ];
+    spans.push(Span::raw(format!("  {turn}")));
+    if app.tokens > 0 {
+        spans.push(Span::raw(format!(
+            "ctx {}K/{}K  ",
+            // Round to nearest K for display clarity.
+            (app.tokens + 500) / 1000,
+            app.context_window / 1000
+        )));
+    } else {
+        spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
+    }
+    spans.push(Span::styled(elapsed, Style::new().dim()));
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
     // green once achieved), so an unattended run shows the goal is still live.
     if let Some(goal) = app.goal.as_ref() {
@@ -3946,7 +4389,7 @@ const MAX_INPUT_ROWS: u16 = 8;
 /// idle/working placeholder, or the wrapped input height clamped to
 /// `MAX_INPUT_ROWS` while editing.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.status == Status::Idle && app.picker.is_none() {
+    let content = if app.picker.is_none() && !(app.status == Status::Running && app.input.is_empty()) {
         let inner = width.saturating_sub(2).max(1);
         let rows = Paragraph::new(input_content_lines(&app.input, app.cursor))
             .wrap(Wrap { trim: false })
@@ -4019,20 +4462,32 @@ fn input_box(app: &App) -> Paragraph<'static> {
     let block = Block::default();
     if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
-    } else if app.status == Status::Running {
-        Paragraph::new(Line::styled(
-            "working… (Esc to cancel)",
-            Style::new().dim().italic(),
-        ))
-        .block(block)
+    } else if app.status == Status::Running && app.input.is_empty() {
+        // Show queue status when running with empty input
+        if app.message_queue.is_empty() {
+            Paragraph::new(Line::styled(
+                "working… (Esc to cancel, type to queue next message)",
+                Style::new().dim().italic(),
+            ))
+            .block(block)
+        } else {
+            let n = app.message_queue.len();
+            let msg = format!("⏳ Queued ({n}) — Esc to cancel, type to add more");
+            Paragraph::new(Line::styled(msg, Style::new().yellow())).block(block)
+        }
     } else if app.input.is_empty() {
         // Same `› ` arrow as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
+        let placeholder = if app.status == Status::Running {
+            "Type to queue next message"
+        } else {
+            "Type here to chat with agent"
+        };
         let cursor_spans: Vec<Span<'static>> = vec![
             Span::styled("› ", Style::new().cyan().bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
-            Span::styled("Type here to chat with agent", Style::new().dim().italic()),
+            Span::styled(placeholder, Style::new().dim().italic()),
         ];
         Paragraph::new(Line::from(cursor_spans)).block(block)
     } else {
@@ -4058,6 +4513,22 @@ fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
     spans
 }
 
+/// One-line path display shown below the input box.
+fn path_line(app: &App) -> Paragraph<'static> {
+    let path = app.project_root.to_string_lossy();
+    let mut spans = vec![
+        Span::styled("📂 ", Style::new().dark_gray()),
+        Span::styled(path.to_string(), Style::new().dark_gray()),
+    ];
+    if let Some(branch) = app.git_branch.as_ref() {
+        spans.push(Span::styled(
+            format!(" ⎇ {}", branch),
+            Style::new().dark_gray(),
+        ));
+    }
+    Paragraph::new(Line::from(spans))
+}
+
 fn footer(app: &App) -> Paragraph<'static> {
     if !app.pending_queue.is_empty() {
         return Paragraph::new(Line::from(hint_spans(
@@ -4074,26 +4545,45 @@ fn footer(app: &App) -> Paragraph<'static> {
         return Paragraph::new(Line::styled(picker.action_hint(), Style::new().dim()));
     }
     let key_style = Style::new().cyan().bold();
+    let queue_count = app.message_queue.len();
     let mut spans = match app.status {
-        Status::Running => hint_spans(
-            key_style,
-            &[
-                ("Esc/Ctrl-C", "cancel"),
-                ("↑/↓", "scroll"),
-                ("Ctrl-O", "expand all"),
-            ],
-        ),
-        Status::Idle => hint_spans(
-            key_style,
-            &[
-                ("Enter", "send"),
-                ("Alt+Enter", "newline"),
-                ("/help", ""),
-                ("↑/↓", "scroll"),
-                ("Ctrl-O", "expand all"),
-                ("Ctrl-D", "quit"),
-            ],
-        ),
+        Status::Running => {
+            let mut s = hint_spans(
+                key_style,
+                &[
+                    ("Esc/Ctrl-C", "cancel"),
+                    ("↑/↓", "scroll"),
+                    ("Ctrl-O", "expand all"),
+                ],
+            );
+            if queue_count > 0 {
+                s.insert(0, Span::styled(
+                    format!("⏳ Queued ({queue_count})  "),
+                    Style::new().yellow().bold(),
+                ));
+            }
+            s
+        }
+        Status::Idle => {
+            let mut s = hint_spans(
+                key_style,
+                &[
+                    ("Enter", "send"),
+                    ("Alt+Enter", "newline"),
+                    ("/help", ""),
+                    ("↑/↓", "scroll"),
+                    ("Ctrl-O", "expand all"),
+                    ("Ctrl-D", "quit"),
+                ],
+            );
+            if queue_count > 0 {
+                s.insert(0, Span::styled(
+                    format!("⏳ Queued ({queue_count})  "),
+                    Style::new().yellow().bold(),
+                ));
+            }
+            s
+        }
     };
     if !app.detail.is_empty() {
         spans.push(Span::styled(
@@ -4135,7 +4625,7 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        App::new("m".into(), 8, 128_000, 16_384, None, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
     fn pending(offers_always: bool) -> Pending {
@@ -5263,6 +5753,22 @@ mod tests {
     }
 
     #[test]
+    fn cancel_clears_pending_run_start() {
+        let mut app = test_app();
+        // Submit while the run is still gated on model/MCP/snapshot readiness:
+        // want_start is armed but no run has spawned yet.
+        app.submit_user("do a thing".into());
+        assert!(app.want_start, "submit should arm want_start");
+        assert_eq!(app.status, Status::Running);
+        app.cancel_run();
+        assert!(
+            !app.want_start,
+            "cancel must drop the pending start or the loop re-spawns it"
+        );
+        assert_eq!(app.status, Status::Idle);
+    }
+
+    #[test]
     fn cancel_keeps_streamed_prose_and_tool_calls() {
         let mut app = test_app();
         app.submit_user("do a thing".into());
@@ -5325,6 +5831,37 @@ mod tests {
         assert!(row.contains("✓") && row.contains("Ran: grep"), "row: {row}");
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
+    }
+
+    #[test]
+    fn expanded_bash_group_shows_full_output_not_summary() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "git push" }),
+        });
+        let content = "To github.com:janhq/jan.git\n   a1b2c3d..e4f5g6h  main -> main\nremote line\n[exit 0]";
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: content.into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let joined = group_detail_lines(&app.groups[0], 120)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("main -> main"), "middle line lost: {joined}");
+        assert!(joined.contains("remote line"), "line lost: {joined}");
+        assert!(joined.contains("[exit 0]"), "exit marker lost: {joined}");
+        assert!(!joined.contains("(+"), "must not summarize when expanded: {joined}");
+        // Single-call group: the command header must not be repeated inside the
+        // expansion (the summary row above already shows it).
+        assert!(!joined.contains("▸"), "duplicate command header: {joined}");
+        assert!(!joined.contains("git push"), "duplicate command label: {joined}");
     }
 
     #[test]
@@ -6346,5 +6883,84 @@ mod tests {
         // Editing the buffer re-shows the popup.
         app.input_insert('s');
         assert_eq!(names(&app), vec!["/resume"]);
+    }
+
+    #[test]
+    fn should_not_auto_compact_when_below_threshold() {
+        let app = test_app();
+        // Default context_window = 128K, reserve_tokens = 16K, so limit ~111K.
+        // With tokens = 50K and history = 6, no compact.
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_auto_compact_when_above_threshold() {
+        let mut app = test_app();
+        app.tokens = 120_000; // > 128K - 16K = 112K
+        // Need more than 4 history messages
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_when_history_too_short() {
+        let mut app = test_app();
+        app.tokens = 120_000;
+        // Only 3 messages — below the minimum of 5
+        for i in 0..3 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_with_zero_tokens() {
+        let mut app = test_app();
+        app.tokens = 0;
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_with_context_window_unset() {
+        let mut app = test_app();
+        app.tokens = 120_000;
+        app.context_window = u64::MAX; // effectively unlimited
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        // limit = u64::MAX - 16384 ≈ u64::MAX, so tokens=120K is well below
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn body_omits_max_tokens_when_unset() {
+        let app = test_app();
+        let body = app.body();
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn body_includes_max_tokens_when_set() {
+        let mut app = test_app();
+        app.max_tokens = Some(4096);
+        let body = app.body();
+        assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }

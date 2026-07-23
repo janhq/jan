@@ -5,6 +5,7 @@
 pub mod mcp;
 pub mod preset;
 pub mod providers;
+mod path_refs;
 mod tui;
 
 use std::path::PathBuf;
@@ -1034,6 +1035,15 @@ pub(crate) struct AgentSession {
     /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
     pub smol_model: String,
     pub max_turns: u32,
+    /// Context window limit in tokens for the model. Defaults to 128K if agent.toml
+    /// doesn't set it. Used to display `ctx N/K` in the header and trigger compaction.
+    pub context_window: u64,
+    /// Tokens reserved for the model's response. Defaults to 16K if unset.
+    /// Compaction triggers at `context_window - reserve_tokens`.
+    pub reserve_tokens: u64,
+    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
+    /// `None` omits the field (model default).
+    pub max_tokens: Option<u64>,
     /// Background local-router startup, awaited before the first turn. `None`
     /// for cloud models.
     pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
@@ -1048,12 +1058,18 @@ pub(crate) struct AgentSession {
 impl AgentSession {
     /// Build a streaming request body for the given conversation history.
     pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
-        serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": messages,
             "max_turns": self.max_turns,
             "stream": true,
-        })
+        });
+        // Forward the per-request output cap only when configured; it flows to
+        // the upstream via `copy_optional_chat_params`.
+        if let Some(max) = self.max_tokens {
+            body["max_tokens"] = serde_json::json!(max);
+        }
+        body
     }
 }
 
@@ -1147,6 +1163,9 @@ fn prepare_agent_session(
         model,
         smol_model,
         max_turns,
+        context_window: cfg.agent.context_window.unwrap_or(128_000),
+        reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
+        max_tokens: cfg.agent.max_tokens,
         router_task,
         mcp_servers,
         mcp_task,
@@ -1163,7 +1182,18 @@ fn prepare_agent_run(
 ) -> Result<PreparedRun, String> {
     let session =
         prepare_agent_session(project, model_override, max_turns_override, overrides, yolo)?;
-    let body = session.body(serde_json::json!([{ "role": "user", "content": task }]));
+    let project_root = resolve_project_root(project);
+    let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
+    let final_task = if injected.is_empty() {
+        clean_task
+    } else {
+        format!("{clean_task}\n\n---\nReferenced file contents:\n\n{injected}")
+    };
+    let body = session.body(serde_json::json!([{ "role": "user", "content": final_task }]));
+    // Emit resolved references stderr so the user sees what was injected
+    if !injected.is_empty() {
+        eprintln!("(resolved @path references)");
+    }
     Ok(PreparedRun {
         args: session.args,
         body,
@@ -1281,6 +1311,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Error { code, message } => {
             eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
         }
+        // The non-interactive CLI doesn't persist session state, so
+        // MessagesUpdated is a no-op here.
+        StreamEvent::MessagesUpdated { .. } => {}
         StreamEvent::PermissionRequest {
             request_id,
             tool_name,

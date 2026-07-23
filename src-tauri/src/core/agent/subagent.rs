@@ -361,7 +361,12 @@ fn resolve_dispatch(
 /// instead, bracketed by `SubagentStart`/`SubagentEnd`.
 fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
     use crate::core::agent::events::StreamEvent;
-    !matches!(ev, StreamEvent::Done { .. } | StreamEvent::Error { .. })
+    !matches!(
+        ev,
+        StreamEvent::Done { .. }
+            | StreamEvent::Error { .. }
+            | StreamEvent::MessagesUpdated { .. }
+    )
 }
 
 /// Final assistant text of a completion, or empty when the model returned none.
