@@ -1,0 +1,85 @@
+name: Manual release dependency tarballs (flatpak)
+
+# Builds offline dependency tarballs for reproducible/offline Flatpak builds:
+#   - cargo-vendor: vendored Rust crates + .cargo/config.toml
+#   - node-modules: fully installed Yarn workspace node_modules trees
+# Both are attached to the given release tag as downloadable assets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the tarballs to (e.g. v0.8.4)'
+        required: true
+      ref:
+        description: 'Git ref to build the tarballs from (defaults to the tag)'
+        required: false
+        default: ''
+
+jobs:
+  dependency-tarballs:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || inputs.tag }}
+
+      - name: Verify release exists
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Vendor Rust crates
+        working-directory: src-tauri
+        run: |
+          mkdir -p .cargo
+          cargo vendor --locked vendor > .cargo/config.toml
+          cat .cargo/config.toml
+
+      - name: Pack cargo-vendor tarball
+        run: |
+          tar -czf "jan-cargo-vendor-${TAG}.tar.gz" \
+            -C src-tauri \
+            .cargo/config.toml \
+            vendor \
+            Cargo.lock
+          ls -lh "jan-cargo-vendor-${TAG}.tar.gz"
+
+      - name: Install node dependencies
+        run: yarn install
+
+      - name: Pack node-modules tarball
+        run: |
+          find . -type d -name node_modules -prune -print0 \
+            | tar --null -czf "jan-node-modules-${TAG}.tar.gz" --files-from -
+          ls -lh "jan-node-modules-${TAG}.tar.gz"
+
+      - name: Generate checksums
+        run: sha256sum jan-cargo-vendor-*.tar.gz jan-node-modules-*.tar.gz > jan-dependency-tarballs-${TAG}.sha256
+
+      - name: Upload tarballs to release
+        run: |
+          gh release upload "$TAG" \
+            "jan-cargo-vendor-${TAG}.tar.gz" \
+            "jan-node-modules-${TAG}.tar.gz" \
+            "jan-dependency-tarballs-${TAG}.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber
