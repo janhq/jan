@@ -4412,16 +4412,17 @@ fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
 /// One-line path display shown below the input box.
 fn path_line(app: &App) -> Paragraph<'static> {
     let path = app.project_root.to_string_lossy();
-    let git = app
-        .git_branch
-        .as_ref()
-        .map(|b| format!(" ⎇ {}", b))
-        .unwrap_or_default();
-    Paragraph::new(Line::from(vec![
+    let mut spans = vec![
         Span::styled("📂 ", Style::new().dark_gray()),
         Span::styled(path.to_string(), Style::new().dark_gray()),
-        Span::styled(git, Style::new().dark_gray()),
-    ]))
+    ];
+    if let Some(branch) = app.git_branch.as_ref() {
+        spans.push(Span::styled(
+            format!(" ⎇ {}", branch),
+            Style::new().dark_gray(),
+        ));
+    }
+    Paragraph::new(Line::from(spans))
 }
 
 fn footer(app: &App) -> Paragraph<'static> {

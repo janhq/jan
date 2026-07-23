@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CRATE_DIR="$SCRIPT_DIR/src-tauri"
 INSTALL_DIR="${HOME}/.local/bin"
-BIN_NAME="jan-agent"
+BIN_NAME="jan"
 
 # Ensure install dir exists
 mkdir -p "$INSTALL_DIR"
