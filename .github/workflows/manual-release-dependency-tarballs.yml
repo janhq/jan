@@ -2,7 +2,8 @@ name: Manual release dependency tarballs (flatpak)
 
 # Builds offline dependency tarballs for reproducible/offline Flatpak builds:
 #   - cargo-vendor: vendored Rust crates + .cargo/config.toml
-#   - node-modules: fully installed Yarn workspace node_modules trees
+#   - yarn-cache: populated Yarn caches for both yarn projects (repo root and
+#     src-tauri/plugins), enabling offline `yarn install` in the Flatpak sandbox
 # Both are attached to the given release tag as downloadable assets.
 
 on:
@@ -64,22 +65,31 @@ jobs:
             Cargo.lock
           ls -lh "jan-cargo-vendor-${TAG}.tar.gz"
 
-      - name: Install node dependencies
-        run: yarn install
-
-      - name: Pack node-modules tarball
+      # Populate each yarn project's local cache. ENABLE_GLOBAL_CACHE=false
+      # forces the package zips into <project>/.yarn/cache so they can be
+      # tarred and later consumed by an offline `yarn install` in Flatpak.
+      # The repo has two independent yarn projects with separate lockfiles.
+      - name: Populate yarn caches (offline install source)
+        env:
+          YARN_ENABLE_GLOBAL_CACHE: 'false'
         run: |
-          find . -type d -name node_modules -prune -print0 \
-            | tar --null -czf "jan-node-modules-${TAG}.tar.gz" --files-from -
-          ls -lh "jan-node-modules-${TAG}.tar.gz"
+          yarn install
+          ( cd src-tauri/plugins && yarn install )
+
+      - name: Pack yarn-cache tarball
+        run: |
+          tar -czf "jan-yarn-cache-${TAG}.tar.gz" \
+            .yarn/cache \
+            src-tauri/plugins/.yarn/cache
+          ls -lh "jan-yarn-cache-${TAG}.tar.gz"
 
       - name: Generate checksums
-        run: sha256sum jan-cargo-vendor-*.tar.gz jan-node-modules-*.tar.gz > jan-dependency-tarballs-${TAG}.sha256
+        run: sha256sum jan-cargo-vendor-*.tar.gz jan-yarn-cache-*.tar.gz > jan-dependency-tarballs-${TAG}.sha256
 
       - name: Upload tarballs to release
         run: |
           gh release upload "$TAG" \
             "jan-cargo-vendor-${TAG}.tar.gz" \
-            "jan-node-modules-${TAG}.tar.gz" \
+            "jan-yarn-cache-${TAG}.tar.gz" \
             "jan-dependency-tarballs-${TAG}.sha256" \
             --repo "$GITHUB_REPOSITORY" --clobber
