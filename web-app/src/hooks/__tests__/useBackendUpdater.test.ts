@@ -127,6 +127,219 @@ describe('useBackendUpdater', () => {
     expect(result.current.updateState.isUpdateAvailable).toBe(true)
   })
 
+  // --- getLlamacppExtension scoped-name fallback ---
+
+  it('installBackend works with scoped extension name', async () => {
+    const mockInstall = vi.fn().mockResolvedValue(undefined)
+    const mockRefresh = vi.fn().mockResolvedValue(undefined)
+
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === '@janhq/llamacpp-extension') {
+        return {
+          installBackend: mockInstall,
+          refreshBackendOptions: mockRefresh,
+        }
+      }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installBackend('/path/to/backend.zip')
+    })
+
+    expect(mockInstall).toHaveBeenCalledWith('/path/to/backend.zip')
+    expect(mockRefresh).toHaveBeenCalled()
+  })
+
+  it('installBackend falls back to unscoped extension name', async () => {
+    const mockInstall = vi.fn().mockResolvedValue(undefined)
+    const mockConfigure = vi.fn().mockResolvedValue(undefined)
+
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === 'llamacpp-extension') {
+        return {
+          installBackend: mockInstall,
+          configureBackends: mockConfigure,
+        }
+      }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installBackend('/path/to/backend.zip')
+    })
+
+    expect(mockInstall).toHaveBeenCalledWith('/path/to/backend.zip')
+    expect(mockConfigure).toHaveBeenCalled()
+  })
+
+  it('installBackend throws when extension not found', async () => {
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await expect(
+      act(async () => {
+        await result.current.installBackend('/path/to/backend.zip')
+      })
+    ).rejects.toThrow('Extension does not support backend installation')
+  })
+
+  it('installBackend prefers refreshBackendOptions over configureBackends', async () => {
+    const mockInstall = vi.fn().mockResolvedValue(undefined)
+    const mockRefresh = vi.fn().mockResolvedValue(undefined)
+    const mockConfigure = vi.fn().mockResolvedValue(undefined)
+
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === '@janhq/llamacpp-extension') {
+        return {
+          installBackend: mockInstall,
+          refreshBackendOptions: mockRefresh,
+          configureBackends: mockConfigure,
+        }
+      }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installBackend('/path/to/backend.zip')
+    })
+
+    expect(mockRefresh).toHaveBeenCalled()
+    expect(mockConfigure).not.toHaveBeenCalled()
+  })
+
+  it('installCudaRuntime works with scoped extension name', async () => {
+    const mockInstall = vi.fn().mockResolvedValue(undefined)
+
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === '@janhq/llamacpp-extension') {
+        return { installCudaRuntime: mockInstall }
+      }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installCudaRuntime('/path/to/cuda.zip')
+    })
+
+    expect(mockInstall).toHaveBeenCalledWith('/path/to/cuda.zip')
+  })
+
+  it('installCudaRuntime falls back to unscoped extension name', async () => {
+    const mockInstall = vi.fn().mockResolvedValue(undefined)
+
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === 'llamacpp-extension') {
+        return { installCudaRuntime: mockInstall }
+      }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installCudaRuntime('/path/to/cuda.zip')
+    })
+
+    expect(mockInstall).toHaveBeenCalledWith('/path/to/cuda.zip')
+  })
+
+  it('installCudaRuntime throws when extension not found', async () => {
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await expect(
+      act(async () => {
+        await result.current.installCudaRuntime('/path/to/cuda.zip')
+      })
+    ).rejects.toThrow('Extension does not support CUDA runtime installation')
+  })
+
+  it('installCudaRuntime throws when extension lacks installCudaRuntime method', async () => {
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === '@janhq/llamacpp-extension') {
+        return {} // no installCudaRuntime method
+      }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await expect(
+      act(async () => {
+        await result.current.installCudaRuntime('/path/to/cuda.zip')
+      })
+    ).rejects.toThrow('Extension does not support CUDA runtime installation')
+  })
+
+  it('searches scoped extension name before fallback', async () => {
+    // Only unscoped name yields an extension; scoped returns null.
+    // This tests that the scoped lookup happens first.
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === '@janhq/llamacpp-extension') return null
+      if (name === 'llamacpp-extension')
+        return {
+          installBackend: vi.fn().mockResolvedValue(undefined),
+          refreshBackendOptions: vi.fn().mockResolvedValue(undefined),
+        }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installBackend('/path/to/backend.zip')
+    })
+
+    // Both names were consulted during the lookup.
+    const llamacppCalls = mockGetByName.mock.calls.filter(
+      (c) =>
+        c[0] === '@janhq/llamacpp-extension' || c[0] === 'llamacpp-extension'
+    )
+    // At minimum one scoped + one unscoped call (there may be more from
+    // the auto-update-setting check which also calls getLlamacppExtension).
+    expect(llamacppCalls.length).toBeGreaterThanOrEqual(2)
+    // The very first call for any llamacpp name is the scoped one.
+    expect(llamacppCalls[0][0]).toBe('@janhq/llamacpp-extension')
+    expect(llamacppCalls[1][0]).toBe('llamacpp-extension')
+  })
+
+  it('does not fall back when scoped name resolves', async () => {
+    mockGetByName.mockImplementation((name: string) => {
+      if (name === '@janhq/llamacpp-extension')
+        return {
+          installBackend: vi.fn().mockResolvedValue(undefined),
+          refreshBackendOptions: vi.fn().mockResolvedValue(undefined),
+        }
+      return null
+    })
+
+    const { useBackendUpdater } = await import('../useBackendUpdater')
+    const { result } = renderHook(() => useBackendUpdater())
+
+    await act(async () => {
+      await result.current.installBackend('/path/to/backend.zip')
+    })
+
+    // Scoped name was found; unscoped should not be consulted.
+    expect(mockGetByName).not.toHaveBeenCalledWith('llamacpp-extension')
+  })
+
   it('checkForUpdate returns null when no update needed', async () => {
     mockGetByName.mockReturnValue({
       checkBackendForUpdates: vi.fn().mockResolvedValue({ updateNeeded: false, newVersion: '' }),
