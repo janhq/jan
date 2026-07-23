@@ -97,15 +97,123 @@ pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_pr
     );
 }
 
+fn xml_attribute(tag: &str, name: &str) -> Option<String> {
+    let mut rest = tag;
+    while let Some(index) = rest.find(name) {
+        let before = rest[..index].chars().next_back();
+        let after_name = &rest[index + name.len()..];
+        if before.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            || after_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            rest = after_name;
+            continue;
+        }
+        let after_equals = after_name.trim_start().strip_prefix('=')?.trim_start();
+        let quote = after_equals.chars().next()?;
+        if quote != '"' && quote != '\'' {
+            return None;
+        }
+        let value = &after_equals[quote.len_utf8()..];
+        let end = value.find(quote)?;
+        return Some(decode_xml_text(&value[..end]));
+    }
+    None
+}
+
+fn decode_xml_text(value: &str) -> String {
+    value
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+/// Compatibility adapter for providers that serialize Anthropic-style
+/// `<function_calls><invoke ...>` markup into assistant content instead of
+/// returning OpenAI `message.tool_calls`.
+fn extract_xml_tool_calls(content: &str) -> Vec<serde_json::Value> {
+    if !content.contains("<function_calls") {
+        return Vec::new();
+    }
+
+    let mut calls = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut rest = content;
+    while let Some(invoke_start) = rest.find("<invoke") {
+        rest = &rest[invoke_start..];
+        let Some(open_end) = rest.find('>') else {
+            break;
+        };
+        let open_tag = &rest[..=open_end];
+        let Some(name) = xml_attribute(open_tag, "name") else {
+            rest = &rest[open_end + 1..];
+            continue;
+        };
+        let after_open = &rest[open_end + 1..];
+        let Some(invoke_end) = after_open.find("</invoke>") else {
+            break;
+        };
+        let body = &after_open[..invoke_end];
+        let mut arguments = serde_json::Map::new();
+        let mut params = body;
+        while let Some(param_start) = params.find("<parameter") {
+            params = &params[param_start..];
+            let Some(param_open_end) = params.find('>') else {
+                break;
+            };
+            let param_tag = &params[..=param_open_end];
+            let after_param_open = &params[param_open_end + 1..];
+            let Some(param_end) = after_param_open.find("</parameter>") else {
+                break;
+            };
+            if let Some(param_name) = xml_attribute(param_tag, "name") {
+                let decoded = decode_xml_text(after_param_open[..param_end].trim());
+                let value = serde_json::from_str(&decoded)
+                    .unwrap_or_else(|_| serde_json::Value::String(decoded));
+                arguments.insert(param_name, value);
+            }
+            params = &after_param_open[param_end + "</parameter>".len()..];
+        }
+
+        let arguments = serde_json::Value::Object(arguments).to_string();
+        let signature = format!("{name}\0{arguments}");
+        if seen.insert(signature) {
+            calls.push(serde_json::json!({
+                "id": format!("compat-tool-{}", calls.len() + 1),
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": arguments
+                }
+            }));
+        }
+        rest = &after_open[invoke_end + "</invoke>".len()..];
+    }
+    calls
+}
+
 pub(crate) fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
-    response
+    let Some(message) = response
         .get("choices")
         .and_then(|c| c.as_array())
         .and_then(|choices| choices.first())
         .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("tool_calls"))
-        .and_then(|tc| tc.as_array())
-        .map(|arr| arr.to_vec())
+    else {
+        return Vec::new();
+    };
+    if let Some(calls) = message.get("tool_calls").and_then(|tc| tc.as_array()) {
+        if !calls.is_empty() {
+            return calls.to_vec();
+        }
+    }
+    message
+        .get("content")
+        .and_then(serde_json::Value::as_str)
+        .map(extract_xml_tool_calls)
         .unwrap_or_default()
 }
 
@@ -750,6 +858,38 @@ mod tests {
     fn parse_messages_rejects_missing_content() {
         let messages = json!([{ "role": "user" }]);
         assert!(parse_openai_messages(&messages).is_err());
+    }
+
+    #[test]
+    fn extracts_anthropic_xml_tool_calls_from_assistant_content() {
+        let response = json!({
+            "choices": [{
+                "message": {
+                    "content": "Starting research.\n<function_calls>\n<invoke name=\"web_search\">\n<parameter name=\"query\">robotics &amp; AI July 2026</parameter>\n<parameter name=\"limit\">5</parameter>\n</invoke>\n</function_calls>"
+                }
+            }]
+        });
+
+        let calls = extract_tool_calls(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["function"]["name"], "web_search");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                calls[0]["function"]["arguments"].as_str().unwrap()
+            )
+            .unwrap(),
+            json!({ "query": "robotics & AI July 2026", "limit": 5 })
+        );
+    }
+
+    #[test]
+    fn xml_tool_call_fallback_deduplicates_repeated_provider_output() {
+        let call = "<function_calls><invoke name='web_search'><parameter name='query'>robotics news</parameter></invoke></function_calls>";
+        let response = json!({
+            "choices": [{ "message": { "content": format!("{call}\n{call}") } }]
+        });
+
+        assert_eq!(extract_tool_calls(&response).len(), 1);
     }
 
     #[test]

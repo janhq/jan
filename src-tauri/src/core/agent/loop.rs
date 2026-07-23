@@ -948,6 +948,7 @@ fn build_completion_request(
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
     json_body: &serde_json::Value,
+    require_tool_use: bool,
 ) -> serde_json::Value {
     let mut completion_map = serde_json::Map::new();
     completion_map.insert("model".to_string(), serde_json::json!(model_id));
@@ -955,7 +956,10 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
+    completion_map.insert(
+        "tool_choice".to_string(),
+        serde_json::json!(if require_tool_use { "required" } else { "auto" }),
+    );
     if !openai_tools.is_empty() {
         completion_map.insert(
             "tools".to_string(),
@@ -1043,6 +1047,13 @@ async fn run_turn_cycle(
     // `MessagesUpdated` even when compaction happened on a prior (tool-call)
     // turn and the final turn itself didn't need retry.
     let mut did_compact = false;
+    // A subagent with an explicit tool allowlist must make at least one native
+    // tool call. Afterwards, restore `auto` so it can finish normally.
+    let mut require_tool_use = json_body
+        .get("_require_tool_use")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        && !openai_tools.is_empty();
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
@@ -1056,8 +1067,13 @@ async fn run_turn_cycle(
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
-                let request_value =
-                    build_completion_request(model_id, &conversation_messages, openai_tools, json_body);
+                let request_value = build_completion_request(
+                    model_id,
+                    &conversation_messages,
+                    openai_tools,
+                    json_body,
+                    require_tool_use,
+                );
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
                     Err(e)
@@ -1102,6 +1118,7 @@ async fn run_turn_cycle(
             }
             return Ok(completion);
         }
+        require_tool_use = false;
 
         if budget.exhausted() {
             return Err(format!(
@@ -1224,11 +1241,13 @@ mod tests {
 
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
+        requests: StdMutex<Vec<serde_json::Value>>,
     }
     impl MockModel {
         fn new(responses: Vec<serde_json::Value>) -> Self {
             Self {
                 responses: StdMutex::new(responses.into_iter().collect()),
+                requests: StdMutex::new(Vec::new()),
             }
         }
     }
@@ -1236,9 +1255,10 @@ mod tests {
     impl ModelInvoker for MockModel {
         async fn invoke(
             &self,
-            _request: &serde_json::Value,
+            request: &serde_json::Value,
             _events: &mpsc::UnboundedSender<StreamEvent>,
         ) -> Result<serde_json::Value, String> {
+            self.requests.lock().unwrap().push(request.clone());
             self.responses
                 .lock()
                 .unwrap()
@@ -1336,6 +1356,91 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    #[tokio::test]
+    async fn subagent_requires_one_native_tool_call_then_restores_auto() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search",
+                "parameters": { "type": "object" }
+            }
+        })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({ "_require_tool_use": true }),
+            "m",
+            &tools,
+            vec![json!({ "role": "user", "content": "research this" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["tool_choice"], "required");
+        assert_eq!(requests[1]["tool_choice"], "auto");
+        assert!(requests[0].get("_require_tool_use").is_none());
+    }
+
+    #[tokio::test]
+    async fn turn_cycle_executes_provider_xml_tool_call_fallback() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({
+                "choices": [{
+                    "message": {
+                        "content": "Starting.\n<function_calls><invoke name=\"web_search\"><parameter name=\"query\">robotics news</parameter></invoke></function_calls>"
+                    },
+                    "finish_reason": "stop"
+                }]
+            }),
+            json!({ "choices": [{ "message": { "content": "research complete" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({ "_require_tool_use": true }),
+            "m",
+            &[json!({
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "parameters": { "type": "object" }
+                }
+            })],
+            vec![json!({ "role": "user", "content": "research this" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result["choices"][0]["message"]["content"],
+            "research complete"
+        );
+        let calls = tool.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0][0]["function"]["name"], "web_search");
     }
 
     #[tokio::test]

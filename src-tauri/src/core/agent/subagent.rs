@@ -487,6 +487,11 @@ fn child_body(
     body.insert("max_turns".to_string(), serde_json::json!(0));
     body.insert("stream".to_string(), serde_json::json!(true));
     if let Some(tools) = &resolved.allowed_tools {
+        // An explicit non-empty allowlist means this task was provisioned to
+        // use those tools. Require one native call, then restore `auto`.
+        if !tools.is_empty() {
+            body.insert("_require_tool_use".to_string(), serde_json::json!(true));
+        }
         body.insert("allowed_tools".to_string(), serde_json::json!(tools));
     }
     if let Some(remaining) = budget_remaining {
@@ -1156,6 +1161,29 @@ mod tests {
             resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
         assert_eq!(resolved.allowed_tools, Some(vec!["read".to_string()]));
         assert_eq!(resolved.definition.system_prompt, "sp");
+    }
+
+    #[test]
+    fn child_body_requires_native_call_for_explicit_nonempty_allowlist() {
+        let p = ToolPermissions::allow_all();
+        let restricted = resolve_dispatch(
+            &registry_with("researcher", Some(vec!["web_search".to_string()])),
+            &req("researcher", None),
+            &p,
+        )
+        .unwrap();
+        let unrestricted =
+            resolve_dispatch(&registry_with("helper", None), &req("helper", None), &p).unwrap();
+
+        assert_eq!(
+            child_body(&restricted, "research", "m", None)["_require_tool_use"],
+            true
+        );
+        assert!(
+            child_body(&unrestricted, "answer", "m", None)
+                .get("_require_tool_use")
+                .is_none()
+        );
     }
 
     #[test]
