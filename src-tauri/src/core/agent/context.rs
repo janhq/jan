@@ -4,6 +4,9 @@
 
 use std::path::Path;
 
+use chrono::Local;
+
+use crate::core::agent::git;
 use crate::core::agent::skills;
 
 /// Default persona used only when no assistant instructions are supplied, so a
@@ -131,11 +134,52 @@ user what's wrong.";
 /// model delegates context-heavy exploration instead of exhausting its own
 /// (limited) context window reading files and tool output directly.
 const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited. For open-ended exploration \
-that could pull in a lot of file content or tool output (broad codebase search, reading many files, \
+that could pull in a lot of file content or tool output (broad codebase search, reading files, many \
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
 in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
 targeted tasks where delegating would cost more than it saves.";
+
+/// Build a compact runtime environment block injected into the system prompt at
+/// session start so the agent is grounded from turn one. Mirrors the
+/// `<workstation>` / cwd / date context blocks that harnesses like this one
+/// already inject. Fields: working directory, OS/platform/arch, date, shell, and
+/// git state (branch name when the project is inside a git repo). Kept short —
+/// a few lines, not a wall of text.
+fn runtime_environment_block(project_root: &Path) -> String {
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let os = format!(
+        "{} {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+
+    let now = Local::now();
+    let date = now.format("%Y-%m-%d").to_string();
+
+    let shell = std::env::var("SHELL")
+        .or_else(|_| std::env::var("COMSPEC"))
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    let git_branch = git::current_branch(project_root);
+    let git_line = match &git_branch {
+        Some(branch) => format!("Git branch: `{branch}`"),
+        None => "Git: not a git repository (or no commits yet)".to_string(),
+    };
+
+    format!(
+        "# Runtime Environment\n\n\
+Work directory: `{cwd}`\n\
+OS: `{os}`\n\
+Date: `{date}`\n\
+Shell: `{shell}`\n\
+{git_line}"
+    )
+}
 
 /// Assemble the project system prompt: the optional base prompt, the always-on
 /// built-in skills/memory guide, then any project-authored skills. The guide is
@@ -155,6 +199,7 @@ pub(crate) fn build_system_prompt(
         "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
         project_root.display()
     ));
+    blocks.push(runtime_environment_block(project_root));
     if subagents_enabled {
         blocks.push(SUBAGENT_GUIDE.to_string());
     }
@@ -327,6 +372,57 @@ mod tests {
         assert!(!without.contains("dispatch_subagent"));
         let with = build_system_prompt(None, &root, true).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ── Runtime environment block ────────────────────────────────────────
+
+    #[test]
+    fn runtime_environment_block_is_compact() {
+        let root = scratch_project("env");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root);
+        // Must be a handful of lines, not a wall of text.
+        let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
+        assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
+        // Must contain the key sections.
+        assert!(block.contains("# Runtime Environment"));
+        assert!(block.contains("Work directory:"));
+        assert!(block.contains("OS:"));
+        assert!(block.contains("Date:"));
+        assert!(block.contains("Shell:"));
+        assert!(block.contains("Git:"));
+        // Must reference actual compile-time constants.
+        assert!(block.contains(std::env::consts::OS));
+        assert!(block.contains(std::env::consts::ARCH));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn runtime_environment_block_injected_into_system_prompt() {
+        let root = scratch_project("inject");
+        std::fs::create_dir_all(&root).unwrap();
+        let out = build_system_prompt(None, &root, false).expect("prompt");
+        assert!(out.contains("# Runtime Environment"));
+        assert!(out.contains("Work directory:"));
+        // The block sits right after the Working Directory section.
+        let work_dir_pos = out.find("# Working Directory").unwrap();
+        let env_pos = out.find("# Runtime Environment").unwrap();
+        assert!(work_dir_pos < env_pos, "env block must come after working directory");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn runtime_environment_block_answers_os_date_cwd() {
+        let root = scratch_project("answer");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root);
+        // The date field must be a real-looking ISO date.
+        assert!(block.contains("Date: `20"), "date should be a 20xx year");
+        // The OS field must identify the host platform.
+        assert!(block.contains(format!("OS: `{}", std::env::consts::OS).as_str()));
+        // Work directory should be present and non-empty.
+        assert!(!block.contains("Work directory: ``"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
