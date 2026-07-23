@@ -69,19 +69,45 @@ pub(crate) fn parse_openai_messages(
             .get("role")
             .and_then(|v| v.as_str())
             .ok_or("Each message must include a string 'role'")?;
+
+        // Assistant tool-call turns carry `tool_calls` and may have `content: null`
+        // (or omit it entirely) per the OpenAI protocol. `tool` result messages
+        // carry a `tool_call_id`. These shapes flow back into the conversation
+        // history (see MessagesUpdated), so a follow-up request re-submits them and
+        // must preserve them verbatim -- otherwise the assistant/tool pairing is
+        // broken and content-null turns are wrongly rejected.
+        let has_tool_calls = msg
+            .get("tool_calls")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| !a.is_empty());
+        let tool_call_id = msg.get("tool_call_id").and_then(|v| v.as_str());
+
         // Content is a plain string or an OpenAI multimodal content-part array
-        // (text + image_url); pass either through verbatim.
+        // (text + image_url); pass either through verbatim. It may be null (or
+        // absent) only when the assistant message carries tool_calls.
         let content = match msg.get("content") {
             Some(v @ serde_json::Value::String(_)) | Some(v @ serde_json::Value::Array(_)) => {
                 v.clone()
             }
+            // Null/absent content is valid for an assistant turn whose payload is
+            // entirely tool calls; normalize to null so upstream sees a well-formed
+            // message.
+            Some(serde_json::Value::Null) | None if has_tool_calls || tool_call_id.is_some() => {
+                serde_json::Value::Null
+            }
             _ => return Err("Each message must include 'content' as a string or array".into()),
         };
 
-        out.push(serde_json::json!({
-            "role": role,
-            "content": content
-        }));
+        let mut obj = serde_json::Map::new();
+        obj.insert("role".to_string(), serde_json::json!(role));
+        obj.insert("content".to_string(), content);
+        if has_tool_calls {
+            obj.insert("tool_calls".to_string(), msg["tool_calls"].clone());
+        }
+        if let Some(id) = tool_call_id {
+            obj.insert("tool_call_id".to_string(), serde_json::json!(id));
+        }
+        out.push(serde_json::Value::Object(obj));
     }
     Ok(out)
 }
@@ -749,6 +775,47 @@ mod tests {
     #[test]
     fn parse_messages_rejects_missing_content() {
         let messages = json!([{ "role": "user" }]);
+        assert!(parse_openai_messages(&messages).is_err());
+    }
+
+    #[test]
+    fn parse_messages_allows_null_content_assistant_tool_call_turn() {
+        // An assistant tool-call turn (content: null + tool_calls) round-trips
+        // through history and must be re-parseable on a follow-up request.
+        let messages = json!([{
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": { "name": "write", "arguments": "{}" }
+            }]
+        }]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert_eq!(out[0]["role"], "assistant");
+        assert!(out[0]["content"].is_null());
+        assert_eq!(out[0]["tool_calls"][0]["id"], "call_1");
+    }
+
+    #[test]
+    fn parse_messages_preserves_tool_result_message() {
+        // A role:tool result must keep its tool_call_id so the assistant/tool
+        // pairing stays valid when the conversation is re-submitted.
+        let messages = json!([{
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "wrote file"
+        }]);
+        let out = parse_openai_messages(&messages).unwrap();
+        assert_eq!(out[0]["role"], "tool");
+        assert_eq!(out[0]["tool_call_id"], "call_1");
+        assert_eq!(out[0]["content"], "wrote file");
+    }
+
+    #[test]
+    fn parse_messages_still_rejects_null_content_without_tool_calls() {
+        // A plain assistant/user turn with null content is still invalid.
+        let messages = json!([{ "role": "assistant", "content": null }]);
         assert!(parse_openai_messages(&messages).is_err());
     }
 
