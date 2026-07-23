@@ -38,6 +38,32 @@ describe('collectCodeFileDiffs', () => {
       { diff: '@@ edit 1/1 @@\n+    2 | next', source: 'main' },
     ])
   })
+  it('includes only write/edit tool diffs and ignores path-bearing bash output', () => {
+    const files = collectCodeFileDiffs(
+      [
+        edit('src/edit.ts', '+    1 | edit'),
+        edit('src/write.ts', '+    1 | write', { name: 'write' }),
+        edit('src/bash.ts', '+    1 | ignored bash diff', { name: 'bash' }),
+        edit('src/assistant.ts', '+    1 | ignored assistant diff', {
+          role: 'assistant',
+        }),
+      ],
+      []
+    )
+
+    expect(files.map((file) => file.path)).toEqual([
+      'src/edit.ts',
+      'src/write.ts',
+    ])
+    expect(
+      files.flatMap((file) =>
+        file.operations.map((operation) => operation.diff)
+      )
+    ).toEqual([
+      '+    1 | edit',
+      '+    1 | write',
+    ])
+  })
 
   it('keeps main trace first, then subagents in current run order', () => {
     const subagents = [
