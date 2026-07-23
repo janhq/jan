@@ -735,6 +735,26 @@ impl BashCapture {
     }
 }
 
+/// True when a `bash` tool result reports failure via its exit marker: a
+/// non-zero `[exit N]` or a signal termination. The marker is emitted by
+/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
+/// so scan every line rather than only the tail. Model-facing content is
+/// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
+/// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
+/// the display-only `is_error` flag so the TUI marks the call failed.
+pub(crate) fn bash_result_failed(content: &str) -> bool {
+    content.lines().any(|line| {
+        let l = line.trim();
+        if l == "[terminated by signal]" {
+            return true;
+        }
+        l.strip_prefix("[exit ")
+            .and_then(|r| r.strip_suffix(']'))
+            .and_then(|n| n.parse::<i32>().ok())
+            .is_some_and(|code| code != 0)
+    })
+}
+
 impl Drop for BashCapture {
     /// Reclaim the spill file on any path that drops the capture without
     /// consuming it via `finish` (e.g. `child.wait()` erroring). `finish`
@@ -1446,6 +1466,19 @@ mod tests {
         let out = execute_builtin(lookup("bash").unwrap(), &json!({}), &root).await;
         assert!(out.starts_with("ERROR: missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bash_result_failed_detects_nonzero_and_signal_markers() {
+        assert!(bash_result_failed("output\n[exit 1]"));
+        assert!(bash_result_failed("output\n[exit 127]"));
+        assert!(bash_result_failed("[terminated by signal]"));
+        // Truncation note follows the marker on its own line: still detected.
+        assert!(bash_result_failed(
+            "output\n[exit 2]\n[output truncated at 10 of 99 bytes]"
+        ));
+        assert!(!bash_result_failed("output\n[exit 0]"));
+        assert!(!bash_result_failed("plain output, no marker"));
     }
 
     #[tokio::test]
