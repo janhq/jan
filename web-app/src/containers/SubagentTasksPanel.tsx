@@ -1,16 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from 'react'
-import {
-  ChevronLeft,
-  ChevronDown,
-  X,
-  Loader2,
-  Sparkles,
-  AlertCircle,
-  Square,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react'
+import { ChevronLeft, ChevronDown, Loader2, Sparkles, AlertCircle, Square } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
 import type { SubagentRun } from '@/hooks/useCodeSessions'
@@ -21,6 +11,7 @@ import {
   Conversation,
   ConversationContent,
 } from '@/components/ai-elements/conversation'
+import { CodeSidePanel } from '@/containers/CodeSidePanel'
 
 /** One row in the running/finished lists. */
 function TaskRow({
@@ -165,7 +156,6 @@ export function SubagentTasksPanel({
 }) {
   const { t } = useTranslation()
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
 
   // Tick once a second while anything is running so the elapsed counters move.
   // Skipped while a detail view is open — that view doesn't render the
@@ -186,16 +176,10 @@ export function SubagentTasksPanel({
   const finishedRuns = subagents.filter((s) => s.status === 'done')
 
   return (
-    <div
-      className={cn(
-        'flex h-full shrink-0 flex-col border-l bg-main-view',
-        // max-w caps growth so the panel can never squeeze the chat column's
-        // min-w-0 sibling down to invisible on a narrower window.
-        expanded ? 'w-[32rem] max-w-[60vw]' : 'w-80'
-      )}
-    >
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
-        {selected ? (
+    <CodeSidePanel
+      title={selected ? selected.name : t('common:backgroundTasks')}
+      leading={
+        selected ? (
           <button
             type="button"
             onClick={() => setSelectedRunId(null)}
@@ -204,35 +188,14 @@ export function SubagentTasksPanel({
           >
             <ChevronLeft size={18} />
           </button>
-        ) : null}
-        <span className="flex-1 truncate text-sm font-medium">
-          {selected ? selected.name : t('common:backgroundTasks')}
-        </span>
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="text-main-view-fg/60 hover:text-main-view-fg"
-          aria-label={expanded ? t('common:collapse') : t('common:expand')}
-          title={expanded ? t('common:collapse') : t('common:expand')}
-        >
-          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-main-view-fg/60 hover:text-main-view-fg"
-          aria-label={t('common:close')}
-        >
-          <X size={18} />
-        </button>
-      </div>
-
+        ) : undefined
+      }
+      onClose={onClose}
+    >
       {selected ? (
-        <div className="min-h-0 flex-1">
-          <TaskDetail run={selected} />
-        </div>
+        <TaskDetail run={selected} />
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="h-full overflow-y-auto p-3">
           {subagents.length === 0 ? (
             <p className="px-1 py-6 text-center text-sm text-main-view-fg/50">
               {t('common:noBackgroundTasks')}
@@ -272,7 +235,7 @@ export function SubagentTasksPanel({
           )}
         </div>
       )}
-    </div>
+    </CodeSidePanel>
   )
 }
 
