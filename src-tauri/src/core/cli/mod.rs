@@ -25,11 +25,6 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 #[cfg(target_os = "macos")]
 use tauri_plugin_mlx::state::MlxState;
 
-#[cfg(target_os = "macos")]
-pub use tauri_plugin_mlx::state::SessionInfo;
-#[cfg(target_os = "macos")]
-pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
-
 // ── State constructors ─────────────────────────────────────────────────────
 
 pub fn init_llamacpp_state() -> LlamacppState {
@@ -340,7 +335,7 @@ pub fn resolve_model_engine(model_id: &str) -> Result<(String, PathBuf, Option<P
     }
     Err(format!(
         "Model '{}' not found for any engine. \
-        Run `jan models list` to see available models.",
+        Run `jan cli models list` to see available models.",
         model_id
     ))
 }
@@ -365,7 +360,7 @@ pub fn resolve_model_by_id(
     if !yml_path.exists() {
         return Err(format!(
             "Model '{}' not found for engine '{}'. \
-            Run `jan models list` to see available models.",
+            Run `jan cli models list` to see available models.",
             model_id, engine
         ));
     }
@@ -451,236 +446,6 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
     None
 }
 
-/// Find the mlx-server binary.
-///
-/// Checks standard locations in order:
-///   1. `/Applications/Jan.app/Contents/Resources/bin/mlx-server` (installed app)
-///   2. Next to the running binary (for dev/custom installs)
-#[cfg(target_os = "macos")]
-pub fn discover_mlx_binary() -> Option<PathBuf> {
-    // 1. Standard macOS app bundle locations (try both path variants)
-    for candidate in &[
-        "/Applications/Jan.app/Contents/Resources/resources/bin/mlx-server",
-        "/Applications/Jan.app/Contents/Resources/bin/mlx-server",
-    ] {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // 2. Next to the current executable (useful for dev builds / custom installs)
-    if let Ok(exe_dir) =
-        std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default())
-    {
-        let next_to_bin = exe_dir.join("mlx-server");
-        if next_to_bin.exists() {
-            return Some(next_to_bin);
-        }
-    }
-
-    None
-}
-
-// ── HuggingFace download ───────────────────────────────────────────────────
-
-/// A single file entry from a HuggingFace repository.
-#[derive(Debug, Clone)]
-pub struct HfFileInfo {
-    /// Original filename in the repo (e.g. `qwen3-30b.Q4_K_M.gguf`)
-    pub filename: String,
-    /// Total size in bytes (from HF metadata or LFS pointer)
-    pub size: u64,
-    /// SHA-256 from the LFS pointer, used for integrity validation
-    pub sha256: Option<String>,
-    /// Direct download URL (`https://huggingface.co/{repo}/resolve/main/{file}`)
-    pub download_url: String,
-}
-
-/// Return `true` if `s` looks like a HuggingFace repo ID (`owner/repo`).
-///
-/// A valid HF repo ID has exactly one `/`, both parts non-empty, no
-/// filesystem path markers, and only alphanumeric / `-` / `_` / `.` chars.
-pub fn looks_like_hf_repo(s: &str) -> bool {
-    if s.starts_with('/') || s.starts_with('.') || s.starts_with('~') {
-        return false;
-    }
-    let Some((owner, name)) = s.split_once('/') else {
-        return false;
-    };
-    if owner.is_empty() || name.is_empty() || name.contains('/') {
-        return false;
-    }
-    let ok = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.');
-    owner.chars().all(ok) && name.chars().all(ok)
-}
-
-/// Fetch the list of GGUF files available in a HuggingFace repository.
-///
-/// Results are sorted by size ascending so smaller quantizations appear first.
-/// Passes `hf_token` as a Bearer token when provided.
-pub async fn fetch_hf_gguf_files(
-    repo_id: &str,
-    hf_token: Option<&str>,
-) -> Result<Vec<HfFileInfo>, String> {
-    let url = format!(
-        "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
-        repo_id
-    );
-
-    let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
-
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    let status = resp.status();
-
-    if !status.is_success() {
-        return Err(match status.as_u16() {
-            401 | 403 => format!(
-                "HuggingFace returned {status} for '{repo_id}'. \
-                The repo may be gated — set the HF_TOKEN environment variable."
-            ),
-            404 => format!(
-                "HuggingFace repo '{repo_id}' not found. \
-                Check the repo ID or run `jan models list` to see local models."
-            ),
-            _ => format!("HuggingFace API error {status} for '{repo_id}'."),
-        });
-    }
-
-    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    let siblings = body["siblings"]
-        .as_array()
-        .ok_or_else(|| "Unexpected HuggingFace API response format".to_string())?;
-
-    let mut files: Vec<HfFileInfo> = siblings
-        .iter()
-        .filter_map(|s| {
-            let name = s["rfilename"].as_str()?;
-            if !name.to_lowercase().ends_with(".gguf") {
-                return None;
-            }
-            // Prefer LFS size, fall back to top-level size field
-            let size = s["lfs"]["size"]
-                .as_u64()
-                .or_else(|| s["size"].as_u64())
-                .unwrap_or(0);
-            let sha256 = s["lfs"]["sha256"].as_str().map(str::to_owned);
-            let download_url = format!("https://huggingface.co/{}/resolve/main/{}", repo_id, name);
-            Some(HfFileInfo {
-                filename: name.to_owned(),
-                size,
-                sha256,
-                download_url,
-            })
-        })
-        .collect();
-    write_messages_to_file(&messages, &get_messages_path(base, &id))?;
-
-    let existing: Option<serde_json::Value> =
-        std::fs::read_to_string(get_thread_metadata_path(base, &id))
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok());
-    let created = existing
-        .as_ref()
-        .and_then(|e| e.get("created").and_then(serde_json::Value::as_f64))
-        .unwrap_or(now_secs);
-    let title = existing
-        .as_ref()
-        .and_then(|e| e.get("title").and_then(|v| v.as_str()))
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| default_thread_title(history));
-
-    // Preserve prior metadata when the caller passes none (e.g. a plain save with
-    // no worktree state), so an update never drops isolation bookkeeping.
-    let metadata = metadata
-        .or_else(|| existing.as_ref().and_then(|e| e.get("metadata").cloned()))
-        .unwrap_or_else(|| serde_json::json!({}));
-
-    let thread = serde_json::json!({
-        "id": id,
-        "object": "thread",
-        "title": title,
-        "created": created,
-        "updated": now_secs,
-        "model": { "id": model, "provider": "" },
-        "metadata": metadata,
-    });
-    update_thread_metadata(base, &id, &thread)?;
-    Ok(id)
-}
-
-/// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
-/// so it is remembered on the next session (agent.toml wins over the desktop
-/// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
-pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
-    set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
-}
-
-    let data_folder = resolve_jan_data_folder();
-    let model_dir = data_folder.join("llamacpp").join("models").join(repo_id);
-    tokio::fs::create_dir_all(&model_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let dest_path = model_dir.join(&file.filename);
-
-    // ── Download ──────────────────────────────────────────────────────────
-    let client = reqwest::Client::new();
-    let mut req = client.get(&file.download_url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
-}
-
-/// Text of an OpenAI-shaped message `content`: the string as-is, or the joined
-/// `text` parts of a multimodal content array (image parts contribute nothing).
-fn openai_content_text(content: Option<&serde_json::Value>) -> String {
-    match content {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(parts)) => parts
-            .iter()
-            .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("text"))
-            .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => String::new(),
-    }
-}
-
-/// Fallback thread title: the first user message, whitespace-collapsed and
-/// truncated. Used only when no summarized title exists yet.
-fn default_thread_title(history: &[serde_json::Value]) -> String {
-    let first_user = history
-        .iter()
-        .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("user"))
-        .map(|m| openai_content_text(m.get("content")))
-        .unwrap_or_default();
-    let collapsed = first_user.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.is_empty() {
-        return "Agent chat".to_string();
-    }
-    dest.flush().await.map_err(|e| e.to_string())?;
-
-    // ── Write model.yml ───────────────────────────────────────────────────
-    // model_path is relative to the Jan data folder
-    let rel_path = format!("llamacpp/models/{}/{}", repo_id, file.filename);
-    let display_name = repo_id.split('/').next_back().unwrap_or(repo_id);
-
-    let mut yml = format!(
-        "model_path: {rel_path}\nname: {display_name}\nsize_bytes: {}\nembedding: false\n",
-        file.size
-    );
-    if let Some(sha) = &file.sha256 {
-        yml.push_str(&format!("model_sha256: {sha}\n"));
-    }
-}
-
 // ── App config ────────────────────────────────────────────────────────────
 
 pub fn cli_get_data_folder() -> PathBuf {
@@ -729,7 +494,7 @@ fn resolve_project_root(project: &str) -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(project))
 }
 
-/// Resolved-config + provider snapshot for `jan agent status`.
+/// Resolved-config + provider snapshot for `jan cli agent status`.
 pub fn cli_agent_status(
     project: &str,
     overrides: &ProviderOverrides,
@@ -795,7 +560,7 @@ pub fn cli_agent_config_unset(provider: &str) -> Result<bool, String> {
 }
 
 /// The global config file path, scaffolding a commented template if it doesn't
-/// exist yet so `jan agent config path` always points at a real file.
+/// exist yet so `jan config path` always points at a real file.
 pub fn cli_agent_config_path() -> Result<PathBuf, String> {
     crate::core::agent::global_config::ensure_global_config()
 }
@@ -950,8 +715,8 @@ pub struct RouterServeInfo {
 }
 
 /// Start the llama-server router (if not already running) against the generated
-/// preset, then POST `/models/load` for `model_id`. Shared by `jan serve` and
-/// the agent path so a local model has a live upstream to talk to. The preset is
+/// preset, then POST `/models/load` for `model_id`. Used by the agent path so a
+/// local model has a live upstream to talk to. The preset is
 /// generated on demand (see [`preset::ensure_router_preset`]) when the desktop
 /// app hasn't produced one.
 #[allow(clippy::too_many_arguments)]
@@ -1267,7 +1032,7 @@ async fn run_agent_loop(
     result.map(|_| ())
 }
 
-/// Launch the interactive chat console (`jan agent ui`). An optional `task`
+/// Launch the interactive chat console (bare `jan`). An optional `task`
 /// seeds the first turn; otherwise the user types the first message. Shares the
 /// engine with `run_agent_loop` via `AgentSession` — only presentation differs.
 pub async fn cli_agent_ui(
@@ -1487,152 +1252,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    // ── looks_like_hf_repo ─────────────────────────────────────────────────
-
-    #[test]
-    fn resume_target_from_flags() {
-        assert_eq!(ResumeTarget::from_flags(None, false), None);
-        assert_eq!(ResumeTarget::from_flags(None, true), Some(ResumeTarget::Latest));
-        assert_eq!(
-            ResumeTarget::from_flags(Some(None), false),
-            Some(ResumeTarget::Latest)
-        );
-        // A blank --resume value behaves like a bare --resume.
-        assert_eq!(
-            ResumeTarget::from_flags(Some(Some("  ".into())), false),
-            Some(ResumeTarget::Latest)
-        );
-        assert_eq!(
-            ResumeTarget::from_flags(Some(Some(" 3f7a ".into())), false),
-            Some(ResumeTarget::Id("3f7a".into()))
-        );
-    }
-
-    /// Write a thread with the given id/recency and a single user message.
-    fn seed_thread(base: &std::path::Path, id: &str, updated: f64) {
-        std::fs::create_dir_all(get_thread_dir(base, id)).unwrap();
-        std::fs::write(
-            get_thread_metadata_path(base, id),
-            serde_json::json!({ "id": id, "title": id, "updated": updated }).to_string(),
-        )
-        .unwrap();
-        std::fs::write(
-            get_messages_path(base, id),
-            serde_json::json!({
-                "role": "user",
-                "content": [{ "type": "text", "text": { "value": id, "annotations": [] } }],
-            })
-            .to_string()
-                + "\n",
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn find_resume_thread_latest_and_by_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path();
-        assert_eq!(
-            find_resume_thread(base, &ResumeTarget::Latest).unwrap_err(),
-            NO_SESSION_TO_RESUME
-        );
-
-        seed_thread(base, "aaaa1111", 100.0);
-        seed_thread(base, "bbbb2222", 300.0);
-        seed_thread(base, "bbbb3333", 200.0);
-
-        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
-        assert_eq!(latest["id"], "bbbb2222");
-
-        let by_prefix = find_resume_thread(base, &ResumeTarget::Id("aaaa".into())).unwrap();
-        assert_eq!(by_prefix["id"], "aaaa1111");
-
-        assert!(find_resume_thread(base, &ResumeTarget::Id("zz".into()))
-            .unwrap_err()
-            .contains("no thread matches"));
-        assert!(find_resume_thread(base, &ResumeTarget::Id("bbbb".into()))
-            .unwrap_err()
-            .contains("ambiguous"));
-    }
-
-    #[test]
-    fn find_resume_thread_skips_corrupted_metadata() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path();
-        seed_thread(base, "good1111", 100.0);
-        let bad = "bad02222";
-        std::fs::create_dir_all(get_thread_dir(base, bad)).unwrap();
-        std::fs::write(get_thread_metadata_path(base, bad), "{not json").unwrap();
-
-        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
-        assert_eq!(latest["id"], "good1111");
-    }
-
-    #[test]
-    fn read_messages_lenient_skips_truncated_tail() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path();
-        seed_thread(base, "aaaa1111", 100.0);
-        let mut raw = std::fs::read_to_string(get_messages_path(base, "aaaa1111")).unwrap();
-        raw.push_str("{\"role\":\"assist");
-        std::fs::write(get_messages_path(base, "aaaa1111"), raw).unwrap();
-
-        let (messages, skipped) = cli_read_messages_lenient(base, "aaaa1111").unwrap();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(skipped, 1);
-        // The strict reader used elsewhere still rejects the same file.
-        assert!(cli_list_messages_in(base, "aaaa1111").is_err());
-    }
-
-    #[test]
-    fn read_messages_lenient_on_missing_thread_is_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let (messages, skipped) = cli_read_messages_lenient(dir.path(), "nope").unwrap();
-        assert!(messages.is_empty());
-        assert_eq!(skipped, 0);
-    }
-
-    #[test]
-    fn resume_cycle_preserves_thread_id_and_history() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path();
-        let history = vec![
-            serde_json::json!({ "role": "user", "content": "first" }),
-            serde_json::json!({ "role": "assistant", "content": "reply" }),
-        ];
-        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
-
-        let resumed = load_resume_history(base, &ResumeTarget::Latest).unwrap();
-        assert_eq!(resumed.thread_id, id);
-        assert_eq!(resumed.history, history);
-
-        // Continue the session and save back: same thread, appended turns.
-        let mut extended = resumed.history;
-        extended.push(serde_json::json!({ "role": "user", "content": "second" }));
-        let same = cli_save_thread(base, Some(&id), "m", &extended, None).unwrap();
-        assert_eq!(same, id);
-        assert_eq!(list_threads_in(base).unwrap().len(), 1);
-        assert_eq!(
-            load_resume_history(base, &ResumeTarget::Id(id[..8].to_string()))
-                .unwrap()
-                .history,
-            extended
-        );
-    }
-
-    #[test]
-    fn completion_text_extracts_assistant_content() {
-        let completion =
-            serde_json::json!({ "choices": [{ "message": { "content": "hello" } }] });
-        assert_eq!(completion_text(&completion).as_deref(), Some("hello"));
-        assert_eq!(completion_text(&serde_json::json!({})), None);
-        assert_eq!(
-            completion_text(&serde_json::json!({ "choices": [{ "message": { "content": "" } }] })),
-            None
-        );
-    }
-
-    // ── default_thread_title ───────────────────────────────────────────────
+    // ── ModelYml deserialization ──────────────────────────────────────────
 
     #[test]
     fn default_thread_title_uses_first_user_message() {
@@ -1671,19 +1291,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn default_thread_title_truncates_and_falls_back() {
-        let long = "x".repeat(80);
-        let history = serde_json::json!([{ "role": "user", "content": long }]);
-        let title = default_thread_title(history.as_array().unwrap());
-        assert_eq!(title.chars().count(), 50);
-        assert!(title.ends_with('…'));
-
-        let no_user = serde_json::json!([{ "role": "assistant", "content": "hi" }]);
-        assert_eq!(default_thread_title(no_user.as_array().unwrap()), "Agent chat");
-    }
-
-    // ── cli_save_thread metadata (snapshot bookkeeping) ────────────────────
+    // ── State constructors ────────────────────────────────────────────────
 
     #[test]
     fn save_thread_persists_and_preserves_snapshot_metadata() {

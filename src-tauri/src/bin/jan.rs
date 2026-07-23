@@ -1,8 +1,7 @@
 //! jan — headless CLI for Jan.
 //!
-//! Shares the Tauri-free core logic with the Jan desktop app; talks only to
-//! remote providers (no local inference, no GUI dependencies).
-//! Build with: cargo build --no-default-features --features cli --bin jan
+//! Shares all core logic with the Jan desktop app.
+//! Build with: cargo build --features cli --bin jan
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use console::Style;
@@ -13,7 +12,7 @@ use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
-    cli_get_thread, cli_list_messages, cli_list_threads, ResumeTarget,
+    cli_get_thread, cli_list_messages, cli_list_threads, list_models,
 };
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
@@ -21,69 +20,45 @@ use app_lib::core::cli::{
 #[derive(Parser)]
 #[command(
     name = "jan",
-    about = "Chat with AI models in an interactive agent console",
+    about = "Chat with local AI models in an interactive agent console — no cloud required",
     long_about = "Running `jan` with no arguments opens the interactive agent console (TUI),\n\
-where you chat with a model that can run tools in your project.\n\n\
+where you chat with a local or cloud model that can run tools in your project.\n\n\
 The `jan cli` subcommand is the non-interactive fallback: run folder-based\n\
-agents headlessly and manage threads and providers.\n\n\
-Models are served by remote providers configured in ~/.jan/config.toml\n\
-(see `jan config set`), a project's agent.toml, or the Jan desktop app.",
+agents headlessly and manage threads and installed models.\n\n\
+Models downloaded in the Jan desktop app are available in both.",
     after_help = "Examples:\n  \
   jan                                                    # open the interactive agent console (TUI)\n  \
   jan --yolo                                             # TUI with every tool call auto-approved\n  \
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
-  jan -c                                                 # resume the most recent session\n  \
-  jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
-  jan cli models list                                    # show every configured provider model\n  \
-  jan cli threads list                                   # list saved conversation threads\n  \
-  jan update                                             # install the latest build of this channel"
+  jan cli models list                                    # show all installed models\n  \
+  jan cli threads list                                   # list saved conversation threads",
+    version
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+    /// Project root containing .jan/agent/agent.toml (bare TUI only)
+    #[arg(long, default_value = ".")]
+    project: String,
+    /// Optional first message to seed the chat with (bare TUI only)
+    #[arg(long)]
+    task: Option<String>,
+    /// Model ID overriding [agent].model in agent.toml (bare TUI only)
+    #[arg(long)]
+    model: Option<String>,
+    /// Max turns per message, clamped 1..=400 (bare TUI only)
+    #[arg(long)]
+    max_turns: Option<u32>,
+    /// Image file to attach to the first message, repeatable (bare TUI only)
+    #[arg(long = "image")]
+    images: Vec<String>,
+    #[command(flatten)]
+    providers: ProviderArgs,
     /// Disable the sandbox and auto-approve every tool call in the default agent
     /// TUI (no prompts). Ignored when a subcommand is given.
     #[arg(long)]
     yolo: bool,
-}
-
-/// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
-/// Threads are per-project (`<project>/.jan/agent/threads`), so resuming from a
-/// different working directory simply finds nothing there.
-#[derive(Args)]
-struct ResumeArgs {
-    /// Resume a saved session: the most recent one, or the thread whose id starts with ID
-    #[arg(long, num_args = 0..=1, value_name = "ID")]
-    resume: Option<Option<String>>,
-    /// Resume the most recent session (alias for a bare --resume)
-    #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
-    continue_session: bool,
-}
-
-impl ResumeArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
-    }
-}
-
-/// Same flags for `jan cli agent run`, which has a required positional TASK: a
-/// space-separated `--resume ID` would swallow the task, so the value form must
-/// be written `--resume=ID`.
-#[derive(Args)]
-struct ResumeRunArgs {
-    /// Resume a saved session: the most recent one, or (as --resume=ID) the thread whose id starts with ID
-    #[arg(long, num_args = 0..=1, require_equals = true, value_name = "ID")]
-    resume: Option<Option<String>>,
-    /// Resume the most recent session (alias for a bare --resume)
-    #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
-    continue_session: bool,
-}
-
-impl ResumeRunArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
-    }
 }
 
 /// Top-level commands. Bare `jan` opens the interactive TUI; everything else
@@ -96,24 +71,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: CliCommands,
     },
-    /// Sign in to Tokamak and save the API key to ~/.jan/config.toml
-    #[command(display_order = 2)]
-    Login,
     /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
-    #[command(display_order = 3)]
+    #[command(display_order = 2)]
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
-    },
-    /// Update this binary to the latest build of the channel it was built for
-    #[command(display_order = 4)]
-    Update {
-        /// Report whether an update exists without installing it
-        #[arg(long)]
-        check: bool,
-        /// Reinstall even when already on the latest version
-        #[arg(long, conflicts_with = "check")]
-        force: bool,
     },
 }
 
@@ -126,7 +88,7 @@ enum CliCommands {
         #[command(subcommand)]
         cmd: ThreadsCommands,
     },
-    /// List the models exposed by the configured providers
+    /// List models installed in the Jan data folder
     #[command(display_order = 11)]
     Models {
         #[command(subcommand)]
@@ -190,28 +152,6 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
     },
-    /// Open the interactive chat console (optionally seeded with a first message)
-    Ui {
-        /// Project root containing .jan/agent/agent.toml
-        #[arg(long, default_value = ".")]
-        project: String,
-        /// Optional first message; omit to start with an empty chat
-        task: Option<String>,
-        /// Model ID (overrides [agent].model in agent.toml)
-        #[arg(long)]
-        model: Option<String>,
-        /// Max turns per message (overrides [agent].max_turns; clamped 1..=400)
-        #[arg(long)]
-        max_turns: Option<u32>,
-        /// Image file to attach to the first message (repeatable)
-        #[arg(long = "image")]
-        images: Vec<String>,
-        /// Disable the sandbox and auto-approve every tool call (no prompts)
-        #[arg(long)]
-        yolo: bool,
-        #[command(flatten)]
-        resume: ResumeRunArgs,
-    },
     /// Run a single turn (debugging)
     Step {
         /// Project root containing .jan/agent/agent.toml
@@ -235,11 +175,6 @@ enum AgentCommands {
         project: String,
         #[command(flatten)]
         providers: ProviderArgs,
-    },
-    /// Manage standalone provider credentials in ~/.jan/config.toml (no Desktop needed)
-    Config {
-        #[command(subcommand)]
-        cmd: AgentConfigCommands,
     },
 }
 
@@ -342,12 +277,9 @@ enum ThreadsCommands {
 enum ModelsCommands {
     /// Print every configured provider's models as JSON (API keys redacted)
     List {
-        /// Only show models from this provider (e.g. anthropic)
-        #[arg(long)]
-        provider: Option<String>,
-        /// Project root whose agent.toml [provider] override is applied
-        #[arg(long, default_value = ".")]
-        project: String,
+        /// Filter by engine: llamacpp, mlx, or all
+        #[arg(long, default_value = "all")]
+        engine: String,
     },
 }
 
@@ -414,12 +346,18 @@ async fn main() {
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
     let Some(command) = cli.command else {
-        let overrides = ProviderArgs {
-            provider: None,
-            api_key: None,
-        }
-        .into_overrides();
-        if let Err(e) = cli_agent_ui(".", None, None, None, Vec::new(), overrides, cli.yolo).await {
+        let overrides = cli.providers.into_overrides();
+        if let Err(e) = cli_agent_ui(
+            &cli.project,
+            cli.task,
+            cli.model,
+            cli.max_turns,
+            cli.images,
+            overrides,
+            cli.yolo,
+        )
+        .await
+        {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
@@ -433,8 +371,8 @@ async fn main() {
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,
-        Commands::Login => {
-            if let Err(e) = app_lib::core::cli::login::run_login().await {
+        Commands::Config { cmd } => {
+            if let Err(e) = handle_agent_config(cmd) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -492,6 +430,16 @@ async fn handle_cli(cmd: CliCommands) {
     }
 }
 
+// ── CLI dispatch ─────────────────────────────────────────────────────────
+
+async fn handle_cli(cmd: CliCommands) {
+    match cmd {
+        CliCommands::Threads { cmd } => handle_threads(cmd).await,
+        CliCommands::Models { cmd } => handle_models(cmd).await,
+        CliCommands::Agent { cmd } => handle_agent(cmd).await,
+    }
+}
+
 // ── Agent handlers ───────────────────────────────────────────────────────
 
 async fn handle_agent(cmd: AgentCommands) {
@@ -515,26 +463,6 @@ async fn handle_agent(cmd: AgentCommands) {
             )
             .await
         }
-        AgentCommands::Ui {
-            project,
-            task,
-            model,
-            max_turns,
-            images,
-            yolo,
-            providers,
-        } => {
-            cli_agent_ui(
-                &project,
-                task,
-                model,
-                max_turns,
-                images,
-                providers.into_overrides(),
-                yolo,
-            )
-            .await
-        }
         AgentCommands::Step {
             project,
             task,
@@ -551,7 +479,6 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
-        AgentCommands::Config { cmd } => handle_agent_config(cmd),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
@@ -674,45 +601,3 @@ async fn handle_models(cmd: ModelsCommands) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // `--plan` is a per-invocation startup toggle mirroring `--yolo`; it must
-    // parse on the top-level `jan` command and default off.
-    #[test]
-    fn top_level_plan_flag_parses() {
-        let cli = Cli::parse_from(["jan", "--plan"]);
-        assert!(cli.plan);
-        assert!(!cli.yolo);
-        assert!(cli.command.is_none());
-
-        let cli = Cli::parse_from(["jan"]);
-        assert!(!cli.plan);
-    }
-
-    #[test]
-    fn update_command_parses() {
-        let cli = Cli::parse_from(["jan", "update"]);
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Update {
-                check: false,
-                force: false
-            })
-        ));
-        let cli = Cli::parse_from(["jan", "update", "--check"]);
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Update { check: true, .. })
-        ));
-        assert!(Cli::try_parse_from(["jan", "update", "--check", "--force"]).is_err());
-    }
-
-    #[test]
-    fn login_command_parses_and_takes_no_args() {
-        let cli = Cli::parse_from(["jan", "login"]);
-        assert!(matches!(cli.command, Some(Commands::Login)));
-        assert!(Cli::try_parse_from(["jan", "login", "sk-key"]).is_err());
-    }
-}
