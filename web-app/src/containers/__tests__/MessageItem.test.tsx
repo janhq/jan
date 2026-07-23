@@ -482,6 +482,42 @@ describe('MessageItem', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/Search/)
   })
 
+  it('shows child activity while the parent awaits that subagent', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              {
+                type: 'tool-await_subagent',
+                state: 'input-available',
+                toolCallId: 'tc-await',
+                input: { run_id: 'sub-robotics-researcher-1' },
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        subagents={[
+          {
+            runId: 'sub-robotics-researcher-1',
+            name: 'robotics-researcher',
+            status: 'running',
+            startedAt: Date.now() - 1_000,
+            turns: [],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'robotics-researcher: working'
+    )
+    expect(screen.getByRole('status')).not.toHaveTextContent('Await subagent')
+  })
+
   it('hides progress while a tool call awaits approval', () => {
     pendingApprovalsRef.current = { tc1: {} }
     render(

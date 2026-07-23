@@ -85,6 +85,7 @@ describe('activeToolPart', () => {
     ]
     expect(activeToolPart(parts)).toEqual({
       toolCallId: 'c1',
+      toolName: 'write',
       text: 'Writing report.html',
     })
   })

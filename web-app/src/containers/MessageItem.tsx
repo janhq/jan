@@ -225,17 +225,24 @@ export const MessageItem = memo(
     }, [pendingTool])
 
     const subagentLabel = useMemo<ActivityLabel>(() => {
-      if (pendingTool || !subagents || subagents.length === 0) return null
+      if (!subagents || subagents.length === 0) return null
       return subagentActivityLabel(subagents)
-    }, [pendingTool, subagents])
+    }, [subagents])
 
-    const activityLabel: ActivityLabel = pendingTool
-      ? {
-          text: pendingTool.text,
-          startedAt:
-            toolStartedAtRef.current.get(pendingTool.toolCallId) ?? Date.now(),
-        }
-      : subagentLabel
+    // `await_subagent` is only the parent's blocking wrapper; the child is the
+    // work actually in progress. Show its live activity instead of the
+    // misleading "Await subagent" label. Other parent tools retain priority.
+    const showSubagentActivity =
+      pendingTool?.toolName === 'await_subagent' && subagentLabel
+    const activityLabel: ActivityLabel = showSubagentActivity
+      ? subagentLabel
+      : pendingTool
+        ? {
+            text: pendingTool.text,
+            startedAt:
+              toolStartedAtRef.current.get(pendingTool.toolCallId) ?? Date.now(),
+          }
+        : subagentLabel
 
     // Re-render once a second while a label is showing, purely to advance the
     // elapsed-time readout -- no state carried, just a tick.
