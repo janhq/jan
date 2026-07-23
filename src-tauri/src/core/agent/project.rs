@@ -329,6 +329,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn context_window_defaults_to_none_when_unset() {
         // The scaffolded template leaves context_window commented out, so the
@@ -340,6 +341,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn context_window_parses_when_present() {
         let root = unique_root("ctx_present");
@@ -354,6 +356,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn compaction_reserve_tokens_defaults_to_none_when_unset() {
         let root = unique_root("reserve_unset");
@@ -363,6 +366,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn compaction_reserve_tokens_parses_when_present() {
         let root = unique_root("reserve_present");
@@ -376,6 +380,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn max_tokens_defaults_to_none_when_unset() {
         let root = unique_root("maxtok_unset");
@@ -385,6 +390,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "cli")]
     #[test]
     fn max_tokens_parses_when_present() {
         let root = unique_root("maxtok_present");
