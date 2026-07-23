@@ -51,9 +51,13 @@ export const Route = createFileRoute(route.code as any)({
   component: CodePage,
 })
 
-// Per-run token ceiling. `max_turns: 0` lets a multi-step task run to completion;
-// this budget is the real bound that stops a runaway loop (see loop.rs).
-const MAX_SESSION_TOKENS = 200_000
+// Per-run cumulative token ceiling (one agent_run = one multi-step task). Since
+// `max_turns: 0`, this cumulative *spend* bound (prompt replays + completions,
+// summed across tool turns — see SessionBudget in session.rs) is the real guard
+// that stops a runaway loop. It is NOT a context-window gauge. A fresh budget is
+// created per run, so a real agentic task with many tool turns must fit under it
+// while a genuine runaway (hundreds of turns burning millions of tokens) trips.
+const MAX_SESSION_TOKENS = 2_000_000
 
 // Cap the history replayed to the agent so a long session never sends more than
 // the model can take (rough ~4 chars/token estimate → well under the ceiling).
@@ -602,6 +606,13 @@ function CodePage() {
     // in the transcript (not just a transient toast).
     let runError: string | null = null
 
+    // If the backend compacted the conversation mid-run (context overflow), it
+    // emits `messages_updated` with the shortened array. Persist THAT as the
+    // session history for the next turn — otherwise we'd re-send the full,
+    // pre-compaction history and immediately re-overflow (mirrors the TUI, which
+    // replaces app.history on this event).
+    let compactedHistory: CodeMessage[] | null = null
+
     // subagentRunId is set when this request came from inside a subagent's
     // wrapped stream, so the tasks panel can flag that run as needing input.
     const addPerm = (
@@ -681,6 +692,9 @@ function CodePage() {
         case 'done':
           run.setUsage(sid, ev.usage)
           break
+        case 'messages_updated':
+          compactedHistory = ev.messages
+          break
         case 'subagent_start':
           run.startSubagent(sid, ev.run_id, ev.name)
           break
@@ -737,9 +751,14 @@ function CodePage() {
         .filter((tn) => tn.role === 'assistant')
         .map((tn) => tn.content)
         .join('\n')
+      // Base history: the backend's compacted array if it compacted mid-run,
+      // else the messages we sent. Appending the assistant reply to the
+      // compacted base keeps the next turn from re-sending the pre-compaction
+      // history.
+      const base = compactedHistory ?? outgoing
       const history: CodeMessage[] = assistantText
-        ? [...outgoing, { role: 'assistant', content: assistantText }]
-        : outgoing
+        ? [...base, { role: 'assistant', content: assistantText }]
+        : base
       useCodeSessions
         .getState()
         .commitTurns(sid, finalTurns, history, finalSubs, finalUsage)
