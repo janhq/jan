@@ -271,6 +271,133 @@ struct PathHintItem {
     is_dir: bool,
 }
 
+struct PendingAsk {
+    request_id: String,
+    request: crate::core::agent::interaction::AskRequest,
+    answers: Vec<crate::core::agent::interaction::QuestionResult>,
+    question_index: usize,
+    selected: usize,
+    editing_custom: bool,
+    custom_input: String,
+    rect: Rect,
+    row_hitboxes: Vec<(u16, usize)>,
+}
+
+impl PendingAsk {
+    fn new(request_id: String, request: crate::core::agent::interaction::AskRequest) -> Self {
+        let answers = request
+            .questions
+            .iter()
+            .map(|question| crate::core::agent::interaction::QuestionResult {
+                id: question.id.clone(),
+                selected: Vec::new(),
+                custom_input: None,
+            })
+            .collect();
+        Self {
+            request_id,
+            request,
+            answers,
+            question_index: 0,
+            selected: 0,
+            editing_custom: false,
+            custom_input: String::new(),
+            rect: Rect::default(),
+            row_hitboxes: Vec::new(),
+        }
+    }
+
+    fn question(&self) -> &crate::core::agent::interaction::Question {
+        &self.request.questions[self.question_index]
+    }
+    fn row_count(&self) -> usize {
+        self.question().options.len() + 1 + usize::from(self.question().multi)
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        self.selected =
+            (self.selected as isize + delta).rem_euclid(self.row_count() as isize) as usize;
+    }
+
+    fn move_question(&mut self, delta: isize) {
+        let last = self.request.questions.len().saturating_sub(1) as isize;
+        self.question_index = (self.question_index as isize + delta).clamp(0, last) as usize;
+        self.selected = 0;
+        self.editing_custom = false;
+        self.custom_input.clear();
+    }
+
+    fn all_answered(&self) -> bool {
+        self.answers
+            .iter()
+            .all(|answer| !answer.selected.is_empty() || answer.custom_input.is_some())
+    }
+
+    /// Apply the highlighted row. Returns true once every question is answered.
+    fn choose(&mut self) -> bool {
+        let option_count = self.question().options.len();
+        let multi = self.question().multi;
+        if multi && self.selected == option_count + 1 {
+            return self.advance_or_finish();
+        }
+        if self.selected == option_count {
+            self.editing_custom = true;
+            self.custom_input = self.answers[self.question_index]
+                .custom_input
+                .clone()
+                .unwrap_or_default();
+            return false;
+        }
+        let label = self.question().options[self.selected].label.clone();
+        let answer = &mut self.answers[self.question_index];
+        answer.custom_input = None;
+        if multi {
+            if let Some(index) = answer.selected.iter().position(|item| item == &label) {
+                answer.selected.remove(index);
+            } else {
+                answer.selected.push(label);
+            }
+            false
+        } else {
+            answer.selected = vec![label];
+            self.advance_or_finish()
+        }
+    }
+
+    fn accept_custom(&mut self) -> bool {
+        let value = self.custom_input.trim().to_string();
+        if value.is_empty() {
+            return false;
+        }
+        let id = self.question().id.clone();
+        self.answers[self.question_index] = crate::core::agent::interaction::QuestionResult {
+            id,
+            selected: Vec::new(),
+            custom_input: Some(value),
+        };
+        self.editing_custom = false;
+        self.advance_or_finish()
+    }
+
+    fn advance_or_finish(&mut self) -> bool {
+        if self.question_index + 1 < self.request.questions.len() {
+            self.move_question(1);
+            return false;
+        }
+        if self.all_answered() {
+            true
+        } else {
+            self.question_index = self
+                .answers
+                .iter()
+                .position(|answer| answer.selected.is_empty() && answer.custom_input.is_none())
+                .unwrap_or(self.question_index);
+            self.selected = 0;
+            false
+        }
+    }
+}
+
 struct App {
     model: String,
     /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
@@ -374,6 +501,8 @@ struct App {
     /// front is shown/answerable at a time, later ones queue and surface once
     /// the front resolves so no requester is silently dropped/left hanging.
     pending_queue: std::collections::VecDeque<Pending>,
+    /// Structured questions waiting for this TUI, oldest first.
+    ask_queue: std::collections::VecDeque<PendingAsk>,
     picker: Option<Picker>,
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
@@ -528,6 +657,7 @@ impl App {
             tokens: 0,
             detail: String::new(),
             pending_queue: std::collections::VecDeque::new(),
+            ask_queue: std::collections::VecDeque::new(),
             picker: None,
             scrollback: 0,
             want_start: false,
@@ -608,6 +738,7 @@ impl App {
         self.assistant_buf.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
+        self.ask_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
         self.turn = (0, 0);
@@ -1311,6 +1442,12 @@ impl App {
                     subagent: None,
                 });
             }
+            StreamEvent::AskRequest {
+                request_id,
+                request,
+            } => self
+                .ask_queue
+                .push_back(PendingAsk::new(request_id, request)),
             StreamEvent::SubagentStart { run_id, name } => {
                 // Open a live rolling panel for this run; several may be active.
                 self.finalize_tool_group();
@@ -2302,7 +2439,7 @@ pub async fn run(
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let AgentSession {
-        args,
+        mut args,
         permission_requests,
         model,
         smol_model,
@@ -2313,6 +2450,8 @@ pub async fn run(
         mcp_servers,
         mcp_task,
     } = session;
+    let ask_requests = crate::core::agent::interaction::new_registry();
+    args.ask_requests = Some(ask_requests.clone());
     let args = Arc::new(args);
 
     enable_raw_mode().map_err(|e| e.to_string())?;
@@ -2349,6 +2488,7 @@ pub async fn run(
         &mut terminal,
         &args,
         &permission_requests,
+        &ask_requests,
         &mut app,
         initial_task,
         mcp_task,
@@ -2372,6 +2512,7 @@ async fn chat_loop<B: Backend>(
     terminal: &mut Terminal<B>,
     args: &Arc<OrchestrationArgs>,
     registry: &PermissionRegistry,
+    ask_requests: &crate::core::agent::interaction::AskRegistry,
     app: &mut App,
     initial_task: Option<String>,
     mut mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
@@ -2446,7 +2587,9 @@ async fn chat_loop<B: Backend>(
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
-                            handle_key(app, key, registry, &mut current, mcp_servers).await;
+                            if !handle_ask_key(app, key, ask_requests).await {
+                                handle_key(app, key, registry, &mut current, mcp_servers).await;
+                            }
                             if app.mouse_capture != mouse_capture_active {
                                 mouse_capture_active = app.mouse_capture;
                                 // Written straight to stdout (not through the generic
@@ -2465,7 +2608,11 @@ async fn chat_loop<B: Backend>(
                                 app.input_insert(c);
                             }
                         }
-                        Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
+                        Ok(Event::Mouse(mouse)) => {
+                            if !handle_ask_mouse(app, mouse, ask_requests).await {
+                                handle_mouse(app, mouse);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -2572,6 +2719,7 @@ async fn chat_loop<B: Backend>(
     if let Some(c) = current {
         c.handle.abort();
     }
+    crate::core::agent::interaction::cancel_all(ask_requests).await;
     Ok(())
 }
 
@@ -2611,6 +2759,113 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     if let Some(Some(idx)) = app.row_index.get(absolute) {
         app.toggle_region(*idx);
     }
+}
+
+async fn resolve_front_ask(
+    app: &mut App,
+    registry: &crate::core::agent::interaction::AskRegistry,
+    cancelled: bool,
+) {
+    let Some(ask) = app.ask_queue.pop_front() else {
+        return;
+    };
+    let outcome = if cancelled {
+        Err(crate::core::agent::interaction::AskError::Cancelled)
+    } else {
+        Ok(ask.answers)
+    };
+    let _ = crate::core::agent::interaction::respond(registry, &ask.request_id, outcome).await;
+}
+
+/// Handle keys owned by the front interactive question. Returns false only for
+/// global Ctrl-C/Ctrl-D, which must continue into the normal run cancellation
+/// path after every ask waiter has been released.
+async fn handle_ask_key(
+    app: &mut App,
+    key: KeyEvent,
+    registry: &crate::core::agent::interaction::AskRegistry,
+) -> bool {
+    if app.ask_queue.is_empty() {
+        return false;
+    }
+    if key.kind != KeyEventKind::Press {
+        return true;
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
+        crate::core::agent::interaction::cancel_all(registry).await;
+        app.ask_queue.clear();
+        return false;
+    }
+    if key.code == KeyCode::Esc {
+        resolve_front_ask(app, registry, true).await;
+        return true;
+    }
+
+    let mut submit = false;
+    {
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        if ask.editing_custom {
+            match key.code {
+                KeyCode::Enter => submit = ask.accept_custom(),
+                KeyCode::Backspace => {
+                    ask.custom_input.pop();
+                }
+                KeyCode::Char(ch) if !ctrl => ask.custom_input.push(ch),
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Up => ask.move_selection(-1),
+                KeyCode::Down => ask.move_selection(1),
+                KeyCode::Left => ask.move_question(-1),
+                KeyCode::Right => ask.move_question(1),
+                KeyCode::Char(' ') if ask.question().multi => {
+                    submit = ask.choose();
+                }
+                KeyCode::Enter => submit = ask.choose(),
+                _ => {}
+            }
+        }
+    }
+    if submit {
+        resolve_front_ask(app, registry, false).await;
+    }
+    true
+}
+
+async fn handle_ask_mouse(
+    app: &mut App,
+    mouse: MouseEvent,
+    registry: &crate::core::agent::interaction::AskRegistry,
+) -> bool {
+    let Some(ask) = app.ask_queue.front_mut() else {
+        return false;
+    };
+    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+        return true;
+    }
+    let inside = mouse.column >= ask.rect.x
+        && mouse.column < ask.rect.x.saturating_add(ask.rect.width)
+        && mouse.row >= ask.rect.y
+        && mouse.row < ask.rect.y.saturating_add(ask.rect.height);
+    if !inside {
+        return true;
+    }
+    let Some((_, selected)) = ask
+        .row_hitboxes
+        .iter()
+        .find(|(row, _)| *row == mouse.row)
+        .copied()
+    else {
+        return true;
+    };
+    ask.selected = selected;
+    let submit = ask.choose();
+    if submit {
+        resolve_front_ask(app, registry, false).await;
+    }
+    true
 }
 
 async fn handle_key(
@@ -4082,9 +4337,21 @@ fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(path_line(app), chunks[3]);
     f.render_widget(footer(app), chunks[4]);
 
-    // Dock the permission prompt directly above the input box, growing upward
-    // and clamped to the body area so it never overruns the transcript.
-    if let Some(pending) = app.pending() {
+    // An interactive question owns the dock while active. Permission prompts
+    // remain queued behind it and surface as soon as the question resolves.
+    if !app.ask_queue.is_empty() {
+        let queue_len = app.ask_queue.len();
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        let height = (ask.row_count() as u16 + 4).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_ask(f, rect, ask, queue_len);
+    } else if let Some(pending) = app.pending() {
         let detail_rows = 1
             + u16::from(pending.path.is_some() || pending.command.is_some())
             + u16::from(pending.subagent.is_some());
@@ -4100,9 +4367,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_permission(f, rect, pending, app.pending_queue.len());
     } else {
-        // Dock the slash-command hints above the input box, growing upward and
-        // clamped to the body so they never overrun the transcript. Mutually
-        // exclusive with the permission prompt (that only shows while running).
+        // Dock the slash-command hints above the input box, growing upward
+        // and clamped to the body so they never overrun the transcript.
         let matches = app.slash_matches();
         if !matches.is_empty() {
             let height = (matches.len() as u16 + 2).min(chunks[1].height);
@@ -4115,8 +4381,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             };
             draw_slash_hints(f, rect, &matches, app.slash_selected);
         } else if app.has_path_hints() {
-            // Dock the file-path hints above the input box, same layout as
-            // slash hints. Only shows when no slash hints are active.
             let height = (app.path_hints.len() as u16 + 2).min(chunks[1].height);
             let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
             let rect = ratatui::layout::Rect {
@@ -4128,6 +4392,124 @@ fn draw(f: &mut Frame, app: &mut App) {
             draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
         }
     }
+}
+
+fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let question = ask.question().clone();
+    let answer = ask.answers[ask.question_index].clone();
+    let dim = Style::new().dark_gray();
+    let title = if queue_len > 1 {
+        format!(
+            " question {}/{} · request 1/{queue_len} ",
+            ask.question_index + 1,
+            ask.request.questions.len()
+        )
+    } else {
+        format!(
+            " question {}/{} ",
+            ask.question_index + 1,
+            ask.request.questions.len()
+        )
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+    let inner = block.inner(area);
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(ask.row_count() as u16),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+
+    let mut items = Vec::with_capacity(ask.row_count());
+    for (index, option) in question.options.iter().enumerate() {
+        let selected = answer.selected.iter().any(|label| label == &option.label);
+        let mark = if question.multi {
+            if selected {
+                "[x] "
+            } else {
+                "[ ] "
+            }
+        } else if selected {
+            "● "
+        } else {
+            "○ "
+        };
+        let mut spans = vec![
+            Span::styled(mark, Style::new().cyan()),
+            Span::raw(option.label.clone()),
+        ];
+        if question.recommended == Some(index) {
+            spans.push(Span::styled("  recommended", Style::new().green().dim()));
+        }
+        if let Some(description) = &option.description {
+            spans.push(Span::styled(format!("  {description}"), dim));
+        }
+        items.push(ListItem::new(Line::from(spans)));
+    }
+    let custom_mark = if question.multi {
+        if answer.custom_input.is_some() {
+            "[x] "
+        } else {
+            "[ ] "
+        }
+    } else if answer.custom_input.is_some() {
+        "● "
+    } else {
+        "○ "
+    };
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled(custom_mark, Style::new().cyan()),
+        Span::raw("Other (type your own)"),
+    ])));
+    if question.multi {
+        items.push(ListItem::new(Line::styled(
+            "Submit answers",
+            Style::new().green().bold(),
+        )));
+    }
+
+    ask.rect = area;
+    ask.row_hitboxes = (0..items.len())
+        .filter_map(|index| {
+            let y = rows[1].y.saturating_add(index as u16);
+            (y < rows[1].y.saturating_add(rows[1].height)).then_some((y, index))
+        })
+        .collect();
+
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(Line::styled(question.question, Style::new().bold())),
+        rows[0],
+    );
+    let list = List::new(items)
+        .highlight_style(Style::new().reversed().bold())
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(ask.selected));
+    f.render_stateful_widget(list, rows[1], &mut state);
+    let help = if ask.editing_custom {
+        Line::from(vec![
+            Span::styled("Other: ", Style::new().cyan()),
+            Span::raw(ask.custom_input.clone()),
+            Span::styled("█", Style::new().cyan()),
+        ])
+    } else {
+        Line::styled(
+            if question.multi {
+                "↑↓ move · Space toggle · Enter choose · ←→ question · Esc cancel"
+            } else {
+                "↑↓ move · Enter choose · ←→ question · Esc cancel"
+            },
+            dim,
+        )
+    };
+    f.render_widget(Paragraph::new(help), rows[2]);
 }
 
 /// Slash-command hint popup: one row per match (`/name [hint]  description`),
@@ -4589,13 +4971,14 @@ fn footer(app: &App) -> Paragraph<'static> {
 mod tests {
     use super::{
         build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
-        group_summary, handle_key, handle_mouse, image_mime, input_content_lines, is_table_separator, load_image_file,
-        message_text, open_config_screen, parse_command, render_table, run_command,
-        restore_goal, running_group_row, split_reasoning, subagent_activity,
-        subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
-        transcript_top_padding, user_content_parts, App, CurrentRun, Pending, PendingImage,
-        apply_resume, PickerKind, ResumeTarget, SnapshotJob, Status, DIFF_MAX_ROWS,
-        SLASH_COMMANDS, SPINNER,
+        apply_resume, build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
+        group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, image_mime,
+        input_content_lines, is_table_separator, load_image_file, message_text,
+        open_config_screen, parse_command, render_table, restore_goal, run_command,
+        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
+        summarize_result, tool_activity, tool_finished, transcript_top_padding,
+        user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
+        SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
     };
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -4722,6 +5105,149 @@ mod tests {
         assert_eq!(p.selected, 0);
         p.move_selection(1);
         assert_eq!(p.selected, 1);
+    }
+
+    fn ask_request(
+        multi: bool,
+        two_questions: bool,
+    ) -> crate::core::agent::interaction::AskRequest {
+        let mut questions = vec![json!({
+            "id": "scope",
+            "question": "Which scope?",
+            "options": [{"label": "Small"}, {"label": "Large", "description": "Everything"}],
+            "multi": multi,
+            "recommended": 0
+        })];
+        if two_questions {
+            questions.push(json!({
+                "id": "speed",
+                "question": "Which speed?",
+                "options": [{"label": "Fast"}, {"label": "Careful"}]
+            }));
+        }
+        crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": questions
+        }))
+        .unwrap()
+    }
+
+    async fn press_ask(
+        app: &mut App,
+        registry: &crate::core::agent::interaction::AskRegistry,
+        code: KeyCode,
+    ) {
+        assert!(handle_ask_key(app, KeyEvent::new(code, KeyModifiers::NONE), registry,).await);
+    }
+
+    #[tokio::test]
+    async fn ask_keyboard_preserves_answers_across_questions() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, true),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.ask_queue.front().unwrap().question_index, 1);
+        press_ask(&mut app, &registry, KeyCode::Left).await;
+        assert_eq!(
+            app.ask_queue.front().unwrap().answers[0].selected,
+            vec!["Small"]
+        );
+        press_ask(&mut app, &registry, KeyCode::Right).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+
+        assert!(app.ask_queue.is_empty(), "final answer did not submit");
+        assert!(
+            registry.lock().await.is_empty(),
+            "ask sender was not resolved"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].selected, vec!["Small"]);
+        assert_eq!(answers[1].selected, vec!["Careful"]);
+        assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ask_keyboard_handles_multi_select_and_cancellation() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(true, false),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Char(' ')).await;
+        for _ in 0..3 {
+            press_ask(&mut app, &registry, KeyCode::Down).await;
+        }
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert!(app.ask_queue.is_empty(), "multi-select did not submit");
+        assert!(
+            registry.lock().await.is_empty(),
+            "ask sender was not resolved"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].selected, vec!["Small"]);
+
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        press_ask(&mut app, &registry, KeyCode::Esc).await;
+        assert!(matches!(
+            receiver.await.unwrap(),
+            Err(crate::core::agent::interaction::AskError::Cancelled)
+        ));
+        assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ask_mouse_opens_custom_editor_and_submits_text() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
+        terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
+        let other_row = app.ask_queue.front().unwrap().row_hitboxes[2].0;
+
+        assert!(
+            handle_ask_mouse(
+                &mut app,
+                MouseEvent {
+                    kind: MouseEventKind::Down(MouseButton::Left),
+                    column: 2,
+                    row: other_row,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &registry,
+            )
+            .await
+        );
+        assert!(app.ask_queue.front().unwrap().editing_custom);
+        for ch in "custom answer".chars() {
+            press_ask(&mut app, &registry, KeyCode::Char(ch)).await;
+        }
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+
+        assert!(app.ask_queue.is_empty(), "custom answer did not submit");
+        assert!(
+            registry.lock().await.is_empty(),
+            "ask sender was not resolved"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].custom_input.as_deref(), Some("custom answer"));
+        assert!(app.ask_queue.is_empty());
     }
 
     #[test]

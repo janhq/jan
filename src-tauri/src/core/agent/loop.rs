@@ -63,6 +63,8 @@ pub(crate) struct OrchestrationArgs {
     pub permissions: crate::core::agent::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
+    /// Present only when a client can render and answer structured questions.
+    pub ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     /// When set, used verbatim as the system prompt, bypassing project-context
     /// assembly and memory recall/indexing. Set for subagent child runs so a
     /// dispatched subagent gets exactly its definition prompt with no parent
@@ -179,6 +181,7 @@ struct CompositeToolInvoker {
     permissions: crate::core::agent::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
+    ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
     yolo: bool,
@@ -320,6 +323,47 @@ impl CompositeToolInvoker {
             _ => "ERROR: unknown subagent tool".to_string(),
         }
     }
+
+    async fn handle_ask_tool(&self, args: &serde_json::Value) -> String {
+        use crate::core::agent::interaction::{register, AskError, AskRequest};
+
+        let Some(registry) = &self.ask_requests else {
+            return "ERROR [interactive_ui_required]: ask requires an attached interactive UI"
+                .to_string();
+        };
+        let request = match AskRequest::parse(args) {
+            Ok(request) => request,
+            Err(error) => return format!("ERROR: {error}"),
+        };
+        let (request_id, receiver) = register(registry).await;
+        if self
+            .events
+            .send(StreamEvent::AskRequest {
+                request_id: request_id.clone(),
+                request: request.clone(),
+            })
+            .is_err()
+        {
+            let _ = crate::core::agent::interaction::respond(
+                registry,
+                &request_id,
+                Err(AskError::Cancelled),
+            )
+            .await;
+            return "ERROR [ask_cancelled]: interactive UI disconnected".to_string();
+        }
+        match receiver.await {
+            Ok(Ok(results)) => match request.validate_results(&results) {
+                Ok(()) => serde_json::to_string(&results).unwrap_or_else(|error| {
+                    format!("ERROR: could not encode ask response: {error}")
+                }),
+                Err(error) => format!("ERROR: invalid ask response: {error}"),
+            },
+            Ok(Err(AskError::Cancelled)) | Err(_) => {
+                "ERROR [ask_cancelled]: user cancelled the question".to_string()
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -346,6 +390,22 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|f| f.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            if name == "ask" {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|value| serde_json::from_str(value).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_ask_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
             // Subagent tools are handled ahead of the fs/exec gate and the MCP
             // fallback: they orchestrate nested runs, not filesystem access.
             if crate::core::agent::subagent::is_subagent_tool(name) {
@@ -554,6 +614,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         permissions: crate::core::agent::permissions::ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
+        ask_requests: None,
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
@@ -675,6 +736,7 @@ async fn orchestrate_inner(
         permissions,
         project_root,
         permission_requests,
+        ask_requests,
         system_prompt_override,
         subagents_enabled,
         yolo,
@@ -765,19 +827,20 @@ async fn orchestrate_inner(
     // path uses `allow_all()`, so behavior there is unchanged.
     retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
 
+    // Per-run allowlist shared by builtin/subagent/ask advertisement below.
+    let allowed_names: Option<std::collections::HashSet<String>> = json_body
+        .get("allowed_tools")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
     if project_root.is_some() {
         // Built-ins are governed by the capability gate at execution time, so here
         // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
         // if the request set one). Advertisement is independent of the read-only
         // default that applies to opaque MCP tools.
-        let allowed_names: Option<std::collections::HashSet<String>> = json_body
-            .get("allowed_tools")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
         for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
             let name = schema["function"]["name"].as_str().unwrap_or_default();
             if permissions.is_denied(name) {
@@ -810,6 +873,16 @@ async fn orchestrate_inner(
                 }
             }
         }
+    }
+    // The `ask` tool needs no project (it's an interactive question, not
+    // filesystem access), so it's advertised independent of the project_root
+    // gate above.
+    if ask_requests.is_some()
+        && allowed_names
+            .as_ref()
+            .is_none_or(|allowed| allowed.contains("ask"))
+    {
+        openai_tools.push(crate::core::agent::interaction::ask_tool_schema());
     }
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -869,6 +942,7 @@ async fn orchestrate_inner(
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
+            ask_requests: ask_requests.clone(),
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
             subagents,
             yolo: *yolo,
@@ -1611,6 +1685,7 @@ mod tests {
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             events,
             permission_requests: registry,
+            ask_requests: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
             yolo: false,
@@ -1635,6 +1710,77 @@ mod tests {
                 None => return,
             }
         }
+    }
+
+    fn ask_call() -> serde_json::Value {
+        json!({
+            "id": "ask-call",
+            "type": "function",
+            "function": {
+                "name": "ask",
+                "arguments": serde_json::to_string(&json!({
+                    "questions": [{
+                        "id": "scope",
+                        "question": "Which scope?",
+                        "options": [{"label": "Small"}, {"label": "Large"}]
+                    }]
+                }))
+                .unwrap()
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn ask_requires_an_attached_interactive_ui() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, permissions);
+
+        let out = invoker.invoke(&[ask_call()]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("interactive_ui_required"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn ask_waits_for_and_returns_a_structured_response() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.ask_requests = Some(asks.clone());
+
+        let task = tokio::spawn(async move { invoker.invoke(&[ask_call()]).await.unwrap() });
+        let request_id = match rx.recv().await.unwrap() {
+            StreamEvent::AskRequest {
+                request_id,
+                request,
+            } => {
+                assert_eq!(request.questions[0].id, "scope");
+                request_id
+            }
+            event => panic!("expected ask_request, got {event:?}"),
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: vec!["Small".into()],
+                custom_input: None,
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let out = task.await.unwrap();
+        let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result[0]["id"], "scope");
+        assert_eq!(result[0]["selected"][0], "Small");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

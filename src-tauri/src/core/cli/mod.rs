@@ -529,6 +529,7 @@ fn build_cli_orchestration_args(
         permissions,
         project_root: Some(project_root),
         permission_requests,
+        ask_requests: None,
         system_prompt_override: None,
         subagents_enabled: true,
         yolo,
@@ -956,6 +957,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         }
         StreamEvent::Error { code, message } => {
             eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
+        }
+        StreamEvent::AskRequest { .. } => {
+            eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
         }
         // The non-interactive CLI doesn't persist session state, so
         // MessagesUpdated is a no-op here.

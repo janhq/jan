@@ -496,6 +496,10 @@ async fn run_subagent(
     let mut child_args = parent_args;
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
     child_args.subagents_enabled = false;
+    // A subagent's own interactive question (if any) belongs to its parent's
+    // conversation, not a client waiting on this child's ask_requests -- and
+    // no client is attached to a background/child run anyway.
+    child_args.ask_requests = None;
 
     let body = child_body(&resolved, &description, &parent_model, budget_remaining);
 

@@ -57,6 +57,11 @@ pub enum StreamEvent {
     MessagesUpdated {
         messages: Vec<serde_json::Value>,
     },
+    /// The `ask` tool is waiting for structured interactive input.
+    AskRequest {
+        request_id: String,
+        request: crate::core::agent::interaction::AskRequest,
+    },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,
