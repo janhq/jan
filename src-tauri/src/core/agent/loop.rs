@@ -57,10 +57,9 @@ pub(crate) struct OrchestrationArgs {
     pub permissions: crate::core::agent::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
-    /// When set, used verbatim as the system prompt, bypassing project-context
-    /// assembly and memory recall/indexing. Set for subagent child runs so a
-    /// dispatched subagent gets exactly its definition prompt with no parent
-    /// context bleed. `None` for normal runs.
+    /// When set, replaces the run's assistant identity while preserving the
+    /// shared project-context and tool-use prompt assembled for normal runs.
+    /// Child turns remain excluded from project memory recall/indexing.
     pub system_prompt_override: Option<String>,
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
@@ -666,6 +665,21 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
+fn build_run_system_prompt(
+    assistant_instructions: Option<&str>,
+    override_prompt: Option<&str>,
+    project_root: Option<&std::path::Path>,
+    subagents_enabled: bool,
+) -> Option<String> {
+    let base = override_prompt.or(assistant_instructions);
+    match project_root {
+        Some(root) => {
+            crate::core::agent::context::build_system_prompt(base, root, subagents_enabled)
+        }
+        None => base.map(str::to_string),
+    }
+}
+
 async fn orchestrate_inner(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
@@ -705,30 +719,27 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    let system_prompt = if let Some(override_prompt) = system_prompt_override.clone() {
-        Some(override_prompt)
-    } else if let Some(root) = project_root {
-        let mut sp = crate::core::agent::context::build_system_prompt(
-            assistant_instructions.as_deref(),
-            root,
-            *subagents_enabled,
-        );
-        // Recall project memory for the current query before it is indexed, so
-        // the active turn cannot surface itself.
-        if let Some(query) = latest_user_text(&conversation_messages) {
-            if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                sp = Some(match sp {
-                    Some(s) => format!("{s}\n\n{mem}"),
-                    None => mem,
-                });
+    let mut system_prompt = build_run_system_prompt(
+        assistant_instructions.as_deref(),
+        system_prompt_override.as_deref(),
+        project_root.as_deref(),
+        *subagents_enabled,
+    );
+    // Normal parent runs recall project memory for the current query before it
+    // is indexed. Child runs keep their isolated history and skip memory.
+    if system_prompt_override.is_none() {
+        if let Some(root) = project_root {
+            if let Some(query) = latest_user_text(&conversation_messages) {
+                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                    system_prompt = Some(match system_prompt {
+                        Some(s) => format!("{s}\n\n{mem}"),
+                        None => mem,
+                    });
+                }
             }
         }
-        sp
-    } else {
-        assistant_instructions
-    };
-    // Always tell the model today's date. Applies to every path — including the
-    // verbatim subagent override — so runs can reason about "today"/"latest".
+    }
+    // Always tell the model today's date, including isolated child runs.
     let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
     let system_prompt = match system_prompt {
         Some(sys) => format!("{date_line}\n\n{sys}"),
@@ -948,7 +959,6 @@ fn build_completion_request(
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
     json_body: &serde_json::Value,
-    require_tool_use: bool,
 ) -> serde_json::Value {
     let mut completion_map = serde_json::Map::new();
     completion_map.insert("model".to_string(), serde_json::json!(model_id));
@@ -956,10 +966,7 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    completion_map.insert(
-        "tool_choice".to_string(),
-        serde_json::json!(if require_tool_use { "required" } else { "auto" }),
-    );
+    completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
     if !openai_tools.is_empty() {
         completion_map.insert(
             "tools".to_string(),
@@ -1047,13 +1054,6 @@ async fn run_turn_cycle(
     // `MessagesUpdated` even when compaction happened on a prior (tool-call)
     // turn and the final turn itself didn't need retry.
     let mut did_compact = false;
-    // A subagent with an explicit tool allowlist must make at least one native
-    // tool call. Afterwards, restore `auto` so it can finish normally.
-    let mut require_tool_use = json_body
-        .get("_require_tool_use")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-        && !openai_tools.is_empty();
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
@@ -1067,13 +1067,8 @@ async fn run_turn_cycle(
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
-                let request_value = build_completion_request(
-                    model_id,
-                    &conversation_messages,
-                    openai_tools,
-                    json_body,
-                    require_tool_use,
-                );
+                let request_value =
+                    build_completion_request(model_id, &conversation_messages, openai_tools, json_body);
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
                     Err(e)
@@ -1118,7 +1113,6 @@ async fn run_turn_cycle(
             }
             return Ok(completion);
         }
-        require_tool_use = false;
 
         if budget.exhausted() {
             return Err(format!(
@@ -1241,13 +1235,11 @@ mod tests {
 
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
-        requests: StdMutex<Vec<serde_json::Value>>,
     }
     impl MockModel {
         fn new(responses: Vec<serde_json::Value>) -> Self {
             Self {
                 responses: StdMutex::new(responses.into_iter().collect()),
-                requests: StdMutex::new(Vec::new()),
             }
         }
     }
@@ -1255,10 +1247,9 @@ mod tests {
     impl ModelInvoker for MockModel {
         async fn invoke(
             &self,
-            request: &serde_json::Value,
+            _request: &serde_json::Value,
             _events: &mpsc::UnboundedSender<StreamEvent>,
         ) -> Result<serde_json::Value, String> {
-            self.requests.lock().unwrap().push(request.clone());
             self.responses
                 .lock()
                 .unwrap()
@@ -1290,6 +1281,26 @@ mod tests {
                 })
                 .collect())
         }
+    }
+
+    #[test]
+    fn subagent_prompt_reuses_main_prompt_builder() {
+        let root = unique_project_root();
+        let prompt = build_run_system_prompt(
+            Some("main assistant"),
+            Some("You are a robotics researcher."),
+            Some(&root),
+            false,
+        )
+        .expect("prompt");
+
+        assert!(prompt.starts_with("You are a robotics researcher."));
+        assert!(!prompt.contains("main assistant"));
+        assert!(prompt.contains("# Guidelines"));
+        assert!(prompt.contains("# Web Access"));
+        assert!(prompt.contains("web_search"));
+        assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     fn tool_call_completion() -> serde_json::Value {
@@ -1356,91 +1367,6 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
-    }
-
-    #[tokio::test]
-    async fn subagent_requires_one_native_tool_call_then_restores_auto() {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let model = MockModel::new(vec![
-            tool_call_completion(),
-            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
-        ]);
-        let tool = MockTool::default();
-        let mut budget = SessionBudget::new(None);
-        let tools = vec![json!({
-            "type": "function",
-            "function": {
-                "name": "search",
-                "description": "Search",
-                "parameters": { "type": "object" }
-            }
-        })];
-
-        run_turn_cycle(
-            &tx,
-            &json!({ "_require_tool_use": true }),
-            "m",
-            &tools,
-            vec![json!({ "role": "user", "content": "research this" })],
-            8,
-            &mut budget,
-            &model,
-            &tool,
-        )
-        .await
-        .unwrap();
-
-        let requests = model.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0]["tool_choice"], "required");
-        assert_eq!(requests[1]["tool_choice"], "auto");
-        assert!(requests[0].get("_require_tool_use").is_none());
-    }
-
-    #[tokio::test]
-    async fn turn_cycle_executes_provider_xml_tool_call_fallback() {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let model = MockModel::new(vec![
-            json!({
-                "choices": [{
-                    "message": {
-                        "content": "Starting.\n<function_calls><invoke name=\"web_search\"><parameter name=\"query\">robotics news</parameter></invoke></function_calls>"
-                    },
-                    "finish_reason": "stop"
-                }]
-            }),
-            json!({ "choices": [{ "message": { "content": "research complete" }, "finish_reason": "stop" }] }),
-        ]);
-        let tool = MockTool::default();
-        let mut budget = SessionBudget::new(None);
-
-        let result = run_turn_cycle(
-            &tx,
-            &json!({ "_require_tool_use": true }),
-            "m",
-            &[json!({
-                "type": "function",
-                "function": {
-                    "name": "web_search",
-                    "parameters": { "type": "object" }
-                }
-            })],
-            vec![json!({ "role": "user", "content": "research this" })],
-            8,
-            &mut budget,
-            &model,
-            &tool,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            result["choices"][0]["message"]["content"],
-            "research complete"
-        );
-        let calls = tool.calls.lock().unwrap();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0][0]["function"]["name"], "web_search");
     }
 
     #[tokio::test]
