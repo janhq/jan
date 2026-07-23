@@ -64,11 +64,12 @@ pub(crate) struct AgentSection {
     /// triggers at the right threshold.
     #[serde(default)]
     pub context_window: Option<u64>,
-    /// Tokens reserved for the model's response (defaults to 16K if unset).
-    /// Compaction triggers at `context_window - max_output_tokens`, so this
-    /// should match the model's configured output limit.
+    /// Tokens to hold back from the context window when deciding whether to
+    /// compact (defaults to 16K if unset). Compaction triggers at
+    /// `context_window - compaction_reserve_tokens`. This is a compaction
+    /// heuristic only — it is NOT sent to the API as `max_tokens`.
     #[serde(default)]
-    pub max_output_tokens: Option<u64>,
+    pub compaction_reserve_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -87,7 +88,7 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
 max_turns = 400
 # context_window = 128000  # tokens; defaults to 128K if unset
-# max_output_tokens = 16384  # tokens reserved for the response; defaults to 16K
+# compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
 instructions_file = "AGENT.md"
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
@@ -348,24 +349,24 @@ mod tests {
     }
 
     #[test]
-    fn max_output_tokens_defaults_to_none_when_unset() {
-        let root = unique_root("out_unset");
+    fn compaction_reserve_tokens_defaults_to_none_when_unset() {
+        let root = unique_root("reserve_unset");
         ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
-        assert_eq!(cfg.agent.max_output_tokens, None);
+        assert_eq!(cfg.agent.compaction_reserve_tokens, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn max_output_tokens_parses_when_present() {
-        let root = unique_root("out_present");
+    fn compaction_reserve_tokens_parses_when_present() {
+        let root = unique_root("reserve_present");
         ensure_project(&root).expect("scaffold");
         let path = agent_toml_path(&root);
         let raw = std::fs::read_to_string(&path).unwrap();
-        let raw = raw.replace("[agent]", "[agent]\nmax_output_tokens = 8192");
+        let raw = raw.replace("[agent]", "[agent]\ncompaction_reserve_tokens = 8192");
         std::fs::write(&path, raw).unwrap();
         let cfg = load_agent_config(&root).expect("load");
-        assert_eq!(cfg.agent.max_output_tokens, Some(8192));
+        assert_eq!(cfg.agent.compaction_reserve_tokens, Some(8192));
         let _ = std::fs::remove_dir_all(&root);
     }
 

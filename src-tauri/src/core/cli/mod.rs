@@ -1154,7 +1154,7 @@ fn prepare_agent_session(
         smol_model,
         max_turns,
         context_window: cfg.agent.context_window.unwrap_or(128_000),
-        reserve_tokens: cfg.agent.max_output_tokens.unwrap_or(16_384),
+        reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
         router_task,
         mcp_servers,
         mcp_task,
