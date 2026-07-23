@@ -1297,6 +1297,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             let _ = std::io::stdout().flush();
         }
         StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
+        // In-progress signal is for the live TUI; the piped log stays quiet
+        // until the full call (with args) arrives just below.
+        StreamEvent::ToolCallStarted { .. } => {}
         StreamEvent::ToolCall { name, args, .. } => eprintln!(
             "\x1b[2m[tool] {}\x1b[0m",
             crate::core::agent::events::describe_tool_call(&name, &args)
