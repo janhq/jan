@@ -1153,12 +1153,31 @@ async fn run_turn_cycle(
         // Standard OpenAI tool protocol: each result is a `role: "tool"` message
         // carrying its `tool_call_id` (see note above the assistant push -- the
         // tokamak-1-preview facade handles models that can't attend to it).
+        let tool_names: HashMap<&str, &str> = tool_calls
+            .iter()
+            .filter_map(|tc| {
+                let id = tc.get("id").and_then(|v| v.as_str())?;
+                let name = tc
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())?;
+                Some((id, name))
+            })
+            .collect();
+
         for outcome in tool_results {
             let ToolOutcome { id, content, diff } = outcome;
+            // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
+            // convention is reserved for hard tool failures the model must
+            // treat as errors), but its failed exit marker still flags the
+            // call as failed for display.
+            let is_error = content.starts_with("ERROR")
+                || (tool_names.get(id.as_str()) == Some(&"bash")
+                    && crate::core::agent::tools::handlers::bash_result_failed(&content));
             let _ = events.send(StreamEvent::ToolResult {
                 id: id.clone(),
                 content: content.clone(),
-                is_error: content.starts_with("ERROR"),
+                is_error,
                 diff,
             });
             conversation_messages.push(serde_json::json!({
@@ -1296,6 +1315,82 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    struct FixedTool {
+        content: String,
+    }
+    #[async_trait]
+    impl ToolInvoker for FixedTool {
+        async fn invoke(
+            &self,
+            tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(tool_calls
+                .iter()
+                .map(|tc| {
+                    let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    ToolOutcome::plain(id, self.content.clone())
+                })
+                .collect())
+        }
+    }
+
+    fn bash_call_completion() -> serde_json::Value {
+        json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": "bash", "arguments": "{\"command\":\"false\"}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        })
+    }
+
+    async fn bash_result_is_error_flag(content: &str) -> bool {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            bash_call_completion(),
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = FixedTool { content: content.to_string() };
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "hi" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+        )
+        .await
+        .unwrap();
+        drop(tx);
+        while let Some(ev) = rx.recv().await {
+            if let StreamEvent::ToolResult { is_error, .. } = ev {
+                return is_error;
+            }
+        }
+        panic!("no ToolResult emitted");
+    }
+
+    #[tokio::test]
+    async fn bash_nonzero_exit_flags_tool_result_as_error() {
+        assert!(bash_result_is_error_flag("boom\n[exit 1]").await);
+        assert!(bash_result_is_error_flag("[terminated by signal]").await);
+    }
+
+    #[tokio::test]
+    async fn bash_zero_exit_does_not_flag_tool_result_as_error() {
+        assert!(!bash_result_is_error_flag("ok\n[exit 0]").await);
     }
 
     #[tokio::test]
