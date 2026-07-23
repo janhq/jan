@@ -1,4 +1,4 @@
-//! Interactive chat console over the agent loop (`jan agent ui`). A thin
+//! Interactive chat console over the agent loop (bare `jan`). A thin
 //! renderer: the engine is shared with the plain CLI path, only the
 //! presentation differs. Maintains a running conversation — the user types
 //! messages into an input box, each submit spawns an agent run over the shared
@@ -173,7 +173,7 @@ impl Picker {
             PickerKind::ToggleMcp => " ↑/↓ select   Enter toggle   Esc close",
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
-            PickerKind::ViewConfig => " set via: jan agent config set --provider <id> ...   Esc close",
+            PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
         }
     }
 }
@@ -3394,7 +3394,7 @@ fn open_mcp_picker(app: &mut App) {
 
 /// Open the `/config` screen: a read-only view of the providers configured in
 /// `~/.jan/config.toml` (the standalone-agent credential store), with API keys
-/// redacted. Editing is headless via `jan agent config set/unset` (shown in the
+/// redacted. Editing is headless via `jan config set/unset` (shown in the
 /// footer), since a TUI is not the safe place to type secrets.
 fn open_config_screen(app: &mut App) {
     let configs = match crate::core::agent::global_config::load_global_config() {
@@ -3406,7 +3406,7 @@ fn open_config_screen(app: &mut App) {
 
     let items: Vec<PickerItem> = if providers.is_empty() {
         vec![PickerItem {
-            label: "no providers configured - run: jan agent config set --provider <id> --api-key <key>"
+            label: "no providers configured - run: jan config set --provider <id> --api-key <key>"
                 .to_string(),
             value: String::new(),
             hint: None,
