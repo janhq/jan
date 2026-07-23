@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { GitBranch, Laptop, Folder, Sparkles } from 'lucide-react'
+import { FileDiff, GitBranch, Laptop, Folder, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -35,7 +35,9 @@ import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
 import CodeModeSelector from '@/containers/CodeModeSelector'
 import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
+import { CodeDiffPanel } from '@/containers/CodeDiffPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
+import { collectCodeFileDiffs } from '@/lib/codeDiffs'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useMessageErrors } from '@/stores/message-errors'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -46,10 +48,17 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export const Route = createFileRoute(route.code as any)({
   component: CodePage,
 })
+
+type CodeSidePanelView = 'subagents' | 'diff'
 
 // Per-run cumulative token ceiling (one agent_run = one multi-step task). Since
 // `max_turns: 0`, this cumulative *spend* bound (prompt replays + completions,
@@ -198,7 +207,9 @@ function CodePage() {
   // Same live-vs-committed split as subagents: while running, the number can
   // still bump on later turns; once idle, show what actually got persisted.
   const usage = running ? liveUsage : current?.lastUsage
-  const [tasksPanelOpen, setTasksPanelOpen] = useState(false)
+  const [activePanel, setActivePanel] = useState<CodeSidePanelView | null>(null)
+  const togglePanel = (view: CodeSidePanelView) =>
+    setActivePanel((current) => (current === view ? null : view))
 
   // Local (llamacpp) models can take a while to load before the first token.
   // The router emits `llamacpp-model-load-progress`, which LlamacppOomListener
@@ -261,6 +272,10 @@ function CodePage() {
   const displayedTurns: CodeTurn[] = useMemo(
     () => [...(current?.turns ?? []), ...liveTurns],
     [current?.turns, liveTurns]
+  )
+  const codeDiffs = useMemo(
+    () => collectCodeFileDiffs(displayedTurns, subagents),
+    [displayedTurns, subagents]
   )
   // Committed turns are stable during a run; only the live tail changes per
   // token. Memoize them separately so streaming rebuilds just the small tail,
@@ -878,24 +893,51 @@ function CodePage() {
     useCodeRun.getState().endSubagent(currentId, subagentRunId, null)
   }
 
-  const runningSubagentCount = subagents.filter(
-    (s) => s.status === 'running'
-  ).length
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
+        <div className="flex items-center justify-between w-full gap-2 pr-2">
           <DropdownModelProvider useLastUsedModel />
-          {current?.goal && (
-            <span
-              className="text-xs text-muted-foreground truncate max-w-[40%]"
-              title={current.goal.condition}
-            >
-              {current.goal.status === 'achieved' ? '✓' : '◎'}{' '}
-              {current.goal.condition}
-            </span>
-          )}
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            {current?.goal && (
+              <span
+                className="text-xs text-muted-foreground truncate max-w-[40%]"
+                title={current.goal.condition}
+              >
+                {current.goal.status === 'achieved' ? '✓' : '◎'}{' '}
+                {current.goal.condition}
+              </span>
+            )}
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activePanel === 'subagents' ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={() => togglePanel('subagents')}
+                    aria-label="Subagents"
+                  >
+                    <Sparkles size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Subagents</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activePanel === 'diff' ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={() => togglePanel('diff')}
+                    aria-label="Diff"
+                  >
+                    <FileDiff size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Diff</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
         </div>
       </HeaderPage>
 
@@ -973,22 +1015,6 @@ function CodePage() {
                   </span>
                 )}
               </div>
-              {subagents.length > 0 && (
-                <Button
-                  variant={tasksPanelOpen ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-7 gap-1.5 rounded-full"
-                  onClick={() => setTasksPanelOpen((o) => !o)}
-                  title={t('common:backgroundTasks')}
-                >
-                  <Sparkles size={14} className={tasksPanelOpen ? undefined : 'text-muted-foreground'} />
-                  <span>
-                    {runningSubagentCount > 0
-                      ? `${runningSubagentCount} running`
-                      : `${subagents.length} tasks`}
-                  </span>
-                </Button>
-              )}
               <div className="ml-auto flex items-center gap-2">
                 {usage?.total_tokens ? (
                   <TokenCountOnly
@@ -1040,14 +1066,21 @@ function CodePage() {
             </div>
         </div>
       </div>
-        {tasksPanelOpen && (
+        {activePanel === 'subagents' ? (
           <SubagentTasksPanel
             subagents={subagents}
             awaitingInputRunIds={awaitingInputRunIds}
-            onClose={() => setTasksPanelOpen(false)}
+            onClose={() => setActivePanel(null)}
             onCancel={handleCancelSubagent}
           />
-        )}
+        ) : activePanel === 'diff' ? (
+          <CodeDiffPanel
+            files={codeDiffs}
+            folderName={folderName}
+            gitBranch={gitBranch}
+            onClose={() => setActivePanel(null)}
+          />
+        ) : null}
       </div>
 
       <CodePermissionDialog
