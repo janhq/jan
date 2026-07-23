@@ -727,9 +727,14 @@ async fn orchestrate_inner(
     } else {
         assistant_instructions
     };
-    if let Some(sys) = system_prompt {
-        set_system_prompt(&mut conversation_messages, &sys);
-    }
+    // Always tell the model today's date. Applies to every path — including the
+    // verbatim subagent override — so runs can reason about "today"/"latest".
+    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
+    let system_prompt = match system_prompt {
+        Some(sys) => format!("{date_line}\n\n{sys}"),
+        None => date_line,
+    };
+    set_system_prompt(&mut conversation_messages, &system_prompt);
 
     let model_override = json_body.get("model").and_then(|v| v.as_str());
     let mut model_id: Option<String> = model_override.map(|v| v.to_string());
@@ -770,49 +775,60 @@ async fn orchestrate_inner(
     // path uses `allow_all()`, so behavior there is unchanged.
     retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
 
-    if project_root.is_some() {
-        // Built-ins are governed by the capability gate at execution time, so here
-        // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
-        // if the request set one). Advertisement is independent of the read-only
-        // default that applies to opaque MCP tools.
-        let allowed_names: Option<std::collections::HashSet<String>> = json_body
-            .get("allowed_tools")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
-        for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
-            let name = schema["function"]["name"].as_str().unwrap_or_default();
-            if permissions.is_denied(name) {
+    // Per-run allowlist shared by builtin + subagent advertisement below.
+    let allowed_names: Option<std::collections::HashSet<String>> = json_body
+        .get("allowed_tools")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
+    // Built-ins are governed by the capability gate at execution time, so here
+    // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
+    // if the request set one). Advertisement is independent of the read-only
+    // default that applies to opaque MCP tools.
+    //
+    // Filesystem/skill/memory builtins resolve paths against `project_root`, so
+    // they are advertised only when a project is selected. Network builtins
+    // (`web_search`/`web_fetch`) take no path and work without one, so they are
+    // always advertised — a folderless Cowork/desktop run (and its subagents)
+    // must still reach the live web.
+    for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
+        let name = schema["function"]["name"].as_str().unwrap_or_default();
+        let is_net = crate::core::agent::tools::lookup(name)
+            .is_some_and(|t| t.capability == crate::core::agent::tools::Capability::Net);
+        if project_root.is_none() && !is_net {
+            continue;
+        }
+        if permissions.is_denied(name) {
+            continue;
+        }
+        if let Some(allow) = &allowed_names {
+            if !allow.contains(name) {
                 continue;
             }
-            if let Some(allow) = &allowed_names {
-                if !allow.contains(name) {
+        }
+        openai_tools.push(schema);
+    }
+    // Subagent tools are advertised only when this run may dispatch them (never
+    // for a child run, capping recursion depth at one) and a project is selected
+    // (the registry loads from it). The dispatch tool's description lists the
+    // resolvable subagent names.
+    if args.subagents_enabled {
+        if let Some(root) = project_root {
+            let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
+            for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
+                let name = schema["function"]["name"].as_str().unwrap_or_default();
+                if permissions.is_denied(name) {
                     continue;
                 }
-            }
-            openai_tools.push(schema);
-        }
-        // Subagent tools are advertised only when this run may dispatch them
-        // (never for a child run, capping recursion depth at one). The dispatch
-        // tool's description lists the resolvable subagent names.
-        if args.subagents_enabled {
-            if let Some(root) = project_root {
-                let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
-                for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
-                    let name = schema["function"]["name"].as_str().unwrap_or_default();
-                    if permissions.is_denied(name) {
+                if let Some(allow) = &allowed_names {
+                    if !allow.contains(name) {
                         continue;
                     }
-                    if let Some(allow) = &allowed_names {
-                        if !allow.contains(name) {
-                            continue;
-                        }
-                    }
-                    openai_tools.push(schema);
                 }
+                openai_tools.push(schema);
             }
         }
     }
@@ -847,82 +863,79 @@ async fn orchestrate_inner(
     let max_session_tokens = json_body.get("max_session_tokens").and_then(|v| v.as_u64());
     let mut budget = SessionBudget::new(max_session_tokens);
 
-    if let Some(root) = project_root {
-        // Subagent (override) runs are ephemeral: their turns are never indexed
-        // into project memory, so a child cannot pollute the parent's recall.
-        let index_memory = system_prompt_override.is_none();
-        if index_memory {
+    // Memory indexing and subagent dispatch are project-scoped; they only run
+    // when a folder is selected. Tool execution, however, always goes through
+    // the composite invoker so native network builtins (`web_search`/`web_fetch`)
+    // work even in a folderless Cowork/desktop run — file/skill builtins are
+    // simply not advertised without a project, so the fallback root is inert.
+    let effective_root = project_root
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from(jan_data_folder.as_str()));
+
+    // Subagent (override) runs are ephemeral: their turns are never indexed into
+    // project memory, so a child cannot pollute the parent's recall.
+    let index_memory = project_root.is_some() && system_prompt_override.is_none();
+    if index_memory {
+        if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 crate::core::agent::memory::index_message(root, "user", &query);
             }
         }
-        // Background subagents are scoped to this run: `_bg_guard` aborts any
-        // still-running child when `orchestrate_inner` returns or is cancelled.
-        // Use the externally-tracked registry when the caller supplied one (so
-        // a Tauri command can cancel one specific subagent from outside), else
-        // a fresh local one exactly as before.
-        let bg = background_subagents.clone().unwrap_or_else(|| {
-            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default())
-        });
-        let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
-        let subagents = args.subagents_enabled.then(|| SubagentContext {
-            parent_args: args.clone(),
-            model_id: model_id.clone(),
-            max_session_tokens,
-            bg: bg.clone(),
-        });
-        let tools = CompositeToolInvoker {
-            mcp: mcp_tools,
-            project_root: root.clone(),
-            permissions: permissions.clone(),
-            events: events.clone(),
-            permission_requests: permission_requests.clone(),
-            grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
-            subagents,
-            yolo: *yolo,
-        };
-        let result = run_turn_cycle(
-            events,
-            json_body,
-            &model_id,
-            &openai_tools,
-            conversation_messages,
-            max_turns,
-            &mut budget,
-            &http_model,
-            &tools,
-        )
-        .await;
-        // On a clean exit, wait for any subagents the model dispatched but never
-        // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them.
-        if result.is_ok() {
-            bg.join_all().await;
-        }
-        if index_memory {
-            if let Ok(completion) = &result {
-                if let Some(answer) = extract_choice_message(completion)
-                    .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
-                {
-                    crate::core::agent::memory::index_message(root, "assistant", &answer);
-                }
+    }
+    // Background subagents are scoped to this run: `_bg_guard` aborts any
+    // still-running child when `orchestrate_inner` returns or is cancelled. Use
+    // the externally-tracked registry when the caller supplied one (so a Tauri
+    // command can cancel one specific subagent from outside), else a fresh local
+    // one. Subagent dispatch is only wired when a project is selected (the
+    // registry loads from it), matching tool advertisement above.
+    let bg = background_subagents.clone().unwrap_or_else(|| {
+        std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default())
+    });
+    let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
+    let subagents = (args.subagents_enabled && project_root.is_some()).then(|| SubagentContext {
+        parent_args: args.clone(),
+        model_id: model_id.clone(),
+        max_session_tokens,
+        bg: bg.clone(),
+    });
+    let tools = CompositeToolInvoker {
+        mcp: mcp_tools,
+        project_root: effective_root,
+        permissions: permissions.clone(),
+        events: events.clone(),
+        permission_requests: permission_requests.clone(),
+        grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
+        subagents,
+        yolo: *yolo,
+    };
+    let result = run_turn_cycle(
+        events,
+        json_body,
+        &model_id,
+        &openai_tools,
+        conversation_messages,
+        max_turns,
+        &mut budget,
+        &http_model,
+        &tools,
+    )
+    .await;
+    // On a clean exit, wait for any subagents the model dispatched but never
+    // explicitly awaited, so their in-flight work isn't aborted and lost by
+    // `_bg_guard`. On an error, teardown still aborts them.
+    if result.is_ok() {
+        bg.join_all().await;
+    }
+    if index_memory {
+        if let (Some(root), Ok(completion)) = (project_root, &result) {
+            if let Some(answer) = extract_choice_message(completion)
+                .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(str::to_string))
+            {
+                crate::core::agent::memory::index_message(root, "assistant", &answer);
             }
         }
-        result
-    } else {
-        run_turn_cycle(
-            events,
-            json_body,
-            &model_id,
-            &openai_tools,
-            conversation_messages,
-            max_turns,
-            &mut budget,
-            &http_model,
-            &mcp_tools,
-        )
-        .await
     }
+    result
 }
 
 /// Upper bound on compaction retries per model call, so a persistently
