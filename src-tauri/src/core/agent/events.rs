@@ -11,6 +11,12 @@ pub enum StreamEvent {
     Token { text: String },
     /// A new orchestration turn began (`index` is 1-based, `max` = max_turns).
     Step { index: u32, max: u32 },
+    /// A tool call started streaming: emitted mid-stream the instant the model's
+    /// tool-call `id` and `name` are known, before its arguments finish
+    /// streaming. Lets a consumer show an in-progress indicator during the
+    /// (potentially long) argument-streaming window; the full [`ToolCall`] with
+    /// parsed `args` follows once the completion is assembled.
+    ToolCallStarted { id: String, name: String },
     /// The model requested a tool call. `args` is the parsed argument object
     /// (null if the model emitted non-JSON arguments).
     ToolCall {
@@ -225,6 +231,19 @@ mod tests {
         assert_eq!(
             describe_tool_call("search", &json!({"q": "rust"})),
             "search {\"q\":\"rust\"}"
+        );
+    }
+
+    #[test]
+    fn tool_call_started_serializes_to_wire_shape() {
+        let v = serde_json::to_value(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            json!({ "type": "tool_call_started", "id": "c1", "name": "write" })
         );
     }
 
