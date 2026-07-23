@@ -25,7 +25,7 @@ export function CodeSidePanel({
     <aside
       className={cn(
         'flex h-full shrink-0 flex-col border-l bg-main-view',
-        expanded ? 'w-[32rem] max-w-[60vw]' : 'w-80'
+        expanded ? 'w-[32rem] max-w-[60%]' : 'w-80 max-w-[50%]'
       )}
     >
       <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
