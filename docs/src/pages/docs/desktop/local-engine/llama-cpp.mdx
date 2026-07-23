@@ -210,7 +210,7 @@ These engine-wide settings control how the router and every loaded model use sys
 | **KV Cache V Type** | KV-cache precision for values | f16 | Switch to q8_0 / q4_0 to save VRAM |
 
 <Callout type="info">
-**Per-model settings** (configured on each model's page, not here): Context Size (`ctx_size`), GPU Layers (`n_gpu_layers`), Batch Size (`batch_size`), **Disable KV Offload** (`no_kv_offload` — enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Chat Template, and sampling parameters. The router applies engine-wide settings as the `[*]` defaults in `router.preset.ini` and lets per-model entries override them.
+**Per-model settings** (configured on each model's page, not here): Context Size (`ctx_size`), GPU Layers (`n_gpu_layers`), Batch Size (`batch_size`), **Disable KV Offload** (`no_kv_offload` — enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Chat Template, Chat template options (`chat_template_kwargs`), and sampling parameters. The router applies engine-wide settings as the `[*]` defaults in `router.preset.ini` and lets per-model entries override them.
 </Callout>
 
 <Callout type="warning">
@@ -227,7 +227,7 @@ The default KV cache type was temporarily set to `q8_0` in a prior release and h
 These settings are for fine-tuning model behavior and advanced use cases.
 
 <Callout type="info">
-**Custom Jinja Chat Template**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
+**Custom Jinja Chat Template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
 </Callout>
 
 ### Text Generation Control
@@ -236,6 +236,7 @@ These settings are for fine-tuning model behavior and advanced use cases.
 |---------|-------------|---------------|----------------|
 | **Max Tokens to Predict** | Maximum tokens to generate | -1 (infinite) | Set a limit to prevent runaway generation |
 | **Custom Jinja Chat Template** (per-model) | Override model's chat format | Empty | Only if model needs special formatting |
+| **Chat template options** (per-model) | Extra options the model's chat template accepts (sent as `chat_template_kwargs`, e.g. `enable_thinking`) | Empty | To toggle template features like reasoning or tool formatting per model |
 
 ### RoPE (Rotary Position Embedding) Settings
 
