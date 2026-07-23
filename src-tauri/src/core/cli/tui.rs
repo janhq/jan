@@ -4241,7 +4241,11 @@ fn header(app: &App) -> Paragraph<'static> {
         (n, 0) => format!("turn {n}  "),
         (n, m) => format!("turn {n}/{m}  "),
     };
-    let project_str = app.project_root.to_string_lossy();
+    let dir_name = app
+        .project_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".");
     let elapsed = app
         .run_started
         .map(|t| format!("  {}", format_elapsed(t.elapsed().as_secs())))
@@ -4249,7 +4253,7 @@ fn header(app: &App) -> Paragraph<'static> {
     let mut spans = vec![
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
-        Span::styled(format!("📂 {}", &project_str as &str), Style::new().dark_gray()),
+        Span::styled(format!("📂 {}", dir_name), Style::new().dark_gray()),
     ];
     if let Some(branch) = app.git_branch.as_ref() {
         spans.push(Span::styled(
