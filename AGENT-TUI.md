@@ -157,9 +157,10 @@ The `apply` method processes `StreamEvent`s from the agent:
 ### Render Pipeline (`render` method)
 
 ```
-header    — project name, git branch, tokens, elapsed time, goal status
+header    — jan agent badge, model name, git branch, tokens, elapsed time, goal status
 transcript — scrollable chat area with user/assistant/tool rows
 input_box  — text input area
+path_line — project root path + git branch (dimmed, between input and footer)
 footer     — keybinding hints
 ```
 
