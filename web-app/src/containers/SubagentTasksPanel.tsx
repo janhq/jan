@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronDown, Loader2, Sparkles, AlertCircle, Square } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
-import type { SubagentRun } from '@/hooks/useCodeSessions'
+import type { CodeTurn, SubagentRun } from '@/hooks/useCodeSessions'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { MessageItem } from '@/containers/MessageItem'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
@@ -96,6 +96,30 @@ function TaskRow({
   )
 }
 
+const LEGACY_TOOL_MARKUP =
+  /<function_calls>[\s\S]*?(?:<\/function_calls>|$)/g
+
+function visibleSubagentTurns(run: SubagentRun): CodeTurn[] {
+  const last = run.turns.at(-1)
+  const finalAlreadyStreamed =
+    run.finalOutput != null &&
+    last?.role === 'assistant' &&
+    last.content === run.finalOutput
+  const turns =
+    run.finalOutput != null && !finalAlreadyStreamed
+      ? [...run.turns, { role: 'assistant' as const, content: run.finalOutput }]
+      : run.turns
+
+  return turns.map((turn) =>
+    turn.role === 'assistant' && turn.content.includes('<function_calls>')
+      ? {
+          ...turn,
+          content: turn.content.replace(LEGACY_TOOL_MARKUP, '').trim(),
+        }
+      : turn,
+  )
+}
+
 /** The selected subagent's trace (live progress while running, full output when done). */
 function TaskDetail({ run }: { run: SubagentRun }) {
   const {
@@ -104,15 +128,11 @@ function TaskDetail({ run }: { run: SubagentRun }) {
     handleScroll,
     forceScrollToBottom,
   } = useAutoScroll()
-  const messages = useMemo(() => {
-    // Append the final answer (from await_subagent) as a closing assistant turn,
-    // since it never arrives in the wrapped trace stream.
-    const turns =
-      run.finalOutput != null
-        ? [...run.turns, { role: 'assistant' as const, content: run.finalOutput }]
-        : run.turns
-    return codeTurnsToUIMessages(turns, `sub-${run.runId}`)
-  }, [run.turns, run.finalOutput, run.runId])
+  const messages = useMemo(
+    () =>
+      codeTurnsToUIMessages(visibleSubagentTurns(run), `sub-${run.runId}`),
+    [run],
+  )
   if (messages.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-main-view-fg/50">
