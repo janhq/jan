@@ -287,6 +287,10 @@ struct App {
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
     max_turns: u32,
+    /// Context window limit for the current model (default 128K).
+    context_window: u64,
+    /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
+    reserve_tokens: u64,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -507,6 +511,8 @@ impl App {
             path_hint_dismissed: false,
             status: Status::Idle,
             turn: (0, 0),
+            context_window: 128_000,
+            reserve_tokens: 16_384,
             tokens: 0,
             detail: String::new(),
             pending_queue: std::collections::VecDeque::new(),
@@ -1424,6 +1430,12 @@ impl App {
         // Auto-dequeue the next queued message, if any
         self.dequeue_next();
         self.persist();
+    }
+
+    /// Whether auto-compaction should trigger after a turn completes.
+    fn should_auto_compact(&self) -> bool {
+        let limit = self.context_window.saturating_sub(self.reserve_tokens);
+        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
     }
 
     fn on_error(&mut self, code: String, message: String) {
@@ -2455,6 +2467,38 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Done { stop_reason, usage }) => {
                     app.on_done(stop_reason, usage);
                     current = None;
+                    // Auto-compact when approaching the context limit.
+                    if app.should_auto_compact() {
+                        let model = app.model.clone();
+                        let mut history = std::mem::take(&mut app.history);
+                        let before = history.len();
+                        let compacted = crate::core::agent::r#loop::compact_history(
+                            args, &model, &history,
+                            crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                        )
+                        .await;
+                        match compacted {
+                            Ok(c) if c.len() < before => {
+                                history = c;
+                                app.history = history;
+                                app.persist();
+                                app.note(&format!(
+                                    "auto-compacted {} -> {} messages (ctx {}K/{}K)",
+                                    before,
+                                    app.history.len(),
+                                    app.tokens / 1000,
+                                    app.context_window / 1000,
+                                ));
+                            }
+                            Ok(_) => {
+                                app.history = history;
+                            }
+                            Err(e) => {
+                                app.history = history;
+                                app.note(&format!("auto-compaction failed: {e}"));
+                            }
+                        }
+                    }
                 }
                 Some(StreamEvent::Error { code, message }) => {
                     app.on_error(code, message);
@@ -3015,7 +3059,14 @@ async fn compact_command(app: &mut App) {
         Ok(compacted) if compacted.len() < before => {
             app.history = compacted;
             app.persist();
-            app.note(&format!("compacted {before} -> {} messages", app.history.len()));
+            // Rough token estimate after compaction (assume ~30% of original).
+            app.tokens = (app.tokens as f64 * 0.3) as u64;
+            app.note(&format!(
+                "compacted {before} -> {} messages (ctx {}K/{}K)",
+                app.history.len(),
+                app.tokens / 1000,
+                app.context_window / 1000,
+            ));
         }
         Ok(_) => app.note("nothing to compact yet"),
         Err(e) => app.note(&format!("compaction failed: {e}")),
@@ -4252,7 +4303,16 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
     ];
-    spans.push(Span::raw(format!("  {turn}tokens {}", app.tokens)));
+    spans.push(Span::raw(format!("  {turn}")));
+    if app.tokens > 0 {
+        spans.push(Span::raw(format!(
+            "ctx {}K/{}K  ",
+            app.tokens / 1000,
+            app.context_window / 1000
+        )));
+    } else {
+        spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
+    }
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
     // green once achieved), so an unattended run shows the goal is still live.
@@ -6754,5 +6814,69 @@ mod tests {
         // Editing the buffer re-shows the popup.
         app.input_insert('s');
         assert_eq!(names(&app), vec!["/resume"]);
+    }
+
+    #[test]
+    fn should_not_auto_compact_when_below_threshold() {
+        let app = test_app();
+        // Default context_window = 128K, reserve_tokens = 16K, so limit ~111K.
+        // With tokens = 50K and history = 6, no compact.
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_auto_compact_when_above_threshold() {
+        let mut app = test_app();
+        app.tokens = 120_000; // > 128K - 16K = 112K
+        // Need more than 4 history messages
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_when_history_too_short() {
+        let mut app = test_app();
+        app.tokens = 120_000;
+        // Only 3 messages — below the minimum of 5
+        for i in 0..3 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_with_zero_tokens() {
+        let mut app = test_app();
+        app.tokens = 0;
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_with_context_window_unset() {
+        let mut app = test_app();
+        app.tokens = 120_000;
+        app.context_window = u64::MAX; // effectively unlimited
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        // limit = u64::MAX - 16384 ≈ u64::MAX, so tokens=120K is well below
+        assert!(!app.should_auto_compact());
     }
 }
