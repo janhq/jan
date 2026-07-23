@@ -45,7 +45,7 @@ rustc --version   # 1.77.2+ (minimum)
 
 ```bash
 # Quick check (no binary produced):
-cd src-tauri && cargo check --no-default-features --features cli --lib
+cd src-tauri && cargo check --features cli --lib
 
 # Debug build + install to ~/.local/bin:
 cd /Users/alandao/Documents/codes/jan-agent
@@ -53,7 +53,7 @@ cd /Users/alandao/Documents/codes/jan-agent
 ./build-tui.sh release    # release (optimized, slower build)
 
 # Release build (optimized, smaller binary):
-cd src-tauri && cargo build --no-default-features --features cli --bin jan --release
+cd src-tauri && cargo build --features cli --bin jan --release
 ```
 
 ### Using the Build Script
@@ -72,32 +72,30 @@ The script installs the binary to `~/.local/bin/jan-agent`. Make sure `~/.local/
 
 ### Binary vs Library
 
-- The **library** (`app_lib`) is what you build in CI/CD for both desktop and CLI,
-  but the two are mutually exclusive feature configs: `cli` compiles out every
-  Tauri-dependent module, and the Tauri/GTK crates are not even dependencies.
-- The **CLI binary** (`jan`) needs `--no-default-features --features cli` to include TUI dependencies.
+- The **library** (`app_lib`) is what you build in CI/CD for both desktop and CLI.
+- The **CLI binary** (`jan`) needs `--features cli` to include TUI dependencies.
 - The **desktop binary** (`jan-desktop`) uses the `desktop` feature (Tauri).
 
-When developing TUI features, use `cargo check --no-default-features --features cli --lib` for the fast inner loop (checks only the library, not binary linking).
+When developing TUI features, use `cargo check --features cli --lib` for the fast inner loop (checks only the library, not binary linking).
 
 ## Testing
 
 ### Run All TUI Tests
 
 ```bash
-cd src-tauri && cargo test --no-default-features --features cli --lib -- core::cli::tui
+cd src-tauri && cargo test --features cli --lib -- core::cli::tui
 ```
 
 ### Run a Specific Test
 
 ```bash
-cd src-tauri && cargo test --no-default-features --features cli --lib -- core::cli::tui::tests::submit_user_attaches_pending_images_and_renders_label
+cd src-tauri && cargo test --features cli --lib -- core::cli::tui::tests::submit_user_attaches_pending_images_and_renders_label
 ```
 
 ### Watch Mode (auto-re-run on changes)
 
 ```bash
-cd src-tauri && cargo watch -x "test --no-default-features --features cli --lib -- core::cli::tui"
+cd src-tauri && cargo watch -x "test --features cli --lib -- core::cli::tui"
 ```
 
 *(Requires `cargo watch`: `cargo install cargo-watch`)*
@@ -159,10 +157,9 @@ The `apply` method processes `StreamEvent`s from the agent:
 ### Render Pipeline (`render` method)
 
 ```
-header    — jan agent badge, model name, git branch, tokens, elapsed time, goal status
+header    — project name, git branch, tokens, elapsed time, goal status
 transcript — scrollable chat area with user/assistant/tool rows
 input_box  — text input area
-path_line — project root path + git branch (dimmed, between input and footer)
 footer     — keybinding hints
 ```
 
@@ -240,7 +237,7 @@ The TUI supports Tab-based slash command completion:
 jan-agent tui
 
 # Or from the project:
-cd src-tauri && cargo run --no-default-features --features cli --bin jan -- tui
+cd src-tauri && cargo run --features cli --bin jan -- tui
 
 # With a specific model:
 jan-agent tui --model my-model
@@ -306,13 +303,12 @@ fn my_new_test() {
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### "features `cli` and `tauri-app`/`desktop` are mutually exclusive"
+### "error: could not compile `Jan`"
 
-`--features cli` on its own still enables the crate's `default` features (which
-include `desktop`). The CLI is a Tauri-free build, so it must opt out of them:
+Desktop features are required for some dependencies. When building CLI-only, use `--features cli`:
 
 ```bash
-cd src-tauri && cargo check --no-default-features --features cli --lib
+cd src-tauri && cargo check --features cli --lib
 ```
 
 ### "signal: 9" (SIGKILL) during build
@@ -321,7 +317,7 @@ The Rust compiler may run out of memory on large builds. Try:
 
 ```bash
 # Limit parallel codegen units
-cd src-tauri && CARGO_BUILD_JOBS=2 cargo build --no-default-features --features cli --bin jan
+cd src-tauri && CARGO_BUILD_JOBS=2 cargo build --features cli --bin jan
 ```
 
 ### TUI rendering artifacts
