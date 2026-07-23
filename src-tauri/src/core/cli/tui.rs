@@ -287,6 +287,13 @@ struct App {
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
     max_turns: u32,
+    /// Context window limit for the current model (default 128K).
+    context_window: u64,
+    /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
+    reserve_tokens: u64,
+    /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
+    /// `None` omits the field (model default).
+    max_tokens: Option<u64>,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -465,6 +472,9 @@ impl App {
     fn new(
         model: String,
         max_turns: u32,
+        context_window: u64,
+        reserve_tokens: u64,
+        max_tokens: Option<u64>,
         agent_dir: std::path::PathBuf,
         project_root: PathBuf,
         repo_root: Option<PathBuf>,
@@ -476,6 +486,9 @@ impl App {
             goal_eval_pending: false,
             args: None,
             max_turns,
+            context_window,
+            reserve_tokens,
+            max_tokens,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -1014,12 +1027,18 @@ impl App {
     }
 
     fn body(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": self.history,
             "max_turns": self.max_turns,
             "stream": true,
-        })
+        });
+        // Forward the per-request output cap only when configured; it reaches
+        // the upstream via `copy_optional_chat_params`.
+        if let Some(max) = self.max_tokens {
+            body["max_tokens"] = serde_json::json!(max);
+        }
+        body
     }
 
     /// Arm workspace snapshots by queuing the base capture before the first turn.
@@ -1426,6 +1445,12 @@ impl App {
         self.persist();
     }
 
+    /// Whether auto-compaction should trigger after a turn completes.
+    fn should_auto_compact(&self) -> bool {
+        let limit = self.context_window.saturating_sub(self.reserve_tokens);
+        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
+    }
+
     fn on_error(&mut self, code: String, message: String) {
         self.finalize_tool_group();
         self.flush_assistant();
@@ -1563,6 +1588,26 @@ fn truncate(s: &str, max: usize) -> String {
 /// Summarize tool output to one transcript line: first non-empty line with its
 /// internal whitespace collapsed, truncated to `max`, plus a `(+N lines)`
 /// suffix when more follow.
+/// Rough token count from message content characters (~4 chars ≈ 1 token).
+fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
+    let mut total_chars: usize = 0;
+    for msg in messages {
+        if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+            total_chars += content.len();
+        }
+        if let Some(calls) = msg.get("tool_calls") {
+            if let Some(arr) = calls.as_array() {
+                for call in arr {
+                    if let Some(args) = call.get("arguments") {
+                        total_chars += args.to_string().len();
+                    }
+                }
+            }
+        }
+    }
+    (total_chars / 4).max(1) as u64
+}
+
 fn summarize_result(s: &str, max: usize) -> String {
     let mut lines = s.lines().filter(|l| !l.trim().is_empty());
     let first = lines.next().unwrap_or("");
@@ -2259,6 +2304,9 @@ pub async fn run(
         model,
         smol_model,
         max_turns,
+        context_window,
+        reserve_tokens,
+        max_tokens,
         router_task,
         mcp_servers,
         mcp_task,
@@ -2275,7 +2323,7 @@ pub async fn run(
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind.
     let repo_root = git::repo_root(&project_root);
-    let mut app = App::new(model, max_turns, agent_dir, project_root, repo_root);
+    let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
     if args.yolo {
@@ -2459,6 +2507,47 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Done { stop_reason, usage }) => {
                     app.on_done(stop_reason, usage);
                     current = None;
+                    // Auto-compact when approaching the context limit.
+                    if app.should_auto_compact() {
+                        let model = app.model.clone();
+                        let mut history = std::mem::take(&mut app.history);
+                        let before = history.len();
+                        // Show feedback immediately before the blocking model call.
+                        app.note("auto-compacting...");
+                        let compacted = crate::core::agent::r#loop::compact_history(
+                            args, &model, &history,
+                            crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                        )
+                        .await;
+                        // Remove the "auto-compacting..." note.
+                        app.transcript.retain(|l| {
+                            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                            !text.contains("auto-compacting")
+                        });
+                        match compacted {
+                            Ok(c) if c.len() < before => {
+                                history = c;
+                                app.history = history;
+                                // Update token estimate from compacted content.
+                                app.tokens = estimate_token_count(&app.history);
+                                app.persist();
+                                app.note(&format!(
+                                    "auto-compacted {} -> {} messages (ctx {}K/{}K)",
+                                    before,
+                                    app.history.len(),
+                                    app.tokens / 1000,
+                                    app.context_window / 1000,
+                                ));
+                            }
+                            Ok(_) => {
+                                app.history = history;
+                            }
+                            Err(e) => {
+                                app.history = history;
+                                app.note(&format!("auto-compaction failed: {e}"));
+                            }
+                        }
+                    }
                 }
                 Some(StreamEvent::Error { code, message }) => {
                     app.on_error(code, message);
@@ -3019,7 +3108,14 @@ async fn compact_command(app: &mut App) {
         Ok(compacted) if compacted.len() < before => {
             app.history = compacted;
             app.persist();
-            app.note(&format!("compacted {before} -> {} messages", app.history.len()));
+            // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
+            app.tokens = estimate_token_count(&app.history);
+            app.note(&format!(
+                "compacted {before} -> {} messages (ctx {}K/{}K)",
+                app.history.len(),
+                app.tokens / 1000,
+                app.context_window / 1000,
+            ));
         }
         Ok(_) => app.note("nothing to compact yet"),
         Err(e) => app.note(&format!("compaction failed: {e}")),
@@ -4256,7 +4352,17 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
     ];
-    spans.push(Span::raw(format!("  {turn}tokens {}", app.tokens)));
+    spans.push(Span::raw(format!("  {turn}")));
+    if app.tokens > 0 {
+        spans.push(Span::raw(format!(
+            "ctx {}K/{}K  ",
+            // Round to nearest K for display clarity.
+            (app.tokens + 500) / 1000,
+            app.context_window / 1000
+        )));
+    } else {
+        spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
+    }
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
     // green once achieved), so an unattended run shows the goal is still live.
@@ -4519,7 +4625,7 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        App::new("m".into(), 8, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
+        App::new("m".into(), 8, 128_000, 16_384, None, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
     fn pending(offers_always: bool) -> Pending {
@@ -6774,5 +6880,84 @@ mod tests {
         // Editing the buffer re-shows the popup.
         app.input_insert('s');
         assert_eq!(names(&app), vec!["/resume"]);
+    }
+
+    #[test]
+    fn should_not_auto_compact_when_below_threshold() {
+        let app = test_app();
+        // Default context_window = 128K, reserve_tokens = 16K, so limit ~111K.
+        // With tokens = 50K and history = 6, no compact.
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_auto_compact_when_above_threshold() {
+        let mut app = test_app();
+        app.tokens = 120_000; // > 128K - 16K = 112K
+        // Need more than 4 history messages
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_when_history_too_short() {
+        let mut app = test_app();
+        app.tokens = 120_000;
+        // Only 3 messages — below the minimum of 5
+        for i in 0..3 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_with_zero_tokens() {
+        let mut app = test_app();
+        app.tokens = 0;
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn should_not_auto_compact_with_context_window_unset() {
+        let mut app = test_app();
+        app.tokens = 120_000;
+        app.context_window = u64::MAX; // effectively unlimited
+        for i in 0..6 {
+            app.history.push(serde_json::json!({
+                "role": if i % 2 == 0 { "user" } else { "assistant" },
+                "content": format!("msg{i}")
+            }));
+        }
+        // limit = u64::MAX - 16384 ≈ u64::MAX, so tokens=120K is well below
+        assert!(!app.should_auto_compact());
+    }
+
+    #[test]
+    fn body_omits_max_tokens_when_unset() {
+        let app = test_app();
+        let body = app.body();
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn body_includes_max_tokens_when_set() {
+        let mut app = test_app();
+        app.max_tokens = Some(4096);
+        let body = app.body();
+        assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }
