@@ -126,7 +126,7 @@ pub fn list_provider_models() -> Vec<(String, String)> {
 /// `[provider]` override -> `--provider`/`--api-key` CLI/env overrides.
 ///
 /// `project_root` is `None` when no project context is available (e.g.
-/// `jan agent status` without `--project`); the local override is then
+/// `jan cli agent status` without `--project`); the local override is then
 /// skipped. A missing/malformed Desktop store is not fatal: it's simply not
 /// layered in, since Global config alone is a valid standalone setup.
 pub fn load_provider_configs(

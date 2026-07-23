@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
 
 /// `[tools]` is always modeled. `[agent]` is only compiled for the CLI (its
-/// sole consumer, via `jan agent run/step/status`); serde still ignores the
+/// sole consumer, via `jan cli agent run/step/status`); serde still ignores the
 /// remaining deferred sections (`[budget]`/`[skills]`).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct AgentToml {
