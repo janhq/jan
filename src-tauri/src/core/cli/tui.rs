@@ -4030,28 +4030,35 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     // Awaiting throbbers render last: below the assistant's reasoning/message
     // so the "still waiting" state trails the prose that led up to the wait.
+    if !app.awaiting.is_empty() || !app.starting.is_empty() {
+        let last_blank = lines
+            .last()
+            .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
+            .unwrap_or(true);
+        if !last_blank {
+            lines.push(Line::raw(""));
+        }
+    }
     for (_, _, name) in &app.awaiting {
         let frame = SPINNER[app.spinner_frame % SPINNER.len()];
-        lines.push(Line::from(vec![
-            Span::styled(format!("{frame} "), Style::new().cyan()),
-            Span::styled(
-                format!("Awaiting subagent: {name}"),
-                Style::new().cyan().dim(),
-            ),
-        ]));
+        lines.push(tool_row(
+            frame,
+            Style::new().cyan(),
+            &format!("Awaiting subagent: {name}"),
+            Style::new().cyan().dim(),
+        ));
     }
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
     for (_, name) in &app.starting {
         let frame = SPINNER[app.spinner_frame % SPINNER.len()];
-        lines.push(Line::from(vec![
-            Span::styled(format!("{frame} "), Style::new().cyan()),
-            Span::styled(
-                format!("Preparing {name}"),
-                Style::new().cyan().dim(),
-            ),
-        ]));
+        lines.push(tool_row(
+            frame,
+            Style::new().cyan(),
+            &format!("Preparing {name}"),
+            Style::new().cyan().dim(),
+        ));
     }
     // Live subagent panels, streaming prose, and awaiting throbbers above have
     // no transcript index; they're all appended after the transcript loop.
@@ -5325,8 +5332,8 @@ mod tests {
         });
         let rows = render(&mut app);
         assert!(
-            rows.iter().any(|r| r.contains("Preparing write")),
-            "throbber must show while args stream:\n{}",
+            rows.iter().any(|r| r.contains("│") && r.contains("Preparing write")),
+            "throbber must show with the tool-row gutter while args stream:\n{}",
             rows.join("\n")
         );
 
