@@ -4252,12 +4252,6 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
     ];
-    if let Some(branch) = app.git_branch.as_ref() {
-        spans.push(Span::styled(
-            format!(" ⎇ {}", branch),
-            Style::new().dark_gray(),
-        ));
-    }
     spans.push(Span::raw(format!("  {turn}tokens {}", app.tokens)));
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
