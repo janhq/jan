@@ -983,7 +983,7 @@ function CodePage() {
         {/* Fixed input dock at the bottom. */}
         <div className="pb-4 shrink-0">
           <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
-            <div className="flex items-center gap-2 px-1 pb-2">
+            <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
               <CodeModeSelector
                 mode={mode}
                 onChange={(m) => {
