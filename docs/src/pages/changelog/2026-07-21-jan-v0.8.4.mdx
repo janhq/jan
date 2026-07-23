@@ -1,7 +1,7 @@
 ---
 title: "Jan v0.8.4: Native Web Search, Per-Model Chat Templates & a Backend Settings Store"
 version: 0.8.4
-description: "Jan v0.8.4 adds native web_search / web_fetch tools, per-model chat-template kwargs for llama.cpp, a token counter for remote and MLX providers, and moves settings and credentials off browser localStorage into a backend store - alongside a batch of chat, MCP, provider, and streaming fixes."
+description: "Jan v0.8.4 adds native web_search / web_fetch tools, per-model chat-template kwargs for llama.cpp, a token counter for remote and MLX providers, and moves settings and credentials into a backend-managed store (localStorage kept as a downgrade snapshot) - alongside a batch of chat, MCP, provider, and streaming fixes."
 date: 2026-07-21
 ---
 
@@ -16,7 +16,9 @@ import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
 
 **Settings and credentials now live in a backend store, not browser localStorage.**
 
-Provider settings and credentials previously persisted in the webview's `localStorage`. In 0.8.4 they move to a backend-managed store. Your existing settings and API keys are migrated automatically on first launch - no manual action is needed. If you run multiple Jan installations or restore from an old profile, expect settings to be read from the new backend store rather than localStorage from this version on.
+Provider settings and credentials previously persisted in the webview's `localStorage`. In 0.8.4, Jan reads and writes them from a backend-managed store instead (secrets go to the OS keyring). Your existing settings and API keys are copied over automatically on first launch — no manual action is needed, and from this version on all new changes are saved to the backend store.
+
+Your old `localStorage` data is **not deleted** — it's kept as a snapshot so you can downgrade to a pre-0.8.4 build and still have your previous settings. Note that any changes you make in 0.8.4+ live only in the backend store, so a downgrade sees the older snapshot, not your latest settings. The migration runs once and is guarded by a backend flag, so re-upgrading never re-imports the stale `localStorage` copy over newer backend data.
 
 ---
 
