@@ -967,6 +967,7 @@ function CodePage() {
                       onReasoningScroll={handleReasoningScroll}
                       onReasoningScrollToBottom={forceScrollReasoningToBottom}
                       onRegenerate={handleRegenerate}
+                      subagents={subagents}
                     />
                   ))}
                   {/* Mirrors the regular chat's own gate ($threadId.tsx): show the
