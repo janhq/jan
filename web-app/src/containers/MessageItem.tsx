@@ -210,10 +210,16 @@ export const MessageItem = memo(
 
     useEffect(() => {
       const map = toolStartedAtRef.current
-      if (pendingTool && !map.has(pendingTool.toolCallId)) {
-        map.set(pendingTool.toolCallId, Date.now())
-      }
-      if (!pendingTool) {
+      if (pendingTool) {
+        // Keep only the current pending id; purge any stale entry that may
+        // have lingered from a previous tool with a different toolCallId.
+        map.forEach((_, key) => {
+          if (key !== pendingTool.toolCallId) map.delete(key)
+        })
+        if (!map.has(pendingTool.toolCallId)) {
+          map.set(pendingTool.toolCallId, Date.now())
+        }
+      } else {
         map.clear()
       }
     }, [pendingTool])
@@ -861,7 +867,7 @@ export const MessageItem = memo(
         {isLastMessage &&
           message.role === 'assistant' &&
           !awaitingApproval &&
-          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED || activityLabel) && (
             <div className="mt-2">
               {activityLabel ? (
                 <div

@@ -477,7 +477,9 @@ describe('MessageItem', () => {
         status={'ready' as any}
       />
     )
-    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+    // A pending tool call renders the new activity-status row, not PromptProgress.
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/Search/)
   })
 
   it('hides progress while a tool call awaits approval', () => {
