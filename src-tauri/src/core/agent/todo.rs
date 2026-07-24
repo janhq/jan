@@ -107,6 +107,28 @@ impl TodoList {
             .collect()
     }
 
+    /// Human-readable summary of open (pending/in-progress) work, one line per
+    /// task, or `None` when nothing is open. Used verbatim as the hidden
+    /// reminder body and as the reminder dedup key.
+    pub fn open_summary(&self) -> Option<String> {
+        let mut lines = Vec::new();
+        for phase in &self.phases {
+            for task in &phase.tasks {
+                let marker = match task.status {
+                    TodoStatus::InProgress => "→",
+                    TodoStatus::Pending => "•",
+                    _ => continue,
+                };
+                if phase.name.is_empty() {
+                    lines.push(format!("{marker} {}", task.content));
+                } else {
+                    lines.push(format!("{marker} [{}] {}", phase.name, task.content));
+                }
+            }
+        }
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
     fn find_task_mut(&mut self, content: &str) -> Option<(&mut TodoPhase, usize)> {
         for phase in &mut self.phases {
             if let Some(idx) = phase.tasks.iter().position(|t| t.content == content) {
@@ -501,6 +523,24 @@ mod tests {
         assert_eq!(
             restored, list,
             "resume/branch reconstruction round-trips exactly"
+        );
+    }
+
+    #[test]
+    fn open_summary_lists_open_work_and_is_none_when_done() {
+        let mut list = TodoList::default();
+        assert_eq!(list.open_summary(), None, "empty list has no open work");
+        list.init(vec![phase("Build", &["a", "b"])]).unwrap();
+        // 'a' is promoted to in-progress, 'b' stays pending.
+        assert_eq!(
+            list.open_summary().unwrap(),
+            "→ [Build] a\n• [Build] b"
+        );
+        list.done(Target::All).unwrap();
+        assert_eq!(
+            list.open_summary(),
+            None,
+            "completed/abandoned work is not open"
         );
     }
 

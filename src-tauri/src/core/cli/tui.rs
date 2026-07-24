@@ -144,6 +144,9 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
+    /// `/todo` editor: browse the phased list and mutate the selected task
+    /// (done/drop/rm) through the same canonical `TodoList` the model uses.
+    Todo,
 }
 
 /// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
@@ -163,6 +166,7 @@ impl Picker {
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
+            PickerKind::Todo => " todo ",
         }
     }
 
@@ -174,6 +178,7 @@ impl Picker {
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
+            PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
 }
@@ -560,6 +565,15 @@ struct App {
     /// Canonical session todo list projection, kept in sync via
     /// `StreamEvent::TodoUpdate`. Empty = no todos declared this session.
     todos: crate::core::agent::todo::TodoList,
+    /// Set when the model issued a `todo` tool call in the current turn; cleared
+    /// at each turn start. Drives the reminder suppression / retry policy.
+    todo_call_this_turn: bool,
+    /// Set when a `todo` mutation succeeded this turn (a `TodoUpdate` arrived);
+    /// a call without a success means the mutation failed (retry reminder).
+    todo_ok_this_turn: bool,
+    /// Open-work summary last surfaced as a reminder, so the same reminder never
+    /// fires twice in a row without the state changing (reminder dedup).
+    last_todo_reminder: Option<String>,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -684,6 +698,9 @@ impl App {
             mouse_capture: true,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
+            todo_call_this_turn: false,
+            todo_ok_this_turn: false,
+            last_todo_reminder: None,
         }
     }
 
@@ -754,6 +771,12 @@ impl App {
         self.detail.clear();
         self.scrollback = 0;
         self.last_kind = Kind::None;
+        // A fresh session drops the todo projection and reminder state; the
+        // model re-declares work with a new `todo init`.
+        self.todos = crate::core::agent::todo::TodoList::default();
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+        self.last_todo_reminder = None;
     }
 
     /// Append a dim single-line status note (command output, cancel, errors).
@@ -1117,8 +1140,79 @@ impl App {
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
         self.scrollback = 0;
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+        // A fresh user turn is new context: allow the next boundary to remind
+        // again even if the open work is unchanged (dedup is "twice in a row").
+        self.last_todo_reminder = None;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Inject a hidden todo reminder and continue with one more model turn. The
+    /// reminder text enters the conversation (so the model sees it) but renders
+    /// as a dim system note, never a user-authored transcript row.
+    fn submit_reminder(&mut self, text: String) {
+        self.history
+            .push(serde_json::json!({ "role": "user", "content": text }));
+        self.gap(Kind::Meta);
+        self.push(Line::styled(
+            "◈ todo reminder — unfinished work, continuing".to_string(),
+            Style::new().dim(),
+        ));
+        self.status = Status::Running;
+        self.run_started = Some(Instant::now());
+        self.turn = (0, 0);
+        self.scrollback = 0;
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+        self.want_start = true;
+        self.persist();
+    }
+
+    /// Reminder policy (spec: one bounded reminder at a clean turn boundary).
+    /// Fires at most one hidden reminder when open work remains and the assistant
+    /// yielded as if finished. Suppressed while an ask/permission is pending, a
+    /// goal/plan transition already queued the next turn, another message is
+    /// armed, or the agent already updated todos this turn. A todo mutation that
+    /// failed this turn queues one retry reminder instead.
+    fn maybe_inject_todo_reminder(&mut self, normal: bool, no_answer: bool) {
+        // A goal/plan continuation or a queued message already owns the next
+        // turn; a pending ask/permission blocks the boundary; plan mode is a
+        // read-only exploration where todos are only staged for handoff.
+        if self.want_start
+            || self.goal_eval_pending
+            || self.run_mode == crate::core::agent::plan::RunMode::Plan
+            || !self.ask_queue.is_empty()
+        {
+            return;
+        }
+        let failed = self.todo_call_this_turn && !self.todo_ok_this_turn;
+        if !failed {
+            // The agent actively managed todos this turn (or the turn ended
+            // abnormally/emptily): don't nag.
+            if self.todo_call_this_turn || !normal || no_answer {
+                return;
+            }
+        }
+        let Some(summary) = self.todos.open_summary() else {
+            return;
+        };
+        // Dedup: the same open-work summary never reminds twice in a row.
+        if self.last_todo_reminder.as_deref() == Some(summary.as_str()) {
+            return;
+        }
+        let text = if failed {
+            format!(
+                "Reminder: your last todo update failed and unfinished work remains:\n{summary}\n\nRetry the update or continue the work; call `todo` to record progress."
+            )
+        } else {
+            format!(
+                "Reminder: unfinished todos remain:\n{summary}\n\nContinue the work, or call `todo` to mark items done/abandoned."
+            )
+        };
+        self.last_todo_reminder = Some(summary);
+        self.submit_reminder(text);
     }
 
     /// Dequeue the next message from the queue and submit it. Called after
@@ -1217,7 +1311,11 @@ impl App {
         // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
         let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
-        if self.base_snapshot.is_none() && self.goal.is_none() && !planning {
+        if self.base_snapshot.is_none()
+            && self.goal.is_none()
+            && !planning
+            && self.todos.is_empty()
+        {
             return None;
         }
         let mut meta = serde_json::Map::new();
@@ -1236,6 +1334,13 @@ impl App {
             meta.insert(
                 "run_mode".to_string(),
                 serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        // Persist the canonical todos so resume/branch reconstructs the list.
+        if !self.todos.is_empty() {
+            meta.insert(
+                "todos".to_string(),
+                serde_json::to_value(&self.todos).unwrap_or(serde_json::Value::Null),
             );
         }
         Some(serde_json::Value::Object(meta))
@@ -1361,6 +1466,11 @@ impl App {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
                 self.starting.retain(|(sid, _)| sid != &id);
+                // Track todo activity this turn so the reminder policy can tell
+                // an engaged turn (mutated todos) from a stalled one.
+                if name == "todo" {
+                    self.todo_call_this_turn = true;
+                }
                 // Awaiting a subagent is a long block: show a live throbber row
                 // (advanced each render tick) instead of a static grouped row,
                 // cleared when its result arrives.
@@ -1528,6 +1638,9 @@ impl App {
             }
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
+                // A snapshot only arrives on a successful mutation; its absence
+                // after a todo call means the mutation failed (retry reminder).
+                self.todo_ok_this_turn = true;
             }
         }
     }
@@ -1627,6 +1740,9 @@ impl App {
         }
         // Auto-dequeue the next queued message, if any
         self.dequeue_next();
+        // Reminder policy runs last: only if nothing else already claimed the
+        // next turn (goal eval, a dequeued message) and open work remains.
+        self.maybe_inject_todo_reminder(normal, no_answer);
         self.persist();
     }
 
@@ -2507,7 +2623,7 @@ pub async fn run(
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
     if let Some(target) = &resume {
-        apply_resume(&mut app, target);
+        apply_resume(&mut app, target).await;
         if app.thread_id.is_none() {
             app.note("starting a new session");
         }
@@ -3056,12 +3172,45 @@ async fn handle_key(
                 item.checkbox = Some(enable);
                 toggle_mcp_server(app, mcp_servers, name, enable);
             }
+            // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
+            // Each mutates the canonical list and rebuilds the overlay in place;
+            // opening/closing the view itself never mutates state.
+            KeyCode::Char('d') | KeyCode::Char('x') | KeyCode::Char('r') | KeyCode::Enter
+                if picker.kind == PickerKind::Todo =>
+            {
+                let code = key.code;
+                let content = picker.items.get(picker.selected).map(|i| i.value.clone());
+                // (picker borrow ends here; nothing below reads it before rebuild)
+                if let Some(content) = content {
+                    use crate::core::agent::todo::Target;
+                    let result = match code {
+                        KeyCode::Char('x') => {
+                            apply_todo_mutation(app, |l| l.drop_target(Target::Task(&content))).await
+                        }
+                        KeyCode::Char('r') => {
+                            apply_todo_mutation(app, |l| l.rm(Target::Task(&content))).await
+                        }
+                        _ => apply_todo_mutation(app, |l| l.done(Target::Task(&content))).await,
+                    };
+                    if let Err(e) = result {
+                        app.note(&format!("todo update failed: {e}"));
+                    }
+                    // Rebuild from the mutated list; close once nothing remains.
+                    if app.todos.is_empty() {
+                        app.picker = None;
+                    } else if let Some(picker) = app.picker.as_mut() {
+                        picker.items = build_todo_items(&app.todos);
+                        picker.selected =
+                            picker.selected.min(picker.items.len().saturating_sub(1));
+                    }
+                }
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
                 app.picker = None;
                 match kind {
-                    PickerKind::ResumeThread => resume_thread(app, &value),
+                    PickerKind::ResumeThread => resume_thread(app, &value).await,
                     PickerKind::SelectModel => app.set_model(value),
                     PickerKind::ToggleMcp => {}
                     PickerKind::RewindMessage => {
@@ -3075,6 +3224,8 @@ async fn handle_key(
                         }
                     }
                     PickerKind::ViewConfig => {}
+                    // Todo Enter is handled by the guarded action arm above.
+                    PickerKind::Todo => {}
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
@@ -3297,6 +3448,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Enter read-only plan mode (bare) or /plan exit to leave",
     },
     SlashCommand {
+        name: "/todo",
+        hint: "[add [phase|] text]",
+        description: "Open the todo editor (bare) or /todo add ... to append a task",
+    },
+    SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
@@ -3406,7 +3562,7 @@ async fn run_command(app: &mut App, line: &str) {
             if arg.is_empty() {
                 open_thread_picker(app);
             } else {
-                resume_thread(app, arg);
+                resume_thread(app, arg).await;
             }
         }
         "model" => {
@@ -3420,6 +3576,7 @@ async fn run_command(app: &mut App, line: &str) {
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
         "plan" => plan_command(app, arg),
+        "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
@@ -3513,6 +3670,96 @@ fn plan_command(app: &mut App, arg: &str) {
             }
         }
         other => app.note(&format!("usage: /plan [exit]  (got '{other}')")),
+    }
+}
+
+/// Apply one user-initiated todo mutation to the canonical `TodoList`. Prefers
+/// the shared registry (the model's source of truth) so agent and user share one
+/// state; falls back to the local projection when no live session is attached
+/// (e.g. tests). Syncs the TUI projection and persists on success.
+async fn apply_todo_mutation(
+    app: &mut App,
+    op: impl FnOnce(&mut crate::core::agent::todo::TodoList) -> Result<(), String>,
+) -> Result<(), String> {
+    if let Some(args) = app.args.clone() {
+        if let Some(registry) = args.todo_registry.as_ref() {
+            let mut list = registry.lock().await;
+            op(&mut list)?;
+            app.todos = list.clone();
+            app.persist();
+            return Ok(());
+        }
+    }
+    let mut list = app.todos.clone();
+    op(&mut list)?;
+    app.todos = list;
+    app.persist();
+    Ok(())
+}
+
+/// Build the `/todo` editor rows: one per task, in phase/task order, prefixed by
+/// a status glyph. `value` is the task content (its stable mutation id).
+fn build_todo_items(todos: &crate::core::agent::todo::TodoList) -> Vec<PickerItem> {
+    use crate::core::agent::todo::TodoStatus;
+    let mut items = Vec::new();
+    for phase in &todos.phases {
+        for task in &phase.tasks {
+            let marker = match task.status {
+                TodoStatus::InProgress => "▸",
+                TodoStatus::Pending => "○",
+                TodoStatus::Completed => "✔",
+                TodoStatus::Abandoned => "✗",
+            };
+            items.push(PickerItem {
+                value: task.content.clone(),
+                label: format!("{marker} {}", task.content),
+                hint: (!phase.name.is_empty()).then(|| phase.name.clone()),
+                checkbox: None,
+            });
+        }
+    }
+    items
+}
+
+/// Open the `/todo` editor overlay over the current phased list.
+fn open_todo_picker(app: &mut App) {
+    if app.todos.is_empty() {
+        app.note("no todos yet — the agent declares them, or add one: /todo add TEXT");
+        return;
+    }
+    app.picker = Some(Picker {
+        kind: PickerKind::Todo,
+        items: build_todo_items(&app.todos),
+        selected: 0,
+    });
+}
+
+/// `/todo` handler. Bare opens the editor overlay; `/todo add [PHASE |] TEXT`
+/// appends a pending task through the canonical `append` op (default phase
+/// "Tasks"), so a user-added task is indistinguishable from a model-added one.
+async fn todo_command(app: &mut App, arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        open_todo_picker(app);
+        return;
+    }
+    let Some(rest) = arg.strip_prefix("add") else {
+        app.note("usage: /todo   (open editor)   |   /todo add [PHASE |] TEXT");
+        return;
+    };
+    let rest = rest.trim();
+    let (phase, text) = match rest.split_once('|') {
+        Some((p, t)) => (p.trim().to_string(), t.trim().to_string()),
+        None => ("Tasks".to_string(), rest.to_string()),
+    };
+    if text.is_empty() {
+        app.note("usage: /todo add [PHASE |] TEXT");
+        return;
+    }
+    let phase_label = phase.clone();
+    match apply_todo_mutation(app, move |list| list.append(&phase, vec![text])).await {
+        Ok(()) => app.note(&format!("added todo to '{phase_label}'")),
+        Err(e) => app.note(&format!("todo add failed: {e}")),
     }
 }
 
@@ -3874,6 +4121,21 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     }
 }
 
+/// Reload the canonical todo list for a resumed thread from its persisted
+/// metadata into the TUI projection. The caller also mirrors it into the shared
+/// registry so the model's next `todo` op operates on the reconstructed state.
+fn restore_todos(app: &mut App, metadata: Option<&serde_json::Value>) {
+    app.todos = crate::core::agent::todo::TodoList::default();
+    app.last_todo_reminder = None;
+    let Some(meta) = metadata else { return };
+    if let Some(todos) = meta
+        .get("todos")
+        .and_then(|v| serde_json::from_value::<crate::core::agent::todo::TodoList>(v.clone()).ok())
+    {
+        app.todos = todos;
+    }
+}
+
 /// Open the double-Esc rewind picker listing the conversation's user messages.
 fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
@@ -4010,15 +4272,15 @@ fn rebuild_transcript(app: &mut App) {
     }
 }
 
-fn resume_thread(app: &mut App, id_arg: &str) {
-    apply_resume(app, &ResumeTarget::Id(id_arg.to_string()));
+async fn resume_thread(app: &mut App, id_arg: &str) {
+    apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
 }
 
 /// Resolve a resume target and load it into the app, reporting why not when it
 /// cannot be resolved. The session is left untouched on failure.
-fn apply_resume(app: &mut App, target: &ResumeTarget) {
+async fn apply_resume(app: &mut App, target: &ResumeTarget) {
     match super::find_resume_thread(&app.agent_dir, target) {
-        Ok(thread) => load_thread(app, &thread),
+        Ok(thread) => load_thread(app, &thread).await,
         Err(e) => app.note(&e),
     }
 }
@@ -4026,7 +4288,7 @@ fn apply_resume(app: &mut App, target: &ResumeTarget) {
 /// Replace the live session with a saved thread's state: history, transcript,
 /// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
 /// are not persisted as messages).
-fn load_thread(app: &mut App, thread: &serde_json::Value) {
+async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     let full_id = thread.get("id").and_then(|v| v.as_str()).unwrap_or_default();
 
     let (messages, skipped) = match super::cli_read_messages_lenient(&app.agent_dir, full_id) {
@@ -4052,6 +4314,14 @@ fn load_thread(app: &mut App, thread: &serde_json::Value) {
     restore_snapshots(app, thread.get("metadata"));
     restore_goal(app, thread.get("metadata"));
     restore_run_mode(app, thread.get("metadata"));
+    restore_todos(app, thread.get("metadata"));
+    // Mirror the reconstructed todos into the shared registry so the model's
+    // next `todo` mutation operates on the resumed state, not an empty list.
+    if let Some(args) = app.args.as_ref() {
+        if let Some(registry) = args.todo_registry.as_ref() {
+            *registry.lock().await = app.todos.clone();
+        }
+    }
 
     // Adopt the thread's model so continuation stays coherent.
     if let Some(model) = thread
@@ -4258,16 +4528,40 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
 
 fn draw(f: &mut Frame, app: &mut App) {
     let input_h = input_box_height(app, f.area().width);
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(input_h),
-        Constraint::Length(1),  // path line
-        Constraint::Length(1),  // footer
-    ])
-    .split(f.area());
+    // A one-line compact todo strip sits just below the header when todos exist
+    // and no overlay is open. Kept out of the layout otherwise so a todo-free
+    // session (or an open picker) renders exactly as before.
+    let show_todo = app.picker.is_none() && !app.todos.is_empty();
+    let raw = if show_todo {
+        Layout::vertical([
+            Constraint::Length(1), // header
+            Constraint::Length(1), // todo strip
+            Constraint::Min(1),
+            Constraint::Length(input_h),
+            Constraint::Length(1), // path line
+            Constraint::Length(1), // footer
+        ])
+        .split(f.area())
+    } else {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(input_h),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(f.area())
+    };
+    let todo_area = show_todo.then(|| raw[1]);
+    // Remap to a stable [header, body, input, path, footer] so the rest of draw
+    // is indifferent to whether the strip is present.
+    let base = if show_todo { 1 } else { 0 };
+    let chunks = [raw[0], raw[base + 1], raw[base + 2], raw[base + 3], raw[base + 4]];
 
     f.render_widget(header(app), chunks[0]);
+    if let Some(area) = todo_area {
+        f.render_widget(todo_strip(app), area);
+    }
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
     // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
@@ -4904,6 +5198,37 @@ fn header(app: &App) -> Paragraph<'static> {
     Paragraph::new(Line::from(spans))
 }
 
+/// Compact one-line todo widget: `☑ done/total · ▸ [phase] active · next: a, b, c`.
+/// Reads only the data-access helpers on `TodoList`; rendering never mutates.
+fn todo_strip(app: &App) -> Paragraph<'static> {
+    let (done, total) = app.todos.done_total();
+    let mut spans = vec![
+        Span::styled(format!(" ☑ {done}/{total}"), Style::new().cyan().bold()),
+    ];
+    if let Some((phase, task)) = app.todos.active() {
+        let active = if phase.name.is_empty() {
+            format!("  ▸ {}", task.content)
+        } else {
+            format!("  ▸ [{}] {}", phase.name, task.content)
+        };
+        spans.push(Span::styled(active, Style::new().white()));
+    }
+    let next = app.todos.next_pending(3);
+    if !next.is_empty() {
+        let preview = next
+            .iter()
+            .map(|(_, t)| *t)
+            .collect::<Vec<_>>()
+            .join(", ");
+        spans.push(Span::styled(
+            format!("  next: {preview}"),
+            Style::new().dim(),
+        ));
+    }
+    spans.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    Paragraph::new(Line::from(spans))
+}
+
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
 
@@ -5124,7 +5449,7 @@ mod tests {
         group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, image_mime,
         input_content_lines, is_table_separator, load_image_file, message_text,
         open_config_screen, parse_command, render_table, restore_goal, restore_run_mode,
-        run_command,
+        restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tool_activity, tool_finished, transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
@@ -7600,6 +7925,166 @@ mod tests {
         // Old threads / normal sessions keep clean, backward-compatible metadata.
         let app = test_app();
         assert!(app.thread_metadata().is_none());
+    }
+
+    // ── session todo: reminder policy, editor, persistence ─────────────────
+
+    fn seed_open_todos(app: &mut App) {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        app.todos = TodoList {
+            phases: vec![TodoPhase {
+                name: "P".into(),
+                tasks: vec![
+                    TodoItem { content: "t1".into(), status: TodoStatus::InProgress },
+                    TodoItem { content: "t2".into(), status: TodoStatus::Pending },
+                ],
+            }],
+        };
+    }
+
+    /// A clean assistant turn that yielded a final answer (the reminder boundary).
+    fn finish_clean_turn(app: &mut App) {
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token { text: "all set".into() });
+        app.on_done("stop".into(), None);
+    }
+
+    fn last_history_content(app: &App) -> String {
+        app.history
+            .last()
+            .and_then(|m| m.get("content"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    }
+
+    #[test]
+    fn todo_reminder_fires_once_at_clean_boundary_with_open_work() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(app.want_start, "open work must queue one continuation turn");
+        let injected = last_history_content(&app);
+        assert!(injected.contains("unfinished todos"), "got: {injected}");
+        assert!(injected.contains("t1") && injected.contains("t2"));
+        // The reminder is hidden: no user-authored `› ` row in the transcript.
+        let rows: String = app.transcript.iter().map(line_text).collect();
+        assert!(!rows.contains("› "), "reminder must not render as a user row");
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_when_agent_updated_todos_this_turn() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        // A successful todo mutation happened this turn: the agent is engaged.
+        app.todo_call_this_turn = true;
+        app.todo_ok_this_turn = true;
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "an engaged turn must not be nagged");
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_in_plan_mode() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "plan mode stages todos, never auto-executes");
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_when_no_answer() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        // A stop with no answer text is an abnormal finish, not a clean yield.
+        app.status = Status::Running;
+        app.on_done("stop".into(), None);
+        assert!(!app.want_start);
+    }
+
+    #[tokio::test]
+    async fn todo_reminder_suppressed_while_ask_pending() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _rx) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "a pending ask blocks the reminder boundary");
+    }
+
+    #[test]
+    fn todo_reminder_deduplicates_repeats() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(app.want_start);
+        assert!(last_history_content(&app).contains("unfinished todos"));
+        // The loop consumes want_start when it spawns the continuation run.
+        app.want_start = false;
+        // Model responds without changing todos and yields again: the same open
+        // summary must not fire a second identical reminder.
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "identical reminder must not repeat");
+        assert!(
+            !last_history_content(&app).contains("unfinished todos"),
+            "last message should be the assistant answer, not a repeat reminder"
+        );
+    }
+
+    #[test]
+    fn todo_reminder_retries_after_failed_mutation() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        // A todo call this turn with no success snapshot = a failed mutation.
+        app.todo_call_this_turn = true;
+        app.todo_ok_this_turn = false;
+        finish_clean_turn(&mut app);
+        assert!(app.want_start, "a failed mutation queues one retry reminder");
+        assert!(last_history_content(&app).contains("failed"));
+    }
+
+    #[tokio::test]
+    async fn todo_editor_mutations_update_the_canonical_list() {
+        let mut app = test_app();
+        // Add through the same `append` op the model uses.
+        run_command(&mut app, "todo add Build | ship it").await;
+        assert_eq!(app.todos.done_total(), (0, 1));
+        assert_eq!(app.todos.active().unwrap().1.content, "ship it");
+        // Mark it done via the editor helper; the projection reflects it.
+        super::apply_todo_mutation(&mut app, |l| {
+            l.done(crate::core::agent::todo::Target::Task("ship it"))
+        })
+        .await
+        .unwrap();
+        assert_eq!(app.todos.done_total(), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn todo_command_bare_opens_editor_overlay() {
+        let mut app = test_app();
+        run_command(&mut app, "todo add first").await;
+        run_command(&mut app, "todo").await;
+        assert!(matches!(
+            app.picker.as_ref().map(|p| p.kind),
+            Some(PickerKind::Todo)
+        ));
+    }
+
+    #[test]
+    fn todos_persist_and_restore_via_thread_metadata() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        let meta = app.thread_metadata().expect("todos force metadata");
+        assert!(meta.get("todos").is_some());
+
+        let mut restored = test_app();
+        restore_todos(&mut restored, Some(&meta));
+        assert_eq!(restored.todos, app.todos, "resume/branch reconstructs todos");
     }
 
     #[tokio::test]
