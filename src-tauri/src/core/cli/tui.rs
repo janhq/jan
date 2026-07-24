@@ -2498,6 +2498,9 @@ pub async fn run(
     let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
+    // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
+    // shows immediately; a resumed thread overrides this via restore_run_mode.
+    app.run_mode = args.run_mode;
     if args.yolo {
         app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
     }
@@ -2508,6 +2511,9 @@ pub async fn run(
         if app.thread_id.is_none() {
             app.note("starting a new session");
         }
+    }
+    if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+        app.note("◈ PLAN · read only — investigate, then propose a plan for review");
     }
     for path in &initial_images {
         match load_image_file(path) {
