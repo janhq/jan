@@ -38,9 +38,20 @@ pub enum StreamEvent {
     /// consumer can attribute concurrent children; brackets the child's wrapped
     /// events with `SubagentEnd`.
     SubagentStart { run_id: String, name: String },
-    /// A backgrounded subagent run finished (success or error). Pairs with the
-    /// `SubagentStart` of the same `run_id`.
-    SubagentEnd { run_id: String, name: String },
+    /// A backgrounded subagent run finished. Pairs with the `SubagentStart` of
+    /// the same `run_id`. `usage` is the child's own final completion usage
+    /// (`None` on error/abort, or if the provider didn't report it) — the
+    /// child's terminal Done is never forwarded to the parent, so this is the
+    /// only way its token spend reaches a consumer. `error` is `None` on
+    /// success, else the failure/abort reason: a consumer renders "done" vs
+    /// "failed" from this (never from `usage` being absent).
+    SubagentEnd {
+        run_id: String,
+        name: String,
+        usage: Option<Usage>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -338,11 +349,26 @@ mod tests {
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            usage: None,
+            error: None,
         })
         .unwrap();
         assert_eq!(
             end,
-            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer" })
+            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer", "usage": null }),
+            "error omitted from wire when None"
+        );
+        let failed = serde_json::to_value(StreamEvent::SubagentEnd {
+            run_id: "sub-1".into(),
+            name: "rust-reviewer".into(),
+            usage: None,
+            error: Some("boom".into()),
+        })
+        .unwrap();
+        assert_eq!(
+            failed["error"],
+            json!("boom"),
+            "failure reason present on wire for the UI to render"
         );
     }
 

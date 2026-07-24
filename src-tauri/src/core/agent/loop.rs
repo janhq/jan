@@ -69,6 +69,12 @@ pub(crate) struct OrchestrationArgs {
     /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
     /// dispatched subagents via the cloned parent args.
     pub yolo: bool,
+    /// Externally-tracked background-subagent registry for this run, so a
+    /// Tauri command can cancel one specific dispatched subagent by run_id
+    /// from outside the loop. `None` falls back to a fresh, purely-local
+    /// registry (the CLI/TUI/proxy paths, and every subagent child run, which
+    /// must never share the parent's — see `run_subagent`).
+    pub background_subagents: Option<Arc<crate::core::agent::subagent::BackgroundSubagents>>,
 }
 
 #[async_trait]
@@ -316,6 +322,15 @@ impl CompositeToolInvoker {
     }
 }
 
+/// Message for a tool blocked by the project's own deny list, naming the
+/// exact config file so the block is actionable, not mysterious.
+fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
+    format!(
+        "ERROR: tool '{name}' denied by project policy (see [tools] deny in {})",
+        crate::core::agent::project::agent_toml_path(project_root).display()
+    )
+}
+
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
     async fn invoke(
@@ -360,7 +375,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by project policy"),
+                        denied_by_policy_msg(name, &self.project_root),
                     ));
                     continue;
                 }
@@ -426,9 +441,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
-                Decision::HardDeny => {
-                    (format!("ERROR: tool '{name}' denied by project policy"), None)
-                }
+                Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
                     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -549,6 +562,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
+        background_subagents: None,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
 }
@@ -668,6 +682,7 @@ async fn orchestrate_inner(
         system_prompt_override,
         subagents_enabled,
         yolo,
+        background_subagents,
     } = args;
 
     let messages_value = json_body
@@ -840,7 +855,12 @@ async fn orchestrate_inner(
         }
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        // Use the externally-tracked registry when the caller supplied one (so
+        // a Tauri command can cancel one specific subagent from outside), else
+        // a fresh local one exactly as before.
+        let bg = background_subagents.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default())
+        });
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),

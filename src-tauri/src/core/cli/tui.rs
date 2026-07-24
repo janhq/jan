@@ -1320,7 +1320,7 @@ impl App {
                     calls: Vec::new(),
                 });
             }
-            StreamEvent::SubagentEnd { run_id, name } => {
+            StreamEvent::SubagentEnd { run_id, name, .. } => {
                 // Take the run's full call list, commit a folded summary row, and
                 // retain the detail so Ctrl-O can expand it (like a tool group).
                 let calls = self
@@ -5449,6 +5449,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         assert_eq!(
             app.awaiting.len(),
@@ -5567,6 +5568,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         // A collapsed summary row + a retained expandable block.
         assert_eq!(app.subagent_blocks.len(), 1);
@@ -5614,6 +5616,7 @@ mod tests {
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            usage: None,
         });
         assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
         assert!(app
