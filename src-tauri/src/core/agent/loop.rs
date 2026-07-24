@@ -1942,6 +1942,113 @@ mod tests {
         })
     }
 
+    /// A single tool call by name with empty JSON arguments.
+    fn tool_call(id: &str, name: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": name, "arguments": "{}" }
+        })
+    }
+
+    #[tokio::test]
+    async fn plan_mode_denies_write_even_with_yolo() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+        // --yolo must NOT override the plan-mode read-only gate.
+        invoker.yolo = true;
+
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "write must be hard-denied in plan mode: {}",
+            out[0].content
+        );
+        assert!(!root.join("out.txt").exists(), "file must not be written");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plan_mode_denies_mcp_tool_from_stale_schema() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+        invoker.yolo = true;
+
+        // An unknown (non-builtin) name stands in for an MCP tool a stale schema
+        // could still surface; it must be denied before any dispatch.
+        let out = invoker.invoke(&[tool_call("m1", "some_mcp_tool")]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plan_mode_denies_subagent_dispatch() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+
+        let out = invoker
+            .invoke(&[tool_call("s1", "dispatch_subagent")])
+            .await
+            .unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plan_mode_allows_read_only_builtins() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+
+        // `ls` is Read-capable: the plan gate must let it through to the normal
+        // (auto-allowed) path, so it never yields the plan-mode denial.
+        let call = json!({
+            "id": "r1",
+            "type": "function",
+            "function": { "name": "ls", "arguments": "{\"path\":\".\"}" }
+        });
+        let out = invoker.invoke(&[call]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(
+            !out[0].content.contains("plan_mode_read_only"),
+            "read-only builtins must not be blocked by plan mode: {}",
+            out[0].content
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn orchestrate_reads_run_mode_override_from_body() {
+        // The per-turn body override (mirrors model/max_tokens) parses to Plan;
+        // absent/normal falls back to the session default.
+        use crate::core::agent::plan::RunMode;
+        let from_body = |v: serde_json::Value| {
+            v.get("run_mode")
+                .and_then(|x| serde_json::from_value::<RunMode>(x.clone()).ok())
+        };
+        assert_eq!(from_body(json!({"run_mode": "plan"})), Some(RunMode::Plan));
+        assert_eq!(from_body(json!({"run_mode": "normal"})), Some(RunMode::Normal));
+        assert_eq!(from_body(json!({})), None);
+    }
+
     #[tokio::test]
     async fn ask_requires_an_attached_interactive_ui() {
         let root = unique_project_root();

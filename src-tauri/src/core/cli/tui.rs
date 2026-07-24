@@ -5117,7 +5117,8 @@ mod tests {
         apply_resume, build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
         group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, image_mime,
         input_content_lines, is_table_separator, load_image_file, message_text,
-        open_config_screen, parse_command, render_table, restore_goal, run_command,
+        open_config_screen, parse_command, render_table, restore_goal, restore_run_mode,
+        run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tool_activity, tool_finished, transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
@@ -7395,6 +7396,11 @@ mod tests {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/goal"));
     }
 
+    #[test]
+    fn plan_is_a_registered_command() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/plan"));
+    }
+
     #[tokio::test]
     async fn goal_set_stores_condition_and_starts_a_turn() {
         let mut app = test_app();
@@ -7516,6 +7522,204 @@ mod tests {
         assert_eq!(g.turns, 2);
         assert_eq!(g.last_reason, "one failing");
         assert!(g.is_active());
+    }
+
+    fn plan_review_request() -> crate::core::agent::interaction::AskRequest {
+        crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": [{
+                "id": crate::core::agent::plan::PLAN_REVIEW_QUESTION_ID,
+                "question": "Ready to execute?",
+                "options": [
+                    {"label": crate::core::agent::plan::EXECUTE_PLAN_LABEL},
+                    {"label": crate::core::agent::plan::KEEP_PLANNING_LABEL},
+                    {"label": crate::core::agent::plan::EXIT_PLAN_LABEL},
+                ]
+            }]
+        }))
+        .unwrap()
+    }
+
+    fn staged_todos() -> crate::core::agent::todo::TodoList {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        TodoList {
+            phases: vec![TodoPhase {
+                name: "Plan".into(),
+                tasks: vec![TodoItem {
+                    content: "do the thing".into(),
+                    status: TodoStatus::Pending,
+                }],
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_command_enters_and_exits_while_idle() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        run_command(&mut app, "plan").await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        run_command(&mut app, "plan exit").await;
+        assert_eq!(app.run_mode, RunMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn plan_command_rejected_while_running() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.status = Status::Running;
+        run_command(&mut app, "plan").await;
+        assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("only settable while idle"), "note: {text}");
+    }
+
+    #[test]
+    fn run_mode_persists_and_restores_via_thread_metadata() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        let meta = app.thread_metadata().expect("metadata present in plan mode");
+        assert_eq!(meta.get("run_mode").and_then(|v| v.as_str()), Some("plan"));
+
+        let mut restored = test_app();
+        restore_run_mode(&mut restored, Some(&meta));
+        assert_eq!(restored.run_mode, RunMode::Plan);
+        // Resume must never auto-execute a saved plan.
+        assert_eq!(restored.status, Status::Idle);
+        assert!(restored.message_queue.is_empty());
+    }
+
+    #[test]
+    fn normal_mode_omits_run_mode_from_metadata() {
+        // Old threads / normal sessions keep clean, backward-compatible metadata.
+        let app = test_app();
+        assert!(app.thread_metadata().is_none());
+    }
+
+    #[tokio::test]
+    async fn plan_review_execute_switches_normal_and_queues_continuation() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.status = Status::Running; // an in-flight turn owns the ask
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        // Default selection 0 = "Execute plan"; Enter submits.
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.run_mode, RunMode::Normal);
+        assert!(
+            app.message_queue
+                .iter()
+                .any(|m| m.as_str() == "Proceed with the plan."),
+            "execute must queue a continuation turn"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(
+            answers[0].selected,
+            vec![crate::core::agent::plan::EXECUTE_PLAN_LABEL]
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_review_execute_without_todos_stays_in_plan() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan; // no todos staged
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        // Atomic handoff: no staged plan => stay in Plan, no continuation.
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.message_queue.is_empty());
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("no plan staged"), "note: {text}");
+    }
+
+    #[tokio::test]
+    async fn plan_review_keep_planning_stays_in_plan() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Down).await; // -> Keep planning
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.message_queue.is_empty(), "keep planning must not execute");
+    }
+
+    #[tokio::test]
+    async fn plan_review_exit_returns_to_normal_without_execution() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await; // -> Exit plan mode
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.run_mode, RunMode::Normal);
+        assert!(app.message_queue.is_empty(), "exit must not auto-execute");
+    }
+
+    #[tokio::test]
+    async fn cancelling_plan_review_leaves_plan_enabled() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Esc).await; // cancel the review
+        assert!(app.ask_queue.is_empty(), "review wait must be cleared");
+        assert_eq!(app.run_mode, RunMode::Plan, "cancel must not change mode");
+        assert!(matches!(
+            receiver.await.unwrap(),
+            Err(crate::core::agent::interaction::AskError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn on_done_does_not_queue_goal_eval_while_planning() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.goal = Some(crate::core::agent::goal::GoalState::new("cond"));
+        app.run_mode = RunMode::Plan;
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token {
+            text: "planning".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert!(
+            !app.goal_eval_pending,
+            "plan mode pauses the goal loop; no auto-continue"
+        );
     }
 
     #[tokio::test]
