@@ -410,6 +410,10 @@ struct App {
     /// Set after a turn finishes while a goal is active: the chat loop runs the
     /// evaluator off the render loop, then auto-continues or returns control.
     goal_eval_pending: bool,
+    /// Read-only plan mode. `Plan` blocks mutation-capable tools at the core
+    /// dispatcher (advisory prompt is defense in depth only). Persisted with
+    /// the thread so it survives restart/resume.
+    run_mode: crate::core::agent::plan::RunMode,
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
@@ -621,6 +625,7 @@ impl App {
             model,
             goal: None,
             goal_eval_pending: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
             max_turns,
             context_window,
@@ -1180,6 +1185,12 @@ impl App {
         if let Some(max) = self.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // Live plan-mode toggle: the backend reads this per turn and falls back
+        // to the session default when absent. Only forwarded in Plan so normal
+        // turns keep an unchanged body.
+        if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+            body["run_mode"] = serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
+        }
         body
     }
 
@@ -1203,9 +1214,10 @@ impl App {
     /// per-turn checkpoints, so `/resume` can restore and rewind. `None` when
     /// snapshots are inactive (keeps a plain `{}` metadata block).
     fn thread_metadata(&self) -> Option<serde_json::Value> {
-        // Persist metadata when either snapshots or a goal are present; a goal
+        // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
-        if self.base_snapshot.is_none() && self.goal.is_none() {
+        let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+        if self.base_snapshot.is_none() && self.goal.is_none() && !planning {
             return None;
         }
         let mut meta = serde_json::Map::new();
@@ -1217,6 +1229,13 @@ impl App {
             meta.insert(
                 "goal".to_string(),
                 serde_json::to_value(goal).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        // Only persisted in Plan (Normal is the default; keeps old threads clean).
+        if planning {
+            meta.insert(
+                "run_mode".to_string(),
+                serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null),
             );
         }
         Some(serde_json::Value::Object(meta))
@@ -1595,8 +1614,11 @@ impl App {
         // A turn just completed under an active goal: count it and queue an
         // evaluation. The chat loop runs the (stateless) evaluator off the
         // render loop, then auto-continues or hands control back.
+        // Plan mode pauses the goal loop: never auto-continue a goal while
+        // planning (spec: entering plan pauses an active goal).
+        let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
         if let Some(goal) = self.goal.as_mut() {
-            if goal.is_active() {
+            if goal.is_active() && !planning {
                 goal.turns = goal.turns.saturating_add(1);
                 // Only evaluate on a normal completion; an early/no-answer finish
                 // is surfaced above and the user decides what to do next.
@@ -2778,12 +2800,55 @@ async fn resolve_front_ask(
     let Some(ask) = app.ask_queue.pop_front() else {
         return;
     };
+    // Reserved plan-review ask: a single question with the exact id drives the
+    // mode transition. Capture the chosen label before `answers` is moved into
+    // the outcome. Skipped on cancel so a cancelled review never changes mode.
+    let plan_choice = (!cancelled
+        && ask.request.questions.len() == 1
+        && ask.request.questions[0].id == crate::core::agent::plan::PLAN_REVIEW_QUESTION_ID)
+        .then(|| ask.answers.first().and_then(|a| a.selected.first().cloned()))
+        .flatten();
     let outcome = if cancelled {
         Err(crate::core::agent::interaction::AskError::Cancelled)
     } else {
         Ok(ask.answers)
     };
+    // Always respond so the model's in-flight turn completes normally.
     let _ = crate::core::agent::interaction::respond(registry, &ask.request_id, outcome).await;
+    if let Some(label) = plan_choice {
+        apply_plan_review(app, &label);
+    }
+}
+
+/// Drive the plan-mode transition from a `plan_review` answer. The model has
+/// already staged todos via `todo(init)` earlier in the same turn; here we only
+/// flip the mode (and, for Execute, queue the continuation turn). Persists so
+/// the mode survives resume.
+fn apply_plan_review(app: &mut App, label: &str) {
+    use crate::core::agent::plan::{self, RunMode};
+    match label {
+        plan::EXECUTE_PLAN_LABEL => {
+            // Atomic handoff: refuse to leave Plan unless the plan was actually
+            // staged (spec: failed todo init keeps the agent in Plan intact).
+            if app.todos.is_empty() {
+                app.note("cannot execute: no plan staged (todo init first); staying in plan mode");
+                return;
+            }
+            app.run_mode = RunMode::Normal;
+            app.persist();
+            app.note("▶ executing plan (normal mode)");
+            // Enqueues while the ask turn is still running; on_done dequeues it,
+            // starting execution only after the mode switch has committed.
+            app.submit_user("Proceed with the plan.".to_string());
+        }
+        plan::KEEP_PLANNING_LABEL => app.note("continuing to plan (read only)"),
+        plan::EXIT_PLAN_LABEL => {
+            app.run_mode = RunMode::Normal;
+            app.persist();
+            app.note("exited plan mode (no execution)");
+        }
+        other => app.note(&format!("unknown plan review choice: {other}")),
+    }
 }
 
 /// Handle keys owned by the front interactive question. Returns false only for
@@ -3221,6 +3286,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Keep working until a condition is met (bare: status)",
     },
     SlashCommand {
+        name: "/plan",
+        hint: "[exit]",
+        description: "Enter read-only plan mode (bare) or /plan exit to leave",
+    },
+    SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
@@ -3343,6 +3413,7 @@ async fn run_command(app: &mut App, line: &str) {
         "mcp" => open_mcp_picker(app),
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
+        "plan" => plan_command(app, arg),
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
@@ -3400,6 +3471,42 @@ fn goal_command(app: &mut App, arg: &str) {
         }
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
+    }
+}
+
+/// `/plan` dispatcher: bare enters read-only plan mode, `/plan exit` leaves it.
+/// Only settable while idle so it never races the live tool set of a running
+/// turn (spec). Enforcement is at the core dispatcher; this just flips the
+/// per-turn flag forwarded in `App::body()` and persists it.
+fn plan_command(app: &mut App, arg: &str) {
+    use crate::core::agent::plan::RunMode;
+    if app.status != Status::Idle {
+        app.note("plan mode is only settable while idle");
+        return;
+    }
+    match arg.trim() {
+        "exit" => {
+            if app.run_mode == RunMode::Plan {
+                app.run_mode = RunMode::Normal;
+                app.persist();
+                app.note("exited plan mode (normal execution)");
+            } else {
+                app.note("not in plan mode");
+            }
+        }
+        "" => {
+            if app.run_mode == RunMode::Plan {
+                app.note("already in plan mode (/plan exit to leave)");
+                return;
+            }
+            app.run_mode = RunMode::Plan;
+            app.persist();
+            app.note("◈ PLAN · read only — investigate, then propose a plan for review");
+            if app.goal.is_some() {
+                app.note("active goal paused while planning; it resumes on exit");
+            }
+        }
+        other => app.note(&format!("usage: /plan [exit]  (got '{other}')")),
     }
 }
 
@@ -3743,6 +3850,24 @@ fn restore_goal(app: &mut App, metadata: Option<&serde_json::Value>) {
     }
 }
 
+/// Reload the persisted `RunMode` for a resumed thread. Defaults to `Normal` on
+/// absence/malformed metadata. Resume restores the mode only; the run stays at
+/// `Status::Idle` (set by the resume path), so a saved plan never auto-executes.
+fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
+    use crate::core::agent::plan::RunMode;
+    app.run_mode = RunMode::Normal;
+    let Some(meta) = metadata else { return };
+    if let Some(mode) = meta
+        .get("run_mode")
+        .and_then(|v| serde_json::from_value::<RunMode>(v.clone()).ok())
+    {
+        app.run_mode = mode;
+        if mode == RunMode::Plan {
+            app.note("resumed in plan mode (read only); /plan exit to leave");
+        }
+    }
+}
+
 /// Open the double-Esc rewind picker listing the conversation's user messages.
 fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
@@ -3920,6 +4045,7 @@ fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.message_queue.clear();
     restore_snapshots(app, thread.get("metadata"));
     restore_goal(app, thread.get("metadata"));
+    restore_run_mode(app, thread.get("metadata"));
 
     // Adopt the thread's model so continuation stays coherent.
     if let Some(model) = thread
@@ -4758,6 +4884,14 @@ fn header(app: &App) -> Paragraph<'static> {
             GoalStatus::Achieved => ("  ◎ /goal done".to_string(), Style::new().green()),
         };
         spans.push(Span::styled(label, gstyle));
+    }
+    // Plan-mode badge: `PLAN · read only`. Only shown in Plan mode; normal mode
+    // keeps its existing layout unchanged (spec).
+    if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+        spans.push(Span::styled(
+            "  PLAN · read only",
+            Style::new().magenta().bold(),
+        ));
     }
     spans.push(Span::raw("  "));
     spans.push(Span::styled(format!("[{status}]"), style));
