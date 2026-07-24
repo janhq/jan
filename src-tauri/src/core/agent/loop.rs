@@ -81,6 +81,11 @@ pub(crate) struct OrchestrationArgs {
     /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
     /// dispatched subagents via the cloned parent args.
     pub yolo: bool,
+    /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
+    /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
+    /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
+    /// stronger than `--yolo`'s prompt suppression (yolo cannot override this).
+    pub run_mode: crate::core::agent::plan::RunMode,
 }
 
 #[async_trait]
@@ -190,6 +195,7 @@ struct CompositeToolInvoker {
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
     yolo: bool,
+    run_mode: crate::core::agent::plan::RunMode,
 }
 
 impl CompositeToolInvoker {
@@ -463,6 +469,21 @@ impl CompositeToolInvoker {
     }
 }
 
+/// Message for a tool blocked by the project's own deny list, naming the
+/// exact config file so the block is actionable, not mysterious.
+fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
+    format!(
+        "ERROR: tool '{name}' denied by project policy (see [tools] deny in {})",
+        crate::core::agent::project::agent_toml_path(project_root).display()
+    )
+}
+
+/// Rejection message for a mutation-capable tool call attempted in
+/// `RunMode::Plan`. Authoritative: the tool never actually runs.
+fn plan_mode_read_only_msg(name: &str) -> String {
+    format!("ERROR: tool '{name}' unavailable in plan_mode_read_only (plan mode is read-only)")
+}
+
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
     async fn invoke(
@@ -523,6 +544,13 @@ impl ToolInvoker for CompositeToolInvoker {
             // fallback: they orchestrate nested runs, not filesystem access.
             if crate::core::agent::subagent::is_subagent_tool(name) {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Plan mode blocks subagent dispatch (a subagent could mutate).
+                // They are not advertised in Plan; this is defense in depth
+                // against a stale tool schema. `--yolo` cannot override.
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
                 let args: serde_json::Value = tc
                     .get("function")
                     .and_then(|f| f.get("arguments"))
@@ -535,6 +563,13 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             if !is_builtin(name) {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Plan mode blocks all MCP tools: their capability is arbitrary
+                // and unknowable, so they are never advertised in Plan and are
+                // hard-denied here as defense in depth. `--yolo` cannot override.
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
                 // Deny-listed MCP tools are never advertised, but guard anyway.
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
@@ -572,6 +607,16 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|s| serde_json::from_str(s).ok())
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             let tool = lookup(name).expect("is_builtin implies lookup");
+            // Plan mode: mutation-capable builtins (Write/Exec) are hard-denied
+            // BEFORE the normal gate, without a permission prompt, and `--yolo`
+            // cannot override this (unlike the normal prompt suppression below).
+            // Read/Net/workspace-read tools fall through to the usual gate.
+            if self.run_mode == crate::core::agent::plan::RunMode::Plan
+                && matches!(tool.capability, Capability::Write | Capability::Exec)
+            {
+                out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                continue;
+            }
             let snapshot = { self.grants.lock().unwrap().clone() };
             let decision = resolve_decision(
                 tool,
@@ -732,6 +777,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
+        run_mode: crate::core::agent::plan::RunMode::Normal,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
 }
@@ -855,7 +901,17 @@ async fn orchestrate_inner(
         system_prompt_override,
         subagents_enabled,
         yolo,
+        run_mode,
     } = args;
+
+    // Per-turn override: the TUI toggles plan mode live via the request body
+    // (like `model`/`max_tokens`), falling back to the session default. Any
+    // caller can only *tighten* to Plan or match the default; the capability
+    // gate below enforces read-only regardless of who set it.
+    let run_mode = json_body
+        .get("run_mode")
+        .and_then(|v| serde_json::from_value::<crate::core::agent::plan::RunMode>(v.clone()).ok())
+        .unwrap_or(*run_mode);
 
     let messages_value = json_body
         .get("messages")
@@ -895,6 +951,15 @@ async fn orchestrate_inner(
         sp
     } else {
         assistant_instructions
+    };
+    let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
+        let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
+        Some(match system_prompt {
+            Some(sys) => format!("{sys}\n\n{addendum}"),
+            None => addendum.to_string(),
+        })
+    } else {
+        system_prompt
     };
     if let Some(sys) = system_prompt {
         set_system_prompt(&mut conversation_messages, &sys);
@@ -939,8 +1004,14 @@ async fn orchestrate_inner(
 
     // Advertise MCP tools per agent.toml policy: read-only (the CLI default) does
     // NOT suppress them; only an explicit deny or `default = "deny"` does. Proxy
-    // path uses `allow_all()`, so behavior there is unchanged.
-    retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
+    // path uses `allow_all()`, so behavior there is unchanged. Plan mode never
+    // advertises MCP tools at all: their capability is arbitrary and unknowable.
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        openai_tools.clear();
+        tool_to_server.clear();
+    } else {
+        retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
+    }
 
     // Per-run allowlist shared by builtin/subagent/ask advertisement below.
     let allowed_names: Option<std::collections::HashSet<String>> = json_body
@@ -961,6 +1032,19 @@ async fn orchestrate_inner(
             if permissions.is_denied(name) {
                 continue;
             }
+            // Plan mode advertises only read/net builtins; write/exec are hidden
+            // entirely rather than relying on a prompt or execution-time denial.
+            if run_mode == crate::core::agent::plan::RunMode::Plan
+                && crate::core::agent::tools::lookup(name).is_some_and(|t| {
+                    matches!(
+                        t.capability,
+                        crate::core::agent::tools::Capability::Write
+                            | crate::core::agent::tools::Capability::Exec
+                    )
+                })
+            {
+                continue;
+            }
             if let Some(allow) = &allowed_names {
                 if !allow.contains(name) {
                     continue;
@@ -969,9 +1053,9 @@ async fn orchestrate_inner(
             openai_tools.push(schema);
         }
         // Subagent tools are advertised only when this run may dispatch them
-        // (never for a child run, capping recursion depth at one). The dispatch
-        // tool's description lists the resolvable subagent names.
-        if args.subagents_enabled {
+        // (never for a child run, capping recursion depth at one) and the run
+        // isn't in read-only Plan mode (a dispatched subagent could mutate).
+        if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
             if let Some(root) = project_root {
                 let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
                 for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
@@ -1071,6 +1155,7 @@ async fn orchestrate_inner(
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
             subagents,
             yolo: *yolo,
+            run_mode,
         };
         let result = run_turn_cycle(
             events,
@@ -1815,6 +1900,7 @@ mod tests {
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
             yolo: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
         }
     }
 

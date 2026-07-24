@@ -71,6 +71,7 @@ fn build_orchestration_args<R: Runtime>(
         system_prompt_override: None,
         subagents_enabled: true,
         yolo: false,
+        run_mode: crate::core::agent::plan::RunMode::Normal,
     }
 }
 
