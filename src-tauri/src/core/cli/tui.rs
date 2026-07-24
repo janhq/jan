@@ -537,8 +537,14 @@ struct App {
     /// Rendered as a live throbber and cleared on the matching `ToolCall` (full
     /// args) or on the next `Step`, whichever comes first.
     starting: Vec<(String, String)>,
-    /// Monotonic frame counter advanced each render tick; drives the throbber.
+    /// Monotonic frame counter driving the throbber. Advanced by whole
+    /// `SPINNER_ADVANCE_MS` steps elapsed since `last_spinner_advance`, not once
+    /// per tick, so the animation runs at a fixed cadence and catches up after a
+    /// stalled loop instead of lagging.
     spinner_frame: usize,
+    /// Wall-clock baseline for the last spinner advance; moved forward by whole
+    /// frames only so leftover sub-frame time carries into the next tick.
+    last_spinner_advance: Instant,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -578,6 +584,9 @@ struct App {
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Milliseconds per spinner frame, decoupled from the 50ms render tick.
+const SPINNER_ADVANCE_MS: u64 = 80;
 
 /// Live rolling view of an in-flight subagent's tool calls. The panel shows only
 /// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
@@ -691,6 +700,7 @@ impl App {
             awaiting: Vec::new(),
             starting: Vec::new(),
             spinner_frame: 0,
+            last_spinner_advance: Instant::now(),
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
@@ -1116,6 +1126,19 @@ impl App {
     /// in the same input batch can't slip through as a second submit.
     /// When already running, the message is enqueued instead and auto-submitted
     /// when the current turn finishes.
+    /// Advance the spinner by however many whole `SPINNER_ADVANCE_MS` frames
+    /// have elapsed since the last advance (0 if under one frame, >1 on catch-up
+    /// after a stalled tick). The baseline moves forward by whole frames only so
+    /// leftover sub-frame milliseconds are not lost across ticks.
+    fn advance_spinner(&mut self, now: Instant) {
+        let elapsed = now.duration_since(self.last_spinner_advance).as_millis() as u64;
+        let frames = (elapsed / SPINNER_ADVANCE_MS) as usize;
+        if frames > 0 {
+            self.spinner_frame = self.spinner_frame.wrapping_add(frames);
+            self.last_spinner_advance += Duration::from_millis(frames as u64 * SPINNER_ADVANCE_MS);
+        }
+    }
+
     fn submit_user(&mut self, text: String) {
         // If a turn is already in progress, enqueue the message instead
         if self.status == Status::Running {
@@ -2735,8 +2758,9 @@ async fn chat_loop<B: Backend>(
 
         tokio::select! {
             _ = ticker.tick() => {
-                // Advance the frame counter always so the cursor blinks even when idle.
-                app.spinner_frame = app.spinner_frame.wrapping_add(1);
+                // Advance the throbber at its own fixed cadence, catching up
+                // whole frames if a tick stalled (a burst of deltas / slow term).
+                app.advance_spinner(Instant::now());
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
@@ -5444,8 +5468,8 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
-        apply_resume, build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
+        apply_resume, build_user_message, clipboard_path, diff_lines, group_activity,
+        group_detail_lines,
         group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, image_mime,
         input_content_lines, is_table_separator, load_image_file, message_text,
         open_config_screen, parse_command, render_table, restore_goal, restore_run_mode,
@@ -5453,8 +5477,9 @@ mod tests {
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tool_activity, tool_finished, transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
+        SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS,
     };
+    use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
@@ -5490,6 +5515,37 @@ mod tests {
             selected: 0,
             subagent: None,
         }
+    }
+
+    #[test]
+    fn spinner_advances_only_after_a_full_frame_elapses() {
+        let mut app = test_app();
+        let t0 = Instant::now();
+        app.last_spinner_advance = t0;
+        app.spinner_frame = 0;
+        // One 50ms tick is under the 80ms frame time: no advance.
+        app.advance_spinner(t0 + Duration::from_millis(50));
+        assert_eq!(app.spinner_frame, 0);
+        // A second tick brings cumulative elapsed to 100ms (>= 80): +1 frame.
+        app.advance_spinner(t0 + Duration::from_millis(100));
+        assert_eq!(app.spinner_frame, 1);
+        // Leftover 20ms carried forward: next advance is at 160ms, not 180ms.
+        app.advance_spinner(t0 + Duration::from_millis(150));
+        assert_eq!(app.spinner_frame, 1);
+        app.advance_spinner(t0 + Duration::from_millis(165));
+        assert_eq!(app.spinner_frame, 2);
+    }
+
+    #[test]
+    fn spinner_catches_up_multiple_frames_after_a_stall() {
+        let mut app = test_app();
+        let t0 = Instant::now();
+        app.last_spinner_advance = t0;
+        app.spinner_frame = 0;
+        // A 500ms stall == floor(500/80) = 6 frames caught up in one advance.
+        app.advance_spinner(t0 + Duration::from_millis(500));
+        assert_eq!(app.spinner_frame, (500 / SPINNER_ADVANCE_MS) as usize);
+        assert_eq!(app.spinner_frame, 6);
     }
 
     #[test]
