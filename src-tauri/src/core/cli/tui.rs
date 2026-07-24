@@ -545,6 +545,10 @@ struct App {
     /// Wall-clock baseline for the last spinner advance; moved forward by whole
     /// frames only so leftover sub-frame time carries into the next tick.
     last_spinner_advance: Instant,
+    /// Output tokens/sec of the last completed turn, cached so the header holds a
+    /// steady value between turns instead of flickering to 0. Cleared at turn
+    /// start; recomputed from the turn's `usage` sample at `on_done`.
+    tokens_per_sec: Option<f64>,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -701,6 +705,7 @@ impl App {
             starting: Vec::new(),
             spinner_frame: 0,
             last_spinner_advance: Instant::now(),
+            tokens_per_sec: None,
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
@@ -777,6 +782,7 @@ impl App {
         self.ask_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
+        self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
         self.scrollback = 0;
@@ -1162,6 +1168,7 @@ impl App {
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
+        self.tokens_per_sec = None;
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
@@ -1186,6 +1193,7 @@ impl App {
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
+        self.tokens_per_sec = None;
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
@@ -1726,6 +1734,16 @@ impl App {
         if !answer.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": answer }));
+        }
+        // Cache this turn's output rate from the single `usage` sample and its
+        // streaming duration, before `run_started` is cleared below. Holds
+        // steady in the header until the next turn resets it.
+        if let (Some(out), Some(started)) = (
+            usage.as_ref().and_then(|u| u.completion_tokens),
+            self.run_started,
+        ) {
+            self.tokens_per_sec =
+                Some(tokens_per_second(out, started.elapsed().as_millis() as u64));
         }
         self.tokens = usage.and_then(|u| u.total_tokens).unwrap_or(self.tokens);
         self.status = Status::Idle;
@@ -5156,6 +5174,13 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
 }
 
 /// Render a duration as a compact `"12s"` / `"3m12s"` / `"1h04m"` label.
+/// Output tokens per second, flooring the duration at 100ms so a near-instant
+/// turn cannot produce a divide-by-tiny spike.
+fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
+    let d = duration_ms.max(100);
+    output_tokens as f64 * 1000.0 / d as f64
+}
+
 fn format_elapsed(secs: u64) -> String {
     if secs < 60 {
         format!("{secs}s")
@@ -5184,6 +5209,12 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
     ];
+    // Wall-clock (local) segment, mirroring the reference status line's leading
+    // HH:MM:SS. Recomputed each frame so it ticks in place.
+    spans.push(Span::styled(
+        format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+        Style::new().dim(),
+    ));
     spans.push(Span::raw(format!("  {turn}")));
     if app.tokens > 0 {
         spans.push(Span::raw(format!(
@@ -5196,6 +5227,11 @@ fn header(app: &App) -> Paragraph<'static> {
         spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
     }
     spans.push(Span::styled(elapsed, Style::new().dim()));
+    // Output rate segment: last completed turn's tokens/sec, cached so it holds
+    // steady instead of flickering to 0 between turns.
+    if let Some(rate) = app.tokens_per_sec {
+        spans.push(Span::styled(format!("  {rate:.1}/s"), Style::new().dim()));
+    }
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
     // green once achieved), so an unattended run shows the goal is still live.
     if let Some(goal) = app.goal.as_ref() {
@@ -5475,7 +5511,7 @@ mod tests {
         open_config_screen, parse_command, render_table, restore_goal, restore_run_mode,
         restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tool_activity, tool_finished, transcript_top_padding,
+        summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
         SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS,
     };
@@ -5515,6 +5551,19 @@ mod tests {
             selected: 0,
             subagent: None,
         }
+    }
+
+    #[test]
+    fn tokens_per_second_floors_duration_at_100ms() {
+        // 100 tokens over exactly 1s -> 100/s.
+        assert_eq!(tokens_per_second(100, 1000), 100.0);
+        // Sub-100ms durations are floored at 100ms, so no divide-by-tiny spike:
+        // 10 tokens / 0ms and / 100ms both yield 100/s, not infinity.
+        assert_eq!(tokens_per_second(10, 0), 100.0);
+        assert_eq!(tokens_per_second(10, 50), 100.0);
+        assert_eq!(tokens_per_second(10, 100), 100.0);
+        // Zero output is a clean 0, never NaN.
+        assert_eq!(tokens_per_second(0, 500), 0.0);
     }
 
     #[test]
