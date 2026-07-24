@@ -21,7 +21,10 @@ use ratatui::crossterm::{
         MouseEvent, MouseEventKind,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, EndSynchronizedUpdate,
+        EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
@@ -2770,9 +2773,16 @@ async fn chat_loop<B: Backend>(
             }
         }
 
-        terminal
-            .draw(|f| draw(f, app))
-            .map_err(|e| e.to_string())?;
+        // Wrap the repaint in synchronized-output (`\x1b[?2026h/l`) so the
+        // terminal buffers the whole frame and flips it atomically, eliminating
+        // tearing. Written straight to stdout (not the generic `Backend`) for the
+        // same reason mouse-capture toggles are: `chat_loop` is generic over B
+        // for TestBackend, which isn't `io::Write`. ratatui already diffs the
+        // buffer and emits ANSI only for changed cells.
+        let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+        let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
+        let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        draw_result?;
 
         tokio::select! {
             _ = ticker.tick() => {
