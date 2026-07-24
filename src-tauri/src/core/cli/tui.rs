@@ -4587,14 +4587,16 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
 
 fn draw(f: &mut Frame, app: &mut App) {
     let input_h = input_box_height(app, f.area().width);
-    // A one-line compact todo strip sits just below the header when todos exist
-    // and no overlay is open. Kept out of the layout otherwise so a todo-free
-    // session (or an open picker) renders exactly as before.
-    let show_todo = app.picker.is_none() && !app.todos.is_empty();
+    // A multi-line todo tree HUD sits just below the header when todos exist and
+    // no overlay is open, sized to its bounded row count. Kept out of the layout
+    // otherwise so a todo-free session (or an open picker) renders exactly as
+    // before.
+    let todo_h = todo_hud_height(app);
+    let show_todo = todo_h > 0;
     let raw = if show_todo {
         Layout::vertical([
             Constraint::Length(1), // header
-            Constraint::Length(1), // todo strip
+            Constraint::Length(todo_h), // todo HUD
             Constraint::Min(1),
             Constraint::Length(input_h),
             Constraint::Length(1), // path line
@@ -4619,7 +4621,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     f.render_widget(header(app), chunks[0]);
     if let Some(area) = todo_area {
-        f.render_widget(todo_strip(app), area);
+        f.render_widget(Paragraph::new(todo_hud(app)), area);
     }
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
@@ -5275,35 +5277,158 @@ fn header(app: &App) -> Paragraph<'static> {
     Paragraph::new(Line::from(spans))
 }
 
-/// Compact one-line todo widget: `☑ done/total · ▸ [phase] active · next: a, b, c`.
-/// Reads only the data-access helpers on `TodoList`; rendering never mutates.
-fn todo_strip(app: &App) -> Paragraph<'static> {
-    let (done, total) = app.todos.done_total();
-    let mut spans = vec![
-        Span::styled(format!(" ☑ {done}/{total}"), Style::new().cyan().bold()),
-    ];
-    if let Some((phase, task)) = app.todos.active() {
-        let active = if phase.name.is_empty() {
-            format!("  ▸ {}", task.content)
-        } else {
-            format!("  ▸ [{}] {}", phase.name, task.content)
-        };
-        spans.push(Span::styled(active, Style::new().white()));
+/// Hard ceiling on HUD rows so a huge plan can't crowd out the transcript.
+const MAX_TODO_ROWS: usize = 10;
+/// Per-phase task cap before a `+N more` summary row is shown.
+const TODO_TASK_CAP: usize = 8;
+
+/// Tree connector: `└─` for the last row at a nesting level, `├─` otherwise.
+fn tree_connector(is_last: bool) -> &'static str {
+    if is_last {
+        "└─"
+    } else {
+        "├─"
     }
-    let next = app.todos.next_pending(3);
-    if !next.is_empty() {
-        let preview = next
+}
+
+/// One task row: `<indent><connector> <glyph> <text>`, styled by status.
+/// Pending is dim, in-progress accent, completed dim+strikethrough, abandoned
+/// red+strikethrough with a distinct `☒` glyph.
+fn todo_task_line(
+    indent: &str,
+    is_last: bool,
+    task: &crate::core::agent::todo::TodoItem,
+    max: usize,
+) -> Line<'static> {
+    use crate::core::agent::todo::TodoStatus;
+    let (glyph, style) = match task.status {
+        TodoStatus::Pending => ("☐", Style::new().dim()),
+        TodoStatus::InProgress => ("☐", Style::new().cyan()),
+        TodoStatus::Completed => ("☑", Style::new().dim().add_modifier(Modifier::CROSSED_OUT)),
+        TodoStatus::Abandoned => ("☒", Style::new().red().add_modifier(Modifier::CROSSED_OUT)),
+    };
+    Line::from(vec![
+        Span::styled(
+            format!("{indent}{} ", tree_connector(is_last)),
+            Style::new().dark_gray(),
+        ),
+        Span::styled(format!("{glyph} "), style),
+        Span::styled(truncate(&task.content, max), style),
+    ])
+}
+
+/// Multi-line tree HUD for the session todos, capped at `MAX_TODO_ROWS`:
+///
+/// ```text
+/// Todos · 1/2   /todo
+///  └─ backend · 1/3
+///      ├─ ☑ scaffold
+///      └─ ☐ wire routes
+/// ```
+///
+/// Single-phase lists skip the redundant phase header and nest tasks directly
+/// under `Todos`. Multi-phase lists show one connected row per phase with its
+/// `· done/total` progress; only the active phase (the one holding the
+/// in-progress task) expands its task rows, the rest stay header-only.
+fn todo_hud(app: &App) -> Vec<Line<'static>> {
+    use crate::core::agent::todo::TodoStatus;
+    let phases = &app.todos.phases;
+    let multi = phases.len() > 1;
+    let width = app.render_width() as usize;
+
+    // Root row: `Todos`, plus ` · idx/count` when multi-phase, plus the hint.
+    let mut root = vec![Span::styled("Todos", Style::new().cyan().bold())];
+    if multi {
+        let active_idx = phases
             .iter()
-            .map(|(_, t)| *t)
-            .collect::<Vec<_>>()
-            .join(", ");
-        spans.push(Span::styled(
-            format!("  next: {preview}"),
-            Style::new().dim(),
+            .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
+        // ponytail: no active task (all done, or none started) → count fully
+        // finished phases so a completed plan reads `N/N`.
+        let idx = active_idx.map(|i| i + 1).unwrap_or_else(|| {
+            phases
+                .iter()
+                .filter(|p| {
+                    p.tasks
+                        .iter()
+                        .all(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
+                })
+                .count()
+                .max(1)
+        });
+        root.push(Span::styled(
+            format!(" · {idx}/{}", phases.len()),
+            Style::new().cyan(),
         ));
     }
-    spans.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
-    Paragraph::new(Line::from(spans))
+    root.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    let mut lines = vec![Line::from(root)];
+
+    // Which task rows to emit for a phase, capped with a `+N more` summary.
+    // ponytail: flat cap over all statuses (completed included, so their
+    // strikethrough shows); no completed-omission viewport for v1.
+    let push_tasks = |lines: &mut Vec<Line<'static>>, indent: &str, tasks: &[crate::core::agent::todo::TodoItem]| {
+        let shown = tasks.len().min(TODO_TASK_CAP);
+        let has_more = tasks.len() > shown;
+        let max = width.saturating_sub(indent.chars().count() + 4).max(8);
+        for (i, task) in tasks.iter().take(shown).enumerate() {
+            let is_last = !has_more && i + 1 == shown;
+            lines.push(todo_task_line(indent, is_last, task, max));
+        }
+        if has_more {
+            let more = tasks.len() - shown;
+            lines.push(Line::from(vec![Span::styled(
+                format!("{indent}{} +{more} more", tree_connector(true)),
+                Style::new().dark_gray(),
+            )]));
+        }
+    };
+
+    if multi {
+        let active_idx = phases
+            .iter()
+            .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
+        for (pi, phase) in phases.iter().enumerate() {
+            let is_last = pi + 1 == phases.len();
+            let done = phase
+                .tasks
+                .iter()
+                .filter(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
+                .count();
+            let active = Some(pi) == active_idx;
+            let style = if active {
+                Style::new().bold()
+            } else {
+                Style::new().dim()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {} ", tree_connector(is_last)),
+                    Style::new().dark_gray(),
+                ),
+                Span::styled(phase.name.clone(), style),
+                Span::styled(format!(" · {done}/{}", phase.tasks.len()), style),
+            ]));
+            // Only the active phase expands its tasks; others stay header-only.
+            if active {
+                push_tasks(&mut lines, "     ", &phase.tasks);
+            }
+        }
+    } else if let Some(phase) = phases.first() {
+        push_tasks(&mut lines, " ", &phase.tasks);
+    }
+
+    lines.truncate(MAX_TODO_ROWS);
+    lines
+}
+
+/// Rows the todo HUD occupies in the layout: 0 when hidden (empty list or an
+/// open picker), otherwise the bounded HUD line count. Mirrors
+/// `input_box_height` so `draw` can size the layout and render consistently.
+fn todo_hud_height(app: &App) -> u16 {
+    if app.picker.is_some() || app.todos.is_empty() {
+        return 0;
+    }
+    todo_hud(app).len() as u16
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
@@ -8243,6 +8368,122 @@ mod tests {
         finish_clean_turn(&mut app);
         assert!(app.want_start, "a failed mutation queues one retry reminder");
         assert!(last_history_content(&app).contains("failed"));
+    }
+
+    fn todos_from(
+        phases: Vec<(&str, Vec<(&str, crate::core::agent::todo::TodoStatus)>)>,
+    ) -> crate::core::agent::todo::TodoList {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase};
+        TodoList {
+            phases: phases
+                .into_iter()
+                .map(|(name, tasks)| TodoPhase {
+                    name: name.into(),
+                    tasks: tasks
+                        .into_iter()
+                        .map(|(content, status)| TodoItem {
+                            content: content.into(),
+                            status,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+
+    fn crossed_out(line: &ratatui::text::Line) -> bool {
+        line.spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::CROSSED_OUT))
+    }
+
+    #[test]
+    fn single_phase_todo_hud_renders_tree_lines() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![(
+            "only",
+            vec![
+                ("alpha", InProgress),
+                ("beta", Pending),
+                ("gamma", Completed),
+            ],
+        )]);
+        let lines: Vec<String> = super::todo_hud(&app).iter().map(line_text).collect();
+        // Root row: `Todos` + hint, no phase-count suffix for a single phase.
+        assert!(lines[0].contains("Todos"), "{lines:?}");
+        assert!(lines[0].contains("/todo"), "{lines:?}");
+        assert!(!lines[0].contains(" · "), "single phase has no idx/count: {lines:?}");
+        // No redundant phase header: tasks nest directly under the root.
+        assert!(!lines.iter().any(|l| l.contains("only")), "{lines:?}");
+        // Glyphs per status and connectors: non-last `├─`, last `└─`.
+        assert!(lines[1].contains("├─") && lines[1].contains("☐ alpha"), "{lines:?}");
+        assert!(lines[2].contains("├─") && lines[2].contains("☐ beta"), "{lines:?}");
+        assert!(lines[3].contains("└─") && lines[3].contains("☑ gamma"), "{lines:?}");
+    }
+
+    #[test]
+    fn multi_phase_todo_hud_collapses_inactive_phases() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![
+            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            ("frontend", vec![("ui", Pending), ("polish", Pending)]),
+        ]);
+        let hud = super::todo_hud(&app);
+        let lines: Vec<String> = hud.iter().map(line_text).collect();
+        // Root carries the active-phase/count suffix when multi-phase.
+        assert!(lines[0].contains("Todos") && lines[0].contains("· 1/2"), "{lines:?}");
+        // Each phase gets a connected header with its own done/total.
+        assert!(lines.iter().any(|l| l.contains("backend") && l.contains("· 1/2")), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("frontend") && l.contains("· 0/2")), "{lines:?}");
+        // Active phase (backend) expands its tasks; inactive phase collapses.
+        assert!(lines.iter().any(|l| l.contains("routes")), "active tasks shown: {lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
+            "inactive phase tasks stay collapsed: {lines:?}");
+    }
+
+    #[test]
+    fn completed_and_abandoned_todos_render_distinctly() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![(
+            "only",
+            vec![("shipped", Completed), ("dropped", Abandoned)],
+        )]);
+        let hud = super::todo_hud(&app);
+        let done = hud.iter().find(|l| line_text(l).contains("shipped")).unwrap();
+        let gone = hud.iter().find(|l| line_text(l).contains("dropped")).unwrap();
+        // Completed: checked glyph + strikethrough.
+        assert!(line_text(done).contains("☑"), "{:?}", line_text(done));
+        assert!(crossed_out(done), "completed is struck through");
+        // Abandoned: distinct glyph, strikethrough, and a red accent.
+        assert!(line_text(gone).contains("☒"), "{:?}", line_text(gone));
+        assert!(crossed_out(gone), "abandoned is struck through");
+        assert!(
+            gone.spans.iter().any(|s| s.style.fg == Some(ratatui::style::Color::Red)),
+            "abandoned carries a red accent to distinguish it from completed"
+        );
+    }
+
+    #[test]
+    fn todo_hud_height_zero_when_hidden_and_bounded_otherwise() {
+        use crate::core::agent::todo::TodoStatus::*;
+        // Empty list: no rows reserved.
+        let mut app = test_app();
+        assert_eq!(super::todo_hud_height(&app), 0);
+        // Non-empty: at least the root plus a task, capped under MAX_TODO_ROWS.
+        app.todos = todos_from(vec![("only", vec![("t", InProgress)])]);
+        let h = super::todo_hud_height(&app);
+        assert!(h >= 2 && h as usize <= super::MAX_TODO_ROWS, "bounded height, got {h}");
+        // A picker overlay hides the HUD entirely.
+        super::open_todo_picker(&mut app);
+        assert_eq!(super::todo_hud_height(&app), 0, "picker suppresses the HUD");
+        // A huge single phase stays clamped at the ceiling.
+        let mut app = test_app();
+        let many: Vec<(&str, _)> = (0..50).map(|_| ("x", Pending)).collect();
+        app.todos = todos_from(vec![("only", many)]);
+        assert_eq!(super::todo_hud_height(&app) as usize, super::MAX_TODO_ROWS);
     }
 
     #[tokio::test]
