@@ -3496,8 +3496,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/plan",
-        hint: "[exit]",
-        description: "Enter read-only plan mode (bare) or /plan exit to leave",
+        hint: "[exit|text]",
+        description: "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
     },
     SlashCommand {
         name: "/todo",
@@ -3689,39 +3689,46 @@ fn goal_command(app: &mut App, arg: &str) {
     }
 }
 
-/// `/plan` dispatcher: bare enters read-only plan mode, `/plan exit` leaves it.
-/// Only settable while idle so it never races the live tool set of a running
-/// turn (spec). Enforcement is at the core dispatcher; this just flips the
-/// per-turn flag forwarded in `App::body()` and persists it.
+/// `/plan` dispatcher: bare enters read-only plan mode, `/plan exit` leaves
+/// it, and `/plan <text>` enters plan mode (if not already in it) and
+/// immediately submits `<text>` as the first message to investigate — same
+/// convenience as seeding the bare TUI with a task. Only settable while idle
+/// so it never races the live tool set of a running turn (spec). Enforcement
+/// is at the core dispatcher; this just flips the per-turn flag forwarded in
+/// `App::body()` and persists it.
 fn plan_command(app: &mut App, arg: &str) {
     use crate::core::agent::plan::RunMode;
     if app.status != Status::Idle {
         app.note("plan mode is only settable while idle");
         return;
     }
-    match arg.trim() {
-        "exit" => {
-            if app.run_mode == RunMode::Plan {
-                app.run_mode = RunMode::Normal;
-                app.persist();
-                app.note("exited plan mode (normal execution)");
-            } else {
-                app.note("not in plan mode");
-            }
-        }
-        "" => {
-            if app.run_mode == RunMode::Plan {
-                app.note("already in plan mode (/plan exit to leave)");
-                return;
-            }
-            app.run_mode = RunMode::Plan;
+    let arg = arg.trim();
+    if arg == "exit" {
+        if app.run_mode == RunMode::Plan {
+            app.run_mode = RunMode::Normal;
             app.persist();
-            app.note("◈ PLAN · read only — investigate, then propose a plan for review");
-            if app.goal.is_some() {
-                app.note("active goal paused while planning; it resumes on exit");
-            }
+            app.note("exited plan mode (normal execution)");
+        } else {
+            app.note("not in plan mode");
         }
-        other => app.note(&format!("usage: /plan [exit]  (got '{other}')")),
+        return;
+    }
+    if app.run_mode == RunMode::Plan {
+        if arg.is_empty() {
+            app.note("already in plan mode (/plan exit to leave)");
+        } else {
+            app.submit_user(arg.to_string());
+        }
+        return;
+    }
+    app.run_mode = RunMode::Plan;
+    app.persist();
+    app.note("◈ PLAN · read only — investigate, then propose a plan for review");
+    if app.goal.is_some() {
+        app.note("active goal paused while planning; it resumes on exit");
+    }
+    if !arg.is_empty() {
+        app.submit_user(arg.to_string());
     }
 }
 
@@ -8017,6 +8024,32 @@ mod tests {
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
         let text: String = app.transcript.iter().map(line_text).collect();
         assert!(text.contains("only settable while idle"), "note: {text}");
+    }
+
+    #[tokio::test]
+    async fn plan_command_with_text_enters_plan_and_submits_it() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        run_command(&mut app, "plan make a html cat slide. use 3 subagents to research").await;
+        assert_eq!(app.run_mode, RunMode::Plan, "text arg must also enter plan mode");
+        assert_eq!(app.status, Status::Running, "seeded text must start a turn");
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(
+            text.contains("make a html cat slide"),
+            "seeded text must render as the user's message: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_command_with_text_while_already_planning_just_submits() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        run_command(&mut app, "plan investigate the auth module").await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert_eq!(app.status, Status::Running);
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("investigate the auth module"), "{text}");
     }
 
     #[test]
