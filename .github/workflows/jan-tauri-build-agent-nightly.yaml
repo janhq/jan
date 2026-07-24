@@ -1,0 +1,96 @@
+name: Jan Agent CLI - Nightly Build
+
+on:
+  schedule:
+    - cron: '0 10 * * *' # 10 AM UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: agent-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AGENT_BRANCH: refs/heads/goal/general-agent
+
+jobs:
+  resolve-ref:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+    steps:
+      - name: Resolve target ref
+        id: resolve
+        run: |
+          echo "ref=${{ env.AGENT_BRANCH }}" >> "$GITHUB_OUTPUT"
+
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  build-linux-x64:
+    uses: ./.github/workflows/template-cli-build-linux-x64.yml
+    needs: [get-update-version, resolve-ref]
+    secrets: inherit
+    with:
+      ref: ${{ needs.resolve-ref.outputs.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: agent-nightly
+
+  build-macos:
+    uses: ./.github/workflows/template-cli-build-macos.yml
+    needs: [get-update-version, resolve-ref]
+    secrets: inherit
+    with:
+      ref: ${{ needs.resolve-ref.outputs.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: agent-nightly
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-cli-build-windows-x64.yml
+    needs: [get-update-version, resolve-ref]
+    secrets: inherit
+    with:
+      ref: ${{ needs.resolve-ref.outputs.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: agent-nightly
+
+  sync-manifest:
+    needs: [get-update-version, build-linux-x64, build-macos, build-windows-x64]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v3
+
+      - name: Generate version manifest
+        run: |
+          VERSION="${{ needs.get-update-version.outputs.new_version }}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+
+          cat <<MANIFEST > manifest.json
+          {
+            "version": "$VERSION",
+            "pub_date": "$PUB_DATE",
+            "platforms": {
+              "linux-x86_64": {
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-linux-x64.outputs.FILE_NAME }}"
+              },
+              "darwin-universal": {
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-macos.outputs.FILE_NAME }}"
+              },
+              "windows-x86_64": {
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+              }
+            }
+          }
+          MANIFEST
+          cat manifest.json
+
+      - name: Upload manifest to S3
+        run: |
+          aws s3 cp ./manifest.json "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/agent-nightly/manifest.json"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'

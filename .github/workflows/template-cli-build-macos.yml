@@ -1,0 +1,111 @@
+# Builds the Jan Agent CLI binary for macOS (universal binary via lipo).
+# Produces a single stripped tarball; no Tauri bundler, no frontend.
+name: cli-build-macos
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: refs/heads/goal/general-agent
+      new_version:
+        required: true
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: agent-nightly
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
+        required: false
+      # Optional code signing
+      CODE_SIGN_P12_BASE64:
+        required: false
+      CODE_SIGN_P12_PASSWORD:
+        required: false
+      NOTARIZE_P8_BASE64:
+        required: false
+      NOTARY_ISSUER:
+        required: false
+      NOTARY_KEY_ID:
+        required: false
+    outputs:
+      FILE_NAME:
+        value: ${{ jobs.build-macos.outputs.FILE_NAME }}
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    outputs:
+      FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI binary (x86_64)
+        run: |
+          cd src-tauri
+          cargo build --features cli --bin jan --release --target x86_64-apple-darwin
+
+      - name: Build CLI binary (aarch64)
+        run: |
+          cd src-tauri
+          cargo build --features cli --bin jan --release --target aarch64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          mkdir -p universal
+          lipo -create \
+            src-tauri/target/x86_64-apple-darwin/release/jan \
+            src-tauri/target/aarch64-apple-darwin/release/jan \
+            -output universal/jan
+
+      - name: Strip universal binary
+        run: strip universal/jan
+
+      - name: Code sign (if certs configured)
+        continue-on-error: true
+        run: |
+          if [ -n "${{ secrets.CODE_SIGN_P12_BASE64 }}" ]; then
+            echo "${{ secrets.CODE_SIGN_P12_BASE64 }}" | base64 -d > /tmp/cert.p12
+            security import /tmp/cert.p12 -P "${{ secrets.CODE_SIGN_P12_PASSWORD }}" -A
+            codesign --force --sign "Developer ID Application" universal/jan --timestamp
+          else
+            echo "No signing cert configured; skipping code sign."
+          fi
+
+      - name: Package tarball
+        id: package
+        run: |
+          VERSION="${{ inputs.new_version }}"
+          FILE_NAME="jan-agent-darwin-universal-$VERSION.tar.gz"
+          tar czf "$FILE_NAME" -C universal jan
+          echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp "./${{ steps.package.outputs.FILE_NAME }}" \
+            "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/${{ inputs.channel }}/${{ steps.package.outputs.FILE_NAME }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'

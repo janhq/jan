@@ -1,0 +1,74 @@
+# Builds the Jan Agent CLI binary for Windows x86_64.
+# Produces a single stripped zip archive; no Tauri bundler, no frontend.
+name: cli-build-windows-x64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: refs/heads/goal/general-agent
+      new_version:
+        required: true
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: agent-nightly
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
+        required: false
+    outputs:
+      FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    outputs:
+      FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI binary
+        run: |
+          cd src-tauri
+          cargo build --features cli --bin jan --release
+
+      - name: Package zip
+        id: package
+        shell: bash
+        run: |
+          VERSION="${{ inputs.new_version }}"
+          FILE_NAME="jan-agent-windows-x86_64-$VERSION.zip"
+          7z a "$FILE_NAME" ./src-tauri/target/release/jan.exe
+          echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to S3
+        shell: bash
+        run: |
+          aws s3 cp "./${{ steps.package.outputs.FILE_NAME }}" \
+            "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/${{ inputs.channel }}/${{ steps.package.outputs.FILE_NAME }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
