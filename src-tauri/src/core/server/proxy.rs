@@ -2929,6 +2929,13 @@ async fn proxy_request(
         .unwrap())
 }
 
+/// True when this bind exposes the API to the network with no authentication:
+/// a non-loopback host and an empty API key.
+fn is_insecure_public_bind(host: &str, api_key: &str) -> bool {
+    let is_loopback = matches!(host, "127.0.0.1" | "localhost" | "::1");
+    !is_loopback && api_key.is_empty()
+}
+
 pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
@@ -3062,6 +3069,19 @@ async fn start_server_internal(
         }
     };
     log::info!("Jan API server started on http://{addr}");
+
+    // Security: binding to a non-loopback interface exposes the OpenAI-compatible
+    // API on the network. With no API key set, any reachable host can call it
+    // unauthenticated (model inference, model enumeration, and MCP tool execution
+    // when enabled). Warn loudly rather than refuse to start, so existing
+    // trusted-LAN setups keep working, but the operator is told.
+    if is_insecure_public_bind(&host, &proxy_api_key) {
+        log::warn!(
+            "Jan API server is bound to a non-loopback address ({host}) with no API key set. \
+             The local API is reachable UNAUTHENTICATED by any host that can reach this machine. \
+             Set an API key in Settings > Local API Server to require authentication."
+        );
+    }
 
     let server_task = tokio::spawn(async move {
         loop {
@@ -3528,5 +3548,30 @@ async fn forward_non_streaming(
         if sender.send_data(bytes).await.is_err() {
             log::debug!("Client disconnected");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_insecure_public_bind;
+
+    #[test]
+    fn loopback_never_warns() {
+        for host in ["127.0.0.1", "localhost", "::1"] {
+            assert!(!is_insecure_public_bind(host, ""), "{host} should be safe");
+            assert!(!is_insecure_public_bind(host, "secret"));
+        }
+    }
+
+    #[test]
+    fn public_bind_without_key_warns() {
+        assert!(is_insecure_public_bind("0.0.0.0", ""));
+        assert!(is_insecure_public_bind("192.168.1.10", ""));
+    }
+
+    #[test]
+    fn public_bind_with_key_is_ok() {
+        assert!(!is_insecure_public_bind("0.0.0.0", "secret"));
+        assert!(!is_insecure_public_bind("192.168.1.10", "secret"));
     }
 }
