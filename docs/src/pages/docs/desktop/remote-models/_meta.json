@@ -14,6 +14,9 @@
   "openai": {
     "title": "OpenAI"
   },
+  "openai-compatible": {
+    "title": "OpenAI-Compatible"
+  },
   "azure": {
     "title": "Azure OpenAI"
   },
