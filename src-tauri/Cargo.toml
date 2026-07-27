@@ -43,14 +43,44 @@ deep-link = ["dep:tauri-plugin-deep-link"]
 desktop = [
     "deep-link",
     "hardware",
+    "tauri-app",
+]
+# Everything that makes this crate a Tauri application: the framework, its
+# plugins, and the native GUI helpers (file dialogs, GTK, D-Bus). The headless
+# `jan` CLI builds without this feature and links no GUI crate -- gtk/gdk enter
+# the graph through `tauri` itself (via muda), so the dependency must be absent,
+# not merely unused.
+tauri-app = [
+    "dep:tauri",
+    "dep:tauri-build",
+    "dep:tauri-plugin-http",
+    "dep:tauri-plugin-llamacpp",
+    "dep:tauri-plugin-log",
+    "dep:tauri-plugin-opener",
+    "dep:tauri-plugin-os",
+    "dep:tauri-plugin-rag",
+    "dep:tauri-plugin-shell",
+    "dep:tauri-plugin-store",
+    "dep:tauri-plugin-mlx",
+    "dep:tauri-plugin-updater",
+    "dep:tauri-plugin-single-instance",
+    "dep:tauri-plugin-dialog",
+    "dep:fix-path-env",
+    "dep:rfd",
+    "dep:gtk",
+    "dep:zbus",
+    "tauri-plugin-vector-db/tauri",
+    "tauri-plugin-websearch/tauri",
 ]
 mobile = [
     "tauri/protocol-asset",
     "tauri/test",
     "tauri/wry",
     "dep:sqlx",
+    "tauri-app",
 ]
 test-tauri = [
+    "tauri-app",
     "tauri/wry",
     "tauri/x11",
     "tauri/protocol-asset",
@@ -63,14 +93,14 @@ test-tauri = [
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:ratatui", "dep:tui-markdown", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
-tauri-build = { version = "2.0.2", features = [] }
+tauri-build = { version = "2.0.2", features = [], optional = true }
 serde_json = "1.0"
 
 [dependencies]
 dirs = "6.0.0"
 async-trait = "0.1"
 env = "1.0.1"
-fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }
 flate2 = "1.0"
 futures-util = "0.3.31"
 hex = "0.4"
@@ -103,16 +133,18 @@ tar = "0.4"
 zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
-tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
-tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
-tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
-tauri-plugin-websearch = { path = "./plugins/tauri-plugin-websearch" }
+tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp", optional = true }
+# The CLI consumes only these two plugins' tauri-free cores (`db`, `provider`);
+# the desktop feature turns their Tauri command surface back on.
+tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db", default-features = false }
+tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag", optional = true }
+tauri-plugin-websearch = { path = "./plugins/tauri-plugin-websearch", default-features = false }
 # `default-features = false` drops the plugin's default `rustls-tls` (bundled
 # Mozilla roots) so `native-tls` reads the OS trust store instead. Other
 # features re-list the plugin's defaults so behaviour is otherwise unchanged.
 # `macos-system-configuration` is reqwest's legacy alias for `system-proxy` —
 # cross-platform-safe; native deps are target-gated by Cargo.
-tauri-plugin-http = { version = "2", default-features = false, features = [
+tauri-plugin-http = { version = "2", optional = true, default-features = false, features = [
   "native-tls",
   "http2",
   "charset",
@@ -120,18 +152,18 @@ tauri-plugin-http = { version = "2", default-features = false, features = [
   "cookies",
   "unsafe-headers",
 ] }
-tauri-plugin-log = "2.0.0-rc"
-tauri-plugin-opener = "2.2.7"
-tauri-plugin-os = "2.2.1"
-tauri-plugin-shell = "2.2.0"
-tauri-plugin-store = "2"
+tauri-plugin-log = { version = "2.0.0-rc", optional = true }
+tauri-plugin-opener = { version = "2.2.7", optional = true }
+tauri-plugin-os = { version = "2.2.1", optional = true }
+tauri-plugin-shell = { version = "2.2.0", optional = true }
+tauri-plugin-store = { version = "2", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.14"
 url = "2.5"
 uuid = { version = "1.7", features = ["v4"] }
-rfd = { version = "0.15.4", default-features = false, features = [
+rfd = { version = "0.15.4", optional = true, default-features = false, features = [
   "tokio",
   "xdg-portal",
   "common-controls-v6",
@@ -165,6 +197,7 @@ png = { version = "0.17", optional = true }
 
 [dependencies.tauri]
 version = "2.8.5"
+optional = true
 default-features = false
 features = ["protocol-asset", "macos-private-api", "test"]
 
@@ -176,8 +209,8 @@ nix = { version = "=0.30.1", features = ["signal", "process", "resource"] }
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "5", default-features = false, features = ["tokio"] }
-gtk = "0.18"
+zbus = { version = "5", default-features = false, features = ["tokio"], optional = true }
+gtk = { version = "0.18", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
@@ -185,23 +218,23 @@ windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 
 # MLX runs only on Apple Silicon, so the plugin is built solely for macOS.
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx" }
+tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "native-tls"] }
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", optional = true }
 once_cell = "1.18"
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"], optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
-tauri-plugin-dialog = { version = "2.2.1", default-features = false }
-tauri-plugin-http = { version = "2", default-features = false }
-tauri-plugin-log = { version = "2.0.0-rc", default-features = false }
-tauri-plugin-opener = { version = "2.2.7", default-features = false }
-tauri-plugin-os = { version = "2.2.1", default-features = false }
-tauri-plugin-shell = { version = "2.2.0", default-features = false }
-tauri-plugin-store = { version = "2", default-features = false }
+tauri-plugin-dialog = { version = "2.2.1", default-features = false, optional = true }
+tauri-plugin-http = { version = "2", default-features = false, optional = true }
+tauri-plugin-log = { version = "2.0.0-rc", default-features = false, optional = true }
+tauri-plugin-opener = { version = "2.2.7", default-features = false, optional = true }
+tauri-plugin-os = { version = "2.2.1", default-features = false, optional = true }
+tauri-plugin-shell = { version = "2.2.0", default-features = false, optional = true }
+tauri-plugin-store = { version = "2", default-features = false, optional = true }
 
 # Release profile optimizations for minimal binary size
 [profile.release]

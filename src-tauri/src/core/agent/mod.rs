@@ -1,6 +1,8 @@
 //! Shared agent orchestration: the server-side loop and its upstream/provider
 //! plumbing, consumed by both the API-server proxy and `tauri-plugin-agent`.
 
+// Tauri IPC surface for the desktop agent; the CLI drives the loop directly.
+#[cfg(not(feature = "cli"))]
 pub mod commands;
 pub mod compaction;
 pub mod context;

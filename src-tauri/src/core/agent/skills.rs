@@ -196,6 +196,7 @@ fn describe(parsed: &ParsedSkill) -> String {
 
 /// Metadata for every discovered skill (name + description) — for the UI list.
 /// Keeps empty stubs so the user can see and edit them.
+#[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn list_meta(root: &Path) -> Vec<SkillMeta> {
     discover(root)
         .into_iter()
@@ -268,6 +269,7 @@ pub(crate) fn write(root: &Path, name: &str, content: &str) -> Result<(), String
 }
 
 /// Delete a skill (folder or flat form). Idempotent: a missing skill is Ok.
+#[cfg(any(not(feature = "cli"), test))]
 pub(crate) fn delete(root: &Path, name: &str) -> Result<(), String> {
     let stem = safe_stem(name)?;
     let dir = skills_dir(root);

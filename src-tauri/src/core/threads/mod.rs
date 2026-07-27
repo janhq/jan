@@ -10,6 +10,7 @@
    - As a result, the messages.jsonl file for each thread is always consistent and never corrupted, even under concurrent access.
 */
 
+#[cfg(not(feature = "cli"))]
 pub mod commands;
 pub mod constants;
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -18,4 +19,5 @@ pub mod helpers;
 pub mod utils;
 
 #[cfg(test)]
+#[cfg(not(feature = "cli"))]
 mod tests;

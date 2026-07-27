@@ -1,3 +1,14 @@
+// The headless `jan` CLI and the desktop app are mutually exclusive builds: the
+// `cli` feature gates off every Tauri-dependent module, so pairing it with the
+// Tauri stack leaves the desktop entry points without their subsystems. Note
+// that `--features cli` alone still implies `default` (and therefore
+// `desktop`); the CLI must be built with `--no-default-features`.
+#[cfg(all(feature = "cli", feature = "tauri-app"))]
+compile_error!(
+    "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
+     build the CLI with `cargo build --no-default-features --features cli --bin jan`"
+);
+
 pub mod core;
 
 #[cfg(not(feature = "cli"))]

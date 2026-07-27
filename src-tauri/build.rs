@@ -1,5 +1,5 @@
 fn main() {
-    #[cfg(not(feature = "cli"))]
+    #[cfg(feature = "tauri-app")]
     {
         tauri_build::build();
     }

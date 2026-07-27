@@ -32,7 +32,7 @@ build() {
     fi
 
     echo "==> Building CLI binary (${profile})..."
-    (cd "$CRATE_DIR" && cargo build $flag --features cli --bin jan)
+    (cd "$CRATE_DIR" && cargo build $flag --no-default-features --features cli --bin jan)
 
     local artifact="$CRATE_DIR/target/$target_dir/jan"
     if [ ! -f "$artifact" ]; then
@@ -51,12 +51,12 @@ build() {
 case "${1:-debug}" in
     check)
         echo "==> cargo check (no binary produced)..."
-        (cd "$CRATE_DIR" && cargo check --features cli --lib)
+        (cd "$CRATE_DIR" && cargo check --no-default-features --features cli --lib)
         echo "==> OK"
         ;;
     test)
         echo "==> Running TUI tests..."
-        (cd "$CRATE_DIR" && cargo test --features cli --lib -- core::cli::tui)
+        (cd "$CRATE_DIR" && cargo test --no-default-features --features cli --lib -- core::cli::tui)
         echo "==> All TUI tests passed"
         ;;
     release)
