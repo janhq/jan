@@ -1,9 +1,4 @@
-use tauri::{
-    plugin::{Builder, TauriPlugin},
-    Runtime,
-    Manager,
-};
-
+#[cfg(feature = "tauri")]
 mod commands;
 pub mod db;
 mod error;
@@ -13,8 +8,11 @@ mod utils;
 pub use error::VectorDBError;
 pub use state::VectorDBState;
 
-pub fn init<R: Runtime>() -> TauriPlugin<R> {
-    Builder::new("vector-db")
+#[cfg(feature = "tauri")]
+pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    use tauri::Manager;
+
+    tauri::plugin::Builder::new("vector-db")
         .invoke_handler(tauri::generate_handler![
             commands::create_collection,
             commands::insert_chunks,

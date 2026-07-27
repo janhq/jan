@@ -12,13 +12,17 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use reqwest::Client;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
+#[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::StreamEvent;
-use crate::core::server::proxy::{
-    http_status_indicates_api_key_retry, normalize_openai_tool_parameters_schema, router_upstream,
+use crate::core::openai_schema::{
+    http_status_indicates_api_key_retry, normalize_openai_tool_parameters_schema,
 };
+#[cfg(not(feature = "cli"))]
+use crate::core::server::proxy::router_upstream;
+#[cfg(not(feature = "cli"))]
 use crate::core::server::MlxBackendSession;
 use crate::core::{
     mcp::models::McpSettings,
@@ -162,18 +166,38 @@ fn mcp_call_result_to_string(result: &CallToolResult) -> String {
     }
 }
 
+/// Resolve `model_id` to an upstream URL + key chain. The desktop build also
+/// resolves local engines (MLX session, llama-server router); the `cli` build is
+/// remote-only, so a model with no provider entry is unresolvable.
 pub(crate) async fn resolve_upstream_for_model(
     model_id: &str,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
-    llama_state: Arc<LlamacppState>,
-    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> Result<(String, Vec<String>), String> {
     let destination_path = "/chat/completions";
 
     let pc = provider_configs.lock().await;
-    let provider_name = pc
+    let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
+
+    // The same model id can be listed by several providers -- typically a local
+    // engine descriptor (no base_url) plus a Jan desktop API server exposing the
+    // same model over HTTP. `HashMap` iteration order is randomized, so pick the
+    // usable one deterministically instead of whichever hashes first. Only the
+    // CLI needs this: the desktop resolves base_url-less providers through its
+    // in-process engine branches below.
+    #[cfg(feature = "cli")]
+    let first_match = pc
         .iter()
-        .find(|(_, config)| config.models.iter().any(|m| m == model_id))
+        .filter(|(_, config)| {
+            config.base_url.as_deref().is_some_and(|u| !u.is_empty()) && offers(config)
+        })
+        .min_by_key(|(name, _)| name.to_string())
+        .or_else(|| pc.iter().find(|(_, config)| offers(config)));
+    #[cfg(not(feature = "cli"))]
+    let first_match = pc.iter().find(|(_, config)| offers(config));
+
+    let provider_name = first_match
         .map(|(_, config)| config.provider.clone())
         .or_else(|| {
             if let Some(sep_pos) = model_id.find('/') {
@@ -200,18 +224,21 @@ pub(crate) async fn resolve_upstream_for_model(
         }
     }
 
-    let mlx_guard = mlx_sessions.lock().await;
-    if let Some(info) = mlx_guard.values().find(|s| s.info.model_id == model_id) {
-        let target_port = info.info.port;
-        return Ok((
-            format!("http://127.0.0.1:{target_port}/v1{destination_path}"),
-            vec![info.info.api_key.clone()],
-        ));
-    }
-    drop(mlx_guard);
+    #[cfg(not(feature = "cli"))]
+    {
+        let mlx_guard = mlx_sessions.lock().await;
+        if let Some(info) = mlx_guard.values().find(|s| s.info.model_id == model_id) {
+            let target_port = info.info.port;
+            return Ok((
+                format!("http://127.0.0.1:{target_port}/v1{destination_path}"),
+                vec![info.info.api_key.clone()],
+            ));
+        }
+        drop(mlx_guard);
 
-    if let Some((url, key)) = router_upstream(&llama_state, destination_path).await {
-        return Ok((url, vec![key]));
+        if let Some((url, key)) = router_upstream(&llama_state, destination_path).await {
+            return Ok((url, vec![key]));
+        }
     }
 
     Err(format!("No upstream session found for model '{model_id}'"))
@@ -383,6 +410,7 @@ pub(crate) async fn execute_mcp_tool_calls(
     results
 }
 
+#[cfg(not(feature = "cli"))]
 pub(crate) async fn call_openai_chat_completions(
     client: &Client,
     upstream_url: &str,
@@ -799,6 +827,44 @@ mod tests {
         mpsc::UnboundedReceiver<StreamEvent>,
     ) {
         mpsc::unbounded_channel()
+    }
+
+    /// A model served both by a Jan desktop API server (reachable over HTTP) and
+    /// by local engine descriptors (no base_url) must always resolve to the
+    /// server. `HashMap` order is randomized, so the local entries outnumber the
+    /// remote one here: without a deterministic preference this fails most runs.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn shared_model_id_resolves_to_the_reachable_provider() {
+        let mut configs = HashMap::new();
+        for local in ["llamacpp", "llamacpp-rs", "mlx", "engine-d", "engine-e"] {
+            configs.insert(
+                local.to_string(),
+                ProviderConfig {
+                    provider: local.into(),
+                    base_url: None,
+                    models: vec!["sentence-transformer-mini".into()],
+                    ..Default::default()
+                },
+            );
+        }
+        configs.insert(
+            "JanServer".to_string(),
+            ProviderConfig {
+                provider: "JanServer".into(),
+                base_url: Some("http://127.0.0.1:1337/v1".into()),
+                models: vec!["sentence-transformer-mini".into()],
+                ..Default::default()
+            },
+        );
+
+        let (url, _keys) = resolve_upstream_for_model(
+            "sentence-transformer-mini",
+            Arc::new(Mutex::new(configs)),
+        )
+        .await
+        .expect("the API server provider is reachable");
+        assert_eq!(url, "http://127.0.0.1:1337/v1/chat/completions");
     }
 
     #[test]

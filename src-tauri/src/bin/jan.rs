@@ -1,18 +1,19 @@
 //! jan — headless CLI for Jan.
 //!
-//! Shares all core logic with the Jan desktop app.
-//! Build with: cargo build --features cli --bin jan
+//! Shares the Tauri-free core logic with the Jan desktop app; talks only to
+//! remote providers (no local inference, no GUI dependencies).
+//! Build with: cargo build --no-default-features --features cli --bin jan
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use console::Style;
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
-use app_lib::core::cli::providers::ProviderOverrides;
+use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
-    cli_get_thread, cli_list_messages, cli_list_threads, list_models,
+    cli_get_thread, cli_list_messages, cli_list_threads,
 };
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
@@ -20,18 +21,19 @@ use app_lib::core::cli::{
 #[derive(Parser)]
 #[command(
     name = "jan",
-    about = "Chat with local AI models in an interactive agent console — no cloud required",
+    about = "Chat with AI models in an interactive agent console",
     long_about = "Running `jan` with no arguments opens the interactive agent console (TUI),\n\
-where you chat with a local or cloud model that can run tools in your project.\n\n\
+where you chat with a model that can run tools in your project.\n\n\
 The `jan cli` subcommand is the non-interactive fallback: run folder-based\n\
-agents headlessly and manage threads and installed models.\n\n\
-Models downloaded in the Jan desktop app are available in both.",
+agents headlessly and manage threads and providers.\n\n\
+Models are served by remote providers configured in ~/.jan/config.toml\n\
+(see `jan config set`), a project's agent.toml, or the Jan desktop app.",
     after_help = "Examples:\n  \
   jan                                                    # open the interactive agent console (TUI)\n  \
   jan --yolo                                             # TUI with every tool call auto-approved\n  \
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
-  jan cli models list                                    # show all installed models\n  \
+  jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads",
     version
 )]
@@ -88,13 +90,13 @@ enum CliCommands {
         #[command(subcommand)]
         cmd: ThreadsCommands,
     },
-    /// List models installed in the Jan data folder
+    /// List the models exposed by the configured providers
     #[command(display_order = 11)]
     Models {
         #[command(subcommand)]
         cmd: ModelsCommands,
     },
-    /// Run folder-based agents against local or cloud models
+    /// Run folder-based agents against a configured provider's models
     #[command(display_order = 12)]
     Agent {
         #[command(subcommand)]
@@ -240,11 +242,14 @@ enum ThreadsCommands {
 
 #[derive(Subcommand)]
 enum ModelsCommands {
-    /// Print all installed models as JSON (from the Jan data folder)
+    /// Print every configured provider's models as JSON (API keys redacted)
     List {
-        /// Filter by engine: llamacpp, mlx, or all
-        #[arg(long, default_value = "all")]
-        engine: String,
+        /// Only show models from this provider (e.g. anthropic)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Project root whose agent.toml [provider] override is applied
+        #[arg(long, default_value = ".")]
+        project: String,
     },
 }
 
@@ -467,26 +472,37 @@ async fn handle_threads(cmd: ThreadsCommands) {
 
 async fn handle_models(cmd: ModelsCommands) {
     match cmd {
-        ModelsCommands::List { engine } => {
-            let engines: &[&str] = match engine.as_str() {
-                "all" => &["llamacpp", "mlx"],
-                other => &[other],
-            };
-            let mut output: Vec<serde_json::Value> = Vec::new();
-            for eng in engines {
-                for (id, yml) in list_models(eng) {
-                    output.push(serde_json::json!({
-                        "id": id,
-                        "engine": eng,
-                        "name": yml.name,
-                        "model_path": yml.model_path,
-                        "size_bytes": yml.size_bytes,
-                        "embedding": yml.embedding,
-                        "capabilities": yml.capabilities,
-                        "mmproj_path": yml.mmproj_path,
-                    }));
+        ModelsCommands::List { provider, project } => {
+            let configs = match load_provider_configs(
+                Some(std::path::Path::new(&project)),
+                &ProviderOverrides::default().with_env(),
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
                 }
-            }
+            };
+            let mut output: Vec<serde_json::Value> = configs
+                .values()
+                .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
+                .filter(|c| provider.as_ref().map_or(true, |p| &c.provider == p))
+                .flat_map(|c| {
+                    c.models.iter().map(move |m| {
+                        serde_json::json!({
+                            "id": m,
+                            "provider": c.provider,
+                            "base_url": c.base_url,
+                            "api_type": c.api_type,
+                            "has_api_key": !c.bearer_key_chain().is_empty(),
+                        })
+                    })
+                })
+                .collect();
+            output.sort_by(|a, b| {
+                (a["provider"].as_str(), a["id"].as_str())
+                    .cmp(&(b["provider"].as_str(), b["id"].as_str()))
+            });
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
     }

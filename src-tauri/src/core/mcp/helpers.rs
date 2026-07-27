@@ -9,7 +9,6 @@ use rmcp::{
 use serde_json::Value;
 use std::{collections::HashMap, env, process::Stdio, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_http::reqwest;
 use tokio::{
     io::AsyncReadExt,
     process::Command,
@@ -19,7 +18,7 @@ use tokio::{
 
 use crate::core::{
     app::commands::get_jan_data_folder_path,
-    mcp::models::{McpServerConfig, McpSettings},
+    mcp::models::{extract_active_status, extract_command_args, McpSettings},
     state::{AppState, RunningServiceEnum, SharedMcpServers},
 };
 use jan_utils::{can_override_npx, can_override_uvx};
@@ -850,43 +849,6 @@ fn emit_mcp_update_event<R: Runtime>(app: &AppHandle<R>, name: &str) {
     ) {
         log::error!("Failed to emit mcp-update event: {e}");
     }
-}
-
-pub fn extract_command_args(config: &Value) -> Option<McpServerConfig> {
-    let obj = config.as_object()?;
-    let command = obj.get("command")?.as_str()?.to_string();
-    let args = obj.get("args")?.as_array()?.clone();
-    let url = obj.get("url").and_then(|u| u.as_str()).map(String::from);
-    let transport_type = obj.get("type").and_then(|t| t.as_str()).map(String::from);
-    let timeout = obj
-        .get("timeout")
-        .and_then(|t| t.as_u64())
-        .map(Duration::from_secs);
-    let headers = obj
-        .get("headers")
-        .unwrap_or(&Value::Object(serde_json::Map::new()))
-        .as_object()?
-        .clone();
-    let envs = obj
-        .get("env")
-        .unwrap_or(&Value::Object(serde_json::Map::new()))
-        .as_object()?
-        .clone();
-    Some(McpServerConfig {
-        timeout,
-        transport_type,
-        url,
-        command,
-        args,
-        envs,
-        headers,
-    })
-}
-
-pub fn extract_active_status(config: &Value) -> Option<bool> {
-    let obj = config.as_object()?;
-    let active = obj.get("active")?.as_bool()?;
-    Some(active)
 }
 
 /// Restart only servers that were previously active (like cortex restart behavior)
