@@ -45,16 +45,13 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
-      - name: Build CLI binary
-        env:
-          JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
-          JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
-        run: |
-          cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release
 
       - name: Assert no GUI crates
         run: |
@@ -68,6 +65,14 @@ jobs:
             echo "GUI crate leaked into the CLI dependency graph" >&2
             exit 1
           fi
+
+      - name: Build CLI binary
+        env:
+          JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
+          JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
+        run: |
+          cd src-tauri
+          cargo build --no-default-features --features cli --bin jan --release
 
       - name: Strip binary
         run: strip src-tauri/target/release/jan
