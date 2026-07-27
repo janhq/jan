@@ -879,18 +879,19 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
-/// Soft nudge appended to the system prompt on a session's first substantive
-/// message: without it, the model only ever reaches for `todo` once told
-/// explicitly that it has the tool, instead of proactively planning a
-/// multi-step request the way a plan laid out up front would help with.
-/// Advisory only -- unlike plan mode's read-only gate, nothing enforces this;
-/// the model may ignore it for a request that doesn't warrant a plan.
-const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, consider \
-calling `todo` first with a single `init` op to lay out a phased plan covering investigation \
-through implementation and verification, not just the next step. Keep each task to a concise, \
-specific 5-10 word label; `init` only accepts phase names and task-label strings. If you create \
-the list, continue the request in the same turn and avoid re-calling `todo` unless task state \
-materially changes.";
+/// System-prompt addendum on a session's first substantive message: without
+/// it, the model only ever reaches for `todo` once told explicitly that it
+/// has the tool, instead of proactively planning a multi-step request the
+/// way a plan laid out up front would help with. Paired with a forced
+/// `tool_choice` on that same first turn (see `should_suggest_eager_todo_plan`
+/// and its caller), so this is a real requirement, not a suggestion the model
+/// can silently skip -- the imperative wording matches that guarantee.
+const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
+phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
+investigation through implementation and verification, not just the next step. Keep each task \
+to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings. \
+After `todo` succeeds, continue the request in the same turn; do not call `todo` again unless \
+task state materially changes.";
 
 /// True on a session's first substantive user message: exactly one user-role
 /// message in the conversation so far (this one), no todos staged yet, and
@@ -1004,17 +1005,21 @@ async fn orchestrate_inner(
     } else {
         assistant_instructions
     };
+    // Child (subagent) runs are excluded via `system_prompt_override`, the
+    // same gate the memory-recall block above uses to distinguish a
+    // top-level run from a subagent's isolated context.
+    let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
+        && system_prompt_override.is_none()
+        && should_suggest_eager_todo_plan(&conversation_messages, todo_registry).await;
     let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
         let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
         Some(match system_prompt {
             Some(sys) => format!("{sys}\n\n{addendum}"),
             None => addendum.to_string(),
         })
-    } else if system_prompt_override.is_none()
-        && should_suggest_eager_todo_plan(&conversation_messages, todo_registry).await
-    {
-        // Child (subagent) runs are excluded above via `system_prompt_override`,
-        // the same gate the memory-recall block already uses to distinguish a
+    } else if eager_todo_plan {
+        // Child (subagent) runs are excluded via `system_prompt_override`, the
+        // same gate the memory-recall block above uses to distinguish a
         // top-level run from a subagent's isolated context.
         Some(match system_prompt {
             Some(sys) => format!("{sys}\n\n{EAGER_TODO_PROMPT_ADDENDUM}"),
@@ -1026,6 +1031,10 @@ async fn orchestrate_inner(
     if let Some(sys) = system_prompt {
         set_system_prompt(&mut conversation_messages, &sys);
     }
+    // Paired with the addendum above: force the model's very first tool call
+    // to actually be `todo` rather than leaving compliance up to a prompt it
+    // could silently ignore.
+    let force_first_tool = eager_todo_plan.then_some("todo");
 
     let model_override = json_body.get("model").and_then(|v| v.as_str());
     let mut model_id: Option<String> = model_override.map(|v| v.to_string());
@@ -1231,6 +1240,7 @@ async fn orchestrate_inner(
             &tools,
             run_mode,
             todo_registry.as_ref(),
+            force_first_tool,
         )
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
@@ -1262,6 +1272,7 @@ async fn orchestrate_inner(
             &mcp_tools,
             run_mode,
             todo_registry.as_ref(),
+            force_first_tool,
         )
         .await
     }
@@ -1277,6 +1288,7 @@ fn build_completion_request(
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
     json_body: &serde_json::Value,
+    forced_tool_choice: Option<&str>,
 ) -> serde_json::Value {
     let mut completion_map = serde_json::Map::new();
     completion_map.insert("model".to_string(), serde_json::json!(model_id));
@@ -1284,7 +1296,11 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
+    let tool_choice = match forced_tool_choice {
+        Some(name) => serde_json::json!({ "type": "function", "function": { "name": name } }),
+        None => serde_json::json!("auto"),
+    };
+    completion_map.insert("tool_choice".to_string(), tool_choice);
     if !openai_tools.is_empty() {
         completion_map.insert(
             "tools".to_string(),
@@ -1370,6 +1386,10 @@ async fn run_turn_cycle(
     tools: &dyn ToolInvoker,
     run_mode: crate::core::agent::plan::RunMode,
     todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+    // Forces the model's very first tool call (`turn == 0` only) to be this
+    // named tool -- used to make the eager-todo nudge actually reliable
+    // instead of an easily-ignored suggestion. `None` for every later turn.
+    force_first_tool: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     // `max_turns == 0` means unbounded: the session token budget and user
     // cancellation are the real guards, so an interactive run isn't cut off
@@ -1400,8 +1420,13 @@ async fn run_turn_cycle(
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
-                let request_value =
-                    build_completion_request(model_id, &conversation_messages, openai_tools, json_body);
+                let request_value = build_completion_request(
+                    model_id,
+                    &conversation_messages,
+                    openai_tools,
+                    json_body,
+                    (turn == 0).then_some(force_first_tool).flatten(),
+                );
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
                     Err(e)
@@ -1775,6 +1800,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1802,6 +1828,47 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    #[tokio::test]
+    async fn force_first_tool_only_applies_to_the_first_turn() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            Some("todo"),
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "one request per turn");
+        assert_eq!(
+            requests[0]["tool_choice"],
+            json!({ "type": "function", "function": { "name": "todo" } }),
+            "the first turn's request must force the named tool"
+        );
+        assert_eq!(
+            requests[1]["tool_choice"], "auto",
+            "later turns must not keep forcing the same tool"
+        );
     }
 
     fn mutating_tool_call_completion(id: &str, name: &str) -> serde_json::Value {
@@ -1869,6 +1936,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
         )
         .await
         .unwrap();
@@ -1904,6 +1972,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Plan,
             Some(&registry),
+            None,
         )
         .await
         .unwrap();
@@ -1942,6 +2011,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
         )
         .await
         .unwrap();
@@ -2006,6 +2076,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -2050,6 +2121,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
         )
         .await
@@ -2107,7 +2179,7 @@ mod tests {
             convo.push(json!({ "role": r, "content": format!("m{i}") }));
         }
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
             .await
             .unwrap();
 
@@ -2128,7 +2200,7 @@ mod tests {
         let mut budget = SessionBudget::new(None);
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
             .await
             .unwrap();
 
@@ -2152,7 +2224,7 @@ mod tests {
 
         // max_turns = 0 means unbounded: it must not error out and must keep
         // going past the tool-call turn to return the final answer.
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
             .await
             .unwrap();
 
