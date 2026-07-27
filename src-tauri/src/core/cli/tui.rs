@@ -4685,31 +4685,31 @@ fn draw(f: &mut Frame, app: &mut App) {
     let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
     let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
     let show_todo = todo_h > 0;
-    let raw = if show_todo {
-        Layout::vertical([
-            Constraint::Length(1), // header
-            Constraint::Length(todo_h), // todo HUD
-            Constraint::Min(1),
-            Constraint::Length(input_h),
-            Constraint::Length(1), // path line
-            Constraint::Length(1), // footer
+    // Persistent chrome (header, todos, path, footer hints) is grouped at the
+    // top so the bottom of the screen is just the input box; only the
+    // scrolling transcript and the input grow/shrink with content.
+    let (todo_area, chunks) = if show_todo {
+        let raw = Layout::vertical([
+            Constraint::Length(1),        // 0: header
+            Constraint::Length(todo_h),   // 1: todo HUD
+            Constraint::Length(1),        // 2: path line
+            Constraint::Length(1),        // 3: footer
+            Constraint::Min(1),           // 4: body
+            Constraint::Length(input_h),  // 5: input
         ])
-        .split(f.area())
+        .split(f.area());
+        (Some(raw[1]), [raw[0], raw[4], raw[5], raw[2], raw[3]])
     } else {
-        Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(input_h),
-            Constraint::Length(1),
-            Constraint::Length(1),
+        let raw = Layout::vertical([
+            Constraint::Length(1),       // 0: header
+            Constraint::Length(1),       // 1: path line
+            Constraint::Length(1),       // 2: footer
+            Constraint::Min(1),          // 3: body
+            Constraint::Length(input_h), // 4: input
         ])
-        .split(f.area())
+        .split(f.area());
+        (None, [raw[0], raw[3], raw[4], raw[1], raw[2]])
     };
-    let todo_area = show_todo.then(|| raw[1]);
-    // Remap to a stable [header, body, input, path, footer] so the rest of draw
-    // is indifferent to whether the strip is present.
-    let base = if show_todo { 1 } else { 0 };
-    let chunks = [raw[0], raw[base + 1], raw[base + 2], raw[base + 3], raw[base + 4]];
 
     f.render_widget(header(app), chunks[0]);
     if let Some(area) = todo_area {
