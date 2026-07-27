@@ -575,7 +575,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by project policy"),
+                        denied_by_policy_msg(name, &self.project_root),
                     ));
                     continue;
                 }
@@ -651,9 +651,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
-                Decision::HardDeny => {
-                    (format!("ERROR: tool '{name}' denied by project policy"), None)
-                }
+                Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
                     let (tx, rx) = tokio::sync::oneshot::channel();
