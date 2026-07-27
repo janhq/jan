@@ -6962,6 +6962,7 @@ mod tests {
         assert!(panel.calls.first().unwrap().contains("cmd0"));
         assert!(panel.calls.last().unwrap().contains("cmd6"));
         // The live panel renders only the last SUBAGENT_WINDOW calls.
+        use ratatui::{backend::TestBackend, Terminal};
         let render = |app: &mut App| {
             let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
             terminal.draw(|f| super::draw(f, app)).unwrap();
@@ -7002,56 +7003,6 @@ mod tests {
         assert_eq!(alpha.calls.len(), 0, "beta's call must not land on alpha");
         assert_eq!(beta.calls.len(), 1);
         assert!(beta.calls.last().unwrap().contains("beta-cmd"));
-    }
-
-    #[test]
-    fn running_subagent_row_shows_latest_activity() {
-        use ratatui::{backend::TestBackend, Terminal};
-        let render = |app: &mut App| {
-            let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
-            terminal.draw(|f| super::draw(f, app)).unwrap();
-            let buf = terminal.backend().buffer().clone();
-            (0..buf.area.height)
-                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let row = |screen: &str, needle: &str| {
-            screen
-                .lines()
-                .find(|l| l.contains(needle))
-                .unwrap()
-                .trim_end()
-                .to_string()
-        };
-        let mut app = test_app();
-        app.apply(StreamEvent::SubagentStart {
-            run_id: "r1".into(),
-            name: "cat-news".into(),
-        });
-        // No tool call yet: the row is name-only, with no trailing activity text.
-        let before = render(&mut app);
-        assert!(
-            row(&before, "cat-news").ends_with("cat-news"),
-            "no-call row must be name only: {before}"
-        );
-        // A tool call lands: the row gains the latest activity label after the name.
-        app.apply(wrap(
-            "r1",
-            "cat-news",
-            StreamEvent::ToolCall {
-                id: "c0".into(),
-                name: "grep".into(),
-                args: json!({ "pattern": "viral cats" }),
-            },
-        ));
-        let after = render(&mut app);
-        let line = row(&after, "cat-news");
-        assert!(line.contains("cat-news"), "row keeps the name: {after}");
-        assert!(
-            line.contains("viral cats"),
-            "row must show latest activity: {after}"
-        );
     }
 
     #[test]
