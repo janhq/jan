@@ -1178,6 +1178,8 @@ async fn orchestrate_inner(
             &mut budget,
             &http_model,
             &tools,
+            run_mode,
+            todo_registry.as_ref(),
         )
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
@@ -1207,6 +1209,8 @@ async fn orchestrate_inner(
             &mut budget,
             &http_model,
             &mcp_tools,
+            run_mode,
+            todo_registry.as_ref(),
         )
         .await
     }
@@ -1313,12 +1317,24 @@ async fn run_turn_cycle(
     budget: &mut SessionBudget,
     model: &dyn ModelInvoker,
     tools: &dyn ToolInvoker,
+    run_mode: crate::core::agent::plan::RunMode,
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
 ) -> Result<serde_json::Value, String> {
     // `max_turns == 0` means unbounded: the session token budget and user
     // cancellation are the real guards, so an interactive run isn't cut off
     // mid-task by a fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
+    // calls with no todo touch, nudge the model once to keep the list honest
+    // rather than only ever reminding it at a full stop -- a task that never
+    // pauses to yield plain text could otherwise go a very long time with a
+    // stale todo list. Local to one cycle (this function runs once per
+    // top-level prompt), so no session-level reset bookkeeping is needed.
+    const MID_RUN_NUDGE_MUTATION_THRESHOLD: u32 = 12;
+    const MID_RUN_NUDGE_MAX_PER_CYCLE: u32 = 2;
+    let mut mutations_since_todo_touch: u32 = 0;
+    let mut mid_run_nudge_count: u32 = 0;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1479,6 +1495,10 @@ async fn run_turn_cycle(
             })
             .collect();
 
+        // Reset wins over any mutations counted in the same batch: touching
+        // `todo` at all means the list was just reconciled, regardless of
+        // what else ran alongside it.
+        let mut todo_touched_this_batch = false;
         for outcome in tool_results {
             let ToolOutcome { id, content, diff } = outcome;
             // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
@@ -1488,6 +1508,12 @@ async fn run_turn_cycle(
             let is_error = content.starts_with("ERROR")
                 || (tool_names.get(id.as_str()) == Some(&"bash")
                     && crate::core::agent::tools::handlers::bash_result_failed(&content));
+            let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            if name == "todo" {
+                todo_touched_this_batch = true;
+            } else if !is_error && matches!(name, "bash" | "write" | "edit") {
+                mutations_since_todo_touch += 1;
+            }
             let _ = events.send(StreamEvent::ToolResult {
                 id: id.clone(),
                 content: content.clone(),
@@ -1499,6 +1525,43 @@ async fn run_turn_cycle(
                 "tool_call_id": id,
                 "content": content
             }));
+        }
+        if todo_touched_this_batch {
+            mutations_since_todo_touch = 0;
+        } else if mutations_since_todo_touch >= MID_RUN_NUDGE_MUTATION_THRESHOLD
+            && mid_run_nudge_count < MID_RUN_NUDGE_MAX_PER_CYCLE
+            && run_mode == crate::core::agent::plan::RunMode::Normal
+        {
+            let open_count = match todo_registry {
+                Some(registry) => {
+                    let list = registry.lock().await;
+                    list.phases
+                        .iter()
+                        .flat_map(|p| p.tasks.iter())
+                        .filter(|t| {
+                            matches!(
+                                t.status,
+                                crate::core::agent::todo::TodoStatus::Pending
+                                    | crate::core::agent::todo::TodoStatus::InProgress
+                            )
+                        })
+                        .count()
+                }
+                None => 0,
+            };
+            if open_count > 0 {
+                mutations_since_todo_touch = 0;
+                mid_run_nudge_count += 1;
+                let plural = if open_count == 1 { "" } else { "s" };
+                conversation_messages.push(serde_json::json!({
+                    "role": "user",
+                    "content": format!(
+                        "Reminder: {open_count} todo item{plural} still open. If you finished a \
+                         task since the last todo update, mark it done now so progress stays \
+                         visible; otherwise just keep working."
+                    )
+                }));
+            }
         }
         turn += 1;
     }
@@ -1517,11 +1580,16 @@ mod tests {
 
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
+        // Every request this mock was invoked with, in order -- lets a test
+        // inspect exactly what conversation was sent on a later turn (e.g. to
+        // confirm a hidden mid-run nudge message landed in it).
+        requests: StdMutex<Vec<serde_json::Value>>,
     }
     impl MockModel {
         fn new(responses: Vec<serde_json::Value>) -> Self {
             Self {
                 responses: StdMutex::new(responses.into_iter().collect()),
+                requests: StdMutex::new(Vec::new()),
             }
         }
     }
@@ -1529,9 +1597,10 @@ mod tests {
     impl ModelInvoker for MockModel {
         async fn invoke(
             &self,
-            _request: &serde_json::Value,
+            request: &serde_json::Value,
             _events: &mpsc::UnboundedSender<StreamEvent>,
         ) -> Result<serde_json::Value, String> {
+            self.requests.lock().unwrap().push(request.clone());
             self.responses
                 .lock()
                 .unwrap()
@@ -1602,6 +1671,8 @@ mod tests {
             &mut budget,
             &model,
             &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
         )
         .await
         .unwrap();
@@ -1629,6 +1700,153 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    fn mutating_tool_call_completion(id: &str, name: &str) -> serde_json::Value {
+        json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": id,
+                        "type": "function",
+                        "function": { "name": name, "arguments": "{}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        })
+    }
+
+    fn todo_registry_with_open_task() -> crate::core::agent::todo::TodoRegistry {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "P".into(),
+                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::InProgress }],
+            }],
+        }))
+    }
+
+    fn request_has_nudge(request: &serde_json::Value) -> bool {
+        request["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|m| {
+                m.get("content")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|s| s.contains("todo item"))
+            })
+    }
+
+    #[tokio::test]
+    async fn mid_run_nudge_fires_after_a_long_uninterrupted_mutation_run() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // 13 consecutive mutating calls with no todo touch -- one past the
+        // 12-call threshold -- then a clean stop.
+        let mut responses: Vec<serde_json::Value> = (0..13)
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .collect();
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        let model = MockModel::new(responses);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+        let convo = vec![json!({ "role": "user", "content": "go" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let nudged_requests = requests.iter().filter(|r| request_has_nudge(r)).count();
+        assert!(nudged_requests >= 1, "expected a mid-run nudge after 12+ mutating calls");
+        assert!(nudged_requests <= 2, "must not exceed the per-cycle nudge cap");
+    }
+
+    #[tokio::test]
+    async fn mid_run_nudge_does_not_fire_in_plan_mode_or_without_open_todos() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut responses: Vec<serde_json::Value> = (0..13)
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .collect();
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        let model = MockModel::new(responses);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+        let convo = vec![json!({ "role": "user", "content": "go" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Plan,
+            Some(&registry),
+        )
+        .await
+        .unwrap();
+        assert!(
+            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
+            "plan mode must never get a mid-run nudge"
+        );
+    }
+
+    #[tokio::test]
+    async fn mid_run_nudge_touching_todo_resets_the_mutation_counter() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // 6 mutating calls, a todo touch, then 6 more -- neither run alone
+        // reaches the 12-call threshold, so no nudge should fire.
+        let mut responses: Vec<serde_json::Value> = (0..6)
+            .map(|i| mutating_tool_call_completion(&format!("a{i}"), "bash"))
+            .collect();
+        responses.push(mutating_tool_call_completion("mid", "todo"));
+        responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        let model = MockModel::new(responses);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+        let convo = vec![json!({ "role": "user", "content": "go" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+        )
+        .await
+        .unwrap();
+        assert!(
+            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
+            "a todo touch partway through must reset the mutation counter"
+        );
     }
 
     struct FixedTool {
@@ -1684,6 +1902,8 @@ mod tests {
             &mut budget,
             &model,
             &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
         )
         .await
         .unwrap();
@@ -1727,6 +1947,8 @@ mod tests {
             &mut budget,
             &model,
             &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
         )
         .await
         .unwrap_err();
@@ -1783,7 +2005,7 @@ mod tests {
             convo.push(json!({ "role": r, "content": format!("m{i}") }));
         }
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None)
             .await
             .unwrap();
 
@@ -1804,7 +2026,7 @@ mod tests {
         let mut budget = SessionBudget::new(None);
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None)
             .await
             .unwrap();
 
@@ -1828,7 +2050,7 @@ mod tests {
 
         // max_turns = 0 means unbounded: it must not error out and must keep
         // going past the tool-call turn to return the final answer.
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None)
             .await
             .unwrap();
 
