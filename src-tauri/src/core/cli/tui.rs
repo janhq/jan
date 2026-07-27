@@ -4680,8 +4680,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     // A multi-line todo tree HUD sits just below the header when todos exist and
     // no overlay is open, sized to its bounded row count. Kept out of the layout
     // otherwise so a todo-free session (or an open picker) renders exactly as
-    // before.
-    let todo_h = todo_hud_height(app);
+    // before. Built at most once per frame -- its line count sizes the layout
+    // and the same lines are reused for the actual render below.
+    let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
+    let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
     let show_todo = todo_h > 0;
     let raw = if show_todo {
         Layout::vertical([
@@ -4711,7 +4713,9 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     f.render_widget(header(app), chunks[0]);
     if let Some(area) = todo_area {
-        f.render_widget(Paragraph::new(todo_hud(app)), area);
+        // `show_todo` (and thus `todo_area`) is only `Some` when `todo_lines`
+        // was built above.
+        f.render_widget(Paragraph::new(todo_lines.unwrap()), area);
     }
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
@@ -5426,12 +5430,15 @@ fn todo_hud(app: &App) -> Vec<Line<'static>> {
     let multi = phases.len() > 1;
     let width = app.render_width() as usize;
 
+    // Which phase holds the in-progress task, if any; used both for the root
+    // row's `idx/count` suffix and to pick which phase expands its tasks below.
+    let active_idx = phases
+        .iter()
+        .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
+
     // Root row: `Todos`, plus ` · idx/count` when multi-phase, plus the hint.
     let mut root = vec![Span::styled("Todos", Style::new().cyan().bold())];
     if multi {
-        let active_idx = phases
-            .iter()
-            .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
         // ponytail: no active task (all done, or none started) → count fully
         // finished phases so a completed plan reads `N/N`.
         let idx = active_idx.map(|i| i + 1).unwrap_or_else(|| {
@@ -5474,9 +5481,6 @@ fn todo_hud(app: &App) -> Vec<Line<'static>> {
     };
 
     if multi {
-        let active_idx = phases
-            .iter()
-            .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
         for (pi, phase) in phases.iter().enumerate() {
             let is_last = pi + 1 == phases.len();
             let done = phase
@@ -5509,16 +5513,6 @@ fn todo_hud(app: &App) -> Vec<Line<'static>> {
 
     lines.truncate(MAX_TODO_ROWS);
     lines
-}
-
-/// Rows the todo HUD occupies in the layout: 0 when hidden (empty list or an
-/// open picker), otherwise the bounded HUD line count. Mirrors
-/// `input_box_height` so `draw` can size the layout and render consistently.
-fn todo_hud_height(app: &App) -> u16 {
-    if app.picker.is_some() || app.todos.is_empty() {
-        return 0;
-    }
-    todo_hud(app).len() as u16
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
@@ -8639,24 +8633,37 @@ mod tests {
         );
     }
 
+    /// `draw` hides the HUD (reserves 0 layout rows) exactly when the picker is
+    /// open or there are no todos; this mirrors that same guard directly rather
+    /// than through a dedicated height helper, since `draw` now builds the HUD
+    /// once and sizes the layout from its own line count (see `draw`'s
+    /// `todo_lines` local).
+    fn todo_hud_height(app: &App) -> usize {
+        if app.picker.is_some() || app.todos.is_empty() {
+            0
+        } else {
+            super::todo_hud(app).len()
+        }
+    }
+
     #[test]
     fn todo_hud_height_zero_when_hidden_and_bounded_otherwise() {
         use crate::core::agent::todo::TodoStatus::*;
         // Empty list: no rows reserved.
         let mut app = test_app();
-        assert_eq!(super::todo_hud_height(&app), 0);
+        assert_eq!(todo_hud_height(&app), 0);
         // Non-empty: at least the root plus a task, capped under MAX_TODO_ROWS.
         app.todos = todos_from(vec![("only", vec![("t", InProgress)])]);
-        let h = super::todo_hud_height(&app);
-        assert!(h >= 2 && h as usize <= super::MAX_TODO_ROWS, "bounded height, got {h}");
+        let h = todo_hud_height(&app);
+        assert!(h >= 2 && h <= super::MAX_TODO_ROWS, "bounded height, got {h}");
         // A picker overlay hides the HUD entirely.
         super::open_todo_picker(&mut app);
-        assert_eq!(super::todo_hud_height(&app), 0, "picker suppresses the HUD");
+        assert_eq!(todo_hud_height(&app), 0, "picker suppresses the HUD");
         // A huge single phase stays clamped at the ceiling.
         let mut app = test_app();
         let many: Vec<(&str, _)> = (0..50).map(|_| ("x", Pending)).collect();
         app.todos = todos_from(vec![("only", many)]);
-        assert_eq!(super::todo_hud_height(&app) as usize, super::MAX_TODO_ROWS);
+        assert_eq!(todo_hud_height(&app), super::MAX_TODO_ROWS);
     }
 
     #[tokio::test]
