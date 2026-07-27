@@ -473,6 +473,7 @@ enum SnapshotJob {
 type SnapshotInputs = (PathBuf, Option<String>, String, String, Vec<PathBuf>);
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         model: String,
         max_turns: u32,
@@ -2243,29 +2244,12 @@ async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
     }
 }
 
-/// Await the background router-start task once, then never resolve again (so the
-/// select arm stays quiet after the model is ready). `None` -> pends forever.
+/// Await the background MCP-connect task once, returning the connected server
+/// names (empty if none / on task failure).
 ///
 /// The handle is borrowed, not taken: this future is rebuilt (and dropped) every
 /// select iteration, so taking it would discard the still-running task the first
 /// time another branch wins the race. The slot is cleared only on completion.
-async fn await_router(
-    task: &mut Option<tokio::task::JoinHandle<Result<(), String>>>,
-) -> Result<(), String> {
-    let joined = match task.as_mut() {
-        Some(h) => h.await,
-        None => return pending().await,
-    };
-    *task = None;
-    match joined {
-        Ok(inner) => inner.map_err(|e| format!("failed to start local model: {e}")),
-        Err(e) => Err(format!("router task failed: {e}")),
-    }
-}
-
-/// Await the background MCP-connect task once, returning the connected server
-/// names (empty if none / on task failure). Same cancel-safe borrow as
-/// `await_router`: the slot is cleared only on completion.
 async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> Vec<String> {
     let joined = match task.as_mut() {
         Some(h) => h.await,
@@ -2294,7 +2278,7 @@ fn spawn_snapshot(
 }
 
 /// Await the in-flight snapshot task once, clearing the slot. Same cancel-safe
-/// borrow as `await_router`; pends forever when idle.
+/// borrow as `await_mcp`; pends forever when idle.
 async fn await_snapshot(
     task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
 ) -> Result<String, String> {
@@ -2325,7 +2309,6 @@ pub async fn run(
         context_window,
         reserve_tokens,
         max_tokens,
-        router_task,
         mcp_servers,
         mcp_task,
     } = session;
@@ -2359,7 +2342,6 @@ pub async fn run(
         &permission_requests,
         &mut app,
         initial_task,
-        router_task,
         mcp_task,
         &mcp_servers,
     )
@@ -2383,7 +2365,6 @@ async fn chat_loop<B: Backend>(
     registry: &PermissionRegistry,
     app: &mut App,
     initial_task: Option<String>,
-    mut router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
     mut mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
     mcp_servers: &crate::core::state::SharedMcpServers,
 ) -> Result<(), String> {
@@ -2393,9 +2374,8 @@ async fn chat_loop<B: Backend>(
     // before this loop starts, so both start in sync.
     let mut mouse_capture_active = true;
 
-    // A local model and active MCP servers load in the background; gate the first
-    // run on both so the model's tools (collected once per run) are ready.
-    let mut router_ready = router_task.is_none();
+    // Active MCP servers connect in the background; gate the first run on them
+    // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
     let mut loading_noted = false;
 
@@ -2430,22 +2410,19 @@ async fn chat_loop<B: Backend>(
             app.run_goal_evaluation().await;
         }
 
-        // Kick off a queued run once the previous one has cleared, the local
-        // model (if any) is loaded, and the base snapshot (if any) is captured.
-        // `submit_user` already flipped status to Running and reset the counter.
+        // Kick off a queued run once the previous one has cleared, the MCP
+        // servers (if any) are connected, and the base snapshot (if any) is
+        // captured. `submit_user` already flipped status to Running and reset
+        // the counter.
         if app.want_start && current.is_none() {
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
-            if router_ready && mcp_ready && base_ready {
+            if mcp_ready && base_ready {
                 app.want_start = false;
                 current = Some(spawn_run(args, app.body()));
-            } else if !loading_noted && (!router_ready || !mcp_ready) {
-                // The base snapshot gates silently; only model/MCP loads note.
+            } else if !loading_noted && !mcp_ready {
+                // The base snapshot gates silently; only the MCP connect notes.
                 loading_noted = true;
-                app.note(if !router_ready {
-                    "loading local model..."
-                } else {
-                    "connecting MCP servers..."
-                });
+                app.note("connecting MCP servers...");
             }
         }
 
@@ -2482,13 +2459,6 @@ async fn chat_loop<B: Backend>(
                         Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
                         _ => {}
                     }
-                }
-            }
-            router_res = await_router(&mut router_task) => {
-                router_ready = true;
-                if let Err(e) = router_res {
-                    app.want_start = false;
-                    app.on_error(String::new(), e);
                 }
             }
             connected = await_mcp(&mut mcp_task) => {
@@ -3345,12 +3315,14 @@ fn open_thread_picker(app: &mut App) {
     }
 }
 
-/// Open the `/model` selector listing `provider / model` pairs from the desktop
-/// store, with the current model pre-highlighted.
+/// Open the `/model` selector listing the `provider / model` pairs this build
+/// can actually run, with the current model pre-highlighted.
 fn open_model_picker(app: &mut App) {
-    let pairs = super::providers::list_provider_models();
+    let pairs = super::providers::list_provider_models(Some(&app.project_root));
     if pairs.is_empty() {
-        return app.note("no models available (configure a provider in the desktop app)");
+        return app.note(
+            "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
+        );
     }
     let selected = pairs.iter().position(|(_, m)| *m == app.model).unwrap_or(0);
     let items = pairs

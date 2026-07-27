@@ -45,26 +45,20 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config
-
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Assert no GUI crates
+      # The CLI must stay free of Tauri/GTK: this runner has no libwebkit2gtk,
+      # so a regression here would surface as a confusing linker error later.
+      - name: Assert no GUI crates in the CLI dependency graph
         run: |
           cd src-tauri
-          if cargo tree --no-default-features --features cli -i tauri >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i gtk >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i gdk >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i muda >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i wry >/dev/null 2>&1 || \
-             cargo tree --no-default-features --features cli -i webkit2gtk >/dev/null 2>&1; then
-            echo "GUI crate leaked into the CLI dependency graph" >&2
-            exit 1
-          fi
+          for crate in tauri gtk gdk muda wry webkit2gtk; do
+            if cargo tree --no-default-features --features cli -e normal -i "$crate" >/dev/null 2>&1; then
+              echo "::error::$crate is back in the jan CLI dependency graph"
+              exit 1
+            fi
+          done
 
       - name: Build CLI binary
         env:
