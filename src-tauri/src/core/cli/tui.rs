@@ -1908,6 +1908,13 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
+        self.subagents.clear();
+        self.awaiting.clear();
+        // A call whose args were still streaming (no ToolCall event yet) never
+        // gets its "Preparing X" throbber cleared by that event once cancelled
+        // -- it would otherwise linger in the transcript forever, looking like
+        // work is still happening after "cancelled" has already printed.
+        self.starting.clear();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -7088,14 +7095,39 @@ mod tests {
         // Submit while the run is still gated on model/MCP/snapshot readiness:
         // want_start is armed but no run has spawned yet.
         app.submit_user("do a thing".into());
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-reviewer-1".into(),
+            name: "reviewer".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-reviewer-1" }),
+        });
+        // A second call whose args are still streaming in (no ToolCall event
+        // yet, just the throbber-only ToolCallStarted).
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "w1".into(),
+            name: "write".into(),
+        });
         assert!(app.want_start, "submit should arm want_start");
         assert_eq!(app.status, Status::Running);
+        assert_eq!(app.subagents.len(), 1);
+        assert_eq!(app.awaiting.len(), 1);
+        assert_eq!(app.starting.len(), 1);
+
         app.cancel_run();
         assert!(
             !app.want_start,
             "cancel must drop the pending start or the loop re-spawns it"
         );
         assert_eq!(app.status, Status::Idle);
+        assert!(app.subagents.is_empty(), "cancel must clear live subagent rows");
+        assert!(app.awaiting.is_empty(), "cancel must clear awaited-subagent state");
+        assert!(
+            app.starting.is_empty(),
+            "cancel must clear a still-streaming call's throbber, or it lingers forever"
+        );
     }
 
     #[test]
