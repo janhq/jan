@@ -893,7 +893,8 @@ task state materially changes.";
 
 /// True on a session's first substantive user message: exactly one user-role
 /// message in the conversation so far (this one), no todos staged yet, and
-/// the prompt isn't a bare question/exclamation a phased plan would be
+/// the prompt looks like actual multi-step work rather than a greeting,
+/// acknowledgement, or a bare question/exclamation a phased plan would be
 /// overkill for.
 async fn should_suggest_eager_todo_plan(
     conversation_messages: &[serde_json::Value],
@@ -911,6 +912,15 @@ async fn should_suggest_eager_todo_plan(
     };
     let trimmed = prompt_text.trim_end();
     if ['?', '！', '？', '!'].iter().any(|c| trimmed.ends_with(*c)) {
+        return false;
+    }
+    // A greeting, thanks, or one-line aside ("hi", "ok thanks") is not work a
+    // phased plan helps with. Require enough words to look like an actual
+    // request; the shortest real task prompts ("fix the login bug") clear this,
+    // while chit-chat does not. A word-count floor, not a keyword blocklist, so
+    // it never has to enumerate every possible pleasantry.
+    const MIN_SUBSTANTIVE_WORDS: usize = 4;
+    if trimmed.split_whitespace().count() < MIN_SUBSTANTIVE_WORDS {
         return false;
     }
     match todo_registry {
@@ -1741,6 +1751,19 @@ mod tests {
         assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
         let convo = vec![user_message("nice work!")];
         assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_for_a_short_greeting() {
+        // Punctuation-free chit-chat must not force a todo plan: the word-count
+        // floor catches greetings and acks that the `?`/`!` check misses.
+        for msg in ["hi", "hello", "hey there", "ok thanks"] {
+            let convo = vec![user_message(msg)];
+            assert!(
+                !should_suggest_eager_todo_plan(&convo, &None).await,
+                "short greeting should not trigger eager todo: {msg:?}"
+            );
+        }
     }
 
     #[tokio::test]
