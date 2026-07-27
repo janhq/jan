@@ -6,6 +6,7 @@ pub mod mcp;
 pub mod providers;
 mod path_refs;
 mod tui;
+pub mod updater;
 
 use std::path::PathBuf;
 use std::sync::Arc;
