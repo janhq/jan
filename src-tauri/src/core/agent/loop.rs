@@ -879,6 +879,47 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
+/// Soft nudge appended to the system prompt on a session's first substantive
+/// message: without it, the model only ever reaches for `todo` once told
+/// explicitly that it has the tool, instead of proactively planning a
+/// multi-step request the way a plan laid out up front would help with.
+/// Advisory only -- unlike plan mode's read-only gate, nothing enforces this;
+/// the model may ignore it for a request that doesn't warrant a plan.
+const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, consider \
+calling `todo` first with a single `init` op to lay out a phased plan covering investigation \
+through implementation and verification, not just the next step. Keep each task to a concise, \
+specific 5-10 word label; `init` only accepts phase names and task-label strings. If you create \
+the list, continue the request in the same turn and avoid re-calling `todo` unless task state \
+materially changes.";
+
+/// True on a session's first substantive user message: exactly one user-role
+/// message in the conversation so far (this one), no todos staged yet, and
+/// the prompt isn't a bare question/exclamation a phased plan would be
+/// overkill for.
+async fn should_suggest_eager_todo_plan(
+    conversation_messages: &[serde_json::Value],
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> bool {
+    let user_turns = conversation_messages
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+        .count();
+    if user_turns != 1 {
+        return false;
+    }
+    let Some(prompt_text) = latest_user_text(conversation_messages) else {
+        return false;
+    };
+    let trimmed = prompt_text.trim_end();
+    if ['?', '！', '？', '!'].iter().any(|c| trimmed.ends_with(*c)) {
+        return false;
+    }
+    match todo_registry {
+        Some(registry) => registry.lock().await.is_empty(),
+        None => true,
+    }
+}
+
 async fn orchestrate_inner(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
@@ -968,6 +1009,16 @@ async fn orchestrate_inner(
         Some(match system_prompt {
             Some(sys) => format!("{sys}\n\n{addendum}"),
             None => addendum.to_string(),
+        })
+    } else if system_prompt_override.is_none()
+        && should_suggest_eager_todo_plan(&conversation_messages, todo_registry).await
+    {
+        // Child (subagent) runs are excluded above via `system_prompt_override`,
+        // the same gate the memory-recall block already uses to distinguish a
+        // top-level run from a subagent's isolated context.
+        Some(match system_prompt {
+            Some(sys) => format!("{sys}\n\n{EAGER_TODO_PROMPT_ADDENDUM}"),
+            None => EAGER_TODO_PROMPT_ADDENDUM.to_string(),
         })
     } else {
         system_prompt
@@ -1632,6 +1683,57 @@ mod tests {
                 })
                 .collect())
         }
+    }
+
+    fn user_message(text: &str) -> serde_json::Value {
+        json!({ "role": "user", "content": text })
+    }
+
+    fn empty_todo_registry() -> crate::core::agent::todo::TodoRegistry {
+        std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::core::agent::todo::TodoList::default(),
+        ))
+    }
+
+    fn staged_todo_registry() -> crate::core::agent::todo::TodoRegistry {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "P".into(),
+                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::Pending }],
+            }],
+        }))
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_suggested_on_first_substantive_message() {
+        let convo = vec![user_message("build a flappy bird clone")];
+        assert!(should_suggest_eager_todo_plan(&convo, &Some(empty_todo_registry())).await);
+        assert!(should_suggest_eager_todo_plan(&convo, &None).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_for_a_bare_question() {
+        let convo = vec![user_message("what's the capital of France?")];
+        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+        let convo = vec![user_message("nice work!")];
+        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_once_todos_exist() {
+        let convo = vec![user_message("keep going")];
+        assert!(!should_suggest_eager_todo_plan(&convo, &Some(staged_todo_registry())).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_past_the_first_user_turn() {
+        let convo = vec![
+            user_message("build a flappy bird clone"),
+            json!({ "role": "assistant", "content": "on it" }),
+            user_message("also add a high score screen"),
+        ];
+        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
     }
 
     fn tool_call_completion() -> serde_json::Value {
