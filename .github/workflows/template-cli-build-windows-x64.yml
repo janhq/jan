@@ -49,9 +49,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build CLI binary
+        env:
+          JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
+          JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
         run: |
           cd src-tauri
-          cargo build --features cli --bin jan --release
+          cargo build --no-default-features --features cli --bin jan --release
 
       - name: Package zip
         id: package

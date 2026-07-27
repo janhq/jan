@@ -2,7 +2,7 @@ name: Jan Agent CLI - Nightly Build
 
 on:
   schedule:
-    - cron: '0 10 * * *' # 10 AM UTC daily
+    - cron: '0 10 * * 2,4' # 10 AM UTC Tuesday and Thursday
   workflow_dispatch:
 
 concurrency:
