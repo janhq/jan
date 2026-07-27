@@ -121,19 +121,36 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-test: lint install-rust-targets
+#
+# `test` is the full local suite and is unchanged: it still builds the real MLX
+# server and CLI binary. `test-ci` runs the same suites without those release
+# builds -- neither is a declared Tauri resource or externalBin (bundle.resources
+# is only resources/LICENSE) and no test executes them, so in CI they were just
+# duplicating what `make build` already does on the release path.
+test-prepare: lint
 	yarn download:bin
-ifeq ($(DETECTED_OS),Windows)
-endif
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
-	yarn build:mlx-server
-	make build-cli
+
+test-rust:
 	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
+
+test: test-prepare install-rust-targets
+	yarn build:mlx-server
+	make build-cli
+	make test-rust
+
+test-ci: test-prepare
+	make test-rust
+
+# Cheap compile guard for the CLI feature set, covering what test-ci no longer
+# builds. `make build` still builds the real binary on every platform.
+check-cli:
+	cd src-tauri && cargo check --locked --features cli --bin jan-cli
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
