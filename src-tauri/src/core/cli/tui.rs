@@ -28,7 +28,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use super::AgentSession;
+use super::{sort_threads_recent, AgentSession, ResumeTarget};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
@@ -2299,6 +2299,7 @@ pub async fn run(
     project_root: PathBuf,
     initial_task: Option<String>,
     initial_images: Vec<String>,
+    resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let AgentSession {
         args,
@@ -2329,6 +2330,14 @@ pub async fn run(
     app.args = Some(args.clone());
     if args.yolo {
         app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
+    }
+    // A failed resume is not fatal: the note explains why and the blank session
+    // the user already has stays usable.
+    if let Some(target) = &resume {
+        apply_resume(&mut app, target);
+        if app.thread_id.is_none() {
+            app.note("starting a new session");
+        }
     }
     for path in &initial_images {
         match load_image_file(path) {
@@ -3266,23 +3275,6 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
     "(untitled)".to_string()
 }
 
-/// Recency sort key for a saved thread (`updated`, falling back to `created`).
-fn thread_recency(t: &serde_json::Value) -> f64 {
-    t.get("updated")
-        .or_else(|| t.get("created"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0)
-}
-
-/// Sort threads most-recent-first (by `updated`/`created`).
-fn sort_threads_recent(threads: &mut [serde_json::Value]) {
-    threads.sort_by(|a, b| {
-        thread_recency(b)
-            .partial_cmp(&thread_recency(a))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-}
-
 /// Load saved threads and open the interactive picker (Enter selects). Falls
 /// back to a note when there is nothing to resume.
 fn open_thread_picker(app: &mut App) {
@@ -3624,26 +3616,25 @@ fn rebuild_transcript(app: &mut App) {
 }
 
 fn resume_thread(app: &mut App, id_arg: &str) {
-    let threads = match super::list_threads_in(&app.agent_dir) {
-        Ok(t) => t,
-        Err(e) => return app.note(&format!("failed to list threads: {e}")),
-    };
-    let matches: Vec<&serde_json::Value> = threads
-        .iter()
-        .filter(|t| {
-            t.get("id")
-                .and_then(|v| v.as_str())
-                .is_some_and(|full| full == id_arg || full.starts_with(id_arg))
-        })
-        .collect();
-    let thread = match matches.as_slice() {
-        [] => return app.note(&format!("no thread matches '{id_arg}'")),
-        [t] => *t,
-        _ => return app.note(&format!("'{id_arg}' is ambiguous ({} matches)", matches.len())),
-    };
+    apply_resume(app, &ResumeTarget::Id(id_arg.to_string()));
+}
+
+/// Resolve a resume target and load it into the app, reporting why not when it
+/// cannot be resolved. The session is left untouched on failure.
+fn apply_resume(app: &mut App, target: &ResumeTarget) {
+    match super::find_resume_thread(&app.agent_dir, target) {
+        Ok(thread) => load_thread(app, &thread),
+        Err(e) => app.note(&e),
+    }
+}
+
+/// Replace the live session with a saved thread's state: history, transcript,
+/// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
+/// are not persisted as messages).
+fn load_thread(app: &mut App, thread: &serde_json::Value) {
     let full_id = thread.get("id").and_then(|v| v.as_str()).unwrap_or_default();
 
-    let messages = match super::cli_list_messages_in(&app.agent_dir, full_id) {
+    let (messages, skipped) = match super::cli_read_messages_lenient(&app.agent_dir, full_id) {
         Ok(m) => m,
         Err(e) => return app.note(&format!("failed to load messages: {e}")),
     };
@@ -3698,6 +3689,9 @@ fn resume_thread(app: &mut App, id_arg: &str) {
         .filter(|s| !s.is_empty())
         .unwrap_or("(untitled)");
     app.note(&format!("resumed \"{title}\" ({count} messages)"));
+    if skipped > 0 {
+        app.note(&format!("{skipped} unreadable message(s) were skipped"));
+    }
 }
 
 /// Infer an image MIME type from a file extension, defaulting to PNG.
@@ -3844,21 +3838,7 @@ fn user_content_parts(content: &serde_json::Value) -> (String, Vec<String>) {
 /// Extract plain text from a stored thread message (`content` is an array of
 /// `{type,text:{value}}` parts, or occasionally a bare string).
 fn message_text(msg: &serde_json::Value) -> String {
-    match msg.get("content") {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(parts)) => parts
-            .iter()
-            .filter_map(|p| {
-                p.get("text")
-                    .and_then(|t| t.get("value"))
-                    .and_then(|v| v.as_str())
-                    .or_else(|| p.get("text").and_then(|t| t.as_str()))
-                    .or_else(|| p.as_str())
-            })
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => String::new(),
-    }
+    super::thread_message_text(msg)
 }
 
 /// Whitespace-collapsed, char-truncated one-liner for checkpoint/rewind labels.
@@ -4614,7 +4594,8 @@ mod tests {
         restore_goal, running_group_row, split_reasoning, subagent_activity,
         subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
         transcript_top_padding, user_content_parts, App, CurrentRun, Pending, PendingImage,
-        PickerKind, SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER,
+        apply_resume, PickerKind, ResumeTarget, SnapshotJob, Status, DIFF_MAX_ROWS,
+        SLASH_COMMANDS, SPINNER,
     };
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -6527,6 +6508,56 @@ mod tests {
         assert_eq!(summarize_result("a    b\tc", 80), "a b c");
         // Truncates the head to max.
         assert_eq!(summarize_result("abcdefgh", 4), "abc…");
+    }
+
+    #[test]
+    fn apply_resume_latest_restores_history_and_model() {
+        let mut app = test_app();
+        let history = vec![
+            json!({ "role": "user", "content": "first" }),
+            json!({ "role": "assistant", "content": "reply" }),
+        ];
+        let id =
+            super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+                .unwrap();
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeTarget::Latest);
+
+        assert_eq!(fresh.thread_id.as_deref(), Some(id.as_str()));
+        assert_eq!(fresh.history, history);
+        assert_eq!(fresh.model, "saved-model");
+        let joined: String = fresh
+            .transcript
+            .iter()
+            .map(|l| line_text(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("first") && joined.contains("reply"), "{joined}");
+
+        // Re-saving the resumed session updates the same thread, not a new one.
+        app.agent_dir = fresh.agent_dir.clone();
+        let same =
+            super::super::cli_save_thread(&app.agent_dir, Some(&id), "saved-model", &fresh.history, None)
+                .unwrap();
+        assert_eq!(same, id);
+        assert_eq!(super::super::list_threads_in(&app.agent_dir).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn apply_resume_notes_when_nothing_to_resume() {
+        let mut app = test_app();
+        apply_resume(&mut app, &ResumeTarget::Latest);
+        let joined: String = app
+            .transcript
+            .iter()
+            .map(|l| line_text(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains(super::super::NO_SESSION_TO_RESUME), "{joined}");
+        assert!(app.thread_id.is_none());
+        assert!(app.history.is_empty());
     }
 
     #[test]
