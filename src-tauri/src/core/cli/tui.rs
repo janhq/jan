@@ -8042,8 +8042,8 @@ mod tests {
         assert_eq!(summarize_result("abcdefgh", 4), "abc…");
     }
 
-    #[test]
-    fn apply_resume_latest_restores_history_and_model() {
+    #[tokio::test]
+    async fn apply_resume_latest_restores_history_and_model() {
         let mut app = test_app();
         let history = vec![
             json!({ "role": "user", "content": "first" }),
@@ -8055,7 +8055,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest);
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
 
         assert_eq!(fresh.thread_id.as_deref(), Some(id.as_str()));
         assert_eq!(fresh.history, history);
@@ -8077,10 +8077,10 @@ mod tests {
         assert_eq!(super::super::list_threads_in(&app.agent_dir).unwrap().len(), 1);
     }
 
-    #[test]
-    fn apply_resume_notes_when_nothing_to_resume() {
+    #[tokio::test]
+    async fn apply_resume_notes_when_nothing_to_resume() {
         let mut app = test_app();
-        apply_resume(&mut app, &ResumeTarget::Latest);
+        apply_resume(&mut app, &ResumeTarget::Latest).await;
         let joined: String = app
             .transcript
             .iter()
