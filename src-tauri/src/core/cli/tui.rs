@@ -587,6 +587,15 @@ struct App {
     /// Open-work summary last surfaced as a reminder, so the same reminder never
     /// fires twice in a row without the state changing (reminder dedup).
     last_todo_reminder: Option<String>,
+    /// Stop-time reminders sent so far this prompt cycle; caps at
+    /// `TODO_REMINDER_MAX` so a summary that keeps changing slightly can't
+    /// nag indefinitely even though the same-summary dedup above wouldn't
+    /// catch it.
+    reminder_count: u32,
+    /// True right after a reminder fires, cleared the moment any tool result
+    /// lands. Blocks a second reminder from piling onto one the model hasn't
+    /// had a chance to act on yet.
+    reminder_awaiting_progress: bool,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
@@ -719,6 +728,8 @@ impl App {
             todo_call_this_turn: false,
             todo_ok_this_turn: false,
             last_todo_reminder: None,
+            reminder_count: 0,
+            reminder_awaiting_progress: false,
         }
     }
 
@@ -796,6 +807,8 @@ impl App {
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
         self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
     }
 
     /// Append a dim single-line status note (command output, cancel, errors).
@@ -1176,8 +1189,14 @@ impl App {
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
         // A fresh user turn is new context: allow the next boundary to remind
-        // again even if the open work is unchanged (dedup is "twice in a row").
+        // again even if the open work is unchanged (dedup is "twice in a row"),
+        // and rearm the per-cycle reminder budget. A reminder's own follow-up
+        // turn (`submit_reminder`, below) deliberately does NOT reset these --
+        // the count must persist across the very continuation it triggers, or
+        // the cap could never actually be reached.
         self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
         self.want_start = true;
         self.persist();
     }
@@ -1208,9 +1227,15 @@ impl App {
     /// Fires at most one hidden reminder when open work remains and the assistant
     /// yielded as if finished. Suppressed while an ask/permission is pending, a
     /// goal/plan transition already queued the next turn, another message is
-    /// armed, or the agent already updated todos this turn. A todo mutation that
-    /// failed this turn queues one retry reminder instead.
-    fn maybe_inject_todo_reminder(&mut self, normal: bool, no_answer: bool) {
+    /// armed, the agent already updated todos this turn, the assistant's own
+    /// final text is itself asking the user something, a prior reminder is
+    /// still unanswered, or the per-cycle reminder budget is spent. A todo
+    /// mutation that failed this turn queues one retry reminder instead.
+    fn maybe_inject_todo_reminder(&mut self, normal: bool, no_answer: bool, answer: &str) {
+        /// Reminders fired per prompt cycle before the policy goes quiet, even
+        /// if the open-work summary keeps changing slightly (the same-summary
+        /// dedup below only catches an unchanged summary, not a moving one).
+        const TODO_REMINDER_MAX: u32 = 3;
         // A goal/plan continuation or a queued message already owns the next
         // turn; a pending ask/permission blocks the boundary; plan mode is a
         // read-only exploration where todos are only staged for handoff.
@@ -1229,6 +1254,18 @@ impl App {
                 return;
             }
         }
+        // The assistant may be legitimately waiting on the user (a plain-text
+        // question, or a "let me know"/"please confirm" cue) rather than
+        // idling mid-task -- nudging "keep working" here would talk over its
+        // own question.
+        if assistant_is_awaiting_user_answer(answer) {
+            return;
+        }
+        // A prior reminder hasn't seen any follow-up action yet, or the
+        // per-cycle budget is already spent: stay silent rather than pile on.
+        if self.reminder_awaiting_progress || self.reminder_count >= TODO_REMINDER_MAX {
+            return;
+        }
         let Some(summary) = self.todos.open_summary() else {
             return;
         };
@@ -1246,6 +1283,8 @@ impl App {
             )
         };
         self.last_todo_reminder = Some(summary);
+        self.reminder_count += 1;
+        self.reminder_awaiting_progress = true;
         self.submit_reminder(text);
     }
 
@@ -1551,6 +1590,11 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
+                // Any tool result means the model took some action since the last
+                // reminder fired; let a later stop remind again if work is still
+                // open. Set unconditionally, before the grouped-call early return
+                // below, so it applies no matter how the result renders.
+                self.reminder_awaiting_progress = false;
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
@@ -1736,7 +1780,7 @@ impl App {
         let answer = self.take_answer();
         if !answer.is_empty() {
             self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer }));
+                .push(serde_json::json!({ "role": "assistant", "content": answer.clone() }));
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -1786,7 +1830,7 @@ impl App {
         self.dequeue_next();
         // Reminder policy runs last: only if nothing else already claimed the
         // next turn (goal eval, a dequeued message) and open work remains.
-        self.maybe_inject_todo_reminder(normal, no_answer);
+        self.maybe_inject_todo_reminder(normal, no_answer, &answer);
         self.persist();
     }
 
@@ -2393,6 +2437,79 @@ fn has_answer_text(buf: &str) -> bool {
     split_reasoning(buf)
         .iter()
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
+}
+
+/// A leading markdown list/blockquote marker (`> `, `- `, `1. `), stripped
+/// before checking whether a line reads as a question.
+fn markdown_prefix_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^(?:>\s*)?(?:(?:[-*+]|\d+[.)])\s+)*").unwrap())
+}
+
+/// A leading label like `Q:`, `Question 2:`, `Ask:`.
+fn prompt_label_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)^(?:q(?:uestion)?|ask)\s*\d*\s*[:.)-]\s*").unwrap())
+}
+
+/// A line starting with a question word (what/how/can/should/...).
+fn question_word_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)^(?:what|which|when|where|why|how|who|whom|whose|do|does|did|can|could|would|will|should|is|are|am|may|shall)\b",
+        )
+        .unwrap()
+    })
+}
+
+/// A line directly addressing the user ("you", "your", "we", "our").
+fn user_directed_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)\b(?:you|your|we|our)\b").unwrap())
+}
+
+/// An explicit request for the user to respond ("let me know", "please
+/// confirm"), independent of a trailing question mark.
+fn response_cue_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)^(?:please\s+)?(?:confirm|reply|choose|pick|decide|advise)\b|^(?:please\s+)?answer\b|^(?:please\s+)?(?:let\s+me\s+know|tell\s+me)\b",
+        )
+        .unwrap()
+    })
+}
+
+/// True when the assistant's final line reads as a question or an explicit
+/// request for the user to respond, rather than the model idling mid-task
+/// with work still open. A plain-text cue counts just as much as the
+/// structured `ask` tool -- either way, the todo reminder must not talk over
+/// the assistant's own question by nudging it to "keep working."
+fn assistant_is_awaiting_user_answer(text: &str) -> bool {
+    let Some(last_line) = text
+        .split(['\n', '\r'])
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .next_back()
+    else {
+        return false;
+    };
+    let without_markdown = markdown_prefix_re().replace(last_line, "");
+    let without_markdown = without_markdown.trim();
+    let without_label = prompt_label_re().replace(without_markdown, "");
+    let without_label = without_label.trim();
+    let had_label = without_label != without_markdown;
+    let is_question = without_label.ends_with('?') || without_label.ends_with('？');
+    if is_question
+        && (had_label
+            || question_word_re().is_match(without_label)
+            || user_directed_re().is_match(without_label))
+    {
+        return true;
+    }
+    let without_trailing_punct = without_label.trim_end_matches(['.', '!', '?', '。', '！', '？']);
+    response_cue_re().is_match(without_trailing_punct)
 }
 
 fn think_re() -> &'static regex::Regex {
@@ -5730,12 +5847,11 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_resume, build_user_message, clipboard_path, diff_lines, group_activity,
-        group_detail_lines,
-        group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, image_mime,
-        input_content_lines, is_table_separator, load_image_file, message_text,
-        open_config_screen, parse_command, render_table, restore_goal, restore_run_mode,
-        restore_todos, run_command,
+        apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
+        diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
+        handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
+        is_table_separator, load_image_file, message_text, open_config_screen, parse_command,
+        render_table, restore_goal, restore_run_mode, restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
@@ -8433,8 +8549,13 @@ mod tests {
 
     /// A clean assistant turn that yielded a final answer (the reminder boundary).
     fn finish_clean_turn(app: &mut App) {
+        finish_clean_turn_with_answer(app, "all set");
+    }
+
+    /// Like `finish_clean_turn`, but with a caller-chosen final answer text.
+    fn finish_clean_turn_with_answer(app: &mut App, text: &str) {
         app.status = Status::Running;
-        app.apply(StreamEvent::Token { text: "all set".into() });
+        app.apply(StreamEvent::Token { text: text.into() });
         app.on_done("stop".into(), None);
     }
 
@@ -8535,6 +8656,77 @@ mod tests {
         finish_clean_turn(&mut app);
         assert!(app.want_start, "a failed mutation queues one retry reminder");
         assert!(last_history_content(&app).contains("failed"));
+    }
+
+    #[test]
+    fn awaiting_user_answer_detects_plain_questions_and_response_cues() {
+        assert!(assistant_is_awaiting_user_answer("Which approach do you want?"));
+        assert!(assistant_is_awaiting_user_answer("Q: proceed with the migration?"));
+        assert!(assistant_is_awaiting_user_answer(
+            "I've drafted both options.\nLet me know which one to build."
+        ));
+        assert!(assistant_is_awaiting_user_answer("Please confirm before I continue."));
+        assert!(!assistant_is_awaiting_user_answer("Done, the tests pass."));
+        assert!(!assistant_is_awaiting_user_answer(
+            "This uses a well-known algorithm, is it fast enough already? It runs in O(n)."
+        ));
+        assert!(!assistant_is_awaiting_user_answer(""));
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_when_assistant_is_asking_a_question() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn_with_answer(&mut app, "Which database should I use, Postgres or MySQL?");
+        assert!(
+            !app.want_start,
+            "a plain-text question must not be talked over by the todo reminder"
+        );
+    }
+
+    #[test]
+    fn todo_reminder_stops_after_max_reminders_even_as_summary_changes() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        for i in 0..3 {
+            app.want_start = false;
+            finish_clean_turn(&mut app);
+            assert!(app.want_start, "reminder {i} of the 3-reminder budget must fire");
+            app.reminder_awaiting_progress = false;
+            // Vary the open-work summary each round so the same-summary dedup
+            // alone could never explain a stop -- only the hard cap should.
+            app.todos.phases[0].tasks[0].content = format!("t1-{i}");
+        }
+        app.want_start = false;
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "the 4th reminder must be suppressed by the per-cycle cap");
+    }
+
+    #[test]
+    fn todo_reminder_waits_for_progress_before_firing_again() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(app.want_start);
+        app.want_start = false;
+        // Change the summary so dedup alone wouldn't suppress a second fire,
+        // but no tool result has landed since the reminder: still silent.
+        app.todos.phases[0].tasks[0].content = "t1-changed".into();
+        finish_clean_turn(&mut app);
+        assert!(
+            !app.want_start,
+            "an unanswered reminder must not be followed by another before any progress"
+        );
+        // A tool result lands (any tool, not just todo) -- progress happened.
+        app.apply(StreamEvent::ToolResult {
+            id: "x".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.todos.phases[0].tasks[0].content = "t1-changed-again".into();
+        finish_clean_turn(&mut app);
+        assert!(app.want_start, "a reminder may fire again once progress happened");
     }
 
     fn todos_from(
