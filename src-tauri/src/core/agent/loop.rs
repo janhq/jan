@@ -19,7 +19,8 @@ use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
-    resolve_upstream_for_model, set_system_prompt, stream_openai_chat_completions,
+    repair_dangling_tool_calls, resolve_upstream_for_model, set_system_prompt,
+    stream_openai_chat_completions,
 };
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_first_model;
@@ -917,6 +918,16 @@ async fn orchestrate_inner(
         .get("messages")
         .ok_or("Missing required field 'messages'")?;
     let mut conversation_messages = parse_openai_messages(messages_value)?;
+    // Self-heal a conversation an earlier interrupted run may have left with a
+    // tool_calls turn missing one of its results (e.g. the process was killed
+    // while an `ask`/permission prompt was still pending). Providers like
+    // Anthropic reject the entire request on a dangling tool_use, so repair
+    // it here -- the one place every incoming message array passes through --
+    // before it ever reaches a provider.
+    let repaired = repair_dangling_tool_calls(&mut conversation_messages);
+    if repaired > 0 {
+        log::warn!("agent: repaired {repaired} dangling tool call(s) with no prior result");
+    }
 
     let assistant_id = json_body
         .get("assistant_id")

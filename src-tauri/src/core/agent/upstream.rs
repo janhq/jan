@@ -116,6 +116,69 @@ pub(crate) fn parse_openai_messages(
     Ok(out)
 }
 
+/// Repairs a "dangling" tool-call turn: an assistant message with
+/// `tool_calls` whose ids don't all have a matching `role: "tool"` reply
+/// immediately after. Anthropic (and some other providers) reject the whole
+/// request outright when this happens, rather than just the offending turn.
+///
+/// This can happen if a previous run was interrupted before a tool result was
+/// ever recorded -- e.g. the process crashed or was force-killed while an
+/// `ask`/permission prompt was still pending -- and the incomplete turn was
+/// then persisted and later resumed/replayed. Insert a synthetic error result
+/// for each missing id so the conversation is always well-formed by the time
+/// it leaves this process, regardless of how the gap was introduced. Returns
+/// the number of ids repaired.
+pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
+    let mut repaired = 0;
+    let mut i = 0;
+    while i < messages.len() {
+        let ids: Vec<String> = messages[i]
+            .get("tool_calls")
+            .and_then(|v| v.as_array())
+            .map(|calls| {
+                calls
+                    .iter()
+                    .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if ids.is_empty() {
+            i += 1;
+            continue;
+        }
+        // A tool-call turn's replies are the run of `role: "tool"` messages
+        // immediately following it; the run ends at the next message that
+        // isn't a tool reply.
+        let mut answered: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut j = i + 1;
+        while j < messages.len()
+            && messages[j].get("role").and_then(|v| v.as_str()) == Some("tool")
+        {
+            if let Some(id) = messages[j].get("tool_call_id").and_then(|v| v.as_str()) {
+                answered.insert(id);
+            }
+            j += 1;
+        }
+        let missing: Vec<&String> = ids.iter().filter(|id| !answered.contains(id.as_str())).collect();
+        for id in &missing {
+            messages.insert(
+                j,
+                serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": id,
+                    "content": "ERROR: this tool call was interrupted before it produced a \
+                        result (e.g. an unanswered question or a cancelled run); treat it as \
+                        failed.",
+                }),
+            );
+            j += 1;
+        }
+        repaired += missing.len();
+        i = j;
+    }
+    repaired
+}
+
 pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
     messages.retain(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"));
     messages.insert(
@@ -925,6 +988,91 @@ mod tests {
         // A plain assistant/user turn with null content is still invalid.
         let messages = json!([{ "role": "assistant", "content": null }]);
         assert!(parse_openai_messages(&messages).is_err());
+    }
+
+    #[test]
+    fn repair_leaves_well_formed_conversation_untouched() {
+        let mut messages = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": { "name": "read", "arguments": "{}" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_1", "content": "file contents" }),
+            json!({ "role": "assistant", "content": "done" }),
+        ];
+        let before = messages.clone();
+        assert_eq!(repair_dangling_tool_calls(&mut messages), 0);
+        assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn repair_inserts_synthetic_result_for_a_fully_missing_tool_reply() {
+        // An `ask`-style call interrupted before it ever produced a result --
+        // e.g. the process was killed while the prompt was still pending.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "make cat slide" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "toolu_ask",
+                    "type": "function",
+                    "function": { "name": "ask", "arguments": "{}" }
+                }]
+            }),
+            json!({ "role": "user", "content": "next message, no reply ever recorded" }),
+        ];
+        assert_eq!(repair_dangling_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "toolu_ask");
+        assert!(messages[2]["content"].as_str().unwrap().starts_with("ERROR"));
+        assert_eq!(messages[3]["content"], "next message, no reply ever recorded");
+    }
+
+    #[test]
+    fn repair_fills_only_the_missing_id_in_a_multi_call_turn() {
+        // Two tool calls in one turn; only one got a reply before the gap.
+        let mut messages = vec![
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    { "id": "call_a", "type": "function", "function": { "name": "read", "arguments": "{}" } },
+                    { "id": "call_b", "type": "function", "function": { "name": "ask", "arguments": "{}" } },
+                ]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_a", "content": "file contents" }),
+        ];
+        assert_eq!(repair_dangling_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[1]["tool_call_id"], "call_a");
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "call_b");
+    }
+
+    #[test]
+    fn repair_handles_a_dangling_call_at_the_end_of_the_conversation() {
+        // No trailing message at all after the unanswered tool call.
+        let mut messages = vec![json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": { "name": "ask", "arguments": "{}" }
+            }]
+        })];
+        assert_eq!(repair_dangling_tool_calls(&mut messages), 1);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["role"], "tool");
+        assert_eq!(messages[1]["tool_call_id"], "call_1");
     }
 
     #[test]
