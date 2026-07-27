@@ -32,6 +32,9 @@ pub(crate) use crate::core::agent::upstream::{
     execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
     parse_openai_messages, resolve_upstream_for_model, set_system_prompt,
 };
+use crate::core::openai_schema::{
+    http_status_indicates_api_key_retry, normalize_openai_tools_in_chat_body,
+};
 
 type ResBody = BoxBody<Bytes, Infallible>;
 

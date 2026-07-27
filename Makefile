@@ -234,8 +234,8 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(DETECTED_OS),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan --target x86_64-apple-darwin
+	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan --target aarch64-apple-darwin
+	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan --target x86_64-apple-darwin
 	lipo -create \
 		src-tauri/target/aarch64-apple-darwin/release/jan \
 		src-tauri/target/x86_64-apple-darwin/release/jan \
@@ -255,17 +255,17 @@ ifeq ($(DETECTED_OS),Darwin)
 
 	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
 else ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --features cli --bin jan
+	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
 	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
 else
-	cd src-tauri && cargo build --release --features cli --bin jan
+	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
 	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
 endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
 	$(call MKDIR,'src-tauri/resources/bin')	
-	cd src-tauri && cargo build --features cli --bin jan
+	cd src-tauri && cargo build --no-default-features --features cli --bin jan
 ifeq ($(DETECTED_OS),Windows)
 	copy src-tauri\target\debug\jan.exe src-tauri\resources\bin\jan.exe
 else
@@ -283,13 +283,13 @@ agent: build-agent
 # and then installed to src-tauri/resources/bin/jan[.exe] for bundling.
 build-agent:
 ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --features cli --bin jan
+	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
 	copy src-tauri\target\release\jan.exe src-tauri\resources\bin\jan.exe
 	@echo "Jan agent built at:"
 	@echo "  src-tauri/resources/bin/jan.exe"
 	@echo "  src-tauri/target/release/jan.exe"
 else
-	cd src-tauri && cargo build --release --features cli --bin jan
+	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
 	install -m755 src-tauri/target/release/jan src-tauri/resources/bin/jan
 	@echo "Jan agent built at:"
 	@echo "  src-tauri/resources/bin/jan"
