@@ -385,6 +385,8 @@ async fn main() {
     }))
     .init();
 
+    app_lib::core::cli::updater::print_update_notice_if_available().await;
+
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
     let matches = Cli::command()
