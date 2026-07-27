@@ -21,11 +21,10 @@ use rmcp::{
     ServiceExt,
 };
 use serde_json::Value;
-use tauri_plugin_http::reqwest;
 use tokio::process::Command;
 
 use crate::core::app::commands::resolve_jan_data_folder;
-use crate::core::mcp::helpers::{extract_active_status, extract_command_args};
+use crate::core::mcp::models::{extract_active_status, extract_command_args};
 use crate::core::mcp::models::McpSettings;
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
 

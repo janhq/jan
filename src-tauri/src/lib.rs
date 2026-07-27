@@ -9,6 +9,8 @@ compile_error!(
      build the CLI with `cargo build --no-default-features --features cli --bin jan`"
 );
 
+pub mod core;
+
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,

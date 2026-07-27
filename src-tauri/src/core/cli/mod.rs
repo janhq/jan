@@ -3,7 +3,6 @@
 //! This module is only compiled when the `cli` feature is enabled.
 
 pub mod mcp;
-pub mod preset;
 pub mod providers;
 mod path_refs;
 mod tui;
@@ -20,21 +19,6 @@ use crate::core::threads::{
         get_thread_metadata_path,
     },
 };
-use tauri_plugin_llamacpp::router as llamacpp_router;
-use tauri_plugin_llamacpp::state::LlamacppState;
-#[cfg(target_os = "macos")]
-use tauri_plugin_mlx::state::MlxState;
-
-// ── State constructors ─────────────────────────────────────────────────────
-
-pub fn init_llamacpp_state() -> LlamacppState {
-    LlamacppState::new()
-}
-
-#[cfg(target_os = "macos")]
-pub fn init_mlx_state() -> MlxState {
-    MlxState::new()
-}
 
 // ── Thread operations ──────────────────────────────────────────────────────
 
@@ -230,222 +214,6 @@ fn default_thread_title(history: &[serde_json::Value]) -> String {
     }
 }
 
-// ── Server operations ──────────────────────────────────────────────────────
-
-/// Stop the running proxy server.
-pub async fn cli_stop_server(app_state: Arc<AppState>) -> Result<(), String> {
-    proxy::stop_server(app_state.server_handle.clone())
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Check whether the proxy server is currently running.
-pub async fn cli_is_server_running(app_state: Arc<AppState>) -> bool {
-    proxy::is_server_running(app_state.server_handle.clone()).await
-}
-
-// ── Model discovery ───────────────────────────────────────────────────────
-
-/// Parsed representation of a `model.yml` file.
-#[derive(Debug, serde::Deserialize)]
-pub struct ModelYml {
-    pub model_path: String,
-    pub name: Option<String>,
-    #[serde(default)]
-    pub size_bytes: u64,
-    #[serde(default)]
-    pub embedding: bool,
-    pub mmproj_path: Option<String>,
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-}
-
-/// A discovered model entry: `(model_id, yml)`.
-pub type ModelEntry = (String, ModelYml);
-
-/// Scan `<data_folder>/<engine>/models/` for `model.yml` files.
-///
-/// `engine` is `"llamacpp"` or `"mlx"`. Returns one entry per model found.
-pub fn list_models(engine: &str) -> Vec<ModelEntry> {
-    use std::fs;
-
-    let data_folder = resolve_jan_data_folder();
-    let models_root = data_folder.join(engine).join("models");
-
-    if !models_root.exists() {
-        return Vec::new();
-    }
-    ensure_data_dirs(base)?;
-    let id = thread_id
-        .map(str::to_string)
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir_all(get_thread_dir(base, &id)).map_err(|e| e.to_string())?;
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let now_ms = now.as_millis() as i64;
-    let now_secs = now.as_secs_f64();
-
-    while let Some(dir) = stack.pop() {
-        let yml_path = dir.join("model.yml");
-        if yml_path.exists() {
-            if let Ok(content) = fs::read_to_string(&yml_path) {
-                if let Ok(yml) = serde_yaml::from_str::<ModelYml>(&content) {
-                    // model_id = path relative to models_root
-                    let model_id = dir
-                        .strip_prefix(&models_root)
-                        .unwrap_or(&dir)
-                        .to_string_lossy()
-                        .into_owned();
-                    results.push((model_id, yml));
-                    continue; // don't recurse into a model directory
-                }
-            }
-        }
-        // Recurse into subdirectories
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    stack.push(entry.path());
-                }
-            }
-        }
-    }
-
-    results.sort_by(|a, b| a.0.cmp(&b.0));
-    results
-}
-
-/// Detect which engine owns `model_id` by probing the data folder, and
-/// resolve its paths.  Tries `llamacpp` first, then `mlx`.
-/// Returns `(engine, model_path, mmproj_path)`.
-pub fn resolve_model_engine(model_id: &str) -> Result<(String, PathBuf, Option<PathBuf>), String> {
-    let data_folder = resolve_jan_data_folder();
-    for engine in &["llamacpp", "mlx"] {
-        let yml_path = data_folder
-            .join(engine)
-            .join("models")
-            .join(model_id)
-            .join("model.yml");
-        if yml_path.exists() {
-            let (model_path, mmproj_path) = resolve_model_by_id(model_id, engine)?;
-            return Ok((engine.to_string(), model_path, mmproj_path));
-        }
-    }
-    Err(format!(
-        "Model '{}' not found for any engine. \
-        Run `jan cli models list` to see available models.",
-        model_id
-    ))
-}
-
-/// Resolve the absolute model file path (and optional mmproj path) for a
-/// given model ID and engine.
-///
-/// `model_path` in the YAML can be:
-///   - absolute (`/…` or `C:\…`) — used verbatim
-///   - relative — joined with the Jan data folder
-pub fn resolve_model_by_id(
-    model_id: &str,
-    engine: &str,
-) -> Result<(PathBuf, Option<PathBuf>), String> {
-    let data_folder = resolve_jan_data_folder();
-    let yml_path = data_folder
-        .join(engine)
-        .join("models")
-        .join(model_id)
-        .join("model.yml");
-
-    if !yml_path.exists() {
-        return Err(format!(
-            "Model '{}' not found for engine '{}'. \
-            Run `jan cli models list` to see available models.",
-            model_id, engine
-        ));
-    }
-
-    let content = std::fs::read_to_string(&yml_path).map_err(|e| e.to_string())?;
-    let yml: ModelYml = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
-
-    let resolve_path = |p: &str| -> PathBuf {
-        let pb = PathBuf::from(p);
-        if pb.is_absolute() {
-            pb
-        } else {
-            data_folder.join(p)
-        }
-    };
-
-    let model_path = resolve_path(&yml.model_path);
-    let mmproj_path = yml.mmproj_path.as_deref().map(resolve_path);
-
-    Ok((model_path, mmproj_path))
-}
-
-// ── Binary auto-discovery ──────────────────────────────────────────────────
-
-/// Find the llama-server binary inside the Jan data folder.
-///
-/// Walks `<data_folder>/llamacpp/backends/<version>/<backend>/` and checks
-/// two locations per backend (same logic as the llamacpp-extension):
-///   1. `<backend_dir>/build/bin/llama-server[.exe]`
-///   2. `<backend_dir>/llama-server[.exe]`
-///
-/// Returns the first binary found, or `None` if no installed backend is found.
-pub fn discover_llamacpp_binary() -> Option<PathBuf> {
-    use std::fs;
-
-    let data_folder = resolve_jan_data_folder();
-    let backends_dir = data_folder.join("llamacpp").join("backends");
-
-    if !backends_dir.exists() {
-        return None;
-    }
-
-    let exe = if cfg!(windows) {
-        "llama-server.exe"
-    } else {
-        "llama-server"
-    };
-
-    // Collect version directories, sorted descending so we prefer the latest.
-    let mut version_entries: Vec<_> = fs::read_dir(&backends_dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .collect();
-    version_entries.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-    for version_entry in version_entries {
-        let version_dir = version_entry.path();
-        let mut backend_entries: Vec<_> = fs::read_dir(&version_dir)
-            .ok()?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir())
-            .collect();
-        backend_entries.sort_by_key(|a| a.file_name());
-
-        for backend_entry in backend_entries {
-            let backend_dir = backend_entry.path();
-
-            // Primary location: <backend>/build/bin/llama-server
-            let primary = backend_dir.join("build").join("bin").join(exe);
-            if primary.exists() {
-                return Some(primary);
-            }
-
-            // Fallback: <backend>/llama-server
-            let fallback = backend_dir.join(exe);
-            if fallback.exists() {
-                return Some(fallback);
-            }
-        }
-    }
-
-    None
-}
-
 // ── App config ────────────────────────────────────────────────────────────
 
 pub fn cli_get_data_folder() -> PathBuf {
@@ -504,8 +272,11 @@ pub fn cli_agent_status(
     let cfg = load_agent_config(&project_root)?;
     let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
 
+    // Only providers this build can reach: local-engine entries inherited from
+    // the desktop store have no upstream here (see `is_cli_reachable`).
     let mut providers: Vec<serde_json::Value> = provider_configs
         .values()
+        .filter(|c| crate::core::cli::providers::is_cli_reachable(c))
         .map(|c| {
             serde_json::json!({
                 "provider": c.provider,
@@ -616,7 +387,6 @@ fn build_cli_orchestration_args(
     project_root: PathBuf,
     permissions: crate::core::agent::permissions::ToolPermissions,
     provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
-    llama_state: Arc<LlamacppState>,
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
@@ -625,8 +395,6 @@ fn build_cli_orchestration_args(
     OrchestrationArgs {
         client: reqwest::Client::new(),
         provider_configs: Arc::new(Mutex::new(provider_configs)),
-        llama_state,
-        mlx_sessions: Arc::new(Mutex::new(HashMap::new())),
         mcp_servers,
         mcp_settings: Arc::new(Mutex::new(mcp_settings)),
         jan_data_folder: resolve_jan_data_folder().to_string_lossy().into_owned(),
@@ -639,164 +407,6 @@ fn build_cli_orchestration_args(
     }
 }
 
-/// Model-load readiness timeout (seconds) for the router started on the agent
-/// path. Generous: a cold local model can take a while to memory-map + warm up.
-const AGENT_ROUTER_TIMEOUT_SECS: u64 = 300;
-
-/// Pick a free TCP port on the loopback interface. The port is released
-/// immediately; the router binds it moments later (standard, benign race).
-fn pick_free_port() -> Result<u16, String> {
-    let listener =
-        std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
-    listener
-        .local_addr()
-        .map(|a| a.port())
-        .map_err(|e| e.to_string())
-}
-
-/// When `model_id` resolves to a local llamacpp model, spawn a background task
-/// that starts the router and loads the model into `llama_state`. Returns the
-/// task handle so the caller can await readiness before the first turn without
-/// blocking setup/render. Cloud (and MLX) models return `None` -- they either
-/// hit an HTTP provider or a separately-managed session.
-fn spawn_local_router_if_needed(
-    model_id: &str,
-    llama_state: &Arc<LlamacppState>,
-) -> Option<tokio::task::JoinHandle<Result<(), String>>> {
-    match resolve_model_engine(model_id) {
-        Ok((engine, _, _)) if engine == "llamacpp" => {}
-        _ => return None,
-    }
-
-    let llama_state = llama_state.clone();
-    let model_id = model_id.to_string();
-    Some(tokio::spawn(async move {
-        let bin_path = discover_llamacpp_binary()
-            .ok_or_else(|| {
-                "llama-server binary not found; install a backend in the Jan desktop app".to_string()
-            })?
-            .to_string_lossy()
-            .into_owned();
-        let port = pick_free_port()?;
-        ensure_router_and_load(
-            &llama_state,
-            &bin_path,
-            &model_id,
-            port,
-            String::new(),
-            false,
-            HashMap::new(),
-            AGENT_ROUTER_TIMEOUT_SECS,
-        )
-        .await
-        .map(|_| ())
-    }))
-}
-
-/// Await a spawned router-start task, flattening the join + inner errors.
-async fn await_router_task(
-    task: Option<tokio::task::JoinHandle<Result<(), String>>>,
-) -> Result<(), String> {
-    match task {
-        Some(h) => h
-            .await
-            .map_err(|e| format!("router task failed: {e}"))?
-            .map_err(|e| format!("failed to start local model: {e}")),
-        None => Ok(()),
-    }
-}
-
-/// Router endpoint + pid after [`ensure_router_and_load`].
-pub struct RouterServeInfo {
-    pub pid: i32,
-    pub port: u16,
-    #[allow(dead_code)]
-    pub api_key: String,
-}
-
-/// Start the llama-server router (if not already running) against the generated
-/// preset, then POST `/models/load` for `model_id`. Used by the agent path so a
-/// local model has a live upstream to talk to. The preset is
-/// generated on demand (see [`preset::ensure_router_preset`]) when the desktop
-/// app hasn't produced one.
-#[allow(clippy::too_many_arguments)]
-pub async fn ensure_router_and_load(
-    llama_state: &Arc<LlamacppState>,
-    bin_path: &str,
-    model_id: &str,
-    port: u16,
-    api_key: String,
-    is_embedding: bool,
-    envs: HashMap<String, String>,
-    timeout: u64,
-) -> Result<RouterServeInfo, String> {
-    if is_embedding {
-        return Err(
-            "--embedding on the llamacpp engine requires router preset support; \
-             use the desktop UI to load embedding models for now."
-                .to_string(),
-        );
-    }
-
-    let preset_path = preset::ensure_router_preset()?;
-
-    let already_running = { llama_state.router.lock().await.is_some() };
-    if !already_running {
-        let router_api_key = if api_key.is_empty() {
-            uuid::Uuid::new_v4().to_string()
-        } else {
-            api_key.clone()
-        };
-        let mut router_envs = envs.clone();
-        router_envs
-            .entry("LLAMA_ARG_TIMEOUT".to_string())
-            .or_insert_with(|| timeout.to_string());
-
-        let handle = llamacpp_router::start_router(
-            PathBuf::from(bin_path),
-            preset_path,
-            port,
-            router_api_key,
-            0,
-            Vec::new(),
-            router_envs,
-            None,
-        )
-        .await
-        .map_err(|e| format!("{e:?}"))?;
-        let mut guard = llama_state.router.lock().await;
-        *guard = Some(handle);
-    }
-
-    let (router_port, router_key, router_pid) = {
-        let guard = llama_state.router.lock().await;
-        let h = guard
-            .as_ref()
-            .ok_or_else(|| "Router unexpectedly missing after start".to_string())?;
-        (h.port, h.api_key.clone(), h.pid)
-    };
-
-    let url = format!("http://127.0.0.1:{router_port}/models/load");
-    let resp = reqwest::Client::new()
-        .post(&url)
-        .header("Authorization", format!("Bearer {router_key}"))
-        .json(&serde_json::json!({ "model": model_id }))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to POST {url}: {e}"))?;
-    let status = resp.status();
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Router /models/load returned {status}: {body}"));
-    }
-
-    Ok(RouterServeInfo {
-        pid: router_pid as i32,
-        port: router_port,
-        api_key: router_key,
-    })
-}
-
 /// Everything needed to drive one agent run: the engine handle, request body,
 /// and the shared permission registry. Built once and consumed by either the
 /// plain CLI printer or the TUI renderer.
@@ -804,9 +414,6 @@ pub(crate) struct PreparedRun {
     pub args: OrchestrationArgs,
     pub body: serde_json::Value,
     pub permission_requests: PermissionRegistry,
-    /// Background local-router startup, awaited before the first turn. `None`
-    /// for cloud models.
-    pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
     /// Background connect of `active` MCP servers, awaited before the first turn.
     pub mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
 }
@@ -830,9 +437,6 @@ pub(crate) struct AgentSession {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
-    /// Background local-router startup, awaited before the first turn. `None`
-    /// for cloud models.
-    pub router_task: Option<tokio::task::JoinHandle<Result<(), String>>>,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
@@ -908,11 +512,22 @@ fn prepare_agent_session(
 
     let provider_configs = load_provider_configs(Some(&project_root), &overrides)?;
 
-    // A local llamacpp model needs its router started; cloud models are plain
-    // HTTP upstreams. Start it off-thread so setup/render isn't blocked on the
-    // model load; the caller awaits `router_task` before the first turn.
-    let llama_state = Arc::new(init_llamacpp_state());
-    let router_task = spawn_local_router_if_needed(&model, &llama_state);
+    // Reject a model whose only provider is a local engine descriptor before any
+    // setup work: the CLI cannot start an engine itself, so this would otherwise
+    // fail mid-run with a far vaguer message. Local models are still runnable
+    // over HTTP -- via the desktop app's API server -- which is what the hint
+    // points at; a provider entry with a base_url never reaches this branch.
+    if let Some(local) =
+        crate::core::cli::providers::unreachable_local_provider(&provider_configs, &model)
+    {
+        return Err(format!(
+            "model '{model}' is only offered by '{local}', a local engine the Jan CLI cannot \
+             start itself. To use it, run the model in the Jan desktop app with its API server \
+             enabled and point a provider at it:\n  \
+             jan config set --provider jan --base-url http://localhost:1337/v1 --model {model}\n\
+             Or pick a model from `jan cli models list`."
+        ));
+    }
 
     // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
     // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
@@ -936,7 +551,6 @@ fn prepare_agent_session(
         project_root,
         permissions,
         provider_configs,
-        llama_state,
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
@@ -952,7 +566,6 @@ fn prepare_agent_session(
         context_window: cfg.agent.context_window.unwrap_or(128_000),
         reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
         max_tokens: cfg.agent.max_tokens,
-        router_task,
         mcp_servers,
         mcp_task,
     })
@@ -984,7 +597,6 @@ fn prepare_agent_run(
         args: session.args,
         body,
         permission_requests: session.permission_requests,
-        router_task: session.router_task,
         mcp_task: session.mcp_task,
     })
 }
@@ -1001,12 +613,9 @@ async fn run_agent_loop(
         args,
         body,
         permission_requests,
-        router_task,
         mcp_task,
     } = prepare_agent_run(project, task, model_override, max_turns_override, overrides, yolo)?;
 
-    // Block until the local model is loaded (no-op for cloud models).
-    await_router_task(router_task).await?;
     // Block until active MCP servers connect, so tools (collected once per run)
     // are present on the first turn.
     if let Some(task) = mcp_task {
@@ -1212,86 +821,6 @@ mod tests {
     }
 
     // ── cli_save_thread metadata (snapshot bookkeeping) ────────────────────
-
-    #[test]
-    fn save_thread_persists_and_preserves_snapshot_metadata() {
-        let base = std::env::temp_dir().join(format!(
-            "jan_savethread_{}_{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        let history = serde_json::json!([
-            { "role": "user", "content": "hi" },
-            { "role": "assistant", "content": "hello" },
-        ]);
-        let meta = serde_json::json!({
-            "base_snapshot": "abc",
-            "checkpoints": [{ "user_index": 0, "preview": "hi", "sha": "def" }],
-        });
-
-        let id = cli_save_thread(
-            &base,
-            None,
-            "m",
-            history.as_array().unwrap(),
-            Some(meta.clone()),
-        )
-        .expect("save");
-
-        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read");
-        let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(stored["metadata"]["base_snapshot"], "abc");
-        assert_eq!(stored["metadata"]["checkpoints"][0]["sha"], "def");
-
-        // A follow-up save with no metadata must preserve the prior snapshot block.
-        cli_save_thread(&base, Some(&id), "m", history.as_array().unwrap(), None).expect("resave");
-        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read2");
-        let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(stored["metadata"]["base_snapshot"], "abc");
-
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    // ── ModelYml deserialization ──────────────────────────────────────────
-
-    #[test]
-    fn default_thread_title_uses_first_user_message() {
-        let history = serde_json::json!([
-            { "role": "user", "content": "Explain   the  buffer\nlogic" },
-            { "role": "assistant", "content": "sure" },
-        ]);
-        assert_eq!(
-            default_thread_title(history.as_array().unwrap()),
-            "Explain the buffer logic"
-        );
-    }
-
-    #[test]
-    fn openai_content_text_reads_multimodal_array() {
-        let content = serde_json::json!([
-            { "type": "text", "text": "describe" },
-            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
-        ]);
-        assert_eq!(openai_content_text(Some(&content)), "describe");
-        assert_eq!(openai_content_text(Some(&serde_json::json!("plain"))), "plain");
-    }
-
-    #[test]
-    fn default_thread_title_uses_multimodal_user_text() {
-        let history = serde_json::json!([{
-            "role": "user",
-            "content": [
-                { "type": "text", "text": "look at this" },
-                { "type": "image_url", "image_url": { "url": "data:image/png;base64,AA" } },
-            ],
-        }]);
-        assert_eq!(
-            default_thread_title(history.as_array().unwrap()),
-            "look at this"
-        );
-    }
-
-    // ── State constructors ────────────────────────────────────────────────
 
     #[test]
     fn save_thread_persists_and_preserves_snapshot_metadata() {

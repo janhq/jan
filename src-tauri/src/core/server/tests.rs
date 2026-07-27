@@ -584,20 +584,20 @@ mod server_tests {
     #[test]
     fn http_status_indicates_api_key_retry_matrix() {
         use hyper::StatusCode;
-        assert!(proxy::http_status_indicates_api_key_retry(
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
             StatusCode::UNAUTHORIZED
         ));
-        assert!(proxy::http_status_indicates_api_key_retry(
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
             StatusCode::FORBIDDEN
         ));
-        assert!(proxy::http_status_indicates_api_key_retry(
+        assert!(crate::core::openai_schema::http_status_indicates_api_key_retry(
             StatusCode::TOO_MANY_REQUESTS
         ));
-        assert!(!proxy::http_status_indicates_api_key_retry(StatusCode::OK));
-        assert!(!proxy::http_status_indicates_api_key_retry(
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(StatusCode::OK));
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(
             StatusCode::BAD_REQUEST
         ));
-        assert!(!proxy::http_status_indicates_api_key_retry(
+        assert!(!crate::core::openai_schema::http_status_indicates_api_key_retry(
             StatusCode::INTERNAL_SERVER_ERROR
         ));
     }
