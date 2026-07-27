@@ -54,6 +54,111 @@ pub async fn cli_list_threads() -> Result<Vec<serde_json::Value>, String> {
     list_threads_in(&data_folder)
 }
 
+/// Which saved thread a `--resume` / `--continue` / `/resume` request refers to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResumeTarget {
+    /// Most recently updated thread for the project.
+    Latest,
+    /// A full thread id or a unique prefix of one.
+    Id(String),
+}
+
+impl ResumeTarget {
+    /// Build a target from the CLI flag pair: `--resume [ID]` and `--continue`/`-c`
+    /// (an alias for a bare `--resume`). `None` means "do not resume".
+    pub fn from_flags(resume: Option<Option<String>>, continue_session: bool) -> Option<Self> {
+        match resume {
+            Some(Some(id)) if !id.trim().is_empty() => Some(Self::Id(id.trim().to_string())),
+            Some(_) => Some(Self::Latest),
+            None if continue_session => Some(Self::Latest),
+            None => None,
+        }
+    }
+}
+
+/// Recency sort key for a saved thread (`updated`, falling back to `created`).
+pub fn thread_recency(t: &serde_json::Value) -> f64 {
+    t.get("updated")
+        .or_else(|| t.get("created"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+/// Sort threads most-recent-first (by `updated`/`created`).
+pub fn sort_threads_recent(threads: &mut [serde_json::Value]) {
+    threads.sort_by(|a, b| {
+        thread_recency(b)
+            .partial_cmp(&thread_recency(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+/// Message shown when there is nothing to resume; the caller then starts fresh.
+pub const NO_SESSION_TO_RESUME: &str = "No session to resume";
+
+/// Resolve a resume target against `<base>/threads/`, returning the thread
+/// metadata. Threads whose `thread.json` is unparsable are skipped by
+/// `list_threads_in`, so a corrupted neighbour never blocks a resume.
+pub fn find_resume_thread(
+    base: &std::path::Path,
+    target: &ResumeTarget,
+) -> Result<serde_json::Value, String> {
+    let mut threads = list_threads_in(base)?;
+    match target {
+        ResumeTarget::Latest => {
+            sort_threads_recent(&mut threads);
+            threads
+                .into_iter()
+                .next()
+                .ok_or_else(|| NO_SESSION_TO_RESUME.to_string())
+        }
+        ResumeTarget::Id(id) => {
+            let mut matches: Vec<serde_json::Value> = threads
+                .into_iter()
+                .filter(|t| {
+                    t.get("id")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|full| full == id || full.starts_with(id.as_str()))
+                })
+                .collect();
+            match matches.len() {
+                0 => Err(format!("no thread matches '{id}'")),
+                1 => Ok(matches.remove(0)),
+                n => Err(format!("'{id}' is ambiguous ({n} matches)")),
+            }
+        }
+    }
+}
+
+/// Read a thread's messages, tolerating a truncated or malformed line (a crash
+/// mid-append leaves one). Returns the parsed records and the skipped count, so
+/// a resume degrades to "lost the tail" instead of failing outright.
+pub fn cli_read_messages_lenient(
+    base: &std::path::Path,
+    thread_id: &str,
+) -> Result<(Vec<serde_json::Value>, usize), String> {
+    use std::io::BufRead;
+
+    let path = get_messages_path(base, thread_id);
+    if !path.exists() {
+        return Ok((Vec::new(), 0));
+    }
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut messages = Vec::new();
+    let mut skipped = 0;
+    for line in std::io::BufReader::new(file).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str(&line) {
+            Ok(v) => messages.push(v),
+            Err(_) => skipped += 1,
+        }
+    }
+    Ok((messages, skipped))
+}
+
 /// Read a thread's messages from `<base>/threads/<id>/messages.jsonl`.
 pub fn cli_list_messages_in(
     base: &std::path::Path,
@@ -178,6 +283,27 @@ pub fn cli_save_thread(
 /// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
 pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
     set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
+}
+
+/// Text of a persisted `thread.message` (content parts carry `text.value`) or of
+/// an OpenAI-shaped message (`content` is a plain string or `text` parts), so
+/// the same reader works on both sides of a save/resume round trip.
+pub(crate) fn thread_message_text(msg: &serde_json::Value) -> String {
+    match msg.get("content") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|p| {
+                p.get("text")
+                    .and_then(|t| t.get("value"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| p.get("text").and_then(|t| t.as_str()))
+                    .or_else(|| p.as_str())
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
 }
 
 /// Text of an OpenAI-shaped message `content`: the string as-is, or the joined
@@ -367,8 +493,9 @@ pub async fn cli_agent_run(
     max_turns: Option<u32>,
     overrides: ProviderOverrides,
     yolo: bool,
+    resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, max_turns, overrides, yolo).await
+    run_agent_loop(project, task, model, max_turns, overrides, yolo, resume).await
 }
 
 /// Single-turn run for debugging (`max_turns = 1`).
@@ -379,7 +506,7 @@ pub async fn cli_agent_step(
     overrides: ProviderOverrides,
     yolo: bool,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, Some(1), overrides, yolo).await
+    run_agent_loop(project, task, model, Some(1), overrides, yolo, None).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -416,6 +543,17 @@ pub(crate) struct PreparedRun {
     pub permission_requests: PermissionRegistry,
     /// Background connect of `active` MCP servers, awaited before the first turn.
     pub mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
+    /// Where to write the conversation once the run finishes.
+    persist: PersistTarget,
+}
+
+/// Bookkeeping for writing a non-interactive run to the project's thread store,
+/// so `--resume` can pick it up later. `thread_id` is `None` for a new session.
+struct PersistTarget {
+    agent_dir: PathBuf,
+    thread_id: Option<String>,
+    model: String,
+    history: Vec<serde_json::Value>,
 }
 
 /// Resolved engine handle for a chat session: the args are built once and the
@@ -571,6 +709,44 @@ fn prepare_agent_session(
     })
 }
 
+/// The prior conversation a non-interactive `--resume` run continues, in
+/// OpenAI `{role, content}` shape (the wire format the engine expects).
+struct ResumedSession {
+    thread_id: String,
+    history: Vec<serde_json::Value>,
+}
+
+/// Load a saved thread's user/assistant turns for continuation. Tool calls are
+/// not replayed (they are not persisted as messages), matching `/resume` in the
+/// TUI. Errors describe why nothing could be resumed; the caller starts fresh.
+fn load_resume_history(
+    agent_dir: &std::path::Path,
+    target: &ResumeTarget,
+) -> Result<ResumedSession, String> {
+    let thread = find_resume_thread(agent_dir, target)?;
+    let thread_id = thread
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "saved thread has no id".to_string())?
+        .to_string();
+    let (messages, skipped) = cli_read_messages_lenient(agent_dir, &thread_id)?;
+    if skipped > 0 {
+        eprintln!("(skipped {skipped} unreadable message(s) in the resumed session)");
+    }
+    let history = messages
+        .iter()
+        .filter_map(|m| {
+            let role = m.get("role").and_then(|v| v.as_str())?;
+            if !matches!(role, "user" | "assistant") {
+                return None;
+            }
+            let text = thread_message_text(m);
+            (!text.is_empty()).then(|| serde_json::json!({ "role": role, "content": text }))
+        })
+        .collect();
+    Ok(ResumedSession { thread_id, history })
+}
+
 fn prepare_agent_run(
     project: &str,
     task: &str,
@@ -578,6 +754,7 @@ fn prepare_agent_run(
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
     yolo: bool,
+    resume: Option<ResumeTarget>,
 ) -> Result<PreparedRun, String> {
     let session =
         prepare_agent_session(project, model_override, max_turns_override, overrides, yolo)?;
@@ -588,7 +765,24 @@ fn prepare_agent_run(
     } else {
         format!("{clean_task}\n\n---\nReferenced file contents:\n\n{injected}")
     };
-    let body = session.body(serde_json::json!([{ "role": "user", "content": final_task }]));
+
+    // A failed resume is not fatal: report it and run the prompt in a new session.
+    let resumed = resume.and_then(|target| {
+        match load_resume_history(&agent_dir_for(&project_root), &target) {
+            Ok(r) => {
+                eprintln!("(resumed session {} with {} message(s))", short_id(&r.thread_id), r.history.len());
+                Some(r)
+            }
+            Err(e) => {
+                eprintln!("{e}; starting a new session");
+                None
+            }
+        }
+    });
+
+    let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
+    history.push(serde_json::json!({ "role": "user", "content": final_task }));
+    let body = session.body(serde_json::json!(history.clone()));
     // Emit resolved references stderr so the user sees what was injected
     if !injected.is_empty() {
         eprintln!("(resolved @path references)");
@@ -598,7 +792,20 @@ fn prepare_agent_run(
         body,
         permission_requests: session.permission_requests,
         mcp_task: session.mcp_task,
+        // Non-interactive runs persist into the same per-project store the TUI
+        // uses, so a run can later be continued with --resume from either side.
+        persist: PersistTarget {
+            agent_dir: agent_dir_for(&project_root),
+            thread_id: resumed.map(|r| r.thread_id),
+            model: session.model,
+            history,
+        },
     })
+}
+
+/// First 8 chars of a thread id, the form the TUI shows in `/threads`.
+fn short_id(id: &str) -> String {
+    id.chars().take(8).collect()
 }
 
 async fn run_agent_loop(
@@ -608,13 +815,23 @@ async fn run_agent_loop(
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
     yolo: bool,
+    resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let PreparedRun {
         args,
         body,
         permission_requests,
         mcp_task,
-    } = prepare_agent_run(project, task, model_override, max_turns_override, overrides, yolo)?;
+        persist,
+    } = prepare_agent_run(
+        project,
+        task,
+        model_override,
+        max_turns_override,
+        overrides,
+        yolo,
+        resume,
+    )?;
 
     // Block until active MCP servers connect, so tools (collected once per run)
     // are present on the first turn.
@@ -638,12 +855,36 @@ async fn run_agent_loop(
     let result = run_orchestration_streamed(&tx, &body, &args).await;
     drop(tx);
     let _ = printer.await;
+
+    // Write the turn back so the session stays continuable with --resume.
+    if let Ok(completion) = result.as_ref() {
+        let PersistTarget { agent_dir, thread_id, model, mut history } = persist;
+        if let Some(text) = completion_text(completion) {
+            history.push(serde_json::json!({ "role": "assistant", "content": text }));
+        }
+        match cli_save_thread(&agent_dir, thread_id.as_deref(), &model, &history, None) {
+            Ok(id) => eprintln!("\x1b[2m[session {} - resume with `jan --resume={}`]\x1b[0m", short_id(&id), short_id(&id)),
+            Err(e) => eprintln!("(could not save session: {e})"),
+        }
+    }
     result.map(|_| ())
+}
+
+/// Assistant text of a chat-completion response, if any.
+fn completion_text(completion: &serde_json::Value) -> Option<String> {
+    let text = completion
+        .get("choices")?
+        .get(0)?
+        .get("message")?
+        .get("content")
+        .and_then(|v| v.as_str())?;
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Launch the interactive chat console (bare `jan`). An optional `task`
 /// seeds the first turn; otherwise the user types the first message. Shares the
 /// engine with `run_agent_loop` via `AgentSession` — only presentation differs.
+#[allow(clippy::too_many_arguments)]
 pub async fn cli_agent_ui(
     project: &str,
     task: Option<String>,
@@ -652,13 +893,19 @@ pub async fn cli_agent_ui(
     images: Vec<String>,
     overrides: ProviderOverrides,
     yolo: bool,
+    resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let session = prepare_agent_session(project, model, max_turns, overrides, yolo)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let project_root = resolve_project_root(project);
-    let agent_dir = project_root.join(".jan").join("agent");
-    tui::run(session, agent_dir, project_root, task, images).await
+    let agent_dir = agent_dir_for(&project_root);
+    tui::run(session, agent_dir, project_root, task, images, resume).await
+}
+
+/// Where the TUI persists a project's threads (`<project>/.jan/agent`).
+pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
+    project_root.join(".jan").join("agent")
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
@@ -768,6 +1015,151 @@ async fn prompt_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── resume ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn resume_target_from_flags() {
+        assert_eq!(ResumeTarget::from_flags(None, false), None);
+        assert_eq!(ResumeTarget::from_flags(None, true), Some(ResumeTarget::Latest));
+        assert_eq!(
+            ResumeTarget::from_flags(Some(None), false),
+            Some(ResumeTarget::Latest)
+        );
+        // A blank --resume value behaves like a bare --resume.
+        assert_eq!(
+            ResumeTarget::from_flags(Some(Some("  ".into())), false),
+            Some(ResumeTarget::Latest)
+        );
+        assert_eq!(
+            ResumeTarget::from_flags(Some(Some(" 3f7a ".into())), false),
+            Some(ResumeTarget::Id("3f7a".into()))
+        );
+    }
+
+    /// Write a thread with the given id/recency and a single user message.
+    fn seed_thread(base: &std::path::Path, id: &str, updated: f64) {
+        std::fs::create_dir_all(get_thread_dir(base, id)).unwrap();
+        std::fs::write(
+            get_thread_metadata_path(base, id),
+            serde_json::json!({ "id": id, "title": id, "updated": updated }).to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            get_messages_path(base, id),
+            serde_json::json!({
+                "role": "user",
+                "content": [{ "type": "text", "text": { "value": id, "annotations": [] } }],
+            })
+            .to_string()
+                + "\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn find_resume_thread_latest_and_by_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        assert_eq!(
+            find_resume_thread(base, &ResumeTarget::Latest).unwrap_err(),
+            NO_SESSION_TO_RESUME
+        );
+
+        seed_thread(base, "aaaa1111", 100.0);
+        seed_thread(base, "bbbb2222", 300.0);
+        seed_thread(base, "bbbb3333", 200.0);
+
+        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(latest["id"], "bbbb2222");
+
+        let by_prefix = find_resume_thread(base, &ResumeTarget::Id("aaaa".into())).unwrap();
+        assert_eq!(by_prefix["id"], "aaaa1111");
+
+        assert!(find_resume_thread(base, &ResumeTarget::Id("zz".into()))
+            .unwrap_err()
+            .contains("no thread matches"));
+        assert!(find_resume_thread(base, &ResumeTarget::Id("bbbb".into()))
+            .unwrap_err()
+            .contains("ambiguous"));
+    }
+
+    #[test]
+    fn find_resume_thread_skips_corrupted_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        seed_thread(base, "good1111", 100.0);
+        let bad = "bad02222";
+        std::fs::create_dir_all(get_thread_dir(base, bad)).unwrap();
+        std::fs::write(get_thread_metadata_path(base, bad), "{not json").unwrap();
+
+        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(latest["id"], "good1111");
+    }
+
+    #[test]
+    fn read_messages_lenient_skips_truncated_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        seed_thread(base, "aaaa1111", 100.0);
+        let mut raw = std::fs::read_to_string(get_messages_path(base, "aaaa1111")).unwrap();
+        raw.push_str("{\"role\":\"assist");
+        std::fs::write(get_messages_path(base, "aaaa1111"), raw).unwrap();
+
+        let (messages, skipped) = cli_read_messages_lenient(base, "aaaa1111").unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(skipped, 1);
+        // The strict reader used elsewhere still rejects the same file.
+        assert!(cli_list_messages_in(base, "aaaa1111").is_err());
+    }
+
+    #[test]
+    fn read_messages_lenient_on_missing_thread_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let (messages, skipped) = cli_read_messages_lenient(dir.path(), "nope").unwrap();
+        assert!(messages.is_empty());
+        assert_eq!(skipped, 0);
+    }
+
+    #[test]
+    fn resume_cycle_preserves_thread_id_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "first" }),
+            serde_json::json!({ "role": "assistant", "content": "reply" }),
+        ];
+        let id = cli_save_thread(base, None, "m", &history, None).unwrap();
+
+        let resumed = load_resume_history(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(resumed.thread_id, id);
+        assert_eq!(resumed.history, history);
+
+        // Continue the session and save back: same thread, appended turns.
+        let mut extended = resumed.history;
+        extended.push(serde_json::json!({ "role": "user", "content": "second" }));
+        let same = cli_save_thread(base, Some(&id), "m", &extended, None).unwrap();
+        assert_eq!(same, id);
+        assert_eq!(list_threads_in(base).unwrap().len(), 1);
+        assert_eq!(
+            load_resume_history(base, &ResumeTarget::Id(id[..8].to_string()))
+                .unwrap()
+                .history,
+            extended
+        );
+    }
+
+    #[test]
+    fn completion_text_extracts_assistant_content() {
+        let completion =
+            serde_json::json!({ "choices": [{ "message": { "content": "hello" } }] });
+        assert_eq!(completion_text(&completion).as_deref(), Some("hello"));
+        assert_eq!(completion_text(&serde_json::json!({})), None);
+        assert_eq!(
+            completion_text(&serde_json::json!({ "choices": [{ "message": { "content": "" } }] })),
+            None
+        );
+    }
 
     // ── default_thread_title ───────────────────────────────────────────────
 

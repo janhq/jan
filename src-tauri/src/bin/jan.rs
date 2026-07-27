@@ -13,7 +13,7 @@ use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
-    cli_get_thread, cli_list_messages, cli_list_threads,
+    cli_get_thread, cli_list_messages, cli_list_threads, ResumeTarget,
 };
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
@@ -32,6 +32,8 @@ Models are served by remote providers configured in ~/.jan/config.toml\n\
   jan                                                    # open the interactive agent console (TUI)\n  \
   jan --yolo                                             # TUI with every tool call auto-approved\n  \
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
+  jan -c                                                 # resume the most recent session\n  \
+  jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads",
@@ -61,6 +63,46 @@ struct Cli {
     /// TUI (no prompts). Ignored when a subcommand is given.
     #[arg(long)]
     yolo: bool,
+    #[command(flatten)]
+    resume: ResumeArgs,
+}
+
+/// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
+/// Threads are per-project (`<project>/.jan/agent/threads`), so resuming from a
+/// different working directory simply finds nothing there.
+#[derive(Args)]
+struct ResumeArgs {
+    /// Resume a saved session: the most recent one, or the thread whose id starts with ID
+    #[arg(long, num_args = 0..=1, value_name = "ID")]
+    resume: Option<Option<String>>,
+    /// Resume the most recent session (alias for a bare --resume)
+    #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
+    continue_session: bool,
+}
+
+impl ResumeArgs {
+    fn into_target(self) -> Option<ResumeTarget> {
+        ResumeTarget::from_flags(self.resume, self.continue_session)
+    }
+}
+
+/// Same flags for `jan cli agent run`, which has a required positional TASK: a
+/// space-separated `--resume ID` would swallow the task, so the value form must
+/// be written `--resume=ID`.
+#[derive(Args)]
+struct ResumeRunArgs {
+    /// Resume a saved session: the most recent one, or (as --resume=ID) the thread whose id starts with ID
+    #[arg(long, num_args = 0..=1, require_equals = true, value_name = "ID")]
+    resume: Option<Option<String>>,
+    /// Resume the most recent session (alias for a bare --resume)
+    #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
+    continue_session: bool,
+}
+
+impl ResumeRunArgs {
+    fn into_target(self) -> Option<ResumeTarget> {
+        ResumeTarget::from_flags(self.resume, self.continue_session)
+    }
 }
 
 /// Top-level commands. Bare `jan` opens the interactive TUI; everything else
@@ -153,6 +195,8 @@ enum AgentCommands {
         yolo: bool,
         #[command(flatten)]
         providers: ProviderArgs,
+        #[command(flatten)]
+        resume: ResumeRunArgs,
     },
     /// Run a single turn (debugging)
     Step {
@@ -360,6 +404,7 @@ async fn main() {
             cli.images,
             overrides,
             cli.yolo,
+            cli.resume.into_target(),
         )
         .await
         {
@@ -465,6 +510,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 max_turns,
                 providers.into_overrides(),
                 yolo,
+                resume.into_target(),
             )
             .await
         }
