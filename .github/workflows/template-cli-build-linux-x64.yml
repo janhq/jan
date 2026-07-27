@@ -48,13 +48,25 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      # The CLI must stay free of Tauri/GTK: this runner has no libwebkit2gtk,
+      # so a regression here would surface as a confusing linker error later.
+      - name: Assert no GUI crates in the CLI dependency graph
+        run: |
+          cd src-tauri
+          for crate in tauri gtk gdk muda wry webkit2gtk; do
+            if cargo tree --no-default-features --features cli -e normal -i "$crate" >/dev/null 2>&1; then
+              echo "::error::$crate is back in the jan CLI dependency graph"
+              exit 1
+            fi
+          done
+
       - name: Build CLI binary
         env:
           JAN_CLI_UPDATE_CHANNEL: ${{ inputs.channel }}
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
         run: |
           cd src-tauri
-          cargo build --features cli --bin jan --release
+          cargo build --no-default-features --features cli --bin jan --release
 
       - name: Strip binary
         run: strip src-tauri/target/release/jan

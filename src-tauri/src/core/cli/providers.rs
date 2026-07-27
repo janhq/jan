@@ -104,20 +104,68 @@ fn parse_selection(raw: &str) -> DesktopSelection {
     }
 }
 
-/// Enumerate `(provider, model_id)` pairs from the persisted desktop store,
-/// sorted by provider then model. Used to populate the TUI `/model` selector.
-pub fn list_provider_models() -> Vec<(String, String)> {
-    let path = resolve_jan_data_folder().join("settings.json");
-    let configs = match std::fs::read_to_string(&path) {
-        Ok(raw) => parse_provider_store(&raw),
-        Err(_) => return Vec::new(),
-    };
+/// Whether the CLI can actually reach this provider. A populated `base_url` is
+/// an HTTP upstream; an empty one means a local engine (llamacpp, llamacpp-rs,
+/// mlx) whose endpoint only exists after the desktop app spawns it. The CLI is
+/// remote-only, so those entries are dead options and must not be offered.
+/// Mirrors the resolution rule in `agent::upstream::resolve_upstream_for_model`,
+/// whose local-engine branches are compiled out of this build.
+pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
+    config.base_url.as_deref().is_some_and(|u| !u.is_empty())
+}
+
+/// `(provider, model_id)` pairs the CLI can actually run, sorted by provider
+/// then model.
+pub fn reachable_models(configs: &HashMap<String, ProviderConfig>) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = configs
         .values()
+        .filter(|c| is_cli_reachable(c))
         .flat_map(|c| c.models.iter().map(|m| (c.provider.clone(), m.clone())))
         .collect();
     out.sort();
     out
+}
+
+/// Name of the local-engine provider serving `model_id` when **no** reachable
+/// provider offers it, so the caller can reject the run up front instead of
+/// failing at upstream resolution. Lookup mirrors
+/// `agent::upstream::resolve_upstream_for_model`: an exact hit in a provider's
+/// `models` list, or a `<provider>/<model>` prefix.
+///
+/// `None` for a model nobody claims: provider `models` lists are routinely
+/// incomplete (custom deployments, freshly released ids), so an unknown id must
+/// still fall through to normal resolution rather than be rejected here.
+pub fn unreachable_local_provider(
+    configs: &HashMap<String, ProviderConfig>,
+    model_id: &str,
+) -> Option<String> {
+    let offering = |c: &&ProviderConfig| c.models.iter().any(|m| m == model_id);
+    if configs.values().filter(offering).any(is_cli_reachable) {
+        return None;
+    }
+    if let Some(local) = configs.values().find(|c| offering(c)) {
+        return Some(local.provider.clone());
+    }
+
+    let prefix = model_id.split_once('/')?.0;
+    configs
+        .get(prefix)
+        .filter(|c| !is_cli_reachable(c))
+        .map(|c| c.provider.clone())
+}
+
+/// Runnable `(provider, model_id)` pairs for the TUI `/model` selector, taken
+/// from the same layered resolution the agent uses -- so the picker offers
+/// exactly what a run can reach, including `~/.jan/config.toml` providers the
+/// desktop store knows nothing about.
+pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(String, String)> {
+    match load_provider_configs(project_root, &ProviderOverrides::default().with_env()) {
+        Ok(configs) => reachable_models(&configs),
+        Err(e) => {
+            log::warn!("could not load provider configs for the model picker: {e}");
+            Vec::new()
+        }
+    }
 }
 
 /// Load provider configs by layering the four `.jan`-based scopes (see module
@@ -475,6 +523,132 @@ mod tests {
         // Empty strings / null model are treated as unset.
         let blank = r#"{"model-provider":"{\"state\":{\"selectedProvider\":\"\",\"selectedModel\":null}}"}"#;
         assert_eq!(parse_selection(blank), DesktopSelection::default());
+    }
+
+    #[test]
+    fn only_providers_with_a_base_url_are_cli_reachable() {
+        let remote = ProviderConfig {
+            provider: "anthropic".into(),
+            base_url: Some("https://api.anthropic.com/v1".into()),
+            ..Default::default()
+        };
+        // Local engines (llamacpp, llamacpp-rs, mlx) are stored by the desktop
+        // app without a base_url: their upstream only exists once the desktop
+        // has spawned the engine, which the CLI never does.
+        let local = ProviderConfig {
+            provider: "llamacpp".into(),
+            base_url: None,
+            ..Default::default()
+        };
+        let blank = ProviderConfig {
+            provider: "mlx".into(),
+            base_url: Some(String::new()),
+            ..Default::default()
+        };
+        assert!(is_cli_reachable(&remote));
+        assert!(!is_cli_reachable(&local));
+        assert!(!is_cli_reachable(&blank));
+    }
+
+    #[test]
+    fn reachable_models_skips_local_engine_providers() {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "llamacpp".to_string(),
+            ProviderConfig {
+                provider: "llamacpp".into(),
+                base_url: None,
+                models: vec!["gemma-4-E2B-it-IQ4_XS".into()],
+                ..Default::default()
+            },
+        );
+        configs.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                provider: "anthropic".into(),
+                base_url: Some("https://api.anthropic.com/v1".into()),
+                models: vec!["claude-sonnet-5".into(), "claude-opus-5".into()],
+                ..Default::default()
+            },
+        );
+        let pairs = reachable_models(&configs);
+        assert_eq!(
+            pairs,
+            vec![
+                ("anthropic".to_string(), "claude-opus-5".to_string()),
+                ("anthropic".to_string(), "claude-sonnet-5".to_string()),
+            ]
+        );
+    }
+
+    fn cfg(provider: &str, base_url: Option<&str>, models: &[&str]) -> ProviderConfig {
+        ProviderConfig {
+            provider: provider.into(),
+            base_url: base_url.map(String::from),
+            models: models.iter().map(|m| m.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn two_provider_store() -> HashMap<String, ProviderConfig> {
+        let mut c = HashMap::new();
+        c.insert(
+            "llamacpp".into(),
+            cfg("llamacpp", None, &["gemma-4-E2B-it-IQ4_XS", "shared-id"]),
+        );
+        c.insert(
+            "anthropic".into(),
+            cfg(
+                "anthropic",
+                Some("https://api.anthropic.com/v1"),
+                &["claude-sonnet-5", "shared-id"],
+            ),
+        );
+        c
+    }
+
+    #[test]
+    fn local_only_model_is_reported_with_its_provider() {
+        assert_eq!(
+            unreachable_local_provider(&two_provider_store(), "gemma-4-E2B-it-IQ4_XS"),
+            Some("llamacpp".to_string())
+        );
+    }
+
+    #[test]
+    fn remote_model_is_not_flagged() {
+        assert_eq!(
+            unreachable_local_provider(&two_provider_store(), "claude-sonnet-5"),
+            None
+        );
+    }
+
+    #[test]
+    fn model_offered_by_both_local_and_remote_is_not_flagged() {
+        // A reachable provider also serves it, so the run can proceed.
+        assert_eq!(
+            unreachable_local_provider(&two_provider_store(), "shared-id"),
+            None
+        );
+    }
+
+    #[test]
+    fn unknown_model_is_not_flagged() {
+        // Provider `models` lists are often incomplete (custom deployments), so
+        // an id nobody claims must fall through to normal upstream resolution
+        // rather than being rejected here.
+        assert_eq!(
+            unreachable_local_provider(&two_provider_store(), "some-custom-model"),
+            None
+        );
+    }
+
+    #[test]
+    fn provider_prefixed_local_model_is_flagged() {
+        assert_eq!(
+            unreachable_local_provider(&two_provider_store(), "llamacpp/whatever"),
+            Some("llamacpp".to_string())
+        );
     }
 
     #[test]

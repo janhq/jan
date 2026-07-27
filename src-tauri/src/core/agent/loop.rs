@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::Client;
+#[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
@@ -20,7 +21,9 @@ use crate::core::agent::upstream::{
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
     resolve_upstream_for_model, set_system_prompt, stream_openai_chat_completions,
 };
+#[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_first_model;
+#[cfg(not(feature = "cli"))]
 use crate::core::server::MlxBackendSession;
 use crate::core::{
     mcp::models::McpSettings,
@@ -49,7 +52,10 @@ fn next_permission_id() -> String {
 pub(crate) struct OrchestrationArgs {
     pub client: Client,
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    /// Local engine handles. Absent in the `cli` build, which is remote-only.
+    #[cfg(not(feature = "cli"))]
     pub llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))]
     pub mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     pub mcp_servers: SharedMcpServers,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
@@ -522,7 +528,9 @@ impl ToolInvoker for CompositeToolInvoker {
 }
 
 /// API-server entry point. Preserves the original single-final-JSON contract by
-/// running the streamed loop with a discarded event sink.
+/// running the streamed loop with a discarded event sink. Desktop-only: the
+/// `cli` build has no proxy server.
+#[cfg(not(feature = "cli"))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_server_side_openai_orchestration(
     json_body: &serde_json::Value,
@@ -657,7 +665,9 @@ async fn orchestrate_inner(
     let OrchestrationArgs {
         client,
         provider_configs,
+        #[cfg(not(feature = "cli"))]
         llama_state,
+        #[cfg(not(feature = "cli"))]
         mlx_sessions,
         mcp_servers,
         mcp_settings,
@@ -723,14 +733,17 @@ async fn orchestrate_inner(
             }
         }
     }
-    if model_id.is_none() {
-        if let Some(first) = router_first_model(llama_state, client).await {
-            model_id = Some(first);
+    #[cfg(not(feature = "cli"))]
+    {
+        if model_id.is_none() {
+            if let Some(first) = router_first_model(llama_state, client).await {
+                model_id = Some(first);
+            }
         }
-    }
-    if model_id.is_none() {
-        let mlx_guard = mlx_sessions.lock().await;
-        model_id = mlx_guard.values().next().map(|s| s.info.model_id.clone());
+        if model_id.is_none() {
+            let mlx_guard = mlx_sessions.lock().await;
+            model_id = mlx_guard.values().next().map(|s| s.info.model_id.clone());
+        }
     }
     let model_id = model_id.ok_or("No running model sessions available")?;
 
@@ -802,7 +815,9 @@ async fn orchestrate_inner(
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
         &model_id,
         provider_configs.clone(),
+        #[cfg(not(feature = "cli"))]
         llama_state.clone(),
+        #[cfg(not(feature = "cli"))]
         mlx_sessions.clone(),
     )
     .await?;
@@ -944,7 +959,9 @@ pub(crate) async fn compact_history(
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         model_id,
         args.provider_configs.clone(),
+        #[cfg(not(feature = "cli"))]
         args.llama_state.clone(),
+        #[cfg(not(feature = "cli"))]
         args.mlx_sessions.clone(),
     )
     .await?;
@@ -976,7 +993,9 @@ pub(crate) async fn evaluate_goal(
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         smol_model_id,
         args.provider_configs.clone(),
+        #[cfg(not(feature = "cli"))]
         args.llama_state.clone(),
+        #[cfg(not(feature = "cli"))]
         args.mlx_sessions.clone(),
     )
     .await?;
