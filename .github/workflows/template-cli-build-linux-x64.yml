@@ -54,7 +54,20 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
         run: |
           cd src-tauri
-          cargo build --features cli --bin jan --release
+          cargo build --no-default-features --features cli --bin jan --release
+
+      - name: Assert no GUI crates
+        run: |
+          cd src-tauri
+          if cargo tree --no-default-features --features cli -i tauri >/dev/null 2>&1 || \
+             cargo tree --no-default-features --features cli -i gtk >/dev/null 2>&1 || \
+             cargo tree --no-default-features --features cli -i gdk >/dev/null 2>&1 || \
+             cargo tree --no-default-features --features cli -i muda >/dev/null 2>&1 || \
+             cargo tree --no-default-features --features cli -i wry >/dev/null 2>&1 || \
+             cargo tree --no-default-features --features cli -i webkit2gtk >/dev/null 2>&1; then
+            echo "GUI crate leaked into the CLI dependency graph" >&2
+            exit 1
+          fi
 
       - name: Strip binary
         run: strip src-tauri/target/release/jan
