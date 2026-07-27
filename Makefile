@@ -144,7 +144,26 @@ test: test-prepare install-rust-targets
 	make build-cli
 	make test-rust
 
-test-ci: test-prepare
+# Placeholders for the binaries test-ci no longer builds. Each platform's
+# tauri.<os>.conf.json declares these under bundle.resources, and
+# generate_context!() fails the build script if a declared path is missing --
+# but it only checks existence, and no test executes them. Guarded with -e so
+# we never clobber a real local build or churn the cargo:rerun-if-changed
+# stamps these paths emit.
+stub-resources:
+ifeq ($(DETECTED_OS),Windows)
+	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; if (-not (Test-Path 'src-tauri/resources/bin/jan-cli.exe')) { New-Item -ItemType File -Path 'src-tauri/resources/bin/jan-cli.exe' | Out-Null }"
+else ifeq ($(DETECTED_OS),Darwin)
+	@mkdir -p src-tauri/resources/bin
+	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
+	@[ -e src-tauri/resources/bin/mlx-swift_Cmlx.bundle ] || mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle
+else
+	@mkdir -p src-tauri/resources/bin
+	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+endif
+
+test-ci: test-prepare stub-resources
 	make test-rust
 
 # Cheap compile guard for the CLI feature set, covering what test-ci no longer
