@@ -121,19 +121,55 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-test: lint install-rust-targets
+#
+# `test` is the full local suite and is unchanged: it still builds the real MLX
+# server and CLI binary. `test-ci` runs the same suites without those release
+# builds -- neither is a declared Tauri resource or externalBin (bundle.resources
+# is only resources/LICENSE) and no test executes them, so in CI they were just
+# duplicating what `make build` already does on the release path.
+test-prepare: lint
 	yarn download:bin
-ifeq ($(DETECTED_OS),Windows)
-endif
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
-	yarn build:mlx-server
-	make build-cli
+
+test-rust:
 	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
+
+test: test-prepare install-rust-targets
+	yarn build:mlx-server
+	make build-cli
+	make test-rust
+
+# Placeholders for the binaries test-ci no longer builds. Each platform's
+# tauri.<os>.conf.json declares these under bundle.resources, and
+# generate_context!() fails the build script if a declared path is missing --
+# but it only checks existence, and no test executes them. Guarded with -e so
+# we never clobber a real local build or churn the cargo:rerun-if-changed
+# stamps these paths emit.
+stub-resources:
+ifeq ($(DETECTED_OS),Windows)
+	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; if (-not (Test-Path 'src-tauri/resources/bin/jan-cli.exe')) { New-Item -ItemType File -Path 'src-tauri/resources/bin/jan-cli.exe' | Out-Null }"
+else ifeq ($(DETECTED_OS),Darwin)
+	@mkdir -p src-tauri/resources/bin
+	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
+	@[ -e src-tauri/resources/bin/mlx-swift_Cmlx.bundle ] || mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle
+else
+	@mkdir -p src-tauri/resources/bin
+	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+endif
+
+test-ci: test-prepare stub-resources
+	make test-rust
+
+# Cheap compile guard for the CLI feature set, covering what test-ci no longer
+# builds. `make build` still builds the real binary on every platform.
+check-cli:
+	cd src-tauri && cargo check --locked --features cli --bin jan-cli
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
