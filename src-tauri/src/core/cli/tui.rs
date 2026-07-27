@@ -2080,9 +2080,74 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "await_subagent" => format!("Awaiting subagent: {}", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Creating subagent: {}", s("name")),
         "list_subagents" => "Listing subagents".to_string(),
+        "web_search" => {
+            let q = s("query");
+            if q.is_empty() {
+                "Searching the web".to_string()
+            } else {
+                format!("Searching the web: {}", truncate(q, COMMAND_LABEL_MAX))
+            }
+        }
+        "web_fetch" => {
+            let u = s("url");
+            if u.is_empty() {
+                "Fetching a page".to_string()
+            } else {
+                format!("Fetching: {}", truncate(u, COMMAND_LABEL_MAX))
+            }
+        }
+        "ask" => "Asking a question".to_string(),
+        "todo" => format!("{} {}", todo_op_verb(args, false), todo_target_label(args)),
         // Skill/memory tools already produce active labels ("Updating memory: X").
         _ => describe_tool_call(name, args),
     }
+}
+
+/// Present/past-tense verb for a `todo` tool call, keyed on its `op` argument.
+fn todo_op_verb(args: &serde_json::Value, past: bool) -> &'static str {
+    match (args.get("op").and_then(|v| v.as_str()).unwrap_or(""), past) {
+        ("init", false) => "Planning",
+        ("init", true) => "Planned",
+        ("start", false) => "Starting",
+        ("start", true) => "Started",
+        ("done", false) => "Completing",
+        ("done", true) => "Completed",
+        ("drop", false) => "Abandoning",
+        ("drop", true) => "Abandoned",
+        ("rm", false) => "Removing",
+        ("rm", true) => "Removed",
+        ("append", false) => "Adding",
+        ("append", true) => "Added",
+        ("view", false) => "Checking",
+        ("view", true) => "Checked",
+        (_, false) => "Updating",
+        (_, true) => "Updated",
+    }
+}
+
+/// Concise subject for a `todo` tool call's verb: the named task/phase, an
+/// item count for `append`, or "todos" as a generic fallback.
+fn todo_target_label(args: &serde_json::Value) -> String {
+    if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
+        return format!("task: {}", truncate(task, COMMAND_LABEL_MAX));
+    }
+    if let Some(phase) = args.get("phase").and_then(|v| v.as_str()) {
+        if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
+            if !items.is_empty() {
+                let n = items.len();
+                return format!("{n} task{} to {phase}", if n == 1 { "" } else { "s" });
+            }
+        }
+        return format!("phase: {phase}");
+    }
+    if let Some(list) = args.get("list").and_then(|v| v.as_array()) {
+        let n = list.len();
+        return format!("{n} phase{}", if n == 1 { "" } else { "s" });
+    }
+    if args.get("all").and_then(|v| v.as_bool()) == Some(true) {
+        return "all tasks".to_string();
+    }
+    "todos".to_string()
 }
 
 /// Detailed one-line label for a subagent's own tool call, shown in the live
@@ -2139,6 +2204,24 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Created subagent: {}", s("name")),
         "list_subagents" => "Listed subagents".to_string(),
+        "web_search" => {
+            let q = s("query");
+            if q.is_empty() {
+                "Searched the web".to_string()
+            } else {
+                format!("Searched the web: {}", truncate(q, COMMAND_LABEL_MAX))
+            }
+        }
+        "web_fetch" => {
+            let u = s("url");
+            if u.is_empty() {
+                "Fetched a page".to_string()
+            } else {
+                format!("Fetched: {}", truncate(u, COMMAND_LABEL_MAX))
+            }
+        }
+        "ask" => "Asked a question".to_string(),
+        "todo" => format!("{} {}", todo_op_verb(args, true), todo_target_label(args)),
         _ => describe_tool_call(name, args),
     }
 }
@@ -6272,6 +6355,64 @@ mod tests {
             "Read main.rs"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
+    }
+
+    /// `web_search`/`web_fetch`/`ask`/`todo` used to fall through to the raw
+    /// `"{name} {args}"` dump (no `tool_activity`/`tool_finished` match arm),
+    /// so a session mixing them with grep/read looked visually inconsistent
+    /// (friendly labels next to raw JSON blobs). Every builtin the model can
+    /// call now gets a concise label like the rest.
+    #[test]
+    fn every_builtin_gets_a_friendly_label_not_a_raw_json_dump() {
+        assert_eq!(
+            tool_activity("web_search", &json!({ "query": "rust async runtime" })),
+            "Searching the web: rust async runtime"
+        );
+        assert_eq!(
+            tool_finished("web_search", &json!({ "query": "rust async runtime" })),
+            "Searched the web: rust async runtime"
+        );
+        assert_eq!(
+            tool_activity("web_fetch", &json!({ "url": "https://example.com" })),
+            "Fetching: https://example.com"
+        );
+        assert_eq!(
+            tool_finished("web_fetch", &json!({ "url": "https://example.com" })),
+            "Fetched: https://example.com"
+        );
+        assert_eq!(tool_activity("ask", &json!({ "questions": [] })), "Asking a question");
+        assert_eq!(tool_finished("ask", &json!({ "questions": [] })), "Asked a question");
+    }
+
+    #[test]
+    fn todo_tool_label_names_the_op_and_target() {
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "start", "task": "write tests" })),
+            "Starting task: write tests"
+        );
+        assert_eq!(
+            tool_finished("todo", &json!({ "op": "done", "task": "write tests" })),
+            "Completed task: write tests"
+        );
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "drop", "all": true })),
+            "Abandoning all tasks"
+        );
+        assert_eq!(
+            tool_activity(
+                "todo",
+                &json!({ "op": "append", "phase": "Build", "items": ["a", "b"] })
+            ),
+            "Adding 2 tasks to Build"
+        );
+        assert_eq!(
+            tool_activity(
+                "todo",
+                &json!({ "op": "init", "list": [{ "phase": "Research", "items": ["a"] }] })
+            ),
+            "Planning 1 phase"
+        );
+        assert_eq!(tool_activity("todo", &json!({ "op": "view" })), "Checking todos");
     }
 
     fn line_text(line: &ratatui::text::Line) -> String {
