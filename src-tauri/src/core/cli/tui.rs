@@ -4802,20 +4802,22 @@ fn draw(f: &mut Frame, app: &mut App) {
     let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
     let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
     let show_todo = todo_h > 0;
-    // Persistent chrome (header, todos, path, footer hints) is grouped at the
-    // top so the bottom of the screen is just the input box; only the
-    // scrolling transcript and the input grow/shrink with content.
+    // Header/path/footer chrome stays pinned top and bottom; the todo HUD
+    // sits directly above the input box instead -- the last thing in view
+    // right before where the user types, not competing with the header for
+    // attention. Kept out of the layout entirely when there are no todos (or
+    // an overlay is open) so that case renders exactly as before.
     let (todo_area, chunks) = if show_todo {
         let raw = Layout::vertical([
-            Constraint::Length(1),        // 0: header
-            Constraint::Length(todo_h),   // 1: todo HUD
-            Constraint::Length(1),        // 2: path line
-            Constraint::Length(1),        // 3: footer
-            Constraint::Min(1),           // 4: body
-            Constraint::Length(input_h),  // 5: input
+            Constraint::Length(1),       // 0: header
+            Constraint::Length(1),       // 1: path line
+            Constraint::Length(1),       // 2: footer
+            Constraint::Min(1),          // 3: body
+            Constraint::Length(todo_h),  // 4: todo HUD
+            Constraint::Length(input_h), // 5: input
         ])
         .split(f.area());
-        (Some(raw[1]), [raw[0], raw[4], raw[5], raw[2], raw[3]])
+        (Some(raw[4]), [raw[0], raw[3], raw[5], raw[1], raw[2]])
     } else {
         let raw = Layout::vertical([
             Constraint::Length(1),       // 0: header
@@ -4829,11 +4831,6 @@ fn draw(f: &mut Frame, app: &mut App) {
     };
 
     f.render_widget(header(app), chunks[0]);
-    if let Some(area) = todo_area {
-        // `show_todo` (and thus `todo_area`) is only `Some` when `todo_lines`
-        // was built above.
-        f.render_widget(Paragraph::new(todo_lines.unwrap()), area);
-    }
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
     // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
@@ -5040,6 +5037,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else {
         0
     };
+    if let Some(area) = todo_area {
+        // `todo_area` is only `Some` when `todo_lines` was built above.
+        f.render_widget(Paragraph::new(todo_lines.unwrap()), area);
+    }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(path_line(app), chunks[3]);
     f.render_widget(footer(app), chunks[4]);
