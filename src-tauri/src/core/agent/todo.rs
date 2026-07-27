@@ -198,12 +198,43 @@ impl TodoList {
         Ok(())
     }
 
-    /// Mark exactly one task `InProgress`, demoting any other in-progress
-    /// task back to `Pending` first (the single-active invariant).
+    /// Confirm the current task is `InProgress`. Tasks advance in phase and task
+    /// order, so an agent cannot jump ahead of open work.
     pub fn start(&mut self, content: &str) -> Result<(), String> {
-        if !self.task_exists(content) {
-            return Err(format!("unknown task '{content}'"));
+        let (target_phase, target_task) = self
+            .phases
+            .iter()
+            .enumerate()
+            .find_map(|(phase_index, phase)| {
+                phase
+                    .tasks
+                    .iter()
+                    .position(|task| task.content == content)
+                    .map(|task_index| (phase_index, task_index))
+            })
+            .ok_or_else(|| format!("unknown task '{content}'"))?;
+
+        if self.phases[target_phase].tasks[target_task].status == TodoStatus::InProgress {
+            return Ok(());
         }
+        if self.phases[target_phase].tasks[target_task].status != TodoStatus::Pending {
+            return Err(format!("task '{content}' is not pending"));
+        }
+
+        'phases: for (phase_index, phase) in self.phases.iter().enumerate() {
+            for (task_index, task) in phase.tasks.iter().enumerate() {
+                if (phase_index, task_index) == (target_phase, target_task) {
+                    break 'phases;
+                }
+                if !matches!(task.status, TodoStatus::Completed | TodoStatus::Abandoned) {
+                    return Err(format!(
+                        "cannot start '{content}' before completing or abandoning '{}'",
+                        task.content
+                    ));
+                }
+            }
+        }
+
         for phase in &mut self.phases {
             for task in &mut phase.tasks {
                 if task.status == TodoStatus::InProgress {
@@ -211,8 +242,7 @@ impl TodoList {
                 }
             }
         }
-        let (phase, idx) = self.find_task_mut(content).expect("checked above");
-        phase.tasks[idx].status = TodoStatus::InProgress;
+        self.phases[target_phase].tasks[target_task].status = TodoStatus::InProgress;
         Ok(())
     }
 
@@ -341,7 +371,7 @@ pub fn todo_tool_schema() -> serde_json::Value {
         "type": "function",
         "function": {
             "name": "todo",
-            "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation.",
+            "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -419,17 +449,29 @@ mod tests {
     }
 
     #[test]
-    fn start_enforces_single_active_task() {
+    fn start_accepts_only_the_current_task() {
         let mut list = TodoList::default();
         list.init(vec![phase("A", &["a", "b"])]).unwrap();
-        list.start("b").unwrap();
-        assert_eq!(list.active().unwrap().1.content, "b");
-        assert_eq!(
-            list.phases[0].tasks[0].status,
-            TodoStatus::Pending,
-            "starting b must demote a"
-        );
+
+        list.start("a").unwrap();
+        assert_eq!(list.active().unwrap().1.content, "a");
+        assert!(list.start("b").is_err());
         assert!(list.start("missing").is_err());
+    }
+
+    #[test]
+    fn start_rejects_a_task_after_an_open_earlier_phase() {
+        let mut list = TodoList::default();
+        list.init(vec![
+            phase("Phase 1", &["one"]),
+            phase("Phase 2", &["two"]),
+            phase("Phase 5", &["five"]),
+        ])
+        .unwrap();
+        list.done(Target::Phase("Phase 1")).unwrap();
+
+        assert!(list.start("five").is_err());
+        assert_eq!(list.active().unwrap().1.content, "two");
     }
 
     #[test]
@@ -499,6 +541,13 @@ mod tests {
             "cross-phase duplicate rejected"
         );
         assert!(list.append("B", vec!["d".into(), "d".into()]).is_err());
+    }
+
+    #[test]
+    fn todo_schema_explains_ordered_progression() {
+        let schema = todo_tool_schema();
+        let description = schema["function"]["description"].as_str().unwrap();
+        assert!(description.contains("start only confirms the current task"));
     }
 
     #[test]
