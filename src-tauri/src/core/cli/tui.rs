@@ -3708,8 +3708,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/todo",
-        hint: "[add [phase|] text]",
-        description: "Open the todo editor (bare) or /todo add ... to append a task",
+        hint: "[add [phase|] text | clear]",
+        description: "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
     },
     SlashCommand {
         name: "/threads",
@@ -4009,8 +4009,26 @@ async fn todo_command(app: &mut App, arg: &str) {
         open_todo_picker(app);
         return;
     }
+    // Drop the whole list in one step. A finished (or abandoned) task set
+    // otherwise lingers in the HUD until every item is removed by hand in the
+    // editor, since the model does not always close its own todos out.
+    if arg == "clear" {
+        if app.todos.is_empty() {
+            app.note("no todos to clear");
+            return;
+        }
+        match apply_todo_mutation(app, |list| {
+            list.rm(crate::core::agent::todo::Target::All)
+        })
+        .await
+        {
+            Ok(()) => app.note("cleared all todos"),
+            Err(e) => app.note(&format!("todo clear failed: {e}")),
+        }
+        return;
+    }
     let Some(rest) = arg.strip_prefix("add") else {
-        app.note("usage: /todo   (open editor)   |   /todo add [PHASE |] TEXT");
+        app.note("usage: /todo   (open editor)   |   /todo add [PHASE |] TEXT   |   /todo clear");
         return;
     };
     let rest = rest.trim();
@@ -8962,6 +8980,23 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(app.todos.done_total(), (1, 1));
+    }
+
+    /// `/todo clear` drops a stale list in one step -- otherwise a finished or
+    /// abandoned task set lingers in the HUD until each item is removed by hand.
+    #[tokio::test]
+    async fn todo_clear_command_empties_the_whole_list() {
+        let mut app = test_app();
+        run_command(&mut app, "todo add Build | ship it").await;
+        run_command(&mut app, "todo add Build | and this").await;
+        assert_eq!(app.todos.done_total(), (0, 2));
+
+        run_command(&mut app, "todo clear").await;
+        assert!(app.todos.is_empty(), "{:?}", app.todos);
+
+        // Clearing an already-empty list is a no-op note, not an error.
+        run_command(&mut app, "todo clear").await;
+        assert!(app.todos.is_empty());
     }
 
     #[tokio::test]
