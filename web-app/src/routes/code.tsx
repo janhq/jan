@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { GitBranch, Laptop, Folder } from 'lucide-react'
+import { FileDiff, GitBranch, Laptop, Folder, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -18,18 +18,29 @@ import {
   ensureCurrentSession,
   type CodeTurn,
   type CodeMessage,
+  type SubagentRun,
 } from '@/hooks/useCodeSessions'
+import { useCodeRun, makeToolCallTurn, type StreamEvent } from '@/hooks/useCodeRun'
+import { useMessageQueue } from '@/stores/message-queue-store'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { TokenCountOnly } from '@/components/TokenCounter'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import CodePermissionDialog, {
   type PendingPermission,
   type PermissionDecision,
+  WIRE,
 } from '@/containers/dialogs/CodePermissionDialog'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
+import CodeModeSelector from '@/containers/CodeModeSelector'
+import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
+import { CodeDiffPanel } from '@/containers/CodeDiffPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
+import { collectCodeFileDiffs } from '@/lib/codeDiffs'
 import { PromptProgress } from '@/components/PromptProgress'
+import { useMessageErrors } from '@/stores/message-errors'
+import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useAppState } from '@/hooks/useAppState'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
@@ -37,39 +48,45 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export const Route = createFileRoute(route.code as any)({
   component: CodePage,
 })
 
-// StreamEvent shapes emitted by the Rust agent loop (events.rs, tag = "type").
-type StreamEvent =
-  | { type: 'token'; text: string }
-  | { type: 'step'; index: number; max: number }
-  | { type: 'tool_call'; id: string; name: string; args: unknown }
-  | { type: 'tool_result'; id: string; content: string; is_error: boolean; diff?: string }
-  | { type: 'done'; stop_reason: string; usage: unknown }
-  | { type: 'error'; code: string; message: string }
-  | {
-      type: 'permission_request'
-      request_id: string
-      tool_name: string
-      capability: string
-      path?: string
-      command?: string
-      diff?: string
-      prompt_kind: string
-      offers_always: boolean
-    }
+type CodeSidePanelView = 'subagents' | 'diff'
 
-// Per-run token ceiling. `max_turns: 0` lets a multi-step task run to completion;
-// this budget is the real bound that stops a runaway loop (see loop.rs).
-const MAX_SESSION_TOKENS = 200_000
+// Per-run cumulative token ceiling (one agent_run = one multi-step task). Since
+// `max_turns: 0`, this cumulative *spend* bound (prompt replays + completions,
+// summed across tool turns — see SessionBudget in session.rs) is the real guard
+// that stops a runaway loop. It is NOT a context-window gauge. A fresh budget is
+// created per run, so a real agentic task with many tool turns must fit under it
+// while a genuine runaway (hundreds of turns burning millions of tokens) trips.
+const MAX_SESSION_TOKENS = 2_000_000
 
 // Cap the history replayed to the agent so a long session never sends more than
 // the model can take (rough ~4 chars/token estimate → well under the ceiling).
 // Keeps the most recent messages; older ones roll off. Display keeps everything.
 const MAX_HISTORY_CHARS = 400_000
+
+// Stable empty defaults for the per-session selectors below — returning a fresh
+// `[]` from a zustand selector would change identity every render and loop.
+const EMPTY_TURNS: CodeTurn[] = []
+const EMPTY_SUBAGENTS: SubagentRun[] = []
+const EMPTY_PERMS: PendingPermission[] = []
+
+// Safe `run_id` extraction from an await_subagent tool call's parsed args.
+const argRunId = (args: unknown): string | undefined => {
+  if (args && typeof args === 'object' && 'run_id' in args) {
+    const v = (args as Record<string, unknown>).run_id
+    return typeof v === 'string' ? v : undefined
+  }
+  return undefined
+}
 
 function capHistory(messages: CodeMessage[]): CodeMessage[] {
   let budget = MAX_HISTORY_CHARS
@@ -89,12 +106,17 @@ function capHistory(messages: CodeMessage[]): CodeMessage[] {
 const normalizeAlternating = (messages: CodeMessage[]): CodeMessage[] => {
   const out: CodeMessage[] = []
   for (const m of messages) {
-    if (!m.content.trim()) continue
+    if (typeof m.content === 'string' && !m.content.trim()) continue
     // The template also requires the conversation to START with user; drop any
     // leading assistant message (e.g. after aggressive trimming).
     if (out.length === 0 && m.role !== 'user') continue
     const last = out[out.length - 1]
-    if (last && last.role === m.role) {
+    if (
+      last &&
+      last.role === m.role &&
+      typeof last.content === 'string' &&
+      typeof m.content === 'string'
+    ) {
       last.content = `${last.content}\n\n${m.content}`
     } else {
       out.push({ role: m.role, content: m.content })
@@ -110,6 +132,8 @@ const normalizeAlternating = (messages: CodeMessage[]): CodeMessage[] => {
 const SLASH_COMMANDS = [
   { name: '/help', descKey: 'common:cmdHelp', mode: 'run' },
   { name: '/clear', descKey: 'common:cmdClear', mode: 'run' },
+  { name: '/compact', descKey: 'common:cmdCompact', mode: 'run' },
+  { name: '/goal', descKey: 'common:cmdGoal', mode: 'args' },
   { name: '/models', descKey: 'common:cmdModels', mode: 'args' },
 ] as const
 
@@ -135,6 +159,7 @@ function CodePage() {
 
   const folder = current?.folder ?? null
   const folderName = folder ? folder.split(/[/\\]/).pop() : undefined
+  const mode = current?.mode ?? 'normal'
   const [gitBranch, setGitBranch] = useState<string | null>(null)
 
   // Fetch git branch when the folder changes.
@@ -149,15 +174,42 @@ function CodePage() {
       .catch(() => setGitBranch(null))
   }, [folder])
 
-  // In-flight transcript for the active run; committed to the store on `done`.
-  const [liveTurns, setLiveTurns] = useState<CodeTurn[]>([])
-  const [running, setRunning] = useState(false)
-  // Mirrors `running` for reads from closures that outlive a render (the slash
-  // menu's onSelect is memoized without a `running` dep, so it would otherwise
-  // see a stale value).
-  const runningRef = useRef(false)
-  const liveTurnsRef = useRef<CodeTurn[]>([])
-  const runIdRef = useRef<string | null>(null)
+  // Per-session run state (transient, keyed by session id — see useCodeRun).
+  // Reads here are for the VIEWED session (currentId); during a run, writes
+  // target the session id captured at submit, so a background session keeps
+  // updating while another is viewed.
+  const running = useCodeRun((s) =>
+    currentId ? s.runId[currentId] != null : false
+  )
+  const liveTurns = useCodeRun((s) =>
+    currentId ? (s.liveTurns[currentId] ?? EMPTY_TURNS) : EMPTY_TURNS
+  )
+  const liveSubagents = useCodeRun((s) =>
+    currentId ? (s.subagents[currentId] ?? EMPTY_SUBAGENTS) : EMPTY_SUBAGENTS
+  )
+  // While running, the live map only holds THIS turn's subagents (it starts
+  // fresh each run) — merge in the committed set from earlier turns so a
+  // second turn's new dispatches don't make the first turn's finished ones
+  // disappear from the panel. Once idle, the committed snapshot alone is
+  // authoritative (survives session switch + restart).
+  const committedSubagents = current?.subagents ?? EMPTY_SUBAGENTS
+  const subagents = useMemo(() => {
+    if (!running) return committedSubagents
+    const liveIds = new Set(liveSubagents.map((r) => r.runId))
+    return [
+      ...committedSubagents.filter((r) => !liveIds.has(r.runId)),
+      ...liveSubagents,
+    ]
+  }, [running, committedSubagents, liveSubagents])
+  const liveUsage = useCodeRun((s) =>
+    currentId ? s.usage[currentId] : undefined
+  )
+  // Same live-vs-committed split as subagents: while running, the number can
+  // still bump on later turns; once idle, show what actually got persisted.
+  const usage = running ? liveUsage : current?.lastUsage
+  const [activePanel, setActivePanel] = useState<CodeSidePanelView | null>(null)
+  const togglePanel = (view: CodeSidePanelView) =>
+    setActivePanel((current) => (current === view ? null : view))
 
   // Local (llamacpp) models can take a while to load before the first token.
   // The router emits `llamacpp-model-load-progress`, which LlamacppOomListener
@@ -183,19 +235,47 @@ function CodePage() {
     forceScrollToBottom: forceScrollReasoningToBottom,
   } = useAutoScroll()
 
-  // Queue of gated tool calls awaiting the user's approval. The agent loop
-  // awaits each one, so in practice there is at most one live at a time, but we
-  // queue defensively. The head is shown in the approval dialog.
-  const [pendingPerms, setPendingPerms] = useState<PendingPermission[]>([])
+  // Gated tool calls awaiting approval, for the VIEWED session. The agent loop
+  // awaits one at a time; the head is shown in the approval dialog.
+  const pendingPerms = useCodeRun((s) =>
+    currentId ? (s.pendingPerms[currentId] ?? EMPTY_PERMS) : EMPTY_PERMS
+  )
 
   const respondPermission = (requestId: string, decision: PermissionDecision) => {
     invoke('agent_permission_respond', { requestId, decision }).catch(() => {})
-    setPendingPerms((prev) => prev.filter((p) => p.requestId !== requestId))
+    if (currentId) useCodeRun.getState().removePendingPerm(currentId, requestId)
+    // The modal and the inline tool-card approval (`ToolApprovalActions`)
+    // both resolve the same request; whichever fires first wins. Drop the
+    // other's pending entry so its buttons don't linger on a decided call.
+    const toolCallId = pendingPerms.find((p) => p.requestId === requestId)?.toolCallId
+    if (toolCallId) {
+      useToolApprovalRequests.setState((s) => {
+        const next = { ...s.pending }
+        delete next[toolCallId]
+        return { pending: next }
+      })
+    }
   }
+
+  // Subagents (of the viewed session) currently blocked on a permission
+  // prompt — the tasks panel shows these as "needs input" instead of "running".
+  const awaitingInputRunIds = useMemo(
+    () =>
+      new Set(
+        pendingPerms
+          .map((p) => p.subagentRunId)
+          .filter((id): id is string => id != null)
+      ),
+    [pendingPerms]
+  )
 
   const displayedTurns: CodeTurn[] = useMemo(
     () => [...(current?.turns ?? []), ...liveTurns],
     [current?.turns, liveTurns]
+  )
+  const codeDiffs = useMemo(
+    () => collectCodeFileDiffs(displayedTurns, subagents),
+    [displayedTurns, subagents]
   )
   // Committed turns are stable during a run; only the live tail changes per
   // token. Memoize them separately so streaming rebuilds just the small tail,
@@ -261,12 +341,111 @@ function CodePage() {
       case '/clear':
         // Clearing mid-run would wipe the session the in-flight run is about to
         // commit its transcript into, leaving it inconsistent.
-        if (runningRef.current) {
+        if (running) {
           toast.error(t('common:cmdBusy'))
           break
         }
-        if (currentId) useCodeSessions.getState().clearSession(currentId)
+        if (currentId) {
+          useCodeSessions.getState().clearSession(currentId)
+          useCodeRun.getState().clearCodeRun(currentId)
+        }
         break
+      case '/compact': {
+        if (running) {
+          toast.error(t('common:cmdBusy'))
+          break
+        }
+        if (!currentId || !selectedModel?.id) {
+          toast.error(t('common:selectModel'))
+          break
+        }
+        const session = useCodeSessions
+          .getState()
+          .sessions.find((s) => s.id === currentId)
+        const before = session?.history.length ?? 0
+        invoke<CodeMessage[]>('agent_compact', {
+          modelId: selectedModel.id,
+          messages: session?.history ?? [],
+        })
+          .then((compacted) => {
+            if (compacted.length < before) {
+              useCodeSessions.getState().setHistory(currentId, compacted)
+              toast.success(
+                t('common:cmdCompacted', {
+                  before,
+                  after: compacted.length,
+                })
+              )
+            } else {
+              toast(t('common:cmdNothingToCompact'))
+            }
+          })
+          .catch((e) =>
+            toast.error(t('common:cmdCompactFailed', { error: String(e) }))
+          )
+        break
+      }
+      case '/goal': {
+        if (!currentId) break
+        const goal = useCodeSessions
+          .getState()
+          .sessions.find((s) => s.id === currentId)?.goal
+        const condition = arg.trim()
+        if (condition === 'clear') {
+          useCodeSessions.getState().setGoal(currentId, null)
+          toast(goal ? t('common:cmdGoalCleared') : t('common:cmdGoalNone'))
+          break
+        }
+        if (!condition) {
+          if (!goal) {
+            toast(t('common:cmdGoalNone'))
+          } else {
+            toast(
+              t('common:cmdGoalStatus', {
+                status: goal.status,
+                condition: goal.condition,
+                turns: goal.turns,
+                reason: goal.lastReason || '—',
+              })
+            )
+          }
+          break
+        }
+        if (condition.length > 4096) {
+          toast.error(t('common:cmdGoalTooLong'))
+          break
+        }
+        // Mirror the TUI's `set_goal` (tui.rs): setting a goal both arms it and
+        // immediately starts the first turn with the condition as the prompt.
+        // Gate on the same preconditions a real run needs so the "Goal set"
+        // toast never lies about work that can't actually start.
+        if (running) {
+          toast.error(t('common:cmdBusy'))
+          break
+        }
+        if (!current?.folder) {
+          toast.error(t('common:selectFolder'))
+          break
+        }
+        if (!selectedModel?.id) {
+          toast.error(t('common:selectModel'))
+          break
+        }
+        useCodeSessions.getState().setGoal(currentId, {
+          condition,
+          turns: 0,
+          status: 'active',
+          lastReason: '',
+        })
+        toast.success(t('common:cmdGoalSet', { condition }))
+        // The condition is the first prompt; on_done triggers the evaluator,
+        // which drives auto-continuation from there (see the goal block after
+        // agent_run below).
+        submitTurn(condition, currentId).catch((err) => {
+          console.error('Failed to start goal turn:', err)
+        })
+        break
+      }
       case '/models': {
         const q = arg.toLowerCase()
         const found = allModels.find(
@@ -347,38 +526,6 @@ function CodePage() {
     }
   }
 
-  const pushLive = (turn: CodeTurn) => {
-    liveTurnsRef.current = [...liveTurnsRef.current, turn]
-    setLiveTurns(liveTurnsRef.current)
-  }
-
-  const appendToken = (text: string) => {
-    const arr = liveTurnsRef.current
-    const last = arr[arr.length - 1]
-    if (last && last.role === 'assistant') {
-      liveTurnsRef.current = [
-        ...arr.slice(0, -1),
-        { ...last, content: last.content + text },
-      ]
-    } else {
-      liveTurnsRef.current = [...arr, { role: 'assistant', content: text }]
-    }
-    setLiveTurns(liveTurnsRef.current)
-  }
-
-  // Merge a `tool_result` into the tool turn its `tool_call` created.
-  const updateToolTurn = (callId: string, patch: Partial<CodeTurn>) => {
-    const arr = liveTurnsRef.current
-    const idx = arr.findIndex((tn) => tn.role === 'tool' && tn.callId === callId)
-    if (idx === -1) return
-    liveTurnsRef.current = [
-      ...arr.slice(0, idx),
-      { ...arr[idx], ...patch },
-      ...arr.slice(idx + 1),
-    ]
-    setLiveTurns(liveTurnsRef.current)
-  }
-
   const handleSelectFolder = async () => {
     const selected = await serviceHub.dialog().open({
       multiple: false,
@@ -391,15 +538,25 @@ function CodePage() {
     }
   }
 
-  const handleSubmit = async (text: string) => {
+  // Takes an explicit sid (never ensureCurrentSession()) so the queue's
+  // auto-resend below can target the session whose run just finished even if
+  // the user has since switched to viewing a different one.
+  const submitTurn = async (
+    text: string,
+    sid: string,
+    files?: Array<{ type: string; mediaType: string; url: string }>
+  ) => {
     // Slash commands are client-side actions; they never reach the agent.
     if (text.trim().startsWith('/')) {
       runCommand(text)
       return
     }
-    if (running) return
 
-    const sid = ensureCurrentSession()
+    const run = useCodeRun.getState()
+    // Per-session guard: only block if THIS session is already running. A run in
+    // another session no longer locks this one.
+    if (run.runId[sid] != null) return
+
     const store = useCodeSessions.getState()
     const session = store.sessions.find((s) => s.id === sid)
     if (!session?.folder) {
@@ -418,15 +575,31 @@ function CodePage() {
     // coarse sliding window against runaway growth). normalizeAlternating is the
     // one guard the CLI lacks — it keeps roles strictly alternating so a turn
     // that produced no assistant text can't leave two user messages adjacent.
-    // Real out-of-context handling belongs in the shared Rust loop, not here.
+    const images = (files ?? [])
+      .filter((f) => f.mediaType.startsWith('image/'))
+      .map((f) => f.url)
+    const content: CodeMessage['content'] =
+      images.length > 0
+        ? [
+            { type: 'text' as const, text },
+            ...images.map((url) => ({
+              type: 'image_url' as const,
+              image_url: { url },
+            })),
+          ]
+        : text
     const outgoing: CodeMessage[] = normalizeAlternating([
       ...capHistory(session.history),
-      { role: 'user', content: text },
+      { role: 'user', content },
     ])
-    liveTurnsRef.current = [{ role: 'user', content: text }]
-    setLiveTurns(liveTurnsRef.current)
-    runningRef.current = true
-    setRunning(true)
+
+    const runId = crypto.randomUUID()
+    run.beginRun(sid, runId, text, images.length > 0 ? images : undefined)
+    // Clear any stale failure banner from a prior run in this session — a new
+    // submit means the user is moving past whatever previously failed.
+    codeTurnsToUIMessages(session.turns, 'c')
+      .filter((m) => m.role === 'assistant')
+      .forEach((m) => useMessageErrors.getState().clearError(m.id))
 
     // Local models load before the first token — but only on a cold start.
     // Probe the router (as the chat transport does) so the load card shows only
@@ -444,57 +617,86 @@ function CodePage() {
       }
     }
 
-    const runId = crypto.randomUUID()
-    runIdRef.current = runId
-
     // Captured across the stream + catch so a failed run leaves a visible marker
     // in the transcript (not just a transient toast).
     let runError: string | null = null
 
-    const onEvent = new Channel<StreamEvent>()
-    onEvent.onmessage = (ev) => {
+    // If the backend compacted the conversation mid-run (context overflow), it
+    // emits `messages_updated` with the shortened array. Persist THAT as the
+    // session history for the next turn — otherwise we'd re-send the full,
+    // pre-compaction history and immediately re-overflow (mirrors the TUI, which
+    // replaces app.history on this event).
+    let compactedHistory: CodeMessage[] | null = null
+
+    // subagentRunId is set when this request came from inside a subagent's
+    // wrapped stream, so the tasks panel can flag that run as needing input.
+    const addPerm = (
+      ev: Extract<StreamEvent, { type: 'permission_request' }>,
+      subagentRunId?: string
+    ) => {
+      run.addPendingPerm(sid, {
+        requestId: ev.request_id,
+        toolCallId: ev.tool_call_id,
+        toolName: ev.tool_name,
+        capability: ev.capability,
+        path: ev.path,
+        command: ev.command,
+        diff: ev.diff,
+        promptKind: ev.prompt_kind,
+        offersAlways: ev.offers_always,
+        subagentRunId,
+      })
+      // Also register with the shared tool-approval store keyed by
+      // tool_call_id, so `ToolApprovalActions` (rendered inline on the
+      // matching tool card by `MessageItem`, same component the regular
+      // chat uses) shows Allow/Deny buttons there too — the modal
+      // (`CodePermissionDialog`) stays as the primary surface (has
+      // command/diff/path detail the compact inline card doesn't); either
+      // resolving the same `requestId` via `respondPermission`.
+      if (ev.tool_call_id) {
+        useToolApprovalRequests
+          .getState()
+          .registerPending(ev.tool_call_id, ev.tool_name, sid, (decision) =>
+            respondPermission(ev.request_id, WIRE[decision])
+          )
+      }
+    }
+
+    // Every write targets `sid` — the session that OWNS this run — never the
+    // viewed session, so a background session keeps updating while another is
+    // viewed. Recurses for the event wrapped inside a 'subagent' event.
+    const handleEvent = (ev: StreamEvent) => {
       switch (ev.type) {
         case 'token':
-          // First actual output means the model finished loading and is now
-          // generating; drop the load card. (`step` fires before invoke/load,
-          // so clearing on it would hide the card during the real load.)
+          // First output means the model finished loading; drop the load card.
           finishModelLoad()
-          appendToken(ev.text)
+          run.appendToken(sid, ev.text)
           break
         case 'tool_call':
-          // A tool call is model output too — loading is done.
           finishModelLoad()
-          pushLive({
-            role: 'tool',
-            content: '',
-            callId: ev.id,
-            name: ev.name,
-            args: ev.args,
-            status: 'running',
-          })
+          run.pushToolTurn(sid, makeToolCallTurn(ev))
           break
-        case 'tool_result':
-          updateToolTurn(ev.id, {
+        case 'tool_result': {
+          // If this call was an await_subagent, its run_id is already sitting on
+          // the tool_call turn's own args — no separate map needed to carry it
+          // from tool_call time to tool_result time.
+          const turn = (useCodeRun.getState().liveTurns[sid] ?? []).find(
+            (tn) => tn.role === 'tool' && tn.callId === ev.id
+          )
+          if (turn?.name === 'await_subagent') {
+            const rid = argRunId(turn.args)
+            if (rid) run.attachSubagentOutput(sid, rid, ev.content)
+          }
+          run.updateToolTurn(sid, ev.id, {
             result: ev.content,
             isError: ev.is_error,
             diff: ev.diff,
             status: 'done',
           })
           break
+        }
         case 'permission_request':
-          setPendingPerms((prev) => [
-            ...prev,
-            {
-              requestId: ev.request_id,
-              toolName: ev.tool_name,
-              capability: ev.capability,
-              path: ev.path,
-              command: ev.command,
-              diff: ev.diff,
-              promptKind: ev.prompt_kind,
-              offersAlways: ev.offers_always,
-            },
-          ])
+          addPerm(ev)
           break
         case 'error':
           if (ev.code !== 'cancelled') {
@@ -503,9 +705,36 @@ function CodePage() {
           }
           break
         case 'done':
+          run.setUsage(sid, ev.usage)
           break
+        case 'messages_updated':
+          compactedHistory = ev.messages
+          break
+        case 'subagent_start':
+          run.startSubagent(sid, ev.run_id, ev.name)
+          break
+        case 'subagent_end':
+          run.endSubagent(sid, ev.run_id, ev.usage)
+          break
+        case 'subagent': {
+          finishModelLoad()
+          const inner = ev.event
+          // A gated tool INSIDE a subagent still needs the approval dialog —
+          // otherwise the subagent (and the whole run) hangs on a decision the
+          // user is never shown. Everything else goes into the subagent's lane.
+          if (inner.type === 'permission_request') {
+            addPerm(inner, ev.run_id)
+          } else {
+            run.startSubagent(sid, ev.run_id, ev.name) // idempotent; guards reordering
+            run.routeIntoSubagent(sid, ev.run_id, inner)
+          }
+          break
+        }
       }
     }
+
+    const onEvent = new Channel<StreamEvent>()
+    onEvent.onmessage = handleEvent
 
     try {
       await invoke('agent_run', {
@@ -517,107 +746,252 @@ function CodePage() {
           max_turns: 0,
           max_session_tokens: MAX_SESSION_TOKENS,
           model: selectedModel.id,
+          yolo: session.mode === 'yolo',
         },
       })
     } catch (e) {
       runError = String(e)
       toast.error(String(e))
     } finally {
-      // Drop the load card if the run ended before any stream event (error,
-      // cancel, or an unloaded model that never produced output).
+      // Drop the load card if the run ended before any stream event.
       finishModelLoad()
-      // Any tool call still 'running' when the run ends was interrupted (cancel
-      // or error mid-tool); finalize it so it doesn't render as a forever spinner.
-      liveTurnsRef.current = liveTurnsRef.current.map((tn) =>
-        tn.role === 'tool' && tn.status === 'running'
-          ? { ...tn, status: 'done', isError: true, result: tn.result || '(interrupted)' }
-          : tn
-      )
-      // Surface a failed run in the transcript so it is not silently empty.
-      if (runError) {
-        liveTurnsRef.current = [
-          ...liveTurnsRef.current,
-          {
-            role: 'tool',
-            content: '',
-            name: 'error',
-            result: runError,
-            isError: true,
-            status: 'done',
-          },
-        ]
-      }
-      // Commit the whole in-flight transcript into the session.
-      const assistantText = liveTurnsRef.current
+      // Finalize interrupted tool turns + subagents, append an error turn if the
+      // run failed — all keyed to `sid`. Commit the result onto the session so
+      // it survives a session switch and app restart, then drop the transient
+      // run state.
+      const { turns: finalTurns, subagents: finalSubs } = run.finalizeRun(sid)
+      useToolApprovalRequests.getState().clearPendingForThread(sid)
+      const finalUsage = useCodeRun.getState().usage[sid]
+      const assistantText = finalTurns
         .filter((tn) => tn.role === 'assistant')
         .map((tn) => tn.content)
         .join('\n')
+      // Base history: the backend's compacted array if it compacted mid-run,
+      // else the messages we sent. Appending the assistant reply to the
+      // compacted base keeps the next turn from re-sending the pre-compaction
+      // history.
+      const base = compactedHistory ?? outgoing
       const history: CodeMessage[] = assistantText
-        ? [...outgoing, { role: 'assistant', content: assistantText }]
-        : outgoing
-      useCodeSessions.getState().commitTurns(sid, liveTurnsRef.current, history)
-      liveTurnsRef.current = []
-      setLiveTurns([])
-      runningRef.current = false
-      setRunning(false)
-      runIdRef.current = null
-      // The loop has dropped any outstanding permission receivers; drop the UI.
-      setPendingPerms([])
+        ? [...base, { role: 'assistant', content: assistantText }]
+        : base
+      useCodeSessions
+        .getState()
+        .commitTurns(sid, finalTurns, history, finalSubs, finalUsage)
+      run.clearCodeRun(sid)
+
+      // Run-level failure -> standard "Generation failed" banner (with
+      // Regenerate) on the turn's assistant message, matching Home UI —
+      // instead of a tool-error card (see codeTurns.ts for id scheme: 'c'
+      // prefix once committed, matching how `committedMessages` renders it).
+      if (runError) {
+        const committed = codeTurnsToUIMessages(finalTurns, 'c')
+        const lastAssistant = [...committed]
+          .reverse()
+          .find((m) => m.role === 'assistant')
+        if (lastAssistant) {
+          useMessageErrors.getState().setError(lastAssistant.id, runError)
+        }
+      }
+
+      // `/goal`: after a successful turn, check whether the active goal's
+      // condition is met (mirrors the TUI's in-loop evaluator, goal.rs). Runs
+      // before the message-queue dequeue below so an auto-continuation
+      // doesn't race a queued user message for the same session.
+      const activeGoal = useCodeSessions
+        .getState()
+        .sessions.find((s) => s.id === sid)?.goal
+      let goalContinuation: string | null = null
+      if (!runError && activeGoal?.status === 'active' && selectedModel?.id) {
+        const turns = activeGoal.turns + 1
+        try {
+          const verdict = await invoke<{ met: boolean; reason: string }>(
+            'agent_goal_evaluate',
+            {
+              smolModelId: selectedModel.id,
+              condition: activeGoal.condition,
+              messages: history,
+            }
+          )
+          useCodeSessions.getState().setGoal(sid, {
+            ...activeGoal,
+            turns,
+            status: verdict.met ? 'achieved' : 'active',
+            lastReason: verdict.reason,
+          })
+          if (verdict.met) {
+            toast.success(
+              t('common:cmdGoalStatus', {
+                status: 'achieved',
+                condition: activeGoal.condition,
+                turns,
+                reason: verdict.reason,
+              })
+            )
+          } else {
+            goalContinuation = `Continue working toward this goal: ${activeGoal.condition}\n\nThe goal is not yet met: ${verdict.reason}`
+          }
+        } catch {
+          // Evaluator call failed (model unavailable, etc.) — leave the goal
+          // active and let the user retry or /goal clear rather than looping
+          // forever on a broken evaluator.
+          useCodeSessions.getState().setGoal(sid, { ...activeGoal, turns })
+        }
+      }
+
+      // Message queue: send the next queued message now that this session's
+      // run is done. A failed run discards anything queued instead, mirroring
+      // the general chat (errors mean the conversation needs attention, not
+      // more unattended sends). An unmet goal takes priority over the queue,
+      // same as the TUI driving its own next turn before user input.
+      if (runError) {
+        useMessageQueue.getState().clearQueue(sid)
+      } else if (goalContinuation) {
+        submitTurn(goalContinuation, sid).catch((err) => {
+          console.error('Failed to continue toward goal:', err)
+        })
+      } else {
+        const next = useMessageQueue.getState().dequeue(sid)
+        if (next) {
+          submitTurn(next.text, sid).catch((err) => {
+            console.error('Failed to send queued message:', err)
+          })
+        }
+      }
     }
   }
 
+  const handleSubmit = (
+    text: string,
+    files?: Array<{ type: string; mediaType: string; url: string }>
+  ) => submitTurn(text, ensureCurrentSession(), files)
+
   const handleStop = () => {
-    if (runIdRef.current)
-      invoke('agent_cancel', { runId: runIdRef.current }).catch(() => {})
+    const rid = currentId ? useCodeRun.getState().runId[currentId] : undefined
+    if (rid) invoke('agent_cancel', { runId: rid }).catch(() => {})
   }
+
+  // Regenerate: re-send the last user turn as a new run. Code UI's transcript
+  // is a flat append-only log (no branching), so "regenerate" retries rather
+  // than replacing in place — same net effect for the common "run failed,
+  // try again" case the banner exists for.
+  const handleRegenerate = () => {
+    if (!currentId) return
+    const lastUser = [...(current?.turns ?? [])]
+      .reverse()
+      .find((tn) => tn.role === 'user')
+    if (lastUser) submitTurn(lastUser.content, currentId)
+  }
+
+  // Cancelling one subagent never gets a real SubagentEnd back (same as when
+  // the whole parent run tears down) — mark it done locally right away
+  // instead of leaving it stuck showing "running" forever.
+  const handleCancelSubagent = (subagentRunId: string) => {
+    if (!currentId) return
+    const rid = useCodeRun.getState().runId[currentId]
+    if (!rid) return
+    invoke('agent_cancel_subagent', { runId: rid, subagentRunId }).catch(() => {})
+    useCodeRun.getState().endSubagent(currentId, subagentRunId, null)
+  }
+
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
+        <div className="flex items-center justify-between w-full gap-2 pr-2">
           <DropdownModelProvider useLastUsedModel />
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            {current?.goal && (
+              <span
+                className="text-xs text-muted-foreground truncate max-w-[40%]"
+                title={current.goal.condition}
+              >
+                {current.goal.status === 'achieved' ? '✓' : '◎'}{' '}
+                {current.goal.condition}
+              </span>
+            )}
+            <div className="relative z-30 flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activePanel === 'subagents' ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={() => togglePanel('subagents')}
+                    aria-label="Subagents"
+                  >
+                    <Sparkles size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Subagents</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activePanel === 'diff' ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={() => togglePanel('diff')}
+                    aria-label="Diff"
+                  >
+                    <FileDiff size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Diff</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
         </div>
       </HeaderPage>
 
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
-        {/* Scroll area fills the remaining space; absolute inset-0 keeps message
-            volume from ever pushing the fixed input off-screen. */}
-        <div className="flex-1 relative">
-          {displayedTurns.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
-              <h1 className="text-2xl font-studio font-medium">
-                {t('common:newSession')}
-              </h1>
-            </div>
-          ) : (
-            <Conversation className="absolute inset-0 text-start">
-              <ConversationContent className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}>
-                {uiMessages.map((message, i) => (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={i === 0}
-                    isLastMessage={i === uiMessages.length - 1}
-                    status={running ? 'streaming' : 'ready'}
-                    reasoningContainerRef={reasoningContainerRef}
-                    isReasoningAtBottom={isReasoningAtBottom}
-                    onReasoningScroll={handleReasoningScroll}
-                    onReasoningScrollToBottom={forceScrollReasoningToBottom}
-                  />
-                ))}
-                {/* Shared load card; renders only while a local model is loading
-                    (hideIdle suppresses the generic "Working…" fallback). */}
-                {running && <PromptProgress hideIdle />}
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
-          )}
-        </div>
+      <div className="flex flex-1 flex-row h-full overflow-hidden">
+        <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
+          {/* Scroll area fills the remaining space; absolute inset-0 keeps message
+              volume from ever pushing the fixed input off-screen. */}
+          <div className="flex-1 relative">
+            {displayedTurns.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
+                <h1 className="text-2xl font-studio font-medium">
+                  {t('common:newSession')}
+                </h1>
+              </div>
+            ) : (
+              <Conversation className="absolute inset-0 text-start">
+                <ConversationContent className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}>
+                  {uiMessages.map((message, i) => (
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      isFirstMessage={i === 0}
+                      isLastMessage={i === uiMessages.length - 1}
+                      status={running ? 'streaming' : 'ready'}
+                      reasoningContainerRef={reasoningContainerRef}
+                      isReasoningAtBottom={isReasoningAtBottom}
+                      onReasoningScroll={handleReasoningScroll}
+                      onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                      onRegenerate={handleRegenerate}
+                      subagents={subagents}
+                    />
+                  ))}
+                  {/* Mirrors the regular chat's own gate ($threadId.tsx): show the
+                      shared card, unsuppressed, only before this turn's first
+                      visible content has arrived — once liveTurns has something,
+                      that content is itself the "it's working" signal. */}
+                  {running && liveTurns.length === 0 && <PromptProgress />}
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+            )}
+          </div>
 
         {/* Fixed input dock at the bottom. */}
         <div className="pb-4 shrink-0">
           <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
-            <div className="flex items-center gap-2 px-1 pb-2">
+            <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
+              <CodeModeSelector
+                mode={mode}
+                onChange={(m) => {
+                  const sid = currentId ?? ensureCurrentSession()
+                  useCodeSessions.getState().setMode(sid, m)
+                }}
+              />
               <Button variant="outline" size="sm" className="h-7 gap-1.5 rounded-full">
                 <Laptop size={14} className="text-muted-foreground" />
                 <span>{t('common:local')}</span>
@@ -647,7 +1021,15 @@ function CodePage() {
                   </span>
                 )}
               </div>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                {usage?.total_tokens ? (
+                  <TokenCountOnly
+                    totalTokens={usage.total_tokens}
+                    inputTokens={usage.prompt_tokens}
+                    outputTokens={usage.completion_tokens}
+                    modelDisplayName={selectedModel?.name || selectedModel?.id}
+                  />
+                ) : null}
                 <SkillSelector folder={folder} />
               </div>
             </div>
@@ -684,10 +1066,27 @@ function CodePage() {
                 onSubmit={handleSubmit}
                 onStop={handleStop}
                 chatStatus={running ? 'streaming' : 'ready'}
+                queueKey={currentId ?? undefined}
               />
+              </div>
             </div>
-          </div>
         </div>
+      </div>
+        {activePanel === 'subagents' ? (
+          <SubagentTasksPanel
+            subagents={subagents}
+            awaitingInputRunIds={awaitingInputRunIds}
+            onClose={() => setActivePanel(null)}
+            onCancel={handleCancelSubagent}
+          />
+        ) : activePanel === 'diff' ? (
+          <CodeDiffPanel
+            files={codeDiffs}
+            folderName={folderName}
+            gitBranch={gitBranch}
+            onClose={() => setActivePanel(null)}
+          />
+        ) : null}
       </div>
 
       <CodePermissionDialog

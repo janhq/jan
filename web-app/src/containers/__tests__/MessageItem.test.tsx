@@ -477,7 +477,97 @@ describe('MessageItem', () => {
         status={'ready' as any}
       />
     )
-    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+    // A pending tool call renders the new activity-status row, not PromptProgress.
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/Search/)
+  })
+
+  it('shows a persistent badge for a successfully loaded skill', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              {
+                type: 'tool-skill_read',
+                state: 'output-available',
+                toolCallId: 'skill-1',
+                input: { name: 'pptx' },
+                output: 'skill instructions',
+              },
+              { type: 'text', text: 'Done' },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+
+    expect(screen.getByText('Skills used: pptx')).toBeInTheDocument()
+    expect(screen.getByText('Used pptx')).toBeInTheDocument()
+  })
+
+  it('defers the persistent skills badge until generation finishes', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              {
+                type: 'tool-skill_read',
+                state: 'output-available',
+                toolCallId: 'skill-1',
+                input: { name: 'pptx' },
+                output: 'skill instructions',
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'streaming' as any}
+      />
+    )
+
+    expect(screen.queryByLabelText('Skills used')).not.toBeInTheDocument()
+  })
+
+  it('shows child activity while the parent awaits that subagent', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            parts: [
+              {
+                type: 'tool-await_subagent',
+                state: 'input-available',
+                toolCallId: 'tc-await',
+                input: { run_id: 'sub-robotics-researcher-1' },
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        subagents={[
+          {
+            runId: 'sub-robotics-researcher-1',
+            name: 'robotics-researcher',
+            status: 'running',
+            startedAt: Date.now() - 1_000,
+            turns: [],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'robotics-researcher: working'
+    )
+    expect(screen.getByRole('status')).not.toHaveTextContent('Await subagent')
   })
 
   it('hides progress while a tool call awaits approval', () => {
