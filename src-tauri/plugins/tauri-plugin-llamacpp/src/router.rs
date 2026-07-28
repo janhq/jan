@@ -125,14 +125,11 @@ pub struct RouterLock {
 }
 
 pub const ROUTER_LOCK_FILENAME: &str = "router.lock.json";
-pub const ROUTER_LOG_FILENAME: &str = "router.log";
-
-fn log_path_for(preset_path: &Path) -> PathBuf {
-    preset_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(ROUTER_LOG_FILENAME)
-}
+/// Lives in the app's managed `logs/` folder beside `app.log`, not next to the
+/// preset: it is a diagnostic a user or bug report will go looking for. It must
+/// stay a file of its own -- llama.cpp opens it with mode "w", so sharing
+/// `app.log` would truncate Jan's own log on every spawn.
+pub const ROUTER_LOG_FILENAME: &str = "llamacpp-router.log";
 
 /// Cap for a retained log generation. Disk use across spawns is bounded by
 /// roughly twice this: one live file plus one retained.
@@ -417,6 +414,7 @@ fn with_api_key_env(mut envs: HashMap<String, String>, api_key: &str) -> HashMap
 pub async fn start_router(
     backend_exe: PathBuf,
     preset_path: PathBuf,
+    log_path: PathBuf,
     port: u16,
     api_key: String,
     models_max: u32,
@@ -436,7 +434,11 @@ pub async fn start_router(
     // `router_args`'s doc comment).
     let envs = with_api_key_env(envs, &api_key);
 
-    let log_path = log_path_for(&preset_path);
+    if let Some(dir) = log_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            log::warn!("Could not create router log directory {:?}: {}", dir, e);
+        }
+    }
     rotate_log(&log_path);
     let args = router_args(&preset_path, port, models_max, Some(&log_path), &default_args);
     log::info!("Router argv: {:?}", args);
@@ -1081,6 +1083,13 @@ mod tests {
         let args = router_args(&preset, 1337, 1, Some(Path::new("/tmp/r.log")), &[]);
         let i = args.iter().position(|a| a == "--log-file").unwrap();
         assert_eq!(args[i + 1], "/tmp/r.log");
+    }
+
+    #[test]
+    fn router_log_never_shares_the_app_log_file() {
+        // llama.cpp opens the log with mode "w"; sharing app.log would
+        // truncate Jan's own log on every spawn.
+        assert_ne!(ROUTER_LOG_FILENAME, "app.log");
     }
 
     #[test]

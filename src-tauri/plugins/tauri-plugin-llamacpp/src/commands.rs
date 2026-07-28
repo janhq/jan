@@ -814,6 +814,7 @@ pub async fn start_router<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     backend_exe: String,
     preset_path: String,
+    log_path: String,
     port: u16,
     api_key: String,
     models_max: u32,
@@ -849,6 +850,7 @@ pub async fn start_router<R: Runtime>(
     let handle = crate::router::start_router(
         std::path::PathBuf::from(backend_exe),
         std::path::PathBuf::from(preset_path),
+        std::path::PathBuf::from(log_path),
         port,
         api_key,
         models_max,
