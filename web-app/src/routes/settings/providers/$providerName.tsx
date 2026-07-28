@@ -18,6 +18,7 @@ import { DialogDeleteAllModels } from '@/containers/dialogs/DeleteAllModels'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
+import { BackendUpdateHistory } from '@/containers/BackendUpdateHistory'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
 import { SecretInput } from '@/components/ui/secret-input'
@@ -1047,6 +1048,7 @@ function ProviderDetail() {
                                       </span>
                                     </Button>
                                   )}
+                                <BackendUpdateHistory />
                               </div>
                             )}
                         </>

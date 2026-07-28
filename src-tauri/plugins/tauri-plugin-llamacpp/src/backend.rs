@@ -1516,6 +1516,51 @@ mod tests {
         assert!(!root.join("b900").join("cpu").exists());
     }
 
+    #[test]
+    fn digest_normalization_tolerates_producer_quirks() {
+        // Windows CertUtil output: uppercase, BOM, folded whitespace.
+        assert_eq!(normalize_digest("\u{feff}AB\n  cd \r\n"), "abcd");
+        assert_eq!(normalize_digest("  abcd  "), "abcd");
+        assert_eq!(normalize_digest(""), "");
+        // Non-hex noise cannot smuggle itself into a digest.
+        assert_eq!(normalize_digest("zz12zz"), "12");
+    }
+
+    #[test]
+    fn checksum_manifest_parses_the_published_shape() {
+        let yaml = "version: b1234\nfiles:\n\
+                    - url: llama-b1234-bin-linux-x64.tar.gz\n  sha512: >-\n    ABCD\n  size: 10\n\
+                    - url: cudart-llama-bin-linux-cu12.0-x64.tar.gz\n  sha512: >-\n    beef\n  size: 20\n";
+        let m: ChecksumManifest = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(m.files.len(), 2);
+        assert_eq!(m.files[0].url, "llama-b1234-bin-linux-x64.tar.gz");
+        assert_eq!(normalize_digest(&m.files[0].sha512), "abcd");
+    }
+
+    #[tokio::test]
+    async fn sha512_verification_accepts_and_rejects() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive.tar.gz");
+        std::fs::write(&path, b"jan").unwrap();
+
+        let actual = {
+            use sha2::{Digest, Sha512};
+            let mut h = Sha512::new();
+            h.update(b"jan");
+            format!("{:x}", h.finalize())
+        };
+        let p = path.to_string_lossy().to_string();
+
+        assert!(verify_file_sha512(p.clone(), actual.to_uppercase())
+            .await
+            .unwrap());
+        assert!(!verify_file_sha512(p.clone(), "dead".repeat(32))
+            .await
+            .unwrap());
+        // No published digest means nothing to contradict.
+        assert!(verify_file_sha512(p, String::new()).await.unwrap());
+    }
+
     // --- Tests for map_old_backend_to_new ---
 
     #[test]
@@ -2344,4 +2389,116 @@ mod tests {
         assert!(cdn_items[0].url.contains("catalog.jan.ai"));
         assert_ne!(github_items[0].url, cdn_items[0].url);
     }
+}
+
+// ============================================================================
+// Release checksum verification
+// ============================================================================
+
+#[derive(Deserialize)]
+struct ChecksumEntry {
+    url: String,
+    sha512: String,
+}
+
+#[derive(Deserialize)]
+struct ChecksumManifest {
+    files: Vec<ChecksumEntry>,
+}
+
+/// Normalize a digest as published. The Windows job produces it via `CertUtil`
+/// piped through `Out-File`, so it can arrive uppercase and carrying a BOM or
+/// UTF-16 padding; the YAML folded scalar (`>-`) can also fold in whitespace.
+/// Keeping only hex digits is the one rule that holds for every producer.
+fn normalize_digest(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Fetch `checksum.yml` for a release and return `filename -> sha512`.
+///
+/// Returns an empty map rather than an error when the manifest is absent or
+/// unparseable: releases published before the manifest existed (and those
+/// whose entries predate the `-bin-` naming fix) must stay installable.
+#[tauri::command]
+pub async fn fetch_backend_checksums(
+    version: String,
+    source: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<HashMap<String, String>, String> {
+    let url = if source == "cdn" {
+        format!(
+            "https://catalog.jan.ai/llama.cpp/releases/{}/checksum.yml",
+            version
+        )
+    } else {
+        format!(
+            "https://github.com/janhq/llama.cpp/releases/download/{}/checksum.yml",
+            version
+        )
+    };
+
+    let client = build_http_client(proxy.as_ref())?;
+    let resp = match client.get(&url).send().await {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            log::warn!("checksum.yml for {} returned HTTP {}", version, r.status());
+            return Ok(HashMap::new());
+        }
+        Err(e) => {
+            log::warn!("Could not fetch checksum.yml for {}: {}", version, e);
+            return Ok(HashMap::new());
+        }
+    };
+
+    let body = match resp.text().await {
+        Ok(b) => b,
+        Err(e) => {
+            log::warn!("Could not read checksum.yml for {}: {}", version, e);
+            return Ok(HashMap::new());
+        }
+    };
+
+    match serde_yaml::from_str::<ChecksumManifest>(&body) {
+        Ok(m) => Ok(m
+            .files
+            .into_iter()
+            .map(|f| (f.url, normalize_digest(&f.sha512)))
+            .filter(|(_, digest)| !digest.is_empty())
+            .collect()),
+        Err(e) => {
+            log::warn!("Could not parse checksum.yml for {}: {}", version, e);
+            Ok(HashMap::new())
+        }
+    }
+}
+
+/// Streams the file so a multi-GB archive is never held in memory.
+#[tauri::command]
+pub async fn verify_file_sha512(path: String, expected: String) -> Result<bool, String> {
+    let expected = normalize_digest(&expected);
+    if expected.is_empty() {
+        return Ok(true);
+    }
+
+    tokio::task::spawn_blocking(move || {
+        use sha2::{Digest, Sha512};
+        use std::io::Read;
+
+        let mut file = fs::File::open(&path).map_err(|e| format!("{}: {}", path, e))?;
+        let mut hasher = Sha512::new();
+        let mut buf = vec![0u8; 1024 * 1024];
+        loop {
+            let n = file.read(&mut buf).map_err(|e| format!("{}: {}", path, e))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hasher.finalize()) == expected)
+    })
+    .await
+    .map_err(|e| format!("Checksum task panicked: {}", e))?
 }

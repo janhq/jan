@@ -370,6 +370,25 @@ export async function removeOldBackendVersions(
   })
 }
 
+export async function fetchBackendChecksums(
+  version: string,
+  source: 'github' | 'cdn',
+  proxy?: object | null
+): Promise<Record<string, string>> {
+  return invoke('plugin:llamacpp|fetch_backend_checksums', {
+    version,
+    source,
+    proxy,
+  })
+}
+
+export async function verifyFileSha512(
+  path: string,
+  expected: string
+): Promise<boolean> {
+  return invoke('plugin:llamacpp|verify_file_sha512', { path, expected })
+}
+
 export async function validateBackendString(
   backendString: string
 ): Promise<[string, string]> {
