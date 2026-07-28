@@ -28,12 +28,15 @@ on:
     outputs:
       FILE_NAME:
         value: ${{ jobs.build-linux-x64.outputs.FILE_NAME }}
+      SHA256:
+        value: ${{ jobs.build-linux-x64.outputs.SHA256 }}
 
 jobs:
   build-linux-x64:
     runs-on: ubuntu-22.04
     outputs:
       FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+      SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,6 +87,7 @@ jobs:
           FILE_NAME="jan-agent-linux-x86_64-$VERSION.tar.gz"
           tar czf "$FILE_NAME" -C src-tauri/target/release jan
           echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "SHA256=$(sha256sum "$FILE_NAME" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload to S3
         run: |

@@ -39,12 +39,15 @@ on:
     outputs:
       FILE_NAME:
         value: ${{ jobs.build-macos.outputs.FILE_NAME }}
+      SHA256:
+        value: ${{ jobs.build-macos.outputs.SHA256 }}
 
 jobs:
   build-macos:
     runs-on: macos-latest
     outputs:
       FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+      SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,12 +124,17 @@ jobs:
           FILE_NAME="jan-agent-darwin-universal-$VERSION.tar.gz"
           tar czf "$FILE_NAME" -C universal jan
           echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "SHA256=$(shasum -a 256 "$FILE_NAME" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Notarize (if configured)
         continue-on-error: true
         run: |
           if [ -n "${{ secrets.NOTARY_ISSUER }}" ]; then
-            xcrun notarytool submit "${{ steps.package.outputs.FILE_NAME }}" \
+            # notarytool rejects .tar.gz outright (zip/pkg/dmg only), so zip the
+            # binary just for submission; the distributed artifact stays the tarball.
+            NOTARIZE_ZIP="jan-agent-darwin-universal-notarize.zip"
+            zip -j "$NOTARIZE_ZIP" universal/jan
+            xcrun notarytool submit "$NOTARIZE_ZIP" \
               --key /tmp/notary-key.p8 \
               --key-id "${{ secrets.NOTARY_KEY_ID }}" \
               --issuer "${{ secrets.NOTARY_ISSUER }}" \

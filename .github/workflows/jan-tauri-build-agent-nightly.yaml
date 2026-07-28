@@ -73,13 +73,16 @@ jobs:
             "pub_date": "$PUB_DATE",
             "platforms": {
               "linux-x86_64": {
-                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-linux-x64.outputs.FILE_NAME }}"
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-linux-x64.outputs.FILE_NAME }}",
+                "sha256": "${{ needs.build-linux-x64.outputs.SHA256 }}"
               },
               "darwin-universal": {
-                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-macos.outputs.FILE_NAME }}"
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-macos.outputs.FILE_NAME }}",
+                "sha256": "${{ needs.build-macos.outputs.SHA256 }}"
               },
               "windows-x86_64": {
-                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+                "url": "https://delta.jan.ai/agent-nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}",
+                "sha256": "${{ needs.build-windows-x64.outputs.SHA256 }}"
               }
             }
           }
