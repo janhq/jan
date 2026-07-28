@@ -66,9 +66,12 @@ fn build_orchestration_args<R: Runtime>(
         permissions: ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
+        ask_requests: None,
+        todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: true,
         yolo: false,
+        run_mode: crate::core::agent::plan::RunMode::Normal,
     }
 }
 

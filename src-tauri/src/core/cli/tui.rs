@@ -21,7 +21,10 @@ use ratatui::crossterm::{
         MouseEvent, MouseEventKind,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, EndSynchronizedUpdate,
+        EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
@@ -144,6 +147,9 @@ enum PickerKind {
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
     ViewConfig,
+    /// `/todo` editor: browse the phased list and mutate the selected task
+    /// (done/drop/rm) through the same canonical `TodoList` the model uses.
+    Todo,
 }
 
 /// Interactive list overlay (`/resume` threads, `/model` models, `/mcp`
@@ -163,6 +169,7 @@ impl Picker {
             PickerKind::RewindMessage => " rewind to message ",
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
+            PickerKind::Todo => " todo ",
         }
     }
 
@@ -174,6 +181,7 @@ impl Picker {
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
+            PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
 }
@@ -271,6 +279,133 @@ struct PathHintItem {
     is_dir: bool,
 }
 
+struct PendingAsk {
+    request_id: String,
+    request: crate::core::agent::interaction::AskRequest,
+    answers: Vec<crate::core::agent::interaction::QuestionResult>,
+    question_index: usize,
+    selected: usize,
+    editing_custom: bool,
+    custom_input: String,
+    rect: Rect,
+    row_hitboxes: Vec<(u16, usize)>,
+}
+
+impl PendingAsk {
+    fn new(request_id: String, request: crate::core::agent::interaction::AskRequest) -> Self {
+        let answers = request
+            .questions
+            .iter()
+            .map(|question| crate::core::agent::interaction::QuestionResult {
+                id: question.id.clone(),
+                selected: Vec::new(),
+                custom_input: None,
+            })
+            .collect();
+        Self {
+            request_id,
+            request,
+            answers,
+            question_index: 0,
+            selected: 0,
+            editing_custom: false,
+            custom_input: String::new(),
+            rect: Rect::default(),
+            row_hitboxes: Vec::new(),
+        }
+    }
+
+    fn question(&self) -> &crate::core::agent::interaction::Question {
+        &self.request.questions[self.question_index]
+    }
+    fn row_count(&self) -> usize {
+        self.question().options.len() + 1 + usize::from(self.question().multi)
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        self.selected =
+            (self.selected as isize + delta).rem_euclid(self.row_count() as isize) as usize;
+    }
+
+    fn move_question(&mut self, delta: isize) {
+        let last = self.request.questions.len().saturating_sub(1) as isize;
+        self.question_index = (self.question_index as isize + delta).clamp(0, last) as usize;
+        self.selected = 0;
+        self.editing_custom = false;
+        self.custom_input.clear();
+    }
+
+    fn all_answered(&self) -> bool {
+        self.answers
+            .iter()
+            .all(|answer| !answer.selected.is_empty() || answer.custom_input.is_some())
+    }
+
+    /// Apply the highlighted row. Returns true once every question is answered.
+    fn choose(&mut self) -> bool {
+        let option_count = self.question().options.len();
+        let multi = self.question().multi;
+        if multi && self.selected == option_count + 1 {
+            return self.advance_or_finish();
+        }
+        if self.selected == option_count {
+            self.editing_custom = true;
+            self.custom_input = self.answers[self.question_index]
+                .custom_input
+                .clone()
+                .unwrap_or_default();
+            return false;
+        }
+        let label = self.question().options[self.selected].label.clone();
+        let answer = &mut self.answers[self.question_index];
+        answer.custom_input = None;
+        if multi {
+            if let Some(index) = answer.selected.iter().position(|item| item == &label) {
+                answer.selected.remove(index);
+            } else {
+                answer.selected.push(label);
+            }
+            false
+        } else {
+            answer.selected = vec![label];
+            self.advance_or_finish()
+        }
+    }
+
+    fn accept_custom(&mut self) -> bool {
+        let value = self.custom_input.trim().to_string();
+        if value.is_empty() {
+            return false;
+        }
+        let id = self.question().id.clone();
+        self.answers[self.question_index] = crate::core::agent::interaction::QuestionResult {
+            id,
+            selected: Vec::new(),
+            custom_input: Some(value),
+        };
+        self.editing_custom = false;
+        self.advance_or_finish()
+    }
+
+    fn advance_or_finish(&mut self) -> bool {
+        if self.question_index + 1 < self.request.questions.len() {
+            self.move_question(1);
+            return false;
+        }
+        if self.all_answered() {
+            true
+        } else {
+            self.question_index = self
+                .answers
+                .iter()
+                .position(|answer| answer.selected.is_empty() && answer.custom_input.is_none())
+                .unwrap_or(self.question_index);
+            self.selected = 0;
+            false
+        }
+    }
+}
+
 struct App {
     model: String,
     /// Fast model for the `smol` role, used by `/goal` evaluation. Defaults to
@@ -283,6 +418,10 @@ struct App {
     /// Set after a turn finishes while a goal is active: the chat loop runs the
     /// evaluator off the render loop, then auto-continues or returns control.
     goal_eval_pending: bool,
+    /// Read-only plan mode. `Plan` blocks mutation-capable tools at the core
+    /// dispatcher (advisory prompt is defense in depth only). Persisted with
+    /// the thread so it survives restart/resume.
+    run_mode: crate::core::agent::plan::RunMode,
     /// Orchestration handle for out-of-run model calls (the `/compact` command).
     /// `None` in unit tests, set by `run` for the live session.
     args: Option<Arc<OrchestrationArgs>>,
@@ -374,6 +513,8 @@ struct App {
     /// front is shown/answerable at a time, later ones queue and surface once
     /// the front resolves so no requester is silently dropped/left hanging.
     pending_queue: std::collections::VecDeque<Pending>,
+    /// Structured questions waiting for this TUI, oldest first.
+    ask_queue: std::collections::VecDeque<PendingAsk>,
     picker: Option<Picker>,
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
@@ -399,8 +540,18 @@ struct App {
     /// Rendered as a live throbber and cleared on the matching `ToolCall` (full
     /// args) or on the next `Step`, whichever comes first.
     starting: Vec<(String, String)>,
-    /// Monotonic frame counter advanced each render tick; drives the throbber.
+    /// Monotonic frame counter driving the throbber. Advanced by whole
+    /// `SPINNER_ADVANCE_MS` steps elapsed since `last_spinner_advance`, not once
+    /// per tick, so the animation runs at a fixed cadence and catches up after a
+    /// stalled loop instead of lagging.
     spinner_frame: usize,
+    /// Wall-clock baseline for the last spinner advance; moved forward by whole
+    /// frames only so leftover sub-frame time carries into the next tick.
+    last_spinner_advance: Instant,
+    /// Output tokens/sec of the last completed turn, cached so the header holds a
+    /// steady value between turns instead of flickering to 0. Cleared at turn
+    /// start; recomputed from the turn's `usage` sample at `on_done`.
+    tokens_per_sec: Option<f64>,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -424,10 +575,34 @@ struct App {
     /// Messages queued while a run is in progress, dequeued automatically
     /// when the current turn finishes.
     message_queue: std::collections::VecDeque<String>,
+    /// Canonical session todo list projection, kept in sync via
+    /// `StreamEvent::TodoUpdate`. Empty = no todos declared this session.
+    todos: crate::core::agent::todo::TodoList,
+    /// Set when the model issued a `todo` tool call in the current turn; cleared
+    /// at each turn start. Drives the reminder suppression / retry policy.
+    todo_call_this_turn: bool,
+    /// Set when a `todo` mutation succeeded this turn (a `TodoUpdate` arrived);
+    /// a call without a success means the mutation failed (retry reminder).
+    todo_ok_this_turn: bool,
+    /// Open-work summary last surfaced as a reminder, so the same reminder never
+    /// fires twice in a row without the state changing (reminder dedup).
+    last_todo_reminder: Option<String>,
+    /// Stop-time reminders sent so far this prompt cycle; caps at
+    /// `TODO_REMINDER_MAX` so a summary that keeps changing slightly can't
+    /// nag indefinitely even though the same-summary dedup above wouldn't
+    /// catch it.
+    reminder_count: u32,
+    /// True right after a reminder fires, cleared the moment any tool result
+    /// lands. Blocks a second reminder from piling onto one the model hasn't
+    /// had a chance to act on yet.
+    reminder_awaiting_progress: bool,
 }
 
 /// Braille throbber frames for in-progress rows (e.g. awaiting a subagent).
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Milliseconds per spinner frame, decoupled from the 50ms render tick.
+const SPINNER_ADVANCE_MS: u64 = 80;
 
 /// Live rolling view of an in-flight subagent's tool calls. The panel shows only
 /// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
@@ -489,6 +664,7 @@ impl App {
             model,
             goal: None,
             goal_eval_pending: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
             args: None,
             max_turns,
             context_window,
@@ -528,6 +704,7 @@ impl App {
             tokens: 0,
             detail: String::new(),
             pending_queue: std::collections::VecDeque::new(),
+            ask_queue: std::collections::VecDeque::new(),
             picker: None,
             scrollback: 0,
             want_start: false,
@@ -539,12 +716,20 @@ impl App {
             awaiting: Vec::new(),
             starting: Vec::new(),
             spinner_frame: 0,
+            last_spinner_advance: Instant::now(),
+            tokens_per_sec: None,
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
             mouse_capture: true,
             message_queue: std::collections::VecDeque::new(),
+            todos: crate::core::agent::todo::TodoList::default(),
+            todo_call_this_turn: false,
+            todo_ok_this_turn: false,
+            last_todo_reminder: None,
+            reminder_count: 0,
+            reminder_awaiting_progress: false,
         }
     }
 
@@ -608,12 +793,22 @@ impl App {
         self.assistant_buf.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
+        self.ask_queue.clear();
         self.pending_images.clear();
         self.tokens = 0;
+        self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
         self.scrollback = 0;
         self.last_kind = Kind::None;
+        // A fresh session drops the todo projection and reminder state; the
+        // model re-declares work with a new `todo init`.
+        self.todos = crate::core::agent::todo::TodoList::default();
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+        self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
     }
 
     /// Append a dim single-line status note (command output, cancel, errors).
@@ -953,6 +1148,19 @@ impl App {
     /// in the same input batch can't slip through as a second submit.
     /// When already running, the message is enqueued instead and auto-submitted
     /// when the current turn finishes.
+    /// Advance the spinner by however many whole `SPINNER_ADVANCE_MS` frames
+    /// have elapsed since the last advance (0 if under one frame, >1 on catch-up
+    /// after a stalled tick). The baseline moves forward by whole frames only so
+    /// leftover sub-frame milliseconds are not lost across ticks.
+    fn advance_spinner(&mut self, now: Instant) {
+        let elapsed = now.duration_since(self.last_spinner_advance).as_millis() as u64;
+        let frames = (elapsed / SPINNER_ADVANCE_MS) as usize;
+        if frames > 0 {
+            self.spinner_frame = self.spinner_frame.wrapping_add(frames);
+            self.last_spinner_advance += Duration::from_millis(frames as u64 * SPINNER_ADVANCE_MS);
+        }
+    }
+
     fn submit_user(&mut self, text: String) {
         // If a turn is already in progress, enqueue the message instead
         if self.status == Status::Running {
@@ -976,9 +1184,108 @@ impl App {
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
+        self.tokens_per_sec = None;
         self.scrollback = 0;
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+        // A fresh user turn is new context: allow the next boundary to remind
+        // again even if the open work is unchanged (dedup is "twice in a row"),
+        // and rearm the per-cycle reminder budget. A reminder's own follow-up
+        // turn (`submit_reminder`, below) deliberately does NOT reset these --
+        // the count must persist across the very continuation it triggers, or
+        // the cap could never actually be reached.
+        self.last_todo_reminder = None;
+        self.reminder_count = 0;
+        self.reminder_awaiting_progress = false;
         self.want_start = true;
         self.persist();
+    }
+
+    /// Inject a hidden todo reminder and continue with one more model turn. The
+    /// reminder text enters the conversation (so the model sees it) but renders
+    /// as a dim system note, never a user-authored transcript row.
+    fn submit_reminder(&mut self, text: String) {
+        self.history
+            .push(serde_json::json!({ "role": "user", "content": text }));
+        self.gap(Kind::Meta);
+        self.push(Line::styled(
+            "◈ todo reminder — unfinished work, continuing".to_string(),
+            Style::new().dim(),
+        ));
+        self.status = Status::Running;
+        self.run_started = Some(Instant::now());
+        self.turn = (0, 0);
+        self.tokens_per_sec = None;
+        self.scrollback = 0;
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+        self.want_start = true;
+        self.persist();
+    }
+
+    /// Reminder policy (spec: one bounded reminder at a clean turn boundary).
+    /// Fires at most one hidden reminder when open work remains and the assistant
+    /// yielded as if finished. Suppressed while an ask/permission is pending, a
+    /// goal/plan transition already queued the next turn, another message is
+    /// armed, the agent already updated todos this turn, the assistant's own
+    /// final text is itself asking the user something, a prior reminder is
+    /// still unanswered, or the per-cycle reminder budget is spent. A todo
+    /// mutation that failed this turn queues one retry reminder instead.
+    fn maybe_inject_todo_reminder(&mut self, normal: bool, no_answer: bool, answer: &str) {
+        /// Reminders fired per prompt cycle before the policy goes quiet, even
+        /// if the open-work summary keeps changing slightly (the same-summary
+        /// dedup below only catches an unchanged summary, not a moving one).
+        const TODO_REMINDER_MAX: u32 = 3;
+        // A goal/plan continuation or a queued message already owns the next
+        // turn; a pending ask/permission blocks the boundary; plan mode is a
+        // read-only exploration where todos are only staged for handoff.
+        if self.want_start
+            || self.goal_eval_pending
+            || self.run_mode == crate::core::agent::plan::RunMode::Plan
+            || !self.ask_queue.is_empty()
+        {
+            return;
+        }
+        let failed = self.todo_call_this_turn && !self.todo_ok_this_turn;
+        if !failed {
+            // The agent actively managed todos this turn (or the turn ended
+            // abnormally/emptily): don't nag.
+            if self.todo_call_this_turn || !normal || no_answer {
+                return;
+            }
+        }
+        // The assistant may be legitimately waiting on the user (a plain-text
+        // question, or a "let me know"/"please confirm" cue) rather than
+        // idling mid-task -- nudging "keep working" here would talk over its
+        // own question.
+        if assistant_is_awaiting_user_answer(answer) {
+            return;
+        }
+        // A prior reminder hasn't seen any follow-up action yet, or the
+        // per-cycle budget is already spent: stay silent rather than pile on.
+        if self.reminder_awaiting_progress || self.reminder_count >= TODO_REMINDER_MAX {
+            return;
+        }
+        let Some(summary) = self.todos.open_summary() else {
+            return;
+        };
+        // Dedup: the same open-work summary never reminds twice in a row.
+        if self.last_todo_reminder.as_deref() == Some(summary.as_str()) {
+            return;
+        }
+        let text = if failed {
+            format!(
+                "Reminder: your last todo update failed and unfinished work remains:\n{summary}\n\nRetry the update or continue the work; call `todo` to record progress."
+            )
+        } else {
+            format!(
+                "Reminder: unfinished todos remain:\n{summary}\n\nContinue the work, or call `todo` to mark items done/abandoned."
+            )
+        };
+        self.last_todo_reminder = Some(summary);
+        self.reminder_count += 1;
+        self.reminder_awaiting_progress = true;
+        self.submit_reminder(text);
     }
 
     /// Dequeue the next message from the queue and submit it. Called after
@@ -1045,6 +1352,12 @@ impl App {
         if let Some(max) = self.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // Live plan-mode toggle: the backend reads this per turn and falls back
+        // to the session default when absent. Only forwarded in Plan so normal
+        // turns keep an unchanged body.
+        if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+            body["run_mode"] = serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null);
+        }
         body
     }
 
@@ -1068,9 +1381,14 @@ impl App {
     /// per-turn checkpoints, so `/resume` can restore and rewind. `None` when
     /// snapshots are inactive (keeps a plain `{}` metadata block).
     fn thread_metadata(&self) -> Option<serde_json::Value> {
-        // Persist metadata when either snapshots or a goal are present; a goal
+        // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
-        if self.base_snapshot.is_none() && self.goal.is_none() {
+        let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+        if self.base_snapshot.is_none()
+            && self.goal.is_none()
+            && !planning
+            && self.todos.is_empty()
+        {
             return None;
         }
         let mut meta = serde_json::Map::new();
@@ -1082,6 +1400,20 @@ impl App {
             meta.insert(
                 "goal".to_string(),
                 serde_json::to_value(goal).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        // Only persisted in Plan (Normal is the default; keeps old threads clean).
+        if planning {
+            meta.insert(
+                "run_mode".to_string(),
+                serde_json::to_value(self.run_mode).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        // Persist the canonical todos so resume/branch reconstructs the list.
+        if !self.todos.is_empty() {
+            meta.insert(
+                "todos".to_string(),
+                serde_json::to_value(&self.todos).unwrap_or(serde_json::Value::Null),
             );
         }
         Some(serde_json::Value::Object(meta))
@@ -1207,6 +1539,11 @@ impl App {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
                 self.starting.retain(|(sid, _)| sid != &id);
+                // Track todo activity this turn so the reminder policy can tell
+                // an engaged turn (mutated todos) from a stalled one.
+                if name == "todo" {
+                    self.todo_call_this_turn = true;
+                }
                 // Awaiting a subagent is a long block: show a live throbber row
                 // (advanced each render tick) instead of a static grouped row,
                 // cleared when its result arrives.
@@ -1253,6 +1590,11 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
+                // Any tool result means the model took some action since the last
+                // reminder fired; let a later stop remind again if work is still
+                // open. Set unconditionally, before the grouped-call early return
+                // below, so it applies no matter how the result renders.
+                self.reminder_awaiting_progress = false;
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
@@ -1311,6 +1653,12 @@ impl App {
                     subagent: None,
                 });
             }
+            StreamEvent::AskRequest {
+                request_id,
+                request,
+            } => self
+                .ask_queue
+                .push_back(PendingAsk::new(request_id, request)),
             StreamEvent::SubagentStart { run_id, name } => {
                 // Open a live rolling panel for this run; several may be active.
                 self.finalize_tool_group();
@@ -1365,6 +1713,12 @@ impl App {
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
                 self.persist();
+            }
+            StreamEvent::TodoUpdate { list } => {
+                self.todos = list;
+                // A snapshot only arrives on a successful mutation; its absence
+                // after a todo call means the mutation failed (retry reminder).
+                self.todo_ok_this_turn = true;
             }
         }
     }
@@ -1426,7 +1780,17 @@ impl App {
         let answer = self.take_answer();
         if !answer.is_empty() {
             self.history
-                .push(serde_json::json!({ "role": "assistant", "content": answer }));
+                .push(serde_json::json!({ "role": "assistant", "content": answer.clone() }));
+        }
+        // Cache this turn's output rate from the single `usage` sample and its
+        // streaming duration, before `run_started` is cleared below. Holds
+        // steady in the header until the next turn resets it.
+        if let (Some(out), Some(started)) = (
+            usage.as_ref().and_then(|u| u.completion_tokens),
+            self.run_started,
+        ) {
+            self.tokens_per_sec =
+                Some(tokens_per_second(out, started.elapsed().as_millis() as u64));
         }
         self.tokens = usage.and_then(|u| u.total_tokens).unwrap_or(self.tokens);
         self.status = Status::Idle;
@@ -1451,8 +1815,11 @@ impl App {
         // A turn just completed under an active goal: count it and queue an
         // evaluation. The chat loop runs the (stateless) evaluator off the
         // render loop, then auto-continues or hands control back.
+        // Plan mode pauses the goal loop: never auto-continue a goal while
+        // planning (spec: entering plan pauses an active goal).
+        let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
         if let Some(goal) = self.goal.as_mut() {
-            if goal.is_active() {
+            if goal.is_active() && !planning {
                 goal.turns = goal.turns.saturating_add(1);
                 // Only evaluate on a normal completion; an early/no-answer finish
                 // is surfaced above and the user decides what to do next.
@@ -1461,6 +1828,9 @@ impl App {
         }
         // Auto-dequeue the next queued message, if any
         self.dequeue_next();
+        // Reminder policy runs last: only if nothing else already claimed the
+        // next turn (goal eval, a dequeued message) and open work remains.
+        self.maybe_inject_todo_reminder(normal, no_answer, &answer);
         self.persist();
     }
 
@@ -1582,6 +1952,13 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
+        self.subagents.clear();
+        self.awaiting.clear();
+        // A call whose args were still streaming (no ToolCall event yet) never
+        // gets its "Preparing X" throbber cleared by that event once cancelled
+        // -- it would otherwise linger in the transcript forever, looking like
+        // work is still happening after "cancelled" has already printed.
+        self.starting.clear();
         self.detail = "cancelled".to_string();
         self.scrollback = 0;
         self.gap(Kind::Meta);
@@ -1747,9 +2124,74 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "await_subagent" => format!("Awaiting subagent: {}", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Creating subagent: {}", s("name")),
         "list_subagents" => "Listing subagents".to_string(),
+        "web_search" => {
+            let q = s("query");
+            if q.is_empty() {
+                "Searching the web".to_string()
+            } else {
+                format!("Searching the web: {}", truncate(q, COMMAND_LABEL_MAX))
+            }
+        }
+        "web_fetch" => {
+            let u = s("url");
+            if u.is_empty() {
+                "Fetching a page".to_string()
+            } else {
+                format!("Fetching: {}", truncate(u, COMMAND_LABEL_MAX))
+            }
+        }
+        "ask" => "Asking a question".to_string(),
+        "todo" => format!("{} {}", todo_op_verb(args, false), todo_target_label(args)),
         // Skill/memory tools already produce active labels ("Updating memory: X").
         _ => describe_tool_call(name, args),
     }
+}
+
+/// Present/past-tense verb for a `todo` tool call, keyed on its `op` argument.
+fn todo_op_verb(args: &serde_json::Value, past: bool) -> &'static str {
+    match (args.get("op").and_then(|v| v.as_str()).unwrap_or(""), past) {
+        ("init", false) => "Planning",
+        ("init", true) => "Planned",
+        ("start", false) => "Starting",
+        ("start", true) => "Started",
+        ("done", false) => "Completing",
+        ("done", true) => "Completed",
+        ("drop", false) => "Abandoning",
+        ("drop", true) => "Abandoned",
+        ("rm", false) => "Removing",
+        ("rm", true) => "Removed",
+        ("append", false) => "Adding",
+        ("append", true) => "Added",
+        ("view", false) => "Checking",
+        ("view", true) => "Checked",
+        (_, false) => "Updating",
+        (_, true) => "Updated",
+    }
+}
+
+/// Concise subject for a `todo` tool call's verb: the named task/phase, an
+/// item count for `append`, or "todos" as a generic fallback.
+fn todo_target_label(args: &serde_json::Value) -> String {
+    if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
+        return format!("task: {}", truncate(task, COMMAND_LABEL_MAX));
+    }
+    if let Some(phase) = args.get("phase").and_then(|v| v.as_str()) {
+        if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
+            if !items.is_empty() {
+                let n = items.len();
+                return format!("{n} task{} to {phase}", if n == 1 { "" } else { "s" });
+            }
+        }
+        return format!("phase: {phase}");
+    }
+    if let Some(list) = args.get("list").and_then(|v| v.as_array()) {
+        let n = list.len();
+        return format!("{n} phase{}", if n == 1 { "" } else { "s" });
+    }
+    if args.get("all").and_then(|v| v.as_bool()) == Some(true) {
+        return "all tasks".to_string();
+    }
+    "todos".to_string()
 }
 
 /// Detailed one-line label for a subagent's own tool call, shown in the live
@@ -1806,6 +2248,24 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "await_subagent" => format!("Subagent {} returned", subagent_name_from_run_id(s("run_id"))),
         "create_subagent" => format!("Created subagent: {}", s("name")),
         "list_subagents" => "Listed subagents".to_string(),
+        "web_search" => {
+            let q = s("query");
+            if q.is_empty() {
+                "Searched the web".to_string()
+            } else {
+                format!("Searched the web: {}", truncate(q, COMMAND_LABEL_MAX))
+            }
+        }
+        "web_fetch" => {
+            let u = s("url");
+            if u.is_empty() {
+                "Fetched a page".to_string()
+            } else {
+                format!("Fetched: {}", truncate(u, COMMAND_LABEL_MAX))
+            }
+        }
+        "ask" => "Asked a question".to_string(),
+        "todo" => format!("{} {}", todo_op_verb(args, true), todo_target_label(args)),
         _ => describe_tool_call(name, args),
     }
 }
@@ -1977,6 +2437,79 @@ fn has_answer_text(buf: &str) -> bool {
     split_reasoning(buf)
         .iter()
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
+}
+
+/// A leading markdown list/blockquote marker (`> `, `- `, `1. `), stripped
+/// before checking whether a line reads as a question.
+fn markdown_prefix_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^(?:>\s*)?(?:(?:[-*+]|\d+[.)])\s+)*").unwrap())
+}
+
+/// A leading label like `Q:`, `Question 2:`, `Ask:`.
+fn prompt_label_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)^(?:q(?:uestion)?|ask)\s*\d*\s*[:.)-]\s*").unwrap())
+}
+
+/// A line starting with a question word (what/how/can/should/...).
+fn question_word_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)^(?:what|which|when|where|why|how|who|whom|whose|do|does|did|can|could|would|will|should|is|are|am|may|shall)\b",
+        )
+        .unwrap()
+    })
+}
+
+/// A line directly addressing the user ("you", "your", "we", "our").
+fn user_directed_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(?i)\b(?:you|your|we|our)\b").unwrap())
+}
+
+/// An explicit request for the user to respond ("let me know", "please
+/// confirm"), independent of a trailing question mark.
+fn response_cue_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?i)^(?:please\s+)?(?:confirm|reply|choose|pick|decide|advise)\b|^(?:please\s+)?answer\b|^(?:please\s+)?(?:let\s+me\s+know|tell\s+me)\b",
+        )
+        .unwrap()
+    })
+}
+
+/// True when the assistant's final line reads as a question or an explicit
+/// request for the user to respond, rather than the model idling mid-task
+/// with work still open. A plain-text cue counts just as much as the
+/// structured `ask` tool -- either way, the todo reminder must not talk over
+/// the assistant's own question by nudging it to "keep working."
+fn assistant_is_awaiting_user_answer(text: &str) -> bool {
+    let Some(last_line) = text
+        .split(['\n', '\r'])
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .next_back()
+    else {
+        return false;
+    };
+    let without_markdown = markdown_prefix_re().replace(last_line, "");
+    let without_markdown = without_markdown.trim();
+    let without_label = prompt_label_re().replace(without_markdown, "");
+    let without_label = without_label.trim();
+    let had_label = without_label != without_markdown;
+    let is_question = without_label.ends_with('?') || without_label.ends_with('？');
+    if is_question
+        && (had_label
+            || question_word_re().is_match(without_label)
+            || user_directed_re().is_match(without_label))
+    {
+        return true;
+    }
+    let without_trailing_punct = without_label.trim_end_matches(['.', '!', '?', '。', '！', '？']);
+    response_cue_re().is_match(without_trailing_punct)
 }
 
 fn think_re() -> &'static regex::Regex {
@@ -2302,7 +2835,7 @@ pub async fn run(
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let AgentSession {
-        args,
+        mut args,
         permission_requests,
         model,
         smol_model,
@@ -2313,6 +2846,10 @@ pub async fn run(
         mcp_servers,
         mcp_task,
     } = session;
+    let ask_requests = crate::core::agent::interaction::new_registry();
+    args.ask_requests = Some(ask_requests.clone());
+    let todo_registry = crate::core::agent::todo::new_registry();
+    args.todo_registry = Some(todo_registry.clone());
     let args = Arc::new(args);
 
     enable_raw_mode().map_err(|e| e.to_string())?;
@@ -2328,16 +2865,22 @@ pub async fn run(
     let mut app = App::new(model, max_turns, context_window, reserve_tokens, max_tokens, agent_dir, project_root, repo_root);
     app.smol_model = smol_model;
     app.args = Some(args.clone());
+    // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
+    // shows immediately; a resumed thread overrides this via restore_run_mode.
+    app.run_mode = args.run_mode;
     if args.yolo {
         app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
     if let Some(target) = &resume {
-        apply_resume(&mut app, target);
+        apply_resume(&mut app, target).await;
         if app.thread_id.is_none() {
             app.note("starting a new session");
         }
+    }
+    if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+        app.note("◈ PLAN · read only — investigate, then propose a plan for review");
     }
     for path in &initial_images {
         match load_image_file(path) {
@@ -2349,6 +2892,7 @@ pub async fn run(
         &mut terminal,
         &args,
         &permission_requests,
+        &ask_requests,
         &mut app,
         initial_task,
         mcp_task,
@@ -2372,6 +2916,7 @@ async fn chat_loop<B: Backend>(
     terminal: &mut Terminal<B>,
     args: &Arc<OrchestrationArgs>,
     registry: &PermissionRegistry,
+    ask_requests: &crate::core::agent::interaction::AskRegistry,
     app: &mut App,
     initial_task: Option<String>,
     mut mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
@@ -2435,18 +2980,28 @@ async fn chat_loop<B: Backend>(
             }
         }
 
-        terminal
-            .draw(|f| draw(f, app))
-            .map_err(|e| e.to_string())?;
+        // Wrap the repaint in synchronized-output (`\x1b[?2026h/l`) so the
+        // terminal buffers the whole frame and flips it atomically, eliminating
+        // tearing. Written straight to stdout (not the generic `Backend`) for the
+        // same reason mouse-capture toggles are: `chat_loop` is generic over B
+        // for TestBackend, which isn't `io::Write`. ratatui already diffs the
+        // buffer and emits ANSI only for changed cells.
+        let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+        let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
+        let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        draw_result?;
 
         tokio::select! {
             _ = ticker.tick() => {
-                // Advance the frame counter always so the cursor blinks even when idle.
-                app.spinner_frame = app.spinner_frame.wrapping_add(1);
+                // Advance the throbber at its own fixed cadence, catching up
+                // whole frames if a tick stalled (a burst of deltas / slow term).
+                app.advance_spinner(Instant::now());
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
-                            handle_key(app, key, registry, &mut current, mcp_servers).await;
+                            if !handle_ask_key(app, key, ask_requests).await {
+                                handle_key(app, key, registry, &mut current, mcp_servers).await;
+                            }
                             if app.mouse_capture != mouse_capture_active {
                                 mouse_capture_active = app.mouse_capture;
                                 // Written straight to stdout (not through the generic
@@ -2465,7 +3020,11 @@ async fn chat_loop<B: Backend>(
                                 app.input_insert(c);
                             }
                         }
-                        Ok(Event::Mouse(mouse)) => handle_mouse(app, mouse),
+                        Ok(Event::Mouse(mouse)) => {
+                            if !handle_ask_mouse(app, mouse, ask_requests).await {
+                                handle_mouse(app, mouse);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -2572,6 +3131,7 @@ async fn chat_loop<B: Backend>(
     if let Some(c) = current {
         c.handle.abort();
     }
+    crate::core::agent::interaction::cancel_all(ask_requests).await;
     Ok(())
 }
 
@@ -2611,6 +3171,156 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     if let Some(Some(idx)) = app.row_index.get(absolute) {
         app.toggle_region(*idx);
     }
+}
+
+async fn resolve_front_ask(
+    app: &mut App,
+    registry: &crate::core::agent::interaction::AskRegistry,
+    cancelled: bool,
+) {
+    let Some(ask) = app.ask_queue.pop_front() else {
+        return;
+    };
+    // Reserved plan-review ask: a single question with the exact id drives the
+    // mode transition. Capture the chosen label before `answers` is moved into
+    // the outcome. Skipped on cancel so a cancelled review never changes mode.
+    let plan_choice = (!cancelled
+        && ask.request.questions.len() == 1
+        && ask.request.questions[0].id == crate::core::agent::plan::PLAN_REVIEW_QUESTION_ID)
+        .then(|| ask.answers.first().and_then(|a| a.selected.first().cloned()))
+        .flatten();
+    let outcome = if cancelled {
+        Err(crate::core::agent::interaction::AskError::Cancelled)
+    } else {
+        Ok(ask.answers)
+    };
+    // Always respond so the model's in-flight turn completes normally.
+    let _ = crate::core::agent::interaction::respond(registry, &ask.request_id, outcome).await;
+    if let Some(label) = plan_choice {
+        apply_plan_review(app, &label);
+    }
+}
+
+/// Drive the plan-mode transition from a `plan_review` answer. The model has
+/// already staged todos via `todo(init)` earlier in the same turn; here we only
+/// flip the mode (and, for Execute, queue the continuation turn). Persists so
+/// the mode survives resume.
+fn apply_plan_review(app: &mut App, label: &str) {
+    use crate::core::agent::plan::{self, RunMode};
+    match label {
+        plan::EXECUTE_PLAN_LABEL => {
+            // Atomic handoff: refuse to leave Plan unless the plan was actually
+            // staged (spec: failed todo init keeps the agent in Plan intact).
+            if app.todos.is_empty() {
+                app.note("cannot execute: no plan staged (todo init first); staying in plan mode");
+                return;
+            }
+            app.run_mode = RunMode::Normal;
+            app.persist();
+            app.note("▶ executing plan (normal mode)");
+            // Enqueues while the ask turn is still running; on_done dequeues it,
+            // starting execution only after the mode switch has committed.
+            app.submit_user("Proceed with the plan.".to_string());
+        }
+        plan::KEEP_PLANNING_LABEL => app.note("continuing to plan (read only)"),
+        plan::EXIT_PLAN_LABEL => {
+            app.run_mode = RunMode::Normal;
+            app.persist();
+            app.note("exited plan mode (no execution)");
+        }
+        other => app.note(&format!("unknown plan review choice: {other}")),
+    }
+}
+
+/// Handle keys owned by the front interactive question. Returns false only for
+/// global Ctrl-C/Ctrl-D, which must continue into the normal run cancellation
+/// path after every ask waiter has been released.
+async fn handle_ask_key(
+    app: &mut App,
+    key: KeyEvent,
+    registry: &crate::core::agent::interaction::AskRegistry,
+) -> bool {
+    if app.ask_queue.is_empty() {
+        return false;
+    }
+    if key.kind != KeyEventKind::Press {
+        return true;
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
+        crate::core::agent::interaction::cancel_all(registry).await;
+        app.ask_queue.clear();
+        return false;
+    }
+    if key.code == KeyCode::Esc {
+        resolve_front_ask(app, registry, true).await;
+        return true;
+    }
+
+    let mut submit = false;
+    {
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        if ask.editing_custom {
+            match key.code {
+                KeyCode::Enter => submit = ask.accept_custom(),
+                KeyCode::Backspace => {
+                    ask.custom_input.pop();
+                }
+                KeyCode::Char(ch) if !ctrl => ask.custom_input.push(ch),
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Up => ask.move_selection(-1),
+                KeyCode::Down => ask.move_selection(1),
+                KeyCode::Left => ask.move_question(-1),
+                KeyCode::Right => ask.move_question(1),
+                KeyCode::Char(' ') if ask.question().multi => {
+                    submit = ask.choose();
+                }
+                KeyCode::Enter => submit = ask.choose(),
+                _ => {}
+            }
+        }
+    }
+    if submit {
+        resolve_front_ask(app, registry, false).await;
+    }
+    true
+}
+
+async fn handle_ask_mouse(
+    app: &mut App,
+    mouse: MouseEvent,
+    registry: &crate::core::agent::interaction::AskRegistry,
+) -> bool {
+    let Some(ask) = app.ask_queue.front_mut() else {
+        return false;
+    };
+    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+        return true;
+    }
+    let inside = mouse.column >= ask.rect.x
+        && mouse.column < ask.rect.x.saturating_add(ask.rect.width)
+        && mouse.row >= ask.rect.y
+        && mouse.row < ask.rect.y.saturating_add(ask.rect.height);
+    if !inside {
+        return true;
+    }
+    let Some((_, selected)) = ask
+        .row_hitboxes
+        .iter()
+        .find(|(row, _)| *row == mouse.row)
+        .copied()
+    else {
+        return true;
+    };
+    ask.selected = selected;
+    let submit = ask.choose();
+    if submit {
+        resolve_front_ask(app, registry, false).await;
+    }
+    true
 }
 
 async fn handle_key(
@@ -2721,12 +3431,45 @@ async fn handle_key(
                 item.checkbox = Some(enable);
                 toggle_mcp_server(app, mcp_servers, name, enable);
             }
+            // `/todo` editor: d/Enter = done, x = abandon (drop), r = remove.
+            // Each mutates the canonical list and rebuilds the overlay in place;
+            // opening/closing the view itself never mutates state.
+            KeyCode::Char('d') | KeyCode::Char('x') | KeyCode::Char('r') | KeyCode::Enter
+                if picker.kind == PickerKind::Todo =>
+            {
+                let code = key.code;
+                let content = picker.items.get(picker.selected).map(|i| i.value.clone());
+                // (picker borrow ends here; nothing below reads it before rebuild)
+                if let Some(content) = content {
+                    use crate::core::agent::todo::Target;
+                    let result = match code {
+                        KeyCode::Char('x') => {
+                            apply_todo_mutation(app, |l| l.drop_target(Target::Task(&content))).await
+                        }
+                        KeyCode::Char('r') => {
+                            apply_todo_mutation(app, |l| l.rm(Target::Task(&content))).await
+                        }
+                        _ => apply_todo_mutation(app, |l| l.done(Target::Task(&content))).await,
+                    };
+                    if let Err(e) = result {
+                        app.note(&format!("todo update failed: {e}"));
+                    }
+                    // Rebuild from the mutated list; close once nothing remains.
+                    if app.todos.is_empty() {
+                        app.picker = None;
+                    } else if let Some(picker) = app.picker.as_mut() {
+                        picker.items = build_todo_items(&app.todos);
+                        picker.selected =
+                            picker.selected.min(picker.items.len().saturating_sub(1));
+                    }
+                }
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
                 app.picker = None;
                 match kind {
-                    PickerKind::ResumeThread => resume_thread(app, &value),
+                    PickerKind::ResumeThread => resume_thread(app, &value).await,
                     PickerKind::SelectModel => app.set_model(value),
                     PickerKind::ToggleMcp => {}
                     PickerKind::RewindMessage => {
@@ -2740,6 +3483,8 @@ async fn handle_key(
                         }
                     }
                     PickerKind::ViewConfig => {}
+                    // Todo Enter is handled by the guarded action arm above.
+                    PickerKind::Todo => {}
                 }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
@@ -2957,6 +3702,16 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Keep working until a condition is met (bare: status)",
     },
     SlashCommand {
+        name: "/plan",
+        hint: "[exit|text]",
+        description: "Enter read-only plan mode, optionally seeding it with a message; /plan exit to leave",
+    },
+    SlashCommand {
+        name: "/todo",
+        hint: "[add [phase|] text]",
+        description: "Open the todo editor (bare) or /todo add ... to append a task",
+    },
+    SlashCommand {
         name: "/threads",
         hint: "",
         description: "List saved threads for this project",
@@ -3066,7 +3821,7 @@ async fn run_command(app: &mut App, line: &str) {
             if arg.is_empty() {
                 open_thread_picker(app);
             } else {
-                resume_thread(app, arg);
+                resume_thread(app, arg).await;
             }
         }
         "model" => {
@@ -3079,6 +3834,8 @@ async fn run_command(app: &mut App, line: &str) {
         "mcp" => open_mcp_picker(app),
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
+        "plan" => plan_command(app, arg),
+        "todo" => todo_command(app, arg).await,
         "cancel" => cancel_command(app, arg),
         "quit" | "exit" => app.should_quit = true,
         other => app.note(&format!("unknown command '/{other}' (try /help)")),
@@ -3136,6 +3893,139 @@ fn goal_command(app: &mut App, arg: &str) {
         }
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
+    }
+}
+
+/// `/plan` dispatcher: bare enters read-only plan mode, `/plan exit` leaves
+/// it, and `/plan <text>` enters plan mode (if not already in it) and
+/// immediately submits `<text>` as the first message to investigate — same
+/// convenience as seeding the bare TUI with a task. Only settable while idle
+/// so it never races the live tool set of a running turn (spec). Enforcement
+/// is at the core dispatcher; this just flips the per-turn flag forwarded in
+/// `App::body()` and persists it.
+fn plan_command(app: &mut App, arg: &str) {
+    use crate::core::agent::plan::RunMode;
+    if app.status != Status::Idle {
+        app.note("plan mode is only settable while idle");
+        return;
+    }
+    let arg = arg.trim();
+    if arg == "exit" {
+        if app.run_mode == RunMode::Plan {
+            app.run_mode = RunMode::Normal;
+            app.persist();
+            app.note("exited plan mode (normal execution)");
+        } else {
+            app.note("not in plan mode");
+        }
+        return;
+    }
+    if app.run_mode == RunMode::Plan {
+        if arg.is_empty() {
+            app.note("already in plan mode (/plan exit to leave)");
+        } else {
+            app.submit_user(arg.to_string());
+        }
+        return;
+    }
+    app.run_mode = RunMode::Plan;
+    app.persist();
+    app.note("◈ PLAN · read only — investigate, then propose a plan for review");
+    if app.goal.is_some() {
+        app.note("active goal paused while planning; it resumes on exit");
+    }
+    if !arg.is_empty() {
+        app.submit_user(arg.to_string());
+    }
+}
+
+/// Apply one user-initiated todo mutation to the canonical `TodoList`. Prefers
+/// the shared registry (the model's source of truth) so agent and user share one
+/// state; falls back to the local projection when no live session is attached
+/// (e.g. tests). Syncs the TUI projection and persists on success.
+async fn apply_todo_mutation(
+    app: &mut App,
+    op: impl FnOnce(&mut crate::core::agent::todo::TodoList) -> Result<(), String>,
+) -> Result<(), String> {
+    if let Some(args) = app.args.clone() {
+        if let Some(registry) = args.todo_registry.as_ref() {
+            let mut list = registry.lock().await;
+            op(&mut list)?;
+            app.todos = list.clone();
+            app.persist();
+            return Ok(());
+        }
+    }
+    let mut list = app.todos.clone();
+    op(&mut list)?;
+    app.todos = list;
+    app.persist();
+    Ok(())
+}
+
+/// Build the `/todo` editor rows: one per task, in phase/task order, prefixed by
+/// a status glyph. `value` is the task content (its stable mutation id).
+fn build_todo_items(todos: &crate::core::agent::todo::TodoList) -> Vec<PickerItem> {
+    use crate::core::agent::todo::TodoStatus;
+    let mut items = Vec::new();
+    for phase in &todos.phases {
+        for task in &phase.tasks {
+            let marker = match task.status {
+                TodoStatus::InProgress => "▸",
+                TodoStatus::Pending => "○",
+                TodoStatus::Completed => "✔",
+                TodoStatus::Abandoned => "✗",
+            };
+            items.push(PickerItem {
+                value: task.content.clone(),
+                label: format!("{marker} {}", task.content),
+                hint: (!phase.name.is_empty()).then(|| phase.name.clone()),
+                checkbox: None,
+            });
+        }
+    }
+    items
+}
+
+/// Open the `/todo` editor overlay over the current phased list.
+fn open_todo_picker(app: &mut App) {
+    if app.todos.is_empty() {
+        app.note("no todos yet — the agent declares them, or add one: /todo add TEXT");
+        return;
+    }
+    app.picker = Some(Picker {
+        kind: PickerKind::Todo,
+        items: build_todo_items(&app.todos),
+        selected: 0,
+    });
+}
+
+/// `/todo` handler. Bare opens the editor overlay; `/todo add [PHASE |] TEXT`
+/// appends a pending task through the canonical `append` op (default phase
+/// "Tasks"), so a user-added task is indistinguishable from a model-added one.
+async fn todo_command(app: &mut App, arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        open_todo_picker(app);
+        return;
+    }
+    let Some(rest) = arg.strip_prefix("add") else {
+        app.note("usage: /todo   (open editor)   |   /todo add [PHASE |] TEXT");
+        return;
+    };
+    let rest = rest.trim();
+    let (phase, text) = match rest.split_once('|') {
+        Some((p, t)) => (p.trim().to_string(), t.trim().to_string()),
+        None => ("Tasks".to_string(), rest.to_string()),
+    };
+    if text.is_empty() {
+        app.note("usage: /todo add [PHASE |] TEXT");
+        return;
+    }
+    let phase_label = phase.clone();
+    match apply_todo_mutation(app, move |list| list.append(&phase, vec![text])).await {
+        Ok(()) => app.note(&format!("added todo to '{phase_label}'")),
+        Err(e) => app.note(&format!("todo add failed: {e}")),
     }
 }
 
@@ -3479,6 +4369,39 @@ fn restore_goal(app: &mut App, metadata: Option<&serde_json::Value>) {
     }
 }
 
+/// Reload the persisted `RunMode` for a resumed thread. Defaults to `Normal` on
+/// absence/malformed metadata. Resume restores the mode only; the run stays at
+/// `Status::Idle` (set by the resume path), so a saved plan never auto-executes.
+fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
+    use crate::core::agent::plan::RunMode;
+    app.run_mode = RunMode::Normal;
+    let Some(meta) = metadata else { return };
+    if let Some(mode) = meta
+        .get("run_mode")
+        .and_then(|v| serde_json::from_value::<RunMode>(v.clone()).ok())
+    {
+        app.run_mode = mode;
+        if mode == RunMode::Plan {
+            app.note("resumed in plan mode (read only); /plan exit to leave");
+        }
+    }
+}
+
+/// Reload the canonical todo list for a resumed thread from its persisted
+/// metadata into the TUI projection. The caller also mirrors it into the shared
+/// registry so the model's next `todo` op operates on the reconstructed state.
+fn restore_todos(app: &mut App, metadata: Option<&serde_json::Value>) {
+    app.todos = crate::core::agent::todo::TodoList::default();
+    app.last_todo_reminder = None;
+    let Some(meta) = metadata else { return };
+    if let Some(todos) = meta
+        .get("todos")
+        .and_then(|v| serde_json::from_value::<crate::core::agent::todo::TodoList>(v.clone()).ok())
+    {
+        app.todos = todos;
+    }
+}
+
 /// Open the double-Esc rewind picker listing the conversation's user messages.
 fn open_rewind_picker(app: &mut App) {
     let mut items = Vec::new();
@@ -3615,15 +4538,15 @@ fn rebuild_transcript(app: &mut App) {
     }
 }
 
-fn resume_thread(app: &mut App, id_arg: &str) {
-    apply_resume(app, &ResumeTarget::Id(id_arg.to_string()));
+async fn resume_thread(app: &mut App, id_arg: &str) {
+    apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
 }
 
 /// Resolve a resume target and load it into the app, reporting why not when it
 /// cannot be resolved. The session is left untouched on failure.
-fn apply_resume(app: &mut App, target: &ResumeTarget) {
+async fn apply_resume(app: &mut App, target: &ResumeTarget) {
     match super::find_resume_thread(&app.agent_dir, target) {
-        Ok(thread) => load_thread(app, &thread),
+        Ok(thread) => load_thread(app, &thread).await,
         Err(e) => app.note(&e),
     }
 }
@@ -3631,7 +4554,7 @@ fn apply_resume(app: &mut App, target: &ResumeTarget) {
 /// Replace the live session with a saved thread's state: history, transcript,
 /// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
 /// are not persisted as messages).
-fn load_thread(app: &mut App, thread: &serde_json::Value) {
+async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     let full_id = thread.get("id").and_then(|v| v.as_str()).unwrap_or_default();
 
     let (messages, skipped) = match super::cli_read_messages_lenient(&app.agent_dir, full_id) {
@@ -3656,6 +4579,15 @@ fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.message_queue.clear();
     restore_snapshots(app, thread.get("metadata"));
     restore_goal(app, thread.get("metadata"));
+    restore_run_mode(app, thread.get("metadata"));
+    restore_todos(app, thread.get("metadata"));
+    // Mirror the reconstructed todos into the shared registry so the model's
+    // next `todo` mutation operates on the resumed state, not an empty list.
+    if let Some(args) = app.args.as_ref() {
+        if let Some(registry) = args.todo_registry.as_ref() {
+            *registry.lock().await = app.todos.clone();
+        }
+    }
 
     // Adopt the thread's model so continuation stays coherent.
     if let Some(model) = thread
@@ -3862,14 +4794,41 @@ fn transcript_top_padding(total: u16, inner_h: u16) -> u16 {
 
 fn draw(f: &mut Frame, app: &mut App) {
     let input_h = input_box_height(app, f.area().width);
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(input_h),
-        Constraint::Length(1),  // path line
-        Constraint::Length(1),  // footer
-    ])
-    .split(f.area());
+    // A multi-line todo tree HUD sits just below the header when todos exist and
+    // no overlay is open, sized to its bounded row count. Kept out of the layout
+    // otherwise so a todo-free session (or an open picker) renders exactly as
+    // before. Built at most once per frame -- its line count sizes the layout
+    // and the same lines are reused for the actual render below.
+    let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
+    let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
+    let show_todo = todo_h > 0;
+    // Header/path/footer chrome stays pinned top and bottom; the todo HUD
+    // sits directly above the input box instead -- the last thing in view
+    // right before where the user types, not competing with the header for
+    // attention. Kept out of the layout entirely when there are no todos (or
+    // an overlay is open) so that case renders exactly as before.
+    let (todo_area, chunks) = if show_todo {
+        let raw = Layout::vertical([
+            Constraint::Length(1),       // 0: header
+            Constraint::Length(1),       // 1: path line
+            Constraint::Length(1),       // 2: footer
+            Constraint::Min(1),          // 3: body
+            Constraint::Length(todo_h),  // 4: todo HUD
+            Constraint::Length(input_h), // 5: input
+        ])
+        .split(f.area());
+        (Some(raw[4]), [raw[0], raw[3], raw[5], raw[1], raw[2]])
+    } else {
+        let raw = Layout::vertical([
+            Constraint::Length(1),       // 0: header
+            Constraint::Length(1),       // 1: path line
+            Constraint::Length(1),       // 2: footer
+            Constraint::Min(1),          // 3: body
+            Constraint::Length(input_h), // 4: input
+        ])
+        .split(f.area());
+        (None, [raw[0], raw[3], raw[4], raw[1], raw[2]])
+    };
 
     f.render_widget(header(app), chunks[0]);
 
@@ -4078,13 +5037,29 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else {
         0
     };
+    if let Some(area) = todo_area {
+        // `todo_area` is only `Some` when `todo_lines` was built above.
+        f.render_widget(Paragraph::new(todo_lines.unwrap()), area);
+    }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(path_line(app), chunks[3]);
     f.render_widget(footer(app), chunks[4]);
 
-    // Dock the permission prompt directly above the input box, growing upward
-    // and clamped to the body area so it never overruns the transcript.
-    if let Some(pending) = app.pending() {
+    // An interactive question owns the dock while active. Permission prompts
+    // remain queued behind it and surface as soon as the question resolves.
+    if !app.ask_queue.is_empty() {
+        let queue_len = app.ask_queue.len();
+        let ask = app.ask_queue.front_mut().expect("checked non-empty above");
+        let height = (ask.row_count() as u16 + 4).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_ask(f, rect, ask, queue_len);
+    } else if let Some(pending) = app.pending() {
         let detail_rows = 1
             + u16::from(pending.path.is_some() || pending.command.is_some())
             + u16::from(pending.subagent.is_some());
@@ -4100,9 +5075,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_permission(f, rect, pending, app.pending_queue.len());
     } else {
-        // Dock the slash-command hints above the input box, growing upward and
-        // clamped to the body so they never overrun the transcript. Mutually
-        // exclusive with the permission prompt (that only shows while running).
+        // Dock the slash-command hints above the input box, growing upward
+        // and clamped to the body so they never overrun the transcript.
         let matches = app.slash_matches();
         if !matches.is_empty() {
             let height = (matches.len() as u16 + 2).min(chunks[1].height);
@@ -4115,8 +5089,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             };
             draw_slash_hints(f, rect, &matches, app.slash_selected);
         } else if app.has_path_hints() {
-            // Dock the file-path hints above the input box, same layout as
-            // slash hints. Only shows when no slash hints are active.
             let height = (app.path_hints.len() as u16 + 2).min(chunks[1].height);
             let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
             let rect = ratatui::layout::Rect {
@@ -4128,6 +5100,124 @@ fn draw(f: &mut Frame, app: &mut App) {
             draw_path_hints(f, rect, &app.path_hints, app.path_hint_selected);
         }
     }
+}
+
+fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
+    use ratatui::widgets::{Clear, List, ListItem, ListState};
+
+    let question = ask.question().clone();
+    let answer = ask.answers[ask.question_index].clone();
+    let dim = Style::new().dark_gray();
+    let title = if queue_len > 1 {
+        format!(
+            " question {}/{} · request 1/{queue_len} ",
+            ask.question_index + 1,
+            ask.request.questions.len()
+        )
+    } else {
+        format!(
+            " question {}/{} ",
+            ask.question_index + 1,
+            ask.request.questions.len()
+        )
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+    let inner = block.inner(area);
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(ask.row_count() as u16),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+
+    let mut items = Vec::with_capacity(ask.row_count());
+    for (index, option) in question.options.iter().enumerate() {
+        let selected = answer.selected.iter().any(|label| label == &option.label);
+        let mark = if question.multi {
+            if selected {
+                "[x] "
+            } else {
+                "[ ] "
+            }
+        } else if selected {
+            "● "
+        } else {
+            "○ "
+        };
+        let mut spans = vec![
+            Span::styled(mark, Style::new().cyan()),
+            Span::raw(option.label.clone()),
+        ];
+        if question.recommended == Some(index) {
+            spans.push(Span::styled("  recommended", Style::new().green().dim()));
+        }
+        if let Some(description) = &option.description {
+            spans.push(Span::styled(format!("  {description}"), dim));
+        }
+        items.push(ListItem::new(Line::from(spans)));
+    }
+    let custom_mark = if question.multi {
+        if answer.custom_input.is_some() {
+            "[x] "
+        } else {
+            "[ ] "
+        }
+    } else if answer.custom_input.is_some() {
+        "● "
+    } else {
+        "○ "
+    };
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled(custom_mark, Style::new().cyan()),
+        Span::raw("Other (type your own)"),
+    ])));
+    if question.multi {
+        items.push(ListItem::new(Line::styled(
+            "Submit answers",
+            Style::new().green().bold(),
+        )));
+    }
+
+    ask.rect = area;
+    ask.row_hitboxes = (0..items.len())
+        .filter_map(|index| {
+            let y = rows[1].y.saturating_add(index as u16);
+            (y < rows[1].y.saturating_add(rows[1].height)).then_some((y, index))
+        })
+        .collect();
+
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(Line::styled(question.question, Style::new().bold())),
+        rows[0],
+    );
+    let list = List::new(items)
+        .highlight_style(Style::new().reversed().bold())
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(ask.selected));
+    f.render_stateful_widget(list, rows[1], &mut state);
+    let help = if ask.editing_custom {
+        Line::from(vec![
+            Span::styled("Other: ", Style::new().cyan()),
+            Span::raw(ask.custom_input.clone()),
+            Span::styled("█", Style::new().cyan()),
+        ])
+    } else {
+        Line::styled(
+            if question.multi {
+                "↑↓ move · Space toggle · Enter choose · ←→ question · Esc cancel"
+            } else {
+                "↑↓ move · Enter choose · ←→ question · Esc cancel"
+            },
+            dim,
+        )
+    };
+    f.render_widget(Paragraph::new(help), rows[2]);
 }
 
 /// Slash-command hint popup: one row per match (`/name [hint]  description`),
@@ -4315,6 +5405,13 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
 }
 
 /// Render a duration as a compact `"12s"` / `"3m12s"` / `"1h04m"` label.
+/// Output tokens per second, flooring the duration at 100ms so a near-instant
+/// turn cannot produce a divide-by-tiny spike.
+fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
+    let d = duration_ms.max(100);
+    output_tokens as f64 * 1000.0 / d as f64
+}
+
 fn format_elapsed(secs: u64) -> String {
     if secs < 60 {
         format!("{secs}s")
@@ -4343,6 +5440,12 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::styled(" jan agent ", Style::new().on_blue().white().bold()),
         Span::raw(format!("  {}  ", app.model)),
     ];
+    // Wall-clock (local) segment, mirroring the reference status line's leading
+    // HH:MM:SS. Recomputed each frame so it ticks in place.
+    spans.push(Span::styled(
+        format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+        Style::new().dim(),
+    ));
     spans.push(Span::raw(format!("  {turn}")));
     if app.tokens > 0 {
         spans.push(Span::raw(format!(
@@ -4355,6 +5458,11 @@ fn header(app: &App) -> Paragraph<'static> {
         spans.push(Span::raw(format!("ctx 0/{}K  ", app.context_window / 1000)));
     }
     spans.push(Span::styled(elapsed, Style::new().dim()));
+    // Output rate segment: last completed turn's tokens/sec, cached so it holds
+    // steady instead of flickering to 0 between turns.
+    if let Some(rate) = app.tokens_per_sec {
+        spans.push(Span::styled(format!("  {rate:.1}/s"), Style::new().dim()));
+    }
     // Active-goal indicator: `◎ /goal active <duration>` (cyan while running,
     // green once achieved), so an unattended run shows the goal is still live.
     if let Some(goal) = app.goal.as_ref() {
@@ -4368,9 +5476,161 @@ fn header(app: &App) -> Paragraph<'static> {
         };
         spans.push(Span::styled(label, gstyle));
     }
+    // Plan-mode badge: `PLAN · read only`. Only shown in Plan mode; normal mode
+    // keeps its existing layout unchanged (spec).
+    if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+        spans.push(Span::styled(
+            "  PLAN · read only",
+            Style::new().magenta().bold(),
+        ));
+    }
     spans.push(Span::raw("  "));
     spans.push(Span::styled(format!("[{status}]"), style));
     Paragraph::new(Line::from(spans))
+}
+
+/// Hard ceiling on HUD rows so a huge plan can't crowd out the transcript.
+const MAX_TODO_ROWS: usize = 10;
+/// Per-phase task cap before a `+N more` summary row is shown.
+const TODO_TASK_CAP: usize = 8;
+
+/// Tree connector: `└─` for the last row at a nesting level, `├─` otherwise.
+fn tree_connector(is_last: bool) -> &'static str {
+    if is_last {
+        "└─"
+    } else {
+        "├─"
+    }
+}
+
+/// One task row: `<indent><connector> <glyph> <text>`, styled by status.
+/// Pending is dim, in-progress accent, completed dim+strikethrough, abandoned
+/// red+strikethrough with a distinct `☒` glyph.
+fn todo_task_line(
+    indent: &str,
+    is_last: bool,
+    task: &crate::core::agent::todo::TodoItem,
+    max: usize,
+) -> Line<'static> {
+    use crate::core::agent::todo::TodoStatus;
+    let (glyph, style) = match task.status {
+        TodoStatus::Pending => ("☐", Style::new().dim()),
+        TodoStatus::InProgress => ("☐", Style::new().cyan()),
+        TodoStatus::Completed => ("☑", Style::new().dim().add_modifier(Modifier::CROSSED_OUT)),
+        TodoStatus::Abandoned => ("☒", Style::new().red().add_modifier(Modifier::CROSSED_OUT)),
+    };
+    Line::from(vec![
+        Span::styled(
+            format!("{indent}{} ", tree_connector(is_last)),
+            Style::new().dark_gray(),
+        ),
+        Span::styled(format!("{glyph} "), style),
+        Span::styled(truncate(&task.content, max), style),
+    ])
+}
+
+/// Multi-line tree HUD for the session todos, capped at `MAX_TODO_ROWS`:
+///
+/// ```text
+/// Todos · 1/2   /todo
+///  └─ backend · 1/3
+///      ├─ ☑ scaffold
+///      └─ ☐ wire routes
+/// ```
+///
+/// Single-phase lists skip the redundant phase header and nest tasks directly
+/// under `Todos`. Multi-phase lists show one connected row per phase with its
+/// `· done/total` progress; only the active phase (the one holding the
+/// in-progress task) expands its task rows, the rest stay header-only.
+fn todo_hud(app: &App) -> Vec<Line<'static>> {
+    use crate::core::agent::todo::TodoStatus;
+    let phases = &app.todos.phases;
+    let multi = phases.len() > 1;
+    let width = app.render_width() as usize;
+
+    // Which phase holds the in-progress task, if any; used both for the root
+    // row's `idx/count` suffix and to pick which phase expands its tasks below.
+    let active_idx = phases
+        .iter()
+        .position(|p| p.tasks.iter().any(|t| t.status == TodoStatus::InProgress));
+
+    // Root row: `Todos`, plus ` · idx/count` when multi-phase, plus the hint.
+    let mut root = vec![Span::styled("Todos", Style::new().cyan().bold())];
+    if multi {
+        // ponytail: no active task (all done, or none started) → count fully
+        // finished phases so a completed plan reads `N/N`.
+        let idx = active_idx.map(|i| i + 1).unwrap_or_else(|| {
+            phases
+                .iter()
+                .filter(|p| {
+                    p.tasks
+                        .iter()
+                        .all(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
+                })
+                .count()
+                .max(1)
+        });
+        root.push(Span::styled(
+            format!(" · {idx}/{}", phases.len()),
+            Style::new().cyan(),
+        ));
+    }
+    root.push(Span::styled("   /todo".to_string(), Style::new().dark_gray()));
+    let mut lines = vec![Line::from(root)];
+
+    // Which task rows to emit for a phase, capped with a `+N more` summary.
+    // ponytail: flat cap over all statuses (completed included, so their
+    // strikethrough shows); no completed-omission viewport for v1.
+    let push_tasks = |lines: &mut Vec<Line<'static>>, indent: &str, tasks: &[crate::core::agent::todo::TodoItem]| {
+        let shown = tasks.len().min(TODO_TASK_CAP);
+        let has_more = tasks.len() > shown;
+        let max = width.saturating_sub(indent.chars().count() + 4).max(8);
+        for (i, task) in tasks.iter().take(shown).enumerate() {
+            let is_last = !has_more && i + 1 == shown;
+            lines.push(todo_task_line(indent, is_last, task, max));
+        }
+        if has_more {
+            let more = tasks.len() - shown;
+            lines.push(Line::from(vec![Span::styled(
+                format!("{indent}{} +{more} more", tree_connector(true)),
+                Style::new().dark_gray(),
+            )]));
+        }
+    };
+
+    if multi {
+        for (pi, phase) in phases.iter().enumerate() {
+            let is_last = pi + 1 == phases.len();
+            let done = phase
+                .tasks
+                .iter()
+                .filter(|t| matches!(t.status, TodoStatus::Completed | TodoStatus::Abandoned))
+                .count();
+            let active = Some(pi) == active_idx;
+            let style = if active {
+                Style::new().bold()
+            } else {
+                Style::new().dim()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {} ", tree_connector(is_last)),
+                    Style::new().dark_gray(),
+                ),
+                Span::styled(phase.name.clone(), style),
+                Span::styled(format!(" · {done}/{}", phase.tasks.len()), style),
+            ]));
+            // Only the active phase expands its tasks; others stay header-only.
+            if active {
+                push_tasks(&mut lines, "     ", &phase.tasks);
+            }
+        }
+    } else if let Some(phase) = phases.first() {
+        push_tasks(&mut lines, " ", &phase.tasks);
+    }
+
+    lines.truncate(MAX_TODO_ROWS);
+    lines
 }
 
 /// Max content rows the input box grows to before it scrolls internally.
@@ -4588,15 +5848,17 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_user_message, clipboard_path, diff_lines, group_activity, group_detail_lines,
-        group_summary, handle_key, handle_mouse, image_mime, input_content_lines, is_table_separator, load_image_file,
-        message_text, open_config_screen, parse_command, render_table, run_command,
-        restore_goal, running_group_row, split_reasoning, subagent_activity,
-        subagent_name_from_run_id, summarize_result, tool_activity, tool_finished,
-        transcript_top_padding, user_content_parts, App, CurrentRun, Pending, PendingImage,
-        apply_resume, PickerKind, ResumeTarget, SnapshotJob, Status, DIFF_MAX_ROWS,
-        SLASH_COMMANDS, SPINNER,
+        apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
+        diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
+        handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
+        is_table_separator, load_image_file, message_text, open_config_screen, parse_command,
+        render_table, restore_goal, restore_run_mode, restore_todos, run_command,
+        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
+        summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
+        user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
+        SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS,
     };
+    use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
@@ -4632,6 +5894,50 @@ mod tests {
             selected: 0,
             subagent: None,
         }
+    }
+
+    #[test]
+    fn tokens_per_second_floors_duration_at_100ms() {
+        // 100 tokens over exactly 1s -> 100/s.
+        assert_eq!(tokens_per_second(100, 1000), 100.0);
+        // Sub-100ms durations are floored at 100ms, so no divide-by-tiny spike:
+        // 10 tokens / 0ms and / 100ms both yield 100/s, not infinity.
+        assert_eq!(tokens_per_second(10, 0), 100.0);
+        assert_eq!(tokens_per_second(10, 50), 100.0);
+        assert_eq!(tokens_per_second(10, 100), 100.0);
+        // Zero output is a clean 0, never NaN.
+        assert_eq!(tokens_per_second(0, 500), 0.0);
+    }
+
+    #[test]
+    fn spinner_advances_only_after_a_full_frame_elapses() {
+        let mut app = test_app();
+        let t0 = Instant::now();
+        app.last_spinner_advance = t0;
+        app.spinner_frame = 0;
+        // One 50ms tick is under the 80ms frame time: no advance.
+        app.advance_spinner(t0 + Duration::from_millis(50));
+        assert_eq!(app.spinner_frame, 0);
+        // A second tick brings cumulative elapsed to 100ms (>= 80): +1 frame.
+        app.advance_spinner(t0 + Duration::from_millis(100));
+        assert_eq!(app.spinner_frame, 1);
+        // Leftover 20ms carried forward: next advance is at 160ms, not 180ms.
+        app.advance_spinner(t0 + Duration::from_millis(150));
+        assert_eq!(app.spinner_frame, 1);
+        app.advance_spinner(t0 + Duration::from_millis(165));
+        assert_eq!(app.spinner_frame, 2);
+    }
+
+    #[test]
+    fn spinner_catches_up_multiple_frames_after_a_stall() {
+        let mut app = test_app();
+        let t0 = Instant::now();
+        app.last_spinner_advance = t0;
+        app.spinner_frame = 0;
+        // A 500ms stall == floor(500/80) = 6 frames caught up in one advance.
+        app.advance_spinner(t0 + Duration::from_millis(500));
+        assert_eq!(app.spinner_frame, (500 / SPINNER_ADVANCE_MS) as usize);
+        assert_eq!(app.spinner_frame, 6);
     }
 
     #[test]
@@ -4722,6 +6028,149 @@ mod tests {
         assert_eq!(p.selected, 0);
         p.move_selection(1);
         assert_eq!(p.selected, 1);
+    }
+
+    fn ask_request(
+        multi: bool,
+        two_questions: bool,
+    ) -> crate::core::agent::interaction::AskRequest {
+        let mut questions = vec![json!({
+            "id": "scope",
+            "question": "Which scope?",
+            "options": [{"label": "Small"}, {"label": "Large", "description": "Everything"}],
+            "multi": multi,
+            "recommended": 0
+        })];
+        if two_questions {
+            questions.push(json!({
+                "id": "speed",
+                "question": "Which speed?",
+                "options": [{"label": "Fast"}, {"label": "Careful"}]
+            }));
+        }
+        crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": questions
+        }))
+        .unwrap()
+    }
+
+    async fn press_ask(
+        app: &mut App,
+        registry: &crate::core::agent::interaction::AskRegistry,
+        code: KeyCode,
+    ) {
+        assert!(handle_ask_key(app, KeyEvent::new(code, KeyModifiers::NONE), registry,).await);
+    }
+
+    #[tokio::test]
+    async fn ask_keyboard_preserves_answers_across_questions() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, true),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.ask_queue.front().unwrap().question_index, 1);
+        press_ask(&mut app, &registry, KeyCode::Left).await;
+        assert_eq!(
+            app.ask_queue.front().unwrap().answers[0].selected,
+            vec!["Small"]
+        );
+        press_ask(&mut app, &registry, KeyCode::Right).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+
+        assert!(app.ask_queue.is_empty(), "final answer did not submit");
+        assert!(
+            registry.lock().await.is_empty(),
+            "ask sender was not resolved"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].selected, vec!["Small"]);
+        assert_eq!(answers[1].selected, vec!["Careful"]);
+        assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ask_keyboard_handles_multi_select_and_cancellation() {
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(true, false),
+        });
+
+        press_ask(&mut app, &registry, KeyCode::Char(' ')).await;
+        for _ in 0..3 {
+            press_ask(&mut app, &registry, KeyCode::Down).await;
+        }
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert!(app.ask_queue.is_empty(), "multi-select did not submit");
+        assert!(
+            registry.lock().await.is_empty(),
+            "ask sender was not resolved"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].selected, vec!["Small"]);
+
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        press_ask(&mut app, &registry, KeyCode::Esc).await;
+        assert!(matches!(
+            receiver.await.unwrap(),
+            Err(crate::core::agent::interaction::AskError::Cancelled)
+        ));
+        assert!(app.ask_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ask_mouse_opens_custom_editor_and_submits_text() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(36, 24)).unwrap();
+        terminal.draw(|frame| super::draw(frame, &mut app)).unwrap();
+        let other_row = app.ask_queue.front().unwrap().row_hitboxes[2].0;
+
+        assert!(
+            handle_ask_mouse(
+                &mut app,
+                MouseEvent {
+                    kind: MouseEventKind::Down(MouseButton::Left),
+                    column: 2,
+                    row: other_row,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &registry,
+            )
+            .await
+        );
+        assert!(app.ask_queue.front().unwrap().editing_custom);
+        for ch in "custom answer".chars() {
+            press_ask(&mut app, &registry, KeyCode::Char(ch)).await;
+        }
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+
+        assert!(app.ask_queue.is_empty(), "custom answer did not submit");
+        assert!(
+            registry.lock().await.is_empty(),
+            "ask sender was not resolved"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(answers[0].custom_input.as_deref(), Some("custom answer"));
+        assert!(app.ask_queue.is_empty());
     }
 
     #[test]
@@ -5017,6 +6466,64 @@ mod tests {
             "Read main.rs"
         );
         assert_eq!(tool_finished("list", &json!({})), "Listed files");
+    }
+
+    /// `web_search`/`web_fetch`/`ask`/`todo` used to fall through to the raw
+    /// `"{name} {args}"` dump (no `tool_activity`/`tool_finished` match arm),
+    /// so a session mixing them with grep/read looked visually inconsistent
+    /// (friendly labels next to raw JSON blobs). Every builtin the model can
+    /// call now gets a concise label like the rest.
+    #[test]
+    fn every_builtin_gets_a_friendly_label_not_a_raw_json_dump() {
+        assert_eq!(
+            tool_activity("web_search", &json!({ "query": "rust async runtime" })),
+            "Searching the web: rust async runtime"
+        );
+        assert_eq!(
+            tool_finished("web_search", &json!({ "query": "rust async runtime" })),
+            "Searched the web: rust async runtime"
+        );
+        assert_eq!(
+            tool_activity("web_fetch", &json!({ "url": "https://example.com" })),
+            "Fetching: https://example.com"
+        );
+        assert_eq!(
+            tool_finished("web_fetch", &json!({ "url": "https://example.com" })),
+            "Fetched: https://example.com"
+        );
+        assert_eq!(tool_activity("ask", &json!({ "questions": [] })), "Asking a question");
+        assert_eq!(tool_finished("ask", &json!({ "questions": [] })), "Asked a question");
+    }
+
+    #[test]
+    fn todo_tool_label_names_the_op_and_target() {
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "start", "task": "write tests" })),
+            "Starting task: write tests"
+        );
+        assert_eq!(
+            tool_finished("todo", &json!({ "op": "done", "task": "write tests" })),
+            "Completed task: write tests"
+        );
+        assert_eq!(
+            tool_activity("todo", &json!({ "op": "drop", "all": true })),
+            "Abandoning all tasks"
+        );
+        assert_eq!(
+            tool_activity(
+                "todo",
+                &json!({ "op": "append", "phase": "Build", "items": ["a", "b"] })
+            ),
+            "Adding 2 tasks to Build"
+        );
+        assert_eq!(
+            tool_activity(
+                "todo",
+                &json!({ "op": "init", "list": [{ "phase": "Research", "items": ["a"] }] })
+            ),
+            "Planning 1 phase"
+        );
+        assert_eq!(tool_activity("todo", &json!({ "op": "view" })), "Checking todos");
     }
 
     fn line_text(line: &ratatui::text::Line) -> String {
@@ -5791,14 +7298,39 @@ mod tests {
         // Submit while the run is still gated on model/MCP/snapshot readiness:
         // want_start is armed but no run has spawned yet.
         app.submit_user("do a thing".into());
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-reviewer-1".into(),
+            name: "reviewer".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "a1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "sub-reviewer-1" }),
+        });
+        // A second call whose args are still streaming in (no ToolCall event
+        // yet, just the throbber-only ToolCallStarted).
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "w1".into(),
+            name: "write".into(),
+        });
         assert!(app.want_start, "submit should arm want_start");
         assert_eq!(app.status, Status::Running);
+        assert_eq!(app.subagents.len(), 1);
+        assert_eq!(app.awaiting.len(), 1);
+        assert_eq!(app.starting.len(), 1);
+
         app.cancel_run();
         assert!(
             !app.want_start,
             "cancel must drop the pending start or the loop re-spawns it"
         );
         assert_eq!(app.status, Status::Idle);
+        assert!(app.subagents.is_empty(), "cancel must clear live subagent rows");
+        assert!(app.awaiting.is_empty(), "cancel must clear awaited-subagent state");
+        assert!(
+            app.starting.is_empty(),
+            "cancel must clear a still-streaming call's throbber, or it lingers forever"
+        );
     }
 
     #[test]
@@ -6510,8 +8042,8 @@ mod tests {
         assert_eq!(summarize_result("abcdefgh", 4), "abc…");
     }
 
-    #[test]
-    fn apply_resume_latest_restores_history_and_model() {
+    #[tokio::test]
+    async fn apply_resume_latest_restores_history_and_model() {
         let mut app = test_app();
         let history = vec![
             json!({ "role": "user", "content": "first" }),
@@ -6523,7 +8055,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest);
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
 
         assert_eq!(fresh.thread_id.as_deref(), Some(id.as_str()));
         assert_eq!(fresh.history, history);
@@ -6545,10 +8077,10 @@ mod tests {
         assert_eq!(super::super::list_threads_in(&app.agent_dir).unwrap().len(), 1);
     }
 
-    #[test]
-    fn apply_resume_notes_when_nothing_to_resume() {
+    #[tokio::test]
+    async fn apply_resume_notes_when_nothing_to_resume() {
         let mut app = test_app();
-        apply_resume(&mut app, &ResumeTarget::Latest);
+        apply_resume(&mut app, &ResumeTarget::Latest).await;
         let joined: String = app
             .transcript
             .iter()
@@ -6726,6 +8258,11 @@ mod tests {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/goal"));
     }
 
+    #[test]
+    fn plan_is_a_registered_command() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/plan"));
+    }
+
     #[tokio::test]
     async fn goal_set_stores_condition_and_starts_a_turn() {
         let mut app = test_app();
@@ -6847,6 +8384,595 @@ mod tests {
         assert_eq!(g.turns, 2);
         assert_eq!(g.last_reason, "one failing");
         assert!(g.is_active());
+    }
+
+    fn plan_review_request() -> crate::core::agent::interaction::AskRequest {
+        crate::core::agent::interaction::AskRequest::parse(&json!({
+            "questions": [{
+                "id": crate::core::agent::plan::PLAN_REVIEW_QUESTION_ID,
+                "question": "Ready to execute?",
+                "options": [
+                    {"label": crate::core::agent::plan::EXECUTE_PLAN_LABEL},
+                    {"label": crate::core::agent::plan::KEEP_PLANNING_LABEL},
+                    {"label": crate::core::agent::plan::EXIT_PLAN_LABEL},
+                ]
+            }]
+        }))
+        .unwrap()
+    }
+
+    fn staged_todos() -> crate::core::agent::todo::TodoList {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        TodoList {
+            phases: vec![TodoPhase {
+                name: "Plan".into(),
+                tasks: vec![TodoItem {
+                    content: "do the thing".into(),
+                    status: TodoStatus::Pending,
+                }],
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_command_enters_and_exits_while_idle() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        run_command(&mut app, "plan").await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        run_command(&mut app, "plan exit").await;
+        assert_eq!(app.run_mode, RunMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn plan_command_rejected_while_running() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.status = Status::Running;
+        run_command(&mut app, "plan").await;
+        assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("only settable while idle"), "note: {text}");
+    }
+
+    #[tokio::test]
+    async fn plan_command_with_text_enters_plan_and_submits_it() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        run_command(&mut app, "plan make a html cat slide. use 3 subagents to research").await;
+        assert_eq!(app.run_mode, RunMode::Plan, "text arg must also enter plan mode");
+        assert_eq!(app.status, Status::Running, "seeded text must start a turn");
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(
+            text.contains("make a html cat slide"),
+            "seeded text must render as the user's message: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_command_with_text_while_already_planning_just_submits() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        run_command(&mut app, "plan investigate the auth module").await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert_eq!(app.status, Status::Running);
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("investigate the auth module"), "{text}");
+    }
+
+    #[test]
+    fn run_mode_persists_and_restores_via_thread_metadata() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        let meta = app.thread_metadata().expect("metadata present in plan mode");
+        assert_eq!(meta.get("run_mode").and_then(|v| v.as_str()), Some("plan"));
+
+        let mut restored = test_app();
+        restore_run_mode(&mut restored, Some(&meta));
+        assert_eq!(restored.run_mode, RunMode::Plan);
+        // Resume must never auto-execute a saved plan.
+        assert_eq!(restored.status, Status::Idle);
+        assert!(restored.message_queue.is_empty());
+    }
+
+    #[test]
+    fn normal_mode_omits_run_mode_from_metadata() {
+        // Old threads / normal sessions keep clean, backward-compatible metadata.
+        let app = test_app();
+        assert!(app.thread_metadata().is_none());
+    }
+
+    // ── session todo: reminder policy, editor, persistence ─────────────────
+
+    fn seed_open_todos(app: &mut App) {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        app.todos = TodoList {
+            phases: vec![TodoPhase {
+                name: "P".into(),
+                tasks: vec![
+                    TodoItem { content: "t1".into(), status: TodoStatus::InProgress },
+                    TodoItem { content: "t2".into(), status: TodoStatus::Pending },
+                ],
+            }],
+        };
+    }
+
+    /// A clean assistant turn that yielded a final answer (the reminder boundary).
+    fn finish_clean_turn(app: &mut App) {
+        finish_clean_turn_with_answer(app, "all set");
+    }
+
+    /// Like `finish_clean_turn`, but with a caller-chosen final answer text.
+    fn finish_clean_turn_with_answer(app: &mut App, text: &str) {
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token { text: text.into() });
+        app.on_done("stop".into(), None);
+    }
+
+    fn last_history_content(app: &App) -> String {
+        app.history
+            .last()
+            .and_then(|m| m.get("content"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    }
+
+    #[test]
+    fn todo_reminder_fires_once_at_clean_boundary_with_open_work() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(app.want_start, "open work must queue one continuation turn");
+        let injected = last_history_content(&app);
+        assert!(injected.contains("unfinished todos"), "got: {injected}");
+        assert!(injected.contains("t1") && injected.contains("t2"));
+        // The reminder is hidden: no user-authored `› ` row in the transcript.
+        let rows: String = app.transcript.iter().map(line_text).collect();
+        assert!(!rows.contains("› "), "reminder must not render as a user row");
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_when_agent_updated_todos_this_turn() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        // A successful todo mutation happened this turn: the agent is engaged.
+        app.todo_call_this_turn = true;
+        app.todo_ok_this_turn = true;
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "an engaged turn must not be nagged");
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_in_plan_mode() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "plan mode stages todos, never auto-executes");
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_when_no_answer() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        // A stop with no answer text is an abnormal finish, not a clean yield.
+        app.status = Status::Running;
+        app.on_done("stop".into(), None);
+        assert!(!app.want_start);
+    }
+
+    #[tokio::test]
+    async fn todo_reminder_suppressed_while_ask_pending() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _rx) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: ask_request(false, false),
+        });
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "a pending ask blocks the reminder boundary");
+    }
+
+    #[test]
+    fn todo_reminder_deduplicates_repeats() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(app.want_start);
+        assert!(last_history_content(&app).contains("unfinished todos"));
+        // The loop consumes want_start when it spawns the continuation run.
+        app.want_start = false;
+        // Model responds without changing todos and yields again: the same open
+        // summary must not fire a second identical reminder.
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "identical reminder must not repeat");
+        assert!(
+            !last_history_content(&app).contains("unfinished todos"),
+            "last message should be the assistant answer, not a repeat reminder"
+        );
+    }
+
+    #[test]
+    fn todo_reminder_retries_after_failed_mutation() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        // A todo call this turn with no success snapshot = a failed mutation.
+        app.todo_call_this_turn = true;
+        app.todo_ok_this_turn = false;
+        finish_clean_turn(&mut app);
+        assert!(app.want_start, "a failed mutation queues one retry reminder");
+        assert!(last_history_content(&app).contains("failed"));
+    }
+
+    #[test]
+    fn awaiting_user_answer_detects_plain_questions_and_response_cues() {
+        assert!(assistant_is_awaiting_user_answer("Which approach do you want?"));
+        assert!(assistant_is_awaiting_user_answer("Q: proceed with the migration?"));
+        assert!(assistant_is_awaiting_user_answer(
+            "I've drafted both options.\nLet me know which one to build."
+        ));
+        assert!(assistant_is_awaiting_user_answer("Please confirm before I continue."));
+        assert!(!assistant_is_awaiting_user_answer("Done, the tests pass."));
+        assert!(!assistant_is_awaiting_user_answer(
+            "This uses a well-known algorithm, is it fast enough already? It runs in O(n)."
+        ));
+        assert!(!assistant_is_awaiting_user_answer(""));
+    }
+
+    #[test]
+    fn todo_reminder_suppressed_when_assistant_is_asking_a_question() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn_with_answer(&mut app, "Which database should I use, Postgres or MySQL?");
+        assert!(
+            !app.want_start,
+            "a plain-text question must not be talked over by the todo reminder"
+        );
+    }
+
+    #[test]
+    fn todo_reminder_stops_after_max_reminders_even_as_summary_changes() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        for i in 0..3 {
+            app.want_start = false;
+            finish_clean_turn(&mut app);
+            assert!(app.want_start, "reminder {i} of the 3-reminder budget must fire");
+            app.reminder_awaiting_progress = false;
+            // Vary the open-work summary each round so the same-summary dedup
+            // alone could never explain a stop -- only the hard cap should.
+            app.todos.phases[0].tasks[0].content = format!("t1-{i}");
+        }
+        app.want_start = false;
+        finish_clean_turn(&mut app);
+        assert!(!app.want_start, "the 4th reminder must be suppressed by the per-cycle cap");
+    }
+
+    #[test]
+    fn todo_reminder_waits_for_progress_before_firing_again() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        finish_clean_turn(&mut app);
+        assert!(app.want_start);
+        app.want_start = false;
+        // Change the summary so dedup alone wouldn't suppress a second fire,
+        // but no tool result has landed since the reminder: still silent.
+        app.todos.phases[0].tasks[0].content = "t1-changed".into();
+        finish_clean_turn(&mut app);
+        assert!(
+            !app.want_start,
+            "an unanswered reminder must not be followed by another before any progress"
+        );
+        // A tool result lands (any tool, not just todo) -- progress happened.
+        app.apply(StreamEvent::ToolResult {
+            id: "x".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.todos.phases[0].tasks[0].content = "t1-changed-again".into();
+        finish_clean_turn(&mut app);
+        assert!(app.want_start, "a reminder may fire again once progress happened");
+    }
+
+    fn todos_from(
+        phases: Vec<(&str, Vec<(&str, crate::core::agent::todo::TodoStatus)>)>,
+    ) -> crate::core::agent::todo::TodoList {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase};
+        TodoList {
+            phases: phases
+                .into_iter()
+                .map(|(name, tasks)| TodoPhase {
+                    name: name.into(),
+                    tasks: tasks
+                        .into_iter()
+                        .map(|(content, status)| TodoItem {
+                            content: content.into(),
+                            status,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+
+    fn crossed_out(line: &ratatui::text::Line) -> bool {
+        line.spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::CROSSED_OUT))
+    }
+
+    #[test]
+    fn single_phase_todo_hud_renders_tree_lines() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![(
+            "only",
+            vec![
+                ("alpha", InProgress),
+                ("beta", Pending),
+                ("gamma", Completed),
+            ],
+        )]);
+        let lines: Vec<String> = super::todo_hud(&app).iter().map(line_text).collect();
+        // Root row: `Todos` + hint, no phase-count suffix for a single phase.
+        assert!(lines[0].contains("Todos"), "{lines:?}");
+        assert!(lines[0].contains("/todo"), "{lines:?}");
+        assert!(!lines[0].contains(" · "), "single phase has no idx/count: {lines:?}");
+        // No redundant phase header: tasks nest directly under the root.
+        assert!(!lines.iter().any(|l| l.contains("only")), "{lines:?}");
+        // Glyphs per status and connectors: non-last `├─`, last `└─`.
+        assert!(lines[1].contains("├─") && lines[1].contains("☐ alpha"), "{lines:?}");
+        assert!(lines[2].contains("├─") && lines[2].contains("☐ beta"), "{lines:?}");
+        assert!(lines[3].contains("└─") && lines[3].contains("☑ gamma"), "{lines:?}");
+    }
+
+    #[test]
+    fn multi_phase_todo_hud_collapses_inactive_phases() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![
+            ("backend", vec![("scaffold", Completed), ("routes", InProgress)]),
+            ("frontend", vec![("ui", Pending), ("polish", Pending)]),
+        ]);
+        let hud = super::todo_hud(&app);
+        let lines: Vec<String> = hud.iter().map(line_text).collect();
+        // Root carries the active-phase/count suffix when multi-phase.
+        assert!(lines[0].contains("Todos") && lines[0].contains("· 1/2"), "{lines:?}");
+        // Each phase gets a connected header with its own done/total.
+        assert!(lines.iter().any(|l| l.contains("backend") && l.contains("· 1/2")), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("frontend") && l.contains("· 0/2")), "{lines:?}");
+        // Active phase (backend) expands its tasks; inactive phase collapses.
+        assert!(lines.iter().any(|l| l.contains("routes")), "active tasks shown: {lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("ui") || l.contains("polish")),
+            "inactive phase tasks stay collapsed: {lines:?}");
+    }
+
+    #[test]
+    fn completed_and_abandoned_todos_render_distinctly() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![(
+            "only",
+            vec![("shipped", Completed), ("dropped", Abandoned)],
+        )]);
+        let hud = super::todo_hud(&app);
+        let done = hud.iter().find(|l| line_text(l).contains("shipped")).unwrap();
+        let gone = hud.iter().find(|l| line_text(l).contains("dropped")).unwrap();
+        // Completed: checked glyph + strikethrough.
+        assert!(line_text(done).contains("☑"), "{:?}", line_text(done));
+        assert!(crossed_out(done), "completed is struck through");
+        // Abandoned: distinct glyph, strikethrough, and a red accent.
+        assert!(line_text(gone).contains("☒"), "{:?}", line_text(gone));
+        assert!(crossed_out(gone), "abandoned is struck through");
+        assert!(
+            gone.spans.iter().any(|s| s.style.fg == Some(ratatui::style::Color::Red)),
+            "abandoned carries a red accent to distinguish it from completed"
+        );
+    }
+
+    /// `draw` hides the HUD (reserves 0 layout rows) exactly when the picker is
+    /// open or there are no todos; this mirrors that same guard directly rather
+    /// than through a dedicated height helper, since `draw` now builds the HUD
+    /// once and sizes the layout from its own line count (see `draw`'s
+    /// `todo_lines` local).
+    fn todo_hud_height(app: &App) -> usize {
+        if app.picker.is_some() || app.todos.is_empty() {
+            0
+        } else {
+            super::todo_hud(app).len()
+        }
+    }
+
+    #[test]
+    fn todo_hud_height_zero_when_hidden_and_bounded_otherwise() {
+        use crate::core::agent::todo::TodoStatus::*;
+        // Empty list: no rows reserved.
+        let mut app = test_app();
+        assert_eq!(todo_hud_height(&app), 0);
+        // Non-empty: at least the root plus a task, capped under MAX_TODO_ROWS.
+        app.todos = todos_from(vec![("only", vec![("t", InProgress)])]);
+        let h = todo_hud_height(&app);
+        assert!(h >= 2 && h <= super::MAX_TODO_ROWS, "bounded height, got {h}");
+        // A picker overlay hides the HUD entirely.
+        super::open_todo_picker(&mut app);
+        assert_eq!(todo_hud_height(&app), 0, "picker suppresses the HUD");
+        // A huge single phase stays clamped at the ceiling.
+        let mut app = test_app();
+        let many: Vec<(&str, _)> = (0..50).map(|_| ("x", Pending)).collect();
+        app.todos = todos_from(vec![("only", many)]);
+        assert_eq!(todo_hud_height(&app), super::MAX_TODO_ROWS);
+    }
+
+    #[tokio::test]
+    async fn todo_editor_mutations_update_the_canonical_list() {
+        let mut app = test_app();
+        // Add through the same `append` op the model uses.
+        run_command(&mut app, "todo add Build | ship it").await;
+        assert_eq!(app.todos.done_total(), (0, 1));
+        assert_eq!(app.todos.active().unwrap().1.content, "ship it");
+        // Mark it done via the editor helper; the projection reflects it.
+        super::apply_todo_mutation(&mut app, |l| {
+            l.done(crate::core::agent::todo::Target::Task("ship it"))
+        })
+        .await
+        .unwrap();
+        assert_eq!(app.todos.done_total(), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn todo_command_bare_opens_editor_overlay() {
+        let mut app = test_app();
+        run_command(&mut app, "todo add first").await;
+        run_command(&mut app, "todo").await;
+        assert!(matches!(
+            app.picker.as_ref().map(|p| p.kind),
+            Some(PickerKind::Todo)
+        ));
+    }
+
+    #[test]
+    fn todos_persist_and_restore_via_thread_metadata() {
+        let mut app = test_app();
+        seed_open_todos(&mut app);
+        let meta = app.thread_metadata().expect("todos force metadata");
+        assert!(meta.get("todos").is_some());
+
+        let mut restored = test_app();
+        restore_todos(&mut restored, Some(&meta));
+        assert_eq!(restored.todos, app.todos, "resume/branch reconstructs todos");
+    }
+
+    #[tokio::test]
+    async fn plan_review_execute_switches_normal_and_queues_continuation() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.status = Status::Running; // an in-flight turn owns the ask
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        // Default selection 0 = "Execute plan"; Enter submits.
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.run_mode, RunMode::Normal);
+        assert!(
+            app.message_queue
+                .iter()
+                .any(|m| m.as_str() == "Proceed with the plan."),
+            "execute must queue a continuation turn"
+        );
+        let answers = receiver.await.unwrap().unwrap();
+        assert_eq!(
+            answers[0].selected,
+            vec![crate::core::agent::plan::EXECUTE_PLAN_LABEL]
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_review_execute_without_todos_stays_in_plan() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan; // no todos staged
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        // Atomic handoff: no staged plan => stay in Plan, no continuation.
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.message_queue.is_empty());
+        let text: String = app.transcript.iter().map(line_text).collect();
+        assert!(text.contains("no plan staged"), "note: {text}");
+    }
+
+    #[tokio::test]
+    async fn plan_review_keep_planning_stays_in_plan() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Down).await; // -> Keep planning
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.message_queue.is_empty(), "keep planning must not execute");
+    }
+
+    #[tokio::test]
+    async fn plan_review_exit_returns_to_normal_without_execution() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.apply(StreamEvent::TodoUpdate { list: staged_todos() });
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, _receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Down).await;
+        press_ask(&mut app, &registry, KeyCode::Down).await; // -> Exit plan mode
+        press_ask(&mut app, &registry, KeyCode::Enter).await;
+        assert_eq!(app.run_mode, RunMode::Normal);
+        assert!(app.message_queue.is_empty(), "exit must not auto-execute");
+    }
+
+    #[tokio::test]
+    async fn cancelling_plan_review_leaves_plan_enabled() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.run_mode = RunMode::Plan;
+        app.status = Status::Running;
+        let registry = crate::core::agent::interaction::new_registry();
+        let (request_id, receiver) = crate::core::agent::interaction::register(&registry).await;
+        app.apply(StreamEvent::AskRequest {
+            request_id,
+            request: plan_review_request(),
+        });
+        press_ask(&mut app, &registry, KeyCode::Esc).await; // cancel the review
+        assert!(app.ask_queue.is_empty(), "review wait must be cleared");
+        assert_eq!(app.run_mode, RunMode::Plan, "cancel must not change mode");
+        assert!(matches!(
+            receiver.await.unwrap(),
+            Err(crate::core::agent::interaction::AskError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn on_done_does_not_queue_goal_eval_while_planning() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.goal = Some(crate::core::agent::goal::GoalState::new("cond"));
+        app.run_mode = RunMode::Plan;
+        app.status = Status::Running;
+        app.apply(StreamEvent::Token {
+            text: "planning".into(),
+        });
+        app.on_done("stop".into(), None);
+        assert!(
+            !app.goal_eval_pending,
+            "plan mode pauses the goal loop; no auto-continue"
+        );
     }
 
     #[tokio::test]
