@@ -102,6 +102,15 @@ pub async fn agent_run<R: Runtime>(
     let background_subagents =
         Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
     args.background_subagents = Some(background_subagents.clone());
+    // The session's todo list is client-persisted (there is no long-lived
+    // Rust-side session here, unlike the TUI's App): the client sends back
+    // whatever it last saw, we seed a fresh registry from it, and `todo`-tool
+    // mutations stream back out as `TodoUpdate` events for the client to persist.
+    let todo_list: crate::core::agent::todo::TodoList = body
+        .get("todos")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    args.todo_registry = Some(Arc::new(Mutex::new(todo_list)));
 
     // When a project is explicitly named, its agent.toml governs tool permissions.
     // The project is auto-managed: scaffold a `.jan/agent/` on first use, then

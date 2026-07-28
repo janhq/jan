@@ -43,6 +43,8 @@
   "modeYoloDesc": "Auto-allow every tool call — no prompts",
   "modePlan": "Plan",
   "modePlanDesc": "Read-only — write/edit/exec tools are denied",
+  "todoPanelTitle": "Progress",
+  "todoPanelEmpty": "No todo list yet.",
   "commands": "Commands",
   "cmdHelp": "List available commands",
   "cmdClear": "Clear this session",
