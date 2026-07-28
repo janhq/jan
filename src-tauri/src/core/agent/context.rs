@@ -18,6 +18,8 @@ running commands, editing code, and writing new files.";
 /// Always-on behavioral guidelines. Kept short and model-facing.
 const GUIDELINES: &str =
     "# Guidelines\n\n- Be concise in your responses.\n- Show file paths clearly when working with files.\n\
+- For substantive work with multiple steps or repository changes, call `todo` to initialize a concise plan before beginning, then keep it current as tasks start, finish, or are abandoned. Do not create todos for greetings, simple questions, or one-step requests.\n\
+- Call `ask` when the user's answer would materially change scope, behavior, or an irreversible action and it cannot be safely inferred from the request or project context. Ask concise, decision-ready questions; otherwise make the reasonable choice and proceed.\n\
 - Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
 missing output: when output is cut it always carries an explicit `[output truncated ...]` notice, so \
 its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
@@ -330,6 +332,9 @@ mod tests {
         assert!(out.starts_with("You are Jan, an AI coding agent."));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
+        assert!(out.contains("call `todo` to initialize a concise plan"));
+        assert!(out.contains("Do not create todos for greetings"));
+        assert!(out.contains("Call `ask` when the user's answer would materially change"));
         assert!(out.contains("Tool output is complete and verbatim"));
         assert!(out.contains("Do not re-run a command to check"));
         let _ = std::fs::remove_dir_all(&root);

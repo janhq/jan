@@ -519,6 +519,7 @@ fn build_cli_orchestration_args(
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
     yolo: bool,
+    plan: bool,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
@@ -529,9 +530,16 @@ fn build_cli_orchestration_args(
         permissions,
         project_root: Some(project_root),
         permission_requests,
+        ask_requests: None,
+        todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: true,
         yolo,
+        run_mode: if plan {
+            crate::core::agent::plan::RunMode::Plan
+        } else {
+            crate::core::agent::plan::RunMode::Normal
+        },
     }
 }
 
@@ -610,6 +618,7 @@ fn prepare_agent_session(
     max_turns_override: Option<u32>,
     overrides: ProviderOverrides,
     yolo: bool,
+    plan: bool,
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
@@ -694,6 +703,7 @@ fn prepare_agent_session(
         mcp_settings,
         permission_requests.clone(),
         yolo,
+        plan,
     );
 
     Ok(AgentSession {
@@ -757,8 +767,10 @@ fn prepare_agent_run(
     yolo: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<PreparedRun, String> {
+    // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
+    // plan mode stays a TUI-only startup option.
     let session =
-        prepare_agent_session(project, model_override, max_turns_override, overrides, yolo)?;
+        prepare_agent_session(project, model_override, max_turns_override, overrides, yolo, false)?;
     let project_root = resolve_project_root(project);
     let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
     let final_task = if injected.is_empty() {
@@ -894,9 +906,10 @@ pub async fn cli_agent_ui(
     images: Vec<String>,
     overrides: ProviderOverrides,
     yolo: bool,
+    plan: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
-    let session = prepare_agent_session(project, model, max_turns, overrides, yolo)?;
+    let session = prepare_agent_session(project, model, max_turns, overrides, yolo, plan)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let project_root = resolve_project_root(project);
@@ -957,6 +970,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Error { code, message } => {
             eprintln!("\n\x1b[31m[error] {code}: {message}\x1b[0m")
         }
+        StreamEvent::AskRequest { .. } => {
+            eprintln!("\n\x1b[31m[error] interactive ask requires `jan agent ui`\x1b[0m")
+        }
+        // The non-interactive CLI doesn't persist session state; a todo update
+        // is silently dropped here (mirrors MessagesUpdated below).
+        StreamEvent::TodoUpdate { .. } => {}
         // The non-interactive CLI doesn't persist session state, so
         // MessagesUpdated is a no-op here.
         StreamEvent::MessagesUpdated { .. } => {}

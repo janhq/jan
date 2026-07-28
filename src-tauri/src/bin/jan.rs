@@ -65,6 +65,10 @@ struct Cli {
     yolo: bool,
     #[command(flatten)]
     resume: ResumeArgs,
+    /// Start the default agent TUI in read-only plan mode (same as /plan).
+    /// Ignored when a subcommand is given.
+    #[arg(long)]
+    plan: bool,
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
@@ -406,6 +410,7 @@ async fn main() {
             cli.images,
             overrides,
             cli.yolo,
+            cli.plan,
             cli.resume.into_target(),
         )
         .await
@@ -654,3 +659,20 @@ async fn handle_models(cmd: ModelsCommands) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `--plan` is a per-invocation startup toggle mirroring `--yolo`; it must
+    // parse on the top-level `jan` command and default off.
+    #[test]
+    fn top_level_plan_flag_parses() {
+        let cli = Cli::parse_from(["jan", "--plan"]);
+        assert!(cli.plan);
+        assert!(!cli.yolo);
+        assert!(cli.command.is_none());
+
+        let cli = Cli::parse_from(["jan"]);
+        assert!(!cli.plan);
+    }
+}
