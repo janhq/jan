@@ -236,9 +236,9 @@ async fn download_to(url: &str, dest: &Path) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-/// Extract the `jan` binary out of a release archive. Entry paths differ per
-/// platform (the Windows zip keeps the build-tree prefix), so match on the
-/// file name rather than the full path.
+/// Extract the `jan` binary out of a release archive. Today every platform's
+/// archive stores it at the root, but the packaging step differs per platform
+/// (tar vs 7z), so match on the file name rather than the full path.
 fn extract_binary(archive: &Path, dest: &Path) -> Result<(), String> {
     let name = archive.file_name().unwrap_or_default().to_string_lossy();
     let mut out = File::create(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
@@ -512,6 +512,8 @@ mod tests {
         assert!(err.contains(BINARY_NAME), "{err}");
     }
 
+    /// Published zips keep the binary at the root; tolerate a path prefix too,
+    /// so a change to the packaging step can't silently break the updater.
     #[test]
     fn extracts_the_binary_from_a_zip_with_a_path_prefix() {
         let dir = tempfile::tempdir().unwrap();
@@ -536,9 +538,26 @@ mod tests {
         fs::write(&bogus, b"<!DOCTYPE html><html>404</html>").unwrap();
         assert!(verify_executable(&bogus).is_err());
 
-        let good = dir.path().join("good");
-        fs::write(&good, b"\x7fELF\x02\x01").unwrap();
-        verify_executable(&good).unwrap();
+        let truncated = dir.path().join("truncated");
+        fs::write(&truncated, b"\x7f").unwrap();
+        assert!(verify_executable(&truncated).is_err());
+    }
+
+    /// Leading bytes taken from the published 0.8.4-6 artifacts for each
+    /// platform, so a header the real builds use can't be rejected.
+    #[test]
+    fn published_binaries_pass_the_magic_check() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, magic) in [
+            ("linux", [0x7f, 0x45, 0x4c, 0x46]),   // ELF
+            ("windows", [0x4d, 0x5a, 0x90, 0x00]), // PE
+            ("macos", [0xca, 0xfe, 0xba, 0xbe]),   // Mach-O universal
+            ("macos-thin", [0xcf, 0xfa, 0xed, 0xfe]),
+        ] {
+            let path = dir.path().join(name);
+            fs::write(&path, magic).unwrap();
+            verify_executable(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
     }
 
     #[test]
