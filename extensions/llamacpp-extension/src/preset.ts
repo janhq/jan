@@ -127,6 +127,9 @@ export async function generatePreset(
 
   modelEntries.sort((a, b) => a.modelId.localeCompare(b.modelId))
 
+  const kvUnifiedIsAuto =
+    config.kv_unified !== 'on' && config.kv_unified !== 'off'
+
   const lines: string[] = []
 
   // Emit only values that differ from llama.cpp's compiled defaults so the
@@ -204,6 +207,11 @@ export async function generatePreset(
   // slot is added on top and never exposed in the setting's own value.
   if (typeof config.parallel === 'number' && config.parallel > 0) {
     lines.push(`parallel = ${config.parallel + reservedBackgroundSlots}`)
+    // llama.cpp only turns on unified KV as part of resolving parallel = -1;
+    // passing parallel explicitly leaves it off, which splits ctx-size into
+    // ctx-size/parallel per slot. Restore the auto behaviour so the configured
+    // context is what each slot actually gets.
+    if (kvUnifiedIsAuto) lines.push('kv-unified = true')
   }
   // cont-batching default = true; emit only the explicit-off case.
   if (config.cont_batching === false) {
@@ -326,7 +334,8 @@ export async function generatePreset(
   if (config.swa_full === true) {
     lines.push('swa-full = true')
   }
-  // auto = omit the flag, let llama.cpp decide based on slot count
+  // auto is handled next to each `parallel` emission above; with no explicit
+  // parallel the flag is omitted so llama.cpp's own auto resolution applies.
   if (config.kv_unified === 'on') {
     lines.push('kv-unified = true')
   } else if (config.kv_unified === 'off') {
@@ -412,6 +421,7 @@ export async function generatePreset(
     }
     if (typeof mc.parallel === 'number' && mc.parallel > 0) {
       lines.push(`parallel = ${mc.parallel + reservedBackgroundSlots}`)
+      if (kvUnifiedIsAuto) lines.push('kv-unified = true')
     }
     if (mc.cont_batching === false) {
       lines.push('cont-batching = false')

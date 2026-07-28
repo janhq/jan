@@ -210,6 +210,50 @@ describe('generatePreset parallel reservation', () => {
   })
 })
 
+describe('generatePreset kv-unified', () => {
+  it('enables unified KV on auto when an explicit parallel is emitted', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { parallel: 1 } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('parallel = 2')
+    expect(ini).toContain('kv-unified = true')
+  })
+
+  it('enables unified KV on auto when only a per-model parallel is emitted', async () => {
+    setupModel('llama', { parallel: 3 })
+    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('kv-unified = true')
+  })
+
+  it('omits kv-unified on auto when no explicit parallel is emitted', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', {} as any, { supportsMtp: false })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('kv-unified')
+  })
+
+  it('respects an explicit off even when parallel is emitted', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { parallel: 1, kv_unified: 'off' } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('kv-unified = false')
+  })
+
+  it('respects an explicit on when no parallel is emitted', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { kv_unified: 'on' } as any, {
+      supportsMtp: false,
+    })
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('kv-unified = true')
+  })
+})
+
 describe('generatePreset ctx-size default', () => {
   it('emits ctx-size = 8192 in [*] when fit is off and no ctx_size is set', async () => {
     setupModel('llama', {})
