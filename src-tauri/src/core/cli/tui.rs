@@ -5882,6 +5882,21 @@ mod tests {
         App::new("m".into(), 8, 128_000, 16_384, None, agent_dir, std::path::PathBuf::from("/tmp/repo"), None)
     }
 
+    /// Draw `app` into an off-screen terminal and return its rows as strings.
+    fn render_rows(app: &mut App, w: u16, h: u16) -> Vec<String> {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| super::draw(f, app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
     fn pending(offers_always: bool) -> Pending {
         Pending {
             request_id: "r".into(),
@@ -6810,6 +6825,78 @@ mod tests {
             rows.join("\n")
         );
         assert!(app.starting.is_empty());
+    }
+
+    async fn press_esc(app: &mut App) {
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mut current: Option<CurrentRun> = None;
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        handle_key(app, esc, &registry, &mut current, &mcp_servers).await;
+    }
+
+    #[tokio::test]
+    async fn esc_stops_the_open_tool_group_throbber() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 60" }),
+        });
+        assert!(app.tool_group.as_ref().is_some_and(|g| g.is_running()));
+        press_esc(&mut app).await;
+        assert_eq!(app.status, Status::Idle);
+        let rows = render_rows(&mut app, 60, 30);
+        let spinning: Vec<&String> =
+            rows.iter().filter(|r| SPINNER.iter().any(|f| r.contains(f))).collect();
+        assert!(spinning.is_empty(), "throbber survived cancel: {spinning:?}");
+    }
+
+    #[tokio::test]
+    async fn esc_stops_the_awaiting_subagent_throbber() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "await_subagent".into(),
+            args: json!({ "run_id": "reviewer-1" }),
+        });
+        assert!(!app.awaiting.is_empty());
+        press_esc(&mut app).await;
+        let rows = render_rows(&mut app, 60, 30);
+        let spinning: Vec<&String> =
+            rows.iter().filter(|r| SPINNER.iter().any(|f| r.contains(f))).collect();
+        assert!(spinning.is_empty(), "throbber survived cancel: {spinning:?}");
+    }
+
+    #[tokio::test]
+    async fn esc_cancels_a_run_whose_tool_args_are_still_streaming() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        // Args still streaming: the "Preparing write" throbber owns the tail.
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        assert!(!app.starting.is_empty(), "throbber must be live before Esc");
+
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mut current: Option<CurrentRun> = None;
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        handle_key(&mut app, esc, &registry, &mut current, &mcp_servers).await;
+
+        assert_eq!(app.status, Status::Idle, "Esc must end the run");
+        assert!(app.starting.is_empty(), "Esc must clear the streaming throbber");
+        let rows = render_rows(&mut app, 60, 30);
+        assert!(
+            !rows.iter().any(|r| r.contains("Preparing write")),
+            "no throbber may survive the cancel:\n{}",
+            rows.join("\n")
+        );
     }
 
     #[test]
