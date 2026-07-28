@@ -70,10 +70,9 @@ pub(crate) struct OrchestrationArgs {
     /// subagent/child runs never receive it (they cannot read or mutate the
     /// parent's list).
     pub todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
-    /// When set, used verbatim as the system prompt, bypassing project-context
-    /// assembly and memory recall/indexing. Set for subagent child runs so a
-    /// dispatched subagent gets exactly its definition prompt with no parent
-    /// context bleed. `None` for normal runs.
+    /// When set, replaces the run's assistant identity while preserving the
+    /// shared project-context and tool-use prompt assembled for normal runs.
+    /// Child turns remain excluded from project memory recall/indexing.
     pub system_prompt_override: Option<String>,
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
@@ -877,6 +876,27 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
+/// Assembles the run's system prompt: `override_prompt` (a subagent's
+/// definition prompt) replaces the assistant identity when set, but the
+/// project-context and tool-use guidance from `build_system_prompt` is still
+/// built around it when a project is selected — a subagent gets the same
+/// grounding (guidelines, web access, tool docs) as a normal run, not a bare
+/// verbatim prompt with no instruction on how to actually use its tools.
+fn build_run_system_prompt(
+    assistant_instructions: Option<&str>,
+    override_prompt: Option<&str>,
+    project_root: Option<&std::path::Path>,
+    subagents_enabled: bool,
+) -> Option<String> {
+    let base = override_prompt.or(assistant_instructions);
+    match project_root {
+        Some(root) => {
+            crate::core::agent::context::build_system_prompt(base, root, subagents_enabled)
+        }
+        None => base.map(str::to_string),
+    }
+}
+
 /// System-prompt addendum on a session's first substantive message: without
 /// it, the model only ever reaches for `todo` once told explicitly that it
 /// has the tool, instead of proactively planning a multi-step request the
@@ -991,28 +1011,33 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    let system_prompt = if let Some(override_prompt) = system_prompt_override.clone() {
-        Some(override_prompt)
-    } else if let Some(root) = project_root {
-        let mut sp = crate::core::agent::context::build_system_prompt(
-            assistant_instructions.as_deref(),
-            root,
-            *subagents_enabled,
-        );
-        // Recall project memory for the current query before it is indexed, so
-        // the active turn cannot surface itself.
-        if let Some(query) = latest_user_text(&conversation_messages) {
-            if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                sp = Some(match sp {
-                    Some(s) => format!("{s}\n\n{mem}"),
-                    None => mem,
-                });
+    let mut system_prompt = build_run_system_prompt(
+        assistant_instructions.as_deref(),
+        system_prompt_override.as_deref(),
+        project_root.as_deref(),
+        *subagents_enabled,
+    );
+    // Normal parent runs recall project memory for the current query before it
+    // is indexed. Child runs keep their isolated history and skip memory.
+    if system_prompt_override.is_none() {
+        if let Some(root) = project_root {
+            if let Some(query) = latest_user_text(&conversation_messages) {
+                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                    system_prompt = Some(match system_prompt {
+                        Some(s) => format!("{s}\n\n{mem}"),
+                        None => mem,
+                    });
+                }
             }
         }
-        sp
-    } else {
-        assistant_instructions
+    }
+    // Always tell the model today's date, including isolated child runs.
+    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
+    let system_prompt = match system_prompt {
+        Some(sys) => format!("{date_line}\n\n{sys}"),
+        None => date_line,
     };
+    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -1780,6 +1805,26 @@ mod tests {
             user_message("also add a high score screen"),
         ];
         assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    }
+
+    #[test]
+    fn subagent_prompt_reuses_main_prompt_builder() {
+        let root = unique_project_root();
+        let prompt = build_run_system_prompt(
+            Some("main assistant"),
+            Some("You are a robotics researcher."),
+            Some(&root),
+            false,
+        )
+        .expect("prompt");
+
+        assert!(prompt.starts_with("You are a robotics researcher."));
+        assert!(!prompt.contains("main assistant"));
+        assert!(prompt.contains("# Guidelines"));
+        assert!(prompt.contains("# Web Access"));
+        assert!(prompt.contains("web_search"));
+        assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     fn tool_call_completion() -> serde_json::Value {
