@@ -371,7 +371,7 @@ pub fn todo_tool_schema() -> serde_json::Value {
         "type": "function",
         "function": {
             "name": "todo",
-            "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task.",
+            "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task. init takes `list` or `items`, never `phase`/`task` directly -- e.g. {\"op\":\"init\",\"list\":[{\"phase\":\"Setup\",\"items\":[\"do X\",\"do Y\"]}]} or the flat form {\"op\":\"init\",\"items\":[\"do X\",\"do Y\"]}.",
             "parameters": {
                 "type": "object",
                 "properties": {
