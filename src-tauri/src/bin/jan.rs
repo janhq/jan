@@ -36,7 +36,8 @@ Models are served by remote providers configured in ~/.jan/config.toml\n\
   jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
-  jan cli threads list                                   # list saved conversation threads",
+  jan cli threads list                                   # list saved conversation threads\n  \
+  jan update                                             # install the latest build of this channel",
     version
 )]
 struct Cli {
@@ -124,6 +125,16 @@ enum Commands {
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
+    },
+    /// Update this binary to the latest build of the channel it was built for
+    #[command(display_order = 3)]
+    Update {
+        /// Report whether an update exists without installing it
+        #[arg(long)]
+        check: bool,
+        /// Reinstall even when already on the latest version
+        #[arg(long, conflicts_with = "check")]
+        force: bool,
     },
 }
 
@@ -348,7 +359,10 @@ async fn main() {
     }))
     .init();
 
-    app_lib::core::cli::updater::print_update_notice_if_available().await;
+    // `jan update` reports the same thing itself, in more detail.
+    if !std::env::args().any(|a| a == "update") {
+        app_lib::core::cli::updater::print_update_notice_if_available().await;
+    }
 
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
@@ -387,6 +401,43 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Update { check, force } => handle_update(check, force).await,
+    }
+}
+
+// ── Update handler ─────────────────────────────────────────────────────────
+
+async fn handle_update(check: bool, force: bool) {
+    use app_lib::core::cli::updater::{self, UpdateOutcome};
+
+    let result = if check {
+        updater::check_for_update(std::time::Duration::from_secs(10))
+            .await
+            .map(|u| {
+                if u.is_newer() {
+                    println!(
+                        "A new {} build is available: {} -> {}",
+                        u.channel, u.current, u.latest
+                    );
+                } else {
+                    println!("Already on the latest {} build ({})", u.channel, u.current);
+                }
+            })
+    } else {
+        updater::self_update(force)
+            .await
+            .map(|outcome| match outcome {
+                UpdateOutcome::UpToDate { version } => {
+                    println!("Already up to date ({version})");
+                }
+                UpdateOutcome::Installed { from, to, path } => {
+                    println!("Updated {} from {from} to {to}", path.display());
+                }
+            })
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -577,5 +628,23 @@ mod tests {
 
         let cli = Cli::parse_from(["jan"]);
         assert!(!cli.plan);
+    }
+
+    #[test]
+    fn update_command_parses() {
+        let cli = Cli::parse_from(["jan", "update"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Update {
+                check: false,
+                force: false
+            })
+        ));
+        let cli = Cli::parse_from(["jan", "update", "--check"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Update { check: true, .. })
+        ));
+        assert!(Cli::try_parse_from(["jan", "update", "--check", "--force"]).is_err());
     }
 }
