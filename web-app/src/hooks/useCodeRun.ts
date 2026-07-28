@@ -2,6 +2,33 @@ import { create } from 'zustand'
 import type { CodeTurn, SubagentRun, Usage, CodeMessage, TodoList } from '@/hooks/useCodeSessions'
 import type { PendingPermission } from '@/containers/dialogs/CodePermissionDialog'
 
+// Mirrors the Rust `Question`/`OptionItem`/`AskRequest` structs (interaction.rs)
+// verbatim, same convention as `Usage`/`TodoList` above.
+export type AskOption = {
+  label: string
+  description?: string
+}
+
+export type AskQuestion = {
+  id: string
+  question: string
+  options: AskOption[]
+  multi?: boolean
+  recommended?: number
+}
+
+export type AskRequestPayload = {
+  questions: AskQuestion[]
+}
+
+// Mirrors `QuestionResult` (interaction.rs): one answer per question, either
+// selected option label(s) or free-text `custom_input` — never both.
+export type AskAnswer = {
+  id: string
+  selected: string[]
+  custom_input?: string
+}
+
 // StreamEvent shapes emitted by the Rust agent loop (events.rs, tag = "type").
 // Owned here because this store is what consumes/dispatches them.
 export type StreamEvent =
@@ -13,6 +40,7 @@ export type StreamEvent =
   | { type: 'error'; code: string; message: string }
   | { type: 'messages_updated'; messages: CodeMessage[] }
   | { type: 'todo_update'; list: TodoList }
+  | { type: 'ask_request'; request_id: string; request: AskRequestPayload }
   | {
       type: 'permission_request'
       request_id: string
@@ -109,6 +137,9 @@ type CodeRunState = {
   subagents: Record<string, SubagentRun[]>
   runId: Record<string, string>
   pendingPerms: Record<string, PendingPermission[]>
+  // In-flight `ask` tool questions per session, same queue shape as
+  // pendingPerms (a subagent's wrapped ask is attributed the same way).
+  pendingAsks: Record<string, { requestId: string; request: AskRequestPayload }[]>
   // Usage from the latest `done` event, per session. Set once per run (the
   // terminal event); untouched by a `null` usage so a provider that doesn't
   // report it on a given turn doesn't blank out the last known value.
@@ -125,6 +156,8 @@ type CodeRunState = {
   setUsage: (sid: string, usage: Usage | null) => void
   addPendingPerm: (sid: string, perm: PendingPermission) => void
   removePendingPerm: (sid: string, requestId: string) => void
+  addPendingAsk: (sid: string, requestId: string, request: AskRequestPayload) => void
+  removePendingAsk: (sid: string, requestId: string) => void
   // Mark running tool turns + subagents done (interrupted). Leaves
   // liveTurns/subagents in place and returns the final values so the caller
   // can commit them before clearCodeRun without a second round of store
@@ -139,6 +172,7 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
   subagents: {},
   runId: {},
   pendingPerms: {},
+  pendingAsks: {},
   usage: {},
 
   beginRun: (sid, runId, userText, images) =>
@@ -150,6 +184,7 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       },
       subagents: { ...s.subagents, [sid]: [] },
       pendingPerms: { ...s.pendingPerms, [sid]: [] },
+      pendingAsks: { ...s.pendingAsks, [sid]: [] },
     })),
 
   appendToken: (sid, text) =>
@@ -243,6 +278,22 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       },
     })),
 
+  addPendingAsk: (sid, requestId, request) =>
+    set((s) => ({
+      pendingAsks: {
+        ...s.pendingAsks,
+        [sid]: [...(s.pendingAsks[sid] ?? []), { requestId, request }],
+      },
+    })),
+
+  removePendingAsk: (sid, requestId) =>
+    set((s) => ({
+      pendingAsks: {
+        ...s.pendingAsks,
+        [sid]: (s.pendingAsks[sid] ?? []).filter((a) => a.requestId !== requestId),
+      },
+    })),
+
   finalizeRun: (sid) => {
     // Run-level failure surfaces via `useMessageErrors` (Generation-failed
     // banner), not as a synthetic tool-error turn — that used to render a
@@ -268,6 +319,7 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
       subagents: omitKey(s.subagents, sid),
       runId: omitKey(s.runId, sid),
       pendingPerms: omitKey(s.pendingPerms, sid),
+      pendingAsks: omitKey(s.pendingAsks, sid),
       usage: omitKey(s.usage, sid),
     })),
 }))

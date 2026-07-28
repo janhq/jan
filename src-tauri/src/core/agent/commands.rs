@@ -44,6 +44,13 @@ pub struct AgentRuns(pub Arc<Mutex<HashMap<String, RunEntry>>>);
 #[derive(Default)]
 pub struct AgentPermissions(pub Arc<Mutex<HashMap<String, oneshot::Sender<PermissionDecision>>>>);
 
+/// Registry of in-flight `ask` tool questions keyed by request_id, shared with
+/// the agent loop so `agent_ask_respond` can resolve the awaiting tool call.
+/// Global (not per-run) like `AgentPermissions`, since request ids are unique
+/// across every run.
+#[derive(Default)]
+pub struct AgentAsks(pub crate::core::agent::interaction::AskRegistry);
+
 fn build_orchestration_args<R: Runtime>(
     app_handle: &AppHandle<R>,
     state: &AppState,
@@ -93,12 +100,14 @@ pub async fn agent_run<R: Runtime>(
     state: State<'_, AppState>,
     runs: State<'_, AgentRuns>,
     perms_registry: State<'_, AgentPermissions>,
+    asks_registry: State<'_, AgentAsks>,
     run_id: String,
     body: serde_json::Value,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     let mut args = build_orchestration_args(&app_handle, &state);
     args.permission_requests = perms_registry.0.clone();
+    args.ask_requests = Some(asks_registry.0.clone());
     let background_subagents =
         Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
     args.background_subagents = Some(background_subagents.clone());
@@ -248,6 +257,23 @@ pub async fn agent_permission_respond(
     if let Some(tx) = perms_registry.0.lock().await.remove(&request_id) {
         let _ = tx.send(decision);
     }
+    Ok(())
+}
+
+/// Resolve an in-flight `ask` tool question. `answers` is `None` when the user
+/// dismisses the dialog without answering, which the loop treats as cancelled
+/// (a no-op if the request is no longer pending — already answered/timed out).
+#[tauri::command]
+pub async fn agent_ask_respond(
+    asks_registry: State<'_, AgentAsks>,
+    request_id: String,
+    answers: Option<Vec<crate::core::agent::interaction::QuestionResult>>,
+) -> Result<(), String> {
+    let outcome = match answers {
+        Some(results) => Ok(results),
+        None => Err(crate::core::agent::interaction::AskError::Cancelled),
+    };
+    let _ = crate::core::agent::interaction::respond(&asks_registry.0, &request_id, outcome).await;
     Ok(())
 }
 

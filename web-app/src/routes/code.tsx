@@ -20,7 +20,13 @@ import {
   type CodeMessage,
   type SubagentRun,
 } from '@/hooks/useCodeSessions'
-import { useCodeRun, makeToolCallTurn, type StreamEvent } from '@/hooks/useCodeRun'
+import {
+  useCodeRun,
+  makeToolCallTurn,
+  type StreamEvent,
+  type AskAnswer,
+  type AskRequestPayload,
+} from '@/hooks/useCodeRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { TokenCountOnly } from '@/components/TokenCounter'
@@ -31,6 +37,7 @@ import CodePermissionDialog, {
   type PermissionDecision,
   WIRE,
 } from '@/containers/dialogs/CodePermissionDialog'
+import { CodeAskDialog } from '@/containers/dialogs/CodeAskDialog'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
 import CodeModeSelector from '@/containers/CodeModeSelector'
@@ -79,6 +86,7 @@ const MAX_HISTORY_CHARS = 400_000
 const EMPTY_TURNS: CodeTurn[] = []
 const EMPTY_SUBAGENTS: SubagentRun[] = []
 const EMPTY_PERMS: PendingPermission[] = []
+const EMPTY_ASKS: { requestId: string; request: AskRequestPayload }[] = []
 
 // Safe `run_id` extraction from an await_subagent tool call's parsed args.
 const argRunId = (args: unknown): string | undefined => {
@@ -256,6 +264,17 @@ function CodePage() {
         return { pending: next }
       })
     }
+  }
+
+  // In-flight `ask` tool questions for the VIEWED session, same one-at-a-time
+  // shape as pendingPerms.
+  const pendingAsks = useCodeRun((s) =>
+    currentId ? (s.pendingAsks[currentId] ?? EMPTY_ASKS) : EMPTY_ASKS
+  )
+
+  const respondAsk = (requestId: string, answers: AskAnswer[] | null) => {
+    invoke('agent_ask_respond', { requestId, answers }).catch(() => {})
+    if (currentId) useCodeRun.getState().removePendingAsk(currentId, requestId)
   }
 
   // Subagents (of the viewed session) currently blocked on a permission
@@ -714,6 +733,9 @@ function CodePage() {
         case 'todo_update':
           useCodeSessions.getState().setTodos(sid, ev.list)
           break
+        case 'ask_request':
+          run.addPendingAsk(sid, ev.request_id, ev.request)
+          break
         case 'subagent_start':
           run.startSubagent(sid, ev.run_id, ev.name)
           break
@@ -1113,6 +1135,11 @@ function CodePage() {
       <CodePermissionDialog
         request={pendingPerms[0] ?? null}
         onRespond={respondPermission}
+      />
+      <CodeAskDialog
+        requestId={pendingAsks[0]?.requestId ?? null}
+        request={pendingAsks[0]?.request ?? null}
+        onRespond={respondAsk}
       />
     </div>
   )
