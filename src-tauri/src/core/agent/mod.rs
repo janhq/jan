@@ -7,7 +7,6 @@ pub mod commands;
 pub mod compaction;
 pub mod context;
 pub mod events;
-#[cfg(feature = "cli")]
 pub mod goal;
 pub mod interaction;
 #[cfg(feature = "cli")]
