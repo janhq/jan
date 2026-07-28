@@ -1504,16 +1504,6 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // Gate the switch on dependency resolution. Elsewhere this check is
-      // advisory, but here a missing CUDA/ROCm runtime means the new router
-      // would never come up, and we still have a working backend to keep.
-      const verification = await verifyBackendInstallation(backend, version)
-      if (!verification.verified) {
-        throw new Error(
-          `Backend ${targetBackendString} is missing libraries: ${verification.missing_libraries.join(', ')}`
-        )
-      }
-
       await this.commitBackendSelection(version, backend)
 
       if (await this.restartRouterAndProbe()) {
@@ -1587,6 +1577,10 @@ export default class llamacpp_extension extends AIEngine {
    * Bring the router up on whatever backend config currently names and confirm
    * it answers `/health`. A spawn that throws and a process that starts but
    * can't serve are the same failure to the caller.
+   *
+   * This is the only gate on a backend switch. Static dependency analysis is
+   * deliberately not one: it is advisory on every other path and cannot be
+   * trusted to fail a switch (see verifyBackendInstallation).
    */
   private async restartRouterAndProbe(): Promise<boolean> {
     try {

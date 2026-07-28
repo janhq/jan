@@ -705,7 +705,11 @@ describe('llamacpp_extension', () => {
         expect(result.newBackend).toBe('v2.0.0/linux-avx2-x64')
       })
 
-      it('rolls back when the new backend is missing libraries', async () => {
+      // Static dep analysis false-positives (libs dlopen'd at runtime, or
+      // resolved from paths the analyzer does not search but the spawn env
+      // does). A router that serves /health is proof the binary works,
+      // whatever lddtree concluded.
+      it('does not block a switch on a missing-library report', async () => {
         await armUpdate(extension)
         extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
         const { verifyBackendInstallation } = await import('../backend')
@@ -717,9 +721,9 @@ describe('llamacpp_extension', () => {
 
         const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
 
-        expect(result.wasUpdated).toBe(false)
+        expect(result.wasUpdated).toBe(true)
         expect(extension['config'].version_backend).toBe(
-          'v1.0.0/linux-avx2-x64'
+          'v2.0.0/linux-avx2-x64'
         )
       })
 
