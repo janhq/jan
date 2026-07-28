@@ -73,6 +73,33 @@ fn rel_to(base: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+/// Resolve `.`/`..` without touching the filesystem, so a path is comparable to
+/// the project root even when the target does not exist yet. Purely lexical:
+/// `canonicalize` would also follow symlinks and fail on missing files.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// How a mutated path is named back to the model: relative inside the project,
+/// absolute once it escapes. Normalizes first, since `root/../x` strips to a
+/// misleading `../x` against an un-normalized root.
+fn display_path(root: &Path, target: &Path) -> String {
+    let target = lexical_normalize(target);
+    let root = lexical_normalize(root);
+    rel_to(&root, &target)
+}
+
 /// Truncate `s` to the smaller of `max_lines` or `max_bytes`, appending
 /// `note` when truncation occurred.
 fn cap_output(s: &str, max_lines: usize, max_bytes: usize, note: &str) -> String {
@@ -172,6 +199,11 @@ pub(crate) async fn preview_diff(
                 None => None,
             };
             let new = arg_str(args, "content").unwrap_or("");
+            // A rewrite with identical content changes nothing; showing a full
+            // `+` block would misrepresent it as an overwrite.
+            if prior.as_deref() == Some(new) {
+                return None;
+            }
             Some(render_write_diff(prior.as_deref(), new))
         }
         _ => None,
@@ -179,30 +211,19 @@ pub(crate) async fn preview_diff(
 }
 
 /// Run a built-in tool and, for `write`/`edit`, also produce a focused diff.
-/// Returns `(content, diff)` where `diff` is line-prefixed (`-`/`+`) hunk text
-/// for display; `None` for non-mutating tools or on error. Diffs are computed
-/// against the pre-execution file so line numbers match the file as the model
-/// saw it. For `edit` the diff is also appended to `content` (the model sees
-/// exactly what changed); for `write` the diff is display-only and `content`
-/// stays the concise summary.
+/// Returns `(content, diff)`. The diff is line-prefixed (`-`/`+`) hunk text for
+/// **display only**: the model gets the concise summary in `content`, since the
+/// hunk merely replays an edit it just authored and would cost context on every
+/// mutating call. Diffs are computed against the pre-execution file so line
+/// numbers match the file as the model saw it. `None` for non-mutating tools
+/// and on error.
 pub(crate) async fn execute_builtin_with_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     project_root: &Path,
 ) -> (String, Option<String>) {
     match tool.name {
-        "edit" => {
-            let diff = preview_diff(tool, args, project_root).await;
-            let content = execute_builtin(tool, args, project_root).await;
-            if content.starts_with("ERROR") {
-                return (content, None);
-            }
-            match diff {
-                Some(d) => (format!("{content}\n\n{d}"), Some(d)),
-                None => (content, None),
-            }
-        }
-        "write" => {
+        "write" | "edit" => {
             let diff = preview_diff(tool, args, project_root).await;
             let content = execute_builtin(tool, args, project_root).await;
             if content.starts_with("ERROR") {
@@ -480,14 +501,27 @@ async fn write(args: &serde_json::Value, root: &Path) -> String {
         return "ERROR: missing required argument 'content'".to_string();
     };
     let target = resolve(root, path);
+    // Report the resolved location, not the raw argument: an absolute or `../`
+    // path lands outside the project and the model must see where it went.
+    let shown = display_path(root, &target);
     if let Some(parent) = target.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return format!("ERROR: {e}");
+            return format!("ERROR: {shown}: {e}");
         }
     }
+    // Existence decides created/overwrote; a non-UTF8 file still exists, so it
+    // must not be read_to_string's error path that answers that question.
+    let existed = tokio::fs::try_exists(&target).await.unwrap_or(false);
+    let unchanged = existed
+        && tokio::fs::read_to_string(&target)
+            .await
+            .is_ok_and(|prior| prior == content);
+    let bytes = content.len();
     match tokio::fs::write(&target, content).await {
-        Ok(()) => format!("Wrote {} bytes to {}", content.len(), path),
-        Err(e) => format!("ERROR: {e}"),
+        Ok(()) if unchanged => format!("No change: {shown} already had these {bytes} bytes"),
+        Ok(()) if existed => format!("Overwrote {shown} ({bytes} bytes)"),
+        Ok(()) => format!("Created {shown} ({bytes} bytes)"),
+        Err(e) => format!("ERROR: {shown}: {e}"),
     }
 }
 
@@ -502,25 +536,26 @@ async fn edit(args: &serde_json::Value, root: &Path) -> String {
         return "ERROR: edits must contain at least one replacement".to_string();
     }
     let target = resolve(root, path);
+    let shown = display_path(root, &target);
     let mut content = match tokio::fs::read_to_string(&target).await {
         Ok(c) => c,
-        Err(e) => return format!("ERROR: {e}"),
+        Err(e) => return format!("ERROR: {shown}: {e}"),
     };
 
     for (i, e) in edits.iter().enumerate() {
         let Some(old_string) = e.get("old_string").and_then(|v| v.as_str()) else {
-            return format!("ERROR: edit {}: missing 'old_string'", i + 1);
+            return format!("ERROR: {shown}: edit {}: missing 'old_string'", i + 1);
         };
         let Some(new_string) = e.get("new_string").and_then(|v| v.as_str()) else {
-            return format!("ERROR: edit {}: missing 'new_string'", i + 1);
+            return format!("ERROR: {shown}: edit {}: missing 'new_string'", i + 1);
         };
         let count = content.matches(old_string).count();
         if count == 0 {
-            return format!("ERROR: edit {}: old_string not found", i + 1);
+            return format!("ERROR: {shown}: edit {}: old_string not found", i + 1);
         }
         if count > 1 {
             return format!(
-                "ERROR: edit {}: old_string not unique ({count} matches)",
+                "ERROR: {shown}: edit {}: old_string not unique ({count} matches)",
                 i + 1
             );
         }
@@ -528,8 +563,8 @@ async fn edit(args: &serde_json::Value, root: &Path) -> String {
     }
 
     match tokio::fs::write(&target, content).await {
-        Ok(()) => format!("Applied {} edit(s) to {}", edits.len(), path),
-        Err(e) => format!("ERROR: {e}"),
+        Ok(()) => format!("Applied {} edit(s) to {shown}", edits.len()),
+        Err(e) => format!("ERROR: {shown}: {e}"),
     }
 }
 
@@ -1071,7 +1106,7 @@ mod tests {
             &root,
         )
         .await;
-        assert!(w.starts_with("Wrote"), "unexpected: {w}");
+        assert_eq!(w, "Created sub/b.txt (4 bytes)");
         let r = execute_builtin(
             lookup("read").unwrap(),
             &json!({"path": "sub/b.txt"}),
@@ -1118,7 +1153,7 @@ mod tests {
         )
         .await;
         assert!(
-            out.starts_with("ERROR: edit 2: old_string not unique"),
+            out.starts_with("ERROR: d.txt: edit 2: old_string not unique"),
             "unexpected: {out}"
         );
         assert_eq!(
@@ -1133,7 +1168,7 @@ mod tests {
         )
         .await;
         assert!(
-            miss.starts_with("ERROR: edit 1: old_string not found"),
+            miss.starts_with("ERROR: d.txt: edit 1: old_string not found"),
             "unexpected: {miss}"
         );
         let _ = std::fs::remove_dir_all(&root);
@@ -1215,8 +1250,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The diff is display-only for `edit` as well as `write`: the UI renders it,
+    /// the model gets the concise summary and never the replayed hunk.
     #[tokio::test]
-    async fn edit_with_diff_appends_hunks_to_model_content() {
+    async fn edit_diff_is_display_only_and_absent_from_model_content() {
         let root = unique_root();
         std::fs::write(root.join("e.txt"), b"foo").unwrap();
         let (content, diff) = execute_builtin_with_diff(
@@ -1225,9 +1262,10 @@ mod tests {
             &root,
         )
         .await;
-        assert_eq!(
-            content,
-            "Applied 1 edit(s) to e.txt\n\n-    1 | foo\n+    1 | bar"
+        assert_eq!(content, "Applied 1 edit(s) to e.txt");
+        assert!(
+            !content.contains('+') && !content.contains('|'),
+            "edit content must stay concise: {content}"
         );
         assert_eq!(diff.as_deref(), Some("-    1 | foo\n+    1 | bar"));
         let _ = std::fs::remove_dir_all(&root);
@@ -1242,12 +1280,106 @@ mod tests {
             &root,
         )
         .await;
-        assert!(content.starts_with("Wrote"), "unexpected: {content}");
+        assert_eq!(content, "Created w.txt (5 bytes)");
         assert!(!content.contains('+'), "write content must stay concise");
         assert_eq!(
             diff.as_deref(),
             Some("@@ created file @@\n+    1 | hello")
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The model sees only `content`, not the display diff, so an overwrite must
+    /// be distinguishable from a create there -- otherwise clobbering a file
+    /// reads exactly like creating one.
+    #[tokio::test]
+    async fn write_content_distinguishes_overwrite_from_create() {
+        let root = unique_root();
+        let w = lookup("write").unwrap();
+        std::fs::write(root.join("o.txt"), b"ORIGINAL").unwrap();
+
+        let (over, over_diff) =
+            execute_builtin_with_diff(w, &json!({"path": "o.txt", "content": "new"}), &root).await;
+        assert_eq!(over, "Overwrote o.txt (3 bytes)");
+        assert!(over_diff.unwrap().starts_with("@@ overwrote file @@"));
+
+        let created =
+            execute_builtin(w, &json!({"path": "fresh.txt", "content": "new"}), &root).await;
+        assert_eq!(created, "Created fresh.txt (3 bytes)");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn rewriting_identical_content_reports_no_change_and_no_diff() {
+        let root = unique_root();
+        let w = lookup("write").unwrap();
+        std::fs::write(root.join("same.txt"), b"keep").unwrap();
+        let (content, diff) =
+            execute_builtin_with_diff(w, &json!({"path": "same.txt", "content": "keep"}), &root)
+                .await;
+        assert_eq!(content, "No change: same.txt already had these 4 bytes");
+        assert!(diff.is_none(), "no-op write must not show a diff: {diff:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Byte count must be UTF-8 bytes actually on disk, not character count.
+    #[tokio::test]
+    async fn write_reports_utf8_byte_count() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "u.txt", "content": "héllo→"}),
+            &root,
+        )
+        .await;
+        let on_disk = std::fs::metadata(root.join("u.txt")).unwrap().len();
+        assert_eq!(on_disk, 9);
+        assert_eq!(out, "Created u.txt (9 bytes)");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A `../` path really does land outside the project, so the reported
+    /// location must be the resolved target rather than the raw argument.
+    #[tokio::test]
+    async fn write_reports_resolved_path_when_it_escapes_the_project() {
+        let root = unique_root();
+        let outside = root.parent().unwrap().join("jan_escape_probe.txt");
+        let out = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "../jan_escape_probe.txt", "content": "x"}),
+            &root,
+        )
+        .await;
+        assert!(outside.exists(), "precondition: the write escapes the root");
+        assert!(
+            out.contains(outside.to_str().unwrap()),
+            "must name the real destination, got: {out}"
+        );
+        assert!(!out.contains(".."), "must not echo the raw path: {out}");
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn write_and_edit_errors_name_the_path() {
+        let root = unique_root();
+        std::fs::write(root.join("blocker"), b"x").unwrap();
+        let w = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "blocker/child.txt", "content": "d"}),
+            &root,
+        )
+        .await;
+        assert!(w.starts_with("ERROR: blocker/child.txt: "), "got: {w}");
+
+        std::fs::write(root.join("e.txt"), b"foo").unwrap();
+        let e = execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "e.txt", "edits": [{"old_string": "nope", "new_string": "x"}]}),
+            &root,
+        )
+        .await;
+        assert_eq!(e, "ERROR: e.txt: edit 1: old_string not found");
         let _ = std::fs::remove_dir_all(&root);
     }
 
