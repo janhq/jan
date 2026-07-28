@@ -87,6 +87,11 @@ jobs:
       - name: Strip universal binary
         run: strip universal/jan
 
+      - name: Check secrets configured
+        id: secrets-check
+        run: |
+          echo "has-cert=${{ secrets.CODE_SIGN_P12_BASE64 != '' }}" >> "$GITHUB_OUTPUT"
+
       - name: Get key for notarize
         run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
         shell: bash
@@ -94,7 +99,7 @@ jobs:
           NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
 
       - uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
-        if: ${{ secrets.CODE_SIGN_P12_BASE64 != '' }}
+        if: steps.secrets-check.outputs.has-cert == 'true'
         continue-on-error: true
         with:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
