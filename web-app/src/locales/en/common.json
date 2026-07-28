@@ -45,6 +45,8 @@
   "modeNormalDesc": "Prompts before risky tool calls",
   "modeYolo": "Bypass permissions",
   "modeYoloDesc": "Auto-allow every tool call — no prompts",
+  "modePlan": "Plan",
+  "modePlanDesc": "Read-only — write/edit/exec tools are denied",
   "commands": "Commands",
   "cmdHelp": "List available commands",
   "cmdClear": "Clear this session",

@@ -64,11 +64,11 @@ export type Usage = {
   total_tokens?: number
 }
 
-// Mirrors the one bypass-permissions mechanism that actually exists in the
-// agent core today (the `--yolo` flag, now reachable via agent_run's `yolo`
-// body field). Not a stand-in for Claude Code's full mode set — there is no
-// plan/auto-accept mode on the backend to wire those to.
-export type CodeRunMode = 'normal' | 'yolo'
+// Mirrors the run-mode mechanisms the agent core actually exposes: `--yolo`
+// (bypass permissions, reachable via agent_run's `yolo` body field) and the
+// TUI/CLI's read-only `--plan` mode (mutation-capable tools hard-denied at
+// the dispatcher, reachable via agent_run's `plan` body field).
+export type CodeRunMode = 'normal' | 'yolo' | 'plan'
 
 export type CodeSession = {
   id: string
