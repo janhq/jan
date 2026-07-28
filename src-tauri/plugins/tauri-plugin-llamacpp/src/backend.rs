@@ -729,11 +729,19 @@ pub async fn check_backend_for_updates(
     }
 }
 
+/// Prune installs of `backend_type`, always keeping `latest_version` and the
+/// `keep_previous` newest versions below it. Those retained copies are what
+/// makes a rollback possible without a re-download, so this must never be run
+/// before a switch has proven itself.
+///
+/// Ordering is by parsed build number, not directory name: `b9100` must sort
+/// above `b982`, which a lexical compare gets backwards.
 #[tauri::command]
 pub async fn remove_old_backend_versions(
     backends_dir: String,
     latest_version: String,
     backend_type: String,
+    keep_previous: usize,
 ) -> Result<Vec<String>, String> {
     let mut removed_paths = Vec::new();
     let backends_path = PathBuf::from(&backends_dir);
@@ -745,6 +753,7 @@ pub async fn remove_old_backend_versions(
     let version_dirs = fs::read_dir(&backends_path)
         .map_err(|e| format!("Failed to read backends directory: {}", e))?;
 
+    let mut candidates: Vec<(u32, String, PathBuf)> = Vec::new();
     for version_entry in version_dirs {
         let version_entry =
             version_entry.map_err(|e| format!("Failed to read version entry: {}", e))?;
@@ -755,34 +764,58 @@ pub async fn remove_old_backend_versions(
             None => continue,
         };
 
-        // Skip the latest version
         if version_name == latest_version {
             continue;
         }
 
-        // Check if this version has the specific backend type
         let backend_type_path = version_path.join(&backend_type);
+        if !backend_type_path.exists() || !is_backend_installed(&backend_type_path) {
+            continue;
+        }
 
-        if backend_type_path.exists() {
-            // Verify it's actually installed before removing
-            if is_backend_installed(&backend_type_path) {
-                match fs::remove_dir_all(&backend_type_path) {
-                    Ok(_) => {
-                        log::info!(
-                            "Removed old version of {}: {}",
-                            backend_type,
-                            backend_type_path.display()
-                        );
-                        removed_paths.push(backend_type_path.to_string_lossy().to_string());
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to remove old backend version: {} - {}",
-                            backend_type_path.display(),
-                            e
-                        );
-                    }
-                }
+        candidates.push((
+            parse_backend_version(version_name.clone()),
+            version_name,
+            backend_type_path,
+        ));
+    }
+
+    // Newest first, name as a tiebreaker so unparseable versions (all 0) are
+    // still pruned deterministically.
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+
+    if candidates.len() > keep_previous {
+        let retained: Vec<&str> = candidates
+            .iter()
+            .take(keep_previous)
+            .map(|(_, name, _)| name.as_str())
+            .collect();
+        log::info!(
+            "Pruning {} of {}: keeping active {} plus {:?}",
+            backend_type,
+            latest_version,
+            latest_version,
+            retained
+        );
+    }
+
+    for (_, version_name, path) in candidates.into_iter().skip(keep_previous) {
+        match fs::remove_dir_all(&path) {
+            Ok(_) => {
+                log::info!(
+                    "Removed old version {} of {}: {}",
+                    version_name,
+                    backend_type,
+                    path.display()
+                );
+                removed_paths.push(path.to_string_lossy().to_string());
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to remove old backend version: {} - {}",
+                    path.display(),
+                    e
+                );
             }
         }
     }
@@ -1377,6 +1410,111 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::Write;
+
+    fn install_backend(root: &Path, version: &str, backend: &str) {
+        let dir = root.join(version).join(backend);
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = if cfg!(target_os = "windows") {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        };
+        File::create(dir.join(exe)).unwrap();
+    }
+
+    fn versions_left(root: &Path, backend: &str) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(root)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().join(backend).exists())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[tokio::test]
+    async fn retention_keeps_the_active_version_and_n_previous() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for v in ["b900", "b1000", "b1100", "b1200"] {
+            install_backend(root, v, "cpu");
+        }
+
+        let removed = remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1200".into(),
+            "cpu".into(),
+            2,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(versions_left(root, "cpu"), vec!["b1000", "b1100", "b1200"]);
+    }
+
+    #[tokio::test]
+    async fn retention_orders_by_build_number_not_lexically() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Lexically "b982" > "b1100"; by build number it is older and must go.
+        for v in ["b982", "b1100", "b1200"] {
+            install_backend(root, v, "cpu");
+        }
+
+        remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1200".into(),
+            "cpu".into(),
+            1,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(versions_left(root, "cpu"), vec!["b1100", "b1200"]);
+    }
+
+    #[tokio::test]
+    async fn retention_never_removes_the_active_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        install_backend(root, "b1000", "cpu");
+
+        let removed = remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1000".into(),
+            "cpu".into(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert!(removed.is_empty());
+        assert_eq!(versions_left(root, "cpu"), vec!["b1000"]);
+    }
+
+    #[tokio::test]
+    async fn retention_ignores_other_backend_types() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        install_backend(root, "b900", "cpu");
+        install_backend(root, "b900", "cuda");
+        install_backend(root, "b1000", "cpu");
+
+        remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1000".into(),
+            "cpu".into(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        // The cuda install under b900 survives; only its cpu sibling is pruned.
+        assert!(root.join("b900").join("cuda").exists());
+        assert!(!root.join("b900").join("cpu").exists());
+    }
 
     // --- Tests for map_old_backend_to_new ---
 

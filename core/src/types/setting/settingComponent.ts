@@ -37,7 +37,12 @@ export type InputType =
 const InputActions = ['unobscure', 'copy'] as const
 export type InputActionsTuple = typeof InputActions
 export type InputAction = InputActionsTuple[number]
-export type DropdownOption = { name: string; value: string }
+export type DropdownOption = {
+  name: string
+  value: string
+  /** Backend versions only: already downloaded, so selecting it is a rollback. */
+  installed?: boolean
+}
 
 export type InputComponentProps = {
   placeholder: string

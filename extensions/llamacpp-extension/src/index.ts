@@ -81,6 +81,7 @@ import {
   findLatestVersionForBackend,
   prioritizeBackends,
   checkBackendForUpdates,
+  removeOldBackendVersions,
   shouldMigrateBackend,
   handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
@@ -95,6 +96,10 @@ const TEMPLATE_KWARGS_CHECK_VERSION = 1
 // restarting the router (unchanged models stay loaded); below it we must do a
 // full process restart.
 const RELOAD_MIN_BUILD = 9023
+
+// Superseded installs kept on disk so a rollback (or an offline downgrade)
+// does not require re-downloading a release that may since have been yanked.
+const BACKEND_VERSIONS_RETAINED = 2
 
 /** Snapshot of an active backend choice, sufficient to restore it on rollback. */
 type BackendSelection = {
@@ -1182,12 +1187,22 @@ export default class llamacpp_extension extends AIEngine {
           .value ?? ''
       )
 
+      // Flag versions already on disk so the dropdown distinguishes a rollback
+      // (instant, works offline) from a download.
+      const installedVersions = new Set(
+        (await getLocalInstalledBackends().catch((e) => {
+          logger.warn('Could not list local backends for the version list:', e)
+          return [] as { version: string; backend: string }[]
+        })).map((b) => b.version)
+      )
+
       const allVersions = Array.from(
         new Set(version_backends.map((b) => b.version))
       )
       versionSetting.controllerProps.options = allVersions.map((v) => ({
         value: v,
         name: v,
+        installed: installedVersions.has(v),
       }))
 
       const allBackends = Array.from(
@@ -1533,6 +1548,7 @@ export default class llamacpp_extension extends AIEngine {
 
       if (await this.restartRouterAndProbe()) {
         logger.info(`Successfully updated to backend: ${targetBackendString}`)
+        await this.pruneOldBackendVersions(version, backend)
         return { wasUpdated: true, newBackend: targetBackendString }
       }
 
@@ -1545,6 +1561,43 @@ export default class llamacpp_extension extends AIEngine {
       return { wasUpdated: false, newBackend: this.config.version_backend }
     } finally {
       this.isUpdatingBackend = false
+    }
+  }
+
+  /**
+   * Prune superseded installs, keeping BACKEND_VERSIONS_RETAINED older ones as
+   * rollback targets. Runs only after the new backend has passed its health
+   * probe -- pruning earlier would delete the very copy a rollback needs.
+   * Best-effort: a full disk is worse than a failed update, but not by enough
+   * to undo a switch that already works.
+   */
+  private async pruneOldBackendVersions(
+    version: string,
+    backend: string
+  ): Promise<void> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const backendsDir = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'backends',
+      ])
+
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+
+      const removed = await removeOldBackendVersions(
+        backendsDir,
+        version,
+        backend,
+        BACKEND_VERSIONS_RETAINED
+      )
+      if (removed.length) {
+        logger.info(`Pruned ${removed.length} superseded backend install(s)`)
+      }
+    } catch (cleanupError) {
+      logger.warn('Failed to remove old backend versions:', cleanupError)
     }
   }
 

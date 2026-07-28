@@ -359,12 +359,14 @@ export async function checkBackendForUpdates(
 export async function removeOldBackendVersions(
   backendsDir: string,
   latestVersion: string,
-  backendType: string
+  backendType: string,
+  keepPrevious: number
 ): Promise<string[]> {
   return invoke('plugin:llamacpp|remove_old_backend_versions', {
     backendsDir,
     latestVersion,
     backendType,
+    keepPrevious,
   })
 }
 

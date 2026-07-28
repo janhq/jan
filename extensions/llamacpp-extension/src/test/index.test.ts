@@ -757,6 +757,40 @@ describe('llamacpp_extension', () => {
         )
       })
 
+      it('prunes superseded installs only after the probe passes', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const { removeOldBackendVersions } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+        const { joinPath } = await import('@janhq/core')
+        vi.mocked(joinPath).mockResolvedValue('/jan/llamacpp/backends')
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(removeOldBackendVersions).toHaveBeenCalledWith(
+          '/jan/llamacpp/backends',
+          'v2.0.0',
+          'linux-avx2-x64',
+          2
+        )
+      })
+
+      it('keeps the rollback target on disk when the probe fails', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const { removeOldBackendVersions, routerHealth } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(routerHealth).mockResolvedValue(false)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        // Pruning here would delete the version we just rolled back onto.
+        expect(removeOldBackendVersions).not.toHaveBeenCalled()
+      })
+
       it('does not attempt a rollback when the download fails pre-commit', async () => {
         await armUpdate(extension)
         extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
