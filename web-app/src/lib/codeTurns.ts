@@ -40,7 +40,14 @@ export function codeTurnsToUIMessages(
       messages.push({
         id: `${idPrefix}-user-${i}`,
         role: 'user',
-        parts: [{ type: 'text', text: turn.content }],
+        parts: [
+          { type: 'text', text: turn.content },
+          ...(turn.images ?? []).map((url) => ({
+            type: 'file',
+            url,
+            mediaType: url.match(/^data:([^;]+)/)?.[1] ?? 'image/png',
+          })),
+        ],
       } as any)
       return
     }

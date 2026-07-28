@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { ToolUIPart } from 'ai'
-import { ChevronDownIcon, WrenchIcon } from 'lucide-react'
+import { ChevronDownIcon, WrenchIcon, SearchIcon, GlobeIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
@@ -191,7 +191,11 @@ export const ToolHeader = memo(
         )}
       >
         {awaitingApproval ? (
-          <ShieldAlertIcon className="size-4 shrink-0 text-amber-500" />
+          <ShieldAlertIcon className="size-4 text-amber-500" />
+        ) : toolName === 'web_search' ? (
+          <SearchIcon className="size-4" />
+        ) : toolName === 'web_fetch' ? (
+          <GlobeIcon className="size-4" />
         ) : (
           <WrenchIcon className="size-4 shrink-0" />
         )}

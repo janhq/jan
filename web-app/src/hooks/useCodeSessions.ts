@@ -9,6 +9,8 @@ import { backendStorage } from '@/lib/backendStorage'
 export type CodeTurn = {
   role: 'user' | 'assistant' | 'tool'
   content: string
+  // User-row only: data URLs of images attached via paste/file picker.
+  images?: string[]
   // Tool-row only: merged from the `tool_call` + matching `tool_result` events.
   callId?: string
   name?: string
@@ -20,10 +22,53 @@ export type CodeTurn = {
 }
 
 // OpenAI-style history replayed to the agent on the next turn (no tool rows).
+// `content` is a plain string for text-only turns; a multimodal array (mirrors
+// the OpenAI chat content-parts shape the Rust side already accepts verbatim,
+// see upstream.rs::parse_openai_messages) when images are attached.
 export type CodeMessage = {
   role: 'user' | 'assistant'
-  content: string
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+      >
 }
+
+// One background subagent run, bucketed by its own run_id so concurrent
+// subagents never share a transcript lane. Lives transiently in useCodeRun
+// while running, then the finished set is committed onto its session so it
+// survives a session switch and app restart.
+export type SubagentRun = {
+  runId: string
+  name: string
+  status: 'running' | 'done'
+  startedAt: number
+  endedAt?: number
+  // The subagent's own trace (wrapped token/tool events). The final answer is
+  // NOT here — it's captured into `finalOutput` from the parent's
+  // await_subagent result.
+  turns: CodeTurn[]
+  finalOutput?: string
+  // From the child's own terminal completion (SubagentEnd). Undefined while
+  // running, or if the provider didn't report usage.
+  usage?: Usage
+}
+
+// Mirrors the Rust `Usage` struct (events.rs) verbatim — snake_case field
+// names, no renaming, since this never flows through the regular chat's
+// ThreadMessage-shaped token-counting path.
+export type Usage = {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}
+
+// Mirrors the one bypass-permissions mechanism that actually exists in the
+// agent core today (the `--yolo` flag, now reachable via agent_run's `yolo`
+// body field). Not a stand-in for Claude Code's full mode set — there is no
+// plan/auto-accept mode on the backend to wire those to.
+export type CodeRunMode = 'normal' | 'yolo'
 
 export type CodeSession = {
   id: string
@@ -31,7 +76,27 @@ export type CodeSession = {
   folder: string | null
   turns: CodeTurn[]
   history: CodeMessage[]
+  // Per-session so switching sessions doesn't change how a background run
+  // behaves. Absent means 'normal' (the safe default).
+  mode?: CodeRunMode
+  // Finished subagents from the most recent run in this session (replace, not
+  // append). Undefined for sessions that never spawned any.
+  subagents?: SubagentRun[]
+  // Usage from the most recent run's terminal `done` event. Undefined until a
+  // run completes with a provider that reports usage.
+  lastUsage?: Usage
+  // `/goal` state (mirrors the TUI's in-loop evaluator, see goal.rs) — set by
+  // `/goal <condition>`, checked after each turn completes, cleared by
+  // `/goal clear` or once the evaluator reports it met.
+  goal?: CodeGoal
   updated: number
+}
+
+export type CodeGoal = {
+  condition: string
+  turns: number
+  status: 'active' | 'achieved'
+  lastReason: string
 }
 
 type CodeSessionsState = {
@@ -42,7 +107,16 @@ type CodeSessionsState = {
   deleteSession: (id: string) => void
   setFolder: (id: string, folder: string) => void
   setTitle: (id: string, title: string) => void
-  commitTurns: (id: string, turns: CodeTurn[], history: CodeMessage[]) => void
+  setMode: (id: string, mode: CodeRunMode) => void
+  setHistory: (id: string, history: CodeMessage[]) => void
+  setGoal: (id: string, goal: CodeGoal | null) => void
+  commitTurns: (
+    id: string,
+    turns: CodeTurn[],
+    history: CodeMessage[],
+    subagents: SubagentRun[],
+    usage?: Usage
+  ) => void
   clearSession: (id: string) => void
 }
 
@@ -50,11 +124,17 @@ const now = () => Date.now()
 
 export const useCodeSessions = create<CodeSessionsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       sessions: [],
       currentId: null,
 
       createSession: () => {
+        // Already viewing an untouched session — reuse it instead of piling
+        // up empty ones (e.g. from repeated clicks on "New session").
+        const { currentId, sessions } = get()
+        const current = sessions.find((s) => s.id === currentId)
+        if (current && current.turns.length === 0) return current.id
+
         const id = crypto.randomUUID()
         const session: CodeSession = {
           id,
@@ -90,24 +170,54 @@ export const useCodeSessions = create<CodeSessionsState>()(
           sessions: s.sessions.map((x) => (x.id === id ? { ...x, title } : x)),
         })),
 
-      commitTurns: (id, turns, history) =>
+      setMode: (id, mode) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => (x.id === id ? { ...x, mode } : x)),
+        })),
+
+      setHistory: (id, history) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id
-              ? {
-                  ...x,
-                  turns: [...x.turns, ...turns],
-                  history,
-                  updated: now(),
-                }
-              : x
+            x.id === id ? { ...x, history, updated: now() } : x
           ),
+        })),
+
+      setGoal: (id, goal) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, goal: goal ?? undefined } : x
+          ),
+        })),
+
+      commitTurns: (id, turns, history, subagents, usage) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== id) return x
+            // Accumulate across this session's runs, keyed by runId — a later
+            // run that dispatches no subagents of its own must not erase what
+            // an earlier run in the same session already finished.
+            const priorIds = new Set(subagents.map((r) => r.runId))
+            const merged = [
+              ...(x.subagents ?? []).filter((r) => !priorIds.has(r.runId)),
+              ...subagents,
+            ]
+            return {
+              ...x,
+              turns: [...x.turns, ...turns],
+              history,
+              subagents: merged,
+              lastUsage: usage ?? x.lastUsage,
+              updated: now(),
+            }
+          }),
         })),
 
       clearSession: (id) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, turns: [], history: [], updated: now() } : x
+            x.id === id
+              ? { ...x, turns: [], history: [], subagents: [], updated: now() }
+              : x
           ),
         })),
     }),

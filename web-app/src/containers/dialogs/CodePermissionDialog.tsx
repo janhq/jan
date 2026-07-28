@@ -11,6 +11,7 @@ export type PermissionDecision = 'allow_once' | 'allow_always' | 'deny'
  * `permission_request` StreamEvent (see events.rs). */
 export type PendingPermission = {
   requestId: string
+  toolCallId?: string
   toolName: string
   capability: string
   path?: string
@@ -18,11 +19,17 @@ export type PendingPermission = {
   diff?: string
   promptKind: string
   offersAlways: boolean
+  // Set when this request came from inside a subagent's wrapped event stream,
+  // so the tasks panel can flag that specific run as needing input instead of
+  // just "running".
+  subagentRunId?: string
 }
 
 // The shared dialog speaks hyphenated decisions; the Rust command
-// (`agent_permission_respond`) expects the snake_case wire values.
-const WIRE: Record<ApprovalDecision, PermissionDecision> = {
+// (`agent_permission_respond`) expects the snake_case wire values. Exported so
+// other callers speaking the same wire protocol (e.g. code.tsx's inline
+// tool-card approval) can reuse it instead of re-deriving the mapping.
+export const WIRE: Record<ApprovalDecision, PermissionDecision> = {
   'allow-once': 'allow_once',
   'allow-always': 'allow_always',
   deny: 'deny',
