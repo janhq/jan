@@ -747,6 +747,7 @@ function CodePage() {
           max_session_tokens: MAX_SESSION_TOKENS,
           model: selectedModel.id,
           yolo: session.mode === 'yolo',
+          plan: session.mode === 'plan',
         },
       })
     } catch (e) {

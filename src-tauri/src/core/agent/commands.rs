@@ -120,6 +120,11 @@ pub async fn agent_run<R: Runtime>(
     if let Some(yolo) = body.get("yolo").and_then(|v| v.as_bool()) {
         args.yolo = yolo;
     }
+    // Mirrors the CLI's `--plan`/`/plan`: read-only mode where mutation-capable
+    // tools are hard-denied at the dispatcher. Omitted or non-bool keeps Normal.
+    if body.get("plan").and_then(|v| v.as_bool()).unwrap_or(false) {
+        args.run_mode = crate::core::agent::plan::RunMode::Plan;
+    }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let forward = tokio::spawn(async move {
