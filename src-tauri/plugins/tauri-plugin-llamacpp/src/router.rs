@@ -134,17 +134,71 @@ fn log_path_for(preset_path: &Path) -> PathBuf {
         .join(ROUTER_LOG_FILENAME)
 }
 
+/// Cap for a retained log generation. Disk use across spawns is bounded by
+/// roughly twice this: one live file plus one retained.
+const MAX_RETAINED_LOG_BYTES: u64 = 16 * 1024 * 1024;
+
 /// llama.cpp opens its log file with mode "w", so a relaunch after a crash
-/// would truncate the very log that explains the crash. Keep one generation
+/// would truncate the very log that explains the crash. Move the previous run
 /// aside before the child can touch it.
+///
+/// Only the tail of an oversized log is kept: a crash signature is written
+/// just before the process dies, so the end is the part worth retaining, and
+/// keeping it bounded is what stops a long-lived router from filling the disk.
+///
+/// Note this is the only point at which size can be enforced. The live log
+/// belongs to a process holding it open -- renaming it out from under llama.cpp
+/// keeps writes flowing to the same inode on POSIX and fails outright on
+/// Windows -- so a single very long run is bounded only by llama.cpp's own
+/// verbosity until the router next restarts.
 fn rotate_log(log_path: &Path) {
-    if !log_path.exists() {
+    let Ok(meta) = std::fs::metadata(log_path) else {
+        return; // nothing from a previous run
+    };
+
+    let previous = log_path.with_extension("log.1");
+    if meta.len() <= MAX_RETAINED_LOG_BYTES {
+        if let Err(e) = std::fs::rename(log_path, &previous) {
+            log::warn!("Could not rotate router log {:?}: {}", log_path, e);
+        }
         return;
     }
-    let previous = log_path.with_extension("log.1");
-    if let Err(e) = std::fs::rename(log_path, &previous) {
-        log::warn!("Could not rotate router log {:?}: {}", log_path, e);
+
+    match keep_log_tail(log_path, &previous, MAX_RETAINED_LOG_BYTES) {
+        Ok(()) => {
+            log::info!(
+                "Router log was {} bytes; retained the last {} in {:?}",
+                meta.len(),
+                MAX_RETAINED_LOG_BYTES,
+                previous
+            );
+            let _ = std::fs::remove_file(log_path);
+        }
+        Err(e) => {
+            // Retaining nothing beats leaving an unbounded file behind.
+            log::warn!("Could not truncate oversized router log: {}; discarding", e);
+            let _ = std::fs::remove_file(log_path);
+        }
     }
+}
+
+fn keep_log_tail(src: &Path, dst: &Path, bytes: u64) -> std::io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    let mut input = std::fs::File::open(src)?;
+    let len = input.metadata()?.len();
+    input.seek(SeekFrom::Start(len.saturating_sub(bytes)))?;
+
+    let mut output = std::fs::File::create(dst)?;
+    let mut buf = vec![0u8; 1024 * 1024];
+    loop {
+        let n = input.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        output.write_all(&buf[..n])?;
+    }
+    output.flush()
 }
 
 fn lock_path_for(preset_path: &Path) -> PathBuf {
@@ -1048,6 +1102,38 @@ mod tests {
         std::fs::write(&log, b"second run").unwrap();
         rotate_log(&log);
         assert_eq!(std::fs::read(&previous).unwrap(), b"second run");
+    }
+
+    #[test]
+    fn rotating_an_oversized_log_keeps_only_its_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(ROUTER_LOG_FILENAME);
+        let previous = log.with_extension("log.1");
+
+        // Head is filler; the crash signature lands at the very end, which is
+        // the part that has to survive.
+        let mut body = vec![b'x'; (MAX_RETAINED_LOG_BYTES + 4096) as usize];
+        body.extend_from_slice(b"CUDA error: out of memory");
+        std::fs::write(&log, &body).unwrap();
+
+        rotate_log(&log);
+
+        assert!(!log.exists());
+        let kept = std::fs::read(&previous).unwrap();
+        assert_eq!(kept.len() as u64, MAX_RETAINED_LOG_BYTES);
+        assert!(kept.ends_with(b"CUDA error: out of memory"));
+    }
+
+    #[test]
+    fn keep_log_tail_copies_the_whole_file_when_under_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("a.log");
+        let dst = dir.path().join("b.log");
+        std::fs::write(&src, b"short").unwrap();
+
+        keep_log_tail(&src, &dst, MAX_RETAINED_LOG_BYTES).unwrap();
+
+        assert_eq!(std::fs::read(&dst).unwrap(), b"short");
     }
 
     #[test]
