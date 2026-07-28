@@ -410,6 +410,7 @@ export default class llamacpp_extension extends AIEngine {
 
   private routerPort?: number
   private routerApiKey?: string
+  private routerStartLock: Promise<void> | null = null
   private userModelsMax: number = 1
   private routerEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
@@ -696,7 +697,25 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Serialized: two concurrent calls would each run the stop-then-spawn
+   * sequence below, and the second would kill the router the first had just
+   * brought up. A late caller gets the in-flight start rather than a restart.
+   */
   private async startRouter(): Promise<void> {
+    const inflight = this.routerStartLock
+    if (inflight) {
+      logger.info('startRouter already in progress; awaiting the in-flight run')
+      await inflight.catch(() => undefined)
+      return
+    }
+    this.routerStartLock = this.runStartRouter().finally(() => {
+      this.routerStartLock = null
+    })
+    return this.routerStartLock
+  }
+
+  private async runStartRouter(): Promise<void> {
     const versionBackend = this.config?.version_backend
     if (
       !versionBackend ||
@@ -732,13 +751,6 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     const backendExe = await getBackendExePath(backend, version)
-    const port = await this.getRandomPort()
-    const apiKey = await this.generateApiKey('router', String(port))
-
-    const envs: Record<string, string> = {}
-    envs['LLAMA_API_KEY'] = apiKey
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     const rawMax = (this.config as any).models_max
     let modelsMax = 1
@@ -759,8 +771,35 @@ export default class llamacpp_extension extends AIEngine {
     modelsMax += embeddingSlotBonus
     this.routerEmbeddingBonus = embeddingSlotBonus
 
-    // Defensive: if a router is already running (hot reload / dev), stop it
-    // first so start_router doesn't reject.
+    // Adoption runs before any stop, and is the only thing allowed to end an
+    // existing router here. It reuses a process whose backend, preset and
+    // models_max still match, and kills one whose config has moved on. A router
+    // can outlive the UI (crash, SIGKILL, power loss) since kill_on_drop never
+    // runs, so this both rescues orphans holding VRAM and makes a redundant
+    // call a no-op instead of a needless cold restart.
+    let adopted: Awaited<ReturnType<typeof adoptRouter>> = null
+    try {
+      adopted = await adoptRouter(
+        backendExe,
+        presetPath,
+        modelsMax,
+        this.apiSecret
+      )
+    } catch (e) {
+      logger.warn('Router adoption failed; starting a fresh router:', e)
+    }
+    if (adopted) {
+      this.routerPort = adopted.port
+      this.routerApiKey = adopted.api_key
+      logger.info(
+        `Reusing router on port ${adopted.port} (pid ${adopted.pid}); skipping spawn`
+      )
+      return
+    }
+
+    // Adoption found nothing to adopt, or declined a process it could not
+    // verify against the lock. A live router with no matching lock would make
+    // start_router reject, so clear it.
     try {
       const existing = await invoke<{ port: number; api_key: string } | null>(
         'plugin:llamacpp|get_router_info'
@@ -772,29 +811,13 @@ export default class llamacpp_extension extends AIEngine {
       /* ignore probe failures */
     }
 
-    // A router can outlive the UI (crash, SIGKILL, power loss): kill_on_drop
-    // never runs and nothing in memory records it. Reuse it when it matches
-    // this config, so we neither strand a process holding VRAM nor pay a
-    // second cold start. A restart path reaches here having just stopped its
-    // router, which clears the lock, so this only fires on a genuine orphan.
-    try {
-      const adopted = await adoptRouter(
-        backendExe,
-        presetPath,
-        modelsMax,
-        this.apiSecret
-      )
-      if (adopted) {
-        this.routerPort = adopted.port
-        this.routerApiKey = adopted.api_key
-        logger.info(
-          `Adopted existing router on port ${adopted.port} (pid ${adopted.pid}); skipping spawn`
-        )
-        return
-      }
-    } catch (e) {
-      logger.warn('Router adoption failed; starting a fresh router:', e)
-    }
+    const port = await this.getRandomPort()
+    const apiKey = await this.generateApiKey('router', String(port))
+
+    const envs: Record<string, string> = {}
+    envs['LLAMA_API_KEY'] = apiKey
+    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     // --no-webui was renamed to --no-ui in upstream b9222. Keep the legacy
     // flag for older backends; the deprecated form still works on newer ones
@@ -1966,26 +1989,32 @@ export default class llamacpp_extension extends AIEngine {
       this.unlistenValidationStarted()
     }
 
-    // Let any in-flight deferred startup finish so stop_router can't race a
-    // concurrent startRouter and leave an orphaned process.
-    if (this.backgroundInit) {
-      await this.backgroundInit.catch(() => undefined)
-    }
-
-    try {
-      await invoke('plugin:llamacpp|stop_router')
-    } catch (e) {
-      logger.warn('stop_router during onUnload failed (ignored):', e)
-    }
+    // Deliberately does NOT stop the router. The router outlives any single
+    // extension instance: the app owns its lifetime and stops it on
+    // ExitRequested/Exit, and adoption reuses a survivor. An extension teardown
+    // is not an app exit -- React StrictMode and HMR both unload and immediately
+    // reload us, and awaiting backgroundInit here (as this used to) meant
+    // blocking until startRouter had adopted the router, then killing exactly
+    // the process it had just adopted.
     this.routerPort = undefined
     this.routerApiKey = undefined
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    if (key === 'llamacpp_version' || key === 'llamacpp_backend') {
-      if (this.isUpdatingBackend) {
-        return
-      }
+    // configureBackends and updateBackend both persist settings themselves and
+    // own the router restart that follows, so every notification they trigger
+    // is an echo of their own write, and configureBackends writes the whole
+    // settings array rather than just the backend selection. This only
+    // suppresses echoes delivered while they are still running; a debounced
+    // restart outlives the flag. Reuse in startRouter, not this guard, is what
+    // keeps a late echo from respawning a healthy router.
+    const selfInflicted = this.isUpdatingBackend || this.isConfiguringBackends
+
+    if (
+      selfInflicted &&
+      (key === 'llamacpp_version' || key === 'llamacpp_backend')
+    ) {
+      return
     }
 
     this.config[key] = value
@@ -2073,6 +2102,7 @@ export default class llamacpp_extension extends AIEngine {
       // A live router was started with the previous preset; without a restart
       // the new value is invisible to inference. Debounced so a flurry of
       // slider/dropdown updates collapses into one bounce.
+      if (selfInflicted) return
       this.scheduleRouterRestart()
     }
   }
@@ -3110,7 +3140,8 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   // Awaits the deferred startup, then makes one direct attempt if the router
-  // still isn't up. Idempotent: startRouter stops any existing router first.
+  // still isn't up. Safe to call redundantly: startRouter reuses a router that
+  // already matches this config rather than respawning it.
   private async ensureRouterReady(): Promise<void> {
     if (this.backgroundInit) {
       await this.backgroundInit.catch(() => undefined)

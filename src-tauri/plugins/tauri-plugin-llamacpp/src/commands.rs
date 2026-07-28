@@ -993,6 +993,19 @@ pub async fn reload_router_models<R: Runtime>(
             resp.status().as_u16()
         ));
     }
+
+    // The process is now running the regenerated preset, so the hash recorded
+    // at spawn no longer describes it.
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let preset_path = state
+        .router
+        .lock()
+        .await
+        .as_ref()
+        .map(|h| h.preset_path.clone());
+    if let Some(path) = preset_path {
+        crate::router::refresh_lock_preset_hash(&path);
+    }
     Ok(())
 }
 

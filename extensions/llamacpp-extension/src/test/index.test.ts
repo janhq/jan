@@ -721,6 +721,46 @@ describe('llamacpp_extension', () => {
     })
 
     describe('onSettingUpdate guard', () => {
+      it('does not restart the router while configureBackends is persisting settings', async () => {
+        // configureBackends writes llamacpp_version/backend on every launch.
+        // Reacting to that would restart the router a second time, which at
+        // startup kills the router adoption just took over.
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        extension['isConfiguringBackends'] = true
+
+        extension.onSettingUpdate('llamacpp_backend', 'linux-avx2-x64')
+        await new Promise((r) => setTimeout(r, 0))
+
+        expect(extension['ensureBackendReady']).not.toHaveBeenCalled()
+        expect(extension['startRouter']).not.toHaveBeenCalled()
+      })
+
+      it('does not schedule a preset restart for configureBackends own writes', async () => {
+        // configureBackends persists the entire settings array, so every
+        // preset-affecting key echoes back through here. Debouncing a restart
+        // off that echo is what killed the adopted router ~600ms into startup.
+        const scheduleRouterRestart = vi.fn()
+        extension['scheduleRouterRestart'] = scheduleRouterRestart
+        extension['isConfiguringBackends'] = true
+
+        extension.onSettingUpdate('ctx_size', 4096)
+
+        expect(scheduleRouterRestart).not.toHaveBeenCalled()
+        // The value is still applied; only the restart is suppressed.
+        expect(extension['config'].ctx_size).toBe(4096)
+      })
+
+      it('still schedules a preset restart for a genuine user edit', async () => {
+        const scheduleRouterRestart = vi.fn()
+        extension['scheduleRouterRestart'] = scheduleRouterRestart
+        extension['isConfiguringBackends'] = false
+
+        extension.onSettingUpdate('ctx_size', 8192)
+
+        expect(scheduleRouterRestart).toHaveBeenCalledTimes(1)
+      })
+
       it('should skip ensureBackendReady in onSettingUpdate when updateBackend is in progress', async () => {
         extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
 
@@ -1363,5 +1403,91 @@ describe('router adoption after a UI crash', () => {
       3,
       expect.any(String)
     )
+  })
+
+  it('never stops a router before trying to adopt it', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    const calls: string[] = []
+    adoptRouter.mockImplementation(async () => {
+      calls.push('adopt')
+      return { port: 45678, api_key: 'adopted-key', pid: 999 }
+    })
+    invoke.mockImplementation(async (cmd: string) => {
+      calls.push(cmd)
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(calls[0]).toBe('adopt')
+    expect(calls).not.toContain('plugin:llamacpp|stop_router')
+  })
+
+  it('coalesces concurrent starts so the second cannot kill the first', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    let spawns = 0
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        spawns += 1
+        await new Promise((r) => setTimeout(r, 10))
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await Promise.all([extension['startRouter'](), extension['startRouter']()])
+
+    expect(spawns).toBe(1)
+    expect(invoke).not.toHaveBeenCalledWith('plugin:llamacpp|stop_router')
+    expect(extension['routerPort']).toBe(12345)
+  })
+
+  it('releases the lock so a later start can still run', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === 'plugin:llamacpp|start_router'
+        ? { port: 12345, api_key: 'fresh-key', pid: 111 }
+        : null
+    )
+
+    await extension['startRouter']()
+    await extension['startRouter']()
+
+    expect(adoptRouter).toHaveBeenCalledTimes(2)
+    expect(extension['routerStartLock']).toBeNull()
+  })
+
+  it('onUnload leaves the router running for the next instance to adopt', async () => {
+    const { invoke } = await armStartRouter()
+    extension['routerPort'] = 45678
+    extension['routerApiKey'] = 'adopted-key'
+    let adoptResolved = false
+    extension['backgroundInit'] = (async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      adoptResolved = true
+    })()
+
+    await extension.onUnload()
+
+    expect(invoke).not.toHaveBeenCalledWith('plugin:llamacpp|stop_router')
+    // Must not block on the in-flight adoption either; that ordering is what
+    // pinned the kill to the moment adoption completed.
+    expect(adoptResolved).toBe(false)
+    expect(extension['routerPort']).toBeUndefined()
+    expect(extension['routerApiKey']).toBeUndefined()
+  })
+
+  it('releases the lock even when the spawn fails', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') throw new Error('no port')
+      return null
+    })
+
+    await expect(extension['startRouter']()).rejects.toThrow('no port')
+    expect(extension['routerStartLock']).toBeNull()
   })
 })

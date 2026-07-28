@@ -321,6 +321,26 @@ pub fn read_lock(preset_path: &Path) -> Option<RouterLock> {
     }
 }
 
+/// Re-record the preset hash for a router that hot-reloaded its preset.
+///
+/// A live reload (`GET /models?reload=1`) applies a new preset without
+/// respawning, so the hash captured at spawn goes stale while the running
+/// process is in fact up to date. Left alone, the next adoption attempt would
+/// read that stale hash, conclude the preset changed, and kill a healthy
+/// router.
+pub fn refresh_lock_preset_hash(preset_path: &Path) {
+    let Some(mut lock) = read_lock(preset_path) else {
+        return;
+    };
+    let hash = hash_preset(preset_path);
+    if lock.preset_hash == hash {
+        return;
+    }
+    lock.preset_hash = hash;
+    write_lock(preset_path, &lock);
+    log::debug!("Router lock preset hash refreshed after a live reload");
+}
+
 /// Outcome of inspecting a router that outlived its UI.
 pub enum AdoptOutcome {
     /// Same binary, same preset, answering `/health` -- reuse it.
@@ -1081,6 +1101,61 @@ mod tests {
     fn missing_preset_hashes_empty_rather_than_panicking() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(hash_preset(&dir.path().join("absent.ini")), "");
+    }
+
+    #[test]
+    fn refreshing_the_lock_hash_survives_a_hot_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\nctx_size=4096\n");
+        write_lock(&preset, &lock_for(&preset, 4242, 1));
+
+        // A live reload rewrites the preset without respawning.
+        std::fs::write(&preset, "[*]\nctx_size=8192\n").unwrap();
+        assert_ne!(read_lock(&preset).unwrap().preset_hash, hash_preset(&preset));
+
+        refresh_lock_preset_hash(&preset);
+
+        let lock = read_lock(&preset).unwrap();
+        assert_eq!(lock.preset_hash, hash_preset(&preset));
+        // Everything else about the run is untouched.
+        assert_eq!(lock.pid, 4242);
+        assert_eq!(lock.port, 1337);
+    }
+
+    // Uses a throwaway child rather than our own pid: reaching the health
+    // probe means reaching the kill branch, and force_kill_router_tree_by_pid
+    // would take the test runner with it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_hot_reloaded_router_is_still_adoptable() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\nctx_size=4096\n");
+
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn a stand-in process");
+        let mut lock = lock_for(&preset, child.id(), 1);
+        lock.backend_exe = "/backends/llama-server".to_string();
+        write_lock(&preset, &lock);
+
+        std::fs::write(&preset, "[*]\nctx_size=8192\n").unwrap();
+        refresh_lock_preset_hash(&preset);
+
+        // Reaches the health probe rather than being killed for a stale hash.
+        // Nothing listens on the recorded port, so it fails there instead.
+        let outcome = try_adopt_router(
+            &preset,
+            Path::new("/backends/llama-server"),
+            1,
+            "k".into(),
+        )
+        .await;
+        let _ = child.wait();
+        assert!(
+            matches!(outcome, AdoptOutcome::Killed("failed health check")),
+            "should not be killed for a preset change after the hash is refreshed"
+        );
     }
 
     #[tokio::test]
