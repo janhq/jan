@@ -28,12 +28,15 @@ on:
     outputs:
       FILE_NAME:
         value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
+      SHA256:
+        value: ${{ jobs.build-windows-x64.outputs.SHA256 }}
 
 jobs:
   build-windows-x64:
     runs-on: windows-latest
     outputs:
       FILE_NAME: ${{ steps.package.outputs.FILE_NAME }}
+      SHA256: ${{ steps.package.outputs.SHA256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,6 +67,7 @@ jobs:
           FILE_NAME="jan-agent-windows-x86_64-$VERSION.zip"
           7z a "$FILE_NAME" ./src-tauri/target/release/jan.exe
           echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "SHA256=$(sha256sum "$FILE_NAME" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload to S3
         shell: bash
