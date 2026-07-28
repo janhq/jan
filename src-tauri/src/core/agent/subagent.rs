@@ -55,7 +55,13 @@ impl std::fmt::Display for SubagentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SubagentError::UnknownSubagent(n) => {
-                write!(f, "unknown subagent '{n}': no matching definition in the user or project scope")
+                write!(
+                    f,
+                    "unknown subagent '{n}': no matching definition in the user or \
+                     project scope. For a one-off subagent, retry with a `system_prompt` \
+                     describing its role (required for any subagent_name that isn't already \
+                     saved); to check saved names first, call list_subagents."
+                )
             }
             SubagentError::PermissionDenied(m) => write!(f, "permission denied: {m}"),
             SubagentError::Upstream(m) => write!(f, "{m}"),
@@ -685,9 +691,9 @@ pub fn subagent_tool_schemas(registry: &SubagentRegistry) -> Vec<serde_json::Val
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "subagent_name": { "type": "string", "description": "Name of a saved subagent to run, or a short descriptive name for a one-off (paired with system_prompt)." },
+                        "subagent_name": { "type": "string", "description": "Name of a saved subagent to run. For a one-off (no saved definition), pick a short descriptive name here AND pass system_prompt in the same call -- an unrecognized name with no system_prompt fails." },
                         "description": { "type": "string", "description": "The task for the subagent, as its sole user message. Include everything it needs; it does not see this conversation." },
-                        "system_prompt": { "type": "string", "description": "Inline system prompt for a one-off subagent when subagent_name is not a saved one. Omit to run a saved subagent." },
+                        "system_prompt": { "type": "string", "description": "Required alongside subagent_name whenever that name isn't already saved -- defines the one-off subagent's role. Omit only when subagent_name matches a saved subagent." },
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
@@ -1288,6 +1294,43 @@ mod tests {
             }
             other => panic!("expected SubagentEnd on abort, got {other:?}"),
         }
+    }
+
+    /// Regression test for #254: `await_subagent` used to remove the registry
+    /// entry (and its AbortHandle) before awaiting the result, so a subagent
+    /// became unreachable to `abort_all` the instant it started being awaited —
+    /// making it uncancellable if the parent was cancelled mid-await.
+    #[tokio::test]
+    async fn cancelling_mid_await_keeps_the_entry_abortable() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (_tx, rx) = tokio::sync::oneshot::channel::<Result<String, SubagentError>>();
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
+        bg.inner.lock().unwrap().insert(
+            "r1".to_string(),
+            BackgroundEntry {
+                result: Some(rx),
+                abort: handle.abort_handle(),
+                run_id: "r1".to_string(),
+                name: "reviewer".to_string(),
+                events: ev_tx,
+            },
+        );
+
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        cancel_tx.send(()).unwrap();
+
+        tokio::select! {
+            biased;
+            _ = await_subagent(&bg, "r1") => unreachable!("_tx is never sent; await_subagent never resolves on its own"),
+            _ = cancel_rx => {}
+        }
+
+        assert!(
+            bg.inner.lock().unwrap().contains_key("r1"),
+            "cancelling mid-await must not remove the entry — abort_all still needs it"
+        );
+        handle.abort();
     }
 
     #[tokio::test]
