@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { FileDiff, GitBranch, Laptop, Folder, Sparkles } from 'lucide-react'
+import { FileDiff, GitBranch, Laptop, Folder, Sparkles, ListTodo } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -36,6 +36,7 @@ import SkillSelector from '@/containers/SkillSelector'
 import CodeModeSelector from '@/containers/CodeModeSelector'
 import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
 import { CodeDiffPanel } from '@/containers/CodeDiffPanel'
+import { CodeTodoPanel } from '@/containers/CodeTodoPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { collectCodeFileDiffs } from '@/lib/codeDiffs'
 import { PromptProgress } from '@/components/PromptProgress'
@@ -58,7 +59,7 @@ export const Route = createFileRoute(route.code as any)({
   component: CodePage,
 })
 
-type CodeSidePanelView = 'subagents' | 'diff'
+type CodeSidePanelView = 'subagents' | 'diff' | 'todos'
 
 // Per-run cumulative token ceiling (one agent_run = one multi-step task). Since
 // `max_turns: 0`, this cumulative *spend* bound (prompt replays + completions,
@@ -710,6 +711,9 @@ function CodePage() {
         case 'messages_updated':
           compactedHistory = ev.messages
           break
+        case 'todo_update':
+          useCodeSessions.getState().setTodos(sid, ev.list)
+          break
         case 'subagent_start':
           run.startSubagent(sid, ev.run_id, ev.name)
           break
@@ -748,6 +752,7 @@ function CodePage() {
           model: selectedModel.id,
           yolo: session.mode === 'yolo',
           plan: session.mode === 'plan',
+          todos: session.todos ?? { phases: [] },
         },
       })
     } catch (e) {
@@ -911,6 +916,19 @@ function CodePage() {
               </span>
             )}
             <div className="relative z-30 flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activePanel === 'todos' ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={() => togglePanel('todos')}
+                    aria-label={t('common:todoPanelTitle')}
+                  >
+                    <ListTodo size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('common:todoPanelTitle')}</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -1087,6 +1105,8 @@ function CodePage() {
             gitBranch={gitBranch}
             onClose={() => setActivePanel(null)}
           />
+        ) : activePanel === 'todos' ? (
+          <CodeTodoPanel todos={current?.todos} onClose={() => setActivePanel(null)} />
         ) : null}
       </div>
 
