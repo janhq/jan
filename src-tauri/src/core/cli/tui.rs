@@ -3708,8 +3708,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/todo",
-        hint: "[add [phase|] text]",
-        description: "Open the todo editor (bare) or /todo add ... to append a task",
+        hint: "[add [phase|] text | clear]",
+        description: "Open the todo editor (bare), /todo add ... to append, /todo clear to drop all",
     },
     SlashCommand {
         name: "/threads",
@@ -4009,8 +4009,26 @@ async fn todo_command(app: &mut App, arg: &str) {
         open_todo_picker(app);
         return;
     }
+    // Drop the whole list in one step. A finished (or abandoned) task set
+    // otherwise lingers in the HUD until every item is removed by hand in the
+    // editor, since the model does not always close its own todos out.
+    if arg == "clear" {
+        if app.todos.is_empty() {
+            app.note("no todos to clear");
+            return;
+        }
+        match apply_todo_mutation(app, |list| {
+            list.rm(crate::core::agent::todo::Target::All)
+        })
+        .await
+        {
+            Ok(()) => app.note("cleared all todos"),
+            Err(e) => app.note(&format!("todo clear failed: {e}")),
+        }
+        return;
+    }
     let Some(rest) = arg.strip_prefix("add") else {
-        app.note("usage: /todo   (open editor)   |   /todo add [PHASE |] TEXT");
+        app.note("usage: /todo   (open editor)   |   /todo add [PHASE |] TEXT   |   /todo clear");
         return;
     };
     let rest = rest.trim();
@@ -4802,35 +4820,30 @@ fn draw(f: &mut Frame, app: &mut App) {
     let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
     let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
     let show_todo = todo_h > 0;
-    // Header/path/footer chrome stays pinned top and bottom; the todo HUD
-    // sits directly above the input box instead -- the last thing in view
-    // right before where the user types, not competing with the header for
-    // attention. Kept out of the layout entirely when there are no todos (or
-    // an overlay is open) so that case renders exactly as before.
-    let (todo_area, chunks) = if show_todo {
-        let raw = Layout::vertical([
-            Constraint::Length(1),       // 0: header
-            Constraint::Length(1),       // 1: path line
-            Constraint::Length(1),       // 2: footer
-            Constraint::Min(1),          // 3: body
-            Constraint::Length(todo_h),  // 4: todo HUD
-            Constraint::Length(input_h), // 5: input
-        ])
-        .split(f.area());
-        (Some(raw[4]), [raw[0], raw[3], raw[5], raw[1], raw[2]])
-    } else {
-        let raw = Layout::vertical([
-            Constraint::Length(1),       // 0: header
-            Constraint::Length(1),       // 1: path line
-            Constraint::Length(1),       // 2: footer
-            Constraint::Min(1),          // 3: body
-            Constraint::Length(input_h), // 4: input
-        ])
-        .split(f.area());
-        (None, [raw[0], raw[3], raw[4], raw[1], raw[2]])
-    };
+    // Header/path/footer chrome stays pinned top and bottom; the todo HUD sits
+    // directly above the input box -- the last thing in view right before where
+    // the user types, not competing with the header for attention. The
+    // separator rule is its own row *below* the HUD (rather than the body's own
+    // bottom border) so the todos read as part of the input dock, above the
+    // line, instead of stranded between the rule and the prompt. A zero-length
+    // todo slot collapses away, so a todo-free session (or an open overlay)
+    // renders exactly as before.
+    let raw = Layout::vertical([
+        Constraint::Length(1),       // 0: header
+        Constraint::Length(1),       // 1: path line
+        Constraint::Length(1),       // 2: footer
+        Constraint::Min(1),          // 3: body
+        Constraint::Length(todo_h),  // 4: todo HUD
+        Constraint::Length(1),       // 5: separator rule
+        Constraint::Length(input_h), // 6: input
+    ])
+    .split(f.area());
+    let todo_area = show_todo.then(|| raw[4]);
+    let chunks = [raw[0], raw[3], raw[6], raw[1], raw[2]];
 
     f.render_widget(header(app), chunks[0]);
+    // Drawn for every path (picker included) so the dock always reads the same.
+    f.render_widget(Block::default().borders(Borders::TOP), raw[5]);
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
     // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
@@ -4975,8 +4988,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     // no transcript index; they're all appended after the transcript loop.
     row_index.resize(lines.len(), None);
 
-    let block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
-    let inner_h = chunks[1].height.saturating_sub(2);
+    // TOP border only: the rule under the transcript is now its own row below
+    // the todo HUD (see the layout above), not this block's bottom border.
+    let block = Block::default().borders(Borders::TOP);
+    let inner_h = chunks[1].height.saturating_sub(1);
 
     // Wrapping only grows the line count, so if the unwrapped count already
     // fills the viewport no padding is possible; skip the measuring clone and
@@ -8820,6 +8835,60 @@ mod tests {
         assert!(lines[3].contains("└─") && lines[3].contains("☑ gamma"), "{lines:?}");
     }
 
+    /// The todo HUD belongs to the input dock: it must render ABOVE the
+    /// horizontal rule that separates the transcript from the input, not
+    /// stranded between that rule and the prompt.
+    #[test]
+    fn todo_hud_sits_above_the_input_separator_rule() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![("only", vec![("alpha", InProgress)])]);
+        let rows = render_rows(&mut app, 60, 20);
+
+        let todo_row = rows.iter().position(|r| r.contains("Todos")).expect("todos");
+        let input_row = rows
+            .iter()
+            .position(|r| r.contains("Type here to chat with agent"))
+            .expect("input");
+        // The rule is the last full-width run of `─` before the input.
+        let rule_row = rows[..input_row]
+            .iter()
+            .rposition(|r| r.trim_end().len() > 40 && r.trim_end().chars().all(|c| c == '─'))
+            .expect("separator rule above the input");
+
+        assert!(
+            todo_row < rule_row,
+            "todos must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
+        );
+        assert!(
+            rule_row < input_row,
+            "the rule must sit directly above the input: {rows:#?}"
+        );
+    }
+
+    /// A todo-free session keeps the original look: one rule directly above the
+    /// input, with no leftover blank row where the HUD would have been.
+    #[test]
+    fn separator_rule_hugs_the_input_when_there_are_no_todos() {
+        let mut app = test_app();
+        assert!(app.todos.is_empty());
+        let rows = render_rows(&mut app, 60, 20);
+
+        let input_row = rows
+            .iter()
+            .position(|r| r.contains("Type here to chat with agent"))
+            .expect("input");
+        let rule_row = rows[..input_row]
+            .iter()
+            .rposition(|r| r.trim_end().len() > 40 && r.trim_end().chars().all(|c| c == '─'))
+            .expect("separator rule above the input");
+        assert_eq!(
+            rule_row + 1,
+            input_row,
+            "no gap between rule and input: {rows:#?}"
+        );
+    }
+
     #[test]
     fn multi_phase_todo_hud_collapses_inactive_phases() {
         use crate::core::agent::todo::TodoStatus::*;
@@ -8911,6 +8980,23 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(app.todos.done_total(), (1, 1));
+    }
+
+    /// `/todo clear` drops a stale list in one step -- otherwise a finished or
+    /// abandoned task set lingers in the HUD until each item is removed by hand.
+    #[tokio::test]
+    async fn todo_clear_command_empties_the_whole_list() {
+        let mut app = test_app();
+        run_command(&mut app, "todo add Build | ship it").await;
+        run_command(&mut app, "todo add Build | and this").await;
+        assert_eq!(app.todos.done_total(), (0, 2));
+
+        run_command(&mut app, "todo clear").await;
+        assert!(app.todos.is_empty(), "{:?}", app.todos);
+
+        // Clearing an already-empty list is a no-op note, not an error.
+        run_command(&mut app, "todo clear").await;
+        assert!(app.todos.is_empty());
     }
 
     #[tokio::test]
