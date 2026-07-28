@@ -629,12 +629,94 @@ describe('llamacpp_extension', () => {
         expect(result.wasUpdated).toBe(false)
       })
 
-      it('should return no-op when an update is already in progress', async () => {
-        // Simulate an update already in progress
-        extension['isUpdatingBackend'] = true
+      it('queues a concurrent request instead of dropping it', async () => {
+        extension['config'].llamacpp_version = 'v1.0.0'
+        extension['config'].llamacpp_backend = 'linux-avx2-x64'
+        extension['recomposeVersionBackend']()
+        extension['getStoredBackendType'] = vi
+          .fn()
+          .mockResolvedValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn().mockResolvedValue(undefined)
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
+        extension['pruneOldBackendVersions'] = vi
+          .fn()
+          .mockResolvedValue(undefined)
+        extension['recordUpdateHistory'] = vi.fn().mockResolvedValue(undefined)
+        const { mapOldBackendToNew } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(mapOldBackendToNew).mockImplementation(async (b) => b)
 
-        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
-        expect(result.wasUpdated).toBe(false)
+        let releaseFirst: () => void = () => {}
+        const firstDownload = new Promise<void>((r) => {
+          releaseFirst = r
+        })
+        const ensureBackendReady = vi
+          .fn()
+          .mockImplementationOnce(() => firstDownload)
+          .mockResolvedValue(undefined)
+        extension['ensureBackendReady'] = ensureBackendReady
+
+        const first = extension.updateBackend('v2.0.0/linux-avx2-x64')
+        const queued = extension.updateBackend('v3.0.0/linux-avx2-x64')
+        releaseFirst()
+
+        const [firstResult, queuedResult] = await Promise.all([first, queued])
+
+        expect(firstResult.newBackend).toBe('v2.0.0/linux-avx2-x64')
+        // The queued request ran rather than being silently discarded.
+        expect(queuedResult.wasUpdated).toBe(true)
+        expect(queuedResult.newBackend).toBe('v3.0.0/linux-avx2-x64')
+        expect(ensureBackendReady).toHaveBeenCalledTimes(2)
+      })
+
+      it('coalesces queued requests so only the newest target runs', async () => {
+        extension['config'].llamacpp_version = 'v1.0.0'
+        extension['config'].llamacpp_backend = 'linux-avx2-x64'
+        extension['recomposeVersionBackend']()
+        extension['getStoredBackendType'] = vi
+          .fn()
+          .mockResolvedValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn().mockResolvedValue(undefined)
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
+        extension['pruneOldBackendVersions'] = vi
+          .fn()
+          .mockResolvedValue(undefined)
+        extension['recordUpdateHistory'] = vi.fn().mockResolvedValue(undefined)
+        const { mapOldBackendToNew } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(mapOldBackendToNew).mockImplementation(async (b) => b)
+
+        let releaseFirst: () => void = () => {}
+        const firstDownload = new Promise<void>((r) => {
+          releaseFirst = r
+        })
+        const ensureBackendReady = vi
+          .fn()
+          .mockImplementationOnce(() => firstDownload)
+          .mockResolvedValue(undefined)
+        extension['ensureBackendReady'] = ensureBackendReady
+
+        const first = extension.updateBackend('v2.0.0/linux-avx2-x64')
+        const superseded = extension.updateBackend('v3.0.0/linux-avx2-x64')
+        const newest = extension.updateBackend('v4.0.0/linux-avx2-x64')
+        releaseFirst()
+
+        const results = await Promise.all([first, superseded, newest])
+
+        // v3 never runs: obsolete before it could start. Both waiters on the
+        // queued slot get the v4 result.
+        expect(ensureBackendReady).toHaveBeenCalledTimes(2)
+        expect(results[1].newBackend).toBe('v4.0.0/linux-avx2-x64')
+        expect(results[2].newBackend).toBe('v4.0.0/linux-avx2-x64')
+        expect(extension['config'].version_backend).toBe(
+          'v4.0.0/linux-avx2-x64'
+        )
       })
     })
 
@@ -789,6 +871,26 @@ describe('llamacpp_extension', () => {
 
         // Pruning here would delete the version we just rolled back onto.
         expect(removeOldBackendVersions).not.toHaveBeenCalled()
+      })
+
+      it('records the outcome of a failed switch as rolled-back', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const written: unknown[] = []
+        extension['recordUpdateHistory'] = vi.fn(async (r) => {
+          written.push(r)
+        })
+        const { routerHealth } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(routerHealth).mockResolvedValue(false)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(written).toHaveLength(1)
+        expect(written[0]).toMatchObject({
+          from: 'v1.0.0/linux-avx2-x64',
+          to: 'v2.0.0/linux-avx2-x64',
+          outcome: 'rolled-back',
+        })
       })
 
       it('does not attempt a rollback when the download fails pre-commit', async () => {

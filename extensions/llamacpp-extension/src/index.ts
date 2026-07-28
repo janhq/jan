@@ -101,6 +101,19 @@ const RELOAD_MIN_BUILD = 9023
 // does not require re-downloading a release that may since have been yanked.
 const BACKEND_VERSIONS_RETAINED = 2
 
+// Bounded so a long-lived install cannot grow the log without limit.
+const UPDATE_HISTORY_LIMIT = 50
+const UPDATE_HISTORY_FILENAME = 'update_history.json'
+
+type BackendUpdateRecord = {
+  timestamp: string
+  from: string
+  to: string
+  outcome: 'updated' | 'rolled-back' | 'failed'
+  durationMs: number
+  error?: string
+}
+
 /** Snapshot of an active backend choice, sufficient to restore it on rollback. */
 type BackendSelection = {
   version: string
@@ -383,6 +396,15 @@ export default class llamacpp_extension extends AIEngine {
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
+  private currentUpdate: Promise<{
+    wasUpdated: boolean
+    newBackend: string
+  }> | null = null
+  private pendingUpdate: Promise<{
+    wasUpdated: boolean
+    newBackend: string
+  }> | null = null
+  private pendingTarget: string | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
@@ -1492,17 +1514,48 @@ export default class llamacpp_extension extends AIEngine {
     return result.backend_string
   }
 
+  /**
+   * Serializes backend updates. A request arriving mid-update is queued rather
+   * than dropped, and only the newest queued target survives -- if a user
+   * clicks through three versions while a download runs, the first two are
+   * obsolete by the time they could run. All callers waiting on the queued slot
+   * receive the same result.
+   */
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    if (this.isUpdatingBackend) {
-      logger.warn('Backend update already in progress, skipping new update request')
-      // Treat concurrent update requests as a benign no-op and report that no new update
-      // was performed, while still returning the current backend value.
-      return { wasUpdated: false, newBackend: this.config.version_backend }
+    if (this.currentUpdate) {
+      this.pendingTarget = targetBackendString
+      logger.info(
+        `Backend update in progress; queued ${targetBackendString} (supersedes any earlier queued target)`
+      )
+      events.emit(AppEvent.onBackendUpdateQueued, {
+        target: targetBackendString,
+      })
+
+      this.pendingUpdate ??= this.currentUpdate
+        .catch(() => undefined)
+        .then(() => {
+          const next = this.pendingTarget as string
+          this.pendingTarget = null
+          this.pendingUpdate = null
+          return this.updateBackend(next)
+        })
+      return this.pendingUpdate
     }
 
+    // `runUpdate` clears currentUpdate inside its own body, so a queued
+    // continuation chained onto it always observes an idle slot.
+    this.currentUpdate = this.runUpdate(targetBackendString)
+    return this.currentUpdate
+  }
+
+  private async runUpdate(
+    targetBackendString: string
+  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
     this.isUpdatingBackend = true
+    const startedAt = Date.now()
+    const from = this.config.version_backend
     let previous: BackendSelection | undefined
 
     try {
@@ -1549,6 +1602,12 @@ export default class llamacpp_extension extends AIEngine {
       if (await this.restartRouterAndProbe()) {
         logger.info(`Successfully updated to backend: ${targetBackendString}`)
         await this.pruneOldBackendVersions(version, backend)
+        await this.recordUpdateHistory({
+          from,
+          to: targetBackendString,
+          outcome: 'updated',
+          durationMs: Date.now() - startedAt,
+        })
         return { wasUpdated: true, newBackend: targetBackendString }
       }
 
@@ -1557,10 +1616,60 @@ export default class llamacpp_extension extends AIEngine {
       )
     } catch (error) {
       logger.error('Backend update failed:', error)
-      await this.rollbackBackendSelection(previous)
+      const rolledBack = await this.rollbackBackendSelection(previous)
+      await this.recordUpdateHistory({
+        from,
+        to: targetBackendString,
+        outcome: rolledBack ? 'rolled-back' : 'failed',
+        error: String(error),
+        durationMs: Date.now() - startedAt,
+      })
       return { wasUpdated: false, newBackend: this.config.version_backend }
     } finally {
       this.isUpdatingBackend = false
+      this.currentUpdate = null
+    }
+  }
+
+  /**
+   * Every update outcome, newest first, for diagnosing a switch after the fact.
+   * Returns an empty list when nothing has been recorded yet.
+   */
+  async getBackendUpdateHistory(): Promise<BackendUpdateRecord[]> {
+    try {
+      const path = await joinPath([
+        await this.getProviderPath(),
+        UPDATE_HISTORY_FILENAME,
+      ])
+      if (!(await fs.existsSync(path))) return []
+      const parsed = JSON.parse(await fs.readFileSync(path, 'utf8'))
+      return Array.isArray(parsed) ? parsed : []
+    } catch (e) {
+      logger.warn('Could not read backend update history:', e)
+      return []
+    }
+  }
+
+  /**
+   * Append one outcome to the update log. Never throws: losing a diagnostic
+   * record must not turn a working update into a failed one.
+   */
+  private async recordUpdateHistory(
+    record: Omit<BackendUpdateRecord, 'timestamp'>
+  ): Promise<void> {
+    try {
+      const path = await joinPath([
+        await this.getProviderPath(),
+        UPDATE_HISTORY_FILENAME,
+      ])
+      const history = await this.getBackendUpdateHistory()
+      history.unshift({ timestamp: new Date().toISOString(), ...record })
+      await fs.writeFileSync(
+        path,
+        JSON.stringify(history.slice(0, UPDATE_HISTORY_LIMIT), null, 2)
+      )
+    } catch (e) {
+      logger.warn('Could not record backend update history:', e)
     }
   }
 
@@ -1677,13 +1786,13 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async rollbackBackendSelection(
     previous: BackendSelection | undefined
-  ): Promise<void> {
-    if (!previous?.version || !previous.backend) return
+  ): Promise<boolean> {
+    if (!previous?.version || !previous.backend) return false
     if (
       this.config.llamacpp_version === previous.version &&
       this.config.llamacpp_backend === previous.backend
     ) {
-      return
+      return false
     }
 
     const target = `${previous.version}/${previous.backend}`
@@ -1700,8 +1809,10 @@ export default class llamacpp_extension extends AIEngine {
         backend: previous.backend,
         version: previous.version,
       })
+      return true
     } catch (e) {
       logger.error(`Rollback to ${target} failed:`, e)
+      return false
     }
   }
 

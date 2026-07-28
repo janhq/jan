@@ -68,6 +68,7 @@ export enum AppEvent {
 
   onBackendVerificationFailed = 'onBackendVerificationFailed',
   onBackendRollback = 'onBackendRollback',
+  onBackendUpdateQueued = 'onBackendUpdateQueued',
 }
 
 export enum DownloadEvent {
