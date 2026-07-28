@@ -59,8 +59,15 @@ pub enum StreamEvent {
         task: Option<String>,
     },
     /// A backgrounded subagent run finished (success or error). Pairs with the
-    /// `SubagentStart` of the same `run_id`.
-    SubagentEnd { run_id: String, name: String },
+    /// `SubagentStart` of the same `run_id`. `usage` is the child's own final
+    /// completion usage (`None` on error, or if the provider didn't report it) —
+    /// the child's terminal Done is never forwarded to the parent, so this is
+    /// the only way its token spend reaches a consumer.
+    SubagentEnd {
+        run_id: String,
+        name: String,
+        usage: Option<Usage>,
+    },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -108,6 +115,12 @@ pub enum StreamEvent {
     /// the `agent_permission_respond` command referencing `request_id`.
     PermissionRequest {
         request_id: String,
+        /// The originating tool call's id, so the UI can render the approval
+        /// inline on that tool card (see `web-app` `ToolApprovalActions`)
+        /// instead of only in the modal. `None` for prompts with no single
+        /// correlated tool call (e.g. subagent-create).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
         tool_name: String,
         capability: String,
         path: Option<String>,
@@ -340,6 +353,7 @@ mod tests {
     fn permission_request_serializes_to_wire_shape() {
         let v = serde_json::to_value(StreamEvent::PermissionRequest {
             request_id: "perm-1".into(),
+            tool_call_id: Some("call-1".into()),
             tool_name: "write".into(),
             capability: "write".into(),
             path: Some("out.txt".into()),
@@ -354,6 +368,7 @@ mod tests {
             json!({
                 "type": "permission_request",
                 "request_id": "perm-1",
+                "tool_call_id": "call-1",
                 "tool_name": "write",
                 "capability": "write",
                 "path": "out.txt",
@@ -379,11 +394,12 @@ mod tests {
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            usage: None,
         })
         .unwrap();
         assert_eq!(
             end,
-            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer" })
+            json!({ "type": "subagent_end", "run_id": "sub-1", "name": "rust-reviewer", "usage": null })
         );
     }
 
