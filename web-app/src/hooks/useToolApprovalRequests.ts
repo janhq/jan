@@ -1,24 +1,14 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
 
+export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
+
 export type PendingApproval = {
   toolCallId: string
   toolName: string
   threadId: string
-  /** MCP server the tool belongs to, so the prompt can offer to trust it. */
-  serverName?: string
-  resolve: (approved: boolean) => void
+  onDecision: (decision: ApprovalDecision) => void
 }
-
-/**
- * Scope of the grant. `allow-always` trusts the tool's whole server when it has
- * one, since trusting a server tool-by-tool is the same decision repeated.
- */
-export type ApprovalDecision =
-  | 'allow-once'
-  | 'allow-thread'
-  | 'allow-always'
-  | 'deny'
 
 type ToolApprovalRequestsState = {
   // In-flight per-tool-call approval prompts. Kept out of the persisted
@@ -32,6 +22,16 @@ type ToolApprovalRequestsState = {
     threadId: string,
     serverName?: string
   ) => Promise<boolean>
+  // Registers a prompt whose resolution is driven by the caller (Code UI's
+  // own Rust-side permission flow, via `agent_permission_respond`) rather
+  // than the chat auto-approve settings `requestApproval` consults — the
+  // caller already decided a prompt is needed before calling this.
+  registerPending: (
+    toolCallId: string,
+    toolName: string,
+    threadId: string,
+    onDecision: (decision: ApprovalDecision) => void
+  ) => void
   resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
   clearPendingForThread: (threadId: string) => void
 }
@@ -58,12 +58,20 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               toolCallId,
               toolName,
               threadId,
-              serverName,
-              resolve,
+              onDecision: (decision) => resolve(decision !== 'deny'),
             },
           },
         }))
       })
+    },
+
+    registerPending: (toolCallId, toolName, threadId, onDecision) => {
+      set((s) => ({
+        pending: {
+          ...s.pending,
+          [toolCallId]: { toolCallId, toolName, threadId, onDecision },
+        },
+      }))
     },
 
     resolveApproval: (toolCallId, decision) => {
@@ -84,7 +92,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         delete next[toolCallId]
         return { pending: next }
       })
-      entry.resolve(decision !== 'deny')
+      entry.onDecision(decision)
     },
 
     clearPendingForThread: (threadId) => {
@@ -99,7 +107,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
         return { pending: next }
       })
       // Resolve as denied so any awaiting tool loop unblocks instead of hanging.
-      for (const entry of stranded) entry.resolve(false)
+      for (const entry of stranded) entry.onDecision('deny')
     },
   })
 )

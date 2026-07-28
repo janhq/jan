@@ -1,9 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { memo, useState, useCallback, useEffect, useMemo } from 'react'
+import { memo, useState, useCallback, useEffect, useRef, cloneElement } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
-import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
+import { formatDuration } from '@/lib/utils'
+import {
+  activeToolPart,
+  completedToolLabel,
+  subagentActivityLabel,
+  usedSkillNames,
+  type ActivityLabel,
+} from '@/lib/agentActivity'
+import type { SubagentRun } from '@/hooks/useCodeSessions'
+import { Loader } from 'lucide-react'
+import { twMerge } from 'tailwind-merge'
 import {
   CHAT_STATUS,
   CONTENT_TYPE,
@@ -54,6 +64,11 @@ export type MessageItemProps = {
   onDelete?: (messageId: string) => void
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
+  // Cowork only: the session's background subagent runs. Omitted in regular
+  // chat threads, which never spawn subagents.
+  subagents?: SubagentRun[]
+  assistant?: { avatar?: React.ReactNode; name?: string }
+  showAssistant?: boolean
   isAnimating?: boolean
   hideActions?: boolean
 }
@@ -66,6 +81,7 @@ export const MessageItem = memo(
     status,
     isAnimating,
     hideActions,
+    subagents,
     reasoningContainerRef,
     isReasoningAtBottom,
     onReasoningScroll,
@@ -147,6 +163,70 @@ export const MessageItem = memo(
         return Boolean(toolCallId && pendingApprovals[toolCallId])
       })
     }, [hasPendingToolCall, message.parts, pendingApprovals])
+
+    // Tool parts carry no start timestamp; track first-seen time per
+    // toolCallId locally so the elapsed-time readout is stable across
+    // re-renders (not reset every render, not reused across a new call
+    // with the same id after a session reset -- cleared once a step
+    // becomes non-pending in the effect below).
+    const toolStartedAtRef = useRef<Map<string, number>>(new Map())
+
+    const pendingTool = useMemo(() => {
+      if (!isLastMessage || message.role !== 'assistant') return null
+      return activeToolPart(message.parts as never)
+    }, [isLastMessage, message.role, message.parts])
+    const usedSkills = useMemo(
+      () => usedSkillNames(message.parts as never),
+      [message.parts]
+    )
+
+    useEffect(() => {
+      const map = toolStartedAtRef.current
+      if (pendingTool) {
+        // Keep only the current pending id; purge any stale entry that may
+        // have lingered from a previous tool with a different toolCallId.
+        map.forEach((_, key) => {
+          if (key !== pendingTool.toolCallId) map.delete(key)
+        })
+        if (!map.has(pendingTool.toolCallId)) {
+          map.set(pendingTool.toolCallId, Date.now())
+        }
+      } else {
+        map.clear()
+      }
+    }, [pendingTool])
+
+    const subagentLabel = useMemo<ActivityLabel>(() => {
+      if (!subagents || subagents.length === 0) return null
+      return subagentActivityLabel(subagents)
+    }, [subagents])
+
+    // `await_subagent` is only the parent's blocking wrapper; the child is the
+    // work actually in progress. Show its live activity instead of the
+    // misleading "Await subagent" label. Other parent tools retain priority.
+    // Memoized so the reference is stable for the elapsed-time interval effect.
+    const activityLabel = useMemo<ActivityLabel>(() => {
+      if (pendingTool?.toolName === 'await_subagent' && subagentLabel) {
+        return subagentLabel
+      }
+      if (pendingTool) {
+        return {
+          text: pendingTool.text,
+          startedAt:
+            toolStartedAtRef.current.get(pendingTool.toolCallId) ?? Date.now(),
+        }
+      }
+      return subagentLabel
+    }, [pendingTool, subagentLabel])
+
+    // Re-render once a second while a label is showing, purely to advance the
+    // elapsed-time readout -- no state carried, just a tick.
+    const [, forceTick] = useState(0)
+    useEffect(() => {
+      if (!activityLabel) return
+      const id = setInterval(() => forceTick((n) => n + 1), 1000)
+      return () => clearInterval(id)
+    }, [activityLabel])
 
     const isStreaming =
       (isLastMessage &&
@@ -410,6 +490,268 @@ export const MessageItem = memo(
       return null
     }
 
+    const renderToolInline = (part: any, partIndex: number) => {
+      if (!part.type.startsWith('tool-') || !('state' in part)) {
+        return null
+      }
+
+      const toolName = part.type.split('-').slice(1).join('-')
+      const title =
+        toolName === 'skill_read'
+          ? completedToolLabel(toolName, part.input, part.state)
+          : toolName
+      return (
+        <Tool
+          key={`${message.id}-${partIndex}`}
+          state={part.state}
+          toolCallId={part.toolCallId}
+          messageId={message.id}
+          className="mb-1"
+        >
+          <ToolHeader
+            title={title}
+            type={`tool-${toolName}` as `tool-${string}`}
+            state={part.state}
+          />
+          <ToolContent title={title}>
+            {part.input && <ToolInput input={part.input} />}
+            <ToolApprovalActions />
+            {part.output && (
+              <ToolOutput
+                output={part.output}
+                resolver={(input) => Promise.resolve(input)}
+                errorText={undefined}
+                citationOffset={citationOffsets.get(partIndex) ?? 0}
+              />
+            )}
+            {part.state === 'output-error' && (
+              <ToolOutput
+                output={undefined}
+                errorText={part.error || part.errorText || 'Tool execution failed'}
+                resolver={(input) => Promise.resolve(input)}
+              />
+            )}
+          </ToolContent>
+        </Tool>
+      )
+    }
+
+    type PartEntry = { part: any; index: number }
+
+    const renderCotGroup = (
+      entries: PartEntry[],
+      groupKey: string,
+      hasFollowingContent: boolean
+    ) => {
+      const hasTools = entries.some((e) => e.part.type.startsWith('tool-'))
+
+      const lastEntryIndex = entries[entries.length - 1].index
+      const groupIsStreaming =
+        isStreaming && lastEntryIndex === message.parts.length - 1
+
+      // While streaming, surface only the latest step (current reasoning
+      // paragraph or tool call) so each step replaces the previous one rather
+      // than the whole trace scrolling by. The full trace renders once done.
+      const isMeaningfulEntry = ({ part }: PartEntry) => {
+        if (part.type === CONTENT_TYPE.REASONING || part.type === CONTENT_TYPE.TEXT) {
+          return Boolean(part.text && part.text.trim())
+        }
+        return part.type.startsWith('tool-') && 'state' in part
+      }
+      const meaningful = entries.filter(isMeaningfulEntry)
+      // While streaming, show only the latest step — but never truncate away a
+      // tool part that is awaiting the user's approval, or its approve/deny
+      // controls would never mount and the run would hang (multi-tool turns).
+      const lastMeaningful = meaningful[meaningful.length - 1]
+      const visibleEntries =
+        groupIsStreaming && meaningful.length > 0
+          ? meaningful.filter((e) => {
+              if (e === lastMeaningful) return true
+              const toolCallId = (e.part as { toolCallId?: string }).toolCallId
+              return Boolean(toolCallId && pendingApprovals[toolCallId])
+            })
+          : entries
+
+      // Streaming label reflects the current step, not whether the whole trace
+      // ever used a tool — otherwise it sticks on "Using tools…" once the model
+      // resumes reasoning after a tool call.
+      const currentStepIsTool =
+        meaningful.length > 0 &&
+        meaningful[meaningful.length - 1].part.type.startsWith('tool-')
+
+      const currentToolLabel = currentStepIsTool
+        ? humanizeToolName(
+            meaningful[meaningful.length - 1].part.type
+              .split('-')
+              .slice(1)
+              .join('-')
+          )
+        : ''
+
+      // Only reasoning text is worth expanding for — a tool-only step collapses
+      // to the header. While streaming that means the current step is a
+      // reasoning paragraph that has completed at least once (something for
+      // ReasoningActiveStep to render); once done, any reasoning text qualifies.
+      const hasDisplayableContent = groupIsStreaming
+        ? lastMeaningful?.part.type === CONTENT_TYPE.REASONING &&
+          splitReasoningParagraphs(lastMeaningful.part.text ?? '').length >= 2
+        : entries.some(
+            (e) =>
+              e.part.type === CONTENT_TYPE.REASONING &&
+              Boolean(e.part.text && e.part.text.trim())
+          )
+
+      // Force open only while a tool awaits approval — its approve/deny controls
+      // live inside the collapsible and must stay mounted. A running (already
+      // approved) tool does not force it open, so tool-only steps collapse.
+      const forceOpen = awaitingApproval
+      const shouldCollapse = hasFollowingContent || !hasDisplayableContent
+
+      // Done/historical: flatten every entry (reasoning paragraphs, tool calls,
+      // interstitial text, files) into steps on a single continuous dotted rail,
+      // so a tool call between two reasoning paragraphs stays threaded instead of
+      // restarting the rail.
+      const renderTimeline = (rows: PartEntry[]) => {
+        const steps: React.ReactNode[] = []
+        for (const { part, index: partIndex } of rows) {
+          if (part.type === CONTENT_TYPE.REASONING) {
+            for (const [pi, para] of splitReasoningParagraphs(
+              part.text ?? ''
+            ).entries()) {
+              steps.push(
+                <StepRow key={`${message.id}-r-${partIndex}-${pi}`} text={para} />
+              )
+            }
+            continue
+          }
+          if (part.type === CONTENT_TYPE.TEXT) {
+            if (!part.text || part.text.trim() === '') continue
+            steps.push(
+              <StepRow key={`${message.id}-it-${partIndex}`} text={part.text} />
+            )
+            continue
+          }
+          if (part.type === CONTENT_TYPE.FILE) {
+            const node = renderFilePart(part, partIndex)
+            if (node)
+              steps.push(
+                <StepRow key={`${message.id}-f-${partIndex}`}>{node}</StepRow>
+              )
+            continue
+          }
+          const toolNode = renderToolInline(part, partIndex)
+          if (toolNode)
+            steps.push(
+              <StepRow key={`${message.id}-t-${partIndex}`}>{toolNode}</StepRow>
+            )
+        }
+        if (steps.length === 0) return null
+        steps.push(
+          <StepRow
+            key={`${message.id}-done`}
+            marker={
+              <IconCircleCheck className="size-4 text-muted-foreground/60" />
+            }
+            text={t('chat:done')}
+          />
+        )
+        return (
+          <ol className="relative flex flex-col gap-2.5">
+            {steps.map((step, i) =>
+              step && typeof step === 'object' && 'props' in step
+                ? cloneElement(step as React.ReactElement<{ connector?: boolean }>, {
+                    connector: i < steps.length - 1,
+                  })
+                : step
+            )}
+          </ol>
+        )
+      }
+
+      return (
+        <ChainOfThought
+          key={groupKey}
+          className="w-full text-muted-foreground"
+          isStreaming={groupIsStreaming}
+          shouldCollapse={shouldCollapse}
+          forceOpen={forceOpen}
+          defaultOpen={hasDisplayableContent && !hasFollowingContent}
+        >
+          <ChainOfThoughtHeader
+            streamingLabel={
+              currentStepIsTool ? `${currentToolLabel}...` : 'Thinking'
+            }
+            completedVerb={hasTools ? 'Worked' : 'Thought'}
+          />
+          <ChainOfThoughtContent>
+            {groupIsStreaming
+              ? visibleEntries.map(({ part, index: partIndex }) => {
+                  if (part.type === CONTENT_TYPE.REASONING) {
+                    const partIsStreaming =
+                      isStreaming && partIndex === message.parts.length - 1
+
+                    // Streaming: show only the current paragraph as a single
+                    // active step (bounded height, swaps as each paragraph
+                    // completes).
+                    if (partIsStreaming) {
+                      return (
+                        <div
+                          key={`${message.id}-r-${partIndex}`}
+                          className="relative"
+                        >
+                          <div
+                            ref={reasoningContainerRef}
+                            onScroll={onReasoningScroll}
+                            className={twMerge(
+                              'w-full overflow-auto relative max-h-40',
+                              '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                            )}
+                          >
+                            <ReasoningActiveStep text={part.text} />
+                          </div>
+                          {!isReasoningAtBottom && (
+                            <Button
+                              className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+                              onClick={onReasoningScrollToBottom}
+                              size="icon"
+                              type="button"
+                              variant="outline"
+                            >
+                              <IconArrowDown className="size-3" />
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    return null
+                  }
+
+                  if (part.type === CONTENT_TYPE.TEXT) {
+                    if (!part.text || part.text.trim() === '') return null
+                    return (
+                      <div
+                        key={`${message.id}-it-${partIndex}`}
+                        dir="auto"
+                        className="select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70"
+                      >
+                        {part.text}
+                      </div>
+                    )
+                  }
+
+                  if (part.type === CONTENT_TYPE.FILE) {
+                    return renderFilePart(part, partIndex)
+                  }
+
+                  return renderToolInline(part, partIndex)
+                })
+              : renderTimeline(visibleEntries)}
+          </ChainOfThoughtContent>
+        </ChainOfThought>
+      )
+    }
+
     const renderedParts = useMemo(() => {
       const parts = message.parts as MessagePartLike[]
       const elements: React.ReactNode[] = []
@@ -516,12 +858,37 @@ export const MessageItem = memo(
           <WebSourcesRow citations={webCitations} />
         )}
 
+        {message.role === 'assistant' && !isStreaming && usedSkills.length > 0 && (
+          <div
+            aria-label="Skills used"
+            className="mt-2 inline-flex rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+          >
+            Skills used: {usedSkills.join(', ')}
+          </div>
+        )}
+
         {isLastMessage &&
           message.role === 'assistant' &&
           !awaitingApproval &&
-          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED || activityLabel) && (
             <div className="mt-2">
-              <PromptProgress hideIdle={hasPendingToolCall} />
+              {activityLabel ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="font-medium text-foreground">
+                    {activityLabel.text}
+                  </span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {formatDuration(activityLabel.startedAt)}
+                  </span>
+                </div>
+              ) : (
+                <PromptProgress hideIdle={hasPendingToolCall} />
+              )}
             </div>
           )}
 
