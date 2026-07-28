@@ -19,7 +19,8 @@ use crate::core::agent::tools::gate::PermissionDecision;
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
-    resolve_upstream_for_model, set_system_prompt, stream_openai_chat_completions,
+    repair_dangling_tool_calls, resolve_upstream_for_model, set_system_prompt,
+    stream_openai_chat_completions,
 };
 #[cfg(not(feature = "cli"))]
 use crate::core::server::proxy::router_first_model;
@@ -63,6 +64,12 @@ pub(crate) struct OrchestrationArgs {
     pub permissions: crate::core::agent::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
+    /// Present only when a client can render and answer structured questions.
+    pub ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
+    /// Session's canonical todo list. Present for the top-level run only;
+    /// subagent/child runs never receive it (they cannot read or mutate the
+    /// parent's list).
+    pub todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     /// When set, used verbatim as the system prompt, bypassing project-context
     /// assembly and memory recall/indexing. Set for subagent child runs so a
     /// dispatched subagent gets exactly its definition prompt with no parent
@@ -75,6 +82,11 @@ pub(crate) struct OrchestrationArgs {
     /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
     /// dispatched subagents via the cloned parent args.
     pub yolo: bool,
+    /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
+    /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
+    /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
+    /// stronger than `--yolo`'s prompt suppression (yolo cannot override this).
+    pub run_mode: crate::core::agent::plan::RunMode,
 }
 
 #[async_trait]
@@ -179,9 +191,12 @@ struct CompositeToolInvoker {
     permissions: crate::core::agent::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
+    ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
+    todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
     yolo: bool,
+    run_mode: crate::core::agent::plan::RunMode,
 }
 
 impl CompositeToolInvoker {
@@ -320,6 +335,154 @@ impl CompositeToolInvoker {
             _ => "ERROR: unknown subagent tool".to_string(),
         }
     }
+
+    async fn handle_ask_tool(&self, args: &serde_json::Value) -> String {
+        use crate::core::agent::interaction::{register, AskError, AskRequest};
+
+        let Some(registry) = &self.ask_requests else {
+            return "ERROR [interactive_ui_required]: ask requires an attached interactive UI"
+                .to_string();
+        };
+        let request = match AskRequest::parse(args) {
+            Ok(request) => request,
+            Err(error) => return format!("ERROR: {error}"),
+        };
+        let (request_id, receiver) = register(registry).await;
+        if self
+            .events
+            .send(StreamEvent::AskRequest {
+                request_id: request_id.clone(),
+                request: request.clone(),
+            })
+            .is_err()
+        {
+            let _ = crate::core::agent::interaction::respond(
+                registry,
+                &request_id,
+                Err(AskError::Cancelled),
+            )
+            .await;
+            return "ERROR [ask_cancelled]: interactive UI disconnected".to_string();
+        }
+        match receiver.await {
+            Ok(Ok(results)) => match request.validate_results(&results) {
+                Ok(()) => serde_json::to_string(&results).unwrap_or_else(|error| {
+                    format!("ERROR: could not encode ask response: {error}")
+                }),
+                Err(error) => format!("ERROR: invalid ask response: {error}"),
+            },
+            Ok(Err(AskError::Cancelled)) | Err(_) => {
+                "ERROR [ask_cancelled]: user cancelled the question".to_string()
+            }
+        }
+    }
+
+    /// Applies one todo mutation and emits `StreamEvent::TodoUpdate` with the
+    /// full resulting snapshot so session history can reconstruct state.
+    async fn handle_todo_tool(&self, args: &serde_json::Value) -> String {
+        use crate::core::agent::todo::{parse_target, render_result, TodoPhase};
+        let Some(registry) = &self.todo_registry else {
+            return "ERROR [todo_unavailable]: todo tool requires an attached session"
+                .to_string();
+        };
+        let op = args.get("op").and_then(|v| v.as_str()).unwrap_or("");
+        let mut list = registry.lock().await;
+        let result: Result<(), String> = match op {
+            "init" => {
+                let phases = if let Some(list_val) = args.get("list").and_then(|v| v.as_array()) {
+                    list_val
+                        .iter()
+                        .map(|p| {
+                            let name = p.get("phase").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let items = p
+                                .get("items")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str())
+                                        .map(|s| crate::core::agent::todo::TodoItem {
+                                            content: s.to_string(),
+                                            status: crate::core::agent::todo::TodoStatus::Pending,
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            TodoPhase { name, tasks: items }
+                        })
+                        .collect()
+                } else if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
+                    vec![TodoPhase {
+                        name: String::new(),
+                        tasks: items
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| crate::core::agent::todo::TodoItem {
+                                content: s.to_string(),
+                                status: crate::core::agent::todo::TodoStatus::Pending,
+                            })
+                            .collect(),
+                    }]
+                } else {
+                    return "ERROR: init requires 'list' or 'items'".to_string();
+                };
+                list.init(phases)
+            }
+            "start" => match args.get("task").and_then(|v| v.as_str()) {
+                Some(task) => list.start(task),
+                None => return "ERROR: start requires 'task'".to_string(),
+            },
+            "done" => match parse_target(args) {
+                Ok(target) => list.done(target),
+                Err(e) => return format!("ERROR: {e}"),
+            },
+            "drop" => match parse_target(args) {
+                Ok(target) => list.drop_target(target),
+                Err(e) => return format!("ERROR: {e}"),
+            },
+            "rm" => match parse_target(args) {
+                Ok(target) => list.rm(target),
+                Err(e) => return format!("ERROR: {e}"),
+            },
+            "append" => {
+                let phase = args.get("phase").and_then(|v| v.as_str()).unwrap_or("");
+                let items: Vec<String> = args
+                    .get("items")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(String::from).collect())
+                    .unwrap_or_default();
+                if phase.is_empty() || items.is_empty() {
+                    return "ERROR: append requires 'phase' and non-empty 'items'".to_string();
+                }
+                list.append(phase, items)
+            }
+            "view" => Ok(()),
+            other => return format!("ERROR: unknown todo op '{other}'"),
+        };
+        match result {
+            Ok(()) => {
+                let snapshot = list.clone();
+                drop(list);
+                let _ = self.events.send(StreamEvent::TodoUpdate { list: snapshot.clone() });
+                render_result(&snapshot)
+            }
+            Err(error) => format!("ERROR: {error}"),
+        }
+    }
+}
+
+/// Message for a tool blocked by the project's own deny list, naming the
+/// exact config file so the block is actionable, not mysterious.
+fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
+    format!(
+        "ERROR: tool '{name}' denied by project policy (see [tools] deny in {})",
+        crate::core::agent::project::agent_toml_path(project_root).display()
+    )
+}
+
+/// Rejection message for a mutation-capable tool call attempted in
+/// `RunMode::Plan`. Authoritative: the tool never actually runs.
+fn plan_mode_read_only_msg(name: &str) -> String {
+    format!("ERROR: tool '{name}' unavailable in plan_mode_read_only (plan mode is read-only)")
 }
 
 #[async_trait]
@@ -346,10 +509,49 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|f| f.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            if name == "ask" {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|value| serde_json::from_str(value).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_ask_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
+            if name == "todo" {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|value| serde_json::from_str(value).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_todo_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
             // Subagent tools are handled ahead of the fs/exec gate and the MCP
             // fallback: they orchestrate nested runs, not filesystem access.
             if crate::core::agent::subagent::is_subagent_tool(name) {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Plan mode blocks subagent dispatch (a subagent could mutate).
+                // They are not advertised in Plan; this is defense in depth
+                // against a stale tool schema. `--yolo` cannot override.
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
                 let args: serde_json::Value = tc
                     .get("function")
                     .and_then(|f| f.get("arguments"))
@@ -362,11 +564,18 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             if !is_builtin(name) {
                 let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                // Plan mode blocks all MCP tools: their capability is arbitrary
+                // and unknowable, so they are never advertised in Plan and are
+                // hard-denied here as defense in depth. `--yolo` cannot override.
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
                 // Deny-listed MCP tools are never advertised, but guard anyway.
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by project policy"),
+                        denied_by_policy_msg(name, &self.project_root),
                     ));
                     continue;
                 }
@@ -399,6 +608,16 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|s| serde_json::from_str(s).ok())
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             let tool = lookup(name).expect("is_builtin implies lookup");
+            // Plan mode: mutation-capable builtins (Write/Exec) are hard-denied
+            // BEFORE the normal gate, without a permission prompt, and `--yolo`
+            // cannot override this (unlike the normal prompt suppression below).
+            // Read/Net/workspace-read tools fall through to the usual gate.
+            if self.run_mode == crate::core::agent::plan::RunMode::Plan
+                && matches!(tool.capability, Capability::Write | Capability::Exec)
+            {
+                out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                continue;
+            }
             let snapshot = { self.grants.lock().unwrap().clone() };
             let decision = resolve_decision(
                 tool,
@@ -432,9 +651,7 @@ impl ToolInvoker for CompositeToolInvoker {
             }
             let (text, diff) = match decision {
                 Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
-                Decision::HardDeny => {
-                    (format!("ERROR: tool '{name}' denied by project policy"), None)
-                }
+                Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
                     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -554,9 +771,12 @@ pub(crate) async fn run_server_side_openai_orchestration(
         permissions: crate::core::agent::permissions::ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
+        ask_requests: None,
+        todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: false,
         yolo: false,
+        run_mode: crate::core::agent::plan::RunMode::Normal,
     };
     run_orchestration_streamed(&tx, json_body, &args).await
 }
@@ -657,6 +877,58 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
+/// System-prompt addendum on a session's first substantive message: without
+/// it, the model only ever reaches for `todo` once told explicitly that it
+/// has the tool, instead of proactively planning a multi-step request the
+/// way a plan laid out up front would help with. Paired with a forced
+/// `tool_choice` on that same first turn (see `should_suggest_eager_todo_plan`
+/// and its caller), so this is a real requirement, not a suggestion the model
+/// can silently skip -- the imperative wording matches that guarantee.
+const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
+phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
+investigation through implementation and verification, not just the next step. Keep each task \
+to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings. \
+After `todo` succeeds, continue the request in the same turn; do not call `todo` again unless \
+task state materially changes.";
+
+/// True on a session's first substantive user message: exactly one user-role
+/// message in the conversation so far (this one), no todos staged yet, and
+/// the prompt looks like actual multi-step work rather than a greeting,
+/// acknowledgement, or a bare question/exclamation a phased plan would be
+/// overkill for.
+async fn should_suggest_eager_todo_plan(
+    conversation_messages: &[serde_json::Value],
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> bool {
+    let user_turns = conversation_messages
+        .iter()
+        .filter(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+        .count();
+    if user_turns != 1 {
+        return false;
+    }
+    let Some(prompt_text) = latest_user_text(conversation_messages) else {
+        return false;
+    };
+    let trimmed = prompt_text.trim_end();
+    if ['?', '！', '？', '!'].iter().any(|c| trimmed.ends_with(*c)) {
+        return false;
+    }
+    // A greeting, thanks, or one-line aside ("hi", "ok thanks") is not work a
+    // phased plan helps with. Require enough words to look like an actual
+    // request; the shortest real task prompts ("fix the login bug") clear this,
+    // while chit-chat does not. A word-count floor, not a keyword blocklist, so
+    // it never has to enumerate every possible pleasantry.
+    const MIN_SUBSTANTIVE_WORDS: usize = 4;
+    if trimmed.split_whitespace().count() < MIN_SUBSTANTIVE_WORDS {
+        return false;
+    }
+    match todo_registry {
+        Some(registry) => registry.lock().await.is_empty(),
+        None => true,
+    }
+}
+
 async fn orchestrate_inner(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
@@ -675,15 +947,37 @@ async fn orchestrate_inner(
         permissions,
         project_root,
         permission_requests,
+        ask_requests,
+        todo_registry,
         system_prompt_override,
         subagents_enabled,
         yolo,
+        run_mode,
     } = args;
+
+    // Per-turn override: the TUI toggles plan mode live via the request body
+    // (like `model`/`max_tokens`), falling back to the session default. Any
+    // caller can only *tighten* to Plan or match the default; the capability
+    // gate below enforces read-only regardless of who set it.
+    let run_mode = json_body
+        .get("run_mode")
+        .and_then(|v| serde_json::from_value::<crate::core::agent::plan::RunMode>(v.clone()).ok())
+        .unwrap_or(*run_mode);
 
     let messages_value = json_body
         .get("messages")
         .ok_or("Missing required field 'messages'")?;
     let mut conversation_messages = parse_openai_messages(messages_value)?;
+    // Self-heal a conversation an earlier interrupted run may have left with a
+    // tool_calls turn missing one of its results (e.g. the process was killed
+    // while an `ask`/permission prompt was still pending). Providers like
+    // Anthropic reject the entire request on a dangling tool_use, so repair
+    // it here -- the one place every incoming message array passes through --
+    // before it ever reaches a provider.
+    let repaired = repair_dangling_tool_calls(&mut conversation_messages);
+    if repaired > 0 {
+        log::warn!("agent: repaired {repaired} dangling tool call(s) with no prior result");
+    }
 
     let assistant_id = json_body
         .get("assistant_id")
@@ -719,9 +1013,36 @@ async fn orchestrate_inner(
     } else {
         assistant_instructions
     };
+    // Child (subagent) runs are excluded via `system_prompt_override`, the
+    // same gate the memory-recall block above uses to distinguish a
+    // top-level run from a subagent's isolated context.
+    let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
+        && system_prompt_override.is_none()
+        && should_suggest_eager_todo_plan(&conversation_messages, todo_registry).await;
+    let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
+        let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
+        Some(match system_prompt {
+            Some(sys) => format!("{sys}\n\n{addendum}"),
+            None => addendum.to_string(),
+        })
+    } else if eager_todo_plan {
+        // Child (subagent) runs are excluded via `system_prompt_override`, the
+        // same gate the memory-recall block above uses to distinguish a
+        // top-level run from a subagent's isolated context.
+        Some(match system_prompt {
+            Some(sys) => format!("{sys}\n\n{EAGER_TODO_PROMPT_ADDENDUM}"),
+            None => EAGER_TODO_PROMPT_ADDENDUM.to_string(),
+        })
+    } else {
+        system_prompt
+    };
     if let Some(sys) = system_prompt {
         set_system_prompt(&mut conversation_messages, &sys);
     }
+    // Paired with the addendum above: force the model's very first tool call
+    // to actually be `todo` rather than leaving compliance up to a prompt it
+    // could silently ignore.
+    let force_first_tool = eager_todo_plan.then_some("todo");
 
     let model_override = json_body.get("model").and_then(|v| v.as_str());
     let mut model_id: Option<String> = model_override.map(|v| v.to_string());
@@ -762,25 +1083,45 @@ async fn orchestrate_inner(
 
     // Advertise MCP tools per agent.toml policy: read-only (the CLI default) does
     // NOT suppress them; only an explicit deny or `default = "deny"` does. Proxy
-    // path uses `allow_all()`, so behavior there is unchanged.
-    retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
+    // path uses `allow_all()`, so behavior there is unchanged. Plan mode never
+    // advertises MCP tools at all: their capability is arbitrary and unknowable.
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        openai_tools.clear();
+        tool_to_server.clear();
+    } else {
+        retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
+    }
 
+    // Per-run allowlist shared by builtin/subagent/ask advertisement below.
+    let allowed_names: Option<std::collections::HashSet<String>> = json_body
+        .get("allowed_tools")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
     if project_root.is_some() {
         // Built-ins are governed by the capability gate at execution time, so here
         // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
         // if the request set one). Advertisement is independent of the read-only
         // default that applies to opaque MCP tools.
-        let allowed_names: Option<std::collections::HashSet<String>> = json_body
-            .get("allowed_tools")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
         for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
             let name = schema["function"]["name"].as_str().unwrap_or_default();
             if permissions.is_denied(name) {
+                continue;
+            }
+            // Plan mode advertises only read/net builtins; write/exec are hidden
+            // entirely rather than relying on a prompt or execution-time denial.
+            if run_mode == crate::core::agent::plan::RunMode::Plan
+                && crate::core::agent::tools::lookup(name).is_some_and(|t| {
+                    matches!(
+                        t.capability,
+                        crate::core::agent::tools::Capability::Write
+                            | crate::core::agent::tools::Capability::Exec
+                    )
+                })
+            {
                 continue;
             }
             if let Some(allow) = &allowed_names {
@@ -791,9 +1132,9 @@ async fn orchestrate_inner(
             openai_tools.push(schema);
         }
         // Subagent tools are advertised only when this run may dispatch them
-        // (never for a child run, capping recursion depth at one). The dispatch
-        // tool's description lists the resolvable subagent names.
-        if args.subagents_enabled {
+        // (never for a child run, capping recursion depth at one) and the run
+        // isn't in read-only Plan mode (a dispatched subagent could mutate).
+        if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
             if let Some(root) = project_root {
                 let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
                 for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
@@ -810,6 +1151,25 @@ async fn orchestrate_inner(
                 }
             }
         }
+    }
+    // The `ask` tool needs no project (it's an interactive question, not
+    // filesystem access), so it's advertised independent of the project_root
+    // gate above.
+    if ask_requests.is_some()
+        && allowed_names
+            .as_ref()
+            .is_none_or(|allowed| allowed.contains("ask"))
+    {
+        openai_tools.push(crate::core::agent::interaction::ask_tool_schema());
+    }
+    // Todo bookkeeping is session metadata, not filesystem access, so like
+    // `ask` it's advertised independent of the project_root gate above.
+    if todo_registry.is_some()
+        && allowed_names
+            .as_ref()
+            .is_none_or(|allowed| allowed.contains("todo"))
+    {
+        openai_tools.push(crate::core::agent::todo::todo_tool_schema());
     }
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -869,9 +1229,12 @@ async fn orchestrate_inner(
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
+            ask_requests: ask_requests.clone(),
+            todo_registry: todo_registry.clone(),
             grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
             subagents,
             yolo: *yolo,
+            run_mode,
         };
         let result = run_turn_cycle(
             events,
@@ -883,6 +1246,9 @@ async fn orchestrate_inner(
             &mut budget,
             &http_model,
             &tools,
+            run_mode,
+            todo_registry.as_ref(),
+            force_first_tool,
         )
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
@@ -912,6 +1278,9 @@ async fn orchestrate_inner(
             &mut budget,
             &http_model,
             &mcp_tools,
+            run_mode,
+            todo_registry.as_ref(),
+            force_first_tool,
         )
         .await
     }
@@ -927,6 +1296,7 @@ fn build_completion_request(
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
     json_body: &serde_json::Value,
+    forced_tool_choice: Option<&str>,
 ) -> serde_json::Value {
     let mut completion_map = serde_json::Map::new();
     completion_map.insert("model".to_string(), serde_json::json!(model_id));
@@ -934,7 +1304,11 @@ fn build_completion_request(
         "messages".to_string(),
         serde_json::Value::Array(conversation_messages.to_vec()),
     );
-    completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
+    let tool_choice = match forced_tool_choice {
+        Some(name) => serde_json::json!({ "type": "function", "function": { "name": name } }),
+        None => serde_json::json!("auto"),
+    };
+    completion_map.insert("tool_choice".to_string(), tool_choice);
     if !openai_tools.is_empty() {
         completion_map.insert(
             "tools".to_string(),
@@ -1018,12 +1392,28 @@ async fn run_turn_cycle(
     budget: &mut SessionBudget,
     model: &dyn ModelInvoker,
     tools: &dyn ToolInvoker,
+    run_mode: crate::core::agent::plan::RunMode,
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+    // Forces the model's very first tool call (`turn == 0` only) to be this
+    // named tool -- used to make the eager-todo nudge actually reliable
+    // instead of an easily-ignored suggestion. `None` for every later turn.
+    force_first_tool: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     // `max_turns == 0` means unbounded: the session token budget and user
     // cancellation are the real guards, so an interactive run isn't cut off
     // mid-task by a fixed turn cap.
     let unlimited = max_turns == 0;
     let mut turn: usize = 0;
+    // Mid-run todo upkeep: after a long uninterrupted run of mutating tool
+    // calls with no todo touch, nudge the model once to keep the list honest
+    // rather than only ever reminding it at a full stop -- a task that never
+    // pauses to yield plain text could otherwise go a very long time with a
+    // stale todo list. Local to one cycle (this function runs once per
+    // top-level prompt), so no session-level reset bookkeeping is needed.
+    const MID_RUN_NUDGE_MUTATION_THRESHOLD: u32 = 12;
+    const MID_RUN_NUDGE_MAX_PER_CYCLE: u32 = 2;
+    let mut mutations_since_todo_touch: u32 = 0;
+    let mut mid_run_nudge_count: u32 = 0;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1038,8 +1428,13 @@ async fn run_turn_cycle(
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
-                let request_value =
-                    build_completion_request(model_id, &conversation_messages, openai_tools, json_body);
+                let request_value = build_completion_request(
+                    model_id,
+                    &conversation_messages,
+                    openai_tools,
+                    json_body,
+                    (turn == 0).then_some(force_first_tool).flatten(),
+                );
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
                     Err(e)
@@ -1184,6 +1579,10 @@ async fn run_turn_cycle(
             })
             .collect();
 
+        // Reset wins over any mutations counted in the same batch: touching
+        // `todo` at all means the list was just reconciled, regardless of
+        // what else ran alongside it.
+        let mut todo_touched_this_batch = false;
         for outcome in tool_results {
             let ToolOutcome { id, content, diff } = outcome;
             // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
@@ -1193,6 +1592,12 @@ async fn run_turn_cycle(
             let is_error = content.starts_with("ERROR")
                 || (tool_names.get(id.as_str()) == Some(&"bash")
                     && crate::core::agent::tools::handlers::bash_result_failed(&content));
+            let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            if name == "todo" {
+                todo_touched_this_batch = true;
+            } else if !is_error && matches!(name, "bash" | "write" | "edit") {
+                mutations_since_todo_touch += 1;
+            }
             let _ = events.send(StreamEvent::ToolResult {
                 id: id.clone(),
                 content: content.clone(),
@@ -1204,6 +1609,43 @@ async fn run_turn_cycle(
                 "tool_call_id": id,
                 "content": content
             }));
+        }
+        if todo_touched_this_batch {
+            mutations_since_todo_touch = 0;
+        } else if mutations_since_todo_touch >= MID_RUN_NUDGE_MUTATION_THRESHOLD
+            && mid_run_nudge_count < MID_RUN_NUDGE_MAX_PER_CYCLE
+            && run_mode == crate::core::agent::plan::RunMode::Normal
+        {
+            let open_count = match todo_registry {
+                Some(registry) => {
+                    let list = registry.lock().await;
+                    list.phases
+                        .iter()
+                        .flat_map(|p| p.tasks.iter())
+                        .filter(|t| {
+                            matches!(
+                                t.status,
+                                crate::core::agent::todo::TodoStatus::Pending
+                                    | crate::core::agent::todo::TodoStatus::InProgress
+                            )
+                        })
+                        .count()
+                }
+                None => 0,
+            };
+            if open_count > 0 {
+                mutations_since_todo_touch = 0;
+                mid_run_nudge_count += 1;
+                let plural = if open_count == 1 { "" } else { "s" };
+                conversation_messages.push(serde_json::json!({
+                    "role": "user",
+                    "content": format!(
+                        "Reminder: {open_count} todo item{plural} still open. If you finished a \
+                         task since the last todo update, mark it done now so progress stays \
+                         visible; otherwise just keep working."
+                    )
+                }));
+            }
         }
         turn += 1;
     }
@@ -1222,11 +1664,16 @@ mod tests {
 
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
+        // Every request this mock was invoked with, in order -- lets a test
+        // inspect exactly what conversation was sent on a later turn (e.g. to
+        // confirm a hidden mid-run nudge message landed in it).
+        requests: StdMutex<Vec<serde_json::Value>>,
     }
     impl MockModel {
         fn new(responses: Vec<serde_json::Value>) -> Self {
             Self {
                 responses: StdMutex::new(responses.into_iter().collect()),
+                requests: StdMutex::new(Vec::new()),
             }
         }
     }
@@ -1234,9 +1681,10 @@ mod tests {
     impl ModelInvoker for MockModel {
         async fn invoke(
             &self,
-            _request: &serde_json::Value,
+            request: &serde_json::Value,
             _events: &mpsc::UnboundedSender<StreamEvent>,
         ) -> Result<serde_json::Value, String> {
+            self.requests.lock().unwrap().push(request.clone());
             self.responses
                 .lock()
                 .unwrap()
@@ -1268,6 +1716,70 @@ mod tests {
                 })
                 .collect())
         }
+    }
+
+    fn user_message(text: &str) -> serde_json::Value {
+        json!({ "role": "user", "content": text })
+    }
+
+    fn empty_todo_registry() -> crate::core::agent::todo::TodoRegistry {
+        std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::core::agent::todo::TodoList::default(),
+        ))
+    }
+
+    fn staged_todo_registry() -> crate::core::agent::todo::TodoRegistry {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "P".into(),
+                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::Pending }],
+            }],
+        }))
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_suggested_on_first_substantive_message() {
+        let convo = vec![user_message("build a flappy bird clone")];
+        assert!(should_suggest_eager_todo_plan(&convo, &Some(empty_todo_registry())).await);
+        assert!(should_suggest_eager_todo_plan(&convo, &None).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_for_a_bare_question() {
+        let convo = vec![user_message("what's the capital of France?")];
+        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+        let convo = vec![user_message("nice work!")];
+        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_for_a_short_greeting() {
+        // Punctuation-free chit-chat must not force a todo plan: the word-count
+        // floor catches greetings and acks that the `?`/`!` check misses.
+        for msg in ["hi", "hello", "hey there", "ok thanks"] {
+            let convo = vec![user_message(msg)];
+            assert!(
+                !should_suggest_eager_todo_plan(&convo, &None).await,
+                "short greeting should not trigger eager todo: {msg:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_once_todos_exist() {
+        let convo = vec![user_message("keep going")];
+        assert!(!should_suggest_eager_todo_plan(&convo, &Some(staged_todo_registry())).await);
+    }
+
+    #[tokio::test]
+    async fn eager_todo_plan_not_suggested_past_the_first_user_turn() {
+        let convo = vec![
+            user_message("build a flappy bird clone"),
+            json!({ "role": "assistant", "content": "on it" }),
+            user_message("also add a high score screen"),
+        ];
+        assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
     }
 
     fn tool_call_completion() -> serde_json::Value {
@@ -1307,6 +1819,9 @@ mod tests {
             &mut budget,
             &model,
             &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -1334,6 +1849,197 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    #[tokio::test]
+    async fn force_first_tool_only_applies_to_the_first_turn() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let convo = vec![json!({ "role": "user", "content": "hi" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            Some("todo"),
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "one request per turn");
+        assert_eq!(
+            requests[0]["tool_choice"],
+            json!({ "type": "function", "function": { "name": "todo" } }),
+            "the first turn's request must force the named tool"
+        );
+        assert_eq!(
+            requests[1]["tool_choice"], "auto",
+            "later turns must not keep forcing the same tool"
+        );
+    }
+
+    fn mutating_tool_call_completion(id: &str, name: &str) -> serde_json::Value {
+        json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": id,
+                        "type": "function",
+                        "function": { "name": name, "arguments": "{}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        })
+    }
+
+    fn todo_registry_with_open_task() -> crate::core::agent::todo::TodoRegistry {
+        use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
+        std::sync::Arc::new(tokio::sync::Mutex::new(TodoList {
+            phases: vec![TodoPhase {
+                name: "P".into(),
+                tasks: vec![TodoItem { content: "t1".into(), status: TodoStatus::InProgress }],
+            }],
+        }))
+    }
+
+    fn request_has_nudge(request: &serde_json::Value) -> bool {
+        request["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|m| {
+                m.get("content")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|s| s.contains("todo item"))
+            })
+    }
+
+    #[tokio::test]
+    async fn mid_run_nudge_fires_after_a_long_uninterrupted_mutation_run() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // 13 consecutive mutating calls with no todo touch -- one past the
+        // 12-call threshold -- then a clean stop.
+        let mut responses: Vec<serde_json::Value> = (0..13)
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .collect();
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        let model = MockModel::new(responses);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+        let convo = vec![json!({ "role": "user", "content": "go" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let nudged_requests = requests.iter().filter(|r| request_has_nudge(r)).count();
+        assert!(nudged_requests >= 1, "expected a mid-run nudge after 12+ mutating calls");
+        assert!(nudged_requests <= 2, "must not exceed the per-cycle nudge cap");
+    }
+
+    #[tokio::test]
+    async fn mid_run_nudge_does_not_fire_in_plan_mode_or_without_open_todos() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut responses: Vec<serde_json::Value> = (0..13)
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .collect();
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        let model = MockModel::new(responses);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+        let convo = vec![json!({ "role": "user", "content": "go" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Plan,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
+            "plan mode must never get a mid-run nudge"
+        );
+    }
+
+    #[tokio::test]
+    async fn mid_run_nudge_touching_todo_resets_the_mutation_counter() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // 6 mutating calls, a todo touch, then 6 more -- neither run alone
+        // reaches the 12-call threshold, so no nudge should fire.
+        let mut responses: Vec<serde_json::Value> = (0..6)
+            .map(|i| mutating_tool_call_completion(&format!("a{i}"), "bash"))
+            .collect();
+        responses.push(mutating_tool_call_completion("mid", "todo"));
+        responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        let model = MockModel::new(responses);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+        let convo = vec![json!({ "role": "user", "content": "go" })];
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            model.requests.lock().unwrap().iter().all(|r| !request_has_nudge(r)),
+            "a todo touch partway through must reset the mutation counter"
+        );
     }
 
     struct FixedTool {
@@ -1389,6 +2095,9 @@ mod tests {
             &mut budget,
             &model,
             &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -1432,6 +2141,9 @@ mod tests {
             &mut budget,
             &model,
             &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
         )
         .await
         .unwrap_err();
@@ -1488,7 +2200,7 @@ mod tests {
             convo.push(json!({ "role": r, "content": format!("m{i}") }));
         }
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
             .await
             .unwrap();
 
@@ -1509,7 +2221,7 @@ mod tests {
         let mut budget = SessionBudget::new(None);
         let convo = vec![json!({ "role": "user", "content": "hi" })];
 
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 8, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
             .await
             .unwrap();
 
@@ -1533,7 +2245,7 @@ mod tests {
 
         // max_turns = 0 means unbounded: it must not error out and must keep
         // going past the tool-call turn to return the final answer.
-        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool)
+        let result = run_turn_cycle(&tx, &json!({}), "m", &[], convo, 0, &mut budget, &model, &tool, crate::core::agent::plan::RunMode::Normal, None, None)
             .await
             .unwrap();
 
@@ -1611,9 +2323,12 @@ mod tests {
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             events,
             permission_requests: registry,
+            ask_requests: None,
+            todo_registry: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
             yolo: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
         }
     }
 
@@ -1635,6 +2350,295 @@ mod tests {
                 None => return,
             }
         }
+    }
+
+    fn ask_call() -> serde_json::Value {
+        json!({
+            "id": "ask-call",
+            "type": "function",
+            "function": {
+                "name": "ask",
+                "arguments": serde_json::to_string(&json!({
+                    "questions": [{
+                        "id": "scope",
+                        "question": "Which scope?",
+                        "options": [{"label": "Small"}, {"label": "Large"}]
+                    }]
+                }))
+                .unwrap()
+            }
+        })
+    }
+
+    /// A single tool call by name with empty JSON arguments.
+    fn tool_call(id: &str, name: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": name, "arguments": "{}" }
+        })
+    }
+
+    #[tokio::test]
+    async fn plan_mode_denies_write_even_with_yolo() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+        // --yolo must NOT override the plan-mode read-only gate.
+        invoker.yolo = true;
+
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "write must be hard-denied in plan mode: {}",
+            out[0].content
+        );
+        assert!(!root.join("out.txt").exists(), "file must not be written");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plan_mode_denies_mcp_tool_from_stale_schema() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+        invoker.yolo = true;
+
+        // An unknown (non-builtin) name stands in for an MCP tool a stale schema
+        // could still surface; it must be denied before any dispatch.
+        let out = invoker.invoke(&[tool_call("m1", "some_mcp_tool")]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plan_mode_denies_subagent_dispatch() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+
+        let out = invoker
+            .invoke(&[tool_call("s1", "dispatch_subagent")])
+            .await
+            .unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn plan_mode_allows_read_only_builtins() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+
+        // `ls` is Read-capable: the plan gate must let it through to the normal
+        // (auto-allowed) path, so it never yields the plan-mode denial.
+        let call = json!({
+            "id": "r1",
+            "type": "function",
+            "function": { "name": "ls", "arguments": "{\"path\":\".\"}" }
+        });
+        let out = invoker.invoke(&[call]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(
+            !out[0].content.contains("plan_mode_read_only"),
+            "read-only builtins must not be blocked by plan mode: {}",
+            out[0].content
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn orchestrate_reads_run_mode_override_from_body() {
+        // The per-turn body override (mirrors model/max_tokens) parses to Plan;
+        // absent/normal falls back to the session default.
+        use crate::core::agent::plan::RunMode;
+        let from_body = |v: serde_json::Value| {
+            v.get("run_mode")
+                .and_then(|x| serde_json::from_value::<RunMode>(x.clone()).ok())
+        };
+        assert_eq!(from_body(json!({"run_mode": "plan"})), Some(RunMode::Plan));
+        assert_eq!(from_body(json!({"run_mode": "normal"})), Some(RunMode::Normal));
+        assert_eq!(from_body(json!({})), None);
+    }
+
+    #[tokio::test]
+    async fn ask_requires_an_attached_interactive_ui() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, permissions);
+
+        let out = invoker.invoke(&[ask_call()]).await.unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("interactive_ui_required"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn ask_waits_for_and_returns_a_structured_response() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let asks = crate::core::agent::interaction::new_registry();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        invoker.ask_requests = Some(asks.clone());
+
+        let task = tokio::spawn(async move { invoker.invoke(&[ask_call()]).await.unwrap() });
+        let request_id = match rx.recv().await.unwrap() {
+            StreamEvent::AskRequest {
+                request_id,
+                request,
+            } => {
+                assert_eq!(request.questions[0].id, "scope");
+                request_id
+            }
+            event => panic!("expected ask_request, got {event:?}"),
+        };
+        crate::core::agent::interaction::respond(
+            &asks,
+            &request_id,
+            Ok(vec![crate::core::agent::interaction::QuestionResult {
+                id: "scope".into(),
+                selected: vec!["Small".into()],
+                custom_input: None,
+            }]),
+        )
+        .await
+        .unwrap();
+
+        let out = task.await.unwrap();
+        let result: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result[0]["id"], "scope");
+        assert_eq!(result[0]["selected"][0], "Small");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn todo_call(id: &str, args: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": {
+                "name": "todo",
+                "arguments": serde_json::to_string(&args).unwrap()
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn todo_unavailable_without_an_attached_session() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, permissions);
+
+        let out = invoker
+            .invoke(&[todo_call("t1", json!({"op": "view"}))])
+            .await
+            .unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(out[0].content.contains("todo_unavailable"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn todo_init_promotes_first_task_and_emits_snapshot() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        let todos = crate::core::agent::todo::new_registry();
+        invoker.todo_registry = Some(todos.clone());
+
+        let out = invoker
+            .invoke(&[todo_call(
+                "t1",
+                json!({"op": "init", "list": [{"phase": "Setup", "items": ["a", "b"]}]}),
+            )])
+            .await
+            .unwrap();
+
+        assert_eq!(out.len(), 1);
+        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        let result: crate::core::agent::todo::TodoList =
+            serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result.active().unwrap().1.content, "a");
+
+        match rx.recv().await.unwrap() {
+            StreamEvent::TodoUpdate { list } => assert_eq!(list, result),
+            event => panic!("expected todo_update, got {event:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn todo_done_advances_active_task() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        let todos = crate::core::agent::todo::new_registry();
+        invoker.todo_registry = Some(todos.clone());
+
+        invoker
+            .invoke(&[todo_call(
+                "t1",
+                json!({"op": "init", "items": ["a", "b"]}),
+            )])
+            .await
+            .unwrap();
+        let _ = rx.recv().await; // drain init's TodoUpdate
+
+        let out = invoker
+            .invoke(&[todo_call("t2", json!({"op": "done", "task": "a"}))])
+            .await
+            .unwrap();
+        assert!(!out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        let result: crate::core::agent::todo::TodoList =
+            serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(result.active().unwrap().1.content, "b");
+        assert_eq!(result.done_total(), (1, 2));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn todo_rm_unknown_task_reports_error() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, permissions);
+        let todos = crate::core::agent::todo::new_registry();
+        invoker.todo_registry = Some(todos.clone());
+
+        invoker
+            .invoke(&[todo_call("t1", json!({"op": "init", "items": ["a"]}))])
+            .await
+            .unwrap();
+        let _ = rx.recv().await;
+
+        let out = invoker
+            .invoke(&[todo_call("t2", json!({"op": "rm", "task": "missing"}))])
+            .await
+            .unwrap();
+        assert!(out[0].content.starts_with("ERROR"), "got: {}", out[0].content);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

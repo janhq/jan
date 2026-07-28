@@ -30,7 +30,8 @@ pub(crate) use crate::core::agent::r#loop::run_server_side_openai_orchestration;
 pub(crate) use crate::core::agent::upstream::{
     call_openai_chat_completions, collect_mcp_openai_tools, copy_optional_chat_params,
     execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
-    parse_openai_messages, resolve_upstream_for_model, set_system_prompt,
+    parse_openai_messages, repair_dangling_tool_calls, resolve_upstream_for_model,
+    set_system_prompt,
 };
 use crate::core::openai_schema::{
     http_status_indicates_api_key_retry, normalize_openai_tools_in_chat_body,
@@ -1213,6 +1214,13 @@ async fn proxy_request(
                     return Ok(error_response.body(full(e)).unwrap());
                 }
             };
+            // Self-heal a client-supplied conversation that has a tool_calls
+            // turn missing one of its results -- some providers (notably
+            // Anthropic) reject the entire request on a dangling tool_use.
+            let repaired = repair_dangling_tool_calls(&mut conversation_messages);
+            if repaired > 0 {
+                log::warn!("proxy: repaired {repaired} dangling tool call(s) with no prior result");
+            }
 
             // Load assistant config for system prompt + model hint when assistant_id is provided.
             let (assistant_instructions, assistant_model_hint) =
