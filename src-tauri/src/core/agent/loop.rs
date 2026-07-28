@@ -70,10 +70,9 @@ pub(crate) struct OrchestrationArgs {
     /// subagent/child runs never receive it (they cannot read or mutate the
     /// parent's list).
     pub todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
-    /// When set, used verbatim as the system prompt, bypassing project-context
-    /// assembly and memory recall/indexing. Set for subagent child runs so a
-    /// dispatched subagent gets exactly its definition prompt with no parent
-    /// context bleed. `None` for normal runs.
+    /// When set, replaces the run's assistant identity while preserving the
+    /// shared project-context and tool-use prompt assembled for normal runs.
+    /// Child turns remain excluded from project memory recall/indexing.
     pub system_prompt_override: Option<String>,
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
@@ -877,6 +876,27 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
+/// Assembles the run's system prompt: `override_prompt` (a subagent's
+/// definition prompt) replaces the assistant identity when set, but the
+/// project-context and tool-use guidance from `build_system_prompt` is still
+/// built around it when a project is selected — a subagent gets the same
+/// grounding (guidelines, web access, tool docs) as a normal run, not a bare
+/// verbatim prompt with no instruction on how to actually use its tools.
+fn build_run_system_prompt(
+    assistant_instructions: Option<&str>,
+    override_prompt: Option<&str>,
+    project_root: Option<&std::path::Path>,
+    subagents_enabled: bool,
+) -> Option<String> {
+    let base = override_prompt.or(assistant_instructions);
+    match project_root {
+        Some(root) => {
+            crate::core::agent::context::build_system_prompt(base, root, subagents_enabled)
+        }
+        None => base.map(str::to_string),
+    }
+}
+
 /// System-prompt addendum on a session's first substantive message: without
 /// it, the model only ever reaches for `todo` once told explicitly that it
 /// has the tool, instead of proactively planning a multi-step request the
@@ -887,9 +907,39 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
 const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
 phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
 investigation through implementation and verification, not just the next step. Keep each task \
-to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings. \
-After `todo` succeeds, continue the request in the same turn; do not call `todo` again unless \
-task state materially changes.";
+to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
+passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
+top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
+`todo` succeeds, continue the request in the same turn.";
+
+/// Upkeep half of the todo guidance, applied on every turn that has a non-empty
+/// list rather than only a session's first message. The init addendum above
+/// fires once and never again (see `should_suggest_eager_todo_plan`), so a
+/// resumed or multi-turn session would otherwise carry a list the model was
+/// never told to maintain -- which is exactly how a run ends reading 0/N with
+/// every task finished but still marked pending.
+const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
+work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
+it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
+batch the close-out to the end of the turn.";
+
+/// Which todo addendum this turn needs, if any: the init guidance on a
+/// session's first substantive message, otherwise the upkeep guidance whenever
+/// a list already exists. `None` when there is nothing to say (no list, and not
+/// a first-message candidate). Subagent/plan-mode gating is the caller's.
+async fn todo_prompt_addendum(
+    eager_todo_plan: bool,
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> Option<&'static str> {
+    if eager_todo_plan {
+        return Some(EAGER_TODO_PROMPT_ADDENDUM);
+    }
+    let has_todos = match todo_registry {
+        Some(registry) => !registry.lock().await.is_empty(),
+        None => false,
+    };
+    has_todos.then_some(TODO_UPKEEP_PROMPT_ADDENDUM)
+}
 
 /// True on a session's first substantive user message: exactly one user-role
 /// message in the conversation so far (this one), no todos staged yet, and
@@ -991,28 +1041,33 @@ async fn orchestrate_inner(
         (None, None)
     };
 
-    let system_prompt = if let Some(override_prompt) = system_prompt_override.clone() {
-        Some(override_prompt)
-    } else if let Some(root) = project_root {
-        let mut sp = crate::core::agent::context::build_system_prompt(
-            assistant_instructions.as_deref(),
-            root,
-            *subagents_enabled,
-        );
-        // Recall project memory for the current query before it is indexed, so
-        // the active turn cannot surface itself.
-        if let Some(query) = latest_user_text(&conversation_messages) {
-            if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                sp = Some(match sp {
-                    Some(s) => format!("{s}\n\n{mem}"),
-                    None => mem,
-                });
+    let mut system_prompt = build_run_system_prompt(
+        assistant_instructions.as_deref(),
+        system_prompt_override.as_deref(),
+        project_root.as_deref(),
+        *subagents_enabled,
+    );
+    // Normal parent runs recall project memory for the current query before it
+    // is indexed. Child runs keep their isolated history and skip memory.
+    if system_prompt_override.is_none() {
+        if let Some(root) = project_root {
+            if let Some(query) = latest_user_text(&conversation_messages) {
+                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                    system_prompt = Some(match system_prompt {
+                        Some(s) => format!("{s}\n\n{mem}"),
+                        None => mem,
+                    });
+                }
             }
         }
-        sp
-    } else {
-        assistant_instructions
+    }
+    // Always tell the model today's date, including isolated child runs.
+    let date_line = format!("Today's date is {}.", chrono::Local::now().format("%Y-%m-%d"));
+    let system_prompt = match system_prompt {
+        Some(sys) => format!("{date_line}\n\n{sys}"),
+        None => date_line,
     };
+    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -1025,13 +1080,13 @@ async fn orchestrate_inner(
             Some(sys) => format!("{sys}\n\n{addendum}"),
             None => addendum.to_string(),
         })
-    } else if eager_todo_plan {
+    } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
         // Child (subagent) runs are excluded via `system_prompt_override`, the
         // same gate the memory-recall block above uses to distinguish a
         // top-level run from a subagent's isolated context.
         Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{EAGER_TODO_PROMPT_ADDENDUM}"),
-            None => EAGER_TODO_PROMPT_ADDENDUM.to_string(),
+            Some(sys) => format!("{sys}\n\n{addendum}"),
+            None => addendum.to_string(),
         })
     } else {
         system_prompt
@@ -1381,6 +1436,15 @@ pub(crate) async fn evaluate_goal(
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
 
+/// Summary of still-open (pending/in-progress) todos, or `None` when there is
+/// no list or nothing is open. Drives the close-out nudge before the loop hands
+/// control back.
+async fn open_todo_summary(
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+) -> Option<String> {
+    todo_registry?.lock().await.open_summary()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -1414,6 +1478,8 @@ async fn run_turn_cycle(
     const MID_RUN_NUDGE_MAX_PER_CYCLE: u32 = 2;
     let mut mutations_since_todo_touch: u32 = 0;
     let mut mid_run_nudge_count: u32 = 0;
+    // One-shot: asked the model to close out its todos before handing back.
+    let mut closeout_nudged = false;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1471,6 +1537,41 @@ async fn run_turn_cycle(
         let tool_calls = extract_tool_calls(&completion);
 
         if tool_calls.is_empty() {
+            // The model is about to hand control back. If it finished the work
+            // but never closed its todos out, the list is left reading 0/N
+            // forever -- so ask once, then accept whatever comes next. Bounded
+            // to a single retry per cycle: the point is to catch the common
+            // "forgot to mark done" case, not to argue with the model.
+            // Skip when the model appears to be asking the user something --
+            // nudging there would talk over its own question.
+            let final_text = extract_choice_message(&completion)
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let awaiting_user = final_text.trim_end().ends_with('?');
+            if !closeout_nudged
+                && run_mode == crate::core::agent::plan::RunMode::Normal
+                && !awaiting_user
+            {
+                if let Some(summary) = open_todo_summary(todo_registry).await {
+                    closeout_nudged = true;
+                    conversation_messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": final_text,
+                    }));
+                    conversation_messages.push(serde_json::json!({
+                        "role": "user",
+                        "content": format!(
+                            "Before you stop: these todos are still open:\n{summary}\n\nFor each \
+                             one you actually completed, call `todo` with `done` now (or `drop` if \
+                             you skipped it). If work genuinely remains, continue it instead."
+                        ),
+                    }));
+                    turn += 1;
+                    continue;
+                }
+            }
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
@@ -1782,6 +1883,26 @@ mod tests {
         assert!(!should_suggest_eager_todo_plan(&convo, &None).await);
     }
 
+    #[test]
+    fn subagent_prompt_reuses_main_prompt_builder() {
+        let root = unique_project_root();
+        let prompt = build_run_system_prompt(
+            Some("main assistant"),
+            Some("You are a robotics researcher."),
+            Some(&root),
+            false,
+        )
+        .expect("prompt");
+
+        assert!(prompt.starts_with("You are a robotics researcher."));
+        assert!(!prompt.contains("main assistant"));
+        assert!(prompt.contains("# Guidelines"));
+        assert!(prompt.contains("# Web Access"));
+        assert!(prompt.contains("web_search"));
+        assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn tool_call_completion() -> serde_json::Value {
         json!({
             "choices": [{
@@ -1919,15 +2040,24 @@ mod tests {
     }
 
     fn request_has_nudge(request: &serde_json::Value) -> bool {
+        nudge_message_count(request) > 0
+    }
+
+    /// How many mid-run nudges are present in this request's history. Counting
+    /// messages (not requests) is what the per-cycle cap actually bounds: an
+    /// injected nudge stays in `conversation_messages`, so every later request
+    /// carries it and counting requests would grow with the turn count.
+    fn nudge_message_count(request: &serde_json::Value) -> usize {
         request["messages"]
             .as_array()
             .into_iter()
             .flatten()
-            .any(|m| {
+            .filter(|m| {
                 m.get("content")
                     .and_then(|c| c.as_str())
                     .is_some_and(|s| s.contains("todo item"))
             })
+            .count()
     }
 
     #[tokio::test]
@@ -1938,6 +2068,9 @@ mod tests {
         let mut responses: Vec<serde_json::Value> = (0..13)
             .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
             .collect();
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        // The task is still open at that first stop, so the close-out nudge
+        // spends one more turn before the loop hands back; answer it too.
         responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
@@ -1963,9 +2096,119 @@ mod tests {
         .unwrap();
 
         let requests = model.requests.lock().unwrap();
-        let nudged_requests = requests.iter().filter(|r| request_has_nudge(r)).count();
-        assert!(nudged_requests >= 1, "expected a mid-run nudge after 12+ mutating calls");
-        assert!(nudged_requests <= 2, "must not exceed the per-cycle nudge cap");
+        let nudges = nudge_message_count(requests.last().expect("at least one request"));
+        assert!(nudges >= 1, "expected a mid-run nudge after 12+ mutating calls");
+        // MID_RUN_NUDGE_MAX_PER_CYCLE is local to run_turn_cycle; mirror it here.
+        assert!(nudges <= 2, "must not exceed the per-cycle nudge cap, saw {nudges}");
+    }
+
+    /// A resumed/multi-turn session still needs the upkeep instruction: the
+    /// eager-init addendum fires only on a session's first substantive message,
+    /// so without this a continued session carries a todo list the model was
+    /// never told to maintain -- the reported "0/8, nothing ever marked done".
+    #[tokio::test]
+    async fn continued_session_with_todos_still_gets_upkeep_guidance() {
+        let registry = Some(todo_registry_with_open_task());
+        // Not a first-message candidate (eager_todo_plan == false), list exists.
+        let addendum = todo_prompt_addendum(false, &registry).await;
+        assert_eq!(addendum, Some(TODO_UPKEEP_PROMPT_ADDENDUM));
+
+        // A first substantive message gets the init guidance instead.
+        assert_eq!(
+            todo_prompt_addendum(true, &registry).await,
+            Some(EAGER_TODO_PROMPT_ADDENDUM)
+        );
+    }
+
+    /// No list and no first-message trigger means there is nothing to say --
+    /// the prompt must not grow an unconditional todo paragraph.
+    #[tokio::test]
+    async fn no_todo_addendum_when_there_is_no_list() {
+        assert_eq!(todo_prompt_addendum(false, &None).await, None);
+        assert_eq!(
+            todo_prompt_addendum(false, &Some(empty_todo_registry())).await,
+            None
+        );
+    }
+
+    /// The reported bug: the agent finishes the work, stops, and the todo list
+    /// is left reading 0/N forever because it never marked anything done. The
+    /// loop must ask once before handing control back.
+    #[tokio::test]
+    async fn closeout_nudge_asks_once_when_stopping_with_open_todos() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({ "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }] }),
+            json!({ "choices": [{ "message": { "content": "closed them out" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "one extra turn for the close-out ask");
+        let closeouts = requests
+            .last()
+            .expect("second request")["messages"]
+            .as_array()
+            .expect("messages")
+            .iter()
+            .filter(|m| {
+                m["content"]
+                    .as_str()
+                    .is_some_and(|s| s.contains("still open"))
+            })
+            .count();
+        assert_eq!(closeouts, 1, "asked exactly once, never piles on");
+    }
+
+    /// Nothing open means nothing to ask about: the run must end on the first
+    /// stop, with no extra turn spent.
+    #[tokio::test]
+    async fn closeout_nudge_is_silent_when_no_todos_are_open() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({ "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = empty_todo_registry();
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(model.requests.lock().unwrap().len(), 1, "no extra turn");
     }
 
     #[tokio::test]
@@ -2013,6 +2256,9 @@ mod tests {
             .collect();
         responses.push(mutating_tool_call_completion("mid", "todo"));
         responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        // The task is still open at that first stop, so the close-out nudge
+        // spends one more turn before the loop hands back; answer it too.
         responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
