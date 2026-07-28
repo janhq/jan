@@ -910,10 +910,36 @@ investigation through implementation and verification, not just the next step. K
 to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
 passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
 top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
-`todo` succeeds, continue the request in the same turn. From then on keep the list honest as you \
+`todo` succeeds, continue the request in the same turn.";
+
+/// Upkeep half of the todo guidance, applied on every turn that has a non-empty
+/// list rather than only a session's first message. The init addendum above
+/// fires once and never again (see `should_suggest_eager_todo_plan`), so a
+/// resumed or multi-turn session would otherwise carry a list the model was
+/// never told to maintain -- which is exactly how a run ends reading 0/N with
+/// every task finished but still marked pending.
+const TODO_UPKEEP_PROMPT_ADDENDUM: &str = "You have an active todo list. Keep it honest as you \
 work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
 it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
-wait until the end to close everything out at once.";
+batch the close-out to the end of the turn.";
+
+/// Which todo addendum this turn needs, if any: the init guidance on a
+/// session's first substantive message, otherwise the upkeep guidance whenever
+/// a list already exists. `None` when there is nothing to say (no list, and not
+/// a first-message candidate). Subagent/plan-mode gating is the caller's.
+async fn todo_prompt_addendum(
+    eager_todo_plan: bool,
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> Option<&'static str> {
+    if eager_todo_plan {
+        return Some(EAGER_TODO_PROMPT_ADDENDUM);
+    }
+    let has_todos = match todo_registry {
+        Some(registry) => !registry.lock().await.is_empty(),
+        None => false,
+    };
+    has_todos.then_some(TODO_UPKEEP_PROMPT_ADDENDUM)
+}
 
 /// True on a session's first substantive user message: exactly one user-role
 /// message in the conversation so far (this one), no todos staged yet, and
@@ -1054,13 +1080,13 @@ async fn orchestrate_inner(
             Some(sys) => format!("{sys}\n\n{addendum}"),
             None => addendum.to_string(),
         })
-    } else if eager_todo_plan {
+    } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
         // Child (subagent) runs are excluded via `system_prompt_override`, the
         // same gate the memory-recall block above uses to distinguish a
         // top-level run from a subagent's isolated context.
         Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{EAGER_TODO_PROMPT_ADDENDUM}"),
-            None => EAGER_TODO_PROMPT_ADDENDUM.to_string(),
+            Some(sys) => format!("{sys}\n\n{addendum}"),
+            None => addendum.to_string(),
         })
     } else {
         system_prompt
@@ -2074,6 +2100,35 @@ mod tests {
         assert!(nudges >= 1, "expected a mid-run nudge after 12+ mutating calls");
         // MID_RUN_NUDGE_MAX_PER_CYCLE is local to run_turn_cycle; mirror it here.
         assert!(nudges <= 2, "must not exceed the per-cycle nudge cap, saw {nudges}");
+    }
+
+    /// A resumed/multi-turn session still needs the upkeep instruction: the
+    /// eager-init addendum fires only on a session's first substantive message,
+    /// so without this a continued session carries a todo list the model was
+    /// never told to maintain -- the reported "0/8, nothing ever marked done".
+    #[tokio::test]
+    async fn continued_session_with_todos_still_gets_upkeep_guidance() {
+        let registry = Some(todo_registry_with_open_task());
+        // Not a first-message candidate (eager_todo_plan == false), list exists.
+        let addendum = todo_prompt_addendum(false, &registry).await;
+        assert_eq!(addendum, Some(TODO_UPKEEP_PROMPT_ADDENDUM));
+
+        // A first substantive message gets the init guidance instead.
+        assert_eq!(
+            todo_prompt_addendum(true, &registry).await,
+            Some(EAGER_TODO_PROMPT_ADDENDUM)
+        );
+    }
+
+    /// No list and no first-message trigger means there is nothing to say --
+    /// the prompt must not grow an unconditional todo paragraph.
+    #[tokio::test]
+    async fn no_todo_addendum_when_there_is_no_list() {
+        assert_eq!(todo_prompt_addendum(false, &None).await, None);
+        assert_eq!(
+            todo_prompt_addendum(false, &Some(empty_todo_registry())).await,
+            None
+        );
     }
 
     /// The reported bug: the agent finishes the work, stops, and the todo list
