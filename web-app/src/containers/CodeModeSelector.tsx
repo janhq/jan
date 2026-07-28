@@ -1,4 +1,4 @@
-import { Shield, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Shield, ShieldAlert, Eye, type LucideIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,13 +29,19 @@ const MODES: {
     descKey: 'common:modeYoloDesc',
     icon: ShieldAlert,
   },
+  {
+    value: 'plan',
+    labelKey: 'common:modePlan',
+    descKey: 'common:modePlanDesc',
+    icon: Eye,
+  },
 ]
 
 /**
- * Run-mode selector for the Code UI input dock. Only two options exist
- * because that's all the agent core actually supports today (the `--yolo`
- * bypass flag, reachable via agent_run's `yolo` body field) — there's no
- * plan/auto-accept mode on the backend to offer here.
+ * Run-mode selector for the Code UI input dock. Mirrors the run-mode
+ * mechanisms the agent core actually exposes: `--yolo` (bypass permissions)
+ * and the TUI/CLI's read-only `--plan` mode, both reachable via agent_run's
+ * body fields.
  */
 export default function CodeModeSelector({
   mode,
