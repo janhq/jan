@@ -907,9 +907,11 @@ fn build_run_system_prompt(
 const EAGER_TODO_PROMPT_ADDENDUM: &str = "Before substantial work on this request, create a \
 phased todo. You MUST call `todo` first in this turn with a single `init` op covering \
 investigation through implementation and verification, not just the next step. Keep each task \
-to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings. \
-After `todo` succeeds, continue the request in the same turn; do not call `todo` again unless \
-task state materially changes.";
+to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
+passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
+top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
+`todo` succeeds, continue the request in the same turn; do not call `todo` again unless task \
+state materially changes.";
 
 /// True on a session's first substantive user message: exactly one user-role
 /// message in the conversation so far (this one), no todos staged yet, and
