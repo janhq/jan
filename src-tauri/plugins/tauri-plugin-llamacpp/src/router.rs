@@ -125,6 +125,27 @@ pub struct RouterLock {
 }
 
 pub const ROUTER_LOCK_FILENAME: &str = "router.lock.json";
+pub const ROUTER_LOG_FILENAME: &str = "router.log";
+
+fn log_path_for(preset_path: &Path) -> PathBuf {
+    preset_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(ROUTER_LOG_FILENAME)
+}
+
+/// llama.cpp opens its log file with mode "w", so a relaunch after a crash
+/// would truncate the very log that explains the crash. Keep one generation
+/// aside before the child can touch it.
+fn rotate_log(log_path: &Path) {
+    if !log_path.exists() {
+        return;
+    }
+    let previous = log_path.with_extension("log.1");
+    if let Err(e) = std::fs::rename(log_path, &previous) {
+        log::warn!("Could not rotate router log {:?}: {}", log_path, e);
+    }
+}
 
 fn lock_path_for(preset_path: &Path) -> PathBuf {
     preset_path
@@ -299,6 +320,7 @@ pub fn router_args(
     preset_path: &Path,
     port: u16,
     models_max: u32,
+    log_path: Option<&Path>,
     default_args: &[String],
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
@@ -311,6 +333,13 @@ pub fn router_args(
         "--port".to_string(),
         port.to_string(),
     ];
+    // Written in addition to stdout/stderr, not instead of them, so the pipe
+    // readers below are unaffected. This is the only diagnostic an adopted
+    // router leaves behind, since adoption inherits no pipes.
+    if let Some(path) = log_path {
+        args.push("--log-file".to_string());
+        args.push(path.to_string_lossy().to_string());
+    }
     // Web-UI disable flag (`--no-webui` pre-b9222, `--no-ui` from b9222) is
     // appended by the TS caller via `default_args` because the spelling
     // depends on the backend build number.
@@ -353,7 +382,9 @@ pub async fn start_router(
     // `router_args`'s doc comment).
     let envs = with_api_key_env(envs, &api_key);
 
-    let args = router_args(&preset_path, port, models_max, &default_args);
+    let log_path = log_path_for(&preset_path);
+    rotate_log(&log_path);
+    let args = router_args(&preset_path, port, models_max, Some(&log_path), &default_args);
     log::info!("Router argv: {:?}", args);
 
     // Resolve readiness timeout (seconds). Match existing convention by
@@ -987,9 +1018,42 @@ mod tests {
     }
 
     #[test]
+    fn router_args_adds_log_file_only_when_asked() {
+        let preset = PathBuf::from("/tmp/router.preset.ini");
+        assert!(!router_args(&preset, 1337, 1, None, &[])
+            .iter()
+            .any(|a| a == "--log-file"));
+
+        let args = router_args(&preset, 1337, 1, Some(Path::new("/tmp/r.log")), &[]);
+        let i = args.iter().position(|a| a == "--log-file").unwrap();
+        assert_eq!(args[i + 1], "/tmp/r.log");
+    }
+
+    #[test]
+    fn rotating_keeps_one_previous_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(ROUTER_LOG_FILENAME);
+
+        // Nothing to rotate yet.
+        rotate_log(&log);
+        assert!(!log.exists());
+
+        std::fs::write(&log, b"first run").unwrap();
+        rotate_log(&log);
+        assert!(!log.exists());
+        let previous = log.with_extension("log.1");
+        assert_eq!(std::fs::read(&previous).unwrap(), b"first run");
+
+        // A second rotation overwrites the older generation, never the newer.
+        std::fs::write(&log, b"second run").unwrap();
+        rotate_log(&log);
+        assert_eq!(std::fs::read(&previous).unwrap(), b"second run");
+    }
+
+    #[test]
     fn router_args_contains_required_flags() {
         let preset = PathBuf::from("/tmp/preset.ini");
-        let args = router_args(&preset, 1337, 4, &[]);
+        let args = router_args(&preset, 1337, 4, None, &[]);
 
         // Required flags present
         let joined = args.join(" ");
@@ -1059,7 +1123,7 @@ mod tests {
         // visible to any other process on the machine (ps/Task Manager) and
         // gets logged verbatim at startup.
         let preset = PathBuf::from("/tmp/preset.ini");
-        let args = router_args(&preset, 1337, 4, &[]);
+        let args = router_args(&preset, 1337, 4, None, &[]);
         assert!(!args.iter().any(|a| a == "--api-key"));
         assert!(!args.join(" ").to_lowercase().contains("api-key"));
     }
@@ -1068,7 +1132,7 @@ mod tests {
     fn router_args_appends_default_args_in_order() {
         let preset = PathBuf::from("/tmp/p.ini");
         let extras = vec!["--threads".to_string(), "8".to_string(), "--metrics".to_string()];
-        let args = router_args(&preset, 8080, 2, &extras);
+        let args = router_args(&preset, 8080, 2, None, &extras);
 
         // The defaults must appear after our base flags, preserving order.
         let last_three: Vec<&String> = args.iter().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect();
@@ -1079,7 +1143,7 @@ mod tests {
     fn router_args_passes_through_models_max_zero() {
         // README: 0 means unlimited; we forward as-is.
         let preset = PathBuf::from("/tmp/p.ini");
-        let args = router_args(&preset, 8080, 0, &[]);
+        let args = router_args(&preset, 8080, 0, None, &[]);
         let joined = args.join(" ");
         assert!(joined.contains("--models-max 0"));
     }
