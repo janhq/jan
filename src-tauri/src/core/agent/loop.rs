@@ -910,8 +910,10 @@ investigation through implementation and verification, not just the next step. K
 to a concise, specific 5-10 word label; `init` only accepts phase names and task-label strings, \
 passed as the `list` argument (e.g. `list: [{phase: \"Setup\", items: [\"...\"]}]`) -- never as \
 top-level `phase`/`task` strings, which are for later ops (start/done/drop), not init. After \
-`todo` succeeds, continue the request in the same turn; do not call `todo` again unless task \
-state materially changes.";
+`todo` succeeds, continue the request in the same turn. From then on keep the list honest as you \
+work: the moment you finish a task call `todo` with `done` for it (or `drop` if you are skipping \
+it), before moving on to the next one. Do not leave finished work sitting as pending, and do not \
+wait until the end to close everything out at once.";
 
 /// True on a session's first substantive user message: exactly one user-role
 /// message in the conversation so far (this one), no todos staged yet, and
@@ -1408,6 +1410,15 @@ pub(crate) async fn evaluate_goal(
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
 
+/// Summary of still-open (pending/in-progress) todos, or `None` when there is
+/// no list or nothing is open. Drives the close-out nudge before the loop hands
+/// control back.
+async fn open_todo_summary(
+    todo_registry: Option<&crate::core::agent::todo::TodoRegistry>,
+) -> Option<String> {
+    todo_registry?.lock().await.open_summary()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -1441,6 +1452,8 @@ async fn run_turn_cycle(
     const MID_RUN_NUDGE_MAX_PER_CYCLE: u32 = 2;
     let mut mutations_since_todo_touch: u32 = 0;
     let mut mid_run_nudge_count: u32 = 0;
+    // One-shot: asked the model to close out its todos before handing back.
+    let mut closeout_nudged = false;
 
     while unlimited || turn < max_turns {
         let _ = events.send(StreamEvent::Step {
@@ -1498,6 +1511,41 @@ async fn run_turn_cycle(
         let tool_calls = extract_tool_calls(&completion);
 
         if tool_calls.is_empty() {
+            // The model is about to hand control back. If it finished the work
+            // but never closed its todos out, the list is left reading 0/N
+            // forever -- so ask once, then accept whatever comes next. Bounded
+            // to a single retry per cycle: the point is to catch the common
+            // "forgot to mark done" case, not to argue with the model.
+            // Skip when the model appears to be asking the user something --
+            // nudging there would talk over its own question.
+            let final_text = extract_choice_message(&completion)
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let awaiting_user = final_text.trim_end().ends_with('?');
+            if !closeout_nudged
+                && run_mode == crate::core::agent::plan::RunMode::Normal
+                && !awaiting_user
+            {
+                if let Some(summary) = open_todo_summary(todo_registry).await {
+                    closeout_nudged = true;
+                    conversation_messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": final_text,
+                    }));
+                    conversation_messages.push(serde_json::json!({
+                        "role": "user",
+                        "content": format!(
+                            "Before you stop: these todos are still open:\n{summary}\n\nFor each \
+                             one you actually completed, call `todo` with `done` now (or `drop` if \
+                             you skipped it). If work genuinely remains, continue it instead."
+                        ),
+                    }));
+                    turn += 1;
+                    continue;
+                }
+            }
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: conversation_messages.clone(),
             });
@@ -1966,15 +2014,24 @@ mod tests {
     }
 
     fn request_has_nudge(request: &serde_json::Value) -> bool {
+        nudge_message_count(request) > 0
+    }
+
+    /// How many mid-run nudges are present in this request's history. Counting
+    /// messages (not requests) is what the per-cycle cap actually bounds: an
+    /// injected nudge stays in `conversation_messages`, so every later request
+    /// carries it and counting requests would grow with the turn count.
+    fn nudge_message_count(request: &serde_json::Value) -> usize {
         request["messages"]
             .as_array()
             .into_iter()
             .flatten()
-            .any(|m| {
+            .filter(|m| {
                 m.get("content")
                     .and_then(|c| c.as_str())
                     .is_some_and(|s| s.contains("todo item"))
             })
+            .count()
     }
 
     #[tokio::test]
@@ -1985,6 +2042,9 @@ mod tests {
         let mut responses: Vec<serde_json::Value> = (0..13)
             .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
             .collect();
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        // The task is still open at that first stop, so the close-out nudge
+        // spends one more turn before the loop hands back; answer it too.
         responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
@@ -2010,9 +2070,90 @@ mod tests {
         .unwrap();
 
         let requests = model.requests.lock().unwrap();
-        let nudged_requests = requests.iter().filter(|r| request_has_nudge(r)).count();
-        assert!(nudged_requests >= 1, "expected a mid-run nudge after 12+ mutating calls");
-        assert!(nudged_requests <= 2, "must not exceed the per-cycle nudge cap");
+        let nudges = nudge_message_count(requests.last().expect("at least one request"));
+        assert!(nudges >= 1, "expected a mid-run nudge after 12+ mutating calls");
+        // MID_RUN_NUDGE_MAX_PER_CYCLE is local to run_turn_cycle; mirror it here.
+        assert!(nudges <= 2, "must not exceed the per-cycle nudge cap, saw {nudges}");
+    }
+
+    /// The reported bug: the agent finishes the work, stops, and the todo list
+    /// is left reading 0/N forever because it never marked anything done. The
+    /// loop must ask once before handing control back.
+    #[tokio::test]
+    async fn closeout_nudge_asks_once_when_stopping_with_open_todos() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({ "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }] }),
+            json!({ "choices": [{ "message": { "content": "closed them out" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = todo_registry_with_open_task();
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "one extra turn for the close-out ask");
+        let closeouts = requests
+            .last()
+            .expect("second request")["messages"]
+            .as_array()
+            .expect("messages")
+            .iter()
+            .filter(|m| {
+                m["content"]
+                    .as_str()
+                    .is_some_and(|s| s.contains("still open"))
+            })
+            .count();
+        assert_eq!(closeouts, 1, "asked exactly once, never piles on");
+    }
+
+    /// Nothing open means nothing to ask about: the run must end on the first
+    /// stop, with no extra turn spent.
+    #[tokio::test]
+    async fn closeout_nudge_is_silent_when_no_todos_are_open() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({ "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = empty_todo_registry();
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(model.requests.lock().unwrap().len(), 1, "no extra turn");
     }
 
     #[tokio::test]
@@ -2060,6 +2201,9 @@ mod tests {
             .collect();
         responses.push(mutating_tool_call_completion("mid", "todo"));
         responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
+        responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
+        // The task is still open at that first stop, so the close-out nudge
+        // spends one more turn before the loop hands back; answer it too.
         responses.push(json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }));
         let model = MockModel::new(responses);
         let tool = MockTool::default();
