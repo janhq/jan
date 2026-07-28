@@ -112,7 +112,10 @@ jobs:
         continue-on-error: true
         run: |
           if [ -n "${{ secrets.CODE_SIGN_P12_BASE64 }}" ]; then
-            codesign --force --sign "Developer ID Application" universal/jan --timestamp
+            # --options runtime is required: notarization rejects binaries
+            # without the hardened runtime enabled.
+            codesign --force --sign "Developer ID Application" universal/jan \
+              --options runtime --timestamp
           else
             echo "No signing cert configured; skipping code sign."
           fi
@@ -130,10 +133,11 @@ jobs:
         continue-on-error: true
         run: |
           if [ -n "${{ secrets.NOTARY_ISSUER }}" ]; then
-            # notarytool rejects .tar.gz outright (zip/pkg/dmg only), so zip the
-            # binary just for submission; the distributed artifact stays the tarball.
+            # notarytool rejects .tar.gz outright (zip/pkg/dmg only), so submit a
+            # zip; the distributed artifact stays the tarball. ditto is Apple's
+            # documented way to package a command line tool for notarization.
             NOTARIZE_ZIP="jan-agent-darwin-universal-notarize.zip"
-            zip -j "$NOTARIZE_ZIP" universal/jan
+            ditto -c -k universal/jan "$NOTARIZE_ZIP"
             xcrun notarytool submit "$NOTARIZE_ZIP" \
               --key /tmp/notary-key.p8 \
               --key-id "${{ secrets.NOTARY_KEY_ID }}" \
