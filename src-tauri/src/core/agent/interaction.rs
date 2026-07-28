@@ -204,9 +204,6 @@ pub(crate) fn ask_tool_schema() -> Value {
     })
 }
 
-// Only the TUI owns an ask registry; the desktop `ask` IPC surface is not wired
-// up yet, so these are absent from that build.
-#[cfg(any(feature = "cli", test))]
 pub(crate) fn new_registry() -> AskRegistry {
     Arc::new(Mutex::new(HashMap::new()))
 }
@@ -233,7 +230,6 @@ pub(crate) async fn respond(
         .map_err(|_| format!("ask request '{request_id}' is no longer pending"))
 }
 
-#[cfg(any(feature = "cli", test))]
 pub(crate) async fn cancel_all(registry: &AskRegistry) {
     let pending = std::mem::take(&mut *registry.lock().await);
     for (_, sender) in pending {

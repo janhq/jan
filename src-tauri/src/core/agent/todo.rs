@@ -67,17 +67,6 @@ impl TodoList {
         self.phases.iter().all(|p| p.tasks.is_empty())
     }
 
-    /// True while any task is still pending or in progress.
-    ///
-    /// Distinct from `is_empty`, which only asks whether tasks exist at all: a
-    /// fully completed list is non-empty but has no open work left.
-    pub fn has_open(&self) -> bool {
-        self.phases
-            .iter()
-            .flat_map(|p| &p.tasks)
-            .any(|t| matches!(t.status, TodoStatus::Pending | TodoStatus::InProgress))
-    }
-
     pub fn done_total(&self) -> (usize, usize) {
         let mut done = 0;
         let mut total = 0;
@@ -382,7 +371,7 @@ pub fn todo_tool_schema() -> serde_json::Value {
         "type": "function",
         "function": {
             "name": "todo",
-            "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task. init takes `list` or `items`, never `phase`/`task` directly -- e.g. {\"op\":\"init\",\"list\":[{\"phase\":\"Setup\",\"items\":[\"do X\",\"do Y\"]}]} or the flat form {\"op\":\"init\",\"items\":[\"do X\",\"do Y\"]}.",
+            "description": "Manage the canonical session todo list: init/start/done/drop/rm/append/view. One call applies one operation. Tasks advance automatically in phase and task order after done or drop; start only confirms the current task.",
             "parameters": {
                 "type": "object",
                 "properties": {
