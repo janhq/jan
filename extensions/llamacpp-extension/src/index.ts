@@ -804,18 +804,15 @@ export default class llamacpp_extension extends AIEngine {
       build !== null && build >= NO_UI_RENAME_BUILD ? '--no-ui' : '--no-webui'
 
     // Beside app.log in the managed logs folder, where a bug report will look.
-    const logPath = await joinPath([
-      janDataFolderPath,
-      'logs',
-      'llamacpp-router.log',
-    ])
+    // The filename is derived from the port inside the plugin.
+    const logDir = await joinPath([janDataFolderPath, 'logs'])
 
     const info = await invoke<{ port: number; api_key: string; pid: number }>(
       'plugin:llamacpp|start_router',
       {
         backendExe,
         presetPath,
-        logPath,
+        logDir,
         port,
         apiKey,
         modelsMax,

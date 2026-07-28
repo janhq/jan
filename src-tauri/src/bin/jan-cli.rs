@@ -1031,14 +1031,12 @@ async fn ensure_router_and_load(
             .entry("LLAMA_ARG_TIMEOUT".to_string())
             .or_insert_with(|| timeout.to_string());
 
-        let log_path = cli_get_data_folder()
-            .join("logs")
-            .join(llamacpp_router::ROUTER_LOG_FILENAME);
+        let log_dir = cli_get_data_folder().join("logs");
 
         let handle = llamacpp_router::start_router(
             std::path::PathBuf::from(bin_path),
             preset_path,
-            log_path,
+            log_dir,
             port,
             router_api_key,
             0,

@@ -103,6 +103,8 @@ pub struct RouterHandle {
     pub pid: u32,
     /// Kept so the stop paths can clear the lock file that sits beside it.
     pub preset_path: PathBuf,
+    /// This run's own log, removed on a deliberate stop.
+    pub log_path: PathBuf,
 }
 
 /// On-disk record of a spawned router, written next to the preset so a
@@ -122,60 +124,119 @@ pub struct RouterLock {
     /// An argv flag rather than a preset entry, so the preset hash cannot
     /// catch a change to it.
     pub models_max: u32,
+    /// So an adopted router can clean up the log it was actually started with.
+    #[serde(default)]
+    pub log_path: String,
 }
 
 pub const ROUTER_LOCK_FILENAME: &str = "router.lock.json";
-/// Lives in the app's managed `logs/` folder beside `app.log`, not next to the
-/// preset: it is a diagnostic a user or bug report will go looking for. It must
-/// stay a file of its own -- llama.cpp opens it with mode "w", so sharing
-/// `app.log` would truncate Jan's own log on every spawn.
-pub const ROUTER_LOG_FILENAME: &str = "llamacpp-router.log";
+/// One log per router run, in the app's managed `logs/` folder beside
+/// `app.log`. It must stay a file of its own -- llama.cpp opens it with mode
+/// "w", so sharing `app.log` would truncate Jan's own log on every spawn.
+///
+/// The token is the port rather than the child's pid: `--log-file` has to be
+/// in argv before the process exists, and renaming afterwards is not an option
+/// because llama.cpp holds the handle open (which makes `rename` fail outright
+/// on Windows). The port is known at that point and matches the lock file, so
+/// a log is easy to tie back to a run. Ports are recycled across runs, so the
+/// newest log is chosen by mtime, never by name.
+pub const ROUTER_LOG_PREFIX: &str = "router-";
+pub const ROUTER_LOG_SUFFIX: &str = ".log";
 
-/// Cap for a retained log generation. Disk use across spawns is bounded by
-/// roughly twice this: one live file plus one retained.
+/// Cap for a log we retain after a crash. A run that never restarts cannot be
+/// truncated while its process holds the file open, so this applies only to
+/// logs left behind by a process that has already exited.
 const MAX_RETAINED_LOG_BYTES: u64 = 16 * 1024 * 1024;
 
-/// llama.cpp opens its log file with mode "w", so a relaunch after a crash
-/// would truncate the very log that explains the crash. Move the previous run
-/// aside before the child can touch it.
+fn new_log_path(log_dir: &Path, port: u16) -> PathBuf {
+    log_dir.join(format!("{}{}{}", ROUTER_LOG_PREFIX, port, ROUTER_LOG_SUFFIX))
+}
+
+fn is_router_log(name: &str) -> bool {
+    name.starts_with(ROUTER_LOG_PREFIX) && name.ends_with(ROUTER_LOG_SUFFIX)
+}
+
+/// Called only when the router is shut down deliberately. A clean stop has
+/// nothing to diagnose, so this run's log goes; a crash never reaches here, so
+/// its log survives for the next session to inspect.
 ///
-/// Only the tail of an oversized log is kept: a crash signature is written
-/// just before the process dies, so the end is the part worth retaining, and
-/// keeping it bounded is what stops a long-lived router from filling the disk.
-///
-/// Note this is the only point at which size can be enforced. The live log
-/// belongs to a process holding it open -- renaming it out from under llama.cpp
-/// keeps writes flowing to the same inode on POSIX and fails outright on
-/// Windows -- so a single very long run is bounded only by llama.cpp's own
-/// verbosity until the router next restarts.
-fn rotate_log(log_path: &Path) {
-    let Ok(meta) = std::fs::metadata(log_path) else {
-        return; // nothing from a previous run
+/// One log is always kept back -- the newest of whatever remains -- so repeated
+/// crashes cannot accumulate, and a user who exits cleanly after a crash still
+/// has the crash to look at.
+fn cleanup_logs(own_log: &Path) {
+    if let Err(e) = std::fs::remove_file(own_log) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("Could not remove router log {:?}: {}", own_log, e);
+        }
+    }
+
+    let Some(dir) = own_log.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
     };
 
-    let previous = log_path.with_extension("log.1");
-    if meta.len() <= MAX_RETAINED_LOG_BYTES {
-        if let Err(e) = std::fs::rename(log_path, &previous) {
-            log::warn!("Could not rotate router log {:?}: {}", log_path, e);
+    let mut logs: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(is_router_log)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if logs.len() <= 1 {
+        if let Some(kept) = logs.pop() {
+            cap_retained_log(&kept);
         }
         return;
     }
 
-    match keep_log_tail(log_path, &previous, MAX_RETAINED_LOG_BYTES) {
+    // By mtime, not name: a port-named log says nothing about when it ran, and
+    // ports are recycled.
+    logs.sort_by_key(|p| {
+        std::fs::metadata(p)
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH)
+    });
+    let kept = logs.pop();
+    for stale in logs {
+        if let Err(e) = std::fs::remove_file(&stale) {
+            log::warn!("Could not remove stale router log {:?}: {}", stale, e);
+        }
+    }
+    if let Some(kept) = kept {
+        log::info!("Retained router log from a previous run: {:?}", kept);
+        cap_retained_log(&kept);
+    }
+}
+
+/// Keep the tail: a crash signature is written just before the process dies,
+/// so the end is the part worth having.
+fn cap_retained_log(path: &Path) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return;
+    };
+    if meta.len() <= MAX_RETAINED_LOG_BYTES {
+        return;
+    }
+    let tmp = path.with_extension("log.tmp");
+    match keep_log_tail(path, &tmp, MAX_RETAINED_LOG_BYTES) {
         Ok(()) => {
-            log::info!(
-                "Router log was {} bytes; retained the last {} in {:?}",
-                meta.len(),
-                MAX_RETAINED_LOG_BYTES,
-                previous
-            );
-            let _ = std::fs::remove_file(log_path);
+            if let Err(e) = std::fs::rename(&tmp, path) {
+                log::warn!("Could not replace oversized router log: {}", e);
+                let _ = std::fs::remove_file(&tmp);
+            } else {
+                log::info!(
+                    "Router log {:?} was {} bytes; kept the last {}",
+                    path,
+                    meta.len(),
+                    MAX_RETAINED_LOG_BYTES
+                );
+            }
         }
-        Err(e) => {
-            // Retaining nothing beats leaving an unbounded file behind.
-            log::warn!("Could not truncate oversized router log: {}; discarding", e);
-            let _ = std::fs::remove_file(log_path);
-        }
+        Err(e) => log::warn!("Could not cap oversized router log: {}", e),
     }
 }
 
@@ -337,6 +398,7 @@ pub async fn try_adopt_router(
         api_key,
         pid: lock.pid,
         preset_path: preset_path.to_path_buf(),
+        log_path: PathBuf::from(&lock.log_path),
     }))
 }
 
@@ -414,7 +476,7 @@ fn with_api_key_env(mut envs: HashMap<String, String>, api_key: &str) -> HashMap
 pub async fn start_router(
     backend_exe: PathBuf,
     preset_path: PathBuf,
-    log_path: PathBuf,
+    log_dir: PathBuf,
     port: u16,
     api_key: String,
     models_max: u32,
@@ -434,12 +496,10 @@ pub async fn start_router(
     // `router_args`'s doc comment).
     let envs = with_api_key_env(envs, &api_key);
 
-    if let Some(dir) = log_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            log::warn!("Could not create router log directory {:?}: {}", dir, e);
-        }
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        log::warn!("Could not create router log directory {:?}: {}", log_dir, e);
     }
-    rotate_log(&log_path);
+    let log_path = new_log_path(&log_dir, port);
     let args = router_args(&preset_path, port, models_max, Some(&log_path), &default_args);
     log::info!("Router argv: {:?}", args);
 
@@ -649,6 +709,7 @@ pub async fn start_router(
             backend_exe: backend_exe.to_string_lossy().to_string(),
             preset_hash: hash_preset(&preset_path),
             models_max,
+            log_path: log_path.to_string_lossy().to_string(),
         },
     );
     Ok(RouterHandle {
@@ -657,6 +718,7 @@ pub async fn start_router(
         api_key,
         pid,
         preset_path,
+        log_path,
     })
 }
 
@@ -855,6 +917,7 @@ async fn list_processing_models(
 /// back to a PID-based tree kill for an adopted process.
 async fn terminate_router_process(handle: &mut RouterHandle) {
     remove_lock(&handle.preset_path);
+    cleanup_logs(&handle.log_path);
     let Some(child) = handle.child.as_mut() else {
         force_kill_router_tree_by_pid(handle.pid);
         return;
@@ -905,6 +968,7 @@ pub fn force_kill_router_tree_by_pid(router_pid: u32) {
 /// Router is killed before children so it can't spawn new ones mid-sweep.
 pub async fn force_kill_router_tree(mut handle: RouterHandle) {
     remove_lock(&handle.preset_path);
+    cleanup_logs(&handle.log_path);
     let router_pid = handle.pid;
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
@@ -959,6 +1023,7 @@ mod tests {
             backend_exe: "/backends/llama-server".to_string(),
             preset_hash: hash_preset(preset),
             models_max,
+            log_path: String::new(),
         }
     }
 
@@ -1089,60 +1154,86 @@ mod tests {
     fn router_log_never_shares_the_app_log_file() {
         // llama.cpp opens the log with mode "w"; sharing app.log would
         // truncate Jan's own log on every spawn.
-        assert_ne!(ROUTER_LOG_FILENAME, "app.log");
+        let path = new_log_path(Path::new("/logs"), 1337);
+        assert_eq!(path.file_name().unwrap(), "router-1337.log");
+        assert_ne!(path.file_name().unwrap(), "app.log");
+    }
+
+    fn write_log(dir: &Path, port: u16, body: &[u8]) -> PathBuf {
+        let p = new_log_path(dir, port);
+        std::fs::write(&p, body).unwrap();
+        p
     }
 
     #[test]
-    fn rotating_keeps_one_previous_generation() {
+    fn a_clean_stop_removes_its_own_log() {
         let dir = tempfile::tempdir().unwrap();
-        let log = dir.path().join(ROUTER_LOG_FILENAME);
+        let own = write_log(dir.path(), 1337, b"clean run");
 
-        // Nothing to rotate yet.
-        rotate_log(&log);
-        assert!(!log.exists());
+        cleanup_logs(&own);
 
-        std::fs::write(&log, b"first run").unwrap();
-        rotate_log(&log);
-        assert!(!log.exists());
-        let previous = log.with_extension("log.1");
-        assert_eq!(std::fs::read(&previous).unwrap(), b"first run");
-
-        // A second rotation overwrites the older generation, never the newer.
-        std::fs::write(&log, b"second run").unwrap();
-        rotate_log(&log);
-        assert_eq!(std::fs::read(&previous).unwrap(), b"second run");
+        assert!(!own.exists());
     }
 
     #[test]
-    fn rotating_an_oversized_log_keeps_only_its_tail() {
+    fn a_crashed_run_leaves_its_log_for_the_next_clean_stop() {
         let dir = tempfile::tempdir().unwrap();
-        let log = dir.path().join(ROUTER_LOG_FILENAME);
-        let previous = log.with_extension("log.1");
+        // The crashed run never reached cleanup, so its log is still here.
+        let crashed = write_log(dir.path(), 4242, b"CUDA error: out of memory");
+        let own = write_log(dir.path(), 1337, b"clean run");
 
-        // Head is filler; the crash signature lands at the very end, which is
-        // the part that has to survive.
+        cleanup_logs(&own);
+
+        assert!(!own.exists());
+        assert!(crashed.exists(), "crash evidence must survive a clean stop");
+    }
+
+    #[test]
+    fn repeated_crashes_keep_only_the_most_recent_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = write_log(dir.path(), 1111, b"first crash");
+        let newer = write_log(dir.path(), 2222, b"second crash");
+        // Ports say nothing about ordering, so age is taken from mtime.
+        let long_ago = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let f = std::fs::File::options().write(true).open(&old).unwrap();
+        f.set_times(std::fs::FileTimes::new().set_modified(long_ago))
+            .unwrap();
+        drop(f);
+
+        let own = write_log(dir.path(), 3333, b"clean run");
+        cleanup_logs(&own);
+
+        assert!(!own.exists());
+        assert!(!old.exists(), "the older crash log should be swept");
+        assert!(newer.exists(), "the newest crash log is kept");
+    }
+
+    #[test]
+    fn a_retained_oversized_log_is_capped_to_its_tail() {
+        let dir = tempfile::tempdir().unwrap();
         let mut body = vec![b'x'; (MAX_RETAINED_LOG_BYTES + 4096) as usize];
         body.extend_from_slice(b"CUDA error: out of memory");
-        std::fs::write(&log, &body).unwrap();
+        let crashed = write_log(dir.path(), 4242, &body);
+        let own = write_log(dir.path(), 1337, b"clean run");
 
-        rotate_log(&log);
+        cleanup_logs(&own);
 
-        assert!(!log.exists());
-        let kept = std::fs::read(&previous).unwrap();
+        let kept = std::fs::read(&crashed).unwrap();
         assert_eq!(kept.len() as u64, MAX_RETAINED_LOG_BYTES);
+        // The crash signature is at the end, so the tail is what must survive.
         assert!(kept.ends_with(b"CUDA error: out of memory"));
     }
 
     #[test]
-    fn keep_log_tail_copies_the_whole_file_when_under_the_cap() {
+    fn cleanup_ignores_files_that_are_not_router_logs() {
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("a.log");
-        let dst = dir.path().join("b.log");
-        std::fs::write(&src, b"short").unwrap();
+        let app_log = dir.path().join("app.log");
+        std::fs::write(&app_log, b"jan's own log").unwrap();
+        let own = write_log(dir.path(), 1337, b"clean run");
 
-        keep_log_tail(&src, &dst, MAX_RETAINED_LOG_BYTES).unwrap();
+        cleanup_logs(&own);
 
-        assert_eq!(std::fs::read(&dst).unwrap(), b"short");
+        assert_eq!(std::fs::read(&app_log).unwrap(), b"jan's own log");
     }
 
     #[test]
