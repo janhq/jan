@@ -186,6 +186,13 @@ export async function reloadRouterModels(): Promise<void> {
   return await invoke('plugin:llamacpp|reload_router_models')
 }
 
+export async function routerHealth(
+  port?: number,
+  apiKey?: string
+): Promise<boolean> {
+  return await invoke('plugin:llamacpp|router_health', { port, apiKey })
+}
+
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp|read_gguf_metadata', { path })

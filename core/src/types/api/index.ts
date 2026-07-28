@@ -67,6 +67,7 @@ export enum AppEvent {
   onMainViewStateChange = 'onMainViewStateChange',
 
   onBackendVerificationFailed = 'onBackendVerificationFailed',
+  onBackendRollback = 'onBackendRollback',
 }
 
 export enum DownloadEvent {

@@ -32,6 +32,8 @@ async fn router_endpoint<R: Runtime>(
     Ok((h.port, h.api_key.clone(), h.pid))
 }
 
+const ROUTER_HEALTH_TIMEOUT_SECS: u64 = 5;
+
 async fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
@@ -934,6 +936,43 @@ pub async fn reload_router_models<R: Runtime>(
         ));
     }
     Ok(())
+}
+
+/// Probe `GET /health`. With `port`/`api_key` omitted, targets the router this
+/// process owns; supplying them probes an arbitrary endpoint (used to decide
+/// whether a router surviving a UI crash is adoptable). Never errors -- an
+/// unreachable or non-200 endpoint is simply not healthy.
+///
+/// The short timeout is deliberate: `http_client()`'s 600s budget is sized for
+/// inference, but a health gate must fail fast enough to roll back.
+#[tauri::command]
+pub async fn router_health<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    port: Option<u16>,
+    api_key: Option<String>,
+) -> Result<bool, String> {
+    let (port, api_key) = match (port, api_key) {
+        (Some(p), Some(k)) => (p, k),
+        _ => match router_endpoint(&app_handle).await {
+            Ok((p, k, _)) => (p, k),
+            Err(_) => return Ok(false),
+        },
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(ROUTER_HEALTH_TIMEOUT_SECS))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    let url = format!("http://127.0.0.1:{}/health", port);
+    match client.get(&url).bearer_auth(&api_key).send().await {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(e) => {
+            log::debug!("router health probe on port {} failed: {}", port, e);
+            Ok(false)
+        }
+    }
 }
 
 /// Best-effort idle check; returns `Ok(true)` on any error so callers

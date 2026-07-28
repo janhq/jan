@@ -68,6 +68,7 @@ import {
   isModelSupported,
   unloadLlamaModel,
   reloadRouterModels,
+  routerHealth,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -79,7 +80,6 @@ import {
   findLatestVersionForBackend,
   prioritizeBackends,
   checkBackendForUpdates,
-  removeOldBackendVersions,
   shouldMigrateBackend,
   handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
@@ -94,6 +94,13 @@ const TEMPLATE_KWARGS_CHECK_VERSION = 1
 // restarting the router (unchanged models stay loaded); below it we must do a
 // full process restart.
 const RELOAD_MIN_BUILD = 9023
+
+/** Snapshot of an active backend choice, sufficient to restore it on rollback. */
+type BackendSelection = {
+  version: string
+  backend: string
+  storedType?: string
+}
 
 // Provider settings that end up in `router.preset.ini` (`[*]` global section
 // in preset.ts). Mutating any of these requires a router restart so the new
@@ -457,13 +464,12 @@ export default class llamacpp_extension extends AIEngine {
     // the UI unblocks; performLoad awaits it via ensureRouterReady().
     //
     // When a usable backend is already installed, start the router first so
-    // inference is available without waiting on the network-bound update check,
-    // then run configureBackends and restart the router only if the update
-    // swapped the backend. On a fresh install (no backend yet) configureBackends
-    // must run first to download one before the router can start.
+    // inference is available without waiting on the network-bound update check.
+    // A restart on the new binary is owned by updateBackend, which needs it to
+    // health-check the switch. On a fresh install (no backend yet)
+    // configureBackends must run first to download one before the router can start.
     this.backgroundInit = (async () => {
       if (await this.hasInstalledBackend()) {
-        const before = this.config?.version_backend
         try {
           await this.startRouter()
         } catch (e) {
@@ -473,19 +479,6 @@ export default class llamacpp_extension extends AIEngine {
           await this.configureBackends()
         } catch (e) {
           logger.error('configureBackends failed during onLoad:', e)
-        }
-        const after = this.config?.version_backend
-        if (
-          after &&
-          after !== 'none' &&
-          after.includes('/') &&
-          after !== before
-        ) {
-          try {
-            await this.startRouter()
-          } catch (e) {
-            logger.error('Router restart after backend update failed:', e)
-          }
         }
       } else {
         try {
@@ -1470,6 +1463,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     this.isUpdatingBackend = true
+    let previous: BackendSelection | undefined
 
     try {
       if (!targetBackendString)
@@ -1500,6 +1494,8 @@ export default class llamacpp_extension extends AIEngine {
         `Updating backend to ${targetBackendString} (backend type: ${backend})`
       )
 
+      previous = await this.captureBackendSelection()
+
       // Download new backend using the original asset/backend name
       await this.ensureBackendReady(backend, version)
 
@@ -1508,74 +1504,132 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // Map backend type for stored preference only (not for download/config)
-      const effectiveBackendType = await mapOldBackendToNew(backend)
-      const currentStoredBackend = await this.getStoredBackendType()
-
-      // Persist settings and stored preference before mutating in-memory config,
-      // so that if any of these steps fail, config remains consistent.
-
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'llamacpp_version') {
-            item.controllerProps.value = version
-          } else if (item.key === 'llamacpp_backend') {
-            item.controllerProps.value = backend
-          }
-          return item
-        })
-      )
-
-      if (currentStoredBackend !== effectiveBackendType) {
-        await this.setStoredBackendType(effectiveBackendType)
-        logger.info(
-          `Updated stored backend type preference: ${effectiveBackendType}`
+      // Gate the switch on dependency resolution. Elsewhere this check is
+      // advisory, but here a missing CUDA/ROCm runtime means the new router
+      // would never come up, and we still have a working backend to keep.
+      const verification = await verifyBackendInstallation(backend, version)
+      if (!verification.verified) {
+        throw new Error(
+          `Backend ${targetBackendString} is missing libraries: ${verification.missing_libraries.join(', ')}`
         )
       }
 
-      this.config.llamacpp_version = version
-      this.config.llamacpp_backend = backend
-      this.recomposeVersionBackend()
-      this.config.device = ''
+      await this.commitBackendSelection(version, backend)
 
-      logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-      if (events && typeof events.emit === 'function') {
-        events.emit('settingsChanged', {
-          key: 'llamacpp_version',
-          value: version,
-        })
-        events.emit('settingsChanged', {
-          key: 'llamacpp_backend',
-          value: backend,
-        })
+      if (await this.restartRouterAndProbe()) {
+        logger.info(`Successfully updated to backend: ${targetBackendString}`)
+        return { wasUpdated: true, newBackend: targetBackendString }
       }
 
-      // Clean up old versions — best-effort, don't fail the update if this errors
-      try {
-        const janDataFolderPath = await getJanDataFolderPath()
-        const backendsDir = await joinPath([
-          janDataFolderPath,
-          'llamacpp',
-          'backends',
-        ])
-
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-
-        await removeOldBackendVersions(backendsDir, version, backend)
-      } catch (cleanupError) {
-        logger.warn('Failed to remove old backend versions:', cleanupError)
-      }
-
-      return { wasUpdated: true, newBackend: targetBackendString }
+      throw new Error(
+        `Router failed its health check on backend ${targetBackendString}`
+      )
     } catch (error) {
       logger.error('Backend update failed:', error)
+      await this.rollbackBackendSelection(previous)
       return { wasUpdated: false, newBackend: this.config.version_backend }
     } finally {
       this.isUpdatingBackend = false
+    }
+  }
+
+  private async captureBackendSelection(): Promise<BackendSelection> {
+    return {
+      version: this.config.llamacpp_version,
+      backend: this.config.llamacpp_backend,
+      storedType: (await this.getStoredBackendType()) || undefined,
+    }
+  }
+
+  /**
+   * Persist a backend choice across all three places it lives: the settings
+   * file, the stored type preference, and in-memory config. Settings are
+   * written before the in-memory mutation so a failure leaves config coherent.
+   */
+  private async commitBackendSelection(
+    version: string,
+    backend: string
+  ): Promise<void> {
+    const effectiveBackendType = await mapOldBackendToNew(backend)
+    const currentStoredBackend = await this.getStoredBackendType()
+
+    const settings = await this.getSettings()
+    await this.updateSettings(
+      settings.map((item) => {
+        if (item.key === 'llamacpp_version') {
+          item.controllerProps.value = version
+        } else if (item.key === 'llamacpp_backend') {
+          item.controllerProps.value = backend
+        }
+        return item
+      })
+    )
+
+    if (currentStoredBackend !== effectiveBackendType) {
+      await this.setStoredBackendType(effectiveBackendType)
+      logger.info(
+        `Updated stored backend type preference: ${effectiveBackendType}`
+      )
+    }
+
+    this.config.llamacpp_version = version
+    this.config.llamacpp_backend = backend
+    this.recomposeVersionBackend()
+    this.config.device = ''
+
+    if (events && typeof events.emit === 'function') {
+      events.emit('settingsChanged', { key: 'llamacpp_version', value: version })
+      events.emit('settingsChanged', { key: 'llamacpp_backend', value: backend })
+    }
+  }
+
+  /**
+   * Bring the router up on whatever backend config currently names and confirm
+   * it answers `/health`. A spawn that throws and a process that starts but
+   * can't serve are the same failure to the caller.
+   */
+  private async restartRouterAndProbe(): Promise<boolean> {
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.error('Router failed to start on updated backend:', e)
+      return false
+    }
+    return await routerHealth()
+  }
+
+  /**
+   * Restore the backend that was active before a failed update and bring its
+   * router back. Nothing to do when the update failed before the commit, or
+   * when there was no valid prior selection (first-run install).
+   */
+  private async rollbackBackendSelection(
+    previous: BackendSelection | undefined
+  ): Promise<void> {
+    if (!previous?.version || !previous.backend) return
+    if (
+      this.config.llamacpp_version === previous.version &&
+      this.config.llamacpp_backend === previous.backend
+    ) {
+      return
+    }
+
+    const target = `${previous.version}/${previous.backend}`
+    logger.warn(`Rolling back to previous backend: ${target}`)
+    try {
+      await this.commitBackendSelection(previous.version, previous.backend)
+      if (previous.storedType) {
+        await this.setStoredBackendType(previous.storedType)
+      }
+      if (!(await this.restartRouterAndProbe())) {
+        logger.error(`Rollback target ${target} also failed its health check`)
+      }
+      events.emit(AppEvent.onBackendRollback, {
+        backend: previous.backend,
+        version: previous.version,
+      })
+    } catch (e) {
+      logger.error(`Rollback to ${target} failed:`, e)
     }
   }
 
