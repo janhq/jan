@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Installs the `jan` agent CLI on Linux and macOS: either a published build
-# from delta.jan.ai (default) or one compiled from this checkout (--source).
-# Windows has install-jan-agent.ps1; this script also works from Git Bash,
-# but only if `unzip` is available there.
+# Installs the `jan` agent CLI: either a published build from delta.jan.ai
+# (default) or one compiled from this checkout (--source).
 # Downloaded builds self-update via `jan update`; --source builds do not,
 # because the update channel is embedded only by the nightly CI.
 set -euo pipefail
@@ -157,8 +155,7 @@ install_published() {
   fi
 
   # TMP_DIR is global: the EXIT trap fires outside this function's scope.
-  # BSD mktemp (macOS) needs an explicit template, unlike GNU's bare -d.
-  TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jan-agent.XXXXXX")"
+  TMP_DIR="$(mktemp -d)"
   trap 'rm -rf "${TMP_DIR:-}"' EXIT
 
   local tmp="$TMP_DIR"
@@ -179,18 +176,15 @@ install_published() {
   fi
 
   if [ "$ARCHIVE_EXT" = "zip" ]; then
-    command -v unzip >/dev/null 2>&1 || die "unzip not found; on Windows use scripts/install-jan-agent.ps1"
+    command -v unzip >/dev/null 2>&1 || die "unzip not found"
     unzip -qo "$archive" -d "$tmp"
   else
     tar xzf "$archive" -C "$tmp"
   fi
 
-  # Published archives keep the binary at the root, but tar and 7z package it
-  # differently, so search by name rather than assuming a layout.
-  # `head -1` rather than find's -quit, which is not in POSIX; the `|| true`
-  # absorbs the SIGPIPE status that pipefail would otherwise treat as fatal.
+  # The Windows zip keeps the build-tree prefix, so search rather than assume.
   local extracted
-  extracted="$(find "$tmp" -type f -name "$BINARY_NAME" | head -1 || true)"
+  extracted="$(find "$tmp" -type f -name "$BINARY_NAME" -print -quit)"
   [ -n "$extracted" ] || die "no $BINARY_NAME inside the archive"
   chmod +x "$extracted"
   install_binary "$extracted"
