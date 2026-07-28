@@ -69,6 +69,7 @@ import {
   unloadLlamaModel,
   reloadRouterModels,
   routerHealth,
+  adoptRouter,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -742,6 +743,30 @@ export default class llamacpp_extension extends AIEngine {
       }
     } catch {
       /* ignore probe failures */
+    }
+
+    // A router can outlive the UI (crash, SIGKILL, power loss): kill_on_drop
+    // never runs and nothing in memory records it. Reuse it when it matches
+    // this config, so we neither strand a process holding VRAM nor pay a
+    // second cold start. A restart path reaches here having just stopped its
+    // router, which clears the lock, so this only fires on a genuine orphan.
+    try {
+      const adopted = await adoptRouter(
+        backendExe,
+        presetPath,
+        modelsMax,
+        this.apiSecret
+      )
+      if (adopted) {
+        this.routerPort = adopted.port
+        this.routerApiKey = adopted.api_key
+        logger.info(
+          `Adopted existing router on port ${adopted.port} (pid ${adopted.pid}); skipping spawn`
+        )
+        return
+      }
+    } catch (e) {
+      logger.warn('Router adoption failed; starting a fresh router:', e)
     }
 
     // --no-webui was renamed to --no-ui in upstream b9222. Keep the legacy

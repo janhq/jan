@@ -34,6 +34,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::reload_router_models,
             commands::router_slots_idle,
             commands::router_health,
+            commands::adopt_router,
             commands::get_devices,
             commands::generate_api_key,
             commands::ensure_session_ready,

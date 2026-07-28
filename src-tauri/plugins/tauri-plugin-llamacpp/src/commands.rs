@@ -875,6 +875,62 @@ pub async fn start_router<R: Runtime>(
     Ok(info)
 }
 
+/// Reuse a router that outlived its UI, or kill it if it no longer matches.
+///
+/// Returns the adopted endpoint, or `None` when the caller should spawn a
+/// fresh router. `api_secret` is used to re-derive the router's key from the
+/// port recorded in the lock file, so the key never has to be persisted.
+#[tauri::command]
+pub async fn adopt_router<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    backend_exe: String,
+    preset_path: String,
+    models_max: u32,
+    api_secret: String,
+) -> Result<Option<RouterInfo>, String> {
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let mut guard = state.router.lock().await;
+    if guard.is_some() {
+        return Err("Router is already running.".to_string());
+    }
+
+    let preset_path = std::path::PathBuf::from(preset_path);
+    let backend_exe = std::path::PathBuf::from(backend_exe);
+
+    let Some(lock) = crate::router::read_lock(&preset_path) else {
+        return Ok(None);
+    };
+    let api_key = generate_api_key(format!("router{}", lock.port), api_secret)?;
+
+    match crate::router::try_adopt_router(&preset_path, &backend_exe, models_max, api_key).await {
+        crate::router::AdoptOutcome::Adopted(handle) => {
+            let handle = *handle;
+            let info = RouterInfo {
+                port: handle.port,
+                api_key: handle.api_key.clone(),
+                pid: handle.pid,
+            };
+            state
+                .router_pid
+                .store(handle.pid, std::sync::atomic::Ordering::SeqCst);
+            *guard = Some(handle);
+
+            // The SSE subscriber is a plain HTTP client, so it reattaches to an
+            // adopted router exactly as it would to one we spawned.
+            let watcher =
+                spawn_unload_watcher(app_handle.clone(), info.port, info.api_key.clone());
+            *state.unload_watcher.lock().await = Some(watcher);
+
+            Ok(Some(info))
+        }
+        crate::router::AdoptOutcome::NothingToAdopt => Ok(None),
+        crate::router::AdoptOutcome::Killed(reason) => {
+            log::info!("Router not adopted ({}); caller will spawn a fresh one", reason);
+            Ok(None)
+        }
+    }
+}
+
 async fn stop_unload_watcher(state: &LlamacppState) {
     if let Some(handle) = state.unload_watcher.lock().await.take() {
         handle.abort();

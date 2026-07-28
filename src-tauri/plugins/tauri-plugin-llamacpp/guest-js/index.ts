@@ -193,6 +193,20 @@ export async function routerHealth(
   return await invoke('plugin:llamacpp|router_health', { port, apiKey })
 }
 
+export async function adoptRouter(
+  backendExe: string,
+  presetPath: string,
+  modelsMax: number,
+  apiSecret: string
+): Promise<{ port: number; api_key: string; pid: number } | null> {
+  return await invoke('plugin:llamacpp|adopt_router', {
+    backendExe,
+    presetPath,
+    modelsMax,
+    apiSecret,
+  })
+}
+
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp|read_gguf_metadata', { path })

@@ -44,6 +44,7 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
     unloadLlamaModel: vi.fn(),
     reloadRouterModels: vi.fn(),
     routerHealth: vi.fn().mockResolvedValue(true),
+    adoptRouter: vi.fn(),
   }
 })
 
@@ -1101,5 +1102,130 @@ describe('bootstrapDefaultEmbedder', () => {
       extension['bootstrapDefaultEmbedder']()
     ).resolves.toBeUndefined()
     expect(setBackendSetting).not.toHaveBeenCalled()
+  })
+})
+
+describe('router adoption after a UI crash', () => {
+  let extension: llamacpp_extension
+
+  const armStartRouter = async () => {
+    extension = new llamacpp_extension()
+    extension['config'] = {
+      version_backend: 'b9100/cpu',
+      models_max: 1,
+    } as never
+    extension['timeout'] = 600
+
+    const { generatePreset } = await import('../preset')
+    vi.mocked(generatePreset).mockResolvedValue({
+      path: '/jan/llamacpp/router.preset.ini',
+      embeddingCount: 0,
+    })
+    const { getJanDataFolderPath } = await import('@janhq/core')
+    vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
+    vi.spyOn(extension, 'getProviderPath').mockResolvedValue('/jan/llamacpp')
+
+    const backendModule = await import('../backend')
+    vi.mocked(backendModule.getBackendExePath).mockResolvedValue(
+      '/backends/b9100/cpu/llama-server'
+    )
+    vi.spyOn(extension as never, 'getRandomPort' as never).mockResolvedValue(
+      12345 as never
+    )
+    vi.spyOn(extension as never, 'generateApiKey' as never).mockResolvedValue(
+      'derived-key' as never
+    )
+
+    const { invoke } = await import('@tauri-apps/api/core')
+    // get_router_info: nothing running in memory, which is the post-crash state.
+    vi.mocked(invoke).mockResolvedValue(null)
+
+    const { adoptRouter } = await import('@janhq/tauri-plugin-llamacpp-api')
+    return { adoptRouter: vi.mocked(adoptRouter), invoke: vi.mocked(invoke) }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('reuses an adopted router instead of spawning a second one', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue({
+      port: 45678,
+      api_key: 'adopted-key',
+      pid: 999,
+    })
+
+    await extension['startRouter']()
+
+    expect(adoptRouter).toHaveBeenCalledTimes(1)
+    expect(extension['routerPort']).toBe(45678)
+    expect(extension['routerApiKey']).toBe('adopted-key')
+    expect(invoke).not.toHaveBeenCalledWith(
+      'plugin:llamacpp|start_router',
+      expect.anything()
+    )
+  })
+
+  it('spawns a fresh router when there is nothing to adopt', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(invoke).toHaveBeenCalledWith(
+      'plugin:llamacpp|start_router',
+      expect.anything()
+    )
+    expect(extension['routerPort']).toBe(12345)
+  })
+
+  it('falls back to spawning when adoption itself throws', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockRejectedValue(new Error('lock unreadable'))
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(invoke).toHaveBeenCalledWith(
+      'plugin:llamacpp|start_router',
+      expect.anything()
+    )
+  })
+
+  it('passes the effective models_max so an argv-only change is caught', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    extension['config'].models_max = 3 as never
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(adoptRouter).toHaveBeenCalledWith(
+      '/backends/b9100/cpu/llama-server',
+      '/jan/llamacpp/router.preset.ini',
+      3,
+      expect.any(String)
+    )
   })
 })

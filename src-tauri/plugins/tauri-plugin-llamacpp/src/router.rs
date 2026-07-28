@@ -91,11 +91,195 @@ use jan_utils::{
 };
 
 /// A handle to a running router-mode `llama-server` process.
+///
+/// `child` is `None` for a router adopted after a UI crash: we inherit the
+/// process but not its pipes, so readiness parsing, the OOM/backend-error
+/// callback, and log streaming are unavailable until the next restart.
+/// Termination falls back to the PID-based path.
 pub struct RouterHandle {
-    pub child: Child,
+    pub child: Option<Child>,
     pub port: u16,
     pub api_key: String,
     pub pid: u32,
+    /// Kept so the stop paths can clear the lock file that sits beside it.
+    pub preset_path: PathBuf,
+}
+
+/// On-disk record of a spawned router, written next to the preset so a
+/// relaunched UI can find a process its in-memory state knows nothing about.
+///
+/// `start_time` is the pid-reuse guard: a recycled PID belongs to a process
+/// that started later, so a mismatch means our router is gone. `backend_exe`
+/// and `preset_hash` decide adoptability -- a router running a different
+/// binary or a stale preset is killed rather than adopted.
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct RouterLock {
+    pub pid: u32,
+    pub port: u16,
+    pub start_time: u64,
+    pub backend_exe: String,
+    pub preset_hash: String,
+    /// An argv flag rather than a preset entry, so the preset hash cannot
+    /// catch a change to it.
+    pub models_max: u32,
+}
+
+pub const ROUTER_LOCK_FILENAME: &str = "router.lock.json";
+
+fn lock_path_for(preset_path: &Path) -> PathBuf {
+    preset_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(ROUTER_LOCK_FILENAME)
+}
+
+pub fn hash_preset(preset_path: &Path) -> String {
+    match std::fs::read(preset_path) {
+        Ok(bytes) => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            format!("{:x}", hasher.finalize())
+        }
+        Err(e) => {
+            log::warn!("hash_preset: cannot read {:?}: {}", preset_path, e);
+            String::new()
+        }
+    }
+}
+
+fn process_start_time(pid: u32) -> Option<u64> {
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true);
+    sys.process(Pid::from_u32(pid)).map(|p| p.start_time())
+}
+
+fn write_lock(preset_path: &Path, lock: &RouterLock) {
+    let path = lock_path_for(preset_path);
+    match serde_json::to_vec_pretty(lock) {
+        Ok(bytes) => {
+            if let Err(e) = std::fs::write(&path, bytes) {
+                log::warn!("Failed to write router lock {:?}: {}", path, e);
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize router lock: {}", e),
+    }
+}
+
+pub fn remove_lock(preset_path: &Path) {
+    let path = lock_path_for(preset_path);
+    if let Err(e) = std::fs::remove_file(&path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("Failed to remove router lock {:?}: {}", path, e);
+        }
+    }
+}
+
+pub fn read_lock(preset_path: &Path) -> Option<RouterLock> {
+    let path = lock_path_for(preset_path);
+    let bytes = std::fs::read(&path).ok()?;
+    match serde_json::from_slice::<RouterLock>(&bytes) {
+        Ok(l) => Some(l),
+        Err(e) => {
+            log::warn!("Discarding unreadable router lock {:?}: {}", path, e);
+            let _ = std::fs::remove_file(&path);
+            None
+        }
+    }
+}
+
+/// Outcome of inspecting a router that outlived its UI.
+pub enum AdoptOutcome {
+    /// Same binary, same preset, answering `/health` -- reuse it.
+    Adopted(Box<RouterHandle>),
+    /// Nothing usable was running (no lock, dead PID, or PID reused).
+    NothingToAdopt,
+    /// A router was running but could not be reused; it has been killed and
+    /// the caller should spawn a fresh one.
+    Killed(&'static str),
+}
+
+/// Decide what to do with a router recorded in the lock file. Never spawns.
+///
+/// The health probe is what makes adoption safe: a process that is alive but
+/// wedged is killed rather than inherited.
+pub async fn try_adopt_router(
+    preset_path: &Path,
+    backend_exe: &Path,
+    models_max: u32,
+    api_key: String,
+) -> AdoptOutcome {
+    let Some(lock) = read_lock(preset_path) else {
+        return AdoptOutcome::NothingToAdopt;
+    };
+
+    let Some(start_time) = process_start_time(lock.pid) else {
+        log::info!("Router lock pid {} is not running; discarding", lock.pid);
+        remove_lock(preset_path);
+        return AdoptOutcome::NothingToAdopt;
+    };
+    if start_time != lock.start_time {
+        log::info!(
+            "Router lock pid {} was reused (start_time {} != {}); discarding",
+            lock.pid,
+            start_time,
+            lock.start_time
+        );
+        remove_lock(preset_path);
+        return AdoptOutcome::NothingToAdopt;
+    }
+
+    let kill = |reason: &'static str| {
+        log::info!(
+            "Killing unadoptable router pid {} ({}); a fresh one will be spawned",
+            lock.pid,
+            reason
+        );
+        force_kill_router_tree_by_pid(lock.pid);
+        remove_lock(preset_path);
+        AdoptOutcome::Killed(reason)
+    };
+
+    if lock.backend_exe != backend_exe.to_string_lossy() {
+        return kill("backend changed");
+    }
+    if lock.preset_hash != hash_preset(preset_path) {
+        return kill("preset changed");
+    }
+    if lock.models_max != models_max {
+        return kill("models_max changed");
+    }
+
+    if !probe_health(lock.port, &api_key).await {
+        return kill("failed health check");
+    }
+
+    log::info!(
+        "Adopted router pid {} on port {} (no stdout/stderr pipes; logs unavailable until restart)",
+        lock.pid,
+        lock.port
+    );
+    AdoptOutcome::Adopted(Box::new(RouterHandle {
+        child: None,
+        port: lock.port,
+        api_key,
+        pid: lock.pid,
+        preset_path: preset_path.to_path_buf(),
+    }))
+}
+
+async fn probe_health(port: u16, api_key: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    else {
+        return false;
+    };
+    let url = format!("http://127.0.0.1:{}/health", port);
+    matches!(
+        client.get(&url).bearer_auth(api_key).send().await,
+        Ok(r) if r.status().is_success()
+    )
 }
 
 /// Build the argv for router mode. Pure / unit-testable.
@@ -367,11 +551,25 @@ pub async fn start_router(
     }
 
     let pid = child.id().unwrap_or(0);
+    write_lock(
+        &preset_path,
+        &RouterLock {
+            pid,
+            port,
+            // A PID we just spawned but cannot find is not worth recording:
+            // without a start_time the reuse guard cannot fire.
+            start_time: process_start_time(pid).unwrap_or(0),
+            backend_exe: backend_exe.to_string_lossy().to_string(),
+            preset_hash: hash_preset(&preset_path),
+            models_max,
+        },
+    );
     Ok(RouterHandle {
-        child,
+        child: Some(child),
         port,
         api_key,
         pid,
+        preset_path,
     })
 }
 
@@ -403,7 +601,7 @@ pub async fn try_graceful_stop_router(
         Ok(c) => c,
         Err(e) => {
             log::warn!("try_graceful_stop_router: failed to build http client: {}; terminating directly", e);
-            terminate_router_process(&mut handle.child).await;
+            terminate_router_process(&mut handle).await;
             return Ok(());
         }
     };
@@ -415,7 +613,7 @@ pub async fn try_graceful_stop_router(
                 "try_graceful_stop_router: GET /models failed ({}); router likely already down, terminating",
                 e
             );
-            terminate_router_process(&mut handle.child).await;
+            terminate_router_process(&mut handle).await;
             return Ok(());
         }
     };
@@ -477,7 +675,7 @@ pub async fn try_graceful_stop_router(
         tokio::time::sleep(Duration::from_millis(150).min(remaining)).await;
     }
 
-    terminate_router_process(&mut handle.child).await;
+    terminate_router_process(&mut handle).await;
     Ok(())
 }
 
@@ -566,7 +764,14 @@ async fn list_processing_models(
     busy
 }
 
-async fn terminate_router_process(child: &mut Child) {
+/// Terminate the router, using the owned `Child` when we have one and falling
+/// back to a PID-based tree kill for an adopted process.
+async fn terminate_router_process(handle: &mut RouterHandle) {
+    remove_lock(&handle.preset_path);
+    let Some(child) = handle.child.as_mut() else {
+        force_kill_router_tree_by_pid(handle.pid);
+        return;
+    };
     #[cfg(unix)]
     {
         crate::process::graceful_terminate_process(child).await;
@@ -612,6 +817,7 @@ pub fn force_kill_router_tree_by_pid(router_pid: u32) {
 
 /// Router is killed before children so it can't spawn new ones mid-sweep.
 pub async fn force_kill_router_tree(mut handle: RouterHandle) {
+    remove_lock(&handle.preset_path);
     let router_pid = handle.pid;
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
@@ -642,13 +848,143 @@ pub async fn force_kill_router_tree(mut handle: RouterHandle) {
         }
     }
 
-    let _ = handle.child.wait().await;
+    if let Some(child) = handle.child.as_mut() {
+        let _ = child.wait().await;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    fn preset_in(dir: &Path, body: &str) -> PathBuf {
+        let p = dir.join("router.preset.ini");
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    fn lock_for(preset: &Path, pid: u32, models_max: u32) -> RouterLock {
+        RouterLock {
+            pid,
+            port: 1337,
+            start_time: process_start_time(pid).unwrap_or(0),
+            backend_exe: "/backends/llama-server".to_string(),
+            preset_hash: hash_preset(preset),
+            models_max,
+        }
+    }
+
+    #[test]
+    fn lock_roundtrips_next_to_the_preset() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\n");
+        let lock = lock_for(&preset, 4242, 2);
+
+        write_lock(&preset, &lock);
+        assert!(dir.path().join(ROUTER_LOCK_FILENAME).exists());
+
+        let read = read_lock(&preset).expect("lock should be readable");
+        assert_eq!(read.pid, 4242);
+        assert_eq!(read.port, 1337);
+        assert_eq!(read.models_max, 2);
+
+        remove_lock(&preset);
+        assert!(read_lock(&preset).is_none());
+    }
+
+    #[test]
+    fn corrupt_lock_is_discarded_not_returned() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\n");
+        std::fs::write(dir.path().join(ROUTER_LOCK_FILENAME), b"{not json").unwrap();
+
+        assert!(read_lock(&preset).is_none());
+        // A lock we cannot parse must not survive to be retried forever.
+        assert!(!dir.path().join(ROUTER_LOCK_FILENAME).exists());
+    }
+
+    #[test]
+    fn removing_an_absent_lock_is_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\n");
+        remove_lock(&preset);
+        remove_lock(&preset);
+    }
+
+    #[test]
+    fn preset_hash_tracks_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\nctx_size=4096\n");
+        let before = hash_preset(&preset);
+
+        std::fs::write(&preset, "[*]\nctx_size=8192\n").unwrap();
+        assert_ne!(before, hash_preset(&preset));
+
+        std::fs::write(&preset, "[*]\nctx_size=4096\n").unwrap();
+        assert_eq!(before, hash_preset(&preset));
+    }
+
+    #[test]
+    fn missing_preset_hashes_empty_rather_than_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(hash_preset(&dir.path().join("absent.ini")), "");
+    }
+
+    #[tokio::test]
+    async fn no_lock_means_nothing_to_adopt() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\n");
+        let outcome = try_adopt_router(
+            &preset,
+            Path::new("/backends/llama-server"),
+            1,
+            "k".into(),
+        )
+        .await;
+        assert!(matches!(outcome, AdoptOutcome::NothingToAdopt));
+    }
+
+    #[tokio::test]
+    async fn dead_pid_discards_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\n");
+        // Never-valid PID: no process can match, so this exercises the
+        // liveness check without depending on a real one.
+        let mut lock = lock_for(&preset, u32::MAX, 1);
+        lock.start_time = 1;
+        write_lock(&preset, &lock);
+
+        let outcome = try_adopt_router(
+            &preset,
+            Path::new("/backends/llama-server"),
+            1,
+            "k".into(),
+        )
+        .await;
+        assert!(matches!(outcome, AdoptOutcome::NothingToAdopt));
+        assert!(read_lock(&preset).is_none());
+    }
+
+    #[tokio::test]
+    async fn pid_reuse_is_caught_by_start_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = preset_in(dir.path(), "[*]\n");
+        let mut lock = lock_for(&preset, std::process::id(), 1);
+        // Our own PID is alive, but this start_time cannot be ours.
+        lock.start_time = lock.start_time.wrapping_add(9999);
+        write_lock(&preset, &lock);
+
+        let outcome = try_adopt_router(
+            &preset,
+            Path::new("/backends/llama-server"),
+            1,
+            "k".into(),
+        )
+        .await;
+        assert!(matches!(outcome, AdoptOutcome::NothingToAdopt));
+        assert!(read_lock(&preset).is_none());
+    }
 
     #[test]
     fn router_args_contains_required_flags() {
