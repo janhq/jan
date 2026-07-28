@@ -87,12 +87,28 @@ jobs:
       - name: Strip universal binary
         run: strip universal/jan
 
+      - name: Check secrets configured
+        id: secrets-check
+        run: |
+          echo "has-cert=${{ secrets.CODE_SIGN_P12_BASE64 != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Get key for notarize
+        run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
+        shell: bash
+        env:
+          NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
+
+      - uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
+        if: steps.secrets-check.outputs.has-cert == 'true'
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+
       - name: Code sign (if certs configured)
         continue-on-error: true
         run: |
           if [ -n "${{ secrets.CODE_SIGN_P12_BASE64 }}" ]; then
-            echo "${{ secrets.CODE_SIGN_P12_BASE64 }}" | base64 -d > /tmp/cert.p12
-            security import /tmp/cert.p12 -P "${{ secrets.CODE_SIGN_P12_PASSWORD }}" -A
             codesign --force --sign "Developer ID Application" universal/jan --timestamp
           else
             echo "No signing cert configured; skipping code sign."
@@ -105,6 +121,19 @@ jobs:
           FILE_NAME="jan-agent-darwin-universal-$VERSION.tar.gz"
           tar czf "$FILE_NAME" -C universal jan
           echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Notarize (if configured)
+        continue-on-error: true
+        run: |
+          if [ -n "${{ secrets.NOTARY_ISSUER }}" ]; then
+            xcrun notarytool submit "${{ steps.package.outputs.FILE_NAME }}" \
+              --key /tmp/notary-key.p8 \
+              --key-id "${{ secrets.NOTARY_KEY_ID }}" \
+              --issuer "${{ secrets.NOTARY_ISSUER }}" \
+              --wait
+          else
+            echo "No notary key configured; skipping notarization."
+          fi
 
       - name: Upload to S3
         run: |
