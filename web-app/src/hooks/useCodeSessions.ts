@@ -70,6 +70,24 @@ export type Usage = {
 // the dispatcher, reachable via agent_run's `plan` body field).
 export type CodeRunMode = 'normal' | 'yolo' | 'plan'
 
+// Mirrors the Rust `TodoItem`/`TodoPhase`/`TodoList` structs (todo.rs)
+// verbatim, same convention as `Usage` above.
+export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'abandoned'
+
+export type TodoItem = {
+  content: string
+  status: TodoStatus
+}
+
+export type TodoPhase = {
+  name: string
+  tasks: TodoItem[]
+}
+
+export type TodoList = {
+  phases: TodoPhase[]
+}
+
 export type CodeSession = {
   id: string
   title: string
@@ -89,6 +107,11 @@ export type CodeSession = {
   // `/goal <condition>`, checked after each turn completes, cleared by
   // `/goal clear` or once the evaluator reports it met.
   goal?: CodeGoal
+  // Canonical session todo list (mirrors the TUI's todo tool/HUD, see
+  // todo.rs). Sent back to agent_run each turn so the model's plan persists
+  // across turns; updated from `todo_update` stream events. Undefined until
+  // the model first calls the `todo` tool.
+  todos?: TodoList
   updated: number
 }
 
@@ -110,6 +133,7 @@ type CodeSessionsState = {
   setMode: (id: string, mode: CodeRunMode) => void
   setHistory: (id: string, history: CodeMessage[]) => void
   setGoal: (id: string, goal: CodeGoal | null) => void
+  setTodos: (id: string, todos: TodoList) => void
   commitTurns: (
     id: string,
     turns: CodeTurn[],
@@ -187,6 +211,11 @@ export const useCodeSessions = create<CodeSessionsState>()(
           sessions: s.sessions.map((x) =>
             x.id === id ? { ...x, goal: goal ?? undefined } : x
           ),
+        })),
+
+      setTodos: (id, todos) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) => (x.id === id ? { ...x, todos } : x)),
         })),
 
       commitTurns: (id, turns, history, subagents, usage) =>

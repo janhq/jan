@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CodeTurn, SubagentRun, Usage, CodeMessage } from '@/hooks/useCodeSessions'
+import type { CodeTurn, SubagentRun, Usage, CodeMessage, TodoList } from '@/hooks/useCodeSessions'
 import type { PendingPermission } from '@/containers/dialogs/CodePermissionDialog'
 
 // StreamEvent shapes emitted by the Rust agent loop (events.rs, tag = "type").
@@ -12,6 +12,7 @@ export type StreamEvent =
   | { type: 'done'; stop_reason: string; usage: Usage | null }
   | { type: 'error'; code: string; message: string }
   | { type: 'messages_updated'; messages: CodeMessage[] }
+  | { type: 'todo_update'; list: TodoList }
   | {
       type: 'permission_request'
       request_id: string
