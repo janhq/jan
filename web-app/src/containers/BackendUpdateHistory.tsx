@@ -8,7 +8,7 @@ export type BackendUpdateRecord = {
   timestamp: string
   from: string
   to: string
-  outcome: 'updated' | 'rolled-back' | 'failed'
+  outcome: 'updated' | 'rolled-back' | 'rollback-failed' | 'failed'
   durationMs: number
   error?: string
 }
@@ -29,6 +29,7 @@ function getHistoryProvider(): HistoryProvider | null {
 const OUTCOME_LABELS: Record<BackendUpdateRecord['outcome'], string> = {
   updated: 'providers:backendHistoryUpdated',
   'rolled-back': 'providers:backendHistoryRolledBack',
+  'rollback-failed': 'providers:backendHistoryRollbackFailed',
   failed: 'providers:backendHistoryFailed',
 }
 

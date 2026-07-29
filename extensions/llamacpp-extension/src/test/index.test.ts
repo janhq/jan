@@ -913,7 +913,29 @@ describe('llamacpp_extension', () => {
         expect(removeOldBackendVersions).not.toHaveBeenCalled()
       })
 
-      it('records the outcome of a failed switch as rolled-back', async () => {
+      it('records the outcome of a failed switch as rolled-back when the rollback target is healthy', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const written: unknown[] = []
+        extension['recordUpdateHistory'] = vi.fn(async (r) => {
+          written.push(r)
+        })
+        const { routerHealth } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(routerHealth)
+          .mockResolvedValueOnce(false)
+          .mockResolvedValueOnce(true)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(written).toHaveLength(1)
+        expect(written[0]).toMatchObject({
+          from: 'v1.0.0/linux-avx2-x64',
+          to: 'v2.0.0/linux-avx2-x64',
+          outcome: 'rolled-back',
+        })
+      })
+
+      it('records the outcome as rollback-failed when the rollback target also fails its health check', async () => {
         await armUpdate(extension)
         extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
         const written: unknown[] = []
@@ -929,7 +951,7 @@ describe('llamacpp_extension', () => {
         expect(written[0]).toMatchObject({
           from: 'v1.0.0/linux-avx2-x64',
           to: 'v2.0.0/linux-avx2-x64',
-          outcome: 'rolled-back',
+          outcome: 'rollback-failed',
         })
       })
 

@@ -14,6 +14,7 @@
   "backendHistoryNone": "none",
   "backendHistoryUpdated": "Updated",
   "backendHistoryRolledBack": "Rolled back",
+  "backendHistoryRollbackFailed": "Rollback failed",
   "backendHistoryFailed": "Failed",
   "chatModels": "Chat Models",
   "embeddingModels": "Embedding Models",

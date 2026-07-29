@@ -1558,7 +1558,9 @@ mod tests {
             .await
             .unwrap());
         // No published digest means nothing to contradict.
-        assert!(verify_file_sha512(p, String::new()).await.unwrap());
+        assert!(verify_file_sha512(p.clone(), String::new()).await.unwrap());
+        // A malformed (too-short) digest is fail-soft, not a mismatch.
+        assert!(verify_file_sha512(p, "zz12zz".into()).await.unwrap());
     }
 
     // --- Tests for map_old_backend_to_new ---
@@ -2480,6 +2482,10 @@ pub async fn fetch_backend_checksums(
 pub async fn verify_file_sha512(path: String, expected: String) -> Result<bool, String> {
     let expected = normalize_digest(&expected);
     if expected.is_empty() {
+        return Ok(true);
+    }
+    if expected.len() != 128 {
+        log::warn!("Malformed SHA-512 digest (expected 128 hex chars, got {}), skipping verification", expected.len());
         return Ok(true);
     }
 

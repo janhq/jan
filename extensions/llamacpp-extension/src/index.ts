@@ -109,7 +109,7 @@ type BackendUpdateRecord = {
   timestamp: string
   from: string
   to: string
-  outcome: 'updated' | 'rolled-back' | 'failed'
+  outcome: 'updated' | 'rolled-back' | 'rollback-failed' | 'failed'
   durationMs: number
   error?: string
 }
@@ -1644,11 +1644,12 @@ export default class llamacpp_extension extends AIEngine {
       )
     } catch (error) {
       logger.error('Backend update failed:', error)
-      const rolledBack = await this.rollbackBackendSelection(previous)
+      const rollbackOutcome = await this.rollbackBackendSelection(previous)
       await this.recordUpdateHistory({
         from,
         to: targetBackendString,
-        outcome: rolledBack ? 'rolled-back' : 'failed',
+        outcome:
+          rollbackOutcome === 'not-attempted' ? 'failed' : rollbackOutcome,
         error: String(error),
         durationMs: Date.now() - startedAt,
       })
@@ -1814,13 +1815,13 @@ export default class llamacpp_extension extends AIEngine {
    */
   private async rollbackBackendSelection(
     previous: BackendSelection | undefined
-  ): Promise<boolean> {
-    if (!previous?.version || !previous.backend) return false
+  ): Promise<'rolled-back' | 'rollback-failed' | 'not-attempted'> {
+    if (!previous?.version || !previous.backend) return 'not-attempted'
     if (
       this.config.llamacpp_version === previous.version &&
       this.config.llamacpp_backend === previous.backend
     ) {
-      return false
+      return 'not-attempted'
     }
 
     const target = `${previous.version}/${previous.backend}`
@@ -1830,17 +1831,18 @@ export default class llamacpp_extension extends AIEngine {
       if (previous.storedType) {
         await this.setStoredBackendType(previous.storedType)
       }
-      if (!(await this.restartRouterAndProbe())) {
+      const healthy = await this.restartRouterAndProbe()
+      if (!healthy) {
         logger.error(`Rollback target ${target} also failed its health check`)
       }
       events.emit(AppEvent.onBackendRollback, {
         backend: previous.backend,
         version: previous.version,
       })
-      return true
+      return healthy ? 'rolled-back' : 'rollback-failed'
     } catch (e) {
       logger.error(`Rollback to ${target} failed:`, e)
-      return false
+      return 'rollback-failed'
     }
   }
 
