@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
 import { Input } from '@/components/ui/input'
@@ -23,6 +23,8 @@ export const Route = createFileRoute(route.artifacts as any)({
   component: ArtifactsPage,
 })
 
+const PAGE = 24
+
 type Row = CodeArtifact & { sessionId: string; root: string | null }
 
 function ArtifactsPage() {
@@ -32,6 +34,10 @@ function ArtifactsPage() {
   const sessions = useCodeSessions((s) => s.sessions)
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<CodeArtifact['group'] | null>(null)
+  // ponytail: a render cap with "show more" rather than paging or a virtual
+  // list. Search and the kind filter already narrow the set, and the DOM cost
+  // is the only real problem. Swap for virtualization if this gets thousands.
+  const [limit, setLimit] = useState(PAGE)
 
   // ponytail: derived from the sessions already on disk rather than a durable
   // artifact store (#299). No registration path, no migration — the trade-off
@@ -61,6 +67,9 @@ function ArtifactsPage() {
         (!q || r.title.toLowerCase().includes(q) || r.path.toLowerCase().includes(q))
     )
   }, [rows, query, group])
+
+  // Narrowing the set should start from the top again.
+  useEffect(() => setLimit(PAGE), [query, group])
 
   const open = (row: Row) => {
     useCodeSessions.getState().selectSession(row.sessionId)
@@ -116,7 +125,7 @@ function ArtifactsPage() {
           </p>
         ) : (
           <div className="grid flex-1 auto-rows-min gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-            {shown.map((row) => {
+            {shown.slice(0, limit).map((row) => {
               const Icon = ARTIFACT_ICON[row.group]
               const kind = previewKindFor(row.path)
               const abs = row.root ? resolveInRoot(row.root, row.path) : null
@@ -165,6 +174,15 @@ function ArtifactsPage() {
                 </button>
               )
             })}
+            {shown.length > limit && (
+              <button
+                type="button"
+                onClick={() => setLimit((n) => n + PAGE)}
+                className="col-span-full mx-auto my-2 rounded-md border px-3 py-1.5 text-[13px] hover:bg-main-view-fg/5"
+              >
+                {t('common:artifactsShowMore', { count: shown.length - limit })}
+              </button>
+            )}
           </div>
         )}
       </div>
