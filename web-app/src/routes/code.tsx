@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { FileDiff, GitBranch, Laptop, Folder, Sparkles, ListTodo } from 'lucide-react'
+import { FileDiff, GitBranch, Laptop, Folder, Sparkles, ListTodo, Eye } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -44,6 +44,7 @@ import CodeModeSelector from '@/containers/CodeModeSelector'
 import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
 import { CodeDiffPanel } from '@/containers/CodeDiffPanel'
 import { CodeTodoPanel } from '@/containers/CodeTodoPanel'
+import { CodePreviewPanel } from '@/containers/CodePreviewPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { collectCodeFileDiffs } from '@/lib/codeDiffs'
 import { contentLength, hasContent } from '@/lib/codeHistory'
@@ -67,7 +68,7 @@ export const Route = createFileRoute(route.code as any)({
   component: CodePage,
 })
 
-type CodeSidePanelView = 'subagents' | 'diff' | 'todos'
+type CodeSidePanelView = 'subagents' | 'diff' | 'todos' | 'preview'
 
 // Per-run cumulative token ceiling (one agent_run = one multi-step task). Since
 // `max_turns: 0`, this cumulative *spend* bound (prompt replays + completions,
@@ -971,6 +972,19 @@ function CodePage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    variant={activePanel === 'preview' ? 'secondary' : 'ghost'}
+                    size="icon-sm"
+                    onClick={() => togglePanel('preview')}
+                    aria-label={t('common:previewPanelTitle')}
+                  >
+                    <Eye size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('common:previewPanelTitle')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
                     variant={activePanel === 'diff' ? 'secondary' : 'ghost'}
                     size="icon-sm"
                     onClick={() => togglePanel('diff')}
@@ -1140,6 +1154,12 @@ function CodePage() {
           />
         ) : activePanel === 'todos' ? (
           <CodeTodoPanel todos={current?.todos} onClose={() => setActivePanel(null)} />
+        ) : activePanel === 'preview' ? (
+          <CodePreviewPanel
+            files={codeDiffs.map((d) => d.path)}
+            root={folder}
+            onClose={() => setActivePanel(null)}
+          />
         ) : null}
       </div>
 
