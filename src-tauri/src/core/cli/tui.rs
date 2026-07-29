@@ -3917,6 +3917,22 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
 ];
 
+/// Every keybinding worth advertising, as `(keys, description)`. Single source
+/// of truth for the `/help` listing and the first-run footer hint, so the two
+/// can't drift. Deliberately not rendered on every frame -- the footer is for
+/// transient state (running, prompts, pickers), not a permanent cheat sheet.
+const KEY_BINDINGS: &[(&str, &str)] = &[
+    ("Enter", "Send the message"),
+    ("Alt+Enter / Ctrl-J", "Insert a newline"),
+    ("Esc / Ctrl-C", "Cancel the running turn"),
+    ("Esc Esc", "Rewind to an earlier message"),
+    ("↑/↓", "Scroll the transcript"),
+    ("Ctrl-O", "Expand or collapse all tool calls"),
+    ("Ctrl-V", "Paste an image from the clipboard"),
+    ("Ctrl-T", "Toggle mouse capture off to select/copy text"),
+    ("Ctrl-D", "Quit"),
+];
+
 /// Split a command line into `(name, arg)`, UTF-8 safe (no byte slicing).
 fn parse_command(line: &str) -> (&str, &str) {
     match line.trim().split_once(char::is_whitespace) {
@@ -3943,10 +3959,14 @@ async fn run_command(app: &mut App, line: &str) {
                     Style::new().dim(),
                 ));
             }
-            app.push(Line::styled(
-                "  Ctrl-T toggles mouse capture off to select/copy text".to_string(),
-                Style::new().dim(),
-            ));
+            app.gap(Kind::Meta);
+            app.push(Line::styled("keys:".to_string(), Style::new().dim()));
+            for (keys, description) in KEY_BINDINGS {
+                app.push(Line::styled(
+                    format!("  {keys:18} {description}"),
+                    Style::new().dim(),
+                ));
+            }
         }
         "clear" => {
             app.reset_session();
@@ -6124,17 +6144,17 @@ fn footer(app: &App) -> Paragraph<'static> {
             s
         }
         Status::Idle => {
-            let mut s = hint_spans(
-                key_style,
-                &[
-                    ("Enter", "send"),
-                    ("Alt+Enter", "newline"),
-                    ("/help", ""),
-                    ("↑/↓", "scroll"),
-                    ("Ctrl-O", "expand all"),
-                    ("Ctrl-D", "quit"),
-                ],
-            );
+            // Idle is the default state, so a permanent cheat sheet here is
+            // pure noise -- the full list lives in `/help`. Show a one-time
+            // pointer on a session that hasn't been used yet (fresh start,
+            // `/new`, `/clear`), then go quiet after the first message.
+            let mut s = if app.history.is_empty() {
+                hint_spans(key_style, &[("/help", "for commands and keys")])
+            } else {
+                // Matches the leading pad `hint_spans` emits, so a queue count
+                // or detail suffix lands in the same column either way.
+                vec![Span::raw(" ")]
+            };
             if queue_count > 0 {
                 s.insert(0, Span::styled(
                     format!("⏳ Queued ({queue_count})  "),
@@ -6145,8 +6165,11 @@ fn footer(app: &App) -> Paragraph<'static> {
         }
     };
     if !app.detail.is_empty() {
+        // Only separate from a preceding hint; on a bare idle footer the detail
+        // is the whole line and should start at the same column as the hints.
+        let pad = if spans.len() > 1 { "   " } else { "" };
         spans.push(Span::styled(
-            format!("   {}", app.detail),
+            format!("{pad}{}", app.detail),
             Style::new().dim(),
         ));
     }
@@ -6165,7 +6188,8 @@ mod tests {
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS,
+        SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
@@ -8822,6 +8846,64 @@ mod tests {
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
+    }
+
+    /// `/help` is the home for keybindings now that the footer no longer
+    /// carries them, so every advertised binding has to reach the listing.
+    #[tokio::test]
+    async fn help_lists_every_keybinding() {
+        let mut app = test_app();
+        run_command(&mut app, "help").await;
+        let text: String = app.transcript.iter().map(line_text).collect();
+        for (keys, description) in KEY_BINDINGS {
+            assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
+            assert!(
+                text.contains(description),
+                "missing description {description:?} in: {text}"
+            );
+        }
+    }
+
+    /// The idle footer is a one-time pointer, not a permanent cheat sheet: it
+    /// names `/help` on an unused session and goes quiet after the first
+    /// message, so the row stops competing with the transcript.
+    #[test]
+    fn idle_hint_shows_once_then_goes_quiet() {
+        let mut app = test_app();
+        let fresh = render_rows(&mut app, 80, 12);
+        assert!(
+            fresh.iter().any(|r| r.contains("/help")),
+            "a fresh session should point at /help: {fresh:?}"
+        );
+
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        let used = render_rows(&mut app, 80, 12);
+        assert!(
+            !used.iter().any(|r| r.contains("/help")),
+            "hint should be gone once the session is in use: {used:?}"
+        );
+
+        // `/new` and `/clear` drop history, so the pointer comes back.
+        app.reset_session();
+        let reset = render_rows(&mut app, 80, 12);
+        assert!(
+            reset.iter().any(|r| r.contains("/help")),
+            "a reset session should point at /help again: {reset:?}"
+        );
+    }
+
+    /// A running turn still needs its transient hints -- only the idle cheat
+    /// sheet was removed.
+    #[test]
+    fn running_footer_keeps_its_hints() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        app.status = Status::Running;
+        let rows = render_rows(&mut app, 80, 12);
+        assert!(
+            rows.iter().any(|r| r.contains("cancel")),
+            "running footer should still offer cancel: {rows:?}"
+        );
     }
 
     #[test]
