@@ -6,11 +6,19 @@ import type { CodeTurn } from '@/hooks/useCodeSessions'
  * Artifacts a run produced, derived from its `write`/`edit` tool calls
  * (jan-internal #242 / #304).
  *
- * Deliberately not "every file the agent touched": a run also writes
- * `package.json`, lockfiles, config and source, and surfacing those as
- * artifacts turns the list into noise. Those changes are already visible in the
- * diff panel (#285), which is the right surface for "what did the agent change".
- * This is the narrower question: "what did it make *for me*".
+ * Two filters, because either alone is wrong:
+ *
+ * 1. The path must look like a deliverable (see the extension allowlist).
+ * 2. The agent must have **created** the file, not modified an existing one.
+ *
+ * (2) is what makes this usable on a real codebase. On an empty folder the
+ * allowlist alone is fine, but in a repo of thousands of files `.md`, `.svg`,
+ * `.html`, `.csv` and images *are* the codebase — editing READMEs or icons
+ * would otherwise flood the library with source assets. A file the agent
+ * brought into existence is a deliverable; one it edited was already yours.
+ *
+ * Modifications remain visible in the diff panel (#285), which is the right
+ * surface for "what did the agent change".
  */
 export type CodeArtifact = {
   /** Project-relative path, as the tool reported it. */
@@ -68,10 +76,36 @@ export const ARTIFACT_ICON = {
 
 export const ARTIFACT_GROUP_NAMES = ['Code', 'Image', 'Document'] as const
 
+/**
+ * Did this write bring a new file into existence?
+ *
+ * `write` reports `Created <path> (<n> bytes)` or `Overwrote <path> (...)`
+ * (handlers.rs), and its diff is headed `@@ created file @@` for a new file.
+ * On a UIMessage part the diff is prepended to the result, so the marker is not
+ * at position 0 — hence `includes` rather than `startsWith`.
+ *
+ * Sessions written before the tool reported this said `Wrote N bytes to <path>`
+ * with no create/modify distinction. Those are treated as creations: they are
+ * historical, and dropping them would silently empty an existing library.
+ */
+export function createdNewFile(value: unknown): boolean {
+  // A UIMessagePart's `output` is typed `unknown`, so narrow here rather than
+  // casting at every call site.
+  const text = typeof value === 'string' ? value : ''
+  if (!text) return false
+  if (text.includes('Overwrote ')) return false
+  return (
+    text.includes('Created ') ||
+    text.includes('@@ created file @@') ||
+    text.includes('Wrote ') // legacy format, no distinction available
+  )
+}
+
 type PartLike = {
   type?: string
   input?: unknown
   state?: string
+  output?: unknown
 }
 
 const pathFromInput = (input: unknown): string | undefined => {
@@ -96,9 +130,11 @@ export function artifactsFromParts(parts: PartLike[] | undefined): CodeArtifact[
   const out: CodeArtifact[] = []
   const seen = new Set<string>()
   for (const part of parts) {
-    if (part.type !== 'tool-write' && part.type !== 'tool-edit') continue
+    // `edit` targets a file that already existed, so it never creates one.
+    if (part.type !== 'tool-write') continue
     // Only a call that actually completed produced a file.
     if (part.state && part.state !== 'output-available') continue
+    if (!createdNewFile(part.output)) continue
     const path = pathFromInput(part.input)
     if (!path || seen.has(path)) continue
     const artifact = artifactFor(path)
@@ -125,9 +161,11 @@ export function artifactsFromTurns(turns: CodeTurn[] | undefined): CodeArtifact[
   const byPath = new Map<string, CodeArtifact>()
   for (const turn of turns) {
     if (turn.role !== 'tool') continue
-    if (turn.name !== 'write' && turn.name !== 'edit') continue
+    // `edit` targets a file that already existed, so it never creates one.
+    if (turn.name !== 'write') continue
     // Only a completed, non-error call produced a file.
     if (turn.isError || turn.status === 'running') continue
+    if (!createdNewFile(turn.result ?? turn.content)) continue
     const path = pathFromInput(turn.args)
     if (!path) continue
     const artifact = artifactFor(path)
