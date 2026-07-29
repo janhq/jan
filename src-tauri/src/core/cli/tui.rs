@@ -669,6 +669,11 @@ struct SubagentPanel {
     /// mark of how full its window is, which is the number worth watching --
     /// a subagent silently filling its context is the failure this surfaces.
     prompt_tokens: u64,
+    /// The call the child is currently assembling, if any. Without this a
+    /// child streaming a large `write` reports nothing at all for the whole
+    /// request -- no completed tool call yet, so a stats line frozen at
+    /// "0 tools" and an activity line stuck on "starting…".
+    active: Option<StartingCall>,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -1729,6 +1734,7 @@ impl App {
                     calls: Vec::new(),
                     requests: 0,
                     prompt_tokens: 0,
+                    active: None,
                 });
             }
             StreamEvent::SubagentEnd { run_id, name } => {
@@ -1803,14 +1809,34 @@ impl App {
     fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
         match event {
             StreamEvent::ToolCall {
-                name: tool, args, ..
+                id, name: tool, args,
             } => {
                 let max = self.render_width().saturating_sub(6) as usize;
                 let label = truncate(&subagent_activity(&tool, &args), max);
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    // The completed call supersedes its in-progress view.
+                    if panel.active.as_ref().is_some_and(|c| c.id == id) {
+                        panel.active = None;
+                    }
                     // Full history retained for expansion; the panel renders only
                     // the last SUBAGENT_WINDOW.
                     panel.calls.push(label);
+                }
+            }
+            // A child's arguments stream just like the parent's, and for a big
+            // `write` that window is most of the run. Track it so the panel
+            // reports the call being built instead of going silent until it
+            // lands.
+            StreamEvent::ToolCallStarted { id, name: tool } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.active = Some(StartingCall::new(id, tool));
+                }
+            }
+            StreamEvent::ToolCallArgsDelta { id, delta } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    if let Some(call) = panel.active.as_mut().filter(|c| c.id == id) {
+                        call.args.push_str(&delta);
+                    }
                 }
             }
             StreamEvent::PermissionRequest {
@@ -2463,6 +2489,19 @@ impl StartingCall {
         let total = body.bytes().filter(|&b| b == b'\n').count() + 1;
         self.preview.skipped = total - tail.len();
         self.preview.tail = Some(tail);
+    }
+}
+
+impl StartingCall {
+    /// One-line "what is this call doing" for a compact row, resolved as far as
+    /// the arguments allow: the destination once `path` has streamed, the tool
+    /// name alone before that.
+    fn activity_label(&mut self) -> String {
+        self.refresh_preview();
+        match self.preview.path.as_deref() {
+            Some(path) if !path.is_empty() => format!("{} {path}", self.name),
+            _ => format!("{}…", self.name),
+        }
     }
 }
 
@@ -5484,7 +5523,13 @@ fn draw(f: &mut Frame, app: &mut App) {
         if !last_blank {
             lines.push(Line::raw(""));
         }
-        lines.extend(subagent_panel_lines(&app.subagents, app.context_window, width));
+        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        lines.extend(subagent_panel_lines(
+            &mut app.subagents,
+            app.context_window,
+            width,
+            frame,
+        ));
     }
     if !app.assistant_buf.is_empty() {
         let tail = format_assistant_lines(&app.assistant_buf, width);
@@ -6043,9 +6088,10 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
 /// current activity, so the whole fan-out fits in one glance and stays a fixed
 /// height as the work runs.
 fn subagent_panel_lines(
-    panels: &[SubagentPanel],
+    panels: &mut [SubagentPanel],
     context_window: u64,
     width: u16,
+    frame: &str,
 ) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let mut out = vec![Line::from(vec![
@@ -6105,12 +6151,21 @@ fn subagent_panel_lines(
             ));
         }
 
-        if panel.calls.is_empty() {
-            out.push(indented_row("starting…", Style::new().dim()));
-        }
         let start = panel.calls.len().saturating_sub(window);
         for label in &panel.calls[start..] {
             out.push(indented_row(label.clone(), Style::new().dim()));
+        }
+        // The call currently being assembled trails the finished ones, so the
+        // row keeps moving through a long argument stream.
+        match panel.active.as_mut() {
+            Some(call) => out.push(indented_row(
+                format!("{frame} {}", call.activity_label()),
+                Style::new().cyan().dim(),
+            )),
+            None if panel.calls.is_empty() => {
+                out.push(indented_row("starting…", Style::new().dim()))
+            }
+            None => {}
         }
     }
     out
@@ -9391,6 +9446,61 @@ mod tests {
             rows.iter().filter(|r| r.contains("alpha.rs") || r.contains("beta.rs")).count(),
             2,
             "expected exactly one activity line per agent: {out}"
+        );
+    }
+
+    /// Regression: a child streaming a large `write` completes no tool call
+    /// for the whole request, so the panel used to sit frozen on
+    /// "0 tools / starting…" for exactly the stretch the user most wants
+    /// feedback on. Its in-flight call must report progress like the parent's.
+    #[test]
+    fn subagent_reports_its_in_flight_call() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "flappy-2d");
+        subagent_event(&mut app, "r0", "flappy-2d", StreamEvent::Step { index: 1, max: 8 });
+
+        // The child announces a write and starts streaming its arguments --
+        // no ToolCall yet, which is the whole problem.
+        subagent_event(
+            &mut app,
+            "r0",
+            "flappy-2d",
+            StreamEvent::ToolCallStarted { id: "c1".into(), name: "write".into() },
+        );
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(!out.contains("starting…"), "should have moved off the placeholder: {out}");
+        assert!(out.contains("write"), "should name the tool being assembled: {out}");
+
+        // Once the path arrives it names the destination, still mid-stream.
+        for delta in [r#"{"path":"flappy"#, r#"-2d.html","content":"<!doct"#] {
+            subagent_event(
+                &mut app,
+                "r0",
+                "flappy-2d",
+                StreamEvent::ToolCallArgsDelta { id: "c1".into(), delta: delta.into() },
+            );
+        }
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("flappy-2d.html"), "destination should surface: {out}");
+        assert!(out.contains("0 tools"), "still no completed call: {out}");
+
+        // The completed call supersedes the in-progress row.
+        subagent_event(
+            &mut app,
+            "r0",
+            "flappy-2d",
+            StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "write".into(),
+                args: json!({ "path": "flappy-2d.html" }),
+            },
+        );
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("1 tool "), "completed call should count: {out}");
+        assert_eq!(
+            app.subagents[0].active.is_none(),
+            true,
+            "in-flight view should clear once the call lands"
         );
     }
 
