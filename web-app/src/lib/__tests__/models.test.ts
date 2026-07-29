@@ -8,6 +8,7 @@ import {
   extractQuantLabel,
   getModelCapabilities,
   selectDefaultQuant,
+  isManuallyAdded,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
 
@@ -380,5 +381,31 @@ describe('getModelCapabilities', () => {
     expect(capabilities).toContain(ModelCapabilities.COMPLETION)
     expect(capabilities).toContain(ModelCapabilities.TOOLS)
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+})
+
+describe('isManuallyAdded', () => {
+  it('returns true when the manuallyAdded flag is set', () => {
+    expect(isManuallyAdded({ id: 'gpt-4', manuallyAdded: true })).toBe(true)
+  })
+
+  it('returns true for imported local models', () => {
+    expect(isManuallyAdded({ id: 'local.gguf', imported: true })).toBe(true)
+  })
+
+  it('returns false for plain auto-fetched models', () => {
+    expect(isManuallyAdded({ id: 'gpt-4' })).toBe(false)
+  })
+
+  it('does NOT treat a catalog displayName as manual', () => {
+    // Read-time check relies solely on the persisted flags — displayName is a
+    // migration-only heuristic and must not leak into this predicate.
+    expect(isManuallyAdded({ id: 'gpt-4', displayName: 'GPT-4' })).toBe(false)
+  })
+
+  it('does NOT treat user-configured capabilities as manual at read time', () => {
+    expect(
+      isManuallyAdded({ id: 'gpt-4', _userConfiguredCapabilities: true })
+    ).toBe(false)
   })
 })

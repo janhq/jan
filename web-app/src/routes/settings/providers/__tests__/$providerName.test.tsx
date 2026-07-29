@@ -284,6 +284,7 @@ vi.mock('@tabler/icons-react', () => ({
   IconInfoCircle: () => <span />,
   IconLoader: () => <span />,
   IconRefresh: () => <span />,
+  IconFilter: () => <span />,
   IconUpload: () => <span />,
   IconTrash: () => <span />,
   IconCircle: () => <span />,

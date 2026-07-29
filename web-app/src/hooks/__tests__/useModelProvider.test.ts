@@ -435,4 +435,55 @@ describe('useModelProvider migrations', () => {
     // Pre-set api_type must round-trip untouched.
     expect(customAnthropic.api_type).toBe('anthropic')
   })
+
+  it('backfills manuallyAdded on curated models (v17 → v18)', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'openrouter',
+          base_url: 'https://openrouter.ai/api/v1',
+          settings: [],
+          models: [
+            // User toggled capabilities → curated.
+            { id: 'cap', name: 'cap', _userConfiguredCapabilities: true },
+            // User renamed (displayName differs from name) → curated.
+            { id: 'renamed', name: 'renamed', displayName: 'My Model' },
+            // Catalog echoes displayName === name → NOT curated.
+            { id: 'echo-name', name: 'echo-name', displayName: 'echo-name' },
+            // Catalog echoes displayName === id → NOT curated.
+            { id: 'echo-id', name: 'Some Name', displayName: 'echo-id' },
+            // Plain auto-fetched model → untouched.
+            { id: 'plain', name: 'plain' },
+            // Already flagged → preserved.
+            { id: 'already', name: 'already', manuallyAdded: true },
+            // Imported models are recognized at read time, not backfilled here.
+            { id: 'imported', name: 'imported', imported: true },
+          ],
+        },
+      ],
+      selectedProvider: 'openrouter',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 17)
+    const byId = Object.fromEntries(
+      migratedState.providers[0].models.map((m: Model) => [m.id, m])
+    )
+
+    expect(byId.cap.manuallyAdded).toBe(true)
+    expect(byId.renamed.manuallyAdded).toBe(true)
+    expect(byId['echo-name'].manuallyAdded).toBeUndefined()
+    expect(byId['echo-id'].manuallyAdded).toBeUndefined()
+    expect(byId.plain.manuallyAdded).toBeUndefined()
+    expect(byId.already.manuallyAdded).toBe(true)
+    expect(byId.imported.manuallyAdded).toBeUndefined()
+  })
 })
