@@ -1,4 +1,4 @@
-import { ChevronDown, Code2, FileText, FolderOpen, ImageIcon, SquareArrowOutUpRight } from 'lucide-react'
+import { ChevronDown, FolderOpen, SquareArrowOutUpRight } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,13 +8,7 @@ import {
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { resolveInRoot } from '@/lib/codePreview'
-import type { CodeArtifact } from '@/lib/codeArtifacts'
-
-const GROUP_ICON = {
-  Code: Code2,
-  Image: ImageIcon,
-  Document: FileText,
-} as const
+import { ARTIFACT_ICON, type CodeArtifact } from '@/lib/codeArtifacts'
 
 /**
  * Inline card for something the agent produced (jan-internal #242).
@@ -36,7 +30,7 @@ export function CodeArtifactCard({
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const Icon = GROUP_ICON[artifact.group]
+  const Icon = ARTIFACT_ICON[artifact.group]
   const abs = root ? resolveInRoot(root, artifact.path) : null
 
   return (

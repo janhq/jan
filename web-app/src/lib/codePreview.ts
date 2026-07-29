@@ -132,7 +132,13 @@ export function resolveInRoot(root: string, path: string): string | null {
     else parts.push(seg)
   }
   const abs = (joined.startsWith('/') ? '/' : '') + parts.join('/')
-  return abs === r || abs.startsWith(`${r}/`) ? abs : null
+  // Containment compared case-insensitively: Windows and default macOS volumes
+  // are case-insensitive, so `/Users/me/Proj` and `/users/me/proj` are the same
+  // directory and a case-sensitive check would refuse an in-project file. The
+  // returned path keeps its original casing for the actual read.
+  const inRoot = abs.toLowerCase() === r.toLowerCase() ||
+    abs.toLowerCase().startsWith(`${r.toLowerCase()}/`)
+  return inRoot ? abs : null
 }
 
 /** Guard before reading, so an oversized file fails fast instead of hanging. */

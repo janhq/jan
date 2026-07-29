@@ -1,6 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import { Handshake, HomeIcon } from 'lucide-react'
-import { route } from '@/constants/routes'
+import { route, isCoworkRoute } from '@/constants/routes'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -15,9 +15,7 @@ export function NavTabs() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
 
-  // /artifacts belongs to the Cowork surface, so it keeps the Cowork nav
-  // instead of falling back to Home.
-  const isCode = pathname === route.code || pathname === route.artifacts
+  const isCode = isCoworkRoute(pathname)
   // Home owns the chat surfaces (new chat, threads, projects); Code owns /code.
   const isHome =
     pathname === route.home ||

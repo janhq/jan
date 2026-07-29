@@ -111,6 +111,15 @@ describe('resolveInRoot', () => {
     expect(resolveInRoot('C:\\proj', 'C:\\other\\x')).toBeNull()
   })
 
+  it('compares containment case-insensitively (Windows/macOS volumes are)', () => {
+    expect(resolveInRoot('/Users/me/Proj', '/users/me/proj/a.html')).toBe(
+      '/users/me/proj/a.html'
+    )
+    expect(resolveInRoot('c:/proj', 'C:/Proj/a.html')).toBe('C:/Proj/a.html')
+    // Still refuses a genuinely different directory.
+    expect(resolveInRoot('/Users/me/Proj', '/Users/me/Other/a.html')).toBeNull()
+  })
+
   it('is null on empty input', () => {
     expect(resolveInRoot(root, '')).toBeNull()
     expect(resolveInRoot('', 'a.md')).toBeNull()
