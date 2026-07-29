@@ -63,10 +63,12 @@ jobs:
 
       # The CLI must stay free of Tauri/GTK: this runner has no libwebkit2gtk,
       # so a regression here would surface as a confusing linker error later.
+      # `onig`/`onig_sys` are syntect's default regex backend and link C code;
+      # the highlighter is pinned to the pure-Rust `regex-fancy` engine instead.
       - name: Assert no GUI crates in the CLI dependency graph
         run: |
           cd src-tauri
-          for crate in tauri gtk gdk muda wry webkit2gtk; do
+          for crate in tauri gtk gdk muda wry webkit2gtk onig onig_sys; do
             if cargo tree --no-default-features --features cli -e normal -i "$crate" >/dev/null 2>&1; then
               echo "::error::$crate is back in the jan CLI dependency graph"
               exit 1
