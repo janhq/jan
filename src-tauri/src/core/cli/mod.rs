@@ -553,7 +553,7 @@ pub(crate) struct PreparedRun {
     pub body: serde_json::Value,
     pub permission_requests: PermissionRegistry,
     /// Background connect of `active` MCP servers, awaited before the first turn.
-    pub mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
+    pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
     /// Where to write the conversation once the run finishes.
     persist: PersistTarget,
 }
@@ -591,7 +591,7 @@ pub(crate) struct AgentSession {
     pub mcp_servers: crate::core::state::SharedMcpServers,
     /// Background connect of `active` MCP servers, awaited before the first turn.
     /// `None` when no server is active. Resolves to the connected server names.
-    pub mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
+    pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
 }
 
 impl AgentSession {
@@ -852,10 +852,15 @@ async fn run_agent_loop(
     // are present on the first turn.
     if let Some(task) = mcp_task {
         match task.await {
-            Ok(names) if !names.is_empty() => {
-                log::info!("MCP: connected {}", names.join(", "))
+            Ok(outcome) => {
+                if !outcome.connected.is_empty() {
+                    log::info!("MCP: connected {}", outcome.connected.join(", "));
+                }
+                // Headless has no transcript to note into, so these stay logs.
+                for failure in &outcome.failed {
+                    log::warn!("MCP: {failure}");
+                }
             }
-            Ok(_) => {}
             Err(e) => log::warn!("MCP connect task failed: {e}"),
         }
     }
@@ -942,7 +947,11 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
         // In-progress signal is for the live TUI; the piped log stays quiet
         // until the full call (with args) arrives just below.
-        StreamEvent::ToolCallStarted { .. } => {}
+        // Headless prints one line per completed call; the in-progress signal
+        // and its argument deltas have nothing to render into.
+        StreamEvent::ToolCallStarted { .. } | StreamEvent::ToolCallArgsDelta { .. } => {}
+        // Headless reports totals once, from the terminal `Done`.
+        StreamEvent::TurnUsage { .. } => {}
         StreamEvent::ToolCall { name, args, .. } => eprintln!(
             "\x1b[2m[tool] {}\x1b[0m",
             crate::core::agent::events::describe_tool_call(&name, &args)

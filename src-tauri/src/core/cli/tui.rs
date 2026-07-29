@@ -576,10 +576,11 @@ struct App {
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
     awaiting: Vec<(String, String, String)>,
-    /// Tool calls whose arguments are still streaming, `(tool_call_id, name)`.
-    /// Rendered as a live throbber and cleared on the matching `ToolCall` (full
-    /// args) or on the next `Step`, whichever comes first.
-    starting: Vec<(String, String)>,
+    /// Tool calls whose arguments are still streaming. Rendered live -- a file
+    /// body previews as it arrives, anything else gets a throbber -- and
+    /// cleared on the matching `ToolCall` (full args) or on the next `Step`,
+    /// whichever comes first.
+    starting: Vec<StartingCall>,
     /// Monotonic frame counter driving the throbber. Advanced by whole
     /// `SPINNER_ADVANCE_MS` steps elapsed since `last_spinner_advance`, not once
     /// per tick, so the animation runs at a fixed cadence and catches up after a
@@ -592,6 +593,12 @@ struct App {
     /// steady value between turns instead of flickering to 0. Cleared at turn
     /// start; recomputed from the turn's `usage` sample at `on_done`.
     tokens_per_sec: Option<f64>,
+    /// Output tokens produced across every request in the current turn. Summed
+    /// from `TurnUsage` rather than read off `Done`, which reports only the
+    /// final request and so undercounts any turn that used tools.
+    turn_output_tokens: u64,
+    /// Context size of the current turn's most recent request.
+    turn_prompt_tokens: u64,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -650,7 +657,23 @@ const SPINNER_ADVANCE_MS: u64 = 80;
 struct SubagentPanel {
     run_id: String,
     name: String,
+    /// The task this child was dispatched with. Shown above the agent list so
+    /// the block says what the fan-out is *for*, not just who is running.
+    task: String,
     calls: Vec<String>,
+    /// Upstream requests this child has made, counted from its `Step` events.
+    /// Distinct from `calls.len()`: one request can carry several tool calls,
+    /// and a request can carry none.
+    requests: u32,
+    /// Context occupied by the child's most recent request. The high-water
+    /// mark of how full its window is, which is the number worth watching --
+    /// a subagent silently filling its context is the failure this surfaces.
+    prompt_tokens: u64,
+    /// The call the child is currently assembling, if any. Without this a
+    /// child streaming a large `write` reports nothing at all for the whole
+    /// request -- no completed tool call yet, so a stats line frozen at
+    /// "0 tools" and an activity line stuck on "starting…".
+    active: Option<StartingCall>,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -664,6 +687,10 @@ struct SubagentBlock {
 
 /// Rolling window size for a subagent's live tool-call list.
 const SUBAGENT_WINDOW: usize = 5;
+
+/// Lines of the dispatch prompt shown for a lone subagent, where there is room
+/// for the brief itself rather than just its first line.
+const SUBAGENT_TASK_LINES: usize = 4;
 
 /// A queued git workspace snapshot. Snapshots only stage the paths the agent
 /// actually touched this turn (see `App::turn_touched`), never the whole
@@ -760,6 +787,8 @@ impl App {
             spinner_frame: 0,
             last_spinner_advance: Instant::now(),
             tokens_per_sec: None,
+            turn_output_tokens: 0,
+            turn_prompt_tokens: 0,
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
@@ -1223,13 +1252,7 @@ impl App {
         };
         self.history.push(build_user_message(&final_text, &images));
         self.push_user_line(&text, &names);
-        self.status = Status::Running;
-        self.run_started = Some(Instant::now());
-        self.turn = (0, 0);
-        self.tokens_per_sec = None;
-        self.scrollback = 0;
-        self.todo_call_this_turn = false;
-        self.todo_ok_this_turn = false;
+        self.begin_turn();
         // A fresh user turn is new context: allow the next boundary to remind
         // again even if the open work is unchanged (dedup is "twice in a row"),
         // and rearm the per-cycle reminder budget. A reminder's own follow-up
@@ -1254,13 +1277,7 @@ impl App {
             "◈ todo reminder — unfinished work, continuing".to_string(),
             Style::new().dim(),
         ));
-        self.status = Status::Running;
-        self.run_started = Some(Instant::now());
-        self.turn = (0, 0);
-        self.tokens_per_sec = None;
-        self.scrollback = 0;
-        self.todo_call_this_turn = false;
-        self.todo_ok_this_turn = false;
+        self.begin_turn();
         self.want_start = true;
         self.persist();
     }
@@ -1573,14 +1590,19 @@ impl App {
                 // Commit buffered prose/reasoning so it renders above the
                 // in-progress throbber, matching the grouped-call ordering.
                 self.flush_assistant();
-                if !self.starting.iter().any(|(sid, _)| sid == &id) {
-                    self.starting.push((id, name));
+                if !self.starting.iter().any(|c| c.id == id) {
+                    self.starting.push(StartingCall::new(id, name));
+                }
+            }
+            StreamEvent::ToolCallArgsDelta { id, delta } => {
+                if let Some(call) = self.starting.iter_mut().find(|c| c.id == id) {
+                    call.args.push_str(&delta);
                 }
             }
             StreamEvent::ToolCall { id, name, args } => {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
-                self.starting.retain(|(sid, _)| sid != &id);
+                self.starting.retain(|c| c.id != id);
                 // Track todo activity this turn so the reminder policy can tell
                 // an engaged turn (mutated todos) from a stalled one.
                 if name == "todo" {
@@ -1701,14 +1723,18 @@ impl App {
             } => self
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
-            StreamEvent::SubagentStart { run_id, name } => {
+            StreamEvent::SubagentStart { run_id, name, task } => {
                 // Open a live rolling panel for this run; several may be active.
                 self.finalize_tool_group();
                 self.flush_assistant();
                 self.subagents.push(SubagentPanel {
                     run_id,
                     name,
+                    task: task.unwrap_or_default(),
                     calls: Vec::new(),
+                    requests: 0,
+                    prompt_tokens: 0,
+                    active: None,
                 });
             }
             StreamEvent::SubagentEnd { run_id, name } => {
@@ -1751,6 +1777,17 @@ impl App {
                 name,
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
+            StreamEvent::TurnUsage { usage } => {
+                self.turn_output_tokens += usage.completion_tokens.unwrap_or(0);
+                // Latest request's context, not a sum: each request resends the
+                // whole conversation, so adding them would be meaningless.
+                if let Some(prompt) = usage.prompt_tokens {
+                    self.turn_prompt_tokens = prompt;
+                    // Keep the header's context gauge live during the turn
+                    // instead of jumping only when the run ends.
+                    self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
+                }
+            }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
@@ -1772,14 +1809,34 @@ impl App {
     fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
         match event {
             StreamEvent::ToolCall {
-                name: tool, args, ..
+                id, name: tool, args,
             } => {
                 let max = self.render_width().saturating_sub(6) as usize;
                 let label = truncate(&subagent_activity(&tool, &args), max);
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    // The completed call supersedes its in-progress view.
+                    if panel.active.as_ref().is_some_and(|c| c.id == id) {
+                        panel.active = None;
+                    }
                     // Full history retained for expansion; the panel renders only
                     // the last SUBAGENT_WINDOW.
                     panel.calls.push(label);
+                }
+            }
+            // A child's arguments stream just like the parent's, and for a big
+            // `write` that window is most of the run. Track it so the panel
+            // reports the call being built instead of going silent until it
+            // lands.
+            StreamEvent::ToolCallStarted { id, name: tool } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.active = Some(StartingCall::new(id, tool));
+                }
+            }
+            StreamEvent::ToolCallArgsDelta { id, delta } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    if let Some(call) = panel.active.as_mut().filter(|c| c.id == id) {
+                        call.args.push_str(&delta);
+                    }
                 }
             }
             StreamEvent::PermissionRequest {
@@ -1804,10 +1861,38 @@ impl App {
                     subagent: Some(name.to_string()),
                 });
             }
-            // Token/Step/ToolResult and any nested bracket are internal to the
-            // child run and not surfaced in the parent transcript.
+            // Each child request bumps its counter, so the panel shows work
+            // happening even during a long think with no tool calls.
+            StreamEvent::Step { .. } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.requests += 1;
+                }
+            }
+            StreamEvent::TurnUsage { usage } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
+                }
+            }
+            // Token/ToolResult and any nested bracket are internal to the child
+            // run and not surfaced in the parent transcript.
             _ => {}
         }
+    }
+
+    /// Arm the per-turn state shared by a user submit and a reminder
+    /// continuation. Both paths start a run, so both must reset every
+    /// turn-scoped counter -- keeping two hand-maintained copies in sync is how
+    /// a new counter ends up reset on one path and accumulating on the other.
+    fn begin_turn(&mut self) {
+        self.status = Status::Running;
+        self.run_started = Some(Instant::now());
+        self.turn = (0, 0);
+        self.tokens_per_sec = None;
+        self.turn_output_tokens = 0;
+        self.turn_prompt_tokens = 0;
+        self.scrollback = 0;
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
     }
 
     /// Flush the current turn and return its text as the final assistant answer.
@@ -1823,6 +1908,25 @@ impl App {
         if !answer.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": answer.clone() }));
+        }
+        // A closing receipt for the turn: when, how much context went up, how
+        // much came back, how long it took, how fast. Cheap to skim, and the
+        // only place the cost of a turn is visible after the fact.
+        if let Some(started) = self.run_started {
+            // Normally `TurnUsage` has already reported every request. Fall
+            // back to the terminal usage only for an upstream that reports
+            // nothing until the end, so the receipt isn't blank.
+            if self.turn_output_tokens == 0 {
+                self.turn_output_tokens =
+                    usage.as_ref().and_then(|u| u.completion_tokens).unwrap_or(0);
+            }
+            let stats = turn_stats_line(
+                self.turn_prompt_tokens,
+                self.turn_output_tokens,
+                started.elapsed(),
+            );
+            self.gap(Kind::Meta);
+            self.push(stats);
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -2313,6 +2417,231 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
 }
 
 /// A one-line tool row: `│ <tag> <text>` with a styled tag and body.
+/// What a still-streaming call has revealed about itself so far. Derived from
+/// the raw arguments, and cached: deriving it costs a full scan and unescape of
+/// everything received, which at file scale is far too much to repeat on every
+/// 50ms frame when the underlying bytes usually haven't moved.
+#[derive(Default)]
+struct StartingPreview {
+    /// Destination path, available well before the body since `path` is short
+    /// and models emit it first.
+    path: Option<String>,
+    /// Trailing lines of the file body, newest last. `None` until a `write`
+    /// call's `content` field opens.
+    tail: Option<Vec<String>>,
+    /// Body lines scrolled off the top of `tail`.
+    skipped: usize,
+}
+
+/// A tool call announced by the model whose arguments are still arriving.
+struct StartingCall {
+    id: String,
+    name: String,
+    /// Raw JSON arguments accumulated so far -- a truncated prefix of the
+    /// object the model is emitting, not valid JSON until the call completes.
+    args: String,
+    preview: StartingPreview,
+    /// `args.len()` when `preview` was derived. The buffer is append-only, so
+    /// an unchanged length means unchanged content and the cache holds.
+    preview_at: Option<usize>,
+}
+
+impl StartingCall {
+    fn new(id: String, name: String) -> Self {
+        Self {
+            id,
+            name,
+            args: String::new(),
+            preview: StartingPreview::default(),
+            preview_at: None,
+        }
+    }
+
+    /// Re-derive the preview if new argument bytes have arrived since the last
+    /// derivation. Called from the render path, so the work happens at most
+    /// once per frame *and* at most once per delta, whichever is rarer.
+    fn refresh_preview(&mut self) {
+        if self.preview_at == Some(self.args.len()) {
+            return;
+        }
+        self.preview_at = Some(self.args.len());
+        self.preview.path =
+            partial_json_field(&self.args, "path").map(unescape_partial_json_string);
+        let body = (self.name == "write")
+            .then(|| partial_json_field(&self.args, "content"))
+            .flatten()
+            .map(unescape_partial_json_string);
+        let Some(body) = body else {
+            self.preview.tail = None;
+            self.preview.skipped = 0;
+            return;
+        };
+        // `rsplit` walks back from the end and stops once the window is full,
+        // so a large body never materializes a line list it would discard.
+        // `split` (not `lines`) so a trailing newline shows as the empty line
+        // the model just opened, which is where the next content will land.
+        let mut tail: Vec<String> = body
+            .rsplit('\n')
+            .take(STREAM_TAIL_LINES)
+            .map(str::to_string)
+            .collect();
+        tail.reverse();
+        let total = body.bytes().filter(|&b| b == b'\n').count() + 1;
+        self.preview.skipped = total - tail.len();
+        self.preview.tail = Some(tail);
+    }
+}
+
+impl StartingCall {
+    /// One-line "what is this call doing" for a compact row, resolved as far as
+    /// the arguments allow: the destination once `path` has streamed, the tool
+    /// name alone before that.
+    fn activity_label(&mut self) -> String {
+        self.refresh_preview();
+        match self.preview.path.as_deref() {
+            Some(path) if !path.is_empty() => format!("{} {path}", self.name),
+            _ => format!("{}…", self.name),
+        }
+    }
+}
+
+/// How many trailing lines of a streaming file body stay on screen. Enough to
+/// see the model actually working without the preview owning the viewport.
+const STREAM_TAIL_LINES: usize = 12;
+/// Minimum width of the line-number gutter, so a short preview doesn't jitter
+/// sideways as the count crosses 10 / 100.
+const STREAM_GUTTER_MIN: usize = 3;
+
+/// Pull one *string-valued* field out of a JSON object that is still streaming
+/// and therefore almost certainly truncated mid-value.
+///
+/// A real parser can't help here: the input is a prefix like
+/// `{"path":"a.html","content":"<!doctype html>\n<html` with no closing quote
+/// or brace. This scans for `"<field>"` followed by `:` and an opening quote,
+/// then walks the value honoring backslash escapes, stopping at the closing
+/// quote *or* at end-of-input -- whichever comes first. Returns the raw
+/// (still escaped) value; see `unescape_partial_json_string`.
+fn partial_json_field<'a>(raw: &'a str, field: &str) -> Option<&'a str> {
+    let mut rest = raw;
+    let needle = format!("\"{field}\"");
+    loop {
+        let at = rest.find(&needle)?;
+        let after = &rest[at + needle.len()..];
+        let after_colon = after.trim_start();
+        // `"content"` could also appear inside some earlier string value; if
+        // what follows isn't `: "`, keep looking.
+        let Some(after_colon) = after_colon.strip_prefix(':') else {
+            rest = &rest[at + needle.len()..];
+            continue;
+        };
+        let Some(value) = after_colon.trim_start().strip_prefix('"') else {
+            rest = &rest[at + needle.len()..];
+            continue;
+        };
+        let mut escaped = false;
+        for (i, c) in value.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                return Some(&value[..i]);
+            }
+        }
+        // No closing quote: the value is still streaming, take all of it.
+        return Some(value);
+    }
+}
+
+/// Turn a raw JSON string body into display text, tolerating a truncated tail.
+///
+/// The stream can cut anywhere, including the middle of an escape sequence, so
+/// drop a dangling `\` and a partial `\uXXXX` before handing the rest to the
+/// parser. Falls back to the raw text if it still won't parse -- a preview is
+/// never worth failing a render over.
+fn unescape_partial_json_string(raw: &str) -> String {
+    let mut s = raw;
+    // Partial `\uXXXX`: 0-3 hex digits arrived so far.
+    if let Some(at) = s.rfind("\\u") {
+        let tail = &s[at + 2..];
+        if tail.len() < 4 && tail.chars().all(|c| c.is_ascii_hexdigit()) {
+            s = &s[..at];
+        }
+    }
+    // Dangling escape: an odd number of trailing backslashes means the last one
+    // is opening an escape whose payload hasn't arrived.
+    let trailing_slashes = s.chars().rev().take_while(|&c| c == '\\').count();
+    if trailing_slashes % 2 == 1 {
+        s = &s[..s.len() - 1];
+    }
+    serde_json::from_str::<String>(&format!("\"{s}\"")).unwrap_or_else(|_| s.to_string())
+}
+
+/// Rows for one in-flight tool call.
+///
+/// A `write` whose body has started arriving renders as a live preview: the
+/// destination, a tail window of the content with line numbers, and a footer
+/// marking it as still streaming. Everything else -- and a `write` before its
+/// `content` field opens -- falls back to a one-line throbber, which is all
+/// there is to say about a call whose arguments haven't arrived.
+///
+/// Derivation is cached on the call (see `refresh_preview`), so the cost
+/// tracks how fast bytes arrive rather than the frame rate: ~0.15ms per frame
+/// at 400KB of arguments, against ~2ms without the cache. A rescan is still
+/// linear in the whole buffer, so a multi-megabyte write would make each
+/// *delta* expensive -- if that shows up, unescape only from the last
+/// `STREAM_TAIL_LINES` newline escapes instead of the whole body.
+fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static>> {
+    call.refresh_preview();
+    let Some(tail) = call.preview.tail.as_ref() else {
+        let label = match call.preview.path.as_deref() {
+            // Even without a body, the path lands early enough to be worth
+            // showing -- "Preparing write" alone says nothing about what.
+            Some(path) if !path.is_empty() => format!("Preparing write: {path}"),
+            _ => format!("Preparing {}", call.name),
+        };
+        return vec![tool_row(frame, Style::new().cyan(), &label, Style::new().cyan().dim())];
+    };
+
+    let mut out = Vec::new();
+    out.push(Line::from(vec![
+        Span::styled("│ ", Style::new().dark_gray()),
+        Span::styled("Write: ", Style::new().cyan()),
+        Span::styled(
+            call.preview.path.clone().unwrap_or_default(),
+            Style::new().cyan().dim(),
+        ),
+    ]));
+
+    let start = call.preview.skipped;
+    let gutter = (start + tail.len()).to_string().len().max(STREAM_GUTTER_MIN);
+    if start > 0 {
+        out.push(Line::from(vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(
+                format!("… ({})", pluralize("earlier line", start)),
+                Style::new().dark_gray(),
+            ),
+        ]));
+    }
+    for (offset, text) in tail.iter().enumerate() {
+        out.push(Line::from(vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(
+                format!("{:>gutter$} ", start + offset + 1, gutter = gutter),
+                Style::new().dark_gray(),
+            ),
+            Span::raw(text.clone()),
+        ]));
+    }
+    out.push(Line::from(vec![
+        Span::styled("│ ", Style::new().dark_gray()),
+        Span::styled(format!("{frame} "), Style::new().cyan()),
+        Span::styled("… (streaming)", Style::new().dark_gray()),
+    ]));
+    out
+}
+
 fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
     Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
@@ -2825,7 +3154,9 @@ async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
 /// The handle is borrowed, not taken: this future is rebuilt (and dropped) every
 /// select iteration, so taking it would discard the still-running task the first
 /// time another branch wins the race. The slot is cleared only on completion.
-async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> Vec<String> {
+async fn await_mcp(
+    task: &mut Option<tokio::task::JoinHandle<crate::core::cli::mcp::ConnectOutcome>>,
+) -> crate::core::cli::mcp::ConnectOutcome {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -2910,6 +3241,16 @@ pub async fn run(
     args.todo_registry = Some(todo_registry.clone());
     let args = Arc::new(args);
 
+    // `env_logger` writes to stderr, which is still the user's terminal once we
+    // switch to the alternate screen -- a single `log::warn!` from anywhere
+    // (MCP, http, a dependency) then paints raw text over the frame and stays
+    // there until the next full repaint. Nothing may write to the terminal
+    // except the renderer, so mute the log facade for the duration and restore
+    // it on the way out. Anything worth the user's attention is a transcript
+    // note; see `connect_active` for the MCP case.
+    let prev_log_level = log::max_level();
+    log::set_max_level(log::LevelFilter::Off);
+
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
@@ -2966,6 +3307,7 @@ pub async fn run(
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
+    log::set_max_level(prev_log_level);
     res
 }
 
@@ -2977,7 +3319,7 @@ async fn chat_loop<B: Backend>(
     ask_requests: &crate::core::agent::interaction::AskRegistry,
     app: &mut App,
     initial_task: Option<String>,
-    mut mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
+    mut mcp_task: Option<tokio::task::JoinHandle<crate::core::cli::mcp::ConnectOutcome>>,
     mcp_servers: &crate::core::state::SharedMcpServers,
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
@@ -3116,11 +3458,16 @@ async fn chat_loop<B: Backend>(
                     }
                 }
             }
-            connected = await_mcp(&mut mcp_task) => {
+            outcome = await_mcp(&mut mcp_task) => {
                 mcp_ready = true;
-                match connected.as_slice() {
-                    [] => {}
-                    names => app.note(&format!("MCP ready: {}", names.join(", "))),
+                if !outcome.connected.is_empty() {
+                    app.note(&format!("MCP ready: {}", outcome.connected.join(", ")));
+                }
+                // Right after the ready line, so a server that didn't come up
+                // is visible at start/resume instead of being lost to a log
+                // line painted over the frame.
+                for failure in &outcome.failed {
+                    app.note(&format!("MCP: {failure}"));
                 }
             }
             login_res = await_login(&mut login_task) => {
@@ -3917,6 +4264,22 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
 ];
 
+/// Every keybinding worth advertising, as `(keys, description)`. Single source
+/// of truth for the `/help` listing and the first-run footer hint, so the two
+/// can't drift. Deliberately not rendered on every frame -- the footer is for
+/// transient state (running, prompts, pickers), not a permanent cheat sheet.
+const KEY_BINDINGS: &[(&str, &str)] = &[
+    ("Enter", "Send the message"),
+    ("Alt+Enter / Ctrl-J", "Insert a newline"),
+    ("Esc / Ctrl-C", "Cancel the running turn"),
+    ("Esc Esc", "Rewind to an earlier message"),
+    ("↑/↓", "Scroll the transcript"),
+    ("Ctrl-O", "Expand or collapse all tool calls"),
+    ("Ctrl-V", "Paste an image from the clipboard"),
+    ("Ctrl-T", "Toggle mouse capture off to select/copy text"),
+    ("Ctrl-D", "Quit"),
+];
+
 /// Split a command line into `(name, arg)`, UTF-8 safe (no byte slicing).
 fn parse_command(line: &str) -> (&str, &str) {
     match line.trim().split_once(char::is_whitespace) {
@@ -3943,10 +4306,14 @@ async fn run_command(app: &mut App, line: &str) {
                     Style::new().dim(),
                 ));
             }
-            app.push(Line::styled(
-                "  Ctrl-T toggles mouse capture off to select/copy text".to_string(),
-                Style::new().dim(),
-            ));
+            app.gap(Kind::Meta);
+            app.push(Line::styled("keys:".to_string(), Style::new().dim()));
+            for (keys, description) in KEY_BINDINGS {
+                app.push(Line::styled(
+                    format!("  {keys:18} {description}"),
+                    Style::new().dim(),
+                ));
+            }
         }
         "clear" => {
             app.reset_session();
@@ -5053,7 +5420,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
     let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
     let show_todo = todo_h > 0;
-    // Header/path/footer chrome stays pinned top and bottom; the todo HUD sits
+    // The header stays pinned at the top; the working dir/branch line and the
+    // transient status footer sit *below* the input, so the whole "where am I,
+    // what's happening" block reads as one unit at the bottom edge next to
+    // where the user types, instead of being split across both ends. The todo
+    // HUD sits
     // directly above the input box -- the last thing in view right before where
     // the user types, not competing with the header for attention. The
     // separator rule is its own row *below* the HUD (rather than the body's own
@@ -5063,20 +5434,20 @@ fn draw(f: &mut Frame, app: &mut App) {
     // renders exactly as before.
     let raw = Layout::vertical([
         Constraint::Length(1),       // 0: header
-        Constraint::Length(1),       // 1: path line
-        Constraint::Length(1),       // 2: footer
-        Constraint::Min(1),          // 3: body
-        Constraint::Length(todo_h),  // 4: todo HUD
-        Constraint::Length(1),       // 5: separator rule
-        Constraint::Length(input_h), // 6: input
+        Constraint::Min(1),          // 1: body
+        Constraint::Length(todo_h),  // 2: todo HUD
+        Constraint::Length(1),       // 3: separator rule
+        Constraint::Length(input_h), // 4: input
+        Constraint::Length(1),       // 5: path line
+        Constraint::Length(1),       // 6: footer
     ])
     .split(f.area());
-    let todo_area = show_todo.then(|| raw[4]);
-    let chunks = [raw[0], raw[3], raw[6], raw[1], raw[2]];
+    let todo_area = show_todo.then(|| raw[2]);
+    let chunks = [raw[0], raw[1], raw[4], raw[5], raw[6]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[5]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
     // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
@@ -5144,7 +5515,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             }
         }
     }
-    for panel in &app.subagents {
+    if !app.subagents.is_empty() {
         let last_blank = lines
             .last()
             .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
@@ -5152,21 +5523,13 @@ fn draw(f: &mut Frame, app: &mut App) {
         if !last_blank {
             lines.push(Line::raw(""));
         }
-        // Down-then-left arrow header, then the rolling window (last N calls).
-        lines.push(Line::from(vec![
-            Span::styled("↲ ", Style::new().magenta()),
-            Span::styled(
-                format!("subagent: {}", panel.name),
-                Style::new().magenta().dim(),
-            ),
-        ]));
-        let start = panel.calls.len().saturating_sub(SUBAGENT_WINDOW);
-        for label in &panel.calls[start..] {
-            lines.push(Line::from(vec![
-                Span::styled("    ", Style::new().dark_gray()),
-                Span::styled(label.clone(), Style::new().dim()),
-            ]));
-        }
+        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        lines.extend(subagent_panel_lines(
+            &mut app.subagents,
+            app.context_window,
+            width,
+            frame,
+        ));
     }
     if !app.assistant_buf.is_empty() {
         let tail = format_assistant_lines(&app.assistant_buf, width);
@@ -5208,14 +5571,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
-    for (_, name) in &app.starting {
-        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
-        lines.push(tool_row(
-            frame,
-            Style::new().cyan(),
-            &format!("Preparing {name}"),
-            Style::new().cyan().dim(),
-        ));
+    let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+    for call in &mut app.starting {
+        lines.extend(starting_call_lines(call, frame));
     }
     // Live subagent panels, streaming prose, and awaiting throbbers above have
     // no transcript index; they're all appended after the transcript loop.
@@ -5720,6 +6078,143 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
     output_tokens as f64 * 1000.0 / d as f64
 }
 
+/// One block for every in-flight subagent, instead of a scattered header-plus-
+/// call-list per child.
+///
+/// Parallel agents were previously unreadable: N separate sections, each
+/// growing, with the interesting question -- which of these is actually making
+/// progress, and is one about to blow its context -- answerable only by
+/// counting rows. Each child now gets exactly two lines, a stats line and its
+/// current activity, so the whole fan-out fits in one glance and stays a fixed
+/// height as the work runs.
+fn subagent_panel_lines(
+    panels: &mut [SubagentPanel],
+    context_window: u64,
+    width: u16,
+    frame: &str,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut out = vec![Line::from(vec![
+        Span::styled("≡ ", Style::new().magenta()),
+        Span::styled(
+            format!("Task {}", pluralize("agent", panels.len())),
+            Style::new().magenta().bold(),
+        ),
+    ])];
+    // A lone subagent keeps its rolling history and a fuller look at its task
+    // -- there's room, and both are useful context. Once several run at once
+    // that same detail multiplies into an unreadable wall, so each drops to one
+    // line apiece and the block stays a fixed, scannable height.
+    let solo = panels.len() == 1;
+    let window = if solo { SUBAGENT_WINDOW } else { 1 };
+    let task_lines = if solo { SUBAGENT_TASK_LINES } else { 1 };
+    let task_width = width.saturating_sub(8).max(20) as usize;
+    for panel in panels {
+        let mut spans = vec![
+            Span::styled("  • ", Style::new().magenta()),
+            Span::styled(panel.name.clone(), Style::new().magenta()),
+            Span::styled(format!("  {}", pluralize("tool", panel.calls.len())), dim),
+            Span::styled(format!("  ·  {} req", panel.requests), dim),
+        ];
+        // Only once the child has reported usage; "0.0%" before its first
+        // response would read as a stalled agent rather than a starting one.
+        if panel.prompt_tokens > 0 && context_window > 0 {
+            let pct = panel.prompt_tokens as f64 / context_window as f64 * 100.0;
+            spans.push(Span::styled(
+                format!("  ·  {pct:.1}%/{}", compact_tokens(context_window)),
+                dim,
+            ));
+        }
+        out.push(Line::from(spans));
+
+        // The dispatch prompt, so the block says what the fan-out is *for*.
+        // Split on the task's own newlines rather than word-wrapping: models
+        // write these as structured briefs, and the first lines are the summary.
+        for (written, raw) in panel
+            .task
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .enumerate()
+        {
+            if written == task_lines {
+                // Only worth a marker where the brief reads as complete.
+                // Collapsed to a single line it is plainly a summary already,
+                // and the marker would cost the line just saved.
+                if solo {
+                    out.push(indented_row("…", dim));
+                }
+                break;
+            }
+            out.push(indented_row(
+                truncate(raw.trim(), task_width),
+                Style::new().dim().italic(),
+            ));
+        }
+
+        let start = panel.calls.len().saturating_sub(window);
+        for label in &panel.calls[start..] {
+            out.push(indented_row(label.clone(), Style::new().dim()));
+        }
+        // The call currently being assembled trails the finished ones, so the
+        // row keeps moving through a long argument stream.
+        match panel.active.as_mut() {
+            Some(call) => out.push(indented_row(
+                format!("{frame} {}", call.activity_label()),
+                Style::new().cyan().dim(),
+            )),
+            None if panel.calls.is_empty() => {
+                out.push(indented_row("starting…", Style::new().dim()))
+            }
+            None => {}
+        }
+    }
+    out
+}
+
+/// A detail row indented under a subagent's stats line. One place owns the
+/// indent so the block's rows can't drift out of alignment with each other.
+fn indented_row(text: impl Into<String>, style: Style) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("      ", Style::new().dark_gray()),
+        Span::styled(text.into(), style),
+    ])
+}
+
+/// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
+/// column of them stays the same width as the numbers grow.
+fn compact_tokens(n: u64) -> String {
+    match n {
+        0..=999 => n.to_string(),
+        1_000..=9_999 => format!("{:.1}K", n as f64 / 1000.0),
+        10_000..=999_999 => format!("{}K", n / 1000),
+        _ => format!("{:.1}M", n as f64 / 1_000_000.0),
+    }
+}
+
+/// Per-turn receipt: wall-clock, context sent, tokens produced, elapsed, rate.
+fn turn_stats_line(prompt_tokens: u64, output_tokens: u64, elapsed: Duration) -> Line<'static> {
+    let secs = elapsed.as_secs_f64();
+    let rate = tokens_per_second(output_tokens, elapsed.as_millis() as u64);
+    let dim = Style::new().dark_gray();
+    let mut spans = vec![Span::styled(local_timestamp(), dim)];
+    for (glyph, value) in [
+        ("↑", compact_tokens(prompt_tokens)),
+        ("↓", compact_tokens(output_tokens)),
+        ("⏱", format!("{secs:.1}s")),
+        ("⚡", format!("{rate:.1}/s")),
+    ] {
+        spans.push(Span::styled(format!("  {glyph} "), dim));
+        spans.push(Span::styled(value, Style::new().dim()));
+    }
+    Line::from(spans)
+}
+
+/// `YYYY-MM-DD HH:MM:SS` in local time, without pulling in a date library:
+/// `chrono` is already a dependency, so this is just the formatting choice.
+fn local_timestamp() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 fn format_elapsed(secs: u64) -> String {
     if secs < 60 {
         format!("{secs}s")
@@ -6072,12 +6567,27 @@ fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
     spans
 }
 
-/// One-line path display shown below the input box.
+/// Abbreviate a leading `$HOME` to `~`, so the line reads as a location rather
+/// than an absolute path. Non-home paths are returned unchanged.
+fn tilde_path(path: &std::path::Path) -> String {
+    let full = path.to_string_lossy().into_owned();
+    let Some(home) = std::env::var_os("HOME") else {
+        return full;
+    };
+    let home = std::path::Path::new(&home);
+    match path.strip_prefix(home) {
+        // The home dir itself, not a `~`-prefixed child.
+        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Ok(rest) => format!("~/{}", rest.to_string_lossy()),
+        Err(_) => full,
+    }
+}
+
+/// One-line working-dir + branch display shown below the input box.
 fn path_line(app: &App) -> Paragraph<'static> {
-    let path = app.project_root.to_string_lossy();
     let mut spans = vec![
         Span::styled("📂 ", Style::new().dark_gray()),
-        Span::styled(path.to_string(), Style::new().dark_gray()),
+        Span::styled(tilde_path(&app.project_root), Style::new().dark_gray()),
     ];
     if let Some(branch) = app.git_branch.as_ref() {
         spans.push(Span::styled(
@@ -6124,17 +6634,13 @@ fn footer(app: &App) -> Paragraph<'static> {
             s
         }
         Status::Idle => {
-            let mut s = hint_spans(
-                key_style,
-                &[
-                    ("Enter", "send"),
-                    ("Alt+Enter", "newline"),
-                    ("/help", ""),
-                    ("↑/↓", "scroll"),
-                    ("Ctrl-O", "expand all"),
-                    ("Ctrl-D", "quit"),
-                ],
-            );
+            // Idle is the default state, so a cheat sheet here is permanent
+            // noise. Discovery is already covered without it: the transcript
+            // opens with "type a message to start, or /help for commands", and
+            // `/help` carries the full list (see `KEY_BINDINGS`). Keep only the
+            // leading pad `hint_spans` emits, so a queue count or detail suffix
+            // lands in the same column as the other states.
+            let mut s = vec![Span::raw(" ")];
             if queue_count > 0 {
                 s.insert(0, Span::styled(
                     format!("⏳ Queued ({queue_count})  "),
@@ -6145,8 +6651,11 @@ fn footer(app: &App) -> Paragraph<'static> {
         }
     };
     if !app.detail.is_empty() {
+        // Only separate from a preceding hint; on a bare idle footer the detail
+        // is the whole line and should start at the same column as the hints.
+        let pad = if spans.len() > 1 { "   " } else { "" };
         spans.push(Span::styled(
-            format!("   {}", app.detail),
+            format!("{pad}{}", app.detail),
             Style::new().dim(),
         ));
     }
@@ -6159,13 +6668,16 @@ mod tests {
         apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        finish_login, is_table_separator, load_image_file, message_text, open_config_screen,
-        parse_command,
+        compact_tokens, finish_login, is_table_separator, load_image_file, message_text,
+        open_config_screen, parse_command, partial_json_field, starting_call_lines,
+        unescape_partial_json_string,
         render_table, restore_goal, restore_run_mode, restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
+        summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS,
+        SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
     use ratatui::crossterm::event::{
@@ -6173,7 +6685,7 @@ mod tests {
     };
     use ratatui::layout::Rect;
     use ratatui::{style::Modifier, text::Line};
-    use crate::core::agent::events::StreamEvent;
+    use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
@@ -7503,6 +8015,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -7554,10 +8067,12 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "alpha".into(),
+            task: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
+            task: None,
         });
         app.apply(wrap(
             "r2",
@@ -7582,6 +8097,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -7632,6 +8148,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(wrap(
             "r1",
@@ -7659,6 +8176,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -7682,6 +8200,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(wrap(
             "r1",
@@ -7714,10 +8233,12 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
+            task: None,
         });
         app.apply(wrap(
             "r1",
@@ -7872,6 +8393,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -8819,9 +9341,457 @@ mod tests {
         assert_eq!(app.history.len(), 1);
     }
 
+    fn start_subagent(app: &mut App, run_id: &str, name: &str) {
+        start_subagent_with_task(app, run_id, name, None);
+    }
+
+    fn start_subagent_with_task(app: &mut App, run_id: &str, name: &str, task: Option<&str>) {
+        app.apply(StreamEvent::SubagentStart {
+            run_id: run_id.into(),
+            name: name.into(),
+            task: task.map(str::to_string),
+        });
+    }
+
+    /// The dispatch prompt rides on the event, so the block can say what the
+    /// fan-out is for. A lone agent shows a fuller brief; several collapse to
+    /// their first line each so the block stays a fixed height.
+    #[test]
+    fn subagent_block_shows_the_dispatch_prompt() {
+        let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas\nGRAVITY=0.5\nNo external deps";
+
+        let mut solo = test_app();
+        start_subagent_with_task(&mut solo, "r0", "space", Some(brief));
+        let out = render_rows(&mut solo, 100, 24).join("\n");
+        assert!(out.contains("Build Flappy Space"), "brief missing: {out}");
+        assert!(out.contains("GRAVITY=0.5"), "lone agent should show more: {out}");
+        // Capped, with the overflow marked rather than silently dropped.
+        assert!(!out.contains("No external deps"), "should stop at the cap: {out}");
+        assert!(out.contains('…'), "overflow should be marked: {out}");
+
+        let mut pair = test_app();
+        start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
+        start_subagent_with_task(&mut pair, "r1", "fish", Some("Build Flappy Fish\nUnderwater"));
+        let out = render_rows(&mut pair, 100, 24).join("\n");
+        assert!(out.contains("Build Flappy Space"), "{out}");
+        assert!(out.contains("Build Flappy Fish"), "{out}");
+        // One line each once they're sharing the block.
+        assert!(!out.contains("GRAVITY=0.5"), "should collapse when parallel: {out}");
+        assert!(!out.contains("Underwater"), "should collapse when parallel: {out}");
+    }
+
+    /// A dispatch with no task (or an older event without the field) still
+    /// renders -- it just has nothing to say about the brief.
+    #[test]
+    fn subagent_block_without_a_task_renders() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("Task 1 agent") && out.contains("alpha"), "{out}");
+    }
+
+    fn subagent_event(app: &mut App, run_id: &str, name: &str, event: StreamEvent) {
+        app.apply(StreamEvent::Subagent {
+            run_id: run_id.into(),
+            name: name.into(),
+            event: Box::new(event),
+        });
+    }
+
+    /// Parallel agents collapse into one fixed-height block, each carrying the
+    /// numbers that say whether it is progressing or about to blow its context.
+    #[test]
+    fn parallel_subagents_render_one_block_with_live_stats() {
+        let mut app = test_app();
+        for (i, name) in ["alpha", "beta"].iter().enumerate() {
+            let run = format!("r{i}");
+            start_subagent(&mut app, &run, name);
+            subagent_event(&mut app, &run, name, StreamEvent::Step { index: 1, max: 8 });
+            subagent_event(
+                &mut app,
+                &run,
+                name,
+                StreamEvent::TurnUsage {
+                    usage: Usage {
+                        // 12.8K of a 128K window -> 10.0%.
+                        prompt_tokens: Some(12_800 + i as u64 * 12_800),
+                        completion_tokens: Some(100),
+                        total_tokens: Some(12_900),
+                    },
+                },
+            );
+            subagent_event(
+                &mut app,
+                &run,
+                name,
+                StreamEvent::ToolCall {
+                    id: format!("c{i}"),
+                    name: "read".into(),
+                    args: json!({ "path": format!("{name}.rs") }),
+                },
+            );
+        }
+
+        let rows = render_rows(&mut app, 100, 24);
+        let out = rows.join("\n");
+        assert!(out.contains("Task 2 agents"), "no consolidated header: {out}");
+        for (name, pct) in [("alpha", "10.0%"), ("beta", "20.0%")] {
+            assert!(out.contains(name), "missing {name}: {out}");
+            assert!(out.contains(pct), "missing context share {pct}: {out}");
+        }
+        assert!(out.contains("1 tool "), "missing tool count: {out}");
+        assert!(out.contains("1 req"), "missing request count: {out}");
+        // Two agents -> one activity line each, so the block stays scannable.
+        assert_eq!(
+            rows.iter().filter(|r| r.contains("alpha.rs") || r.contains("beta.rs")).count(),
+            2,
+            "expected exactly one activity line per agent: {out}"
+        );
+    }
+
+    /// Regression: a child streaming a large `write` completes no tool call
+    /// for the whole request, so the panel used to sit frozen on
+    /// "0 tools / starting…" for exactly the stretch the user most wants
+    /// feedback on. Its in-flight call must report progress like the parent's.
+    #[test]
+    fn subagent_reports_its_in_flight_call() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "flappy-2d");
+        subagent_event(&mut app, "r0", "flappy-2d", StreamEvent::Step { index: 1, max: 8 });
+
+        // The child announces a write and starts streaming its arguments --
+        // no ToolCall yet, which is the whole problem.
+        subagent_event(
+            &mut app,
+            "r0",
+            "flappy-2d",
+            StreamEvent::ToolCallStarted { id: "c1".into(), name: "write".into() },
+        );
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(!out.contains("starting…"), "should have moved off the placeholder: {out}");
+        assert!(out.contains("write"), "should name the tool being assembled: {out}");
+
+        // Once the path arrives it names the destination, still mid-stream.
+        for delta in [r#"{"path":"flappy"#, r#"-2d.html","content":"<!doct"#] {
+            subagent_event(
+                &mut app,
+                "r0",
+                "flappy-2d",
+                StreamEvent::ToolCallArgsDelta { id: "c1".into(), delta: delta.into() },
+            );
+        }
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("flappy-2d.html"), "destination should surface: {out}");
+        assert!(out.contains("0 tools"), "still no completed call: {out}");
+
+        // The completed call supersedes the in-progress row.
+        subagent_event(
+            &mut app,
+            "r0",
+            "flappy-2d",
+            StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "write".into(),
+                args: json!({ "path": "flappy-2d.html" }),
+            },
+        );
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("1 tool "), "completed call should count: {out}");
+        assert_eq!(
+            app.subagents[0].active.is_none(),
+            true,
+            "in-flight view should clear once the call lands"
+        );
+    }
+
+    /// Before a child reports usage there is no honest percentage to show, and
+    /// "0.0%" would read as a stalled agent.
+    #[test]
+    fn subagent_hides_context_share_until_it_reports() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "alpha");
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("Task 1 agent"), "{out}");
+        assert!(out.contains("starting…"), "{out}");
+        assert!(!out.contains('%'), "no share before the first response: {out}");
+    }
+
+    #[test]
+    fn compact_tokens_keeps_a_stable_width() {
+        assert_eq!(compact_tokens(0), "0");
+        assert_eq!(compact_tokens(840), "840");
+        assert_eq!(compact_tokens(1_100), "1.1K");
+        assert_eq!(compact_tokens(43_000), "43K");
+        assert_eq!(compact_tokens(1_500_000), "1.5M");
+    }
+
+    /// The turn receipt reports what the whole turn cost, which for a
+    /// tool-using turn is more than the final request's usage.
+    #[test]
+    fn turn_stats_sum_output_across_requests() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        for _ in 0..3 {
+            app.apply(StreamEvent::TurnUsage {
+                usage: Usage {
+                    prompt_tokens: Some(40_000),
+                    completion_tokens: Some(500),
+                    total_tokens: Some(40_500),
+                },
+            });
+        }
+        assert_eq!(app.turn_output_tokens, 1_500);
+        assert_eq!(app.turn_prompt_tokens, 40_000);
+
+        app.on_done("stop".into(), None);
+        let out: String = app.transcript.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(out.contains("40K"), "input tokens missing: {out}");
+        assert!(out.contains("1.5K"), "summed output missing: {out}");
+        assert!(out.contains("/s"), "rate missing: {out}");
+
+        // A new turn starts the count over rather than accumulating forever.
+        app.submit_user("again".into());
+        assert_eq!(app.turn_output_tokens, 0);
+    }
+
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
+    }
+
+    #[test]
+    fn partial_json_field_reads_a_truncated_value() {
+        // Closed value.
+        let done = r#"{"path":"a.html","content":"<h1>hi</h1>"}"#;
+        assert_eq!(partial_json_field(done, "path"), Some("a.html"));
+        assert_eq!(partial_json_field(done, "content"), Some("<h1>hi</h1>"));
+
+        // Cut mid-value: everything that arrived is the value.
+        let cut = r#"{"path":"a.html","content":"<!doctype html>\n<html"#;
+        assert_eq!(partial_json_field(cut, "content"), Some(r#"<!doctype html>\n<html"#));
+
+        // Cut before the field even opens.
+        assert_eq!(partial_json_field(r#"{"path":"a.htm"#, "content"), None);
+
+        // An escaped quote inside the value does not end it.
+        let escaped = r#"{"content":"say \"hi\" now"#;
+        assert_eq!(partial_json_field(escaped, "content"), Some(r#"say \"hi\" now"#));
+
+        // The field name occurring inside an earlier value is not the field.
+        let decoy = r#"{"path":"my\"content\".txt","content":"real"#;
+        assert_eq!(partial_json_field(decoy, "content"), Some("real"));
+    }
+
+    #[test]
+    fn unescape_partial_json_string_survives_a_cut_escape() {
+        assert_eq!(unescape_partial_json_string(r#"a\nb"#), "a\nb");
+        // Dangling backslash: the escape's payload hasn't arrived.
+        assert_eq!(unescape_partial_json_string(r#"a\nb\"#), "a\nb");
+        // An even run is a real escaped backslash, keep it.
+        assert_eq!(unescape_partial_json_string(r#"a\\"#), r"a\");
+        // Partial \u escape.
+        assert_eq!(unescape_partial_json_string(r#"hi \u26"#), "hi ");
+        assert_eq!(unescape_partial_json_string(r#"hi ☃"#), "hi ☃");
+    }
+
+    /// A streaming `write` previews the file as it arrives instead of sitting
+    /// on a featureless "Preparing write" spinner.
+    #[test]
+    fn streaming_write_previews_the_body() {
+        let body: String = (1..=20).map(|n| format!("line {n}\\n")).collect();
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        call.args = format!(r#"{{"path":"game.html","content":"{body}"#);
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
+        let joined = text.join("\n");
+
+        assert!(joined.contains("Write: game.html"), "no destination: {joined}");
+        assert!(joined.contains("… (streaming)"), "no streaming marker: {joined}");
+        // 20 body lines plus the empty one after the final \n = 21; a 12-line
+        // window leaves 9 behind.
+        assert!(joined.contains("… (9 earlier lines)"), "wrong elision: {joined}");
+        assert!(!joined.contains("line 9\n"), "line 9 is outside the window: {joined}");
+        assert!(joined.contains("line 20"), "tail should include the newest line: {joined}");
+        // Numbers are absolute, not window-relative, and right-aligned.
+        assert!(text.iter().any(|l| l.contains(" 10 line 10")), "gutter: {text:?}");
+        assert!(text.iter().any(|l| l.contains(" 20 line 20")), "gutter: {text:?}");
+    }
+
+    /// The preview is derived from an append-only buffer, so an unchanged
+    /// length means unchanged content -- the 50ms render tick must not pay for
+    /// a full rescan of a file-sized argument on every frame.
+    #[test]
+    fn preview_is_only_rederived_when_new_bytes_arrive() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        call.args = r#"{"path":"a.html","content":"one\ntwo"#.into();
+        call.refresh_preview();
+        let first = call.preview_at;
+        assert_eq!(call.preview.tail.as_deref(), Some(["one".into(), "two".into()].as_slice()));
+
+        // Same bytes: the cache holds and nothing is recomputed.
+        call.preview.tail = Some(vec!["sentinel".into()]);
+        call.refresh_preview();
+        assert_eq!(call.preview.tail.as_deref(), Some(["sentinel".to_string()].as_slice()));
+        assert_eq!(call.preview_at, first);
+
+        // New bytes invalidate it.
+        call.args.push_str(r#"\nthree"#);
+        call.refresh_preview();
+        assert_eq!(
+            call.preview.tail.as_deref(),
+            Some(["one".into(), "two".into(), "three".into()].as_slice())
+        );
+    }
+
+    /// Before `content` opens there is nothing to preview, but the path is
+    /// already worth showing.
+    #[test]
+    fn streaming_write_shows_the_path_before_the_body() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        call.args = r#"{"path":"game.html","cont"#.into();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
+        assert_eq!(text.len(), 1);
+        assert!(text[0].contains("Preparing write: game.html"), "got {text:?}");
+    }
+
+    /// Tools other than `write` keep the plain throbber -- there is no file
+    /// body to stream.
+    #[test]
+    fn other_tools_keep_the_plain_throbber() {
+        let mut call = super::StartingCall::new("c1".into(), "bash".into());
+        call.args = r#"{"command":"ls -la"#.into();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
+        assert_eq!(text.len(), 1);
+        assert!(text[0].contains("Preparing bash"), "got {text:?}");
+    }
+
+    /// The deltas have to actually reach the call they belong to.
+    #[test]
+    fn args_deltas_accumulate_onto_the_starting_call() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        for delta in [r#"{"path":"a"#, r#".html","content":"he"#, "llo"] {
+            app.apply(StreamEvent::ToolCallArgsDelta {
+                id: "c1".into(),
+                delta: delta.into(),
+            });
+        }
+        let call = &mut app.starting[0];
+        call.refresh_preview();
+        assert_eq!(call.preview.path.as_deref(), Some("a.html"));
+        assert_eq!(call.preview.tail.as_deref(), Some(["hello".to_string()].as_slice()));
+
+        // A delta for an unknown call is dropped, not panicked on.
+        app.apply(StreamEvent::ToolCallArgsDelta {
+            id: "nope".into(),
+            delta: "x".into(),
+        });
+        assert_eq!(app.starting.len(), 1);
+    }
+
+    /// `/help` is the home for keybindings now that the footer no longer
+    /// carries them, so every advertised binding has to reach the listing.
+    #[tokio::test]
+    async fn help_lists_every_keybinding() {
+        let mut app = test_app();
+        run_command(&mut app, "help").await;
+        let text: String = app.transcript.iter().map(line_text).collect();
+        for (keys, description) in KEY_BINDINGS {
+            assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
+            assert!(
+                text.contains(description),
+                "missing description {description:?} in: {text}"
+            );
+        }
+    }
+
+    /// The idle footer carries no cheat sheet at all -- not on a fresh
+    /// session, not while typing the first message, not after it. Discovery
+    /// lives in the opening transcript note and `/help`.
+    #[test]
+    fn idle_footer_never_shows_a_cheat_sheet() {
+        let mut app = test_app();
+        type Setup<'a> = (&'a str, &'a dyn Fn(&mut App));
+        let states: [Setup; 3] = [
+            ("fresh", &|_: &mut App| {}),
+            ("typing", &|a: &mut App| {
+                for c in "hel".chars() {
+                    a.input_insert(c);
+                }
+            }),
+            ("used", &|a: &mut App| {
+                a.history.push(json!({ "role": "user", "content": "hi" }));
+            }),
+        ];
+        for (label, setup) in states {
+            setup(&mut app);
+            let rows = render_rows(&mut app, 80, 12);
+            // The footer is the last row: ... input, path line, footer.
+            let footer_row = rows.last().expect("non-empty render").trim();
+            assert!(
+                footer_row.is_empty(),
+                "{label}: idle footer should be blank, got {footer_row:?}"
+            );
+        }
+    }
+
+    /// A transient detail (`stop_reason=...`, `cancelled`) still owns the
+    /// footer row, and starts at the same column the hints used to.
+    #[test]
+    fn idle_footer_still_shows_transient_detail() {
+        let mut app = test_app();
+        app.detail = "stop_reason=stop".into();
+        let rows = render_rows(&mut app, 80, 12);
+        assert_eq!(rows.last().unwrap().trim_end(), " stop_reason=stop");
+    }
+
+    /// Working dir + branch sit below the input, directly above the status
+    /// footer -- not split across the top and bottom of the screen.
+    #[test]
+    fn path_line_sits_below_the_input() {
+        let mut app = test_app();
+        app.git_branch = Some("goal/general-agent".into());
+        let rows = render_rows(&mut app, 80, 12);
+        let path_row = rows.len() - 2;
+        assert!(
+            rows[path_row].contains("/tmp/repo") && rows[path_row].contains("goal/general-agent"),
+            "expected dir+branch just above the footer, got {:?}",
+            rows[path_row]
+        );
+        // Nothing but the header above the transcript any more.
+        assert!(
+            !rows[1].contains("/tmp/repo"),
+            "path line should no longer render at the top: {:?}",
+            rows[1]
+        );
+    }
+
+    #[test]
+    fn tilde_path_abbreviates_only_the_home_prefix() {
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME set in tests"));
+        assert_eq!(tilde_path(&home), "~");
+        assert_eq!(tilde_path(&home.join("code/jan")), "~/code/jan");
+        // A path that merely starts with the same characters is not a child.
+        assert_eq!(
+            tilde_path(std::path::Path::new("/var/tmp/x")),
+            "/var/tmp/x"
+        );
+    }
+
+    /// A running turn still needs its transient hints -- only the idle cheat
+    /// sheet was removed.
+    #[test]
+    fn running_footer_keeps_its_hints() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        app.status = Status::Running;
+        let rows = render_rows(&mut app, 80, 12);
+        assert!(
+            rows.iter().any(|r| r.contains("cancel")),
+            "running footer should still offer cancel: {rows:?}"
+        );
     }
 
     #[test]
@@ -9815,3 +10785,5 @@ mod tests {
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }
+
+
