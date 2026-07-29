@@ -34,16 +34,21 @@ const joinPath = (root: string, rel: string) =>
 export function CodePreviewPanel({
   files,
   root,
+  selectedPath,
+  onSelect,
   onClose,
 }: {
   files: string[]
   root: string | null
+  /** Driven by the caller so a transcript artifact card can open a file here. */
+  selectedPath: string | null
+  onSelect: (path: string | null) => void
   onClose: () => void
 }): React.ReactElement {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const [selected, setSelected] = useState<string | null>(null)
   const [state, setState] = useState<PreviewState>({ status: 'idle' })
+  const selected = selectedPath
 
   const load = useCallback(
     async (rel: string) => {
@@ -101,15 +106,18 @@ export function CodePreviewPanel({
     [root, serviceHub, t]
   )
 
-  const select = (rel: string) => {
-    setSelected(rel)
-    void load(rel)
-  }
+  // Load whenever the caller changes the selection (file list click, or a
+  // transcript artifact card opening a specific file).
+  useEffect(() => {
+    if (selectedPath) void load(selectedPath)
+    else setState({ status: 'idle' })
+  }, [selectedPath, load])
 
   // Switching project root can never leave another project's file on screen.
   useEffect(() => {
-    setSelected(null)
+    onSelect(null)
     setState({ status: 'idle' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root])
 
   return (
@@ -142,7 +150,7 @@ export function CodePreviewPanel({
               <button
                 key={rel}
                 type="button"
-                onClick={() => select(rel)}
+                onClick={() => onSelect(rel)}
                 title={rel}
                 className={cn(
                   'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[13px] hover:bg-main-view-fg/5',

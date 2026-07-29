@@ -45,6 +45,8 @@ import { SubagentTasksPanel } from '@/containers/SubagentTasksPanel'
 import { CodeDiffPanel } from '@/containers/CodeDiffPanel'
 import { CodeTodoPanel } from '@/containers/CodeTodoPanel'
 import { CodePreviewPanel } from '@/containers/CodePreviewPanel'
+import { CodeArtifactCard } from '@/containers/CodeArtifactCard'
+import { artifactsFromParts } from '@/lib/codeArtifacts'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { collectCodeFileDiffs } from '@/lib/codeDiffs'
 import { contentLength, hasContent } from '@/lib/codeHistory'
@@ -219,6 +221,12 @@ function CodePage() {
   // still bump on later turns; once idle, show what actually got persisted.
   const usage = running ? liveUsage : current?.lastUsage
   const [activePanel, setActivePanel] = useState<CodeSidePanelView | null>(null)
+  // Lifted so a transcript artifact card can open a specific file in the pane.
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
+  const openPreview = (path: string) => {
+    setPreviewPath(path)
+    setActivePanel('preview')
+  }
   const togglePanel = (view: CodeSidePanelView) =>
     setActivePanel((current) => (current === view ? null : view))
 
@@ -1015,19 +1023,30 @@ function CodePage() {
               <Conversation className="absolute inset-0 text-start">
                 <ConversationContent className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}>
                   {uiMessages.map((message, i) => (
-                    <MessageItem
-                      key={message.id}
-                      message={message}
-                      isFirstMessage={i === 0}
-                      isLastMessage={i === uiMessages.length - 1}
-                      status={running ? 'streaming' : 'ready'}
-                      reasoningContainerRef={reasoningContainerRef}
-                      isReasoningAtBottom={isReasoningAtBottom}
-                      onReasoningScroll={handleReasoningScroll}
-                      onReasoningScrollToBottom={forceScrollReasoningToBottom}
-                      onRegenerate={handleRegenerate}
-                      subagents={subagents}
-                    />
+                    <div key={message.id}>
+                      <MessageItem
+                        message={message}
+                        isFirstMessage={i === 0}
+                        isLastMessage={i === uiMessages.length - 1}
+                        status={running ? 'streaming' : 'ready'}
+                        reasoningContainerRef={reasoningContainerRef}
+                        isReasoningAtBottom={isReasoningAtBottom}
+                        onReasoningScroll={handleReasoningScroll}
+                        onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                        onRegenerate={handleRegenerate}
+                        subagents={subagents}
+                      />
+                      {/* Derived from this message's own write/edit parts, so
+                          MessageItem (shared with chat) stays artifact-unaware. */}
+                      {artifactsFromParts(message.parts).map((artifact) => (
+                        <CodeArtifactCard
+                          key={artifact.path}
+                          artifact={artifact}
+                          root={folder}
+                          onPreview={openPreview}
+                        />
+                      ))}
+                    </div>
                   ))}
                   {/* Mirrors the regular chat's own gate ($threadId.tsx): show the
                       shared card, unsuppressed, only before this turn's first
@@ -1158,6 +1177,8 @@ function CodePage() {
           <CodePreviewPanel
             files={codeDiffs.map((d) => d.path)}
             root={folder}
+            selectedPath={previewPath}
+            onSelect={setPreviewPath}
             onClose={() => setActivePanel(null)}
           />
         ) : null}
