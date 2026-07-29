@@ -2825,7 +2825,9 @@ async fn next_event(current: &mut Option<CurrentRun>) -> Option<StreamEvent> {
 /// The handle is borrowed, not taken: this future is rebuilt (and dropped) every
 /// select iteration, so taking it would discard the still-running task the first
 /// time another branch wins the race. The slot is cleared only on completion.
-async fn await_mcp(task: &mut Option<tokio::task::JoinHandle<Vec<String>>>) -> Vec<String> {
+async fn await_mcp(
+    task: &mut Option<tokio::task::JoinHandle<crate::core::cli::mcp::ConnectOutcome>>,
+) -> crate::core::cli::mcp::ConnectOutcome {
     let joined = match task.as_mut() {
         Some(h) => h.await,
         None => return pending().await,
@@ -2910,6 +2912,16 @@ pub async fn run(
     args.todo_registry = Some(todo_registry.clone());
     let args = Arc::new(args);
 
+    // `env_logger` writes to stderr, which is still the user's terminal once we
+    // switch to the alternate screen -- a single `log::warn!` from anywhere
+    // (MCP, http, a dependency) then paints raw text over the frame and stays
+    // there until the next full repaint. Nothing may write to the terminal
+    // except the renderer, so mute the log facade for the duration and restore
+    // it on the way out. Anything worth the user's attention is a transcript
+    // note; see `connect_active` for the MCP case.
+    let prev_log_level = log::max_level();
+    log::set_max_level(log::LevelFilter::Off);
+
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
@@ -2966,6 +2978,7 @@ pub async fn run(
         LeaveAlternateScreen,
     );
     let _ = terminal.show_cursor();
+    log::set_max_level(prev_log_level);
     res
 }
 
@@ -2977,7 +2990,7 @@ async fn chat_loop<B: Backend>(
     ask_requests: &crate::core::agent::interaction::AskRegistry,
     app: &mut App,
     initial_task: Option<String>,
-    mut mcp_task: Option<tokio::task::JoinHandle<Vec<String>>>,
+    mut mcp_task: Option<tokio::task::JoinHandle<crate::core::cli::mcp::ConnectOutcome>>,
     mcp_servers: &crate::core::state::SharedMcpServers,
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
@@ -3116,11 +3129,16 @@ async fn chat_loop<B: Backend>(
                     }
                 }
             }
-            connected = await_mcp(&mut mcp_task) => {
+            outcome = await_mcp(&mut mcp_task) => {
                 mcp_ready = true;
-                match connected.as_slice() {
-                    [] => {}
-                    names => app.note(&format!("MCP ready: {}", names.join(", "))),
+                if !outcome.connected.is_empty() {
+                    app.note(&format!("MCP ready: {}", outcome.connected.join(", ")));
+                }
+                // Right after the ready line, so a server that didn't come up
+                // is visible at start/resume instead of being lost to a log
+                // line painted over the frame.
+                for failure in &outcome.failed {
+                    app.note(&format!("MCP: {failure}"));
                 }
             }
             login_res = await_login(&mut login_task) => {
@@ -6144,17 +6162,13 @@ fn footer(app: &App) -> Paragraph<'static> {
             s
         }
         Status::Idle => {
-            // Idle is the default state, so a permanent cheat sheet here is
-            // pure noise -- the full list lives in `/help`. Show a one-time
-            // pointer on a session that hasn't been used yet (fresh start,
-            // `/new`, `/clear`), then go quiet after the first message.
-            let mut s = if app.history.is_empty() {
-                hint_spans(key_style, &[("/help", "for commands and keys")])
-            } else {
-                // Matches the leading pad `hint_spans` emits, so a queue count
-                // or detail suffix lands in the same column either way.
-                vec![Span::raw(" ")]
-            };
+            // Idle is the default state, so a cheat sheet here is permanent
+            // noise. Discovery is already covered without it: the transcript
+            // opens with "type a message to start, or /help for commands", and
+            // `/help` carries the full list (see `KEY_BINDINGS`). Keep only the
+            // leading pad `hint_spans` emits, so a queue count or detail suffix
+            // lands in the same column as the other states.
+            let mut s = vec![Span::raw(" ")];
             if queue_count > 0 {
                 s.insert(0, Span::styled(
                     format!("⏳ Queued ({queue_count})  "),
@@ -8864,32 +8878,43 @@ mod tests {
         }
     }
 
-    /// The idle footer is a one-time pointer, not a permanent cheat sheet: it
-    /// names `/help` on an unused session and goes quiet after the first
-    /// message, so the row stops competing with the transcript.
+    /// The idle footer carries no cheat sheet at all -- not on a fresh
+    /// session, not while typing the first message, not after it. Discovery
+    /// lives in the opening transcript note and `/help`.
     #[test]
-    fn idle_hint_shows_once_then_goes_quiet() {
+    fn idle_footer_never_shows_a_cheat_sheet() {
         let mut app = test_app();
-        let fresh = render_rows(&mut app, 80, 12);
-        assert!(
-            fresh.iter().any(|r| r.contains("/help")),
-            "a fresh session should point at /help: {fresh:?}"
-        );
+        let states: [(&str, &dyn Fn(&mut App)); 3] = [
+            ("fresh", &|_: &mut App| {}),
+            ("typing", &|a: &mut App| {
+                for c in "hel".chars() {
+                    a.input_insert(c);
+                }
+            }),
+            ("used", &|a: &mut App| {
+                a.history.push(json!({ "role": "user", "content": "hi" }));
+            }),
+        ];
+        for (label, setup) in states {
+            setup(&mut app);
+            let rows = render_rows(&mut app, 80, 12);
+            // Row 2 is the footer: header, path line, footer, then the body.
+            let footer_row = rows[2].trim();
+            assert!(
+                footer_row.is_empty(),
+                "{label}: idle footer should be blank, got {footer_row:?}"
+            );
+        }
+    }
 
-        app.history.push(json!({ "role": "user", "content": "hi" }));
-        let used = render_rows(&mut app, 80, 12);
-        assert!(
-            !used.iter().any(|r| r.contains("/help")),
-            "hint should be gone once the session is in use: {used:?}"
-        );
-
-        // `/new` and `/clear` drop history, so the pointer comes back.
-        app.reset_session();
-        let reset = render_rows(&mut app, 80, 12);
-        assert!(
-            reset.iter().any(|r| r.contains("/help")),
-            "a reset session should point at /help again: {reset:?}"
-        );
+    /// A transient detail (`stop_reason=...`, `cancelled`) still owns the
+    /// footer row, and starts at the same column the hints used to.
+    #[test]
+    fn idle_footer_still_shows_transient_detail() {
+        let mut app = test_app();
+        app.detail = "stop_reason=stop".into();
+        let rows = render_rows(&mut app, 80, 12);
+        assert_eq!(rows[2].trim_end(), " stop_reason=stop");
     }
 
     /// A running turn still needs its transient hints -- only the idle cheat
