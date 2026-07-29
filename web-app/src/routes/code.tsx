@@ -37,7 +37,7 @@ import CodePermissionDialog, {
   type PermissionDecision,
   WIRE,
 } from '@/containers/dialogs/CodePermissionDialog'
-import { CodeAskDialog } from '@/containers/dialogs/CodeAskDialog'
+import { CodeAskCard } from '@/containers/CodeAskCard'
 import { MessageItem } from '@/containers/MessageItem'
 import SkillSelector from '@/containers/SkillSelector'
 import CodeModeSelector from '@/containers/CodeModeSelector'
@@ -1074,6 +1074,13 @@ function CodePage() {
                 <SkillSelector folder={folder} />
               </div>
             </div>
+            {/* Docked above the input, not modal: the run is paused, but the
+                user can still read the transcript and reply in prose instead. */}
+            <CodeAskCard
+              requestId={pendingAsks[0]?.requestId ?? null}
+              request={pendingAsks[0]?.request ?? null}
+              onRespond={respondAsk}
+            />
             <div className="relative" onKeyDownCapture={onMenuKeyDown}>
               {menuItems.length > 0 && (
                 <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
@@ -1135,11 +1142,6 @@ function CodePage() {
       <CodePermissionDialog
         request={pendingPerms[0] ?? null}
         onRespond={respondPermission}
-      />
-      <CodeAskDialog
-        requestId={pendingAsks[0]?.requestId ?? null}
-        request={pendingAsks[0]?.request ?? null}
-        onRespond={respondAsk}
       />
     </div>
   )
