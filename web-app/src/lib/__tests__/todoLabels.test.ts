@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanTaskLabel } from '@/containers/CodeTodoPanel'
+import { cleanTaskLabel } from '@/lib/todoLabels'
 
 describe('cleanTaskLabel', () => {
   it('strips a model-written status marker so it does not double up with the row icon', () => {
