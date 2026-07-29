@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.apiario.dev/v1',
+    explore_models_url: 'https://docs.apiario.dev/models',
+    provider: 'apiario',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'The Apiário API uses API keys for authentication. Visit [apiario.dev](https://apiario.dev) to get your API key.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]
