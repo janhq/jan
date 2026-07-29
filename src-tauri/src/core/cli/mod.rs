@@ -947,7 +947,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Step { index, max } => eprintln!("\n\x1b[2m[turn {index}/{max}]\x1b[0m"),
         // In-progress signal is for the live TUI; the piped log stays quiet
         // until the full call (with args) arrives just below.
-        StreamEvent::ToolCallStarted { .. } => {}
+        // Headless prints one line per completed call; the in-progress signal
+        // and its argument deltas have nothing to render into.
+        StreamEvent::ToolCallStarted { .. } | StreamEvent::ToolCallArgsDelta { .. } => {}
         StreamEvent::ToolCall { name, args, .. } => eprintln!(
             "\x1b[2m[tool] {}\x1b[0m",
             crate::core::agent::events::describe_tool_call(&name, &args)

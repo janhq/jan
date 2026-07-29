@@ -17,6 +17,16 @@ pub enum StreamEvent {
     /// (potentially long) argument-streaming window; the full [`ToolCall`] with
     /// parsed `args` follows once the completion is assembled.
     ToolCallStarted { id: String, name: String },
+    /// A chunk of a tool call's raw JSON arguments, exactly as it arrived on the
+    /// wire. Emitted between [`ToolCallStarted`] and [`ToolCall`] so a consumer
+    /// can render the arguments as they land -- the difference between a
+    /// featureless spinner and a live preview while a large `write` streams.
+    ///
+    /// Deltas, not the accumulated buffer: re-sending the whole prefix on every
+    /// chunk is quadratic in a file-sized argument. Consumers concatenate.
+    /// The result is *incomplete JSON* until [`ToolCall`] arrives; parse it
+    /// leniently or not at all.
+    ToolCallArgsDelta { id: String, delta: String },
     /// The model requested a tool call. `args` is the parsed argument object
     /// (null if the model emitted non-JSON arguments).
     ToolCall {

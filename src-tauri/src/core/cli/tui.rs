@@ -576,10 +576,11 @@ struct App {
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
     awaiting: Vec<(String, String, String)>,
-    /// Tool calls whose arguments are still streaming, `(tool_call_id, name)`.
-    /// Rendered as a live throbber and cleared on the matching `ToolCall` (full
-    /// args) or on the next `Step`, whichever comes first.
-    starting: Vec<(String, String)>,
+    /// Tool calls whose arguments are still streaming. Rendered live -- a file
+    /// body previews as it arrives, anything else gets a throbber -- and
+    /// cleared on the matching `ToolCall` (full args) or on the next `Step`,
+    /// whichever comes first.
+    starting: Vec<StartingCall>,
     /// Monotonic frame counter driving the throbber. Advanced by whole
     /// `SPINNER_ADVANCE_MS` steps elapsed since `last_spinner_advance`, not once
     /// per tick, so the animation runs at a fixed cadence and catches up after a
@@ -1573,14 +1574,19 @@ impl App {
                 // Commit buffered prose/reasoning so it renders above the
                 // in-progress throbber, matching the grouped-call ordering.
                 self.flush_assistant();
-                if !self.starting.iter().any(|(sid, _)| sid == &id) {
-                    self.starting.push((id, name));
+                if !self.starting.iter().any(|c| c.id == id) {
+                    self.starting.push(StartingCall { id, name, args: String::new() });
+                }
+            }
+            StreamEvent::ToolCallArgsDelta { id, delta } => {
+                if let Some(call) = self.starting.iter_mut().find(|c| c.id == id) {
+                    call.args.push_str(&delta);
                 }
             }
             StreamEvent::ToolCall { id, name, args } => {
                 // The full call (with parsed args) supersedes its in-progress
                 // throbber.
-                self.starting.retain(|(sid, _)| sid != &id);
+                self.starting.retain(|c| c.id != id);
                 // Track todo activity this turn so the reminder policy can tell
                 // an engaged turn (mutated todos) from a stalled one.
                 if name == "todo" {
@@ -2313,6 +2319,168 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
 }
 
 /// A one-line tool row: `│ <tag> <text>` with a styled tag and body.
+/// A tool call announced by the model whose arguments are still arriving.
+struct StartingCall {
+    id: String,
+    name: String,
+    /// Raw JSON arguments accumulated so far -- a truncated prefix of the
+    /// object the model is emitting, not valid JSON until the call completes.
+    args: String,
+}
+
+impl StartingCall {
+    /// The file body being written, as far as it has streamed. `None` for any
+    /// call that isn't a `write`, or before its `content` field opens.
+    fn streaming_body(&self) -> Option<String> {
+        if self.name != "write" {
+            return None;
+        }
+        partial_json_field(&self.args, "content").map(unescape_partial_json_string)
+    }
+
+    /// The destination path, available well before the body since `path` is
+    /// the short field and models emit it first.
+    fn streaming_path(&self) -> Option<String> {
+        partial_json_field(&self.args, "path").map(unescape_partial_json_string)
+    }
+}
+
+/// How many trailing lines of a streaming file body stay on screen. Enough to
+/// see the model actually working without the preview owning the viewport.
+const STREAM_TAIL_LINES: usize = 12;
+/// Minimum width of the line-number gutter, so a short preview doesn't jitter
+/// sideways as the count crosses 10 / 100.
+const STREAM_GUTTER_MIN: usize = 3;
+
+/// Pull one *string-valued* field out of a JSON object that is still streaming
+/// and therefore almost certainly truncated mid-value.
+///
+/// A real parser can't help here: the input is a prefix like
+/// `{"path":"a.html","content":"<!doctype html>\n<html` with no closing quote
+/// or brace. This scans for `"<field>"` followed by `:` and an opening quote,
+/// then walks the value honoring backslash escapes, stopping at the closing
+/// quote *or* at end-of-input -- whichever comes first. Returns the raw
+/// (still escaped) value; see `unescape_partial_json_string`.
+fn partial_json_field<'a>(raw: &'a str, field: &str) -> Option<&'a str> {
+    let mut rest = raw;
+    let needle = format!("\"{field}\"");
+    loop {
+        let at = rest.find(&needle)?;
+        let after = &rest[at + needle.len()..];
+        let after_colon = after.trim_start();
+        // `"content"` could also appear inside some earlier string value; if
+        // what follows isn't `: "`, keep looking.
+        let Some(after_colon) = after_colon.strip_prefix(':') else {
+            rest = &rest[at + needle.len()..];
+            continue;
+        };
+        let Some(value) = after_colon.trim_start().strip_prefix('"') else {
+            rest = &rest[at + needle.len()..];
+            continue;
+        };
+        let mut escaped = false;
+        for (i, c) in value.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                return Some(&value[..i]);
+            }
+        }
+        // No closing quote: the value is still streaming, take all of it.
+        return Some(value);
+    }
+}
+
+/// Turn a raw JSON string body into display text, tolerating a truncated tail.
+///
+/// The stream can cut anywhere, including the middle of an escape sequence, so
+/// drop a dangling `\` and a partial `\uXXXX` before handing the rest to the
+/// parser. Falls back to the raw text if it still won't parse -- a preview is
+/// never worth failing a render over.
+fn unescape_partial_json_string(raw: &str) -> String {
+    let mut s = raw;
+    // Partial `\uXXXX`: 0-3 hex digits arrived so far.
+    if let Some(at) = s.rfind("\\u") {
+        let tail = &s[at + 2..];
+        if tail.len() < 4 && tail.chars().all(|c| c.is_ascii_hexdigit()) {
+            s = &s[..at];
+        }
+    }
+    // Dangling escape: an odd number of trailing backslashes means the last one
+    // is opening an escape whose payload hasn't arrived.
+    let trailing_slashes = s.chars().rev().take_while(|&c| c == '\\').count();
+    if trailing_slashes % 2 == 1 {
+        s = &s[..s.len() - 1];
+    }
+    serde_json::from_str::<String>(&format!("\"{s}\"")).unwrap_or_else(|_| s.to_string())
+}
+
+/// Rows for one in-flight tool call.
+///
+/// A `write` whose body has started arriving renders as a live preview: the
+/// destination, a tail window of the content with line numbers, and a footer
+/// marking it as still streaming. Everything else -- and a `write` before its
+/// `content` field opens -- falls back to a one-line throbber, which is all
+/// there is to say about a call whose arguments haven't arrived.
+///
+/// Re-derived from the raw arguments on every frame rather than cached: the
+/// whole buffer is rescanned and unescaped each time, which measures ~0.2ms at
+/// 40KB and ~2ms at 400KB against a 50ms frame. Linear, so a multi-megabyte
+/// write would start eating the budget -- if that shows up, unescape only from
+/// the last `STREAM_TAIL_LINES` newline escapes instead of the whole body.
+fn starting_call_lines(call: &StartingCall, frame: &str) -> Vec<Line<'static>> {
+    let Some(body) = call.streaming_body() else {
+        let label = match call.streaming_path() {
+            // Even without a body, the path lands early enough to be worth
+            // showing -- "Preparing write" alone says nothing about what.
+            Some(path) if !path.is_empty() => format!("Preparing write: {path}"),
+            _ => format!("Preparing {}", call.name),
+        };
+        return vec![tool_row(frame, Style::new().cyan(), &label, Style::new().cyan().dim())];
+    };
+
+    let mut out = Vec::new();
+    let path = call.streaming_path().unwrap_or_default();
+    out.push(Line::from(vec![
+        Span::styled("│ ", Style::new().dark_gray()),
+        Span::styled("Write: ", Style::new().cyan()),
+        Span::styled(path, Style::new().cyan().dim()),
+    ]));
+
+    // `split` (not `lines`) so a trailing newline shows as the empty line the
+    // model just opened, which is where the next content will land.
+    let all: Vec<&str> = body.split('\n').collect();
+    let start = all.len().saturating_sub(STREAM_TAIL_LINES);
+    let gutter = all.len().to_string().len().max(STREAM_GUTTER_MIN);
+    if start > 0 {
+        out.push(Line::from(vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(
+                format!("… ({start} earlier line{})", if start == 1 { "" } else { "s" }),
+                Style::new().dark_gray(),
+            ),
+        ]));
+    }
+    for (offset, text) in all[start..].iter().enumerate() {
+        out.push(Line::from(vec![
+            Span::styled("│ ", Style::new().dark_gray()),
+            Span::styled(
+                format!("{:>gutter$} ", start + offset + 1, gutter = gutter),
+                Style::new().dark_gray(),
+            ),
+            Span::raw(text.to_string()),
+        ]));
+    }
+    out.push(Line::from(vec![
+        Span::styled("│ ", Style::new().dark_gray()),
+        Span::styled(format!("{frame} "), Style::new().cyan()),
+        Span::styled("… (streaming)", Style::new().dark_gray()),
+    ]));
+    out
+}
+
 fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
     Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
@@ -5250,14 +5418,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
-    for (_, name) in &app.starting {
+    for call in &app.starting {
         let frame = SPINNER[app.spinner_frame % SPINNER.len()];
-        lines.push(tool_row(
-            frame,
-            Style::new().cyan(),
-            &format!("Preparing {name}"),
-            Style::new().cyan().dim(),
-        ));
+        lines.extend(starting_call_lines(call, frame));
     }
     // Live subagent panels, streaming prose, and awaiting throbbers above have
     // no transcript index; they're all appended after the transcript loop.
@@ -6216,7 +6379,7 @@ mod tests {
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         finish_login, is_table_separator, load_image_file, message_text, open_config_screen,
-        parse_command,
+        parse_command, partial_json_field, starting_call_lines, unescape_partial_json_string,
         render_table, restore_goal, restore_run_mode, restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
@@ -8882,6 +9045,120 @@ mod tests {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
     }
 
+    #[test]
+    fn partial_json_field_reads_a_truncated_value() {
+        // Closed value.
+        let done = r#"{"path":"a.html","content":"<h1>hi</h1>"}"#;
+        assert_eq!(partial_json_field(done, "path"), Some("a.html"));
+        assert_eq!(partial_json_field(done, "content"), Some("<h1>hi</h1>"));
+
+        // Cut mid-value: everything that arrived is the value.
+        let cut = r#"{"path":"a.html","content":"<!doctype html>\n<html"#;
+        assert_eq!(partial_json_field(cut, "content"), Some(r#"<!doctype html>\n<html"#));
+
+        // Cut before the field even opens.
+        assert_eq!(partial_json_field(r#"{"path":"a.htm"#, "content"), None);
+
+        // An escaped quote inside the value does not end it.
+        let escaped = r#"{"content":"say \"hi\" now"#;
+        assert_eq!(partial_json_field(escaped, "content"), Some(r#"say \"hi\" now"#));
+
+        // The field name occurring inside an earlier value is not the field.
+        let decoy = r#"{"path":"my\"content\".txt","content":"real"#;
+        assert_eq!(partial_json_field(decoy, "content"), Some("real"));
+    }
+
+    #[test]
+    fn unescape_partial_json_string_survives_a_cut_escape() {
+        assert_eq!(unescape_partial_json_string(r#"a\nb"#), "a\nb");
+        // Dangling backslash: the escape's payload hasn't arrived.
+        assert_eq!(unescape_partial_json_string(r#"a\nb\"#), "a\nb");
+        // An even run is a real escaped backslash, keep it.
+        assert_eq!(unescape_partial_json_string(r#"a\\"#), r"a\");
+        // Partial \u escape.
+        assert_eq!(unescape_partial_json_string(r#"hi \u26"#), "hi ");
+        assert_eq!(unescape_partial_json_string(r#"hi ☃"#), "hi ☃");
+    }
+
+    /// A streaming `write` previews the file as it arrives instead of sitting
+    /// on a featureless "Preparing write" spinner.
+    #[test]
+    fn streaming_write_previews_the_body() {
+        let body: String = (1..=20).map(|n| format!("line {n}\\n")).collect();
+        let call = super::StartingCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: format!(r#"{{"path":"game.html","content":"{body}"#),
+        };
+        let text: Vec<String> = starting_call_lines(&call, "⠋").iter().map(line_text).collect();
+        let joined = text.join("\n");
+
+        assert!(joined.contains("Write: game.html"), "no destination: {joined}");
+        assert!(joined.contains("… (streaming)"), "no streaming marker: {joined}");
+        // 20 body lines plus the empty one after the final \n = 21; a 12-line
+        // window leaves 9 behind.
+        assert!(joined.contains("… (9 earlier lines)"), "wrong elision: {joined}");
+        assert!(!joined.contains("line 9\n"), "line 9 is outside the window: {joined}");
+        assert!(joined.contains("line 20"), "tail should include the newest line: {joined}");
+        // Numbers are absolute, not window-relative, and right-aligned.
+        assert!(text.iter().any(|l| l.contains(" 10 line 10")), "gutter: {text:?}");
+        assert!(text.iter().any(|l| l.contains(" 20 line 20")), "gutter: {text:?}");
+    }
+
+    /// Before `content` opens there is nothing to preview, but the path is
+    /// already worth showing.
+    #[test]
+    fn streaming_write_shows_the_path_before_the_body() {
+        let call = super::StartingCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: r#"{"path":"game.html","cont"#.into(),
+        };
+        let text: Vec<String> = starting_call_lines(&call, "⠋").iter().map(line_text).collect();
+        assert_eq!(text.len(), 1);
+        assert!(text[0].contains("Preparing write: game.html"), "got {text:?}");
+    }
+
+    /// Tools other than `write` keep the plain throbber -- there is no file
+    /// body to stream.
+    #[test]
+    fn other_tools_keep_the_plain_throbber() {
+        let call = super::StartingCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: r#"{"command":"ls -la"#.into(),
+        };
+        let text: Vec<String> = starting_call_lines(&call, "⠋").iter().map(line_text).collect();
+        assert_eq!(text.len(), 1);
+        assert!(text[0].contains("Preparing bash"), "got {text:?}");
+    }
+
+    /// The deltas have to actually reach the call they belong to.
+    #[test]
+    fn args_deltas_accumulate_onto_the_starting_call() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "write".into(),
+        });
+        for delta in [r#"{"path":"a"#, r#".html","content":"he"#, "llo"] {
+            app.apply(StreamEvent::ToolCallArgsDelta {
+                id: "c1".into(),
+                delta: delta.into(),
+            });
+        }
+        let call = &app.starting[0];
+        assert_eq!(call.streaming_path().as_deref(), Some("a.html"));
+        assert_eq!(call.streaming_body().as_deref(), Some("hello"));
+
+        // A delta for an unknown call is dropped, not panicked on.
+        app.apply(StreamEvent::ToolCallArgsDelta {
+            id: "nope".into(),
+            delta: "x".into(),
+        });
+        assert_eq!(app.starting.len(), 1);
+    }
+
     /// `/help` is the home for keybindings now that the footer no longer
     /// carries them, so every advertised binding has to reach the listing.
     #[tokio::test]
@@ -9975,3 +10252,4 @@ mod tests {
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }
+
