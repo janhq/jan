@@ -53,6 +53,7 @@ import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
   isAnthropicProvider,
+  ensureAnthropicHeaders,
 } from '@/lib/remoteModelCatalog'
 
 // as route.threadsDetail
@@ -458,6 +459,9 @@ function ProviderDetail() {
         } else {
           headers['Authorization'] = `Bearer ${key}`
         }
+        if (provider) {
+          ensureAnthropicHeaders(provider, headers)
+        }
         if (
           provider.base_url.includes('localhost:') ||
           provider.base_url.includes('127.0.0.1:')
@@ -497,7 +501,7 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+  }, [apiKeysDraft, maskApiKey, provider, serviceHub, t])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
