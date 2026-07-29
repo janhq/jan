@@ -1,15 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { IconSearch } from '@tabler/icons-react'
+import { ChevronsUpDown } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { route } from '@/constants/routes'
-import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCodeSessions } from '@/hooks/useCodeSessions'
 import { useCodeRun } from '@/hooks/useCodeRun'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   ARTIFACT_GROUP_NAMES,
   ARTIFACT_ICON,
@@ -17,7 +24,6 @@ import {
   type CodeArtifact,
 } from '@/lib/codeArtifacts'
 import { previewKindFor, resolveInRoot } from '@/lib/codePreview'
-import { useServiceHub } from '@/hooks/useServiceHub'
 
 export const Route = createFileRoute(route.artifacts as any)({
   component: ArtifactsPage,
@@ -35,18 +41,14 @@ function ArtifactsPage() {
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<CodeArtifact['group'] | null>(null)
   // ponytail: a render cap with "show more" rather than paging or a virtual
-  // list. Search and the kind filter already narrow the set, and the DOM cost
-  // is the only real problem. Swap for virtualization if this gets thousands.
+  // list. Search and the kind filter already narrow the set, and DOM size was
+  // the only real cost. Swap for virtualization if this hits thousands.
   const [limit, setLimit] = useState(PAGE)
 
   // ponytail: derived from the sessions already on disk rather than a durable
   // artifact store (#299). No registration path, no migration — the trade-off
-  // is that an artifact disappears if its session is deleted. Add the store
-  // when artifacts need to outlive their session.
-  // ponytail: derived from the sessions already on disk rather than a durable
-  // artifact store (#299). No registration path, no migration — the trade-off
-  // is that an artifact disappears if its session is deleted. Add the store
-  // when artifacts need to outlive their session.
+  // is that an artifact disappears if its session is deleted. See #310 for why
+  // that store needs splitting before it can carry artifact records.
   const rows = useMemo<Row[]>(
     () =>
       sessions.flatMap((session) =>
@@ -78,113 +80,101 @@ function ArtifactsPage() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="flex h-svh w-full flex-col">
+      {/* Search in the header, dropdown filter on the right — the hub page's
+          layout, so this reads as part of Jan rather than its own thing. */}
       <HeaderPage>
-        <h1 className="font-medium">{t('common:artifacts')}</h1>
-      </HeaderPage>
-
-      <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
-        <div className="mb-4 flex shrink-0 items-center gap-2">
-          <div className="relative w-64">
-            <Search
-              size={14}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-main-view-fg/40"
-            />
-            <Input
+        <div className="relative z-20 flex h-10 w-full items-center justify-between py-3 pr-3">
+          <div className="flex w-full items-center gap-2">
+            <IconSearch size={14} className="shrink-0 text-muted-foreground" />
+            <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('common:artifactsSearch')}
-              className="h-8 pl-8"
+              className="w-full focus:outline-none"
             />
           </div>
-          <Button
-            variant={group === null ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8"
-            onClick={() => setGroup(null)}
-          >
-            {t('common:artifactsAll')}
-          </Button>
-          {ARTIFACT_GROUP_NAMES.map((g) => (
-            <Button
-              key={g}
-              variant={group === g ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8"
-              onClick={() => setGroup(g)}
-            >
-              {g}
-            </Button>
-          ))}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="shrink-0">
+                {group ?? t('common:artifactsAll')}
+                <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end">
+              <DropdownMenuItem onClick={() => setGroup(null)}>
+                {t('common:artifactsAll')}
+              </DropdownMenuItem>
+              {ARTIFACT_GROUP_NAMES.map((g) => (
+                <DropdownMenuItem key={g} onClick={() => setGroup(g)}>
+                  {g}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+      </HeaderPage>
 
-        {shown.length === 0 ? (
-          <p className="text-sm text-main-view-fg/50">
-            {/* Distinct messages: nothing made yet vs nothing matching. */}
-            {rows.length === 0 ? t('common:artifactsEmpty') : t('common:artifactsNoMatch')}
-          </p>
-        ) : (
-          <div className="grid flex-1 auto-rows-min gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-            {shown.slice(0, limit).map((row) => {
-              const Icon = ARTIFACT_ICON[row.group]
-              const kind = previewKindFor(row.path)
-              const abs = row.root ? resolveInRoot(row.root, row.path) : null
-              const thumb =
-                abs && (kind === 'image' || kind === 'svg')
-                  ? serviceHub.core().convertFileSrc(abs)
-                  : null
-              return (
-                <button
-                  key={`${row.sessionId}:${row.path}`}
-                  type="button"
-                  onClick={() => open(row)}
-                  title={row.path}
-                  className={cn(
-                    'flex flex-col gap-3 rounded-xl border bg-main-view p-4 text-left',
-                    'transition-colors hover:border-main-view-fg/25'
-                  )}
-                >
-                  {/* Real thumbnail where the browser can render the file
-                      directly. HTML would need executing the page to preview,
-                      so it keeps the icon. */}
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt=""
-                      className="size-11 shrink-0 rounded-lg border bg-main-view-fg/[0.03] object-contain"
-                    />
-                  ) : (
-                    <span className="flex size-11 shrink-0 items-center justify-center rounded-lg border bg-main-view-fg/[0.03]">
-                      <Icon size={18} className="text-main-view-fg/50" />
-                    </span>
-                  )}
-                  {/* block + w-full: `truncate` is inert on an inline span,
-                      which is why long absolute paths overflowed the card. */}
-                  <span className="block w-full min-w-0">
-                    <span className="block truncate text-[15px] font-semibold">
-                      {row.title}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-main-view-fg/55">
-                      {row.group} · {row.label}
-                    </span>
-                    <span className="mt-1.5 block truncate text-xs text-main-view-fg/45">
-                      {row.path}
-                    </span>
-                  </span>
-                </button>
-              )
-            })}
-            {shown.length > limit && (
-              <button
-                type="button"
-                onClick={() => setLimit((n) => n + PAGE)}
-                className="col-span-full mx-auto my-2 rounded-md border px-3 py-1.5 text-[13px] hover:bg-main-view-fg/5"
-              >
+      <div className="h-[calc(100%-60px)] w-full overflow-y-auto p-4">
+        <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+          {shown.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {/* Distinct: nothing made yet vs nothing matching the filter. */}
+              {rows.length === 0 ? t('common:artifactsEmpty') : t('common:artifactsNoMatch')}
+            </p>
+          ) : (
+            <div className="grid auto-rows-min gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {shown.slice(0, limit).map((row) => {
+                const Icon = ARTIFACT_ICON[row.group]
+                const kind = previewKindFor(row.path)
+                const abs = row.root ? resolveInRoot(row.root, row.path) : null
+                // A real thumbnail only where the browser renders the file on
+                // its own; HTML would need executing the page.
+                const thumb =
+                  abs && (kind === 'image' || kind === 'svg')
+                    ? serviceHub.core().convertFileSrc(abs)
+                    : null
+                return (
+                  <Card
+                    key={`${row.sessionId}:${row.path}`}
+                    className="flex cursor-pointer items-center gap-3 p-3 transition-colors hover:border-accent"
+                    onClick={() => open(row)}
+                    title={row.path}
+                  >
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt=""
+                        className="size-10 shrink-0 rounded-md border object-contain"
+                      />
+                    ) : (
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-md border">
+                        <Icon size={18} className="text-muted-foreground" />
+                      </div>
+                    )}
+                    {/* min-w-0 on a block box: `truncate` is inert otherwise. */}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{row.title}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {row.group} · {row.label}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground/70">
+                        {row.path}
+                      </div>
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+          {shown.length > limit && (
+            <div className="mt-3 flex justify-center">
+              <Button variant="outline" size="sm" onClick={() => setLimit((n) => n + PAGE)}>
                 {t('common:artifactsShowMore', { count: shown.length - limit })}
-              </button>
-            )}
-          </div>
-        )}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
