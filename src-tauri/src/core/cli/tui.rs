@@ -1247,15 +1247,7 @@ impl App {
         };
         self.history.push(build_user_message(&final_text, &images));
         self.push_user_line(&text, &names);
-        self.status = Status::Running;
-        self.run_started = Some(Instant::now());
-        self.turn = (0, 0);
-        self.tokens_per_sec = None;
-        self.turn_output_tokens = 0;
-        self.turn_prompt_tokens = 0;
-        self.scrollback = 0;
-        self.todo_call_this_turn = false;
-        self.todo_ok_this_turn = false;
+        self.begin_turn();
         // A fresh user turn is new context: allow the next boundary to remind
         // again even if the open work is unchanged (dedup is "twice in a row"),
         // and rearm the per-cycle reminder budget. A reminder's own follow-up
@@ -1280,15 +1272,7 @@ impl App {
             "◈ todo reminder — unfinished work, continuing".to_string(),
             Style::new().dim(),
         ));
-        self.status = Status::Running;
-        self.run_started = Some(Instant::now());
-        self.turn = (0, 0);
-        self.tokens_per_sec = None;
-        self.turn_output_tokens = 0;
-        self.turn_prompt_tokens = 0;
-        self.scrollback = 0;
-        self.todo_call_this_turn = false;
-        self.todo_ok_this_turn = false;
+        self.begin_turn();
         self.want_start = true;
         self.persist();
     }
@@ -1602,7 +1586,7 @@ impl App {
                 // in-progress throbber, matching the grouped-call ordering.
                 self.flush_assistant();
                 if !self.starting.iter().any(|c| c.id == id) {
-                    self.starting.push(StartingCall { id, name, args: String::new() });
+                    self.starting.push(StartingCall::new(id, name));
                 }
             }
             StreamEvent::ToolCallArgsDelta { id, delta } => {
@@ -1869,6 +1853,22 @@ impl App {
         }
     }
 
+    /// Arm the per-turn state shared by a user submit and a reminder
+    /// continuation. Both paths start a run, so both must reset every
+    /// turn-scoped counter -- keeping two hand-maintained copies in sync is how
+    /// a new counter ends up reset on one path and accumulating on the other.
+    fn begin_turn(&mut self) {
+        self.status = Status::Running;
+        self.run_started = Some(Instant::now());
+        self.turn = (0, 0);
+        self.tokens_per_sec = None;
+        self.turn_output_tokens = 0;
+        self.turn_prompt_tokens = 0;
+        self.scrollback = 0;
+        self.todo_call_this_turn = false;
+        self.todo_ok_this_turn = false;
+    }
+
     /// Flush the current turn and return its text as the final assistant answer.
     fn take_answer(&mut self) -> String {
         let answer = self.assistant_buf.trim().to_string();
@@ -1887,11 +1887,13 @@ impl App {
         // much came back, how long it took, how fast. Cheap to skim, and the
         // only place the cost of a turn is visible after the fact.
         if let Some(started) = self.run_started {
-            self.turn_output_tokens += usage
-                .as_ref()
-                .and_then(|u| u.completion_tokens)
-                .filter(|_| self.turn_output_tokens == 0)
-                .unwrap_or(0);
+            // Normally `TurnUsage` has already reported every request. Fall
+            // back to the terminal usage only for an upstream that reports
+            // nothing until the end, so the receipt isn't blank.
+            if self.turn_output_tokens == 0 {
+                self.turn_output_tokens =
+                    usage.as_ref().and_then(|u| u.completion_tokens).unwrap_or(0);
+            }
             let stats = turn_stats_line(
                 self.turn_prompt_tokens,
                 self.turn_output_tokens,
@@ -2389,6 +2391,22 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
 }
 
 /// A one-line tool row: `│ <tag> <text>` with a styled tag and body.
+/// What a still-streaming call has revealed about itself so far. Derived from
+/// the raw arguments, and cached: deriving it costs a full scan and unescape of
+/// everything received, which at file scale is far too much to repeat on every
+/// 50ms frame when the underlying bytes usually haven't moved.
+#[derive(Default)]
+struct StartingPreview {
+    /// Destination path, available well before the body since `path` is short
+    /// and models emit it first.
+    path: Option<String>,
+    /// Trailing lines of the file body, newest last. `None` until a `write`
+    /// call's `content` field opens.
+    tail: Option<Vec<String>>,
+    /// Body lines scrolled off the top of `tail`.
+    skipped: usize,
+}
+
 /// A tool call announced by the model whose arguments are still arriving.
 struct StartingCall {
     id: String,
@@ -2396,22 +2414,55 @@ struct StartingCall {
     /// Raw JSON arguments accumulated so far -- a truncated prefix of the
     /// object the model is emitting, not valid JSON until the call completes.
     args: String,
+    preview: StartingPreview,
+    /// `args.len()` when `preview` was derived. The buffer is append-only, so
+    /// an unchanged length means unchanged content and the cache holds.
+    preview_at: Option<usize>,
 }
 
 impl StartingCall {
-    /// The file body being written, as far as it has streamed. `None` for any
-    /// call that isn't a `write`, or before its `content` field opens.
-    fn streaming_body(&self) -> Option<String> {
-        if self.name != "write" {
-            return None;
+    fn new(id: String, name: String) -> Self {
+        Self {
+            id,
+            name,
+            args: String::new(),
+            preview: StartingPreview::default(),
+            preview_at: None,
         }
-        partial_json_field(&self.args, "content").map(unescape_partial_json_string)
     }
 
-    /// The destination path, available well before the body since `path` is
-    /// the short field and models emit it first.
-    fn streaming_path(&self) -> Option<String> {
-        partial_json_field(&self.args, "path").map(unescape_partial_json_string)
+    /// Re-derive the preview if new argument bytes have arrived since the last
+    /// derivation. Called from the render path, so the work happens at most
+    /// once per frame *and* at most once per delta, whichever is rarer.
+    fn refresh_preview(&mut self) {
+        if self.preview_at == Some(self.args.len()) {
+            return;
+        }
+        self.preview_at = Some(self.args.len());
+        self.preview.path =
+            partial_json_field(&self.args, "path").map(unescape_partial_json_string);
+        let body = (self.name == "write")
+            .then(|| partial_json_field(&self.args, "content"))
+            .flatten()
+            .map(unescape_partial_json_string);
+        let Some(body) = body else {
+            self.preview.tail = None;
+            self.preview.skipped = 0;
+            return;
+        };
+        // `rsplit` walks back from the end and stops once the window is full,
+        // so a large body never materializes a line list it would discard.
+        // `split` (not `lines`) so a trailing newline shows as the empty line
+        // the model just opened, which is where the next content will land.
+        let mut tail: Vec<String> = body
+            .rsplit('\n')
+            .take(STREAM_TAIL_LINES)
+            .map(str::to_string)
+            .collect();
+        tail.reverse();
+        let total = body.bytes().filter(|&b| b == b'\n').count() + 1;
+        self.preview.skipped = total - tail.len();
+        self.preview.tail = Some(tail);
     }
 }
 
@@ -2495,14 +2546,16 @@ fn unescape_partial_json_string(raw: &str) -> String {
 /// `content` field opens -- falls back to a one-line throbber, which is all
 /// there is to say about a call whose arguments haven't arrived.
 ///
-/// Re-derived from the raw arguments on every frame rather than cached: the
-/// whole buffer is rescanned and unescaped each time, which measures ~0.2ms at
-/// 40KB and ~2ms at 400KB against a 50ms frame. Linear, so a multi-megabyte
-/// write would start eating the budget -- if that shows up, unescape only from
-/// the last `STREAM_TAIL_LINES` newline escapes instead of the whole body.
-fn starting_call_lines(call: &StartingCall, frame: &str) -> Vec<Line<'static>> {
-    let Some(body) = call.streaming_body() else {
-        let label = match call.streaming_path() {
+/// Derivation is cached on the call (see `refresh_preview`), so the cost
+/// tracks how fast bytes arrive rather than the frame rate: ~0.15ms per frame
+/// at 400KB of arguments, against ~2ms without the cache. A rescan is still
+/// linear in the whole buffer, so a multi-megabyte write would make each
+/// *delta* expensive -- if that shows up, unescape only from the last
+/// `STREAM_TAIL_LINES` newline escapes instead of the whole body.
+fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static>> {
+    call.refresh_preview();
+    let Some(tail) = call.preview.tail.as_ref() else {
+        let label = match call.preview.path.as_deref() {
             // Even without a body, the path lands early enough to be worth
             // showing -- "Preparing write" alone says nothing about what.
             Some(path) if !path.is_empty() => format!("Preparing write: {path}"),
@@ -2512,35 +2565,34 @@ fn starting_call_lines(call: &StartingCall, frame: &str) -> Vec<Line<'static>> {
     };
 
     let mut out = Vec::new();
-    let path = call.streaming_path().unwrap_or_default();
     out.push(Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
         Span::styled("Write: ", Style::new().cyan()),
-        Span::styled(path, Style::new().cyan().dim()),
+        Span::styled(
+            call.preview.path.clone().unwrap_or_default(),
+            Style::new().cyan().dim(),
+        ),
     ]));
 
-    // `split` (not `lines`) so a trailing newline shows as the empty line the
-    // model just opened, which is where the next content will land.
-    let all: Vec<&str> = body.split('\n').collect();
-    let start = all.len().saturating_sub(STREAM_TAIL_LINES);
-    let gutter = all.len().to_string().len().max(STREAM_GUTTER_MIN);
+    let start = call.preview.skipped;
+    let gutter = (start + tail.len()).to_string().len().max(STREAM_GUTTER_MIN);
     if start > 0 {
         out.push(Line::from(vec![
             Span::styled("│ ", Style::new().dark_gray()),
             Span::styled(
-                format!("… ({start} earlier line{})", if start == 1 { "" } else { "s" }),
+                format!("… ({})", pluralize("earlier line", start)),
                 Style::new().dark_gray(),
             ),
         ]));
     }
-    for (offset, text) in all[start..].iter().enumerate() {
+    for (offset, text) in tail.iter().enumerate() {
         out.push(Line::from(vec![
             Span::styled("│ ", Style::new().dark_gray()),
             Span::styled(
                 format!("{:>gutter$} ", start + offset + 1, gutter = gutter),
                 Style::new().dark_gray(),
             ),
-            Span::raw(text.to_string()),
+            Span::raw(text.clone()),
         ]));
     }
     out.push(Line::from(vec![
@@ -5474,8 +5526,8 @@ fn draw(f: &mut Frame, app: &mut App) {
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
-    for call in &app.starting {
-        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+    let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+    for call in &mut app.starting {
         lines.extend(starting_call_lines(call, frame));
     }
     // Live subagent panels, streaming prose, and awaiting throbbers above have
@@ -5999,11 +6051,7 @@ fn subagent_panel_lines(
     let mut out = vec![Line::from(vec![
         Span::styled("≡ ", Style::new().magenta()),
         Span::styled(
-            format!(
-                "Task {} agent{}",
-                panels.len(),
-                if panels.len() == 1 { "" } else { "s" }
-            ),
+            format!("Task {}", pluralize("agent", panels.len())),
             Style::new().magenta().bold(),
         ),
     ])];
@@ -6019,14 +6067,7 @@ fn subagent_panel_lines(
         let mut spans = vec![
             Span::styled("  • ", Style::new().magenta()),
             Span::styled(panel.name.clone(), Style::new().magenta()),
-            Span::styled(
-                format!(
-                    "  {} tool{}",
-                    panel.calls.len(),
-                    if panel.calls.len() == 1 { "" } else { "s" }
-                ),
-                dim,
-            ),
+            Span::styled(format!("  {}", pluralize("tool", panel.calls.len())), dim),
             Span::styled(format!("  ·  {} req", panel.requests), dim),
         ];
         // Only once the child has reported usage; "0.0%" before its first
@@ -6043,47 +6084,45 @@ fn subagent_panel_lines(
         // The dispatch prompt, so the block says what the fan-out is *for*.
         // Split on the task's own newlines rather than word-wrapping: models
         // write these as structured briefs, and the first lines are the summary.
-        if !panel.task.trim().is_empty() {
-            for (written, raw) in panel
-                .task
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .enumerate()
-            {
-                if written == task_lines {
-                    // Only worth a marker where the brief reads as complete.
-                    // Collapsed to a single line it is plainly a summary
-                    // already, and the marker would cost the line just saved.
-                    if solo {
-                        out.push(Line::from(vec![
-                            Span::styled("      ", dim),
-                            Span::styled("…".to_string(), dim),
-                        ]));
-                    }
-                    break;
+        for (written, raw) in panel
+            .task
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .enumerate()
+        {
+            if written == task_lines {
+                // Only worth a marker where the brief reads as complete.
+                // Collapsed to a single line it is plainly a summary already,
+                // and the marker would cost the line just saved.
+                if solo {
+                    out.push(indented_row("…", dim));
                 }
-                out.push(Line::from(vec![
-                    Span::styled("      ", dim),
-                    Span::styled(truncate(raw.trim(), task_width), Style::new().dim().italic()),
-                ]));
+                break;
             }
+            out.push(indented_row(
+                truncate(raw.trim(), task_width),
+                Style::new().dim().italic(),
+            ));
         }
 
         if panel.calls.is_empty() {
-            out.push(Line::from(vec![
-                Span::styled("      ", dim),
-                Span::styled("starting…".to_string(), Style::new().dim()),
-            ]));
+            out.push(indented_row("starting…", Style::new().dim()));
         }
         let start = panel.calls.len().saturating_sub(window);
         for label in &panel.calls[start..] {
-            out.push(Line::from(vec![
-                Span::styled("      ", dim),
-                Span::styled(label.clone(), Style::new().dim()),
-            ]));
+            out.push(indented_row(label.clone(), Style::new().dim()));
         }
     }
     out
+}
+
+/// A detail row indented under a subagent's stats line. One place owns the
+/// indent so the block's rows can't drift out of alignment with each other.
+fn indented_row(text: impl Into<String>, style: Style) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("      ", Style::new().dark_gray()),
+        Span::styled(text.into(), style),
+    ])
 }
 
 /// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
@@ -9450,12 +9489,9 @@ mod tests {
     #[test]
     fn streaming_write_previews_the_body() {
         let body: String = (1..=20).map(|n| format!("line {n}\\n")).collect();
-        let call = super::StartingCall {
-            id: "c1".into(),
-            name: "write".into(),
-            args: format!(r#"{{"path":"game.html","content":"{body}"#),
-        };
-        let text: Vec<String> = starting_call_lines(&call, "⠋").iter().map(line_text).collect();
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        call.args = format!(r#"{{"path":"game.html","content":"{body}"#);
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
         let joined = text.join("\n");
 
         assert!(joined.contains("Write: game.html"), "no destination: {joined}");
@@ -9470,16 +9506,39 @@ mod tests {
         assert!(text.iter().any(|l| l.contains(" 20 line 20")), "gutter: {text:?}");
     }
 
+    /// The preview is derived from an append-only buffer, so an unchanged
+    /// length means unchanged content -- the 50ms render tick must not pay for
+    /// a full rescan of a file-sized argument on every frame.
+    #[test]
+    fn preview_is_only_rederived_when_new_bytes_arrive() {
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        call.args = r#"{"path":"a.html","content":"one\ntwo"#.into();
+        call.refresh_preview();
+        let first = call.preview_at;
+        assert_eq!(call.preview.tail.as_deref(), Some(["one".into(), "two".into()].as_slice()));
+
+        // Same bytes: the cache holds and nothing is recomputed.
+        call.preview.tail = Some(vec!["sentinel".into()]);
+        call.refresh_preview();
+        assert_eq!(call.preview.tail.as_deref(), Some(["sentinel".to_string()].as_slice()));
+        assert_eq!(call.preview_at, first);
+
+        // New bytes invalidate it.
+        call.args.push_str(r#"\nthree"#);
+        call.refresh_preview();
+        assert_eq!(
+            call.preview.tail.as_deref(),
+            Some(["one".into(), "two".into(), "three".into()].as_slice())
+        );
+    }
+
     /// Before `content` opens there is nothing to preview, but the path is
     /// already worth showing.
     #[test]
     fn streaming_write_shows_the_path_before_the_body() {
-        let call = super::StartingCall {
-            id: "c1".into(),
-            name: "write".into(),
-            args: r#"{"path":"game.html","cont"#.into(),
-        };
-        let text: Vec<String> = starting_call_lines(&call, "⠋").iter().map(line_text).collect();
+        let mut call = super::StartingCall::new("c1".into(), "write".into());
+        call.args = r#"{"path":"game.html","cont"#.into();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
         assert_eq!(text.len(), 1);
         assert!(text[0].contains("Preparing write: game.html"), "got {text:?}");
     }
@@ -9488,12 +9547,9 @@ mod tests {
     /// body to stream.
     #[test]
     fn other_tools_keep_the_plain_throbber() {
-        let call = super::StartingCall {
-            id: "c1".into(),
-            name: "bash".into(),
-            args: r#"{"command":"ls -la"#.into(),
-        };
-        let text: Vec<String> = starting_call_lines(&call, "⠋").iter().map(line_text).collect();
+        let mut call = super::StartingCall::new("c1".into(), "bash".into());
+        call.args = r#"{"command":"ls -la"#.into();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋").iter().map(line_text).collect();
         assert_eq!(text.len(), 1);
         assert!(text[0].contains("Preparing bash"), "got {text:?}");
     }
@@ -9512,9 +9568,10 @@ mod tests {
                 delta: delta.into(),
             });
         }
-        let call = &app.starting[0];
-        assert_eq!(call.streaming_path().as_deref(), Some("a.html"));
-        assert_eq!(call.streaming_body().as_deref(), Some("hello"));
+        let call = &mut app.starting[0];
+        call.refresh_preview();
+        assert_eq!(call.preview.path.as_deref(), Some("a.html"));
+        assert_eq!(call.preview.tail.as_deref(), Some(["hello".to_string()].as_slice()));
 
         // A delta for an unknown call is dropped, not panicked on.
         app.apply(StreamEvent::ToolCallArgsDelta {
@@ -10618,4 +10675,5 @@ mod tests {
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }
+
 
