@@ -46,6 +46,7 @@ import { CodeDiffPanel } from '@/containers/CodeDiffPanel'
 import { CodeTodoPanel } from '@/containers/CodeTodoPanel'
 import { codeTurnsToUIMessages } from '@/lib/codeTurns'
 import { collectCodeFileDiffs } from '@/lib/codeDiffs'
+import { contentLength, hasContent } from '@/lib/codeHistory'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useMessageErrors } from '@/stores/message-errors'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -101,7 +102,7 @@ function capHistory(messages: CodeMessage[]): CodeMessage[] {
   let budget = MAX_HISTORY_CHARS
   const kept: CodeMessage[] = []
   for (let i = messages.length - 1; i >= 0; i--) {
-    budget -= messages[i].content.length
+    budget -= contentLength(messages[i].content)
     if (budget < 0 && kept.length > 0) break
     kept.unshift(messages[i])
   }
@@ -115,7 +116,7 @@ function capHistory(messages: CodeMessage[]): CodeMessage[] {
 const normalizeAlternating = (messages: CodeMessage[]): CodeMessage[] => {
   const out: CodeMessage[] = []
   for (const m of messages) {
-    if (typeof m.content === 'string' && !m.content.trim()) continue
+    if (!hasContent(m)) continue
     // The template also requires the conversation to START with user; drop any
     // leading assistant message (e.g. after aggressive trimming).
     if (out.length === 0 && m.role !== 'user') continue
@@ -728,7 +729,10 @@ function CodePage() {
           run.setUsage(sid, ev.usage)
           break
         case 'messages_updated':
-          compactedHistory = ev.messages
+          // Drop the core's tool-call turns here so they never reach the store:
+          // `CodeMessage` has no `tool_calls`, so all that survives is an
+          // assistant entry with null content.
+          compactedHistory = ev.messages.filter(hasContent)
           break
         case 'todo_update':
           useCodeSessions.getState().setTodos(sid, ev.list)
