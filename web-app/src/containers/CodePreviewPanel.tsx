@@ -45,7 +45,6 @@ export function CodePreviewPanel({
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const [state, setState] = useState<PreviewState>({ status: 'idle' })
-  const selected = selectedPath
 
   const load = useCallback(
     async (rel: string) => {
@@ -124,7 +123,7 @@ export function CodePreviewPanel({
         state.status === 'ready' || state.status === 'unsupported' ? (
           <button
             type="button"
-            onClick={() => selected && void load(selected)}
+            onClick={() => selectedPath && void load(selectedPath)}
             title={t('common:previewReload')}
             aria-label={t('common:previewReload')}
             className="shrink-0 text-main-view-fg/60 hover:text-main-view-fg"
@@ -151,7 +150,7 @@ export function CodePreviewPanel({
                 title={rel}
                 className={cn(
                   'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[13px] hover:bg-main-view-fg/5',
-                  selected === rel && 'bg-main-view-fg/[0.07] font-medium'
+                  selectedPath === rel && 'bg-main-view-fg/[0.07] font-medium'
                 )}
               >
                 <FileIcon size={12} className="shrink-0 text-main-view-fg/40" />

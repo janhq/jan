@@ -1,4 +1,6 @@
+import { Code2, FileText, ImageIcon } from 'lucide-react'
 import { basenameOf, extensionOf } from '@/lib/codePreview'
+import type { CodeTurn } from '@/hooks/useCodeSessions'
 
 /**
  * Artifacts a run produced, derived from its `write`/`edit` tool calls
@@ -57,6 +59,15 @@ export function artifactFor(path: string): CodeArtifact | null {
   }
 }
 
+/** Icon per group, shared by the transcript card and the artifacts library. */
+export const ARTIFACT_ICON = {
+  Code: Code2,
+  Image: ImageIcon,
+  Document: FileText,
+} as const
+
+export const ARTIFACT_GROUP_NAMES = ['Code', 'Image', 'Document'] as const
+
 type PartLike = {
   type?: string
   input?: unknown
@@ -96,4 +107,31 @@ export function artifactsFromParts(parts: PartLike[] | undefined): CodeArtifact[
     out.push(artifact)
   }
   return out
+}
+
+/**
+ * Artifacts a whole session produced, read straight off its turns.
+ *
+ * Deliberately not `codeTurnsToUIMessages` + {@link artifactsFromParts}: that
+ * builds the full message tree (markdown parts, reasoning splitting, tool
+ * grouping) for every session just to recover a handful of paths. The library
+ * lists every session at once, so that cost is paid per render.
+ *
+ * Deduplicated by path — a session that rewrites a file across turns produced
+ * one artifact, not one per rewrite.
+ */
+export function artifactsFromTurns(turns: CodeTurn[] | undefined): CodeArtifact[] {
+  if (!turns?.length) return []
+  const byPath = new Map<string, CodeArtifact>()
+  for (const turn of turns) {
+    if (turn.role !== 'tool') continue
+    if (turn.name !== 'write' && turn.name !== 'edit') continue
+    // Only a completed, non-error call produced a file.
+    if (turn.isError || turn.status === 'running') continue
+    const path = pathFromInput(turn.args)
+    if (!path) continue
+    const artifact = artifactFor(path)
+    if (artifact) byPath.set(path, artifact)
+  }
+  return [...byPath.values()]
 }

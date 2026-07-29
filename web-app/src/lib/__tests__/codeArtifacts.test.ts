@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { artifactFor, isArtifactPath, artifactsFromParts } from '@/lib/codeArtifacts'
+import {
+  artifactFor,
+  isArtifactPath,
+  artifactsFromParts,
+  artifactsFromTurns,
+} from '@/lib/codeArtifacts'
+import type { CodeTurn } from '@/hooks/useCodeSessions'
 
 const write = (path: string, state = 'output-available') => ({
   type: 'tool-write',
@@ -92,5 +98,40 @@ describe('artifactsFromParts', () => {
   it('preserves first-seen order', () => {
     const got = artifactsFromParts([write('b.md'), write('a.html')])
     expect(got.map((a) => a.path)).toEqual(['b.md', 'a.html'])
+  })
+})
+
+describe('artifactsFromTurns', () => {
+  const toolTurn = (name: string, path: string, extra: Partial<CodeTurn> = {}) =>
+    ({ role: 'tool', content: '', name, args: { path }, status: 'done', ...extra }) as CodeTurn
+
+  it('reads write/edit artifacts straight off session turns', () => {
+    const turns = [
+      { role: 'user', content: 'go' },
+      toolTurn('write', 'index.html'),
+      toolTurn('write', 'package.json'),
+      toolTurn('read', 'index.html'),
+    ] as CodeTurn[]
+    expect(artifactsFromTurns(turns).map((a) => a.path)).toEqual(['index.html'])
+  })
+
+  it('counts a file rewritten across turns once', () => {
+    // Regression: the library showed one card per rewrite.
+    const turns = [
+      toolTurn('write', 'a.html'),
+      toolTurn('edit', 'a.html'),
+      toolTurn('write', 'a.html'),
+    ]
+    expect(artifactsFromTurns(turns)).toHaveLength(1)
+  })
+
+  it('ignores errored and still-running calls', () => {
+    expect(artifactsFromTurns([toolTurn('write', 'a.html', { isError: true })])).toEqual([])
+    expect(artifactsFromTurns([toolTurn('write', 'a.html', { status: 'running' })])).toEqual([])
+  })
+
+  it('is empty for no turns', () => {
+    expect(artifactsFromTurns(undefined)).toEqual([])
+    expect(artifactsFromTurns([])).toEqual([])
   })
 })

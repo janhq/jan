@@ -29,6 +29,7 @@
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
     "opener:allow-open-path",
+    "opener:allow-reveal-item-in-dir",
     "store:default",
     "vector-db:default",
     "rag:default",

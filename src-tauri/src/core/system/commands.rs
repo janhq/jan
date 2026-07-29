@@ -352,12 +352,7 @@ pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
 #[tauri::command]
 pub fn open_file_explorer(path: String) -> Result<(), String> {
     let path = PathBuf::from(path);
-    // Revealing a FILE is a different command from opening a DIRECTORY: handing a
-    // file to plain `open`/`xdg-open` launches its default application instead of
-    // showing it in the file manager. Callers passing a directory (e.g. the logs
-    // folder) keep the original behaviour.
-    let reveal_file = path.is_file();
-    let mut cmd = if cfg!(target_os = "windows") {
+    let (program, arg): (&str, std::ffi::OsString) = if cfg!(target_os = "windows") {
         // Normalize extended-length paths (\\?\...) for explorer compatibility.
         let mut path_str = path.to_string_lossy().into_owned();
         if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
@@ -365,33 +360,15 @@ pub fn open_file_explorer(path: String) -> Result<(), String> {
         } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
             path_str = stripped.to_string();
         }
-        let mut c = std::process::Command::new("explorer");
-        if reveal_file {
-            // One argument: `/select,<path>` — a space would break the pairing.
-            c.arg(format!("/select,{path_str}"));
-        } else {
-            c.arg(path_str);
-        }
-        c
+        ("explorer", path_str.into())
     } else if cfg!(target_os = "macos") {
-        let mut c = std::process::Command::new("open");
-        if reveal_file {
-            c.arg("-R");
-        }
-        c.arg(&path);
-        c
+        ("open", path.into())
     } else {
-        // No portable "reveal" on Linux; open the containing directory.
-        let target = if reveal_file {
-            path.parent().unwrap_or(&path).to_path_buf()
-        } else {
-            path.clone()
-        };
-        let mut c = std::process::Command::new("xdg-open");
-        c.arg(target);
-        c
+        ("xdg-open", path.into())
     };
-    cmd.status()
+    std::process::Command::new(program)
+        .arg(arg)
+        .status()
         .map_err(|e| format!("Failed to open file explorer: {e}"))?;
     Ok(())
 }
