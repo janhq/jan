@@ -21,7 +21,9 @@ import { route } from '@/constants/routes'
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
   const { pathname } = useLocation()
-  const isCode = pathname === route.code
+  // /artifacts belongs to the Cowork surface, so it keeps the Cowork nav
+  // instead of falling back to Home.
+  const isCode = pathname === route.code || pathname === route.artifacts
   // Right-align the header when native controls own the top-left (macOS, or a Linux
   // DE placing buttons left); "Jan" moves into the right cluster except on macOS.
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
