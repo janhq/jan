@@ -18,6 +18,16 @@ pub enum StreamEvent {
     /// (potentially long) argument-streaming window; the full [`ToolCall`] with
     /// parsed `args` follows once the completion is assembled.
     ToolCallStarted { id: String, name: String },
+    /// A chunk of a tool call's raw JSON arguments, exactly as it arrived on the
+    /// wire. Emitted between [`ToolCallStarted`] and [`ToolCall`] so a consumer
+    /// can render the arguments as they land -- the difference between a
+    /// featureless spinner and a live preview while a large `write` streams.
+    ///
+    /// Deltas, not the accumulated buffer: re-sending the whole prefix on every
+    /// chunk is quadratic in a file-sized argument. Consumers concatenate.
+    /// The result is *incomplete JSON* until [`ToolCall`] arrives; parse it
+    /// leniently or not at all.
+    ToolCallArgsDelta { id: String, delta: String },
     /// The model requested a tool call. `args` is the parsed argument object
     /// (null if the model emitted non-JSON arguments).
     ToolCall {
@@ -38,7 +48,16 @@ pub enum StreamEvent {
     /// A backgrounded subagent run began. `run_id` identifies the run so a
     /// consumer can attribute concurrent children; brackets the child's wrapped
     /// events with `SubagentEnd`.
-    SubagentStart { run_id: String, name: String },
+    SubagentStart {
+        run_id: String,
+        name: String,
+        /// The task the child was dispatched with -- its sole user message.
+        /// Carried on the event rather than left for consumers to correlate
+        /// back to the `dispatch_subagent` call: two dispatches can share a
+        /// `subagent_name`, so matching on name alone is ambiguous.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task: Option<String>,
+    },
     /// A backgrounded subagent run finished (success or error). Pairs with the
     /// `SubagentStart` of the same `run_id`.
     SubagentEnd { run_id: String, name: String },
@@ -68,6 +87,16 @@ pub enum StreamEvent {
     TodoUpdate {
         list: crate::core::agent::todo::TodoList,
     },
+    /// Token usage for a single upstream request, emitted as soon as that
+    /// request completes rather than waiting for the run to finish.
+    ///
+    /// `Done` carries only the *last* request's usage, which is too late and
+    /// too little for a live display: a turn that calls tools makes many
+    /// requests, and a subagent never emits `Done` into the parent stream at
+    /// all. Consumers accumulate these to show context pressure, output
+    /// volume, and throughput while the work is still happening -- for the
+    /// parent run and, via the [`Subagent`] bracket, for each child.
+    TurnUsage { usage: Usage },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,
@@ -340,6 +369,7 @@ mod tests {
         let start = serde_json::to_value(StreamEvent::SubagentStart {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            task: None,
         })
         .unwrap();
         assert_eq!(
