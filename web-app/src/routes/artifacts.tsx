@@ -16,16 +16,19 @@ import {
   artifactsFromTurns,
   type CodeArtifact,
 } from '@/lib/codeArtifacts'
+import { previewKindFor, resolveInRoot } from '@/lib/codePreview'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 export const Route = createFileRoute(route.artifacts as any)({
   component: ArtifactsPage,
 })
 
-type Row = CodeArtifact & { sessionId: string }
+type Row = CodeArtifact & { sessionId: string; root: string | null }
 
 function ArtifactsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const serviceHub = useServiceHub()
   const sessions = useCodeSessions((s) => s.sessions)
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<CodeArtifact['group'] | null>(null)
@@ -44,6 +47,7 @@ function ArtifactsPage() {
         artifactsFromTurns(session.turns).map((artifact) => ({
           ...artifact,
           sessionId: session.id,
+          root: session.folder ?? null,
         }))
       ),
     [sessions]
@@ -114,6 +118,12 @@ function ArtifactsPage() {
           <div className="grid flex-1 auto-rows-min gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((row) => {
               const Icon = ARTIFACT_ICON[row.group]
+              const kind = previewKindFor(row.path)
+              const abs = row.root ? resolveInRoot(row.root, row.path) : null
+              const thumb =
+                abs && (kind === 'image' || kind === 'svg')
+                  ? serviceHub.core().convertFileSrc(abs)
+                  : null
               return (
                 <button
                   key={`${row.sessionId}:${row.path}`}
@@ -125,10 +135,23 @@ function ArtifactsPage() {
                     'transition-colors hover:border-main-view-fg/25'
                   )}
                 >
-                  <span className="flex size-11 items-center justify-center rounded-lg border bg-main-view-fg/[0.03]">
-                    <Icon size={18} className="text-main-view-fg/50" />
-                  </span>
-                  <span className="min-w-0">
+                  {/* Real thumbnail where the browser can render the file
+                      directly. HTML would need executing the page to preview,
+                      so it keeps the icon. */}
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt=""
+                      className="size-11 shrink-0 rounded-lg border bg-main-view-fg/[0.03] object-contain"
+                    />
+                  ) : (
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-lg border bg-main-view-fg/[0.03]">
+                      <Icon size={18} className="text-main-view-fg/50" />
+                    </span>
+                  )}
+                  {/* block + w-full: `truncate` is inert on an inline span,
+                      which is why long absolute paths overflowed the card. */}
+                  <span className="block w-full min-w-0">
                     <span className="block truncate text-[15px] font-semibold">
                       {row.title}
                     </span>
