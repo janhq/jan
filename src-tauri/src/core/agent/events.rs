@@ -77,6 +77,16 @@ pub enum StreamEvent {
     TodoUpdate {
         list: crate::core::agent::todo::TodoList,
     },
+    /// Token usage for a single upstream request, emitted as soon as that
+    /// request completes rather than waiting for the run to finish.
+    ///
+    /// `Done` carries only the *last* request's usage, which is too late and
+    /// too little for a live display: a turn that calls tools makes many
+    /// requests, and a subagent never emits `Done` into the parent stream at
+    /// all. Consumers accumulate these to show context pressure, output
+    /// volume, and throughput while the work is still happening -- for the
+    /// parent run and, via the [`Subagent`] bracket, for each child.
+    TurnUsage { usage: Usage },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,

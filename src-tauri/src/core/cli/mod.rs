@@ -950,6 +950,8 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         // Headless prints one line per completed call; the in-progress signal
         // and its argument deltas have nothing to render into.
         StreamEvent::ToolCallStarted { .. } | StreamEvent::ToolCallArgsDelta { .. } => {}
+        // Headless reports totals once, from the terminal `Done`.
+        StreamEvent::TurnUsage { .. } => {}
         StreamEvent::ToolCall { name, args, .. } => eprintln!(
             "\x1b[2m[tool] {}\x1b[0m",
             crate::core::agent::events::describe_tool_call(&name, &args)

@@ -593,6 +593,12 @@ struct App {
     /// steady value between turns instead of flickering to 0. Cleared at turn
     /// start; recomputed from the turn's `usage` sample at `on_done`.
     tokens_per_sec: Option<f64>,
+    /// Output tokens produced across every request in the current turn. Summed
+    /// from `TurnUsage` rather than read off `Done`, which reports only the
+    /// final request and so undercounts any turn that used tools.
+    turn_output_tokens: u64,
+    /// Context size of the current turn's most recent request.
+    turn_prompt_tokens: u64,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -652,6 +658,14 @@ struct SubagentPanel {
     run_id: String,
     name: String,
     calls: Vec<String>,
+    /// Upstream requests this child has made, counted from its `Step` events.
+    /// Distinct from `calls.len()`: one request can carry several tool calls,
+    /// and a request can carry none.
+    requests: u32,
+    /// Context occupied by the child's most recent request. The high-water
+    /// mark of how full its window is, which is the number worth watching --
+    /// a subagent silently filling its context is the failure this surfaces.
+    prompt_tokens: u64,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -761,6 +775,8 @@ impl App {
             spinner_frame: 0,
             last_spinner_advance: Instant::now(),
             tokens_per_sec: None,
+            turn_output_tokens: 0,
+            turn_prompt_tokens: 0,
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
@@ -1228,6 +1244,8 @@ impl App {
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
         self.tokens_per_sec = None;
+        self.turn_output_tokens = 0;
+        self.turn_prompt_tokens = 0;
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
@@ -1259,6 +1277,8 @@ impl App {
         self.run_started = Some(Instant::now());
         self.turn = (0, 0);
         self.tokens_per_sec = None;
+        self.turn_output_tokens = 0;
+        self.turn_prompt_tokens = 0;
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
@@ -1715,6 +1735,8 @@ impl App {
                     run_id,
                     name,
                     calls: Vec::new(),
+                    requests: 0,
+                    prompt_tokens: 0,
                 });
             }
             StreamEvent::SubagentEnd { run_id, name } => {
@@ -1757,6 +1779,17 @@ impl App {
                 name,
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
+            StreamEvent::TurnUsage { usage } => {
+                self.turn_output_tokens += usage.completion_tokens.unwrap_or(0);
+                // Latest request's context, not a sum: each request resends the
+                // whole conversation, so adding them would be meaningless.
+                if let Some(prompt) = usage.prompt_tokens {
+                    self.turn_prompt_tokens = prompt;
+                    // Keep the header's context gauge live during the turn
+                    // instead of jumping only when the run ends.
+                    self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
+                }
+            }
             StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
@@ -1810,8 +1843,20 @@ impl App {
                     subagent: Some(name.to_string()),
                 });
             }
-            // Token/Step/ToolResult and any nested bracket are internal to the
-            // child run and not surfaced in the parent transcript.
+            // Each child request bumps its counter, so the panel shows work
+            // happening even during a long think with no tool calls.
+            StreamEvent::Step { .. } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.requests += 1;
+                }
+            }
+            StreamEvent::TurnUsage { usage } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
+                }
+            }
+            // Token/ToolResult and any nested bracket are internal to the child
+            // run and not surfaced in the parent transcript.
             _ => {}
         }
     }
@@ -1829,6 +1874,23 @@ impl App {
         if !answer.is_empty() {
             self.history
                 .push(serde_json::json!({ "role": "assistant", "content": answer.clone() }));
+        }
+        // A closing receipt for the turn: when, how much context went up, how
+        // much came back, how long it took, how fast. Cheap to skim, and the
+        // only place the cost of a turn is visible after the fact.
+        if let Some(started) = self.run_started {
+            self.turn_output_tokens += usage
+                .as_ref()
+                .and_then(|u| u.completion_tokens)
+                .filter(|_| self.turn_output_tokens == 0)
+                .unwrap_or(0);
+            let stats = turn_stats_line(
+                self.turn_prompt_tokens,
+                self.turn_output_tokens,
+                started.elapsed(),
+            );
+            self.gap(Kind::Meta);
+            self.push(stats);
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -5354,7 +5416,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             }
         }
     }
-    for panel in &app.subagents {
+    if !app.subagents.is_empty() {
         let last_blank = lines
             .last()
             .map(|l| l.spans.iter().all(|s| s.content.trim().is_empty()))
@@ -5362,21 +5424,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         if !last_blank {
             lines.push(Line::raw(""));
         }
-        // Down-then-left arrow header, then the rolling window (last N calls).
-        lines.push(Line::from(vec![
-            Span::styled("↲ ", Style::new().magenta()),
-            Span::styled(
-                format!("subagent: {}", panel.name),
-                Style::new().magenta().dim(),
-            ),
-        ]));
-        let start = panel.calls.len().saturating_sub(SUBAGENT_WINDOW);
-        for label in &panel.calls[start..] {
-            lines.push(Line::from(vec![
-                Span::styled("    ", Style::new().dark_gray()),
-                Span::styled(label.clone(), Style::new().dim()),
-            ]));
-        }
+        lines.extend(subagent_panel_lines(&app.subagents, app.context_window));
     }
     if !app.assistant_buf.is_empty() {
         let tail = format_assistant_lines(&app.assistant_buf, width);
@@ -5925,6 +5973,109 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
     output_tokens as f64 * 1000.0 / d as f64
 }
 
+/// One block for every in-flight subagent, instead of a scattered header-plus-
+/// call-list per child.
+///
+/// Parallel agents were previously unreadable: N separate sections, each
+/// growing, with the interesting question -- which of these is actually making
+/// progress, and is one about to blow its context -- answerable only by
+/// counting rows. Each child now gets exactly two lines, a stats line and its
+/// current activity, so the whole fan-out fits in one glance and stays a fixed
+/// height as the work runs.
+fn subagent_panel_lines(panels: &[SubagentPanel], context_window: u64) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut out = vec![Line::from(vec![
+        Span::styled("≡ ", Style::new().magenta()),
+        Span::styled(
+            format!(
+                "Task {} agent{}",
+                panels.len(),
+                if panels.len() == 1 { "" } else { "s" }
+            ),
+            Style::new().magenta().bold(),
+        ),
+    ])];
+    // A lone subagent keeps its rolling history -- there's room, and the recent
+    // calls are the useful context. Once several run at once that same history
+    // multiplies into an unreadable wall, so each drops to its current call and
+    // the block stays a fixed, scannable height.
+    let window = if panels.len() == 1 { SUBAGENT_WINDOW } else { 1 };
+    for panel in panels {
+        let mut spans = vec![
+            Span::styled("  • ", Style::new().magenta()),
+            Span::styled(panel.name.clone(), Style::new().magenta()),
+            Span::styled(
+                format!(
+                    "  {} tool{}",
+                    panel.calls.len(),
+                    if panel.calls.len() == 1 { "" } else { "s" }
+                ),
+                dim,
+            ),
+            Span::styled(format!("  ·  {} req", panel.requests), dim),
+        ];
+        // Only once the child has reported usage; "0.0%" before its first
+        // response would read as a stalled agent rather than a starting one.
+        if panel.prompt_tokens > 0 && context_window > 0 {
+            let pct = panel.prompt_tokens as f64 / context_window as f64 * 100.0;
+            spans.push(Span::styled(
+                format!("  ·  {pct:.1}%/{}", compact_tokens(context_window)),
+                dim,
+            ));
+        }
+        out.push(Line::from(spans));
+        if panel.calls.is_empty() {
+            out.push(Line::from(vec![
+                Span::styled("      ", dim),
+                Span::styled("starting…".to_string(), Style::new().dim()),
+            ]));
+        }
+        let start = panel.calls.len().saturating_sub(window);
+        for label in &panel.calls[start..] {
+            out.push(Line::from(vec![
+                Span::styled("      ", dim),
+                Span::styled(label.clone(), Style::new().dim()),
+            ]));
+        }
+    }
+    out
+}
+
+/// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
+/// column of them stays the same width as the numbers grow.
+fn compact_tokens(n: u64) -> String {
+    match n {
+        0..=999 => n.to_string(),
+        1_000..=9_999 => format!("{:.1}K", n as f64 / 1000.0),
+        10_000..=999_999 => format!("{}K", n / 1000),
+        _ => format!("{:.1}M", n as f64 / 1_000_000.0),
+    }
+}
+
+/// Per-turn receipt: wall-clock, context sent, tokens produced, elapsed, rate.
+fn turn_stats_line(prompt_tokens: u64, output_tokens: u64, elapsed: Duration) -> Line<'static> {
+    let secs = elapsed.as_secs_f64();
+    let rate = tokens_per_second(output_tokens, elapsed.as_millis() as u64);
+    let dim = Style::new().dark_gray();
+    let mut spans = vec![Span::styled(local_timestamp(), dim)];
+    for (glyph, value) in [
+        ("↑", compact_tokens(prompt_tokens)),
+        ("↓", compact_tokens(output_tokens)),
+        ("⏱", format!("{secs:.1}s")),
+        ("⚡", format!("{rate:.1}/s")),
+    ] {
+        spans.push(Span::styled(format!("  {glyph} "), dim));
+        spans.push(Span::styled(value, Style::new().dim()));
+    }
+    Line::from(spans)
+}
+
+/// `YYYY-MM-DD HH:MM:SS` in local time, without pulling in a date library:
+/// `chrono` is already a dependency, so this is just the formatting choice.
+fn local_timestamp() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 fn format_elapsed(secs: u64) -> String {
     if secs < 60 {
         format!("{secs}s")
@@ -6378,8 +6529,9 @@ mod tests {
         apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        finish_login, is_table_separator, load_image_file, message_text, open_config_screen,
-        parse_command, partial_json_field, starting_call_lines, unescape_partial_json_string,
+        compact_tokens, finish_login, is_table_separator, load_image_file, message_text,
+        open_config_screen, parse_command, partial_json_field, starting_call_lines,
+        unescape_partial_json_string,
         render_table, restore_goal, restore_run_mode, restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
@@ -6394,7 +6546,7 @@ mod tests {
     };
     use ratatui::layout::Rect;
     use ratatui::{style::Modifier, text::Line};
-    use crate::core::agent::events::StreamEvent;
+    use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
@@ -9040,6 +9192,122 @@ mod tests {
         assert_eq!(app.history.len(), 1);
     }
 
+    fn start_subagent(app: &mut App, run_id: &str, name: &str) {
+        app.apply(StreamEvent::SubagentStart {
+            run_id: run_id.into(),
+            name: name.into(),
+        });
+    }
+
+    fn subagent_event(app: &mut App, run_id: &str, name: &str, event: StreamEvent) {
+        app.apply(StreamEvent::Subagent {
+            run_id: run_id.into(),
+            name: name.into(),
+            event: Box::new(event),
+        });
+    }
+
+    /// Parallel agents collapse into one fixed-height block, each carrying the
+    /// numbers that say whether it is progressing or about to blow its context.
+    #[test]
+    fn parallel_subagents_render_one_block_with_live_stats() {
+        let mut app = test_app();
+        for (i, name) in ["alpha", "beta"].iter().enumerate() {
+            let run = format!("r{i}");
+            start_subagent(&mut app, &run, name);
+            subagent_event(&mut app, &run, name, StreamEvent::Step { index: 1, max: 8 });
+            subagent_event(
+                &mut app,
+                &run,
+                name,
+                StreamEvent::TurnUsage {
+                    usage: Usage {
+                        // 12.8K of a 128K window -> 10.0%.
+                        prompt_tokens: Some(12_800 + i as u64 * 12_800),
+                        completion_tokens: Some(100),
+                        total_tokens: Some(12_900),
+                    },
+                },
+            );
+            subagent_event(
+                &mut app,
+                &run,
+                name,
+                StreamEvent::ToolCall {
+                    id: format!("c{i}"),
+                    name: "read".into(),
+                    args: json!({ "path": format!("{name}.rs") }),
+                },
+            );
+        }
+
+        let rows = render_rows(&mut app, 100, 24);
+        let out = rows.join("\n");
+        assert!(out.contains("Task 2 agents"), "no consolidated header: {out}");
+        for (name, pct) in [("alpha", "10.0%"), ("beta", "20.0%")] {
+            assert!(out.contains(name), "missing {name}: {out}");
+            assert!(out.contains(pct), "missing context share {pct}: {out}");
+        }
+        assert!(out.contains("1 tool "), "missing tool count: {out}");
+        assert!(out.contains("1 req"), "missing request count: {out}");
+        // Two agents -> one activity line each, so the block stays scannable.
+        assert_eq!(
+            rows.iter().filter(|r| r.contains("alpha.rs") || r.contains("beta.rs")).count(),
+            2,
+            "expected exactly one activity line per agent: {out}"
+        );
+    }
+
+    /// Before a child reports usage there is no honest percentage to show, and
+    /// "0.0%" would read as a stalled agent.
+    #[test]
+    fn subagent_hides_context_share_until_it_reports() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "alpha");
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("Task 1 agent"), "{out}");
+        assert!(out.contains("starting…"), "{out}");
+        assert!(!out.contains('%'), "no share before the first response: {out}");
+    }
+
+    #[test]
+    fn compact_tokens_keeps_a_stable_width() {
+        assert_eq!(compact_tokens(0), "0");
+        assert_eq!(compact_tokens(840), "840");
+        assert_eq!(compact_tokens(1_100), "1.1K");
+        assert_eq!(compact_tokens(43_000), "43K");
+        assert_eq!(compact_tokens(1_500_000), "1.5M");
+    }
+
+    /// The turn receipt reports what the whole turn cost, which for a
+    /// tool-using turn is more than the final request's usage.
+    #[test]
+    fn turn_stats_sum_output_across_requests() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        for _ in 0..3 {
+            app.apply(StreamEvent::TurnUsage {
+                usage: Usage {
+                    prompt_tokens: Some(40_000),
+                    completion_tokens: Some(500),
+                    total_tokens: Some(40_500),
+                },
+            });
+        }
+        assert_eq!(app.turn_output_tokens, 1_500);
+        assert_eq!(app.turn_prompt_tokens, 40_000);
+
+        app.on_done("stop".into(), None);
+        let out: String = app.transcript.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(out.contains("40K"), "input tokens missing: {out}");
+        assert!(out.contains("1.5K"), "summed output missing: {out}");
+        assert!(out.contains("/s"), "rate missing: {out}");
+
+        // A new turn starts the count over rather than accumulating forever.
+        app.submit_user("again".into());
+        assert_eq!(app.turn_output_tokens, 0);
+    }
+
     #[test]
     fn compact_is_a_registered_command() {
         assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/compact"));
@@ -9181,7 +9449,8 @@ mod tests {
     #[test]
     fn idle_footer_never_shows_a_cheat_sheet() {
         let mut app = test_app();
-        let states: [(&str, &dyn Fn(&mut App)); 3] = [
+        type Setup<'a> = (&'a str, &'a dyn Fn(&mut App));
+        let states: [Setup; 3] = [
             ("fresh", &|_: &mut App| {}),
             ("typing", &|a: &mut App| {
                 for c in "hel".chars() {
