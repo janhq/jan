@@ -10,6 +10,8 @@ import {
   listSupportedBackendsFromRust,
   BackendVersion,
   getSupportedFeaturesFromRust,
+  fetchBackendChecksums,
+  verifyFileSha512,
 } from '@janhq/tauri-plugin-llamacpp-api'
 
 /*
@@ -132,6 +134,55 @@ export async function verifyBackendInstallation(
   )
 }
 
+/**
+ * Check downloaded archives against the release's `checksum.yml` before they
+ * are unpacked.
+ *
+ * Fail-soft on a missing manifest or a missing entry, and deliberately so:
+ * releases published before the manifest existed -- and those whose entries
+ * predate the `-bin-` naming fix in janhq/llama.cpp db8b2fcd -- carry no usable
+ * digest, and refusing to install them would strand every older version, which
+ * is exactly what rollback depends on. A digest that IS present and does not
+ * match is a hard failure: the file is removed so a retry cannot reuse it.
+ */
+async function verifyDownloadedArchives(
+  savePaths: string[],
+  version: string,
+  source: 'github' | 'cdn',
+  proxyConfig: object | null
+): Promise<void> {
+  let checksums: Record<string, string> = {}
+  try {
+    checksums = await fetchBackendChecksums(version, source, proxyConfig)
+  } catch (e) {
+    logger.warn(`Could not load checksum.yml for ${version}:`, e)
+    return
+  }
+  if (!Object.keys(checksums).length) {
+    logger.warn(
+      `No usable checksums published for ${version}; skipping verification`
+    )
+    return
+  }
+
+  for (const savePath of savePaths) {
+    const name = savePath.split(/[\\/]/).pop() ?? ''
+    const expected = checksums[name]
+    if (!expected) {
+      logger.warn(`No checksum entry for ${name}; skipping verification`)
+      continue
+    }
+    if (await verifyFileSha512(savePath, expected)) {
+      logger.info(`Checksum verified for ${name}`)
+      continue
+    }
+    await fs.rm(savePath).catch(() => undefined)
+    throw new Error(
+      `Checksum mismatch for ${name}; the download was corrupt or tampered with`
+    )
+  }
+}
+
 export async function downloadBackend(
   backend: string,
   version: string,
@@ -187,6 +238,13 @@ export async function downloadBackend(
       events.emit('onFileDownloadStopped', { modelId: taskId, downloadType })
       return
     }
+
+    await verifyDownloadedArchives(
+      itemsWithProxy.map((i) => i.save_path),
+      version,
+      source,
+      proxyConfig
+    )
 
     for (const { save_path } of itemsWithProxy) {
       // Official Windows HIP assets ship as .zip; everything else is .tar.gz.

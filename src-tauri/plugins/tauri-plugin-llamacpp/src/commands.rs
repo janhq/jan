@@ -32,6 +32,8 @@ async fn router_endpoint<R: Runtime>(
     Ok((h.port, h.api_key.clone(), h.pid))
 }
 
+const ROUTER_HEALTH_TIMEOUT_SECS: u64 = 5;
+
 async fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
@@ -812,6 +814,7 @@ pub async fn start_router<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     backend_exe: String,
     preset_path: String,
+    log_dir: String,
     port: u16,
     api_key: String,
     models_max: u32,
@@ -847,6 +850,7 @@ pub async fn start_router<R: Runtime>(
     let handle = crate::router::start_router(
         std::path::PathBuf::from(backend_exe),
         std::path::PathBuf::from(preset_path),
+        std::path::PathBuf::from(log_dir),
         port,
         api_key,
         models_max,
@@ -871,6 +875,62 @@ pub async fn start_router<R: Runtime>(
     *state.unload_watcher.lock().await = Some(watcher);
 
     Ok(info)
+}
+
+/// Reuse a router that outlived its UI, or kill it if it no longer matches.
+///
+/// Returns the adopted endpoint, or `None` when the caller should spawn a
+/// fresh router. `api_secret` is used to re-derive the router's key from the
+/// port recorded in the lock file, so the key never has to be persisted.
+#[tauri::command]
+pub async fn adopt_router<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    backend_exe: String,
+    preset_path: String,
+    models_max: u32,
+    api_secret: String,
+) -> Result<Option<RouterInfo>, String> {
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let mut guard = state.router.lock().await;
+    if guard.is_some() {
+        return Err("Router is already running.".to_string());
+    }
+
+    let preset_path = std::path::PathBuf::from(preset_path);
+    let backend_exe = std::path::PathBuf::from(backend_exe);
+
+    let Some(lock) = crate::router::read_lock(&preset_path) else {
+        return Ok(None);
+    };
+    let api_key = generate_api_key(format!("router{}", lock.port), api_secret)?;
+
+    match crate::router::try_adopt_router(&preset_path, &backend_exe, models_max, api_key).await {
+        crate::router::AdoptOutcome::Adopted(handle) => {
+            let handle = *handle;
+            let info = RouterInfo {
+                port: handle.port,
+                api_key: handle.api_key.clone(),
+                pid: handle.pid,
+            };
+            state
+                .router_pid
+                .store(handle.pid, std::sync::atomic::Ordering::SeqCst);
+            *guard = Some(handle);
+
+            // The SSE subscriber is a plain HTTP client, so it reattaches to an
+            // adopted router exactly as it would to one we spawned.
+            let watcher =
+                spawn_unload_watcher(app_handle.clone(), info.port, info.api_key.clone());
+            *state.unload_watcher.lock().await = Some(watcher);
+
+            Ok(Some(info))
+        }
+        crate::router::AdoptOutcome::NothingToAdopt => Ok(None),
+        crate::router::AdoptOutcome::Killed(reason) => {
+            log::info!("Router not adopted ({}); caller will spawn a fresh one", reason);
+            Ok(None)
+        }
+    }
 }
 
 async fn stop_unload_watcher(state: &LlamacppState) {
@@ -933,7 +993,57 @@ pub async fn reload_router_models<R: Runtime>(
             resp.status().as_u16()
         ));
     }
+
+    // The process is now running the regenerated preset, so the hash recorded
+    // at spawn no longer describes it.
+    let state: State<Arc<LlamacppState>> = app_handle.state();
+    let preset_path = state
+        .router
+        .lock()
+        .await
+        .as_ref()
+        .map(|h| h.preset_path.clone());
+    if let Some(path) = preset_path {
+        crate::router::refresh_lock_preset_hash(&path);
+    }
     Ok(())
+}
+
+/// Probe `GET /health`. With `port`/`api_key` omitted, targets the router this
+/// process owns; supplying them probes an arbitrary endpoint (used to decide
+/// whether a router surviving a UI crash is adoptable). Never errors -- an
+/// unreachable or non-200 endpoint is simply not healthy.
+///
+/// The short timeout is deliberate: `http_client()`'s 600s budget is sized for
+/// inference, but a health gate must fail fast enough to roll back.
+#[tauri::command]
+pub async fn router_health<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    port: Option<u16>,
+    api_key: Option<String>,
+) -> Result<bool, String> {
+    let (port, api_key) = match (port, api_key) {
+        (Some(p), Some(k)) => (p, k),
+        _ => match router_endpoint(&app_handle).await {
+            Ok((p, k, _)) => (p, k),
+            Err(_) => return Ok(false),
+        },
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(ROUTER_HEALTH_TIMEOUT_SECS))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    let url = format!("http://127.0.0.1:{}/health", port);
+    match client.get(&url).bearer_auth(&api_key).send().await {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(e) => {
+            log::debug!("router health probe on port {} failed: {}", port, e);
+            Ok(false)
+        }
+    }
 }
 
 /// Best-effort idle check; returns `Ok(true)` on any error so callers

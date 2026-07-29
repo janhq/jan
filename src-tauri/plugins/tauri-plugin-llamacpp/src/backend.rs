@@ -729,11 +729,19 @@ pub async fn check_backend_for_updates(
     }
 }
 
+/// Prune installs of `backend_type`, always keeping `latest_version` and the
+/// `keep_previous` newest versions below it. Those retained copies are what
+/// makes a rollback possible without a re-download, so this must never be run
+/// before a switch has proven itself.
+///
+/// Ordering is by parsed build number, not directory name: `b9100` must sort
+/// above `b982`, which a lexical compare gets backwards.
 #[tauri::command]
 pub async fn remove_old_backend_versions(
     backends_dir: String,
     latest_version: String,
     backend_type: String,
+    keep_previous: usize,
 ) -> Result<Vec<String>, String> {
     let mut removed_paths = Vec::new();
     let backends_path = PathBuf::from(&backends_dir);
@@ -745,6 +753,7 @@ pub async fn remove_old_backend_versions(
     let version_dirs = fs::read_dir(&backends_path)
         .map_err(|e| format!("Failed to read backends directory: {}", e))?;
 
+    let mut candidates: Vec<(u32, String, PathBuf)> = Vec::new();
     for version_entry in version_dirs {
         let version_entry =
             version_entry.map_err(|e| format!("Failed to read version entry: {}", e))?;
@@ -755,34 +764,58 @@ pub async fn remove_old_backend_versions(
             None => continue,
         };
 
-        // Skip the latest version
         if version_name == latest_version {
             continue;
         }
 
-        // Check if this version has the specific backend type
         let backend_type_path = version_path.join(&backend_type);
+        if !backend_type_path.exists() || !is_backend_installed(&backend_type_path) {
+            continue;
+        }
 
-        if backend_type_path.exists() {
-            // Verify it's actually installed before removing
-            if is_backend_installed(&backend_type_path) {
-                match fs::remove_dir_all(&backend_type_path) {
-                    Ok(_) => {
-                        log::info!(
-                            "Removed old version of {}: {}",
-                            backend_type,
-                            backend_type_path.display()
-                        );
-                        removed_paths.push(backend_type_path.to_string_lossy().to_string());
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to remove old backend version: {} - {}",
-                            backend_type_path.display(),
-                            e
-                        );
-                    }
-                }
+        candidates.push((
+            parse_backend_version(version_name.clone()),
+            version_name,
+            backend_type_path,
+        ));
+    }
+
+    // Newest first, name as a tiebreaker so unparseable versions (all 0) are
+    // still pruned deterministically.
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+
+    if candidates.len() > keep_previous {
+        let retained: Vec<&str> = candidates
+            .iter()
+            .take(keep_previous)
+            .map(|(_, name, _)| name.as_str())
+            .collect();
+        log::info!(
+            "Pruning {} of {}: keeping active {} plus {:?}",
+            backend_type,
+            latest_version,
+            latest_version,
+            retained
+        );
+    }
+
+    for (_, version_name, path) in candidates.into_iter().skip(keep_previous) {
+        match fs::remove_dir_all(&path) {
+            Ok(_) => {
+                log::info!(
+                    "Removed old version {} of {}: {}",
+                    version_name,
+                    backend_type,
+                    path.display()
+                );
+                removed_paths.push(path.to_string_lossy().to_string());
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to remove old backend version: {} - {}",
+                    path.display(),
+                    e
+                );
             }
         }
     }
@@ -1377,6 +1410,158 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::Write;
+
+    fn install_backend(root: &Path, version: &str, backend: &str) {
+        let dir = root.join(version).join(backend);
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = if cfg!(target_os = "windows") {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        };
+        File::create(dir.join(exe)).unwrap();
+    }
+
+    fn versions_left(root: &Path, backend: &str) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(root)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().join(backend).exists())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[tokio::test]
+    async fn retention_keeps_the_active_version_and_n_previous() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for v in ["b900", "b1000", "b1100", "b1200"] {
+            install_backend(root, v, "cpu");
+        }
+
+        let removed = remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1200".into(),
+            "cpu".into(),
+            2,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(versions_left(root, "cpu"), vec!["b1000", "b1100", "b1200"]);
+    }
+
+    #[tokio::test]
+    async fn retention_orders_by_build_number_not_lexically() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Lexically "b982" > "b1100"; by build number it is older and must go.
+        for v in ["b982", "b1100", "b1200"] {
+            install_backend(root, v, "cpu");
+        }
+
+        remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1200".into(),
+            "cpu".into(),
+            1,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(versions_left(root, "cpu"), vec!["b1100", "b1200"]);
+    }
+
+    #[tokio::test]
+    async fn retention_never_removes_the_active_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        install_backend(root, "b1000", "cpu");
+
+        let removed = remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1000".into(),
+            "cpu".into(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert!(removed.is_empty());
+        assert_eq!(versions_left(root, "cpu"), vec!["b1000"]);
+    }
+
+    #[tokio::test]
+    async fn retention_ignores_other_backend_types() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        install_backend(root, "b900", "cpu");
+        install_backend(root, "b900", "cuda");
+        install_backend(root, "b1000", "cpu");
+
+        remove_old_backend_versions(
+            root.to_string_lossy().to_string(),
+            "b1000".into(),
+            "cpu".into(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        // The cuda install under b900 survives; only its cpu sibling is pruned.
+        assert!(root.join("b900").join("cuda").exists());
+        assert!(!root.join("b900").join("cpu").exists());
+    }
+
+    #[test]
+    fn digest_normalization_tolerates_producer_quirks() {
+        // Windows CertUtil output: uppercase, BOM, folded whitespace.
+        assert_eq!(normalize_digest("\u{feff}AB\n  cd \r\n"), "abcd");
+        assert_eq!(normalize_digest("  abcd  "), "abcd");
+        assert_eq!(normalize_digest(""), "");
+        // Non-hex noise cannot smuggle itself into a digest.
+        assert_eq!(normalize_digest("zz12zz"), "12");
+    }
+
+    #[test]
+    fn checksum_manifest_parses_the_published_shape() {
+        let yaml = "version: b1234\nfiles:\n\
+                    - url: llama-b1234-bin-linux-x64.tar.gz\n  sha512: >-\n    ABCD\n  size: 10\n\
+                    - url: cudart-llama-bin-linux-cu12.0-x64.tar.gz\n  sha512: >-\n    beef\n  size: 20\n";
+        let m: ChecksumManifest = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(m.files.len(), 2);
+        assert_eq!(m.files[0].url, "llama-b1234-bin-linux-x64.tar.gz");
+        assert_eq!(normalize_digest(&m.files[0].sha512), "abcd");
+    }
+
+    #[tokio::test]
+    async fn sha512_verification_accepts_and_rejects() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive.tar.gz");
+        std::fs::write(&path, b"jan").unwrap();
+
+        let actual = {
+            use sha2::{Digest, Sha512};
+            let mut h = Sha512::new();
+            h.update(b"jan");
+            format!("{:x}", h.finalize())
+        };
+        let p = path.to_string_lossy().to_string();
+
+        assert!(verify_file_sha512(p.clone(), actual.to_uppercase())
+            .await
+            .unwrap());
+        assert!(!verify_file_sha512(p.clone(), "dead".repeat(32))
+            .await
+            .unwrap());
+        // No published digest means nothing to contradict.
+        assert!(verify_file_sha512(p.clone(), String::new()).await.unwrap());
+        // A malformed (too-short) digest is fail-soft, not a mismatch.
+        assert!(verify_file_sha512(p, "zz12zz".into()).await.unwrap());
+    }
 
     // --- Tests for map_old_backend_to_new ---
 
@@ -2206,4 +2391,120 @@ mod tests {
         assert!(cdn_items[0].url.contains("catalog.jan.ai"));
         assert_ne!(github_items[0].url, cdn_items[0].url);
     }
+}
+
+// ============================================================================
+// Release checksum verification
+// ============================================================================
+
+#[derive(Deserialize)]
+struct ChecksumEntry {
+    url: String,
+    sha512: String,
+}
+
+#[derive(Deserialize)]
+struct ChecksumManifest {
+    files: Vec<ChecksumEntry>,
+}
+
+/// Normalize a digest as published. The Windows job produces it via `CertUtil`
+/// piped through `Out-File`, so it can arrive uppercase and carrying a BOM or
+/// UTF-16 padding; the YAML folded scalar (`>-`) can also fold in whitespace.
+/// Keeping only hex digits is the one rule that holds for every producer.
+fn normalize_digest(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Fetch `checksum.yml` for a release and return `filename -> sha512`.
+///
+/// Returns an empty map rather than an error when the manifest is absent or
+/// unparseable: releases published before the manifest existed (and those
+/// whose entries predate the `-bin-` naming fix) must stay installable.
+#[tauri::command]
+pub async fn fetch_backend_checksums(
+    version: String,
+    source: String,
+    proxy: Option<ProxyConfig>,
+) -> Result<HashMap<String, String>, String> {
+    let url = if source == "cdn" {
+        format!(
+            "https://catalog.jan.ai/llama.cpp/releases/{}/checksum.yml",
+            version
+        )
+    } else {
+        format!(
+            "https://github.com/janhq/llama.cpp/releases/download/{}/checksum.yml",
+            version
+        )
+    };
+
+    let client = build_http_client(proxy.as_ref())?;
+    let resp = match client.get(&url).send().await {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            log::warn!("checksum.yml for {} returned HTTP {}", version, r.status());
+            return Ok(HashMap::new());
+        }
+        Err(e) => {
+            log::warn!("Could not fetch checksum.yml for {}: {}", version, e);
+            return Ok(HashMap::new());
+        }
+    };
+
+    let body = match resp.text().await {
+        Ok(b) => b,
+        Err(e) => {
+            log::warn!("Could not read checksum.yml for {}: {}", version, e);
+            return Ok(HashMap::new());
+        }
+    };
+
+    match serde_yaml::from_str::<ChecksumManifest>(&body) {
+        Ok(m) => Ok(m
+            .files
+            .into_iter()
+            .map(|f| (f.url, normalize_digest(&f.sha512)))
+            .filter(|(_, digest)| !digest.is_empty())
+            .collect()),
+        Err(e) => {
+            log::warn!("Could not parse checksum.yml for {}: {}", version, e);
+            Ok(HashMap::new())
+        }
+    }
+}
+
+/// Streams the file so a multi-GB archive is never held in memory.
+#[tauri::command]
+pub async fn verify_file_sha512(path: String, expected: String) -> Result<bool, String> {
+    let expected = normalize_digest(&expected);
+    if expected.is_empty() {
+        return Ok(true);
+    }
+    if expected.len() != 128 {
+        log::warn!("Malformed SHA-512 digest (expected 128 hex chars, got {}), skipping verification", expected.len());
+        return Ok(true);
+    }
+
+    tokio::task::spawn_blocking(move || {
+        use sha2::{Digest, Sha512};
+        use std::io::Read;
+
+        let mut file = fs::File::open(&path).map_err(|e| format!("{}: {}", path, e))?;
+        let mut hasher = Sha512::new();
+        let mut buf = vec![0u8; 1024 * 1024];
+        loop {
+            let n = file.read(&mut buf).map_err(|e| format!("{}: {}", path, e))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hasher.finalize()) == expected)
+    })
+    .await
+    .map_err(|e| format!("Checksum task panicked: {}", e))?
 }
