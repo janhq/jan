@@ -6,6 +6,7 @@ import { FaDiscord, FaGithub } from 'react-icons/fa'
 import { FiDownload } from 'react-icons/fi'
 import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
 import { Button } from './ui/button'
+import DocSearch from './DocSearch'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
 const MENU_ITEMS = [
@@ -93,6 +94,13 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 </li>
               )
             })}
+            {/* Landing page keeps the navbar transparent over artwork, where a
+                filled input would read as a stray form field. */}
+            {!isLanding && (
+              <li>
+                <DocSearch />
+              </li>
+            )}
             <li>
               <a
                 href="https://github.com/janhq/jan/releases/latest"
@@ -225,6 +233,15 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 >
                   ×
                 </button>
+              </div>
+
+              {/* Nextra's own sidebar search is unreachable here: our custom
+                  hamburger drives this modal, not Nextra's sidebar state. */}
+              <div className="mb-6">
+                <DocSearch
+                  variant="panel"
+                  onNavigate={() => setIsMobileMenuOpen(false)}
+                />
               </div>
 
               {/* Menu Items */}
