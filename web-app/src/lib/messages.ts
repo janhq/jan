@@ -220,19 +220,22 @@ export function reasoningPartsFromText(text: string): ReasoningTextPart[] {
 
   if (reasoningSegment) {
     // Extract the reasoning text from inside the tag (group 2 = content).
-    const completedMatch = reasoningSegment.match(
-      new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>([\\s\\S]*)</\\1>`, 'i')
-    )
-    if (completedMatch) {
-      parts.push({ type: 'reasoning', text: completedMatch[2] })
-    } else {
-      // In-progress reasoning - content after an unclosed reasoning tag.
-      const inProgressMatch = reasoningSegment.match(
+    // Completed tag first; failing that, an unclosed one still streaming.
+    const match =
+      reasoningSegment.match(
+        new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>([\\s\\S]*)</\\1>`, 'i')
+      ) ??
+      reasoningSegment.match(
         new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>([\\s\\S]*)`, 'i')
       )
-      if (inProgressMatch) {
-        parts.push({ type: 'reasoning', text: inProgressMatch[2] })
-      }
+    if (match) {
+      // Prose the model emitted *before* opening the tag. `parseReasoning`
+      // folds that prefix into `reasoningSegment` (see its "text before tags"
+      // case), so taking only the tag body would drop it from the transcript
+      // entirely — the model says something, and it silently never renders.
+      const prefix = reasoningSegment.slice(0, match.index).trim()
+      if (prefix) parts.push({ type: 'text', text: prefix })
+      parts.push({ type: 'reasoning', text: match[2] })
     }
   }
 
