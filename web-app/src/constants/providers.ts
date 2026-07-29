@@ -403,7 +403,7 @@ export const predefinedProviders = [
     active: true,
     api_key: '',
     base_url: 'https://api.apiario.dev/v1',
-    explore_models_url: 'https://docs.apiario.dev/models',
+    explore_models_url: 'https://apiario.dev/modelos',
     provider: 'apiario',
     settings: [
       {

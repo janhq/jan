@@ -12,7 +12,7 @@ describe('Apiário Provider Configuration', () => {
     expect(apiarioProvider?.base_url).toBe('https://api.apiario.dev/v1')
     expect(apiarioProvider?.api_key).toBe('')
     expect(apiarioProvider?.explore_models_url).toBe(
-      'https://docs.apiario.dev/models'
+      'https://apiario.dev/modelos'
     )
   })
 
