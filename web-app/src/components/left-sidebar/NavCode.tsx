@@ -155,7 +155,7 @@ export function NavCode() {
     {
       title: t('common:artifacts'),
       icon: Box,
-      onClick: goCode,
+      onClick: () => navigate({ to: route.artifacts }),
     },
     {
       title: t('common:customize'),

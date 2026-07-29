@@ -227,6 +227,15 @@ function CodePage() {
     setPreviewPath(path)
     setActivePanel('preview')
   }
+
+  // The artifacts library hands us a file to show when it navigates here.
+  const pendingPreview = useCodeRun((s) => s.pendingPreview)
+  useEffect(() => {
+    if (!pendingPreview || pendingPreview.sessionId !== currentId) return
+    setPreviewPath(pendingPreview.path)
+    setActivePanel('preview')
+    useCodeRun.getState().clearPendingPreview()
+  }, [pendingPreview, currentId])
   const togglePanel = (view: CodeSidePanelView) =>
     setActivePanel((current) => (current === view ? null : view))
 

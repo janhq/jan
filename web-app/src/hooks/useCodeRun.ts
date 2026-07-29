@@ -144,6 +144,8 @@ type CodeRunState = {
   // terminal event); untouched by a `null` usage so a provider that doesn't
   // report it on a given turn doesn't blank out the last known value.
   usage: Record<string, Usage>
+  /** Set by the artifacts library so Cowork opens that file on mount. */
+  pendingPreview: { sessionId: string; path: string } | null
 
   beginRun: (sid: string, runId: string, userText: string, images?: string[]) => void
   appendToken: (sid: string, text: string) => void
@@ -154,6 +156,8 @@ type CodeRunState = {
   routeIntoSubagent: (sid: string, runId: string, inner: StreamEvent) => void
   attachSubagentOutput: (sid: string, runId: string, content: string) => void
   setUsage: (sid: string, usage: Usage | null) => void
+  requestPreview: (sessionId: string, path: string) => void
+  clearPendingPreview: () => void
   addPendingPerm: (sid: string, perm: PendingPermission) => void
   removePendingPerm: (sid: string, requestId: string) => void
   addPendingAsk: (sid: string, requestId: string, request: AskRequestPayload) => void
@@ -174,6 +178,7 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
   pendingPerms: {},
   pendingAsks: {},
   usage: {},
+  pendingPreview: null,
 
   beginRun: (sid, runId, userText, images) =>
     set((s) => ({
@@ -261,6 +266,9 @@ export const useCodeRun = create<CodeRunState>()((set, get) => ({
 
   setUsage: (sid, usage) =>
     set((s) => (usage ? { usage: { ...s.usage, [sid]: usage } } : {})),
+
+  requestPreview: (sessionId, path) => set({ pendingPreview: { sessionId, path } }),
+  clearPendingPreview: () => set({ pendingPreview: null }),
 
   addPendingPerm: (sid, perm) =>
     set((s) => ({
