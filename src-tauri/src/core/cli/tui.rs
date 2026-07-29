@@ -5091,7 +5091,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     let todo_lines = (app.picker.is_none() && !app.todos.is_empty()).then(|| todo_hud(app));
     let todo_h = todo_lines.as_ref().map_or(0, |l| l.len() as u16);
     let show_todo = todo_h > 0;
-    // Header/path/footer chrome stays pinned top and bottom; the todo HUD sits
+    // The header stays pinned at the top; the working dir/branch line and the
+    // transient status footer sit *below* the input, so the whole "where am I,
+    // what's happening" block reads as one unit at the bottom edge next to
+    // where the user types, instead of being split across both ends. The todo
+    // HUD sits
     // directly above the input box -- the last thing in view right before where
     // the user types, not competing with the header for attention. The
     // separator rule is its own row *below* the HUD (rather than the body's own
@@ -5101,20 +5105,20 @@ fn draw(f: &mut Frame, app: &mut App) {
     // renders exactly as before.
     let raw = Layout::vertical([
         Constraint::Length(1),       // 0: header
-        Constraint::Length(1),       // 1: path line
-        Constraint::Length(1),       // 2: footer
-        Constraint::Min(1),          // 3: body
-        Constraint::Length(todo_h),  // 4: todo HUD
-        Constraint::Length(1),       // 5: separator rule
-        Constraint::Length(input_h), // 6: input
+        Constraint::Min(1),          // 1: body
+        Constraint::Length(todo_h),  // 2: todo HUD
+        Constraint::Length(1),       // 3: separator rule
+        Constraint::Length(input_h), // 4: input
+        Constraint::Length(1),       // 5: path line
+        Constraint::Length(1),       // 6: footer
     ])
     .split(f.area());
-    let todo_area = show_todo.then(|| raw[4]);
-    let chunks = [raw[0], raw[3], raw[6], raw[1], raw[2]];
+    let todo_area = show_todo.then(|| raw[2]);
+    let chunks = [raw[0], raw[1], raw[4], raw[5], raw[6]];
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[5]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[3]);
 
     // Top/bottom borders only, so wrapping uses the full width; the two border
     // rows reduce the vertical viewport. Cache the width so flushed tables wrap.
@@ -6110,12 +6114,27 @@ fn hint_spans(key_style: Style, pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
     spans
 }
 
-/// One-line path display shown below the input box.
+/// Abbreviate a leading `$HOME` to `~`, so the line reads as a location rather
+/// than an absolute path. Non-home paths are returned unchanged.
+fn tilde_path(path: &std::path::Path) -> String {
+    let full = path.to_string_lossy().into_owned();
+    let Some(home) = std::env::var_os("HOME") else {
+        return full;
+    };
+    let home = std::path::Path::new(&home);
+    match path.strip_prefix(home) {
+        // The home dir itself, not a `~`-prefixed child.
+        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Ok(rest) => format!("~/{}", rest.to_string_lossy()),
+        Err(_) => full,
+    }
+}
+
+/// One-line working-dir + branch display shown below the input box.
 fn path_line(app: &App) -> Paragraph<'static> {
-    let path = app.project_root.to_string_lossy();
     let mut spans = vec![
         Span::styled("📂 ", Style::new().dark_gray()),
-        Span::styled(path.to_string(), Style::new().dark_gray()),
+        Span::styled(tilde_path(&app.project_root), Style::new().dark_gray()),
     ];
     if let Some(branch) = app.git_branch.as_ref() {
         spans.push(Span::styled(
@@ -6200,7 +6219,8 @@ mod tests {
         parse_command,
         render_table, restore_goal, restore_run_mode, restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
+        summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
         SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
@@ -8898,8 +8918,8 @@ mod tests {
         for (label, setup) in states {
             setup(&mut app);
             let rows = render_rows(&mut app, 80, 12);
-            // Row 2 is the footer: header, path line, footer, then the body.
-            let footer_row = rows[2].trim();
+            // The footer is the last row: ... input, path line, footer.
+            let footer_row = rows.last().expect("non-empty render").trim();
             assert!(
                 footer_row.is_empty(),
                 "{label}: idle footer should be blank, got {footer_row:?}"
@@ -8914,7 +8934,40 @@ mod tests {
         let mut app = test_app();
         app.detail = "stop_reason=stop".into();
         let rows = render_rows(&mut app, 80, 12);
-        assert_eq!(rows[2].trim_end(), " stop_reason=stop");
+        assert_eq!(rows.last().unwrap().trim_end(), " stop_reason=stop");
+    }
+
+    /// Working dir + branch sit below the input, directly above the status
+    /// footer -- not split across the top and bottom of the screen.
+    #[test]
+    fn path_line_sits_below_the_input() {
+        let mut app = test_app();
+        app.git_branch = Some("goal/general-agent".into());
+        let rows = render_rows(&mut app, 80, 12);
+        let path_row = rows.len() - 2;
+        assert!(
+            rows[path_row].contains("/tmp/repo") && rows[path_row].contains("goal/general-agent"),
+            "expected dir+branch just above the footer, got {:?}",
+            rows[path_row]
+        );
+        // Nothing but the header above the transcript any more.
+        assert!(
+            !rows[1].contains("/tmp/repo"),
+            "path line should no longer render at the top: {:?}",
+            rows[1]
+        );
+    }
+
+    #[test]
+    fn tilde_path_abbreviates_only_the_home_prefix() {
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME set in tests"));
+        assert_eq!(tilde_path(&home), "~");
+        assert_eq!(tilde_path(&home.join("code/jan")), "~/code/jan");
+        // A path that merely starts with the same characters is not a child.
+        assert_eq!(
+            tilde_path(std::path::Path::new("/var/tmp/x")),
+            "/var/tmp/x"
+        );
     }
 
     /// A running turn still needs its transient hints -- only the idle cheat
