@@ -20,7 +20,7 @@ export const Route = createFileRoute(route.artifacts as any)({
 const GROUP_ICON = { Code: Code2, Image: ImageIcon, Document: FileText } as const
 const GROUPS = ['Code', 'Image', 'Document'] as const
 
-type Row = CodeArtifact & { sessionId: string; sessionTitle: string }
+type Row = CodeArtifact & { sessionId: string }
 
 function ArtifactsPage() {
   const { t } = useTranslation()
@@ -35,15 +35,20 @@ function ArtifactsPage() {
   // when artifacts need to outlive their session.
   const rows = useMemo<Row[]>(
     () =>
-      sessions.flatMap((session) =>
-        codeTurnsToUIMessages(session.turns ?? [], 'c').flatMap((message) =>
-          artifactsFromParts(message.parts).map((artifact) => ({
-            ...artifact,
-            sessionId: session.id,
-            sessionTitle: session.title,
-          }))
-        )
-      ),
+      sessions.flatMap((session) => {
+        // artifactsFromParts dedupes within a message; a session that rewrites
+        // the same file across turns would otherwise repeat it per turn.
+        const byPath = new Map<string, Row>()
+        for (const message of codeTurnsToUIMessages(session.turns ?? [], 'c')) {
+          for (const artifact of artifactsFromParts(message.parts)) {
+            byPath.set(artifact.path, {
+              ...artifact,
+              sessionId: session.id,
+            })
+          }
+        }
+        return [...byPath.values()]
+      }),
     [sessions]
   )
 
@@ -134,7 +139,7 @@ function ArtifactsPage() {
                       {row.group} · {row.label}
                     </span>
                     <span className="mt-1.5 block truncate text-xs text-main-view-fg/45">
-                      {row.sessionTitle}
+                      {row.path}
                     </span>
                   </span>
                 </button>

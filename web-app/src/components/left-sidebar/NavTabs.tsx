@@ -15,7 +15,9 @@ export function NavTabs() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
 
-  const isCode = pathname === route.code
+  // /artifacts belongs to the Cowork surface, so it keeps the Cowork nav
+  // instead of falling back to Home.
+  const isCode = pathname === route.code || pathname === route.artifacts
   // Home owns the chat surfaces (new chat, threads, projects); Code owns /code.
   const isHome =
     pathname === route.home ||
