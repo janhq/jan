@@ -2,11 +2,19 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
   "description": "enables the default permissions for desktop platforms",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "remote": {
-    "urls": ["http://*"]
+    "urls": [
+      "http://*"
+    ]
   },
-  "platforms": ["linux", "macOS", "windows"],
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
   "permissions": [
     "core:default",
     "core:webview:allow-set-webview-zoom",
@@ -23,6 +31,7 @@
     "log:default",
     "core:webview:allow-create-webview-window",
     "opener:allow-open-url",
+    "opener:allow-open-path",
     "store:default",
     "vector-db:default",
     "rag:default",
@@ -49,7 +58,9 @@
     {
       "identifier": "opener:allow-open-url",
       "description": "opens the default permissions for the core module",
-      "windows": ["*"],
+      "windows": [
+        "*"
+      ],
       "allow": [
         {
           "url": "https://*"
@@ -59,6 +70,18 @@
         },
         {
           "url": "http://0.0.0.0:*"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "description": "Open a Cowork artifact in the OS default application. Scoped to any path because a Cowork project folder is user-chosen and can live anywhere; the same breadth the assetProtocol scope already has.",
+      "windows": [
+        "*"
+      ],
+      "allow": [
+        {
+          "path": "**"
         }
       ]
     }
