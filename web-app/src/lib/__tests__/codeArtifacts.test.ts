@@ -7,10 +7,11 @@ import {
 } from '@/lib/codeArtifacts'
 import type { CodeTurn } from '@/hooks/useCodeSessions'
 
-const write = (path: string, state = 'output-available') => ({
+const write = (path: string, state = 'output-available', output = `Created ${path} (10 bytes)`) => ({
   type: 'tool-write',
   input: { path },
   state,
+  output,
 })
 
 describe('isArtifactPath', () => {
@@ -70,9 +71,19 @@ describe('artifactsFromParts', () => {
     ])
   })
 
-  it('counts write-then-edit of one file as one artifact', () => {
-    const parts = [write('a.html'), { type: 'tool-edit', input: { path: 'a.html' }, state: 'output-available' }]
-    expect(artifactsFromParts(parts)).toHaveLength(1)
+  it('ignores edit entirely — it only ever touches an existing file', () => {
+    const parts = [
+      write('a.html'),
+      { type: 'tool-edit', input: { path: 'b.html' }, state: 'output-available', output: 'ok' },
+    ]
+    expect(artifactsFromParts(parts).map((a) => a.path)).toEqual(['a.html'])
+  })
+
+  it('ignores a write that overwrote an existing file', () => {
+    // The codebase case: rewriting README.md or an icon is not a deliverable.
+    expect(
+      artifactsFromParts([write('README.md', 'output-available', 'Overwrote README.md (20 bytes)')])
+    ).toEqual([])
   })
 
   it('ignores a call that failed or never completed', () => {
@@ -103,7 +114,15 @@ describe('artifactsFromParts', () => {
 
 describe('artifactsFromTurns', () => {
   const toolTurn = (name: string, path: string, extra: Partial<CodeTurn> = {}) =>
-    ({ role: 'tool', content: '', name, args: { path }, status: 'done', ...extra }) as CodeTurn
+    ({
+      role: 'tool',
+      content: '',
+      name,
+      args: { path },
+      status: 'done',
+      result: `Created ${path} (10 bytes)`,
+      ...extra,
+    }) as CodeTurn
 
   it('reads write/edit artifacts straight off session turns', () => {
     const turns = [
@@ -115,14 +134,36 @@ describe('artifactsFromTurns', () => {
     expect(artifactsFromTurns(turns).map((a) => a.path)).toEqual(['index.html'])
   })
 
-  it('counts a file rewritten across turns once', () => {
+  it('counts a file created then rewritten once', () => {
     // Regression: the library showed one card per rewrite.
     const turns = [
       toolTurn('write', 'a.html'),
       toolTurn('edit', 'a.html'),
-      toolTurn('write', 'a.html'),
+      toolTurn('write', 'a.html', { result: 'Overwrote a.html (12 bytes)' }),
     ]
     expect(artifactsFromTurns(turns)).toHaveLength(1)
+  })
+
+  it('excludes files it only modified — the real-codebase case', () => {
+    // A repo of thousands of files: editing docs and assets must not flood
+    // the library just because .md/.svg are on the allowlist.
+    const turns = [
+      toolTurn('write', 'README.md', { result: 'Overwrote README.md (99 bytes)' }),
+      toolTurn('edit', 'docs/guide.md'),
+      toolTurn('write', 'assets/icon.svg', { result: 'Overwrote assets/icon.svg (30 bytes)' }),
+      toolTurn('write', 'report.html'), // genuinely new
+    ]
+    expect(artifactsFromTurns(turns).map((a) => a.path)).toEqual(['report.html'])
+  })
+
+  it('treats the legacy "Wrote N bytes" result as a creation', () => {
+    // Pre-existing sessions have no create/modify distinction; dropping them
+    // would silently empty an existing library.
+    expect(
+      artifactsFromTurns([
+        toolTurn('write', 'a.html', { result: 'Wrote 8000 bytes to /p/a.html' }),
+      ])
+    ).toHaveLength(1)
   })
 
   it('ignores errored and still-running calls', () => {
