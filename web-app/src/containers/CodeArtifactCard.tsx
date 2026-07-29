@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { resolveInRoot } from '@/lib/codePreview'
 import type { CodeArtifact } from '@/lib/codeArtifacts'
 
 const GROUP_ICON = {
@@ -14,9 +15,6 @@ const GROUP_ICON = {
   Image: ImageIcon,
   Document: FileText,
 } as const
-
-const joinPath = (root: string, rel: string) =>
-  `${root.replace(/[/\\]+$/, '')}/${rel.replace(/^[/\\]+/, '')}`
 
 /**
  * Inline card for something the agent produced (jan-internal #242).
@@ -39,7 +37,7 @@ export function CodeArtifactCard({
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const Icon = GROUP_ICON[artifact.group]
-  const abs = root ? joinPath(root, artifact.path) : null
+  const abs = root ? resolveInRoot(root, artifact.path) : null
 
   return (
     <div className="my-2 flex items-center gap-3 rounded-lg border bg-main-view px-3 py-2.5">
