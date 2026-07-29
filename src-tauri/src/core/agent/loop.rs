@@ -1532,7 +1532,13 @@ async fn run_turn_cycle(
             }
         };
 
-        budget.record(&Usage::from_completion(&completion));
+        let turn_usage = Usage::from_completion(&completion);
+        // Publish before the tool calls run: the numbers describe the request
+        // that just landed, and a long tool phase shouldn't sit on them.
+        if let Some(usage) = turn_usage.clone() {
+            let _ = events.send(StreamEvent::TurnUsage { usage });
+        }
+        budget.record(&turn_usage);
 
         let tool_calls = extract_tool_calls(&completion);
 

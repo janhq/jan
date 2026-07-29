@@ -623,6 +623,10 @@ struct ToolCallAccum {
     /// A `ToolCallStarted` was already emitted for this call; guards the
     /// once-per-call in-progress signal against later argument deltas.
     started_emitted: bool,
+    /// Bytes of `arguments` already forwarded as `ToolCallArgsDelta`. Zero
+    /// until the first forward, which replays whatever arrived before the call
+    /// could be announced.
+    args_forwarded: usize,
 }
 
 /// Accumulates OpenAI SSE deltas into a single reconstructed completion. Kept
@@ -747,15 +751,20 @@ impl SseAccumulator {
                         slot.id = id.to_string();
                     }
                 }
-                if let Some(func) = tc.get("function") {
-                    if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
-                        if !name.is_empty() {
-                            slot.name = name.to_string();
-                        }
-                    }
-                    if let Some(arg) = func.get("arguments").and_then(|v| v.as_str()) {
-                        slot.arguments.push_str(arg);
-                    }
+                let func = tc.get("function");
+                if let Some(name) = func
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+                    .filter(|n| !n.is_empty())
+                {
+                    slot.name = name.to_string();
+                }
+                let arg_delta = func
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty());
+                if let Some(arg) = arg_delta {
+                    slot.arguments.push_str(arg);
                 }
 
                 // Signal the in-progress tool call the instant both id and name
@@ -767,6 +776,29 @@ impl SseAccumulator {
                         id: slot.id.clone(),
                         name: slot.name.clone(),
                     });
+                }
+
+                // Forward the argument text itself, but only once the call has
+                // been announced -- a delta with no preceding `ToolCallStarted`
+                // has no call for the consumer to attach it to. Providers that
+                // send arguments before the id/name are covered by the replay
+                // below, which flushes what was buffered before the announce.
+                if slot.started_emitted {
+                    if let Some(arg) = arg_delta {
+                        let delta = if slot.args_forwarded == 0 {
+                            // First forward after the announce: ship everything
+                            // accumulated so far, including any chunks that
+                            // arrived before id/name were known.
+                            slot.arguments.clone()
+                        } else {
+                            arg.to_string()
+                        };
+                        slot.args_forwarded = slot.arguments.len();
+                        let _ = events.send(StreamEvent::ToolCallArgsDelta {
+                            id: slot.id.clone(),
+                            delta,
+                        });
+                    }
                 }
             }
         }
