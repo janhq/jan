@@ -2,9 +2,11 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
+pub mod login;
 pub mod mcp;
 pub mod providers;
 mod path_refs;
+pub mod tokamak;
 mod tui;
 pub mod updater;
 
@@ -644,7 +646,7 @@ fn prepare_agent_session(
         .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
         .or_else(|| crate::core::cli::providers::desktop_selection().model)
         .ok_or_else(|| {
-            "no model specified: pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
+            "no model specified: run `jan login` to sign in to Tokamak, or pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
                 .to_string()
         })?;
     let max_turns = max_turns_override
@@ -909,10 +911,16 @@ pub async fn cli_agent_ui(
     plan: bool,
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
+    let project_root = resolve_project_root(project);
+    // Fresh install: sign in before session setup, which would otherwise fail on
+    // "no model specified" with nothing configured. Skipped the moment any
+    // provider is usable, and bypassed entirely by an explicit --api-key/env key.
+    if overrides.api_key.is_none() {
+        login::ensure_provider_configured(Some(&project_root)).await?;
+    }
     let session = prepare_agent_session(project, model, max_turns, overrides, yolo, plan)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
-    let project_root = resolve_project_root(project);
     let agent_dir = agent_dir_for(&project_root);
     tui::run(session, agent_dir, project_root, task, images, resume).await
 }
