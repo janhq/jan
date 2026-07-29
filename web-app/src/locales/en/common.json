@@ -51,6 +51,7 @@
   "artifactsAll": "All",
   "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
   "artifactsNoMatch": "No artifacts match.",
+  "artifactsShowMore": "Show {{count}} more",
   "artifactOpenPreview": "Open preview",
   "artifactOpenExternal": "Open",
   "artifactShowInFolder": "Show in Folder",
