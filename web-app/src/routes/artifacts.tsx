@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { Code2, FileText, ImageIcon, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -10,15 +10,16 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCodeSessions } from '@/hooks/useCodeSessions'
 import { useCodeRun } from '@/hooks/useCodeRun'
-import { codeTurnsToUIMessages } from '@/lib/codeTurns'
-import { artifactsFromParts, type CodeArtifact } from '@/lib/codeArtifacts'
+import {
+  ARTIFACT_GROUP_NAMES,
+  ARTIFACT_ICON,
+  artifactsFromTurns,
+  type CodeArtifact,
+} from '@/lib/codeArtifacts'
 
 export const Route = createFileRoute(route.artifacts as any)({
   component: ArtifactsPage,
 })
-
-const GROUP_ICON = { Code: Code2, Image: ImageIcon, Document: FileText } as const
-const GROUPS = ['Code', 'Image', 'Document'] as const
 
 type Row = CodeArtifact & { sessionId: string }
 
@@ -33,22 +34,18 @@ function ArtifactsPage() {
   // artifact store (#299). No registration path, no migration — the trade-off
   // is that an artifact disappears if its session is deleted. Add the store
   // when artifacts need to outlive their session.
+  // ponytail: derived from the sessions already on disk rather than a durable
+  // artifact store (#299). No registration path, no migration — the trade-off
+  // is that an artifact disappears if its session is deleted. Add the store
+  // when artifacts need to outlive their session.
   const rows = useMemo<Row[]>(
     () =>
-      sessions.flatMap((session) => {
-        // artifactsFromParts dedupes within a message; a session that rewrites
-        // the same file across turns would otherwise repeat it per turn.
-        const byPath = new Map<string, Row>()
-        for (const message of codeTurnsToUIMessages(session.turns ?? [], 'c')) {
-          for (const artifact of artifactsFromParts(message.parts)) {
-            byPath.set(artifact.path, {
-              ...artifact,
-              sessionId: session.id,
-            })
-          }
-        }
-        return [...byPath.values()]
-      }),
+      sessions.flatMap((session) =>
+        artifactsFromTurns(session.turns).map((artifact) => ({
+          ...artifact,
+          sessionId: session.id,
+        }))
+      ),
     [sessions]
   )
 
@@ -95,7 +92,7 @@ function ArtifactsPage() {
           >
             {t('common:artifactsAll')}
           </Button>
-          {GROUPS.map((g) => (
+          {ARTIFACT_GROUP_NAMES.map((g) => (
             <Button
               key={g}
               variant={group === g ? 'secondary' : 'ghost'}
@@ -116,7 +113,7 @@ function ArtifactsPage() {
         ) : (
           <div className="grid flex-1 auto-rows-min gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((row) => {
-              const Icon = GROUP_ICON[row.group]
+              const Icon = ARTIFACT_ICON[row.group]
               return (
                 <button
                   key={`${row.sessionId}:${row.path}`}
