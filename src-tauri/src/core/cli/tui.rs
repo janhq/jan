@@ -1918,6 +1918,13 @@ impl App {
         self.diff_paths.clear();
     }
 
+    /// Current throbber frame. `spinner_frame` is advanced on a fixed cadence
+    /// by the render loop, so every animated row in a frame shows the same
+    /// glyph and they turn together instead of drifting apart.
+    fn spinner(&self) -> &'static str {
+        SPINNER[self.spinner_frame % SPINNER.len()]
+    }
+
     /// Flush the current turn and return its text as the final assistant answer.
     fn take_answer(&mut self) -> String {
         let answer = self.assistant_buf.trim().to_string();
@@ -5386,7 +5393,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         if !last_blank {
             lines.push(Line::raw(""));
         }
-        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        let frame = app.spinner();
         lines.extend(subagent_panel_lines(
             &mut app.subagents,
             app.context_window,
@@ -5423,7 +5430,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         }
     }
     for (_, _, name) in &app.awaiting {
-        let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+        let frame = app.spinner();
         lines.push(tool_row(
             frame,
             Style::new().cyan(),
@@ -5434,7 +5441,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
-    let frame = SPINNER[app.spinner_frame % SPINNER.len()];
+    let frame = app.spinner();
     for call in &mut app.starting {
         lines.extend(starting_call_lines(call, frame));
     }
@@ -6382,15 +6389,26 @@ fn input_box(app: &App) -> Paragraph<'static> {
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
         if app.message_queue.is_empty() {
-            Paragraph::new(Line::styled(
-                "working… (Esc to cancel, type to queue next message)",
-                Style::new().dim().italic(),
-            ))
+            // The spinner carries the motion; the rest of the row is static so
+            // the text stays readable rather than shifting under the eye.
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+                Span::styled(
+                    "working… (Esc to cancel, type to queue next message)",
+                    Style::new().dim().italic(),
+                ),
+            ]))
             .block(block)
         } else {
             let n = app.message_queue.len();
-            let msg = format!("⏳ Queued ({n}) — Esc to cancel, type to add more");
-            Paragraph::new(Line::styled(msg, Style::new().yellow())).block(block)
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{} ", app.spinner()), Style::new().yellow()),
+                Span::styled(
+                    format!("⏳ Queued ({n}) — Esc to cancel, type to add more"),
+                    Style::new().yellow(),
+                ),
+            ]))
+            .block(block)
         }
     } else if app.input.is_empty() {
         // Same `› ` arrow as the typing view, then a fixed (non-blinking)
@@ -9376,6 +9394,49 @@ mod tests {
         assert!(out.contains("Task 1 agent"), "{out}");
         assert!(out.contains("starting…"), "{out}");
         assert!(!out.contains('%'), "no share before the first response: {out}");
+    }
+
+    /// The running placeholder is the row a user stares at during a long turn.
+    /// A static "working…" reads as a hung UI, so it animates on the same
+    /// cadence as every other throbber.
+    #[test]
+    fn working_placeholder_animates() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        assert_eq!(app.status, Status::Running);
+
+        let frame_of = |app: &mut App| {
+            render_rows(app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("working…"))
+                .expect("running placeholder present")
+        };
+
+        app.spinner_frame = 0;
+        let first = frame_of(&mut app);
+        assert!(first.contains(SPINNER[0]), "expected frame 0 glyph: {first:?}");
+
+        app.spinner_frame = 3;
+        let later = frame_of(&mut app);
+        assert!(later.contains(SPINNER[3]), "expected frame 3 glyph: {later:?}");
+        assert_ne!(first, later, "row must change as the frame advances");
+
+        // The wording itself does not move, only the glyph.
+        assert!(later.contains("(Esc to cancel, type to queue next message)"), "{later:?}");
+    }
+
+    /// A queued-message row is still a running row, so it animates too.
+    #[test]
+    fn queued_placeholder_animates() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.message_queue.push_back("next".into());
+        app.spinner_frame = 5;
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("Queued"))
+            .expect("queued row present");
+        assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
     }
 
     #[test]
