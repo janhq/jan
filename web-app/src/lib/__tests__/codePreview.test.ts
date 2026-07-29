@@ -5,7 +5,7 @@ import {
   basenameOf,
   isAssetKind,
   unresolvedRefs,
-  isSafeRelativePath,
+  resolveInRoot,
 } from '@/lib/codePreview'
 
 describe('previewKindFor', () => {
@@ -77,23 +77,42 @@ describe('unresolvedRefs', () => {
   })
 })
 
-describe('isSafeRelativePath', () => {
-  it('accepts ordinary project-relative paths', () => {
-    expect(isSafeRelativePath('index.html')).toBe(true)
-    expect(isSafeRelativePath('src/a/b.md')).toBe(true)
+describe('resolveInRoot', () => {
+  const root = '/Users/me/proj'
+
+  it('resolves a relative path', () => {
+    expect(resolveInRoot(root, 'index.html')).toBe('/Users/me/proj/index.html')
+    expect(resolveInRoot(root, 'a/b.md')).toBe('/Users/me/proj/a/b.md')
   })
 
-  it('refuses traversal and absolute paths rather than normalising them', () => {
-    expect(isSafeRelativePath('../secrets.env')).toBe(false)
-    expect(isSafeRelativePath('a/../../etc/passwd')).toBe(false)
-    expect(isSafeRelativePath('/etc/passwd')).toBe(false)
-    expect(isSafeRelativePath('C:\\Windows\\x')).toBe(false)
-    expect(isSafeRelativePath('a\\..\\..\\b')).toBe(false)
-    expect(isSafeRelativePath('')).toBe(false)
+  it('accepts an absolute path inside the root', () => {
+    // Regression: the agent reports absolute paths for some writes and
+    // relative for others; refusing absolute rejected in-project files.
+    expect(resolveInRoot(root, '/Users/me/proj/flappy.html')).toBe(
+      '/Users/me/proj/flappy.html'
+    )
   })
 
-  it('allows dots that are not traversal', () => {
-    expect(isSafeRelativePath('v1.2/notes.md')).toBe(true)
-    expect(isSafeRelativePath('.hidden/file.md')).toBe(true)
+  it('refuses anything that lands outside the root', () => {
+    expect(resolveInRoot(root, '../secrets.env')).toBeNull()
+    expect(resolveInRoot(root, 'a/../../etc/passwd')).toBeNull()
+    expect(resolveInRoot(root, '/etc/passwd')).toBeNull()
+    // Sibling dir sharing a name prefix must not pass the prefix check.
+    expect(resolveInRoot(root, '/Users/me/proj-other/x')).toBeNull()
+  })
+
+  it('collapses . and trailing slashes', () => {
+    expect(resolveInRoot(root + '/', './a.md')).toBe('/Users/me/proj/a.md')
+    expect(resolveInRoot(root, 'a/./b/../c.md')).toBe('/Users/me/proj/a/c.md')
+  })
+
+  it('handles windows paths', () => {
+    expect(resolveInRoot('C:\\proj', 'a\\b.html')).toBe('C:/proj/a/b.html')
+    expect(resolveInRoot('C:\\proj', 'C:\\other\\x')).toBeNull()
+  })
+
+  it('is null on empty input', () => {
+    expect(resolveInRoot(root, '')).toBeNull()
+    expect(resolveInRoot('', 'a.md')).toBeNull()
   })
 })

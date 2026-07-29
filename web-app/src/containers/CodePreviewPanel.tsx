@@ -13,15 +13,12 @@ import {
   MAX_PREVIEW_BYTES,
   basenameOf,
   isAssetKind,
-  isSafeRelativePath,
+  resolveInRoot,
   previewKindFor,
   unresolvedRefs,
   type PreviewState,
 } from '@/lib/codePreview'
 import type { BundledLanguage } from 'shiki'
-
-const joinPath = (root: string, rel: string) =>
-  `${root.replace(/[/\\]+$/, '')}/${rel.replace(/^[/\\]+/, '')}`
 
 /**
  * Preview pane for files the agent produced (jan-internal #242). Reads from disk
@@ -53,9 +50,10 @@ export function CodePreviewPanel({
   const load = useCallback(
     async (rel: string) => {
       if (!root) return
-      // Refuse rather than normalise: a tool-reported path must never reach
-      // outside the project root.
-      if (!isSafeRelativePath(rel)) {
+      // The agent reports relative or absolute paths; either is fine as long as
+      // it lands inside the project root.
+      const abs = resolveInRoot(root, rel)
+      if (!abs) {
         setState({ status: 'failed', path: rel, reason: t('common:previewOutsideRoot') })
         return
       }
@@ -65,7 +63,6 @@ export function CodePreviewPanel({
         return
       }
       setState({ status: 'loading', path: rel })
-      const abs = joinPath(root, rel)
       try {
         if (isAssetKind(kind)) {
           // Images/video stream through the asset protocol; `read_file_sync` is
@@ -192,7 +189,7 @@ export function CodePreviewPanel({
                   size="sm"
                   className="h-7 gap-1.5"
                   onClick={() =>
-                    void serviceHub.opener().revealItemInDir(joinPath(root, state.path))
+                    void serviceHub.opener().revealItemInDir(resolveInRoot(root, state.path) ?? root)
                   }
                 >
                   <FolderOpen size={13} />

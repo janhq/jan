@@ -109,14 +109,30 @@ export function unresolvedRefs(html: string): number {
 }
 
 /**
- * Reject a path that escapes the project root before anything reads it.
- * Traversal and absolute paths are refused rather than normalised, so a
- * tool-reported path can never reach outside the workspace.
+ * Absolute path for `path` if it lands inside `root`, else null.
+ *
+ * Accepts relative *or* absolute input: the agent reports either, sometimes
+ * both within one session, so refusing absolute outright rejected files that
+ * were in the project all along. `..` is collapsed first, so traversal cannot
+ * sneak past by ending up inside the root string.
  */
-export function isSafeRelativePath(path: string): boolean {
-  if (!path || path.startsWith('/') || /^[a-z]:[\\/]/i.test(path)) return false
-  const parts = path.split(/[/\\]/)
-  return !parts.some((p) => p === '..')
+export function resolveInRoot(root: string, path: string): string | null {
+  const slash = (p: string) => p.replace(/\\/g, '/')
+  const trim = (p: string) => slash(p).replace(/\/+$/, '')
+  const r = trim(root)
+  if (!r || !path) return null
+  const raw = slash(path)
+  const isAbs = raw.startsWith('/') || /^[a-z]:\//i.test(raw)
+  const joined = isAbs ? raw : `${r}/${raw.replace(/^\/+/, '')}`
+
+  const parts: string[] = []
+  for (const seg of joined.split('/')) {
+    if (!seg || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  const abs = (joined.startsWith('/') ? '/' : '') + parts.join('/')
+  return abs === r || abs.startsWith(`${r}/`) ? abs : null
 }
 
 /** Guard before reading, so an oversized file fails fast instead of hanging. */
