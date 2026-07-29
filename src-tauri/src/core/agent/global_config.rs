@@ -191,6 +191,27 @@ pub(crate) fn set_provider(name: &str, update: ProviderUpdate) -> Result<PathBuf
     write_raw(&config)
 }
 
+/// Point `default_model` at `model` unless the user already chose one. Returns
+/// `true` when it was written. Used by sign-in flows: the first provider a user
+/// connects should become runnable without a second config step, but an explicit
+/// choice must never be overwritten.
+pub(crate) fn set_default_model_if_unset(model: &str) -> Result<bool, String> {
+    if model.trim().is_empty() {
+        return Ok(false);
+    }
+    let mut config = load_raw()?;
+    if config
+        .default_model
+        .as_deref()
+        .is_some_and(|m| !m.trim().is_empty())
+    {
+        return Ok(false);
+    }
+    config.default_model = Some(model.to_string());
+    write_raw(&config)?;
+    Ok(true)
+}
+
 /// Remove a provider entry from `~/.jan/config.toml`. Returns `true` if the
 /// provider existed and was removed, `false` if it was already absent.
 pub(crate) fn remove_provider(name: &str) -> Result<bool, String> {
@@ -215,31 +236,35 @@ pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Redirect `HOME` to a scratch dir for the duration of `f`. Every test that
+/// touches `~/.jan` must go through this one helper: `HOME` is process-wide, so
+/// a second lock elsewhere would let those tests race each other.
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
 
-    // HOME is process-wide; serialize tests that mutate it.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-    fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let home = std::env::temp_dir().join(format!("jan_global_cfg_test_{n}"));
-        std::fs::create_dir_all(&home).unwrap();
-        let prev = std::env::var_os("HOME");
-        std::env::set_var("HOME", &home);
-        let result = f(&home);
-        match prev {
-            Some(p) => std::env::set_var("HOME", p),
-            None => std::env::remove_var("HOME"),
-        }
-        let _ = std::fs::remove_dir_all(&home);
-        result
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let home = std::env::temp_dir().join(format!("jan_global_cfg_test_{n}"));
+    std::fs::create_dir_all(&home).unwrap();
+    let prev = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let result = f(&home);
+    match prev {
+        Some(p) => std::env::set_var("HOME", p),
+        None => std::env::remove_var("HOME"),
     }
+    let _ = std::fs::remove_dir_all(&home);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn missing_file_yields_empty_map() {
@@ -395,6 +420,31 @@ models = ["gpt-4o"]
             std::fs::write(&path, "default_model = \"m1\"\n").unwrap();
             set_provider("openai", ProviderUpdate { api_key: Some("sk".into()), ..Default::default() }).unwrap();
             assert_eq!(default_model().expect("default").as_deref(), Some("m1"));
+        });
+    }
+
+    #[test]
+    fn default_model_is_set_once_and_never_overwritten() {
+        with_temp_home(|_| {
+            assert!(set_default_model_if_unset("m1").expect("set"));
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+            assert!(!set_default_model_if_unset("m2").expect("set again"));
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+        });
+    }
+
+    #[test]
+    fn default_model_set_keeps_existing_providers_and_rejects_blank() {
+        with_temp_home(|_| {
+            set_provider(
+                "tokamak",
+                ProviderUpdate { api_key: Some("tk".into()), ..Default::default() },
+            )
+            .unwrap();
+            assert!(!set_default_model_if_unset("  ").expect("blank"));
+            assert!(set_default_model_if_unset("m1").expect("set"));
+            let configs = load_global_config().expect("load");
+            assert_eq!(configs.get("tokamak").unwrap().api_key.as_deref(), Some("tk"));
         });
     }
 

@@ -197,6 +197,42 @@ struct PickerItem {
     checkbox: Option<bool>,
 }
 
+/// `/login` key entry: a docked prompt that collects a Tokamak API key without
+/// echoing it. Verification runs off the render loop (see `login_task` in
+/// `chat_loop`), so `verifying` marks the window where the prompt is read-only.
+struct LoginPrompt {
+    /// The key as typed/pasted. Never rendered verbatim -- see `masked`.
+    input: String,
+    /// Why the previous attempt failed, shown above the field.
+    error: Option<String>,
+    verifying: bool,
+}
+
+impl LoginPrompt {
+    fn new() -> Self {
+        Self {
+            input: String::new(),
+            error: None,
+            verifying: false,
+        }
+    }
+
+    /// Bounded stand-in for the key so a long paste can't overflow the box and a
+    /// shoulder-surfer learns nothing beyond "something was entered".
+    fn masked(&self) -> String {
+        "*".repeat(self.input.chars().count().min(32))
+    }
+
+    /// Append pasted text, dropping the whitespace terminals add around a paste.
+    /// Interior whitespace is kept so `sanitize_key` can reject a mis-paste with
+    /// a clear reason rather than silently mangling the key.
+    fn paste(&mut self, text: &str) {
+        if !self.verifying {
+            self.input.push_str(text.trim());
+        }
+    }
+}
+
 /// A spawned agent run: the event stream and its abort handle.
 struct CurrentRun {
     rx: mpsc::UnboundedReceiver<StreamEvent>,
@@ -516,6 +552,10 @@ struct App {
     /// Structured questions waiting for this TUI, oldest first.
     ask_queue: std::collections::VecDeque<PendingAsk>,
     picker: Option<Picker>,
+    /// Active `/login` prompt; owns the keyboard while open.
+    login: Option<LoginPrompt>,
+    /// Key handed off to the loop to verify off the render loop. Taken once.
+    login_submit: Option<String>,
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
     scrollback: u16,
@@ -706,6 +746,8 @@ impl App {
             pending_queue: std::collections::VecDeque::new(),
             ask_queue: std::collections::VecDeque::new(),
             picker: None,
+            login: None,
+            login_submit: None,
             scrollback: 0,
             want_start: false,
             view_width: 0,
@@ -2826,6 +2868,22 @@ async fn await_snapshot(
     }
 }
 
+/// Await an in-flight `/login` verification, parking forever when none is
+/// running so this can sit in the loop's `select!` unconditionally.
+async fn await_login(
+    task: &mut Option<tokio::task::JoinHandle<Result<super::tokamak::Login, String>>>,
+) -> Result<super::tokamak::Login, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("sign-in task failed: {e}")),
+    }
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -2938,6 +2996,12 @@ async fn chat_loop<B: Backend>(
     let mut snap_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
     let mut snap_inflight: Option<SnapshotJob> = None;
 
+    // `/login` key verification: an HTTP round trip, so it runs off the render
+    // loop and the prompt keeps repainting ("verifying...") while it's in flight.
+    let mut login_task: Option<
+        tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
+    > = None;
+
     match initial_task {
         Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
         _ => app.note("type a message to start, or /help for commands"),
@@ -2953,6 +3017,24 @@ async fn chat_loop<B: Backend>(
                     snap_inflight = Some(job);
                     break;
                 }
+            }
+        }
+
+        // Esc closed the prompt while a verification was in flight: drop it, so a
+        // late reply can't report a sign-in the user walked away from.
+        if app.login.is_none() {
+            if let Some(task) = login_task.take() {
+                task.abort();
+            }
+        }
+
+        // A key was submitted at the `/login` prompt: verify it off-loop. One at
+        // a time -- the prompt is read-only while `verifying`.
+        if login_task.is_none() {
+            if let Some(key) = app.login_submit.take() {
+                login_task = Some(tokio::spawn(
+                    async move { super::tokamak::login(&key).await },
+                ));
             }
         }
 
@@ -3015,11 +3097,16 @@ async fn chat_loop<B: Backend>(
                                 };
                             }
                         }
-                        Ok(Event::Paste(text)) => {
-                            for c in text.chars() {
-                                app.input_insert(c);
+                        Ok(Event::Paste(text)) => match app.login.as_mut() {
+                            // A pasted API key belongs to the login field, not
+                            // the input box (where it would be echoed).
+                            Some(prompt) => prompt.paste(&text),
+                            None => {
+                                for c in text.chars() {
+                                    app.input_insert(c);
+                                }
                             }
-                        }
+                        },
                         Ok(Event::Mouse(mouse)) => {
                             if !handle_ask_mouse(app, mouse, ask_requests).await {
                                 handle_mouse(app, mouse);
@@ -3035,6 +3122,9 @@ async fn chat_loop<B: Backend>(
                     [] => {}
                     names => app.note(&format!("MCP ready: {}", names.join(", "))),
                 }
+            }
+            login_res = await_login(&mut login_task) => {
+                finish_login(app, login_res);
             }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
@@ -3323,6 +3413,72 @@ async fn handle_ask_mouse(
     true
 }
 
+/// Keys for the `/login` prompt. Enter hands the key to the loop for
+/// verification (`login_submit`); Esc or Ctrl-C abandons sign-in. While a
+/// verification is in flight the field is read-only, so a stray keystroke cannot
+/// edit the key being checked -- but Esc still cancels, so the prompt can never
+/// wedge the TUI.
+fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    let cancel = key.code == KeyCode::Esc
+        || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
+    if cancel {
+        app.login = None;
+        app.login_submit = None;
+        app.note("sign-in cancelled (run /login again any time)");
+        return;
+    }
+    // Ctrl-V: terminals deliver a normal paste as `Event::Paste`, but some send
+    // Ctrl-V through as a key, so read the clipboard directly for those.
+    if ctrl && key.code == KeyCode::Char('v') {
+        match clipboard_text() {
+            Ok(text) => {
+                if let Some(prompt) = app.login.as_mut() {
+                    prompt.paste(&text);
+                }
+            }
+            Err(e) => {
+                if let Some(prompt) = app.login.as_mut() {
+                    prompt.error = Some(format!("could not read the clipboard: {e}"));
+                }
+            }
+        }
+        return;
+    }
+
+    let Some(prompt) = app.login.as_mut() else {
+        return;
+    };
+    if prompt.verifying {
+        return;
+    }
+    match key.code {
+        KeyCode::Enter => match super::tokamak::sanitize_key(&prompt.input) {
+            Ok(key) => {
+                prompt.verifying = true;
+                prompt.error = None;
+                app.login_submit = Some(key);
+            }
+            Err(e) => {
+                prompt.input.clear();
+                prompt.error = Some(e);
+            }
+        },
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
+}
+
+/// Plain text from the OS clipboard, for Ctrl-V in the `/login` prompt (the
+/// image path is `clipboard_image`).
+fn clipboard_text() -> Result<String, String> {
+    arboard::Clipboard::new()
+        .and_then(|mut clip| clip.get_text())
+        .map_err(|e| e.to_string())
+}
+
 async fn handle_key(
     app: &mut App,
     key: KeyEvent,
@@ -3347,6 +3503,14 @@ async fn handle_key(
         } else {
             "mouse capture off: drag to select/copy text (Ctrl-T to re-enable)"
         });
+        return;
+    }
+
+    // The `/login` prompt owns the keyboard while open: every keystroke is part
+    // of a secret being typed, so none of it may reach the input box or the
+    // transcript shortcuts.
+    if app.login.is_some() {
+        handle_login_key(app, key, ctrl);
         return;
     }
 
@@ -3737,6 +3901,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Cancel queued messages (bare: all, or index)",
     },
     SlashCommand {
+        name: "/login",
+        hint: "",
+        description: "Sign in to Tokamak and save the API key",
+    },
+    SlashCommand {
         name: "/config",
         hint: "",
         description: "View provider config (~/.jan/config.toml)",
@@ -3832,6 +4001,7 @@ async fn run_command(app: &mut App, line: &str) {
             }
         }
         "mcp" => open_mcp_picker(app),
+        "login" => open_login_prompt(app),
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
         "plan" => plan_command(app, arg),
@@ -4262,6 +4432,69 @@ fn open_mcp_picker(app: &mut App) {
         items,
         selected: 0,
     });
+}
+
+/// Open the `/login` prompt: send the user to Tokamak's API-keys page and wait
+/// for the key they paste back. The URL is always written to the transcript, not
+/// just handed to the browser, so a headless or remote session can still be
+/// completed by hand.
+fn open_login_prompt(app: &mut App) {
+    app.gap(Kind::Meta);
+    app.push(Line::styled(
+        "sign in to Tokamak and create an API key:".to_string(),
+        Style::new().dim(),
+    ));
+    app.push(Line::styled(
+        format!("  {}", super::tokamak::API_KEYS_URL),
+        Style::new().cyan(),
+    ));
+    let browser = match super::tokamak::open_api_keys_page() {
+        Ok(()) => "  opening that page in your browser".to_string(),
+        Err(e) => format!("  open that URL yourself ({e})"),
+    };
+    app.push(Line::styled(browser, Style::new().dim()));
+    app.login = Some(LoginPrompt::new());
+}
+
+/// Apply a finished verification. Success persists the key and, when the session
+/// is pointed at a model this account cannot serve, moves it onto one that works
+/// -- otherwise signing in would appear to do nothing on the next message.
+fn finish_login(app: &mut App, result: Result<super::tokamak::Login, String>) {
+    match result {
+        Ok(login) => {
+            app.login = None;
+            app.note(&format!(
+                "signed in to Tokamak - {} model(s) available, key saved to {}",
+                login.models.len(),
+                login.config_path.display()
+            ));
+            adopt_login_model(app, &login);
+        }
+        Err(e) => {
+            // Keep the prompt open with the reason: a rejected key is usually a
+            // partial paste, and reopening from scratch loses that context.
+            if let Some(prompt) = app.login.as_mut() {
+                prompt.verifying = false;
+                prompt.input.clear();
+                prompt.error = Some(e);
+            } else {
+                app.note(&format!("sign-in failed: {e}"));
+            }
+        }
+    }
+}
+
+/// Point the session at a Tokamak model when the current one is not runnable.
+/// A model that already resolves is left alone: `/login` is also used to refresh
+/// an expired key, which must not silently switch models.
+fn adopt_login_model(app: &mut App, login: &super::tokamak::Login) {
+    let runnable = super::providers::list_provider_models(Some(&app.project_root));
+    if runnable.iter().any(|(_, m)| *m == app.model) {
+        return;
+    }
+    if let Some(model) = login.models.first() {
+        app.set_model(model.clone());
+    }
 }
 
 /// Open the `/config` screen: a read-only view of the providers configured in
@@ -5060,9 +5293,19 @@ fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(path_line(app), chunks[3]);
     f.render_widget(footer(app), chunks[4]);
 
-    // An interactive question owns the dock while active. Permission prompts
-    // remain queued behind it and surface as soon as the question resolves.
-    if !app.ask_queue.is_empty() {
+    // `/login` is modal and user-initiated (only reachable while idle), so it
+    // outranks the queues below: nothing else may take keystrokes meant for a key.
+    if let Some(prompt) = &app.login {
+        let height = (LOGIN_PROMPT_ROWS + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_login(f, rect, prompt);
+    } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
         let height = (ask.row_count() as u16 + 4).min(chunks[1].height);
@@ -5233,6 +5476,56 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
         )
     };
     f.render_widget(Paragraph::new(help), rows[2]);
+}
+
+/// Rows the `/login` box needs: two borders, the URL, the field, and the help
+/// line. An error adds one more (see the `draw` call site).
+const LOGIN_PROMPT_ROWS: u16 = 5;
+
+/// The `/login` prompt: the API-keys URL, a masked key field, and a help line.
+/// The key is never rendered, so a shared screen or scrollback capture cannot
+/// leak it.
+fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
+    use ratatui::widgets::Clear;
+
+    let dim = Style::new().dark_gray();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            " tokamak sign-in ",
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    let mut lines = vec![Line::from(vec![
+        Span::styled("get a key at ", dim),
+        Span::styled(super::tokamak::API_KEYS_URL, Style::new().cyan()),
+    ])];
+    if let Some(error) = &prompt.error {
+        lines.push(Line::styled(error.clone(), Style::new().red()));
+    }
+    if prompt.verifying {
+        lines.push(Line::styled(
+            "verifying...".to_string(),
+            Style::new().yellow(),
+        ));
+        lines.push(Line::styled("Esc cancel".to_string(), dim));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("API key: ", Style::new().bold()),
+            Span::raw(prompt.masked()),
+            Span::styled("█", Style::new().cyan()),
+        ]));
+        lines.push(Line::styled(
+            "paste the key · Enter verify · Esc cancel".to_string(),
+            dim,
+        ));
+    }
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 /// Slash-command hint popup: one row per match (`/name [hint]  description`),
@@ -5866,7 +6159,8 @@ mod tests {
         apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        is_table_separator, load_image_file, message_text, open_config_screen, parse_command,
+        finish_login, is_table_separator, load_image_file, message_text, open_config_screen,
+        parse_command,
         render_table, restore_goal, restore_run_mode, restore_todos, run_command,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
@@ -6912,6 +7206,181 @@ mod tests {
             "no throbber may survive the cancel:\n{}",
             rows.join("\n")
         );
+    }
+
+    async fn press(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mcp_servers: crate::core::state::SharedMcpServers =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let mut current: Option<CurrentRun> = None;
+        handle_key(app, KeyEvent::new(code, mods), &registry, &mut current, &mcp_servers).await;
+    }
+
+    async fn type_key_chars(app: &mut App, text: &str) {
+        for ch in text.chars() {
+            press(app, KeyCode::Char(ch), KeyModifiers::NONE).await;
+        }
+    }
+
+    #[test]
+    fn slash_commands_include_login() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/login"));
+    }
+
+    #[tokio::test]
+    async fn login_prompt_captures_keys_and_never_renders_the_key() {
+        let mut app = test_app();
+        run_command(&mut app, "login").await;
+        assert!(app.login.is_some(), "/login must open the prompt");
+
+        type_key_chars(&mut app, "tk-secret").await;
+        // Keystrokes are the key, not chat input.
+        assert!(app.input.is_empty(), "the input box must not see the key");
+        let prompt = app.login.as_ref().unwrap();
+        assert_eq!(prompt.input, "tk-secret");
+        assert_eq!(prompt.masked(), "*********");
+
+        let rows = render_rows(&mut app, 80, 24);
+        let screen = rows.join("\n");
+        assert!(screen.contains("tokamak sign-in"), "{screen}");
+        assert!(
+            !screen.contains("tk-secret"),
+            "the key must never be rendered:\n{screen}"
+        );
+    }
+
+    #[tokio::test]
+    async fn login_enter_hands_a_trimmed_key_to_the_loop() {
+        let mut app = test_app();
+        run_command(&mut app, "login").await;
+        app.login.as_mut().unwrap().paste("  tk-abc\n");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert_eq!(app.login_submit.as_deref(), Some("tk-abc"));
+        assert!(app.login.as_ref().unwrap().verifying);
+    }
+
+    #[tokio::test]
+    async fn login_rejects_a_mispasted_key_before_any_request() {
+        let mut app = test_app();
+        run_command(&mut app, "login").await;
+        type_key_chars(&mut app, "tk-abc def").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert!(app.login_submit.is_none(), "no request for a bad paste");
+        let prompt = app.login.as_ref().unwrap();
+        assert!(!prompt.verifying);
+        assert!(prompt.input.is_empty(), "a rejected key is cleared");
+        assert!(prompt.error.is_some());
+
+        // Empty input is likewise not worth a round trip.
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.login_submit.is_none());
+    }
+
+    #[tokio::test]
+    async fn login_backspace_edits_and_esc_cancels() {
+        let mut app = test_app();
+        run_command(&mut app, "login").await;
+        type_key_chars(&mut app, "tk-ab").await;
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
+        assert_eq!(app.login.as_ref().unwrap().input, "tk-a");
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.login.is_none(), "Esc must close the prompt");
+        assert!(app.login_submit.is_none());
+    }
+
+    #[tokio::test]
+    async fn login_stays_cancellable_while_verifying() {
+        let mut app = test_app();
+        run_command(&mut app, "login").await;
+        app.login.as_mut().unwrap().paste("tk-abc");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.login_submit.take();
+
+        // Read-only while in flight: no edit may change the key being checked.
+        type_key_chars(&mut app, "xyz").await;
+        press(&mut app, KeyCode::Backspace, KeyModifiers::NONE).await;
+        assert_eq!(app.login.as_ref().unwrap().input, "tk-abc");
+        let rows = render_rows(&mut app, 80, 24);
+        assert!(rows.iter().any(|r| r.contains("verifying")), "{rows:?}");
+
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.login.is_none(), "Ctrl-C must not wedge the prompt");
+    }
+
+    #[tokio::test]
+    async fn failed_verification_keeps_the_prompt_open_with_the_reason() {
+        let mut app = test_app();
+        run_command(&mut app, "login").await;
+        app.login.as_mut().unwrap().paste("tk-abc");
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        app.login_submit.take();
+
+        finish_login(&mut app, Err("Tokamak rejected that API key.".to_string()));
+        let prompt = app.login.as_ref().expect("prompt stays open to retry");
+        assert!(!prompt.verifying);
+        assert!(prompt.input.is_empty());
+        assert_eq!(prompt.error.as_deref(), Some("Tokamak rejected that API key."));
+    }
+
+    #[test]
+    fn successful_login_closes_the_prompt_and_adopts_a_runnable_model() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.login = Some(super::LoginPrompt::new());
+            finish_login(
+                &mut app,
+                Ok(crate::core::cli::tokamak::Login {
+                    models: vec!["tokamak-1-preview".into(), "tokamak-1-mini".into()],
+                    config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                    default_model: Some("tokamak-1-preview".into()),
+                }),
+            );
+            assert!(app.login.is_none());
+            // The session's old model ("m") is offered by nobody, so sign-in must
+            // move it onto one the new account can serve.
+            assert_eq!(app.model, "tokamak-1-preview");
+        });
+    }
+
+    #[test]
+    fn login_keeps_a_still_runnable_model_on_a_key_refresh() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    base_url: Some(crate::core::cli::tokamak::BASE_URL.into()),
+                    models: Some(vec!["m".into()]),
+                    api_type: None,
+                },
+            )
+            .expect("seed provider");
+
+            let mut app = test_app();
+            app.login = Some(super::LoginPrompt::new());
+            finish_login(
+                &mut app,
+                Ok(crate::core::cli::tokamak::Login {
+                    models: vec!["tokamak-1-preview".into()],
+                    config_path: std::path::PathBuf::from("/tmp/config.toml"),
+                    default_model: None,
+                }),
+            );
+            assert_eq!(app.model, "m", "a working model must survive a re-login");
+        });
+    }
+
+    #[test]
+    fn masked_key_is_bounded() {
+        let mut prompt = super::LoginPrompt::new();
+        prompt.paste(&"k".repeat(200));
+        assert_eq!(prompt.masked().chars().count(), 32);
+        prompt.verifying = true;
+        prompt.paste("ignored");
+        assert_eq!(prompt.input.chars().count(), 200);
     }
 
     #[test]

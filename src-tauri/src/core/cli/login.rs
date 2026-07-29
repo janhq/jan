@@ -1,33 +1,36 @@
 //! Terminal sign-in UX for Tokamak: the plain-stdout counterpart to the TUI's
 //! `/login` overlay. Both drive [`super::tokamak`]; only presentation differs.
 //!
-//! `jan login` runs this directly. The TUI no longer forces this flow on a
-//! fresh install -- it launches with an empty model and shows a one-line
-//! notice, letting the user run `/login` (or `jan login`) when they are ready
-//! instead of being dropped into a masked key prompt immediately.
+//! This runs *before* the TUI starts, which is what makes a fresh install work
+//! at all: with no provider configured, session setup fails on "no model
+//! specified" before a single frame is drawn, so the key has to be collected
+//! here.
 
 use std::io::IsTerminal;
 
-use super::{secret_input, tokamak};
+use super::tokamak;
 
 /// Max key prompts before giving up, so a wrong paste is retryable but a script
 /// piping garbage at us can't loop forever.
 const MAX_ATTEMPTS: usize = 3;
 
-const KEY_PROMPT: &str = "Paste your Tokamak API key: ";
-
-/// Reject a non-interactive run with nothing configured: there is no terminal
-/// to show the sign-in notice in and nobody to act on it. No-op otherwise --
-/// an interactive run with no provider proceeds and the TUI shows its own
-/// notice instead of forcing a login flow here.
-pub fn reject_headless_without_provider(project_root: Option<&std::path::Path>) -> Result<(), String> {
+/// Guarantee a runnable provider before the agent starts, signing the user in if
+/// there is none. No-op when anything usable is already configured, so the
+/// startup cost on an existing install is one config read.
+///
+/// Non-interactive (piped stdin) fails with instructions instead of prompting:
+/// there is no one there to paste a key.
+pub async fn ensure_provider_configured(
+    project_root: Option<&std::path::Path>,
+) -> Result<(), String> {
     if super::providers::has_usable_provider(project_root) {
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
         return Err(headless_message());
     }
-    Ok(())
+    println!("No AI provider is configured yet.");
+    run_login().await
 }
 
 /// Sign in to Tokamak from a plain terminal: point the user at the API-keys
@@ -48,7 +51,6 @@ pub async fn run_login() -> Result<(), String> {
         Err(e) => println!("  (open that URL yourself: {e})"),
     }
     println!();
-    println!("The key is masked as you type or paste. Enter verifies, Esc cancels.");
 
     let mut last_error = None;
     for attempt in 1..=MAX_ATTEMPTS {
@@ -97,13 +99,28 @@ async fn login_from_stdin() -> Result<(), String> {
     Ok(())
 }
 
-/// Read the key, echoing a mask so the user can see a paste land. `None` means
-/// the user abandoned the prompt. Runs on a blocking thread: the prompt owns the
-/// terminal while it waits, which must not stall the async runtime.
+/// Read the key with echo disabled. `None` means the user interrupted the
+/// prompt. Runs on a blocking thread: `dialoguer` owns the terminal while it
+/// waits, which must not stall the async runtime.
 async fn prompt_for_key() -> Result<Option<String>, String> {
-    tokio::task::spawn_blocking(|| secret_input::read_masked_line(KEY_PROMPT))
-        .await
-        .map_err(|e| format!("key prompt failed: {e}"))?
+    tokio::task::spawn_blocking(|| {
+        match dialoguer::Password::new()
+            .with_prompt("Paste your Tokamak API key")
+            .allow_empty_password(true)
+            .interact()
+        {
+            Ok(key) => Ok(Some(key)),
+            Err(e) if is_interrupted(&e) => Ok(None),
+            Err(e) => Err(format!("could not read the API key: {e}")),
+        }
+    })
+    .await
+    .map_err(|e| format!("key prompt failed: {e}"))?
+}
+
+fn is_interrupted(e: &dialoguer::Error) -> bool {
+    let dialoguer::Error::IO(io) = e;
+    io.kind() == std::io::ErrorKind::Interrupted
 }
 
 /// Why we stopped when there is nobody at the keyboard to paste a key.

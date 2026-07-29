@@ -114,6 +114,49 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
+/// Whether this install can run a turn at all: some provider is reachable and
+/// either credentialed or local (a self-hosted endpoint - typically the desktop
+/// app's API server - needs no key). `false` is the fresh-install state that
+/// triggers the sign-in flow. A remote entry with no key does not count: the
+/// request would only fail later with a 401.
+pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
+    let overrides = ProviderOverrides::default().with_env();
+    match load_provider_configs(project_root, &overrides) {
+        Ok(configs) => configs.values().any(is_usable),
+        Err(e) => {
+            log::warn!("could not load provider configs: {e}");
+            false
+        }
+    }
+}
+
+fn is_usable(config: &ProviderConfig) -> bool {
+    if !is_cli_reachable(config) {
+        return false;
+    }
+    config.api_key.is_some()
+        || !config.api_keys.is_empty()
+        || config.base_url.as_deref().is_some_and(is_loopback_url)
+}
+
+/// Whether a base URL points at this machine, where an API key is usually not
+/// required. Host-only match (no DNS): anything else is treated as remote.
+fn is_loopback_url(url: &str) -> bool {
+    let authority = url
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(url)
+        .split('/')
+        .next()
+        .unwrap_or("");
+    // Bracketed IPv6 keeps its colons; everything else splits off the port.
+    let host = match authority.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(""),
+        None => authority.split(':').next().unwrap_or(""),
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1")
+}
+
 /// `(provider, model_id)` pairs the CLI can actually run, sorted by provider
 /// then model.
 pub fn reachable_models(configs: &HashMap<String, ProviderConfig>) -> Vec<(String, String)> {
@@ -548,6 +591,47 @@ mod tests {
         assert!(is_cli_reachable(&remote));
         assert!(!is_cli_reachable(&local));
         assert!(!is_cli_reachable(&blank));
+    }
+
+    #[test]
+    fn usable_requires_a_key_only_for_remote_upstreams() {
+        let keyed_remote = ProviderConfig {
+            provider: "tokamak".into(),
+            base_url: Some("https://api.tokamak.sh/v1".into()),
+            api_key: Some("tk".into()),
+            ..Default::default()
+        };
+        let keyless_remote = ProviderConfig {
+            provider: "openai".into(),
+            base_url: Some("https://api.openai.com/v1".into()),
+            ..Default::default()
+        };
+        let keyless_local = ProviderConfig {
+            provider: "jan".into(),
+            base_url: Some("http://localhost:1337/v1".into()),
+            ..Default::default()
+        };
+        let engine = ProviderConfig {
+            provider: "llamacpp".into(),
+            base_url: None,
+            api_key: Some("k".into()),
+            ..Default::default()
+        };
+        assert!(is_usable(&keyed_remote));
+        assert!(!is_usable(&keyless_remote));
+        assert!(is_usable(&keyless_local));
+        assert!(!is_usable(&engine));
+    }
+
+    #[test]
+    fn loopback_detection_ignores_ports_paths_and_lookalike_hosts() {
+        assert!(is_loopback_url("http://127.0.0.1:1337/v1"));
+        assert!(is_loopback_url("http://localhost/v1"));
+        assert!(is_loopback_url("http://[::1]:1337/v1"));
+        assert!(is_loopback_url("localhost:1337"));
+        assert!(!is_loopback_url("https://localhost.evil.com/v1"));
+        assert!(!is_loopback_url("https://api.tokamak.sh/v1"));
+        assert!(!is_loopback_url(""));
     }
 
     #[test]

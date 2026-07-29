@@ -120,14 +120,17 @@ enum Commands {
         #[command(subcommand)]
         cmd: CliCommands,
     },
-    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    /// Sign in to Tokamak and save the API key to ~/.jan/config.toml
     #[command(display_order = 2)]
+    Login,
+    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    #[command(display_order = 3)]
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
     },
     /// Update this binary to the latest build of the channel it was built for
-    #[command(display_order = 3)]
+    #[command(display_order = 4)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -442,6 +445,12 @@ async fn main() {
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,
+        Commands::Login => {
+            if let Err(e) = app_lib::core::cli::login::run_login().await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::Config { cmd } => {
             if let Err(e) = handle_agent_config(cmd) {
                 eprintln!("Error: {e}");
@@ -693,5 +702,12 @@ mod tests {
             Some(Commands::Update { check: true, .. })
         ));
         assert!(Cli::try_parse_from(["jan", "update", "--check", "--force"]).is_err());
+    }
+
+    #[test]
+    fn login_command_parses_and_takes_no_args() {
+        let cli = Cli::parse_from(["jan", "login"]);
+        assert!(matches!(cli.command, Some(Commands::Login)));
+        assert!(Cli::try_parse_from(["jan", "login", "sk-key"]).is_err());
     }
 }
