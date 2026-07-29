@@ -657,6 +657,9 @@ const SPINNER_ADVANCE_MS: u64 = 80;
 struct SubagentPanel {
     run_id: String,
     name: String,
+    /// The task this child was dispatched with. Shown above the agent list so
+    /// the block says what the fan-out is *for*, not just who is running.
+    task: String,
     calls: Vec<String>,
     /// Upstream requests this child has made, counted from its `Step` events.
     /// Distinct from `calls.len()`: one request can carry several tool calls,
@@ -679,6 +682,10 @@ struct SubagentBlock {
 
 /// Rolling window size for a subagent's live tool-call list.
 const SUBAGENT_WINDOW: usize = 5;
+
+/// Lines of the dispatch prompt shown for a lone subagent, where there is room
+/// for the brief itself rather than just its first line.
+const SUBAGENT_TASK_LINES: usize = 4;
 
 /// A queued git workspace snapshot. Snapshots only stage the paths the agent
 /// actually touched this turn (see `App::turn_touched`), never the whole
@@ -1727,13 +1734,14 @@ impl App {
             } => self
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
-            StreamEvent::SubagentStart { run_id, name } => {
+            StreamEvent::SubagentStart { run_id, name, task } => {
                 // Open a live rolling panel for this run; several may be active.
                 self.finalize_tool_group();
                 self.flush_assistant();
                 self.subagents.push(SubagentPanel {
                     run_id,
                     name,
+                    task: task.unwrap_or_default(),
                     calls: Vec::new(),
                     requests: 0,
                     prompt_tokens: 0,
@@ -5424,7 +5432,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         if !last_blank {
             lines.push(Line::raw(""));
         }
-        lines.extend(subagent_panel_lines(&app.subagents, app.context_window));
+        lines.extend(subagent_panel_lines(&app.subagents, app.context_window, width));
     }
     if !app.assistant_buf.is_empty() {
         let tail = format_assistant_lines(&app.assistant_buf, width);
@@ -5982,7 +5990,11 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
 /// counting rows. Each child now gets exactly two lines, a stats line and its
 /// current activity, so the whole fan-out fits in one glance and stays a fixed
 /// height as the work runs.
-fn subagent_panel_lines(panels: &[SubagentPanel], context_window: u64) -> Vec<Line<'static>> {
+fn subagent_panel_lines(
+    panels: &[SubagentPanel],
+    context_window: u64,
+    width: u16,
+) -> Vec<Line<'static>> {
     let dim = Style::new().dark_gray();
     let mut out = vec![Line::from(vec![
         Span::styled("≡ ", Style::new().magenta()),
@@ -5995,11 +6007,14 @@ fn subagent_panel_lines(panels: &[SubagentPanel], context_window: u64) -> Vec<Li
             Style::new().magenta().bold(),
         ),
     ])];
-    // A lone subagent keeps its rolling history -- there's room, and the recent
-    // calls are the useful context. Once several run at once that same history
-    // multiplies into an unreadable wall, so each drops to its current call and
-    // the block stays a fixed, scannable height.
-    let window = if panels.len() == 1 { SUBAGENT_WINDOW } else { 1 };
+    // A lone subagent keeps its rolling history and a fuller look at its task
+    // -- there's room, and both are useful context. Once several run at once
+    // that same detail multiplies into an unreadable wall, so each drops to one
+    // line apiece and the block stays a fixed, scannable height.
+    let solo = panels.len() == 1;
+    let window = if solo { SUBAGENT_WINDOW } else { 1 };
+    let task_lines = if solo { SUBAGENT_TASK_LINES } else { 1 };
+    let task_width = width.saturating_sub(8).max(20) as usize;
     for panel in panels {
         let mut spans = vec![
             Span::styled("  • ", Style::new().magenta()),
@@ -6024,6 +6039,36 @@ fn subagent_panel_lines(panels: &[SubagentPanel], context_window: u64) -> Vec<Li
             ));
         }
         out.push(Line::from(spans));
+
+        // The dispatch prompt, so the block says what the fan-out is *for*.
+        // Split on the task's own newlines rather than word-wrapping: models
+        // write these as structured briefs, and the first lines are the summary.
+        if !panel.task.trim().is_empty() {
+            for (written, raw) in panel
+                .task
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .enumerate()
+            {
+                if written == task_lines {
+                    // Only worth a marker where the brief reads as complete.
+                    // Collapsed to a single line it is plainly a summary
+                    // already, and the marker would cost the line just saved.
+                    if solo {
+                        out.push(Line::from(vec![
+                            Span::styled("      ", dim),
+                            Span::styled("…".to_string(), dim),
+                        ]));
+                    }
+                    break;
+                }
+                out.push(Line::from(vec![
+                    Span::styled("      ", dim),
+                    Span::styled(truncate(raw.trim(), task_width), Style::new().dim().italic()),
+                ]));
+            }
+        }
+
         if panel.calls.is_empty() {
             out.push(Line::from(vec![
                 Span::styled("      ", dim),
@@ -7876,6 +7921,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -7927,10 +7973,12 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "alpha".into(),
+            task: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
+            task: None,
         });
         app.apply(wrap(
             "r2",
@@ -7955,6 +8003,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -8005,6 +8054,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(wrap(
             "r1",
@@ -8032,6 +8082,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -8055,6 +8106,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(wrap(
             "r1",
@@ -8087,10 +8139,12 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "r1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
+            task: None,
         });
         app.apply(wrap(
             "r1",
@@ -8245,6 +8299,7 @@ mod tests {
         app.apply(StreamEvent::SubagentStart {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
+            task: None,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -9193,10 +9248,52 @@ mod tests {
     }
 
     fn start_subagent(app: &mut App, run_id: &str, name: &str) {
+        start_subagent_with_task(app, run_id, name, None);
+    }
+
+    fn start_subagent_with_task(app: &mut App, run_id: &str, name: &str, task: Option<&str>) {
         app.apply(StreamEvent::SubagentStart {
             run_id: run_id.into(),
             name: name.into(),
+            task: task.map(str::to_string),
         });
+    }
+
+    /// The dispatch prompt rides on the event, so the block can say what the
+    /// fan-out is for. A lone agent shows a fuller brief; several collapse to
+    /// their first line each so the block stays a fixed height.
+    #[test]
+    fn subagent_block_shows_the_dispatch_prompt() {
+        let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas\nGRAVITY=0.5\nNo external deps";
+
+        let mut solo = test_app();
+        start_subagent_with_task(&mut solo, "r0", "space", Some(brief));
+        let out = render_rows(&mut solo, 100, 24).join("\n");
+        assert!(out.contains("Build Flappy Space"), "brief missing: {out}");
+        assert!(out.contains("GRAVITY=0.5"), "lone agent should show more: {out}");
+        // Capped, with the overflow marked rather than silently dropped.
+        assert!(!out.contains("No external deps"), "should stop at the cap: {out}");
+        assert!(out.contains('…'), "overflow should be marked: {out}");
+
+        let mut pair = test_app();
+        start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
+        start_subagent_with_task(&mut pair, "r1", "fish", Some("Build Flappy Fish\nUnderwater"));
+        let out = render_rows(&mut pair, 100, 24).join("\n");
+        assert!(out.contains("Build Flappy Space"), "{out}");
+        assert!(out.contains("Build Flappy Fish"), "{out}");
+        // One line each once they're sharing the block.
+        assert!(!out.contains("GRAVITY=0.5"), "should collapse when parallel: {out}");
+        assert!(!out.contains("Underwater"), "should collapse when parallel: {out}");
+    }
+
+    /// A dispatch with no task (or an older event without the field) still
+    /// renders -- it just has nothing to say about the brief.
+    #[test]
+    fn subagent_block_without_a_task_renders() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        let out = render_rows(&mut app, 100, 20).join("\n");
+        assert!(out.contains("Task 1 agent") && out.contains("alpha"), "{out}");
     }
 
     fn subagent_event(app: &mut App, run_id: &str, name: &str, event: StreamEvent) {

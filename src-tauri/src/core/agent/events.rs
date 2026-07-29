@@ -47,7 +47,16 @@ pub enum StreamEvent {
     /// A backgrounded subagent run began. `run_id` identifies the run so a
     /// consumer can attribute concurrent children; brackets the child's wrapped
     /// events with `SubagentEnd`.
-    SubagentStart { run_id: String, name: String },
+    SubagentStart {
+        run_id: String,
+        name: String,
+        /// The task the child was dispatched with -- its sole user message.
+        /// Carried on the event rather than left for consumers to correlate
+        /// back to the `dispatch_subagent` call: two dispatches can share a
+        /// `subagent_name`, so matching on name alone is ambiguous.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task: Option<String>,
+    },
     /// A backgrounded subagent run finished (success or error). Pairs with the
     /// `SubagentStart` of the same `run_id`.
     SubagentEnd { run_id: String, name: String },
@@ -359,6 +368,7 @@ mod tests {
         let start = serde_json::to_value(StreamEvent::SubagentStart {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            task: None,
         })
         .unwrap();
         assert_eq!(

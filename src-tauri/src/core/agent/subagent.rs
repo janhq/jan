@@ -515,6 +515,7 @@ async fn run_subagent(
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
         name: name.clone(),
+        task: Some(description.clone()),
     });
 
     let (child_tx, mut child_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
