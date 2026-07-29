@@ -6,6 +6,7 @@
 //! inline workflow elements (turn steps, tool calls/results). Gated tool calls
 //! are approved interactively via the shared `PermissionRegistry`.
 
+use std::collections::HashMap;
 use std::future::pending;
 use std::io;
 use std::path::PathBuf;
@@ -30,6 +31,13 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+
+mod highlight;
+mod markdown;
+
+use markdown::{
+    format_assistant_lines, format_markdown_lines, reasoning_detail_lines, reasoning_summary_row,
+};
 
 use super::{sort_threads_recent, AgentSession, ResumeTarget};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
@@ -114,7 +122,12 @@ impl Pending {
     /// prompt box, unlike the tool-row-aligned result diff.
     fn diff_preview(&self, inner: u16) -> Vec<Line<'static>> {
         match &self.diff {
-            Some(d) => diff_lines(d, (inner as usize).saturating_sub(4).max(1), ""),
+            Some(d) => diff_lines(
+                d,
+                (inner as usize).saturating_sub(4).max(1),
+                "",
+                self.path.as_deref(),
+            ),
             None => Vec::new(),
         }
     }
@@ -480,6 +493,10 @@ struct App {
     /// drained into the next checkpoint's snapshot and reset per turn. Only
     /// these exact paths are staged -- checkpoints never scan the repo.
     turn_touched: Vec<PathBuf>,
+    /// Destination path of each in-flight `edit`/`write` call, keyed by call id,
+    /// so the diff in its `ToolResult` (which carries no path) can be
+    /// syntax-highlighted for the right language. Removed as results arrive.
+    diff_paths: HashMap<String, String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -741,6 +758,7 @@ impl App {
             git_branch: git::current_branch(&project_root),
             project_root,
             turn_touched: Vec::new(),
+            diff_paths: HashMap::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -1630,6 +1648,7 @@ impl App {
                     // exactly this file instead of scanning the whole repo.
                     if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
                         self.turn_touched.push(self.project_root.join(p));
+                        self.diff_paths.insert(id.clone(), p.to_string());
                     }
                     // Diff-producing tools render standalone (call row & panel).
                     self.finalize_tool_group();
@@ -1687,7 +1706,8 @@ impl App {
                     Span::styled(summarize_result(&content, max), Style::new().dim()),
                 ]));
                 if let Some(diff) = diff {
-                    for line in diff_lines(&diff, max, "│     ") {
+                    let lang = self.diff_paths.remove(&id);
+                    for line in diff_lines(&diff, max, "│     ", lang.as_deref()) {
                         self.push(line);
                     }
                 }
@@ -1893,6 +1913,9 @@ impl App {
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
+        // A call cancelled before its result would otherwise leave its path
+        // behind for the life of the session.
+        self.diff_paths.clear();
     }
 
     /// Flush the current turn and return its text as the final assistant answer.
@@ -2174,23 +2197,52 @@ const COMMAND_LABEL_MAX: usize = 80;
 /// `max` and each row padded so the right border aligns. Collapses to
 /// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule. `gutter`
 /// indents the panel (tool-row alignment under a result; empty in the prompt).
-fn diff_lines(diff: &str, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
+fn diff_lines(
+    diff: &str,
+    max: usize,
+    gutter: &'static str,
+    lang: Option<&str>,
+) -> Vec<Line<'static>> {
     let all: Vec<&str> = diff.lines().collect();
     let shown = all.len().min(DIFF_MAX_ROWS);
     let truncated = all.len() > shown;
 
-    let mut rows: Vec<(String, Style)> = Vec::with_capacity(shown + 1);
-    for line in &all[..shown] {
-        let style = match line.as_bytes().first() {
+    // Truncate before highlighting so the width arithmetic is unchanged.
+    let kept: Vec<String> = all[..shown].iter().map(|l| truncate(l, max)).collect();
+    // Highlight the body with the `-`/`+` markers stripped, so a multi-line
+    // string or comment keeps its colour across the hunk instead of restarting
+    // on every row; the markers are re-attached with their own colour below.
+    // Hunk headers are not code and stay out of it.
+    let bodies: Vec<&str> = kept.iter().map(|l| split_diff_marker(l).1).collect();
+    let highlighted: Option<Vec<Vec<Span<'static>>>> = match lang {
+        Some(l) if !l.is_empty() => Some(highlight::block(&bodies, l)),
+        _ => None,
+    };
+
+    let mut rows: Vec<Line<'static>> = Vec::with_capacity(shown + 1);
+    for (i, line) in kept.iter().enumerate() {
+        let (marker, body) = split_diff_marker(line);
+        let marker_style = match marker.as_bytes().first() {
             Some(b'-') => Style::new().red(),
             Some(b'+') => Style::new().green(),
-            Some(b'@') => Style::new().cyan().dim(),
             _ => Style::new().dim(),
         };
-        rows.push((truncate(line, max), style));
+        if marker.starts_with('@') {
+            rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
+            continue;
+        }
+        let mut spans = Vec::with_capacity(2);
+        if !marker.is_empty() {
+            spans.push(Span::styled(marker.to_string(), marker_style));
+        }
+        match &highlighted {
+            Some(h) => spans.extend(h[i].iter().cloned()),
+            None => spans.push(Span::styled(body.to_string(), Style::new().dim())),
+        }
+        rows.push(Line::from(spans));
     }
     if truncated {
-        rows.push((
+        rows.push(Line::styled(
             format!("(+{} more)", all.len() - shown),
             Style::new().dim(),
         ));
@@ -2198,12 +2250,30 @@ fn diff_lines(diff: &str, max: usize, gutter: &'static str) -> Vec<Line<'static>
     boxed_panel(rows, max, gutter)
 }
 
-/// Frame `(text, style)` rows in a light box, right-padded to the widest row
-/// (clamped to `max`). `gutter` prefixes every line to indent the panel.
-fn boxed_panel(rows: Vec<(String, Style)>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
+/// Split a diff row into its leading marker and the code after it. A `@@` hunk
+/// header is returned whole as the marker, since none of it is code.
+fn split_diff_marker(line: &str) -> (&str, &str) {
+    if line.starts_with("@@") {
+        return (line, "");
+    }
+    match line.as_bytes().first() {
+        Some(b'-') | Some(b'+') | Some(b' ') => line.split_at(1),
+        _ => ("", line),
+    }
+}
+
+/// Total display width of a row's spans.
+fn row_width(row: &Line<'_>) -> usize {
+    row.spans.iter().map(|s| s.content.chars().count()).sum()
+}
+
+/// Frame styled rows in a light box, right-padded to the widest row (clamped to
+/// `max`). Rows carry their own spans so style can vary within a row (syntax
+/// highlighting); `gutter` prefixes every line to indent the panel.
+fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
-        .map(|(t, _)| t.chars().count())
+        .map(row_width)
         .max()
         .unwrap_or(0)
         .clamp(1, max.max(1));
@@ -2213,14 +2283,15 @@ fn boxed_panel(rows: Vec<(String, Style)>, max: usize, gutter: &'static str) -> 
         Span::styled(gutter, border),
         Span::styled(format!("┌{}┐", "─".repeat(inner + 2)), border),
     ]));
-    for (text, style) in rows {
-        let pad = inner.saturating_sub(text.chars().count());
-        out.push(Line::from(vec![
+    for row in rows {
+        let pad = inner.saturating_sub(row_width(&row));
+        let mut spans = vec![
             Span::styled(gutter, border),
             Span::styled("│ ", border),
-            Span::styled(text, style),
-            Span::styled(format!("{} │", " ".repeat(pad)), border),
-        ]));
+        ];
+        spans.extend(row.spans);
+        spans.push(Span::styled(format!("{} │", " ".repeat(pad)), border));
+        out.push(Line::from(spans));
     }
     out.push(Line::from(vec![
         Span::styled(gutter, border),
@@ -2426,9 +2497,9 @@ struct StartingPreview {
     /// Destination path, available well before the body since `path` is short
     /// and models emit it first.
     path: Option<String>,
-    /// Trailing lines of the file body, newest last. `None` until a `write`
-    /// call's `content` field opens.
-    tail: Option<Vec<String>>,
+    /// Trailing lines of the file body, newest last, syntax-highlighted from
+    /// `path`'s extension. `None` until a `write` call's `content` field opens.
+    tail: Option<Vec<Vec<Span<'static>>>>,
     /// Body lines scrolled off the top of `tail`.
     skipped: usize,
 }
@@ -2480,15 +2551,15 @@ impl StartingCall {
         // so a large body never materializes a line list it would discard.
         // `split` (not `lines`) so a trailing newline shows as the empty line
         // the model just opened, which is where the next content will land.
-        let mut tail: Vec<String> = body
-            .rsplit('\n')
-            .take(STREAM_TAIL_LINES)
-            .map(str::to_string)
-            .collect();
+        let mut tail: Vec<&str> = body.rsplit('\n').take(STREAM_TAIL_LINES).collect();
         tail.reverse();
         let total = body.bytes().filter(|&b| b == b'\n').count() + 1;
         self.preview.skipped = total - tail.len();
-        self.preview.tail = Some(tail);
+        // Highlighted here rather than in the row builder so the cost tracks
+        // arriving bytes, not the frame rate: this window is a fresh cache key
+        // on every delta, and highlighting 12 lines costs ~4.6ms.
+        let lang = self.preview.path.clone().unwrap_or_default();
+        self.preview.tail = Some(highlight::block(&tail, &lang));
     }
 }
 
@@ -2624,15 +2695,16 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static
             ),
         ]));
     }
-    for (offset, text) in tail.iter().enumerate() {
-        out.push(Line::from(vec![
+    for (offset, code) in tail.iter().enumerate() {
+        let mut spans = vec![
             Span::styled("│ ", Style::new().dark_gray()),
             Span::styled(
                 format!("{:>gutter$} ", start + offset + 1, gutter = gutter),
                 Style::new().dark_gray(),
             ),
-            Span::raw(text.clone()),
-        ]));
+        ];
+        spans.extend(code.iter().cloned());
+        out.push(Line::from(spans));
     }
     out.push(Line::from(vec![
         Span::styled("│ ", Style::new().dark_gray()),
@@ -2695,7 +2767,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
                 ]));
             }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, cont_gutter) {
+                for line in diff_lines(diff, max, cont_gutter, None) {
                     out.push(line);
                 }
             }
@@ -2910,225 +2982,11 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
     out
 }
 
-/// Render assistant text to styled lines: reasoning dimmed, answer prose passed
-/// through markdown formatting. `width` bounds table wrapping.
-fn format_assistant_lines(text: &str, width: u16) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    for (reasoning, seg) in split_reasoning(text) {
-        if reasoning {
-            lines.extend(reasoning_detail_lines(&seg));
-        } else {
-            lines.extend(format_markdown_lines(&seg, width));
-        }
-    }
-    lines
-}
-
 /// True if `text` has any non-whitespace content in any reasoning/answer run.
 fn assistant_has_content(text: &str) -> bool {
     split_reasoning(text)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
-}
-
-/// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body).
-fn reasoning_detail_lines(seg: &str) -> Vec<Line<'static>> {
-    seg.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            Line::from(vec![
-                Span::styled("┊ ", Style::new().dark_gray()),
-                Span::styled(l.to_string(), Style::new().dim().italic()),
-            ])
-        })
-        .collect()
-}
-
-/// Collapsed summary row for a folded reasoning block.
-fn reasoning_summary_row(n: usize) -> Line<'static> {
-    let label = if n == 1 {
-        "reasoning (1 line)".to_string()
-    } else {
-        format!("reasoning ({n} lines)")
-    };
-    Line::from(vec![
-        Span::styled("┊ ", Style::new().dark_gray()),
-        Span::styled(label, Style::new().dim().italic()),
-    ])
-}
-
-fn table_cells(line: &str) -> Vec<String> {
-    line.trim()
-        .trim_matches('|')
-        .split('|')
-        .map(|c| c.trim().to_string())
-        .collect()
-}
-
-/// A `|---|:--:|` markdown table separator row.
-fn is_table_separator(line: &str) -> bool {
-    let body = line.trim().trim_matches('|');
-    !body.is_empty()
-        && body.split('|').all(|c| {
-            let c = c.trim();
-            !c.is_empty() && c.contains('-') && c.chars().all(|ch| matches!(ch, '-' | ':' | ' '))
-        })
-}
-
-/// Render answer prose. Fenced code blocks and GitHub pipe tables are rendered
-/// ourselves (`render_code_block`/`render_table`) because tui-markdown leaks the
-/// ` ``` ` fences as literal text and has no table support; every other block
-/// goes through tui-markdown (headings, bold/italic, lists, quotes).
-fn format_markdown_lines(text: &str, width: u16) -> Vec<Line<'static>> {
-    let src: Vec<&str> = text.lines().collect();
-    let mut out = Vec::new();
-    let mut prose: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < src.len() {
-        if let Some(lang) = src[i].trim_start().strip_prefix("```") {
-            flush_prose(&mut prose, &mut out);
-            let lang = lang.trim().to_string();
-            i += 1;
-            let start = i;
-            while i < src.len() && !src[i].trim_start().starts_with("```") {
-                i += 1;
-            }
-            out.extend(render_code_block(&src[start..i], &lang, (width as usize).saturating_sub(4)));
-            i += usize::from(i < src.len()); // consume closing fence when present
-            continue;
-        }
-        let is_table_head =
-            src[i].contains('|') && i + 1 < src.len() && is_table_separator(src[i + 1]);
-        if is_table_head {
-            flush_prose(&mut prose, &mut out);
-            let header = table_cells(src[i]);
-            let mut rows = Vec::new();
-            i += 2;
-            while i < src.len() && src[i].contains('|') && !src[i].trim().is_empty() {
-                rows.push(table_cells(src[i]));
-                i += 1;
-            }
-            out.extend(render_table(&header, &rows, width));
-        } else {
-            prose.push(src[i]);
-            i += 1;
-        }
-    }
-    flush_prose(&mut prose, &mut out);
-    out
-}
-
-/// Render a fenced code block as a boxed panel (same frame as `diff_lines`),
-/// the language tag (when present) as a dim header row. Content bypasses
-/// tui-markdown so code is never reinterpreted as markdown.
-fn render_code_block(body: &[&str], lang: &str, max: usize) -> Vec<Line<'static>> {
-    let mut rows: Vec<(String, Style)> = Vec::with_capacity(body.len() + 1);
-    if !lang.is_empty() {
-        rows.push((lang.to_string(), Style::new().dark_gray().italic()));
-    }
-    for l in body {
-        rows.push((truncate(l, max), Style::new()));
-    }
-    boxed_panel(rows, max, "")
-}
-
-fn flush_prose(prose: &mut Vec<&str>, out: &mut Vec<Line<'static>>) {
-    if prose.is_empty() {
-        return;
-    }
-    out.extend(markdown_to_lines(&prose.join("\n")));
-    prose.clear();
-}
-
-/// Render a markdown block to owned ratatui lines via `tui-markdown`.
-fn markdown_to_lines(text: &str) -> Vec<Line<'static>> {
-    let lines: Vec<Line<'static>> = tui_markdown::from_str(text)
-        .lines
-        .into_iter()
-        .map(own_line)
-        .collect();
-    merge_list_markers(lines)
-}
-
-/// tui-markdown renders loose list items with the marker (`1. `, `- `) alone on
-/// one line and the item body on the next. Fold a lone-marker line into the
-/// following line so list items read as `1. body`.
-fn merge_list_markers(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    let mut out: Vec<Line<'static>> = Vec::with_capacity(lines.len());
-    let mut iter = lines.into_iter().peekable();
-    while let Some(line) = iter.next() {
-        if is_lone_list_marker(&line) && iter.peek().is_some() {
-            let body = iter.next().unwrap();
-            let mut spans = line.spans;
-            spans.extend(body.spans);
-            let mut merged = Line::from(spans);
-            merged.alignment = body.alignment;
-            out.push(merged);
-        } else {
-            out.push(line);
-        }
-    }
-    out
-}
-
-/// True if the line is nothing but a list marker: `1.`/`12.` or a `-`/`*`/`•`
-/// bullet (trailing spaces allowed).
-fn is_lone_list_marker(line: &Line<'_>) -> bool {
-    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-    let t = text.trim();
-    if matches!(t, "-" | "*" | "•") {
-        return true;
-    }
-    matches!(t.strip_suffix('.'), Some(d) if !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
-}
-
-/// Deep-clone a borrowed `Line` into a `'static` one (own each span's text).
-fn own_line(line: Line<'_>) -> Line<'static> {
-    let spans: Vec<Span<'static>> = line
-        .spans
-        .into_iter()
-        .map(|s| Span::styled(s.content.into_owned(), s.style))
-        .collect();
-    let mut owned = Line::from(spans);
-    owned.style = line.style;
-    owned.alignment = line.alignment;
-    owned
-}
-
-/// Strip the inline markdown markers that would otherwise show as literal text
-/// inside table cells (comfy-table renders plain text).
-fn strip_inline_md(s: &str) -> String {
-    s.replace("**", "").replace("__", "").replace('`', "")
-}
-
-/// Render a markdown table via comfy-table: `Dynamic` arrangement wraps long
-/// cells within their column and keeps the whole table within `width`, fixing
-/// the overflow/separator-wrap failure of naive padding. Border rows are dimmed.
-fn render_table(header: &[String], rows: &[Vec<String>], width: u16) -> Vec<Line<'static>> {
-    use comfy_table::{ContentArrangement, Table};
-
-    let mut table = Table::new();
-    table
-        .load_preset(comfy_table::presets::UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_width(width.max(20))
-        .set_header(header.iter().map(|c| strip_inline_md(c)));
-    for r in rows {
-        table.add_row(r.iter().map(|c| strip_inline_md(c)));
-    }
-
-    table
-        .to_string()
-        .lines()
-        .map(|l| {
-            let is_border = !l.chars().any(|c| c.is_alphanumeric());
-            if is_border {
-                Line::styled(l.to_string(), Style::new().dim())
-            } else {
-                Line::raw(l.to_string())
-            }
-        })
-        .collect()
 }
 
 fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentRun {
@@ -3240,6 +3098,11 @@ pub async fn run(
     let todo_registry = crate::core::agent::todo::new_registry();
     args.todo_registry = Some(todo_registry.clone());
     let args = Arc::new(args);
+
+    // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
+    // Doing it here, off the render loop, keeps the first code block of a
+    // response from stalling a frame mid-stream.
+    tokio::task::spawn_blocking(highlight::warm);
 
     // `env_logger` writes to stderr, which is still the user's terminal once we
     // switch to the alternate screen -- a single `log::warn!` from anywhere
@@ -6668,10 +6531,9 @@ mod tests {
         apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        compact_tokens, finish_login, is_table_separator, load_image_file, message_text,
-        open_config_screen, parse_command, partial_json_field, starting_call_lines,
-        unescape_partial_json_string,
-        render_table, restore_goal, restore_run_mode, restore_todos, run_command,
+        compact_tokens, finish_login, load_image_file, message_text, open_config_screen,
+        parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
+        run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
         summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding,
@@ -7364,6 +7226,15 @@ mod tests {
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    /// Text of a streaming write preview's tail, dropping the highlight styles.
+    fn tail_text(call: &super::StartingCall) -> Option<Vec<String>> {
+        call.preview.tail.as_ref().map(|rows| {
+            rows.iter()
+                .map(|r| r.iter().map(|s| s.content.as_ref()).collect())
+                .collect()
+        })
     }
 
     /// Like `line_text`, but marks the reverse-video block cursor with `▏` at its
@@ -8357,9 +8228,95 @@ mod tests {
         assert_eq!(app.cursor, 2);
     }
 
+    /// Non-frame, non-marker colours in a diff panel: what syntax highlighting
+    /// contributes, as distinct from the red/green add-remove markers.
+    fn diff_syntax_colours(lines: &[ratatui::text::Line]) -> Vec<ratatui::style::Color> {
+        lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter_map(|s| s.style.fg)
+            .filter(|c| matches!(c, ratatui::style::Color::Rgb(..)))
+            .collect()
+    }
+
+    #[test]
+    fn a_write_diff_is_syntax_highlighted_from_its_path() {
+        let diff = "+fn main() {\n+    let x = 1;\n+}";
+        let out = diff_lines(diff, 80, "", Some("src/main.rs"));
+        assert!(
+            !diff_syntax_colours(&out).is_empty(),
+            "diff body not highlighted: {:?}",
+            out.iter().map(line_text).collect::<Vec<_>>()
+        );
+        // The add/remove markers must stay legible as such.
+        let greens = out
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.content.starts_with('+') && s.style.fg == Some(ratatui::style::Color::Green))
+            .count();
+        assert_eq!(greens, 3, "one green marker per added line");
+    }
+
+    #[test]
+    fn a_diff_without_a_known_language_stays_plain() {
+        let out = diff_lines("+ foo\n- bar", 80, "", None);
+        assert!(
+            diff_syntax_colours(&out).is_empty(),
+            "unexpected highlighting without a language"
+        );
+    }
+
+    #[test]
+    fn a_hunk_header_is_not_syntax_highlighted() {
+        let out = diff_lines("@@ -1,2 +1,3 @@\n+let x = 1;", 80, "", Some("a.rs"));
+        let header = out
+            .iter()
+            .find(|l| line_text(l).contains("@@"))
+            .expect("no hunk header row");
+        assert!(
+            header.spans.iter().all(|s| !matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))),
+            "hunk header was highlighted: {:?}",
+            line_text(header)
+        );
+    }
+
+    #[test]
+    fn a_cancelled_write_does_not_leak_its_recorded_path() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        assert_eq!(app.diff_paths.len(), 1);
+        app.begin_turn();
+        assert!(app.diff_paths.is_empty(), "path outlived its turn");
+    }
+
+    #[test]
+    fn a_completed_write_carries_its_path_into_the_result_diff() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "write".into(),
+            args: json!({"path": "src/main.rs"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "wrote 3 lines".into(),
+            is_error: false,
+            diff: Some("+fn main() {\n+    let x = 1;\n+}".into()),
+        });
+        assert!(
+            !diff_syntax_colours(&app.transcript).is_empty(),
+            "result diff not highlighted: {:?}",
+            app.transcript.iter().map(line_text).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
-        let out = diff_lines("- foo\n+ bar", 80, "│     ");
+        let out = diff_lines("- foo\n+ bar", 80, "│     ", None);
         // 2 content rows framed by a top and bottom border.
         assert_eq!(out.len(), 4);
         assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
@@ -8376,7 +8333,7 @@ mod tests {
             .map(|i| format!("+ line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let out = diff_lines(&diff, 80, "│     ");
+        let out = diff_lines(&diff, 80, "│     ", None);
         // DIFF_MAX_ROWS content rows + a `(+N more)` row, framed by 2 borders.
         assert_eq!(out.len(), DIFF_MAX_ROWS + 1 + 2);
         // The tail sits just above the closing border.
@@ -9212,101 +9169,6 @@ mod tests {
     }
 
     #[test]
-    fn table_separator_detection() {
-        assert!(is_table_separator("|---|:--:|"));
-        assert!(is_table_separator(" --- | --- "));
-        assert!(!is_table_separator("| a | b |"));
-        assert!(!is_table_separator("plain text"));
-    }
-
-    #[test]
-    fn loose_list_marker_merges_into_body_line() {
-        // tui-markdown splits loose-list markers onto their own line; the merge
-        // pass folds "1. " and "- " back onto the item body.
-        let md = "1. first item\n\n2. second item";
-        let lines: Vec<String> = super::markdown_to_lines(md)
-            .iter()
-            .map(line_text)
-            .filter(|l| !l.trim().is_empty())
-            .collect();
-        assert_eq!(lines, ["1. first item", "2. second item"], "{lines:?}");
-
-        let bullets: Vec<String> = super::markdown_to_lines("- alpha\n\n- beta")
-            .iter()
-            .map(line_text)
-            .filter(|l| !l.trim().is_empty())
-            .collect();
-        assert_eq!(bullets, ["- alpha", "- beta"], "{bullets:?}");
-    }
-
-    #[test]
-    fn markdown_renders_bold_and_keeps_text() {
-        // tui-markdown should strip the ** markers and keep the word.
-        let lines = super::markdown_to_lines("hello **world**");
-        let text: String = lines
-            .iter()
-            .flat_map(|l| l.spans.iter())
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(text.contains("hello"), "got {text:?}");
-        assert!(text.contains("world"), "got {text:?}");
-        assert!(!text.contains("**"), "markers not stripped: {text:?}");
-    }
-
-    fn joined(lines: &[ratatui::text::Line]) -> String {
-        lines
-            .iter()
-            .flat_map(|l| l.spans.iter())
-            .map(|s| s.content.as_ref())
-            .collect()
-    }
-
-    #[test]
-    fn format_markdown_routes_table_through_comfy_table() {
-        let md = "| a | b |\n|---|---|\n| 1 | 2 |";
-        let lines = super::format_markdown_lines(md, 40);
-        let text = joined(&lines);
-        // No raw markdown pipes; cell content preserved; wrapped within width.
-        assert!(text.contains('a') && text.contains('b') && text.contains('1'));
-        assert!(lines.iter().all(|l| joined(std::slice::from_ref(l)).chars().count() <= 40));
-    }
-
-    #[test]
-    fn format_markdown_renders_code_fence_without_literal_backticks() {
-        let md = "before\n\n```cpp\nconst bool x = true;\nif (x) { foo(); }\n```\n\nafter";
-        let text = joined(&super::format_markdown_lines(md, 80));
-        assert!(!text.contains("```"), "fence markers leaked: {text}");
-        assert!(text.contains("const bool x = true;"));
-        assert!(text.contains("if (x) { foo(); }"));
-        assert!(text.contains("cpp"), "language tag missing: {text}");
-        assert!(text.contains("before") && text.contains("after"));
-        assert!(text.contains('┌') && text.contains('┘'), "missing box frame: {text}");
-    }
-
-    #[test]
-    fn format_markdown_handles_unterminated_code_fence() {
-        let md = "```rust\nfn main() {}";
-        let text = joined(&super::format_markdown_lines(md, 80));
-        assert!(!text.contains("```"), "fence leaked: {text}");
-        assert!(text.contains("fn main() {}"));
-    }
-
-    #[test]
-    fn render_table_wraps_and_strips_inline_md() {
-        let header = vec!["name".to_string(), "note".to_string()];
-        let rows = vec![vec![
-            "**apple**".to_string(),
-            "a `very` long note that must wrap across several lines".to_string(),
-        ]];
-        let lines = render_table(&header, &rows, 30);
-        let text = joined(&lines);
-        assert!(text.contains("apple") && !text.contains('*'), "md not stripped: {text:?}");
-        assert!(!text.contains('`'), "backticks not stripped: {text:?}");
-        // Dynamic wrapping keeps every rendered row within the target width.
-        assert!(lines.iter().all(|l| joined(std::slice::from_ref(l)).chars().count() <= 30));
-    }
-
-    #[test]
     fn parse_command_splits_name_and_arg() {
         assert_eq!(parse_command("resume abc123"), ("resume", "abc123"));
         assert_eq!(parse_command("help"), ("help", ""));
@@ -9625,20 +9487,20 @@ mod tests {
         call.args = r#"{"path":"a.html","content":"one\ntwo"#.into();
         call.refresh_preview();
         let first = call.preview_at;
-        assert_eq!(call.preview.tail.as_deref(), Some(["one".into(), "two".into()].as_slice()));
+        assert_eq!(tail_text(&call), Some(vec!["one".to_string(), "two".to_string()]));
 
         // Same bytes: the cache holds and nothing is recomputed.
-        call.preview.tail = Some(vec!["sentinel".into()]);
+        call.preview.tail = Some(vec![vec![ratatui::text::Span::raw("sentinel")]]);
         call.refresh_preview();
-        assert_eq!(call.preview.tail.as_deref(), Some(["sentinel".to_string()].as_slice()));
+        assert_eq!(tail_text(&call), Some(vec!["sentinel".to_string()]));
         assert_eq!(call.preview_at, first);
 
         // New bytes invalidate it.
         call.args.push_str(r#"\nthree"#);
         call.refresh_preview();
         assert_eq!(
-            call.preview.tail.as_deref(),
-            Some(["one".into(), "two".into(), "three".into()].as_slice())
+            tail_text(&call),
+            Some(vec!["one".to_string(), "two".to_string(), "three".to_string()])
         );
     }
 
@@ -9681,7 +9543,7 @@ mod tests {
         let call = &mut app.starting[0];
         call.refresh_preview();
         assert_eq!(call.preview.path.as_deref(), Some("a.html"));
-        assert_eq!(call.preview.tail.as_deref(), Some(["hello".to_string()].as_slice()));
+        assert_eq!(tail_text(call), Some(vec!["hello".to_string()]));
 
         // A delta for an unknown call is dropped, not panicked on.
         app.apply(StreamEvent::ToolCallArgsDelta {
@@ -10785,5 +10647,7 @@ mod tests {
         assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(4096));
     }
 }
+
+
 
 
