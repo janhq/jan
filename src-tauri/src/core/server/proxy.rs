@@ -3046,6 +3046,9 @@ async fn start_server_internal(
         trusted_hosts
     };
 
+    // Calculate this before proxy_api_key is moved into ProxyConfig.
+    let insecure_public_bind = is_insecure_public_bind(&host, &proxy_api_key);
+
     let config = ProxyConfig {
         prefix,
         proxy_api_key,
@@ -3075,7 +3078,7 @@ async fn start_server_internal(
     // unauthenticated (model inference, model enumeration, and MCP tool execution
     // when enabled). Warn loudly rather than refuse to start, so existing
     // trusted-LAN setups keep working, but the operator is told.
-    if is_insecure_public_bind(&host, &proxy_api_key) {
+    if insecure_public_bind {
         log::warn!(
             "Jan API server is bound to a non-loopback address ({host}) with no API key set. \
              The local API is reachable UNAUTHENTICATED by any host that can reach this machine. \
