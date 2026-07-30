@@ -186,6 +186,27 @@ export async function reloadRouterModels(): Promise<void> {
   return await invoke('plugin:llamacpp|reload_router_models')
 }
 
+export async function routerHealth(
+  port?: number,
+  apiKey?: string
+): Promise<boolean> {
+  return await invoke('plugin:llamacpp|router_health', { port, apiKey })
+}
+
+export async function adoptRouter(
+  backendExe: string,
+  presetPath: string,
+  modelsMax: number,
+  apiSecret: string
+): Promise<{ port: number; api_key: string; pid: number } | null> {
+  return await invoke('plugin:llamacpp|adopt_router', {
+    backendExe,
+    presetPath,
+    modelsMax,
+    apiSecret,
+  })
+}
+
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp|read_gguf_metadata', { path })
@@ -338,13 +359,34 @@ export async function checkBackendForUpdates(
 export async function removeOldBackendVersions(
   backendsDir: string,
   latestVersion: string,
-  backendType: string
+  backendType: string,
+  keepPrevious: number
 ): Promise<string[]> {
   return invoke('plugin:llamacpp|remove_old_backend_versions', {
     backendsDir,
     latestVersion,
     backendType,
+    keepPrevious,
   })
+}
+
+export async function fetchBackendChecksums(
+  version: string,
+  source: 'github' | 'cdn',
+  proxy?: object | null
+): Promise<Record<string, string>> {
+  return invoke('plugin:llamacpp|fetch_backend_checksums', {
+    version,
+    source,
+    proxy,
+  })
+}
+
+export async function verifyFileSha512(
+  path: string,
+  expected: string
+): Promise<boolean> {
+  return invoke('plugin:llamacpp|verify_file_sha512', { path, expected })
 }
 
 export async function validateBackendString(

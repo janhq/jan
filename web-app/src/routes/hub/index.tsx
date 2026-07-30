@@ -50,6 +50,10 @@ import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
+import {
+  cleanHubSearchQuery,
+  prioritizeExactModelMatches,
+} from './searchRanking'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
@@ -207,11 +211,13 @@ function HubContent() {
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
       // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(
-        /^https?:\/\/[^/]+\//,
-        ''
+      const cleanedSearchValue = cleanHubSearchQuery(debouncedSearchValue)
+      // Fuse scores fuzzy relevance; re-rank so an exact HF id/name is first
+      // (see #8447 — precise queries were not always top of list).
+      filtered = prioritizeExactModelMatches(
+        fuse.search(cleanedSearchValue).map((result) => result.item),
+        cleanedSearchValue
       )
-      filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {

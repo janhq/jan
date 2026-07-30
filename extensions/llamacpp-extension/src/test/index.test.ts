@@ -17,6 +17,12 @@ vi.mock('../backend', () => ({
   listSupportedBackends: vi.fn(),
   getBackendDir: vi.fn(),
   getLocalInstalledBackends: vi.fn(),
+  fetchRemoteBackends: vi.fn(),
+  verifyBackendInstallation: vi.fn().mockResolvedValue({
+    verified: true,
+    missing_libraries: [],
+    resolved_libraries: [],
+  }),
 }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
@@ -37,6 +43,8 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
     loadLlamaModel: vi.fn(),
     unloadLlamaModel: vi.fn(),
     reloadRouterModels: vi.fn(),
+    routerHealth: vi.fn().mockResolvedValue(true),
+    adoptRouter: vi.fn(),
   }
 })
 
@@ -47,8 +55,18 @@ vi.mock('../preset', async () => {
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    // Re-armed per test: afterEach's restoreAllMocks strips implementations
+    // set in the vi.mock factories.
+    const { verifyBackendInstallation } = await import('../backend')
+    vi.mocked(verifyBackendInstallation).mockResolvedValue({
+      verified: true,
+      missing_libraries: [],
+      resolved_libraries: [],
+    })
+    const { routerHealth } = await import('@janhq/tauri-plugin-llamacpp-api')
+    vi.mocked(routerHealth).mockResolvedValue(true)
     extension = new llamacpp_extension()
   })
 
@@ -579,6 +597,7 @@ describe('llamacpp_extension', () => {
     describe('isUpdatingBackend flag', () => {
       it('should reset isUpdatingBackend to false after successful update', async () => {
         extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
         extension['getStoredBackendType'] = vi.fn().mockReturnValue('linux-avx2-x64')
         extension['setStoredBackendType'] = vi.fn()
         extension['getSettings'] = vi.fn().mockResolvedValue([])
@@ -610,16 +629,138 @@ describe('llamacpp_extension', () => {
         expect(result.wasUpdated).toBe(false)
       })
 
-      it('should return no-op when an update is already in progress', async () => {
-        // Simulate an update already in progress
-        extension['isUpdatingBackend'] = true
+      it('queues a concurrent request instead of dropping it', async () => {
+        extension['config'].llamacpp_version = 'v1.0.0'
+        extension['config'].llamacpp_backend = 'linux-avx2-x64'
+        extension['recomposeVersionBackend']()
+        extension['getStoredBackendType'] = vi
+          .fn()
+          .mockResolvedValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn().mockResolvedValue(undefined)
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
+        extension['pruneOldBackendVersions'] = vi
+          .fn()
+          .mockResolvedValue(undefined)
+        extension['recordUpdateHistory'] = vi.fn().mockResolvedValue(undefined)
+        const { mapOldBackendToNew } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(mapOldBackendToNew).mockImplementation(async (b) => b)
 
-        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
-        expect(result.wasUpdated).toBe(false)
+        let releaseFirst: () => void = () => {}
+        const firstDownload = new Promise<void>((r) => {
+          releaseFirst = r
+        })
+        const ensureBackendReady = vi
+          .fn()
+          .mockImplementationOnce(() => firstDownload)
+          .mockResolvedValue(undefined)
+        extension['ensureBackendReady'] = ensureBackendReady
+
+        const first = extension.updateBackend('v2.0.0/linux-avx2-x64')
+        const queued = extension.updateBackend('v3.0.0/linux-avx2-x64')
+        releaseFirst()
+
+        const [firstResult, queuedResult] = await Promise.all([first, queued])
+
+        expect(firstResult.newBackend).toBe('v2.0.0/linux-avx2-x64')
+        // The queued request ran rather than being silently discarded.
+        expect(queuedResult.wasUpdated).toBe(true)
+        expect(queuedResult.newBackend).toBe('v3.0.0/linux-avx2-x64')
+        expect(ensureBackendReady).toHaveBeenCalledTimes(2)
+      })
+
+      it('coalesces queued requests so only the newest target runs', async () => {
+        extension['config'].llamacpp_version = 'v1.0.0'
+        extension['config'].llamacpp_backend = 'linux-avx2-x64'
+        extension['recomposeVersionBackend']()
+        extension['getStoredBackendType'] = vi
+          .fn()
+          .mockResolvedValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn().mockResolvedValue(undefined)
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
+        extension['pruneOldBackendVersions'] = vi
+          .fn()
+          .mockResolvedValue(undefined)
+        extension['recordUpdateHistory'] = vi.fn().mockResolvedValue(undefined)
+        const { mapOldBackendToNew } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(mapOldBackendToNew).mockImplementation(async (b) => b)
+
+        let releaseFirst: () => void = () => {}
+        const firstDownload = new Promise<void>((r) => {
+          releaseFirst = r
+        })
+        const ensureBackendReady = vi
+          .fn()
+          .mockImplementationOnce(() => firstDownload)
+          .mockResolvedValue(undefined)
+        extension['ensureBackendReady'] = ensureBackendReady
+
+        const first = extension.updateBackend('v2.0.0/linux-avx2-x64')
+        const superseded = extension.updateBackend('v3.0.0/linux-avx2-x64')
+        const newest = extension.updateBackend('v4.0.0/linux-avx2-x64')
+        releaseFirst()
+
+        const results = await Promise.all([first, superseded, newest])
+
+        // v3 never runs: obsolete before it could start. Both waiters on the
+        // queued slot get the v4 result.
+        expect(ensureBackendReady).toHaveBeenCalledTimes(2)
+        expect(results[1].newBackend).toBe('v4.0.0/linux-avx2-x64')
+        expect(results[2].newBackend).toBe('v4.0.0/linux-avx2-x64')
+        expect(extension['config'].version_backend).toBe(
+          'v4.0.0/linux-avx2-x64'
+        )
       })
     })
 
     describe('onSettingUpdate guard', () => {
+      it('does not restart the router while configureBackends is persisting settings', async () => {
+        // configureBackends writes llamacpp_version/backend on every launch.
+        // Reacting to that would restart the router a second time, which at
+        // startup kills the router adoption just took over.
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        extension['isConfiguringBackends'] = true
+
+        extension.onSettingUpdate('llamacpp_backend', 'linux-avx2-x64')
+        await new Promise((r) => setTimeout(r, 0))
+
+        expect(extension['ensureBackendReady']).not.toHaveBeenCalled()
+        expect(extension['startRouter']).not.toHaveBeenCalled()
+      })
+
+      it('does not schedule a preset restart for configureBackends own writes', async () => {
+        // configureBackends persists the entire settings array, so every
+        // preset-affecting key echoes back through here. Debouncing a restart
+        // off that echo is what killed the adopted router ~600ms into startup.
+        const scheduleRouterRestart = vi.fn()
+        extension['scheduleRouterRestart'] = scheduleRouterRestart
+        extension['isConfiguringBackends'] = true
+
+        extension.onSettingUpdate('ctx_size', 4096)
+
+        expect(scheduleRouterRestart).not.toHaveBeenCalled()
+        // The value is still applied; only the restart is suppressed.
+        expect(extension['config'].ctx_size).toBe(4096)
+      })
+
+      it('still schedules a preset restart for a genuine user edit', async () => {
+        const scheduleRouterRestart = vi.fn()
+        extension['scheduleRouterRestart'] = scheduleRouterRestart
+        extension['isConfiguringBackends'] = false
+
+        extension.onSettingUpdate('ctx_size', 8192)
+
+        expect(scheduleRouterRestart).toHaveBeenCalledTimes(1)
+      })
+
       it('should skip ensureBackendReady in onSettingUpdate when updateBackend is in progress', async () => {
         extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
 
@@ -637,6 +778,7 @@ describe('llamacpp_extension', () => {
     describe('stored backend type', () => {
       it('should store effectiveBackendType, not the full version/backend string', async () => {
         extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
         extension['getStoredBackendType'] = vi.fn().mockReturnValue('old-backend-type')
         extension['setStoredBackendType'] = vi.fn()
         extension['getSettings'] = vi.fn().mockResolvedValue([])
@@ -658,9 +800,182 @@ describe('llamacpp_extension', () => {
       })
     })
 
+    describe('atomicity', () => {
+      const armUpdate = async (extension: llamacpp_extension) => {
+        extension['config'].llamacpp_version = 'v1.0.0'
+        extension['config'].llamacpp_backend = 'linux-avx2-x64'
+        extension['recomposeVersionBackend']()
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['getStoredBackendType'] = vi.fn().mockResolvedValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn().mockResolvedValue(undefined)
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+        const { mapOldBackendToNew } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(mapOldBackendToNew).mockImplementation(async (b) => b)
+      }
+
+      it('restarts the router so the new binary actually serves', async () => {
+        await armUpdate(extension)
+        const startRouter = vi.fn().mockResolvedValue(undefined)
+        extension['startRouter'] = startRouter
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(startRouter).toHaveBeenCalledTimes(1)
+        expect(result.wasUpdated).toBe(true)
+        expect(result.newBackend).toBe('v2.0.0/linux-avx2-x64')
+      })
+
+      // Static dep analysis false-positives (libs dlopen'd at runtime, or
+      // resolved from paths the analyzer does not search but the spawn env
+      // does). A router that serves /health is proof the binary works,
+      // whatever lddtree concluded.
+      it('does not block a switch on a missing-library report', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const { verifyBackendInstallation } = await import('../backend')
+        vi.mocked(verifyBackendInstallation).mockResolvedValue({
+          verified: false,
+          missing_libraries: ['libcudart.so.12'],
+          resolved_libraries: [],
+        })
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(result.wasUpdated).toBe(true)
+        expect(extension['config'].version_backend).toBe(
+          'v2.0.0/linux-avx2-x64'
+        )
+      })
+
+      it('rolls back when the router fails its health check', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const { routerHealth } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(routerHealth).mockResolvedValue(false)
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(result.wasUpdated).toBe(false)
+        expect(extension['config'].llamacpp_version).toBe('v1.0.0')
+        // Once for the failed target, once bringing the old backend back up.
+        expect(extension['startRouter']).toHaveBeenCalledTimes(2)
+      })
+
+      it('rolls back when the router process refuses to start', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi
+          .fn()
+          .mockRejectedValueOnce(new Error('spawn failed'))
+          .mockResolvedValue(undefined)
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(result.wasUpdated).toBe(false)
+        expect(extension['config'].version_backend).toBe(
+          'v1.0.0/linux-avx2-x64'
+        )
+      })
+
+      it('prunes superseded installs only after the probe passes', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const { removeOldBackendVersions } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+        const { joinPath } = await import('@janhq/core')
+        vi.mocked(joinPath).mockResolvedValue('/jan/llamacpp/backends')
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(removeOldBackendVersions).toHaveBeenCalledWith(
+          '/jan/llamacpp/backends',
+          'v2.0.0',
+          'linux-avx2-x64',
+          2
+        )
+      })
+
+      it('keeps the rollback target on disk when the probe fails', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const { removeOldBackendVersions, routerHealth } = await import(
+          '@janhq/tauri-plugin-llamacpp-api'
+        )
+        vi.mocked(routerHealth).mockResolvedValue(false)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        // Pruning here would delete the version we just rolled back onto.
+        expect(removeOldBackendVersions).not.toHaveBeenCalled()
+      })
+
+      it('records the outcome of a failed switch as rolled-back when the rollback target is healthy', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const written: unknown[] = []
+        extension['recordUpdateHistory'] = vi.fn(async (r) => {
+          written.push(r)
+        })
+        const { routerHealth } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(routerHealth)
+          .mockResolvedValueOnce(false)
+          .mockResolvedValueOnce(true)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(written).toHaveLength(1)
+        expect(written[0]).toMatchObject({
+          from: 'v1.0.0/linux-avx2-x64',
+          to: 'v2.0.0/linux-avx2-x64',
+          outcome: 'rolled-back',
+        })
+      })
+
+      it('records the outcome as rollback-failed when the rollback target also fails its health check', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        const written: unknown[] = []
+        extension['recordUpdateHistory'] = vi.fn(async (r) => {
+          written.push(r)
+        })
+        const { routerHealth } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(routerHealth).mockResolvedValue(false)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(written).toHaveLength(1)
+        expect(written[0]).toMatchObject({
+          from: 'v1.0.0/linux-avx2-x64',
+          to: 'v2.0.0/linux-avx2-x64',
+          outcome: 'rollback-failed',
+        })
+      })
+
+      it('does not attempt a rollback when the download fails pre-commit', async () => {
+        await armUpdate(extension)
+        extension['startRouter'] = vi.fn().mockResolvedValue(undefined)
+        extension['ensureBackendReady'] = vi
+          .fn()
+          .mockRejectedValue(new Error('download failed'))
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(result.wasUpdated).toBe(false)
+        expect(extension['startRouter']).not.toHaveBeenCalled()
+        expect(extension['config'].version_backend).toBe(
+          'v1.0.0/linux-avx2-x64'
+        )
+      })
+    })
+
     describe('trimming', () => {
       it('should trim whitespace from version and backend before use', async () => {
         extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['restartRouterAndProbe'] = vi.fn().mockResolvedValue(true)
         extension['getStoredBackendType'] = vi.fn().mockReturnValue('linux-avx2-x64')
         extension['setStoredBackendType'] = vi.fn()
         extension['getSettings'] = vi.fn().mockResolvedValue([])
@@ -985,5 +1300,216 @@ describe('bootstrapDefaultEmbedder', () => {
       extension['bootstrapDefaultEmbedder']()
     ).resolves.toBeUndefined()
     expect(setBackendSetting).not.toHaveBeenCalled()
+  })
+})
+
+describe('router adoption after a UI crash', () => {
+  let extension: llamacpp_extension
+
+  const armStartRouter = async () => {
+    extension = new llamacpp_extension()
+    extension['config'] = {
+      version_backend: 'b9100/cpu',
+      models_max: 1,
+    } as never
+    extension['timeout'] = 600
+
+    const { generatePreset } = await import('../preset')
+    vi.mocked(generatePreset).mockResolvedValue({
+      path: '/jan/llamacpp/router.preset.ini',
+      embeddingCount: 0,
+    })
+    const { getJanDataFolderPath } = await import('@janhq/core')
+    vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
+    vi.spyOn(extension, 'getProviderPath').mockResolvedValue('/jan/llamacpp')
+
+    const backendModule = await import('../backend')
+    vi.mocked(backendModule.getBackendExePath).mockResolvedValue(
+      '/backends/b9100/cpu/llama-server'
+    )
+    vi.spyOn(extension as never, 'getRandomPort' as never).mockResolvedValue(
+      12345 as never
+    )
+    vi.spyOn(extension as never, 'generateApiKey' as never).mockResolvedValue(
+      'derived-key' as never
+    )
+
+    const { invoke } = await import('@tauri-apps/api/core')
+    // get_router_info: nothing running in memory, which is the post-crash state.
+    vi.mocked(invoke).mockResolvedValue(null)
+
+    const { adoptRouter } = await import('@janhq/tauri-plugin-llamacpp-api')
+    return { adoptRouter: vi.mocked(adoptRouter), invoke: vi.mocked(invoke) }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('reuses an adopted router instead of spawning a second one', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue({
+      port: 45678,
+      api_key: 'adopted-key',
+      pid: 999,
+    })
+
+    await extension['startRouter']()
+
+    expect(adoptRouter).toHaveBeenCalledTimes(1)
+    expect(extension['routerPort']).toBe(45678)
+    expect(extension['routerApiKey']).toBe('adopted-key')
+    expect(invoke).not.toHaveBeenCalledWith(
+      'plugin:llamacpp|start_router',
+      expect.anything()
+    )
+  })
+
+  it('spawns a fresh router when there is nothing to adopt', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(invoke).toHaveBeenCalledWith(
+      'plugin:llamacpp|start_router',
+      expect.anything()
+    )
+    expect(extension['routerPort']).toBe(12345)
+  })
+
+  it('falls back to spawning when adoption itself throws', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockRejectedValue(new Error('lock unreadable'))
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(invoke).toHaveBeenCalledWith(
+      'plugin:llamacpp|start_router',
+      expect.anything()
+    )
+  })
+
+  it('passes the effective models_max so an argv-only change is caught', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    extension['config'].models_max = 3 as never
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(adoptRouter).toHaveBeenCalledWith(
+      '/backends/b9100/cpu/llama-server',
+      '/jan/llamacpp/router.preset.ini',
+      3,
+      expect.any(String)
+    )
+  })
+
+  it('never stops a router before trying to adopt it', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    const calls: string[] = []
+    adoptRouter.mockImplementation(async () => {
+      calls.push('adopt')
+      return { port: 45678, api_key: 'adopted-key', pid: 999 }
+    })
+    invoke.mockImplementation(async (cmd: string) => {
+      calls.push(cmd)
+      return null
+    })
+
+    await extension['startRouter']()
+
+    expect(calls[0]).toBe('adopt')
+    expect(calls).not.toContain('plugin:llamacpp|stop_router')
+  })
+
+  it('coalesces concurrent starts so the second cannot kill the first', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    let spawns = 0
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') {
+        spawns += 1
+        await new Promise((r) => setTimeout(r, 10))
+        return { port: 12345, api_key: 'fresh-key', pid: 111 }
+      }
+      return null
+    })
+
+    await Promise.all([extension['startRouter'](), extension['startRouter']()])
+
+    expect(spawns).toBe(1)
+    expect(invoke).not.toHaveBeenCalledWith('plugin:llamacpp|stop_router')
+    expect(extension['routerPort']).toBe(12345)
+  })
+
+  it('releases the lock so a later start can still run', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === 'plugin:llamacpp|start_router'
+        ? { port: 12345, api_key: 'fresh-key', pid: 111 }
+        : null
+    )
+
+    await extension['startRouter']()
+    await extension['startRouter']()
+
+    expect(adoptRouter).toHaveBeenCalledTimes(2)
+    expect(extension['routerStartLock']).toBeNull()
+  })
+
+  it('onUnload leaves the router running for the next instance to adopt', async () => {
+    const { invoke } = await armStartRouter()
+    extension['routerPort'] = 45678
+    extension['routerApiKey'] = 'adopted-key'
+    let adoptResolved = false
+    extension['backgroundInit'] = (async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      adoptResolved = true
+    })()
+
+    await extension.onUnload()
+
+    expect(invoke).not.toHaveBeenCalledWith('plugin:llamacpp|stop_router')
+    // Must not block on the in-flight adoption either; that ordering is what
+    // pinned the kill to the moment adoption completed.
+    expect(adoptResolved).toBe(false)
+    expect(extension['routerPort']).toBeUndefined()
+    expect(extension['routerApiKey']).toBeUndefined()
+  })
+
+  it('releases the lock even when the spawn fails', async () => {
+    const { adoptRouter, invoke } = await armStartRouter()
+    adoptRouter.mockResolvedValue(null)
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'plugin:llamacpp|start_router') throw new Error('no port')
+      return null
+    })
+
+    await expect(extension['startRouter']()).rejects.toThrow('no port')
+    expect(extension['routerStartLock']).toBeNull()
   })
 })

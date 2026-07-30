@@ -12,6 +12,8 @@ const COMMANDS: &[&str] = &[
     "get_router_info",
     "reload_router_models",
     "router_slots_idle",
+    "router_health",
+    "adopt_router",
     "get_devices",
     "generate_api_key",
     "is_process_running",
@@ -48,6 +50,8 @@ const COMMANDS: &[&str] = &[
     "verify_backend_installation",
     "fetch_remote_supported_backends",
     "build_backend_download_items",
+    "fetch_backend_checksums",
+    "verify_file_sha512",
 ];
 
 fn main() {

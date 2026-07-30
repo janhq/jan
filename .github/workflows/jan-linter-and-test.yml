@@ -6,15 +6,13 @@ on:
       - main
     paths:
       - .github/workflows/jan-linter-and-test.yml
-      - 'web/**'
-      - 'joi/**'
       - 'package.json'
-      - 'node_modules/**'
       - 'yarn.lock'
       - 'core/**'
       - 'extensions/**'
-      - '!README.md'
       - 'Makefile'
+      - 'src-tauri/**'
+      - 'web-app/**'
 
   pull_request:
     branches:
@@ -22,17 +20,13 @@ on:
       - release/**
     paths:
       - .github/workflows/jan-linter-and-test.yml
-      - 'web/**'
-      - 'joi/**'
       - 'package.json'
-      - 'node_modules/**'
       - 'yarn.lock'
       - 'Makefile'
       - 'extensions/**'
       - 'core/**'
       - 'src-tauri/**'
       - 'web-app/**'
-      - '!README.md'
 
 concurrency:
   group: linter-test-${{ github.ref }}
@@ -132,8 +126,6 @@ jobs:
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -158,7 +150,7 @@ jobs:
 
       - name: Linter and test
         run: |
-          make test
+          make test-ci
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
@@ -172,8 +164,6 @@ jobs:
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -211,8 +201,6 @@ jobs:
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - name: install dependencies
         run: |
@@ -235,12 +223,6 @@ jobs:
           }
           make clean
 
-      - name: Install WebView2 Runtime (Bootstrapper)
-        shell: powershell
-        run: |
-          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile 'setup.exe'
-          Start-Process -FilePath setup.exe -Verb RunAs -Wait
-
       - name: Config Yarn
         run: |
           corepack enable
@@ -251,29 +233,16 @@ jobs:
       - name: Linter and test
         shell: powershell
         run: |
-          make test
+          make test-ci
         env:
           NODE_OPTIONS: '--max-old-space-size=2048'
 
   test-on-ubuntu:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
-
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -302,14 +271,8 @@ jobs:
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
-          make test
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: playwright-report
-          path: electron/playwright-report/
-          retention-days: 2
+          make test-ci
+          make check-cli
 
   coverage-check:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -319,8 +282,6 @@ jobs:
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

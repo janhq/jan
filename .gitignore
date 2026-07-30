@@ -31,6 +31,7 @@ OpenCode.md
 Claude.md
 archive/
 .cache/
+.jan/
 
 # auto qa
 autoqa/trajectories
