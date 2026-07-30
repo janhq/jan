@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 import {
   SparklesIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CheckCircle2Icon,
   CircleDotIcon,
   CircleIcon,
@@ -25,6 +27,8 @@ import {
   useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { formatCompactDuration } from '@/lib/duration'
 import { Shimmer } from './shimmer'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -150,51 +154,106 @@ export type ChainOfThoughtHeaderProps = ComponentProps<
   title?: string
   /** Label shown while streaming, e.g. "Working...". Defaults to "Reasoning...". */
   streamingLabel?: string
-  /** Past-tense verb for the completed state, e.g. "Worked". Defaults to "Thought". */
-  completedVerb?: string
+  /** Which past-tense phrasing to use once the trace is complete. */
+  completedVariant?: 'thought' | 'worked'
+  /**
+   * Turns the header into a view switch instead of a collapse toggle: the
+   * chevron points the way it navigates, e.g. `right` to drill into the full
+   * timeline and `left` to come back.
+   */
+  navDirection?: 'left' | 'right'
+  onNavigate?: () => void
 }
+
+const COMPLETED_KEYS = {
+  thought: {
+    aWhile: 'chat:reasoning.thoughtForAWhile',
+    withDuration: 'chat:reasoning.thoughtFor',
+  },
+  worked: {
+    aWhile: 'chat:reasoning.workedForAWhile',
+    withDuration: 'chat:reasoning.workedFor',
+  },
+} as const
 
 export const ChainOfThoughtHeader = memo(
   ({
     className,
     title,
-    streamingLabel = 'Reasoning...',
-    completedVerb = 'Thought',
+    streamingLabel,
+    completedVariant = 'thought',
+    navDirection,
+    onNavigate,
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
+    const { t } = useTranslation()
     const { isStreaming, isOpen, duration } = useChainOfThought()
 
+    const keys = COMPLETED_KEYS[completedVariant]
+    const completedLabel =
+      duration === undefined
+        ? t(keys.aWhile)
+        : t(keys.withDuration, { duration: formatCompactDuration(duration, t) })
+
+    const rowClassName = cn(
+      'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
+      className
+    )
+
+    if (children) {
+      return (
+        <CollapsibleTrigger className={rowClassName} {...props}>
+          {children}
+        </CollapsibleTrigger>
+      )
+    }
+
+    const label = (
+      <>
+        <SparklesIcon className="size-4" />
+        {isStreaming || duration === 0 ? (
+          <Shimmer duration={1}>
+            {streamingLabel ?? t('chat:reasoning.label')}
+          </Shimmer>
+        ) : title ? (
+          <p>{title}</p>
+        ) : (
+          <p>{completedLabel}</p>
+        )}
+      </>
+    )
+
+    if (navDirection) {
+      const navLabel =
+        navDirection === 'right'
+          ? t('chat:reasoning.showFullTimeline')
+          : t('chat:reasoning.showCurrentStep')
+      return (
+        <button
+          type="button"
+          className={rowClassName}
+          onClick={onNavigate}
+          aria-label={navLabel}
+          title={navLabel}
+          {...props}
+        >
+          {navDirection === 'left' && <ChevronLeftIcon className="size-4" />}
+          {label}
+          {navDirection === 'right' && <ChevronRightIcon className="size-4" />}
+        </button>
+      )
+    }
+
     return (
-      <CollapsibleTrigger
-        className={cn(
-          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
-          className
-        )}
-        {...props}
-      >
-        {children ?? (
-          <>
-            <SparklesIcon className="size-4" />
-            {isStreaming || duration === 0 ? (
-              <Shimmer duration={1}>{streamingLabel}</Shimmer>
-            ) : title ? (
-              <p>{title}</p>
-            ) : duration === undefined ? (
-              <p>{completedVerb} for a few seconds</p>
-            ) : (
-              <p>
-                {completedVerb} for {duration} seconds
-              </p>
-            )}
-            <ChevronDownIcon
-              className={cn(
-                'size-4 transition-transform',
-                isOpen ? 'rotate-180' : 'rotate-0'
-              )}
-            />
-          </>
-        )}
+      <CollapsibleTrigger className={rowClassName} {...props}>
+        {label}
+        <ChevronDownIcon
+          className={cn(
+            'size-4 transition-transform',
+            isOpen ? 'rotate-180' : 'rotate-0'
+          )}
+        />
       </CollapsibleTrigger>
     )
   }

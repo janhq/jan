@@ -18,5 +18,16 @@
     "continue": "Continue generating"
   },
   "done": "Done",
-  "webSources": "{{count}} source(s)"
+  "webSources": "{{count}} source(s)",
+  "reasoning": {
+    "label": "Reasoning...",
+    "thinking": "Thinking",
+    "usingTool": "{{tool}}...",
+    "showFullTimeline": "Show full timeline",
+    "showCurrentStep": "Show current step only",
+    "thoughtForAWhile": "Thought for a few seconds",
+    "thoughtFor": "Thought for {{duration}}",
+    "workedForAWhile": "Worked for a few seconds",
+    "workedFor": "Worked for {{duration}}"
+  }
 }
