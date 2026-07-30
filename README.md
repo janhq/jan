@@ -57,32 +57,13 @@ Jan is bringing the best of open-source AI in an easy-to-use product. Download a
 
 The easiest way to get started is by downloading one of the following versions for your respective operating system:
 
-<table>
-  <tr>
-    <td><b>Platform</b></td>
-    <td><b>Download</b></td>
-  </tr>
-  <tr>
-    <td><b>Windows</b></td>
-    <td><a href='https://app.jan.ai/download/latest/win-x64'>jan.exe</a></td>
-  </tr>
-  <tr>
-    <td><b>macOS</b></td>
-    <td><a href='https://app.jan.ai/download/latest/mac-universal'>jan.dmg</a></td>
-  </tr>
-  <tr>
-    <td><b>Linux (deb)</b></td>
-    <td><a href='https://app.jan.ai/download/latest/linux-amd64-deb'>jan.deb</a></td>
-  </tr>
-  <tr>
-    <td><b>Linux (AppImage)</b></td>
-    <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
-  </tr>
-  <tr>
-    <td><b>Linux (Arm64)</b></td>
-    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-4142429792'>How-to</a></td>
-  </tr>
-</table>
+| Platform | Download |
+| --- | --- |
+| Windows | [jan.exe](https://github.com/janhq/jan/releases/latest) |
+| macOS | [jan.dmg](https://github.com/janhq/jan/releases/latest) |
+| Linux (deb) | [jan.deb](https://github.com/janhq/jan/releases/latest) |
+| Linux (AppImage) | [jan.AppImage](https://github.com/janhq/jan/releases/latest) |
+| Linux (Arm64) | [How-to](https://jan.ai/docs/desktop/linux) |
 
 
 Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/janhq/jan/releases).
