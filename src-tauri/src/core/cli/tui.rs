@@ -573,6 +573,11 @@ struct App {
     login: Option<LoginPrompt>,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<String>,
+    /// `/update` handed off to the loop, which spawns the install. Taken once.
+    update_requested: bool,
+    /// An install is in flight: `/update` is refused (two processes must not
+    /// rewrite the same binary) and the footer shows progress.
+    update_installing: bool,
     /// Lines scrolled back from the tail; 0 pins the view to the bottom so new
     /// content follows. Non-zero survives streaming so scroll-back stays usable.
     scrollback: u16,
@@ -793,6 +798,8 @@ impl App {
             picker: None,
             login: None,
             login_submit: None,
+            update_requested: false,
+            update_installing: false,
             scrollback: 0,
             want_start: false,
             view_width: 0,
@@ -3080,6 +3087,75 @@ async fn await_login(
     }
 }
 
+/// Await the startup update check once, clearing the slot. Same cancel-safe
+/// borrow as `await_mcp`; pends forever before it is spawned and after it has
+/// been consumed, so it can sit in the loop's `select!` unconditionally.
+async fn await_update_check(
+    task: &mut Option<tokio::task::JoinHandle<Option<super::updater::AvailableUpdate>>>,
+) -> Option<super::updater::AvailableUpdate> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok().flatten()
+}
+
+/// Surface a newer published build in the transcript. The stderr notice the
+/// non-interactive commands print is invisible here (the alternate screen wipes
+/// it), so the TUI has to say it itself.
+fn note_update(app: &mut App, update: Option<super::updater::AvailableUpdate>) {
+    if let Some(update) = update {
+        app.note(&format!("{}; run /update to install it", update.summary()));
+    }
+}
+
+/// Hand `/update` to the loop, which downloads and swaps the binary off the
+/// render loop. Refused while one install is already in flight.
+fn update_command(app: &mut App) {
+    if app.update_installing {
+        app.note("an update is already installing");
+        return;
+    }
+    app.update_requested = true;
+    app.note("downloading the latest build...");
+}
+
+/// Await an in-flight `/update` install, parking forever when none is running.
+/// Same cancel-safe borrow as `await_mcp`.
+async fn await_update_install(
+    task: &mut Option<tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>>,
+) -> Result<super::updater::UpdateOutcome, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("update task failed: {e}")),
+    }
+}
+
+/// Report an install. The swap replaced the file on disk, not this process's
+/// image, so the new build only runs after a restart. A failure clears the
+/// in-flight flag too, so `/update` can be retried.
+fn finish_update_install(app: &mut App, result: Result<super::updater::UpdateOutcome, String>) {
+    use super::updater::UpdateOutcome;
+    app.update_installing = false;
+    app.detail.clear();
+    match result {
+        Ok(UpdateOutcome::Installed { from, to, path }) => app.note(&format!(
+            "updated {} from {from} -> {to}; restart jan to run it",
+            tilde_path(&path)
+        )),
+        Ok(UpdateOutcome::UpToDate { version }) => {
+            app.note(&format!("already up to date ({version})"))
+        }
+        Err(e) => app.note(&format!("update failed: {e}")),
+    }
+}
+
 pub async fn run(
     session: AgentSession,
     agent_dir: std::path::PathBuf,
@@ -3178,6 +3254,12 @@ pub async fn run(
     );
     let _ = terminal.show_cursor();
     log::set_max_level(prev_log_level);
+    // Quitting cancels an in-flight `/update` (the runtime drops the task), so
+    // say so on the real terminal now that the alternate screen is gone -- a
+    // transcript note would vanish with it.
+    if app.update_installing {
+        eprintln!("the update was still installing when jan exited; run `jan update` to finish it");
+    }
     res
 }
 
@@ -3214,6 +3296,16 @@ async fn chat_loop<B: Backend>(
         tokio::task::JoinHandle<Result<super::tokamak::Login, String>>,
     > = None;
 
+    // The update check is a network round trip, so it runs off the render loop
+    // and notes itself whenever it lands rather than delaying the first frame.
+    let mut update_task = Some(tokio::spawn(super::updater::available_update()));
+
+    // `/update` downloads tens of megabytes and rewrites the binary; off the
+    // render loop for the same reason, and one at a time.
+    let mut update_install_task: Option<
+        tokio::task::JoinHandle<Result<super::updater::UpdateOutcome, String>>,
+    > = None;
+
     match initial_task {
         Some(task) if !task.trim().is_empty() => app.submit_user(task.trim().to_string()),
         _ => app.note("type a message to start, or /help for commands"),
@@ -3247,6 +3339,18 @@ async fn chat_loop<B: Backend>(
                 login_task = Some(tokio::spawn(
                     async move { super::tokamak::login(&key).await },
                 ));
+            }
+        }
+
+        // `/update` was typed: install off-loop. The flag is only honored when
+        // no install is in flight, so a repeated request can't spawn a second
+        // process rewriting the same binary.
+        if app.update_requested {
+            app.update_requested = false;
+            if update_install_task.is_none() {
+                app.update_installing = true;
+                app.detail = "installing update...".to_string();
+                update_install_task = Some(tokio::spawn(super::updater::self_update(false)));
             }
         }
 
@@ -3342,6 +3446,12 @@ async fn chat_loop<B: Backend>(
             }
             login_res = await_login(&mut login_task) => {
                 finish_login(app, login_res);
+            }
+            update = await_update_check(&mut update_task) => {
+                note_update(app, update);
+            }
+            install = await_update_install(&mut update_install_task) => {
+                finish_update_install(app, install);
             }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
@@ -4128,6 +4238,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "View provider config (~/.jan/config.toml)",
     },
     SlashCommand {
+        name: "/update",
+        hint: "",
+        description: "Install the latest published build (takes effect on restart)",
+    },
+    SlashCommand {
         name: "/quit",
         hint: "",
         description: "Exit the TUI",
@@ -4239,6 +4354,7 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "mcp" => open_mcp_picker(app),
         "login" => open_login_prompt(app),
+        "update" => update_command(app),
         "config" => open_config_screen(app),
         "goal" => goal_command(app, arg),
         "plan" => plan_command(app, arg),
@@ -6549,7 +6665,8 @@ mod tests {
         apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
-        compact_tokens, finish_login, load_image_file, message_text, open_config_screen,
+        compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
+        note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         run_command, starting_call_lines, unescape_partial_json_string,
         running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
@@ -6566,6 +6683,7 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::{style::Modifier, text::Line};
     use crate::core::agent::events::{StreamEvent, Usage};
+    use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::agent::tools::gate::PermissionDecision;
     use serde_json::json;
@@ -6623,6 +6741,104 @@ mod tests {
         assert_eq!(tokens_per_second(10, 100), 100.0);
         // Zero output is a clean 0, never NaN.
         assert_eq!(tokens_per_second(0, 500), 0.0);
+    }
+
+    fn available_update(current: &str, latest: &str) -> AvailableUpdate {
+        AvailableUpdate {
+            channel: "agent-nightly",
+            current: current.into(),
+            latest: latest.into(),
+            url: None,
+            sha256: None,
+        }
+    }
+
+    #[test]
+    fn a_newer_build_is_noted_in_the_transcript() {
+        let mut app = test_app();
+        note_update(&mut app, Some(available_update("0.8.4-10", "0.8.4-11")));
+        let text = app
+            .transcript
+            .iter()
+            .map(message_text_of)
+            .collect::<String>();
+        assert!(text.contains("0.8.4-10 -> 0.8.4-11"), "{text}");
+        assert!(text.contains("/update"), "{text}");
+    }
+
+    /// A local build, an unreachable manifest and an already-current binary all
+    /// arrive as `None`, and must leave the transcript untouched.
+    #[test]
+    fn no_update_available_notes_nothing() {
+        let mut app = test_app();
+        let before = app.transcript.len();
+        note_update(&mut app, None);
+        assert_eq!(app.transcript.len(), before);
+    }
+
+    fn transcript_text(app: &App) -> String {
+        app.transcript.iter().map(message_text_of).collect()
+    }
+
+    #[tokio::test]
+    async fn update_command_requests_an_install_once() {
+        let mut app = test_app();
+        run_command(&mut app, "update").await;
+        assert!(app.update_requested, "the loop should pick up the request");
+        assert!(transcript_text(&app).contains("downloading"), "no progress note");
+
+        // A second /update while the first is still downloading must not queue a
+        // concurrent install (two processes rewriting the same binary).
+        app.update_installing = true;
+        app.update_requested = false;
+        run_command(&mut app, "update").await;
+        assert!(!app.update_requested);
+        assert!(transcript_text(&app).contains("already installing"));
+    }
+
+    #[test]
+    fn install_outcome_reports_the_new_version_and_clears_the_flag() {
+        let mut app = test_app();
+        app.update_installing = true;
+        finish_update_install(
+            &mut app,
+            Ok(UpdateOutcome::Installed {
+                from: "0.8.4-10".into(),
+                to: "0.8.4-11".into(),
+                path: std::path::PathBuf::from("/home/u/.local/bin/jan"),
+            }),
+        );
+        assert!(!app.update_installing);
+        let text = transcript_text(&app);
+        assert!(text.contains("0.8.4-10 -> 0.8.4-11"), "{text}");
+        assert!(text.contains("restart"), "must say the swap needs a restart: {text}");
+    }
+
+    #[test]
+    fn a_failed_install_is_reported_and_retryable() {
+        let mut app = test_app();
+        app.update_installing = true;
+        finish_update_install(&mut app, Err("checksum mismatch".into()));
+        assert!(!app.update_installing, "a failure must allow a retry");
+        assert!(transcript_text(&app).contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn an_already_current_binary_is_not_reinstalled() {
+        let mut app = test_app();
+        app.update_installing = true;
+        finish_update_install(
+            &mut app,
+            Ok(UpdateOutcome::UpToDate {
+                version: "0.8.4-11".into(),
+            }),
+        );
+        assert!(!app.update_installing);
+        assert!(transcript_text(&app).contains("0.8.4-11"));
+    }
+
+    fn message_text_of(line: &Line<'static>) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
     #[test]

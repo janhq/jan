@@ -150,25 +150,36 @@ impl AvailableUpdate {
     pub fn is_newer(&self) -> bool {
         compare_versions(&self.latest, &self.current) == Ordering::Greater
     }
+
+    /// One-line "what is newer", shared by the stderr notice, the TUI note and
+    /// `jan update --check`.
+    pub fn summary(&self) -> String {
+        format!(
+            "A new {} build is available: {} -> {}",
+            self.channel, self.current, self.latest
+        )
+    }
 }
 
-/// Check for a newer nightly build and print a one-line notice to stderr.
-/// Best-effort: any network error, timeout, or missing embed is silently
-/// ignored so it never blocks or breaks CLI startup.
-pub async fn print_update_notice_if_available() {
+/// A published build strictly newer than this one, or `None` when the check is
+/// opted out of, this is a local build, the manifest is unreachable, or we are
+/// already current. Best-effort by design: every failure is a silent `None` so
+/// the check never blocks or breaks startup.
+pub async fn available_update() -> Option<AvailableUpdate> {
     if std::env::var_os("JAN_CLI_NO_UPDATE_CHECK").is_some() {
-        return;
+        return None;
     }
-    let Ok(update) = check_for_update(CHECK_TIMEOUT).await else {
-        return;
-    };
-    if !update.is_newer() {
-        return;
+    let update = check_for_update(CHECK_TIMEOUT).await.ok()?;
+    update.is_newer().then_some(update)
+}
+
+/// Print the startup update notice to stderr. Used by the non-interactive
+/// commands; the TUI notes it in the transcript instead (`tui::note_update`),
+/// since anything written here is lost to the alternate screen.
+pub async fn print_update_notice_if_available() {
+    if let Some(update) = available_update().await {
+        eprintln!("{}. Run `jan update` to install it.", update.summary());
     }
-    eprintln!(
-        "A new {} build is available: {} -> {}. Run `jan update` to install it.",
-        update.channel, update.current, update.latest
-    );
 }
 
 // ── Self-update ────────────────────────────────────────────────────────────
@@ -337,12 +348,41 @@ fn replace_binary(staged: &Path, exe: &Path) -> Result<(), String> {
     fs::rename(staged, exe).map_err(|e| format!("{}: {e}", exe.display()))
 }
 
-/// Leftover from a previous Windows update; the file is unlocked once the old
-/// process has exited, so clean it up opportunistically.
-fn clean_stale_backup(exe: &Path) {
+/// Staging-file prefix; the pid suffix keeps two concurrent installs apart.
+const STAGING_PREFIX: &str = ".jan-update-";
+
+/// Drop leftovers from an earlier update: the Windows backup (unlocked once the
+/// old process has exited) and any staging files from a run that was killed
+/// mid-download. `/update` makes that reachable -- quitting the TUI cancels the
+/// task between `download_to`'s awaits, so nothing gets to clean up after it.
+fn clean_stale_files(exe: &Path) {
     if cfg!(windows) {
         let _ = fs::remove_file(exe.with_extension("old"));
     }
+    let Some(dir) = exe.parent() else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().starts_with(STAGING_PREFIX) && is_stale(&entry) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// True when a staging file is too old to belong to a download still running in
+/// another process: any live one is younger than `DOWNLOAD_TIMEOUT`, since that
+/// is when the request itself gives up. Unreadable timestamps count as fresh so
+/// the sweep never removes a file it can't reason about.
+fn is_stale(entry: &fs::DirEntry) -> bool {
+    entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > DOWNLOAD_TIMEOUT)
 }
 
 /// Download the newest build for this channel and replace the running binary
@@ -364,13 +404,13 @@ pub async fn self_update(force: bool) -> Result<UpdateOutcome, String> {
     })?;
 
     let exe = target_binary_path()?;
-    clean_stale_backup(&exe);
+    clean_stale_files(&exe);
     ensure_writable(&exe)?;
     let dir = exe.parent().unwrap_or(Path::new("."));
 
     let pid = std::process::id();
-    let archive = dir.join(format!(".jan-update-{pid}{}", archive_suffix(&url)));
-    let staged = dir.join(format!(".jan-update-{pid}.bin"));
+    let archive = dir.join(format!("{STAGING_PREFIX}{pid}{}", archive_suffix(&url)));
+    let staged = dir.join(format!("{STAGING_PREFIX}{pid}.bin"));
     let result = install(&url, update.sha256.as_deref(), &archive, &staged, &exe).await;
     let _ = fs::remove_file(&archive);
     let _ = fs::remove_file(&staged);
@@ -570,6 +610,36 @@ mod tests {
         replace_binary(&staged, &exe).unwrap();
         assert_eq!(fs::read(&exe).unwrap(), b"new");
         assert!(!staged.exists());
+    }
+
+    /// Quitting the TUI mid-download cancels the install task, leaving staging
+    /// files nothing cleans up; the next install sweeps them. A fresh one may
+    /// belong to a download still running in another process, so it stays.
+    #[test]
+    fn stale_staging_files_are_swept_but_live_ones_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join(BINARY_NAME);
+        fs::write(&exe, b"old").unwrap();
+        let stale = dir.path().join(format!("{STAGING_PREFIX}999.tar.gz"));
+        let live = dir.path().join(format!("{STAGING_PREFIX}1000.tar.gz"));
+        let unrelated = dir.path().join("keep-me.tar.gz");
+        for path in [&stale, &live, &unrelated] {
+            fs::write(path, b"x").unwrap();
+        }
+        let old = std::time::SystemTime::now() - (DOWNLOAD_TIMEOUT + Duration::from_secs(60));
+        File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        clean_stale_files(&exe);
+
+        assert!(!stale.exists(), "an abandoned download must be removed");
+        assert!(live.exists(), "a download still in flight must be left alone");
+        assert!(unrelated.exists());
+        assert!(exe.exists(), "the binary itself is never swept");
     }
 
     #[test]
