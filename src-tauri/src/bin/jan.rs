@@ -362,11 +362,6 @@ async fn main() {
     }))
     .init();
 
-    // `jan update` reports the same thing itself, in more detail.
-    if !std::env::args().any(|a| a == "update") {
-        app_lib::core::cli::updater::print_update_notice_if_available().await;
-    }
-
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
     let matches = Cli::command()
@@ -376,6 +371,9 @@ async fn main() {
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
     let Some(command) = cli.command else {
+        // No stderr notice on this path: the TUI's alternate screen would wipe
+        // it, and blocking on the check here would delay the first frame. The
+        // TUI runs the same check itself and notes it in the transcript.
         let overrides = cli.providers.into_overrides();
         if let Err(e) = cli_agent_ui(
             &cli.project,
@@ -395,6 +393,11 @@ async fn main() {
         }
         return;
     };
+
+    // `jan update` reports the same thing itself, in more detail.
+    if !matches!(command, Commands::Update { .. }) {
+        app_lib::core::cli::updater::print_update_notice_if_available().await;
+    }
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,
@@ -424,10 +427,7 @@ async fn handle_update(check: bool, force: bool) {
             .await
             .map(|u| {
                 if u.is_newer() {
-                    println!(
-                        "A new {} build is available: {} -> {}",
-                        u.channel, u.current, u.latest
-                    );
+                    println!("{}", u.summary());
                 } else {
                     println!("Already on the latest {} build ({})", u.channel, u.current);
                 }
