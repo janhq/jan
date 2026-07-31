@@ -16,7 +16,8 @@ keywords:
   ]
 ---
 
-import { Callout } from 'nextra/components'
+import { Callout, Tabs } from 'nextra/components'
+import { Link } from 'nextra-theme-docs'
 import { DocCard, DocCards } from '@/components/DocCard'
 import { Rocket, Terminal, Wrench, Settings, Users, SquareTerminal } from 'lucide-react'
 
@@ -26,8 +27,8 @@ Jan Agent is an AI agent that lives in your terminal. You give it a task in plai
 reads files, edits them, runs commands, and searches the web until the work is done - asking for
 your approval before anything touches your machine.
 
-It runs against the same providers and models you already use with Jan Desktop, so there is nothing
-new to sign up for.
+It uses the providers you have already configured in Jan Desktop, so if you're a Jan user there is
+nothing new to sign up for.
 
 ```bash
 jan
@@ -35,21 +36,50 @@ jan
 
 That single command opens the interactive console in whatever directory you're in.
 
-## Why a terminal agent
+## Jan Agent and Jan Desktop
 
-Jan Desktop is a chat app: you talk to a model and copy the results into your work. Jan Agent closes
-that loop - it operates directly on the folder you point it at.
+They're two front ends onto the same stack, built for different jobs. Jan Desktop is where you run
+models on your own hardware and work in a GUI. Jan Agent is where you point a model at a folder and
+let it work.
 
 | | Jan Desktop | Jan Agent |
 | --- | --- | --- |
-| Interface | Desktop app | Terminal |
-| Works on | A conversation | A project folder |
-| Runs commands | No | Yes, with your approval |
-| Edits files | No | Yes, with your approval |
-| Best for | Asking, drafting, exploring | Doing - refactors, fixes, research tasks |
+| Interface | Desktop app | Terminal, interactive or headless |
+| Where models run | Locally via llama.cpp or MLX, or a cloud provider | Cloud providers only, or any OpenAI-compatible endpoint |
+| Works on | Conversations, projects, and files you attach | A project folder on disk |
+| Files and shell | Through MCP servers you add | Built in - read, write, edit, and run commands, each gated by approval |
+| Automation | Interactive | Scriptable: run it in CI, over SSH, or from a cron job |
+| MCP servers | Yes | Yes, the same ones |
 
-Both read the same provider settings and the same MCP servers, so switching between them costs you
-nothing.
+Neither replaces the other. A common setup is Jan Desktop serving a local model, with Jan Agent
+pointed at it - see [running against local models](/docs/agent/configuration#running-against-local-models).
+
+They share provider settings and MCP config, so anything you set up in one is already there in the
+other.
+
+## Install
+
+<Tabs items={['macOS / Linux', 'Windows']}>
+  <Tabs.Tab>
+```bash
+curl -fsSL https://raw.githubusercontent.com/janhq/jan/dev/scripts/install-jan-agent.sh | bash
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+irm https://raw.githubusercontent.com/janhq/jan/dev/scripts/install-jan-agent.ps1 | iex
+```
+  </Tabs.Tab>
+</Tabs>
+
+Then check it landed:
+
+```bash
+jan --version
+```
+
+The [Quickstart](/docs/agent/quickstart) covers connecting a provider and finishing a first task.
+Looking for the desktop app instead? <Link href="https://jan.ai/download" target="_blank" rel="noopener noreferrer">Download Jan Desktop</Link>.
 
 ## What it can do
 
@@ -61,9 +91,9 @@ nothing.
 - **Keep working toward a goal** - `/goal` keeps it going until a condition you set is true.
 
 <Callout type="info">
-Jan Agent talks to **remote providers only** - it has no local inference engine of its own. To run a
-model on your own hardware, point it at a local OpenAI-compatible endpoint (Jan Desktop's
-[local API server](/docs/desktop/api-server) works) with `jan config set --base-url`.
+Jan Agent ships no inference engine of its own, so a model always runs somewhere else. That can be a
+cloud provider, or your own machine - point it at any OpenAI-compatible endpoint, such as Jan
+Desktop's [local API server](/docs/desktop/api-server), with `jan config set --base-url`.
 </Callout>
 
 ## Get started
