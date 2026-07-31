@@ -284,6 +284,10 @@ pub fn insert_chunks(
         .unwrap_or(-1);
 
     for ch in chunks.into_iter() {
+        // Reject unusable vectors before they reach either table: a non-finite
+        // value poisons cosine_similarity on the linear path and sqlite-vec
+        // silently drops the row on the ANN path.
+        validate_embedding(&ch.embedding)?;
         current_order += 1;
         let emb = to_le_bytes_vec(&ch.embedding);
         let chunk_id = Uuid::new_v4().to_string();
@@ -296,11 +300,16 @@ pub fn insert_chunks(
             let rowid: i64 = tx
                 .prepare("SELECT rowid FROM chunks WHERE id=?1")?
                 .query_row(params![chunk_id], |r| r.get(0))?;
-            let json_vec = serde_json::to_string(&ch.embedding).unwrap_or("[]".to_string());
-            let _ = tx.execute(
+            let json_vec = embedding_to_json(&ch.embedding)?;
+            // Tolerated, not propagated: an existing chunks_vec built for a
+            // different dimension (the embedding model changed) rejects the
+            // row, and linear search still serves it.
+            if let Err(e) = tx.execute(
                 "INSERT OR REPLACE INTO chunks_vec(rowid, embedding) VALUES (?1, ?2)",
                 params![rowid, json_vec],
-            );
+            ) {
+                println!("[VectorDB] ✗ Failed to index chunk in chunks_vec: {}", e);
+            }
         }
     }
 
@@ -331,6 +340,31 @@ pub fn delete_file(conn: &Connection, file_id: &str) -> Result<(), VectorDBError
 // Search Operations
 // ============================================================================
 
+// sqlite-vec parses a bound vector as JSON. serde_json writes a non-finite
+// float as `null` and sqlite-vec then fails with only "JSON parsing error", so
+// reject the vector here while the offending element can still be named.
+fn embedding_to_json(embedding: &[f32]) -> Result<String, VectorDBError> {
+    validate_embedding(embedding)?;
+    Ok(serde_json::to_string(embedding)?)
+}
+
+fn validate_embedding(embedding: &[f32]) -> Result<(), VectorDBError> {
+    if embedding.is_empty() {
+        return Err(VectorDBError::InvalidInput(
+            "embedding is empty; the embedding model returned no vector".to_string(),
+        ));
+    }
+    if let Some(i) = embedding.iter().position(|v| !v.is_finite()) {
+        return Err(VectorDBError::InvalidInput(format!(
+            "embedding has a non-finite value ({}) at index {} of {}; the embedding model returned an unusable vector",
+            embedding[i],
+            i,
+            embedding.len()
+        )));
+    }
+    Ok(())
+}
+
 pub fn search_collection(
     conn: &Connection,
     query_embedding: &[f32],
@@ -340,6 +374,11 @@ pub fn search_collection(
     vec_loaded: bool,
     file_ids: Option<Vec<String>>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
+    // Both paths need this: sqlite-vec fails opaquely on a non-finite value,
+    // and cosine_similarity turns it into a NaN score that silently fails the
+    // threshold, so retrieval would just come back empty.
+    validate_embedding(query_embedding)?;
+
     let has_vec = if vec_loaded {
         conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'")
@@ -370,7 +409,7 @@ fn search_ann(
     limit: usize,
     file_ids: Option<Vec<String>>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
-    let json_vec = serde_json::to_string(&query_embedding).unwrap_or("[]".to_string());
+    let json_vec = embedding_to_json(query_embedding)?;
 
     // Build query with optional file_id filtering
     let query = if let Some(ref ids) = file_ids {
@@ -628,4 +667,85 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_a_finite_embedding() {
+        assert_eq!(embedding_to_json(&[0.5, -0.25]).unwrap(), "[0.5,-0.25]");
+    }
+
+    // serde_json writes a non-finite float as `null`, which sqlite-vec rejects
+    // with an opaque "JSON parsing error". Catch it here with a usable message.
+    #[test]
+    fn rejects_non_finite_values() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let err = embedding_to_json(&[0.1, bad, 0.3]).unwrap_err();
+            let msg = err.to_string();
+            assert!(matches!(err, VectorDBError::InvalidInput(_)), "{msg}");
+            assert!(msg.contains("index 1"), "{msg}");
+        }
+        assert_eq!(serde_json::to_string(&f32::NAN).unwrap(), "null");
+    }
+
+    // How a non-finite value reaches us at all: a JSON number past f32::MAX is
+    // cast, not rejected, so an embedding of 1e39 arrives over IPC as infinity.
+    #[test]
+    fn json_numbers_past_f32_max_arrive_as_infinity() {
+        assert_eq!(
+            serde_json::from_str::<Vec<f32>>("[1e39]").unwrap(),
+            vec![f32::INFINITY]
+        );
+    }
+
+    // The linear path has no JSON step, so it needs its own guard or a NaN
+    // query silently returns zero matches instead of reporting the bad vector.
+    #[test]
+    fn linear_search_rejects_a_non_finite_query() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = search_collection(
+            &conn,
+            &[0.1, f32::NAN, 0.3],
+            5,
+            0.0,
+            Some("linear".to_string()),
+            false,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+    }
+
+    #[test]
+    fn insert_rejects_a_non_finite_embedding() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = insert_chunks(
+            &conn,
+            "f1",
+            vec![MinimalChunkInput {
+                text: "hello".to_string(),
+                embedding: vec![0.1, f32::INFINITY, 0.3],
+            }],
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn rejects_an_empty_embedding() {
+        assert!(matches!(
+            embedding_to_json(&[]).unwrap_err(),
+            VectorDBError::InvalidInput(_)
+        ));
+    }
 }
