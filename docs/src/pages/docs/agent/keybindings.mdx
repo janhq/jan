@@ -1,0 +1,63 @@
+---
+title: Keybindings
+description: Keyboard shortcuts for the Jan Agent console.
+keywords: [Jan, Jan Agent, keybindings, keyboard shortcuts, TUI, console]
+---
+
+import { Callout } from 'nextra/components'
+
+# Keybindings
+
+`/help` prints this list inside the console.
+
+## Input
+
+| Key | Action |
+| --- | --- |
+| <kbd>Enter</kbd> | Send the message |
+| <kbd>Alt</kbd>+<kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | Insert a newline |
+| <kbd>Ctrl</kbd>+<kbd>V</kbd> | Paste an image from the clipboard |
+
+Typing while the agent works queues your message rather than dropping it. See
+[Sessions](/docs/agent/sessions#queueing).
+
+## Running
+
+| Key | Action |
+| --- | --- |
+| <kbd>Esc</kbd> / <kbd>Ctrl</kbd>+<kbd>C</kbd> | Cancel the running turn |
+| <kbd>Esc</kbd> <kbd>Esc</kbd> | Rewind to an earlier message (when idle) |
+
+Cancelling stops the turn, not the session. See [rewinding](/docs/agent/sessions#rewinding).
+
+## Reading
+
+| Key | Action |
+| --- | --- |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Scroll the transcript |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> | Expand or collapse all tool calls |
+| <kbd>Ctrl</kbd>+<kbd>T</kbd> | Toggle mouse capture off to select and copy text |
+
+<Callout type="tip">
+Terminal text selection doesn't work while the console captures the mouse - that capture is what
+makes tool rows clickable. Press <kbd>Ctrl</kbd>+<kbd>T</kbd> to hand the mouse back to your
+terminal, select, then press it again.
+</Callout>
+
+## Approval prompts
+
+When the agent asks before a write or a command:
+
+| Key | Action |
+| --- | --- |
+| <kbd>y</kbd> | Allow once |
+| <kbd>a</kbd> | Allow, and stop asking for this kind of call this session |
+| <kbd>n</kbd> | Deny |
+
+See [Tool permissions](/docs/agent/permissions).
+
+## Exit
+
+| Key | Action |
+| --- | --- |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Quit |

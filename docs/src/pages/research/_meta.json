@@ -1,0 +1,66 @@
+{
+  "index": {
+    "type": "page",
+    "title": "Research",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-v3-5-4b": {
+    "title": "Jan-v3.5-4B",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-code-4b": {
+    "title": "Jan-Code-4B",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-v3-4b": {
+    "title": "Jan-v3-4B",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-v2-vl": {
+    "title": "Jan-v2-VL",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-v1": {
+    "title": "Jan-v1",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-nano-128": {
+    "title": "Jan Nano 128k",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "jan-nano-32": {
+    "title": "Jan Nano 32k",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "lucy": {
+    "title": "Lucy",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  }
+}

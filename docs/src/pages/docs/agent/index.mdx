@@ -1,0 +1,130 @@
+---
+title: Overview
+description: Jan Agent is a terminal AI agent that reads, writes, and runs code in your project - powered by the models you already configured.
+keywords:
+  [
+    Jan,
+    Jan AI,
+    Jan Agent,
+    agents,
+    autonomous agent,
+    terminal agent,
+    coding agent,
+    CLI agent,
+    local AI agent,
+    MCP,
+  ]
+---
+
+import { Callout, Tabs } from 'nextra/components'
+import { Link } from 'nextra-theme-docs'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { Rocket, Terminal, Wrench, Settings, Users, SquareTerminal } from 'lucide-react'
+
+# Overview
+
+Jan Agent is an AI agent that lives in your terminal. You give it a task in plain language, and it
+reads files, edits them, runs commands, and searches the web until the work is done - asking for
+your approval before anything touches your machine.
+
+It uses the providers you have already configured in Jan Desktop, so if you're a Jan user there is
+nothing new to sign up for.
+
+```bash
+jan
+```
+
+That single command opens the interactive console in whatever directory you're in.
+
+## Jan Agent and Jan Desktop
+
+They're two front ends onto the same stack, built for different jobs. Jan Desktop is where you run
+models on your own hardware and work in a GUI. Jan Agent is where you point a model at a folder and
+let it work.
+
+| | Jan Desktop | Jan Agent |
+| --- | --- | --- |
+| Interface | Desktop app | Terminal, interactive or headless |
+| Where models run | Locally via llama.cpp or MLX, or a cloud provider | Cloud providers, or any OpenAI-compatible endpoint |
+| Works on | Conversations, projects, and files you attach | A project folder on disk |
+| Files and shell | Through MCP servers you add | Built in - read, write, edit, and run commands, each gated by approval |
+| MCP servers | Yes | Yes, the same ones |
+| Skills and memory | Yes | Yes, the same ones |
+
+Neither replaces the other. A common setup is Jan Desktop serving a local model, with Jan Agent
+pointed at it - see [running against local models](/docs/agent/providers#your-own-hardware).
+
+Provider settings, MCP servers, [skills, and memory](/docs/agent/skills)
+are all shared, so anything you set up in one is already there in the other.
+
+## Install
+
+<Callout type="warning">
+Jan Agent is a preview. The installer lives on the `goal/general-agent` branch until it lands on
+`dev`, and pulls from the `agent-nightly` channel - expect nightly-quality builds.
+</Callout>
+
+<Tabs items={['macOS / Linux', 'Windows']}>
+  <Tabs.Tab>
+```bash
+curl -fsSL https://raw.githubusercontent.com/janhq/jan/goal/general-agent/scripts/install-jan-agent.sh | bash
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+irm https://raw.githubusercontent.com/janhq/jan/goal/general-agent/scripts/install-jan-agent.ps1 | iex
+```
+  </Tabs.Tab>
+</Tabs>
+
+Then check it landed:
+
+```bash
+jan --version
+```
+
+The [Quickstart](/docs/agent/quickstart) covers connecting a provider and finishing a first task.
+Looking for the desktop app instead? <Link href="https://jan.ai/download" target="_blank" rel="noopener noreferrer">Download Jan Desktop</Link>.
+
+## What it can do
+
+- **Read and change a project** - open files, make targeted edits, create new ones.
+- **Run commands** - build, test, grep, and read the output to decide what to do next.
+- **Search the web** - look things up mid-task when the answer isn't in your project.
+- **Use your MCP servers** - every connector configured in Jan Desktop is available here too.
+- **Follow your project's skills** - reusable procedures it loads when a task calls for them.
+- **Remember across sessions** - durable facts about the project, kept as files you can review.
+- **Delegate** - split large jobs across [subagents](/docs/agent/subagents) that work in parallel.
+- **Keep working toward a goal** - `/goal` keeps it going until a condition you set is true.
+
+<Callout type="info">
+Jan Agent ships no inference engine of its own, so a model always runs somewhere else. That can be a
+cloud provider, or your own machine - point it at any OpenAI-compatible endpoint, such as Jan
+Desktop's [local API server](/docs/desktop/api-server), with `jan config set --base-url`.
+</Callout>
+
+## Get started
+
+<DocCards>
+  <DocCard title="Quickstart" href="/docs/agent/quickstart" icon={<Rocket size={20} />}>Install Jan Agent, connect a provider, and finish your first task.</DocCard>
+  <DocCard title="Interactive console" href="/docs/agent/console" icon={<SquareTerminal size={20} />}>Slash commands, keyboard shortcuts, and how a session works.</DocCard>
+  <DocCard title="Tools & permissions" href="/docs/agent/permissions" icon={<Wrench size={20} />}>What the agent can do, and how approval keeps you in control.</DocCard>
+  <DocCard title="Configuration" href="/docs/agent/project-config" icon={<Settings size={20} />}>Providers, `agent.toml`, and per-project instructions.</DocCard>
+  <DocCard title="Subagents" href="/docs/agent/subagents" icon={<Users size={20} />}>Delegate parts of a task to agents that run in parallel.</DocCard>
+  <DocCard title="CLI reference" href="/docs/agent/cli" icon={<Terminal size={20} />}>Every flag and subcommand, including headless runs for scripts and CI.</DocCard>
+</DocCards>
+
+## Staying in control
+
+The agent never edits a file or runs a command without asking, unless you tell it otherwise. Reads
+are free; writes and shell commands prompt. You can approve a single call, approve that kind of call
+for the rest of the session, or deny it.
+
+Two ways to change that:
+
+- **Plan mode** (`jan --plan`) makes the session read-only. The agent investigates and proposes, but
+  cannot change anything.
+- **YOLO mode** (`jan --yolo`) disables the sandbox and auto-approves everything. Fast, and only
+  appropriate in a throwaway environment such as a container or a scratch checkout.
+
+See [Tools & permissions](/docs/agent/permissions) for the full picture.

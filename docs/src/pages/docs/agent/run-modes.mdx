@@ -1,0 +1,79 @@
+---
+title: Run Modes
+description: Normal, plan, and YOLO - how much freedom the agent has in a session.
+keywords: [Jan, Jan Agent, plan mode, yolo, read-only, sandbox, run modes]
+---
+
+import { Callout } from 'nextra/components'
+
+# Run Modes
+
+A session runs in one of three modes. They differ only in how much the agent is allowed to do
+without you.
+
+| Mode | Reads | Writes and commands | Start with |
+| --- | --- | --- | --- |
+| Normal | Free | Prompt for approval | `jan` |
+| Plan | Free | Blocked | `jan --plan` |
+| YOLO | Free | Auto-approved, sandbox off | `jan --yolo` |
+
+## Normal
+
+The default. The agent reads freely and stops to ask before anything that changes your machine:
+
+```
+ write src/cli.rs
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+`a` lasts for the session only. Details in [Tool permissions](/docs/agent/permissions).
+
+## Plan mode
+
+Read-only. The agent investigates and proposes, but every write and command is blocked.
+
+```bash
+jan --plan
+```
+
+```
+/plan                # switch mid-session
+/plan fix the tests  # switch in and send a first message
+/plan exit           # leave, allowing changes again
+```
+
+The header shows a `PLAN` badge while it's active, so you always know where you are.
+
+Use it to audit an unfamiliar codebase, or to agree on an approach before letting anything change.
+Todos staged during plan mode carry over when you exit, so the plan becomes the work list.
+
+## YOLO mode
+
+No sandbox, no prompts. Every tool call is auto-approved.
+
+```bash
+jan --yolo
+```
+
+The console prints a warning on start:
+
+```
+WARNING: --yolo disables the sandbox. The agent can read, write, and run any
+command without asking for approval.
+```
+
+<Callout type="warning">
+This grants unrestricted shell access to the machine you run it on. Use it in a container, a VM, or
+a scratch checkout you don't mind losing - not in your home directory.
+</Callout>
+
+It is the right choice in CI, where there is no one to answer a prompt and the environment is
+disposable. See [running in CI](/docs/agent/cli#using-it-in-ci).
+
+## Switching
+
+Plan mode toggles at any time with `/plan` and `/plan exit`. Normal and YOLO are decided at launch -
+YOLO cannot be turned on mid-session, which is deliberate: a session you started cautiously stays
+cautious.

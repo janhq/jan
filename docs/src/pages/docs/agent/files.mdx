@@ -1,0 +1,92 @@
+---
+title: Working with Files
+description: How Jan Agent reads, searches, edits, and runs commands in your project.
+keywords: [Jan, Jan Agent, files, read, write, edit, grep, find, bash, shell]
+---
+
+import { Callout } from 'nextra/components'
+
+# Working with Files
+
+The agent operates on the folder you launched it in. Reads happen freely; anything that changes the
+folder asks first.
+
+## Reading and searching
+
+| Tool | What it does |
+| --- | --- |
+| `read` | Read a UTF-8 text file. Truncated to 2000 lines or 64KB, with offset/limit for the rest |
+| `ls` | List a directory, dotfiles included, `/` suffix on directories |
+| `find` | Find files by glob - `*.ts`, `**/*.json`, `src/**/*.rs` |
+| `grep` | Search file contents. Returns paths and line numbers, respects `.gitignore` |
+
+None of these prompt. Truncation is deliberate: a tool that dumps a 40MB file would spend the
+context window in one call, so large results come back bounded and the agent pages through them.
+
+## Changing files
+
+| Tool | What it does |
+| --- | --- |
+| `write` | Create or overwrite a file |
+| `edit` | One or more exact text replacements, applied in order |
+
+Both prompt, and both show a diff of the change before you decide:
+
+```
+ edit src/parser.rs
+   - fn parse(input: &str) -> Result<Ast> {
+   + fn parse(input: &str) -> Result<Ast, ParseError> {
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+`edit` requires each `old_string` to match exactly once in the current file. That's a safety
+property, not a limitation: an edit that could match two places is ambiguous, and the agent is made
+to disambiguate rather than guess.
+
+For a large `write`, the console previews the file as it streams in, so you can see what's being
+produced before it lands.
+
+## Running commands
+
+| Tool | What it does |
+| --- | --- |
+| `bash` | Run a shell command in the project root |
+
+Output is combined stdout and stderr, followed by a final `[exit N]` line. That last part matters:
+it's how the agent knows a command actually failed rather than assuming it worked.
+
+Commands prompt with the exact command shown:
+
+```
+ $ cargo test --all
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+<Callout type="warning">
+`a` on a shell command allows further commands for the rest of the session - not just that one
+command. If you only meant to allow this one, use `y`.
+</Callout>
+
+## Staying inside the project
+
+Path arguments are checked against the project root, so a write outside the project is caught before
+it happens rather than silently allowed. `bash` runs with the project root as its working directory.
+
+This is a guard, not a jail: a shell command can still reach outside if you approve it. Plan mode
+blocks the whole category, and that's the control to reach for when you want a hard boundary. See
+[Run modes](/docs/agent/run-modes).
+
+## Images
+
+The agent can read images if your model supports vision:
+
+```bash
+jan --image screenshot.png --task "why does this layout break?"
+```
+
+Repeat `--image` for more than one, or paste from the clipboard with <kbd>Ctrl</kbd>+<kbd>V</kbd>
+while the console is open.

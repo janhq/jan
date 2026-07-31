@@ -1,0 +1,71 @@
+---
+title: MCP
+description: Use your Model Context Protocol servers from the Jan Agent console.
+keywords: [Jan, Jan Agent, MCP, Model Context Protocol, servers, connectors, tools]
+---
+
+import { Callout } from 'nextra/components'
+
+# MCP
+
+Model Context Protocol servers extend the agent with tools it doesn't have built in - a private
+wiki, a database, a browser that holds a login, an internal API.
+
+Jan Agent reads the same `mcp_config.json` as Jan Desktop, so servers you configured in the app are
+available in the terminal with nothing further to do. For what MCP is and how to add servers, see
+[Model Context Protocol](/docs/desktop/mcp).
+
+## At startup
+
+Active servers connect in the background while the console opens, and announce themselves:
+
+```
+MCP ready: sequential-thinking, serper
+```
+
+A server that fails to come up says so in the transcript, with the reason:
+
+```
+MCP: failed to connect to 'fetch': connection closed: initialize response
+```
+
+<Callout type="info">
+The first turn waits for the connecting servers, so the model sees the full toolset rather than a
+half-connected one. A slow stdio server delays that first turn, not the whole session.
+</Callout>
+
+## Toggling servers
+
+```
+/mcp
+```
+
+Lists every configured server with its state. <kbd>Enter</kbd> toggles the highlighted one. Turning
+one on connects it in the background; the tools appear once it lands.
+
+The change is written back to `mcp_config.json`, so it persists - and applies to Jan Desktop too.
+
+## Tool policy
+
+MCP tools follow the project's [`[tools]` policy](/docs/agent/permissions#project-policy):
+
+| `default` | Effect on MCP tools |
+| --- | --- |
+| `read-only` | Available. The default |
+| `deny` | Locked down, except anything in `allow` |
+| `allow` | Available, except anything in `deny` |
+
+```toml
+[tools]
+default = "deny"
+allow = ["sequential-thinking"]
+```
+
+That exposes one server's tools and nothing else - useful for a project where you want reasoning
+help but no outside network access.
+
+## Choosing a model
+
+Not every model is good at tool calling, and some can't do it at all. If MCP tools are connected but
+never used, try a different model before debugging the server - `/model` switches without leaving
+the session.

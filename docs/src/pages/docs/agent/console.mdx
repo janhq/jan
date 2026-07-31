@@ -1,0 +1,89 @@
+---
+title: Using Jan Agent
+description: A tour of the console - the screen, approving work, and what to reach for next.
+keywords: [Jan, Jan Agent, TUI, console, terminal UI, using]
+---
+
+import { Callout } from 'nextra/components'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { Command, Keyboard, GitBranch, Layers } from 'lucide-react'
+
+# Using Jan Agent
+
+Running `jan` with no subcommand opens the console. This is the main way to use Jan Agent.
+
+```bash
+jan                 # the current directory
+jan --project ~/app # somewhere else
+jan --task "..."    # with a first message already sent
+```
+
+## The screen
+
+```
+ jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
+─────────────────────────────────────────────────────────────────────────────────────
+ MCP ready: sequential-thinking, serper
+
+ > add a --version flag
+
+ │ ✓ Read 3 files
+ │ ✓ Edited src/cli.rs
+
+ Done - the flag is wired up and documented.
+
+ 2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+─────────────────────────────────────────────────────────────────────────────────────
+ > Type here to chat with agent
+
+📂  ~/code/app ⎇ main
+```
+
+| Region | What it shows |
+| --- | --- |
+| Header | Model, clock, turn count, context usage, throughput, state |
+| Transcript | The conversation, with tool calls folded into summary rows |
+| Receipt | Per turn: context sent, tokens produced, elapsed, rate |
+| Input | Where you type |
+| Footer | Working directory and git branch |
+
+Tool rows fold to one line each. <kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to
+expand just that one.
+
+## A turn
+
+You type, the agent works, and it stops when it has an answer or needs you.
+
+While it runs, each tool call appears as it happens. A large `write` previews the file as it streams
+in, so you can see what's being produced before it lands. <kbd>Esc</kbd> cancels the turn.
+
+Type while it's working and your message queues rather than being dropped - see
+[Sessions](/docs/agent/sessions#queueing).
+
+## Approving work
+
+Reads are free. Writes and shell commands stop and ask:
+
+```
+ write src/cli.rs
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+You see a diff for a file change, or the exact command for a shell call. Full detail in
+[Tool permissions](/docs/agent/permissions).
+
+## Getting help
+
+`/help` inside the console prints every command and keybinding. `/` alone filters the command list
+as you type.
+
+## Next
+
+<DocCards>
+  <DocCard title="Slash commands" href="/docs/agent/slash-commands" icon={<Command size={20} />}>Every command, grouped by what it's for.</DocCard>
+  <DocCard title="Keybindings" href="/docs/agent/keybindings" icon={<Keyboard size={20} />}>Shortcuts for input, scrolling, and approval prompts.</DocCard>
+  <DocCard title="Run modes" href="/docs/agent/run-modes" icon={<GitBranch size={20} />}>Normal, read-only plan mode, and YOLO.</DocCard>
+  <DocCard title="Sessions" href="/docs/agent/sessions" icon={<Layers size={20} />}>Resuming, rewinding, and queueing.</DocCard>
+</DocCards>

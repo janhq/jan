@@ -1,0 +1,117 @@
+---
+title: Providers
+description: Connect Jan Agent to a model - cloud, Tokamak, or your own OpenAI-compatible endpoint.
+keywords: [Jan, Jan Agent, providers, API key, base URL, models, local models, Tokamak]
+---
+
+import { Callout } from 'nextra/components'
+
+# Providers
+
+Jan Agent ships no inference engine, so a model always runs somewhere else. A provider is how it
+gets there.
+
+## Adding one
+
+```bash
+jan config set --provider anthropic --api-key sk-ant-...
+```
+
+Full form:
+
+```bash
+jan config set \
+  --provider openai \
+  --api-key sk-... \
+  --base-url https://api.openai.com/v1 \
+  --model gpt-4o \
+  --model gpt-4o-mini \
+  --api-type openai
+```
+
+| Flag | Description |
+| --- | --- |
+| `--provider` | Provider id, e.g. `openai`, `anthropic`, `groq`. Required |
+| `--api-key` | API key |
+| `--base-url` | Endpoint base URL |
+| `--model` | Model to expose. Repeatable, and replaces any existing list |
+| `--api-type` | Wire protocol, `openai` or `anthropic`. Defaults to OpenAI-compatible |
+
+## Inspecting
+
+```bash
+jan config list   # configured providers as JSON, keys redacted
+jan config path   # where that file lives
+jan cli models list
+```
+
+<Callout type="info">
+`jan config list` can report no providers while `jan cli models list` returns plenty. That isn't a
+bug - the second includes providers inherited from Jan Desktop, which aren't stored in
+`~/.jan/config.toml`.
+</Callout>
+
+Inside the console, `/config` shows the same thing read-only, and `/model` switches model on the
+spot.
+
+## Tokamak
+
+Signing in avoids managing a key yourself:
+
+```bash
+jan login
+```
+
+Or `/login` from inside the console. The key is saved to `~/.jan/config.toml`.
+
+## Where settings come from
+
+Four sources, each beating the ones above it:
+
+| | Source | Notes |
+| --- | --- | --- |
+| 1 | `~/.jan/config.toml` | The base, and the only file `jan config set` writes |
+| 2 | Jan Desktop's `settings.json` | Inherit-only. Adds providers you haven't configured here, never overwrites one you have, and is never written back to |
+| 3 | `[provider]` in a project's `agent.toml` | An explicit per-project choice, so it wins over both |
+| 4 | `--provider` / `--api-key`, or `JAN_API_KEY` / `<PROVIDER>_API_KEY` | The most explicit and most ephemeral signal |
+
+The useful consequence: Jan Desktop fills in providers for free without ever clobbering something
+you set deliberately, a project can pin its own provider without touching your global setup, and a
+single run can override everything.
+
+## Your own hardware
+
+Any OpenAI-compatible endpoint works, which includes a model running locally. Jan Desktop's
+[local API server](/docs/desktop/api-server) is the easy path:
+
+```bash
+jan config set \
+  --provider local \
+  --base-url http://localhost:6767/v1 \
+  --model my-local-model
+```
+
+Nothing leaves your machine in that setup - Jan Desktop runs the model, Jan Agent drives it.
+
+## Per-project override
+
+For a project that must use a specific provider, put it in `agent.toml`:
+
+```toml
+[provider]
+name = "openai"
+api_key = "sk-..."
+base_url = "https://api.openai.com/v1"
+models = ["gpt-4o"]
+```
+
+<Callout type="warning">
+That file usually gets committed. Prefer leaving `api_key` out of it and keeping the key in
+`~/.jan/config.toml` or the environment.
+</Callout>
+
+## Removing one
+
+```bash
+jan config unset --provider openai
+```

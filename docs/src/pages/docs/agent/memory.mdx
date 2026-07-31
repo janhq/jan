@@ -1,0 +1,66 @@
+---
+title: Memory
+description: Durable facts the agent keeps about your project, stored as files you can read and edit.
+keywords: [Jan, Jan Agent, memory, durable facts, project memory, recall]
+---
+
+import { Callout } from 'nextra/components'
+
+# Memory
+
+Memory is what the agent remembers about a project between sessions. Not the conversation - that's a
+[session](/docs/agent/sessions) - but the durable, non-obvious facts worth carrying forward.
+
+Good memory entries look like:
+
+- "The API client is generated; edit `openapi.yaml`, never `client.ts`."
+- "We use `pnpm`, not `npm`. `npm install` breaks the lockfile."
+- "Integration tests need `docker compose up -d` first."
+
+## How it works
+
+The agent writes memory itself when it learns something durable, and reads it back into the system
+prompt on later runs. It's scoped per project.
+
+Three tools drive it, and only the write prompts for approval:
+
+| Tool | Approval |
+| --- | --- |
+| `memory_list` | No |
+| `memory_read` | No |
+| `memory_write` | Yes |
+
+Because writes prompt, nothing enters memory without you seeing it.
+
+## Where it lives
+
+Under `<project>/.jan/agent/memory/`, as files. You can read them, edit them, delete them, or commit
+them. Nothing is hidden in an opaque store.
+
+Retrieval is backed by the same store Jan Desktop uses for memory, so a fact learned in one is
+available in the other.
+
+<Callout type="info">
+Memory is shared with Jan Desktop. Settings you change there apply to what the terminal agent
+recalls, and vice versa.
+</Callout>
+
+## Keeping it useful
+
+Memory works when it's small and specific. A note that restates what any reader would see from the
+README is noise; a note about the thing that surprised someone is worth keeping.
+
+If the agent has stored something wrong, delete the file. There's no special command for it - they
+are just files.
+
+## Memory and AGENT.md
+
+They overlap, and the distinction is who writes them:
+
+| | Written by | Best for |
+| --- | --- | --- |
+| `AGENT.md` | You | Rules you want followed every time |
+| Memory | The agent | Facts it discovered and shouldn't have to rediscover |
+
+If you find yourself correcting the same thing repeatedly, promote it into
+[`AGENT.md`](/docs/agent/project-config#agentmd) where it's guaranteed to be in the prompt.

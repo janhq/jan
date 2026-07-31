@@ -1,0 +1,93 @@
+---
+title: Context and Compaction
+description: How Jan Agent manages a conversation that outgrows the model's context window.
+keywords: [Jan, Jan Agent, context window, compaction, tokens, compact, summarize]
+---
+
+import { Callout } from 'nextra/components'
+
+# Context and Compaction
+
+Every model has a fixed context window. A long session will reach it. Jan Agent handles that by
+summarizing the older part of the conversation rather than failing.
+
+## Watching it fill
+
+The header carries live usage:
+
+```
+ jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
+```
+
+`ctx 6K/128K` is context used against the window. It updates as each request lands, not only when a
+turn ends.
+
+At the end of a turn you get a receipt:
+
+```
+2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+```
+
+`↑` is context sent, `↓` tokens produced, then elapsed time and throughput. The two differ on
+purpose: context is the size of the request, output is what came back.
+
+## Automatic compaction
+
+As the conversation approaches the window, older turns are summarized to make room. The reserve is
+the headroom kept free so compaction has space to work in:
+
+```toml
+[agent]
+context_window = 128000            # defaults to 128K
+compaction_reserve_tokens = 16384  # defaults to 16K
+```
+
+Compaction triggers as usage nears `context_window - compaction_reserve_tokens`. When it runs, the
+session history is replaced with the compacted version and the console says so:
+
+```
+auto-compacted 84 -> 31 messages (ctx 96K/128K)
+```
+
+## Compacting on purpose
+
+```
+/compact
+```
+
+Worth doing before you start a large new sub-task in a long session: it clears room so the new work
+isn't immediately fighting for space.
+
+<Callout type="tip">
+If a session has drifted somewhere unhelpful, `/new` is often better than `/compact`. Compaction
+preserves the thread of the conversation, including the parts that sent it off course.
+</Callout>
+
+## Context overflow
+
+If a request overflows anyway, the loop compacts and retries rather than erroring out. Each retry
+keeps a smaller tail of recent messages. If a pass fails to shrink the conversation at all, it gives
+up rather than looping.
+
+## Capping output
+
+`max_tokens` caps what the model generates in a single response. It is omitted from the request when
+unset, which leaves the model's own default in charge:
+
+```toml
+[agent]
+max_tokens = 4096
+```
+
+## Budgets
+
+Separately from the context window, a project can bound how far one run goes:
+
+```toml
+[budget]
+max_steps = 40
+max_tokens = 200000
+```
+
+That's a stop point for the run as a whole, not a per-request limit. See
+[Project config](/docs/agent/project-config).

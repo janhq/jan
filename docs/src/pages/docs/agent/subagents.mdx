@@ -1,0 +1,131 @@
+---
+title: Subagents
+description: Delegate parts of a task to isolated agents that run in parallel, each with its own context and tool allowlist.
+keywords:
+  [
+    Jan,
+    Jan Agent,
+    subagents,
+    parallel agents,
+    delegation,
+    multi-agent,
+    context isolation,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# Subagents
+
+A subagent is a separate agent run that the main agent starts, hands a task to, and collects an
+answer from. Each one gets its own context window and its own tool allowlist.
+
+Two reasons to use them:
+
+- **Context.** A subagent that reads twenty files to answer one question spends its own context
+  doing it, not yours. Only the answer comes back.
+- **Parallelism.** Independent pieces of work can run at the same time instead of one after another.
+
+## How it works
+
+The main agent decides when to delegate. You don't call these tools yourself - you describe the work
+and the agent splits it up.
+
+```
+Write four variants of this game, each in a different visual style.
+Spawn them in parallel.
+```
+
+```
+≡ Task 4 agents
+  • flappy-2d   3 tools  ·  3 req  ·  11.9%/128K
+      Create variant 1: 2D Canvas - classic mechanics
+      write flappy-2d.html
+  • flappy-3d   4 tools  ·  4 req  ·  13.0%/128K
+      Create variant 2: 3D - same mechanics in 3D
+      ⠋ write flappy-3d.html
+```
+
+Each row shows the agent's name, how many tools it has called, how many model requests it has made,
+and how much of its context window it has used. The line under it is the task it was given, followed
+by what it's doing right now.
+
+Context share is the one to watch: an agent climbing toward 100% is about to run out of room.
+
+## The tools
+
+| Tool | Purpose |
+| --- | --- |
+| `dispatch_subagent` | Start a subagent on a task and return immediately with a `run_id` |
+| `await_subagent` | Block until a dispatched run finishes and return its answer |
+| `create_subagent` | Save a reusable subagent definition |
+| `list_subagents` | List the subagents available here |
+
+Dispatch is non-blocking, which is what makes parallel fan-out possible: the main agent dispatches
+several, then awaits each one. Each `run_id` can be awaited once.
+
+## Isolation
+
+A subagent does not see your conversation. It gets only the task it was handed, so that description
+has to be self-contained - the main agent is responsible for writing a brief that stands alone.
+
+Subagents also cannot:
+
+- dispatch subagents of their own (no recursion)
+- read or change the main agent's todo list
+- ask you an interactive question
+
+They *can* request permission for a write or a command. Those prompts surface in your console,
+labelled with which subagent asked.
+
+<Callout type="info">
+Because a subagent's context is separate, a long research task that would have crowded your session
+costs you only its final answer.
+</Callout>
+
+## Reusable subagents
+
+Definitions are TOML files, merged from two scopes:
+
+```
+~/.jan/agent/subagents/<name>.toml          # user scope, available everywhere
+<project>/.jan/agent/subagents/<name>.toml  # project scope, shareable via git
+```
+
+The two are merged, and the project scope shadows the user scope by name - so a project can
+override one of your personal subagents without renaming it.
+
+Each definition carries a name, a one-line description, a system prompt, and an optional default
+tool allowlist. The agent can write one for you:
+
+```
+Create a subagent called "reviewer" that reviews diffs for correctness
+and never edits files.
+```
+
+That writes to the project scope by default, so it can be committed and shared. Ask for the user
+scope to keep it to yourself.
+
+Once saved, refer to it by name and it picks up its stored prompt and permissions.
+
+## One-off subagents
+
+A subagent doesn't need a saved definition. The agent can invent one for a single task by supplying
+a name and a system prompt together in the same call. Useful for a fan-out where each worker differs
+only slightly.
+
+## Tool permissions
+
+A subagent's tools are narrowed, never widened:
+
+- For a **saved** subagent, the allowlist further restricts its own stored allowlist.
+- For a **one-off**, the allowlist is its toolset.
+
+Either way it can only ever reach a subset of what the parent could reach, so delegation cannot be
+used to escape your project's [tool policy](/docs/agent/permissions#project-policy).
+
+## When not to delegate
+
+Subagents cost a model call to brief and another to summarize. For a small task, doing it inline is
+faster and cheaper. They earn their keep when the work is genuinely independent, or when it would
+otherwise flood your context with material you don't need to keep.
