@@ -583,6 +583,12 @@ struct App {
     scrollback: u16,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
+    /// Runs started since the todo list last had open work. The list is the
+    /// model's own scratchpad, so a finished one lingers until it declares a
+    /// new plan -- which may never happen. This counts down a grace period
+    /// instead of clearing the moment the last task closes, so a model that is
+    /// still mid-flow (about to append, or reopening a task) keeps its list.
+    runs_since_todos_closed: u32,
     /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
     /// it. 0 until the first draw (callers fall back to a default).
     view_width: u16,
@@ -802,6 +808,7 @@ impl App {
             update_installing: false,
             scrollback: 0,
             want_start: false,
+            runs_since_todos_closed: 0,
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
@@ -3370,6 +3377,7 @@ async fn chat_loop<B: Backend>(
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
             if mcp_ready && base_ready {
                 app.want_start = false;
+                age_closed_todos(app).await;
                 current = Some(spawn_run(args, app.body()));
             } else if !loading_noted && !mcp_ready {
                 // The base snapshot gates silently; only the MCP connect notes.
@@ -4302,10 +4310,12 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "clear" => {
             app.reset_session();
+            clear_todos(app).await;
             app.note("conversation cleared");
         }
         "new" => {
             app.reset_session();
+            clear_todos(app).await;
             app.note("started a new session");
         }
         "compact" => compact_command(app).await,
@@ -4484,6 +4494,49 @@ async fn apply_todo_mutation(
     app.todos = list;
     app.persist();
     Ok(())
+}
+
+/// Runs allowed to start with a fully closed-out todo list before it is
+/// dropped. One is too eager -- a model often closes the last task and then
+/// appends follow-up work in the next run, and clearing between the two would
+/// destroy a list it is still using.
+const TODO_KEEP_CLOSED_RUNS: u32 = 2;
+
+/// Clear the canonical todo list and the TUI projection together.
+///
+/// Goes through `apply_todo_mutation` so the registry -- the model's source of
+/// truth -- is cleared too. Dropping only the projection would leave the model
+/// appending to a list the user believes is gone, and the next `TodoUpdate`
+/// would resurrect it on screen.
+async fn clear_todos(app: &mut App) {
+    // `Target::All` clears unconditionally; the Result exists for the
+    // unknown-task and unknown-phase targets.
+    let _ = apply_todo_mutation(app, |list| {
+        list.rm(crate::core::agent::todo::Target::All)
+    })
+    .await;
+    app.last_todo_reminder = None;
+    app.runs_since_todos_closed = 0;
+}
+
+/// Age a finished todo list, dropping it once it has survived
+/// `TODO_KEEP_CLOSED_RUNS` runs without the model reopening or extending it.
+///
+/// Without this the widget is sticky: `is_empty` means "no tasks exist", and a
+/// completed task is still a task, so a finished plan renders forever and only
+/// a fresh `todo init` ever replaces it. Users end up reading a plan that
+/// belongs to work they finished several tasks ago.
+async fn age_closed_todos(app: &mut App) {
+    if app.todos.is_empty() || app.todos.has_open() {
+        // Nothing to age, or the model still has open work.
+        app.runs_since_todos_closed = 0;
+        return;
+    }
+    app.runs_since_todos_closed += 1;
+    if app.runs_since_todos_closed > TODO_KEEP_CLOSED_RUNS {
+        clear_todos(app).await;
+        app.persist();
+    }
 }
 
 /// Build the `/todo` editor rows: one per task, in phase/task order, prefixed by
@@ -6662,7 +6715,8 @@ fn footer(app: &App) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_resume, assistant_is_awaiting_user_answer, build_user_message, clipboard_path,
+        age_closed_todos, apply_resume, assistant_is_awaiting_user_answer, build_user_message,
+        clipboard_path,
         diff_lines, group_activity, group_detail_lines, group_summary, handle_ask_key,
         handle_ask_mouse, handle_key, handle_mouse, image_mime, input_content_lines,
         compact_tokens, finish_login, finish_update_install, load_image_file, message_text,
@@ -9691,6 +9745,87 @@ mod tests {
         // A new turn starts the count over rather than accumulating forever.
         app.submit_user("again".into());
         assert_eq!(app.turn_output_tokens, 0);
+    }
+
+    fn todo_item(content: &str) -> crate::core::agent::todo::TodoItem {
+        crate::core::agent::todo::TodoItem {
+            content: content.to_string(),
+            status: crate::core::agent::todo::TodoStatus::Pending,
+        }
+    }
+
+    #[tokio::test]
+    async fn finished_todos_clear_after_a_grace_period() {
+        let mut app = test_app();
+        app.todos
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: String::new(),
+                tasks: vec![
+                    todo_item("write the parser"),
+                ],
+            }])
+            .unwrap();
+        assert!(!app.todos.is_empty());
+
+        // Open work is never aged away, however many runs go by.
+        for _ in 0..5 {
+            age_closed_todos(&mut app).await;
+        }
+        assert!(!app.todos.is_empty(), "open work must survive");
+
+        app.todos
+            .done(crate::core::agent::todo::Target::All)
+            .unwrap();
+        assert!(app.todos.open_summary().is_none(), "all work closed out");
+
+        // Survives every run up to the cutoff.
+        for i in 1..=super::TODO_KEEP_CLOSED_RUNS {
+            age_closed_todos(&mut app).await;
+            assert!(!app.todos.is_empty(), "cleared too eagerly at run {i}");
+        }
+
+        // One run past the grace period and it goes.
+        age_closed_todos(&mut app).await;
+        assert!(app.todos.is_empty(), "finished list should have been dropped");
+    }
+
+    /// Reopening work resets the grace period, so a list in active use is never
+    /// aged out from under the model.
+    #[tokio::test]
+    async fn reopened_todos_reset_the_grace_period() {
+        let mut app = test_app();
+        app.todos
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: String::new(),
+                tasks: vec![todo_item("a")],
+            }])
+            .unwrap();
+        app.todos
+            .done(crate::core::agent::todo::Target::All)
+            .unwrap();
+
+        age_closed_todos(&mut app).await;
+        assert_eq!(app.runs_since_todos_closed, 1);
+
+        app.todos
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: String::new(),
+                tasks: vec![todo_item("b")],
+            }])
+            .unwrap();
+        age_closed_todos(&mut app).await;
+        assert_eq!(app.runs_since_todos_closed, 0, "counter must reset");
+        assert!(!app.todos.is_empty(), "new work must not be aged out");
+    }
+
+    /// An empty list never accumulates grace, so the counter can't drift.
+    #[tokio::test]
+    async fn empty_todos_do_not_accumulate_grace() {
+        let mut app = test_app();
+        for _ in 0..5 {
+            age_closed_todos(&mut app).await;
+        }
+        assert_eq!(app.runs_since_todos_closed, 0);
     }
 
     #[test]
