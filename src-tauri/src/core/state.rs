@@ -6,12 +6,9 @@ use std::{
 use crate::core::{
     downloads::models::DownloadManagerState,
     mcp::models::{McpSettings, ToolWithServer},
+    mcp::progress::JanClientHandler,
 };
-use rmcp::{
-    model::{CallToolRequestParam, CallToolResult, InitializeRequestParam, Tool},
-    service::RunningService,
-    RoleClient, ServiceError,
-};
+use rmcp::{service::RunningService, RoleClient};
 use tokio::sync::{oneshot, Mutex, Notify};
 
 /// Server handle type for managing the proxy server lifecycle
@@ -54,11 +51,10 @@ pub struct ProviderCustomHeader {
     pub value: String,
 }
 
-pub enum RunningServiceEnum {
-    NoInit(RunningService<RoleClient, ()>),
-    WithInit(RunningService<RoleClient, InitializeRequestParam>),
-}
-pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningServiceEnum>>>;
+/// Every connection uses the same handler, so that progress notifications are
+/// observed at all -- rmcp drops them on the `()` handler.
+pub type RunningMcpService = RunningService<RoleClient, JanClientHandler>;
+pub type SharedMcpServers = Arc<Mutex<HashMap<String, RunningMcpService>>>;
 
 pub struct AppState {
     pub app_token: Option<String>,
@@ -115,20 +111,3 @@ impl Default for AppState {
     }
 }
 
-impl RunningServiceEnum {
-    pub async fn list_all_tools(&self) -> Result<Vec<Tool>, ServiceError> {
-        match self {
-            Self::NoInit(s) => s.list_all_tools().await,
-            Self::WithInit(s) => s.list_all_tools().await,
-        }
-    }
-    pub async fn call_tool(
-        &self,
-        params: CallToolRequestParam,
-    ) -> Result<CallToolResult, ServiceError> {
-        match self {
-            Self::NoInit(s) => s.call_tool(params).await,
-            Self::WithInit(s) => s.call_tool(params).await,
-        }
-    }
-}
