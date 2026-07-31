@@ -1,0 +1,87 @@
+---
+title: Tool Permissions
+description: The approval model, capabilities, and how to widen or narrow what the agent can reach.
+keywords: [Jan, Jan Agent, permissions, approval, sandbox, capabilities, tool policy]
+---
+
+import { Callout } from 'nextra/components'
+
+# Tool Permissions
+
+The agent asks before it changes anything. This page covers how that works and how to change it.
+
+## Approval
+
+Reads are free. Writes and shell commands stop and ask:
+
+```
+ write src/cli.rs
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+For `write` and `edit` you see a diff first. For `bash` you see the exact command.
+
+`a` grants that capability for the rest of the session. Nothing is written to disk, so a new session
+starts cautious again - a grant can't leak into tomorrow.
+
+## Capabilities
+
+Every tool maps to one capability, and approval applies at that level rather than per tool:
+
+| Capability | Tools | Default |
+| --- | --- | --- |
+| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `memory_list`, `skill_read`, `skill_list` | Allowed |
+| Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
+| Exec | `bash` | Prompts |
+
+So approving `a` on a shell command allows further shell commands, not just that one. That's the
+trade for not being asked twenty times during a test loop - and the reason to prefer `y` when you
+only meant one.
+
+## Path checks
+
+Tools that take a path have it checked against the project root, so a write outside the project is
+refused before it happens. `bash` has no path argument and runs in the project root; a command you
+approve can still reach outside, which is why plan mode exists as the hard boundary.
+
+## Project policy
+
+`.jan/agent/agent.toml` sets what a project exposes:
+
+```toml
+[tools]
+# read-only | deny | allow
+default = "read-only"
+
+# Exposed even under deny; the deny list wins over everything
+allow = []
+deny = []
+
+# Write tools are opt-in
+allow_write = []
+```
+
+| `default` | Effect |
+| --- | --- |
+| `read-only` | The default. MCP tools and built-in reads available; built-in writes and exec still prompt |
+| `deny` | Locks down all MCP tools. Anything in `allow` is still exposed |
+| `allow` | Exposes everything not in `deny` |
+
+`deny` always wins over `allow`. A tool in both lists is denied.
+
+## Subagents
+
+A [subagent's](/docs/agent/subagents) tools are narrowed, never widened. For a saved subagent an
+allowlist further restricts its own; for a one-off it is its toolset. Either way a subagent reaches
+a subset of what the parent could, so delegation can't be used to escape this policy.
+
+## Turning it off
+
+[YOLO mode](/docs/agent/run-modes#yolo-mode) disables the sandbox and auto-approves everything.
+
+<Callout type="warning">
+That means unrestricted shell access to the machine. Appropriate in a container, a VM, or CI - not
+in your home directory.
+</Callout>

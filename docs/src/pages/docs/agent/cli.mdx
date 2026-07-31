@@ -1,0 +1,210 @@
+---
+title: CLI Reference
+description: Every Jan Agent flag and subcommand, including headless runs for scripts and CI.
+keywords:
+  [
+    Jan,
+    Jan Agent,
+    CLI,
+    command line,
+    headless,
+    automation,
+    CI,
+    jan cli agent run,
+    threads,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# CLI Reference
+
+`jan` with no subcommand opens the [interactive console](/docs/agent/console). Everything else is
+non-interactive, for scripts and CI.
+
+```bash
+jan [OPTIONS]
+jan <COMMAND>
+```
+
+## Opening the console
+
+| Flag | Description |
+| --- | --- |
+| `--project <PATH>` | Project root containing `.jan/agent/agent.toml`. Defaults to `.` |
+| `--task <TEXT>` | Seed the session with a first message |
+| `--model <ID>` | Model id, overriding `[agent].model` |
+| `--max-turns <N>` | Turns per message, clamped to 1-400 |
+| `--image <PATH>` | Attach an image to the first message. Repeatable |
+| `--plan` | Start in read-only plan mode |
+| `--yolo` | Disable the sandbox and auto-approve every tool call |
+| `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
+| `-c`, `--continue` | Resume the most recent session |
+| `--provider <ID>` | Target a specific provider for this run |
+| `--api-key <KEY>` | API key for that provider |
+
+```bash
+jan                                     # current directory
+jan --project ~/code/app                # somewhere else
+jan --task "fix the failing test"       # with a first message
+jan -c                                  # resume the latest session
+jan --resume 3f7a91c2                   # resume by id prefix
+jan --plan                              # read-only
+jan --yolo                              # no prompts (see the warning below)
+```
+
+<Callout type="warning">
+`--yolo` gives the agent unrestricted shell access. Use it only in a container, VM, or scratch
+checkout.
+</Callout>
+
+## `jan cli agent`
+
+Run the agent without a UI. This is the form to use in scripts.
+
+### `run`
+
+Run to completion, or until the turn/token budget is spent.
+
+```bash
+jan cli agent run "fix the failing test in tests/auth"
+jan cli agent run --project ~/code/app "update the changelog"
+jan cli agent run --model gpt-4o --max-turns 20 "add unit tests for the parser"
+jan cli agent run --yolo "run the migration"
+```
+
+| Flag | Description |
+| --- | --- |
+| `--project <PATH>` | Project root. Defaults to `.` |
+| `--model <ID>` | Model id, overriding `[agent].model` |
+| `--max-turns <N>` | Turns, overriding `[agent].max_turns`. Clamped to 1-400 |
+| `--yolo` | Disable the sandbox and auto-approve every tool call |
+| `--resume[=ID]` | Resume the most recent session, or one by id |
+| `-c`, `--continue` | Resume the most recent session |
+| `--provider`, `--api-key` | Credential overrides for this run |
+
+<Callout type="info">
+`run` takes a positional task, so a space-separated `--resume ID` would swallow it. Write the value
+form with an equals sign: `--resume=3f7a91c2`.
+</Callout>
+
+### `step`
+
+Run a single turn. Useful when debugging a prompt or a tool.
+
+```bash
+jan cli agent step "list the files you would change"
+```
+
+### `status`
+
+Print the resolved project config and available providers as JSON.
+
+```bash
+jan cli agent status
+jan cli agent status --project ~/code/app
+```
+
+## `jan config`
+
+Manage provider credentials in `~/.jan/config.toml`.
+
+```bash
+jan config set --provider openai --api-key sk-... --base-url https://api.openai.com/v1 --model gpt-4o
+jan config unset --provider openai
+jan config list    # JSON, API keys redacted
+jan config path    # print the file path, scaffolding a template if absent
+```
+
+| `set` flag | Description |
+| --- | --- |
+| `--provider <ID>` | Provider id, e.g. `openai`, `anthropic`, `groq`. Required |
+| `--api-key <KEY>` | API key |
+| `--base-url <URL>` | Base URL for the endpoint |
+| `--model <ID>` | Model to expose. Repeatable; replaces any existing list |
+| `--api-type <TYPE>` | Wire protocol (`openai`, `anthropic`). Defaults to OpenAI-compatible |
+
+See [Configuration](/docs/agent/providers).
+
+## `jan login`
+
+Sign in to Tokamak and save the API key to `~/.jan/config.toml`.
+
+```bash
+jan login
+```
+
+## `jan cli threads`
+
+Inspect saved conversations. Output is JSON, so it pipes into `jq`.
+
+```bash
+jan cli threads list
+jan cli threads get <ID>
+jan cli threads messages <THREAD_ID>
+jan cli threads delete <ID>
+```
+
+## `jan cli models`
+
+Print every configured provider's models as JSON, keys redacted.
+
+```bash
+jan cli models list
+```
+
+```json
+[
+  {
+    "provider": "anthropic",
+    "api_type": "anthropic",
+    "base_url": "https://api.anthropic.com/v1",
+    "has_api_key": true,
+    "id": "claude-fable-5"
+  }
+]
+```
+
+This includes providers inherited from Jan Desktop, so it can list models even when
+`jan config list` shows none of its own.
+
+## `jan update`
+
+Update the binary to the latest build of the channel it was built for.
+
+```bash
+jan update
+jan update --check   # report without installing
+jan update --force   # reinstall even if current
+```
+
+<Callout type="info">
+Builds compiled from source have no update channel embedded, so `jan update` will say so rather than
+doing anything. Re-run the installer with `--source` to rebuild.
+</Callout>
+
+## Environment variables
+
+| Variable | Description |
+| --- | --- |
+| `JAN_API_KEY` | API key for the target provider |
+| `<PROVIDER>_API_KEY` | Per-provider key, e.g. `ANTHROPIC_API_KEY` |
+| `JAN_INSTALL_DIR` | Install directory used by the install script |
+
+## Using it in CI
+
+A headless run with credentials from the environment and no prompts:
+
+```bash
+export ANTHROPIC_API_KEY="$SECRET_KEY"
+
+jan cli agent run \
+  --project . \
+  --provider anthropic \
+  --max-turns 30 \
+  --yolo \
+  "update the changelog for the current release"
+```
+
+`--yolo` is appropriate here for the same reason it usually isn't: a CI runner is a disposable
+environment, and there's nobody at a keyboard to answer a prompt.
