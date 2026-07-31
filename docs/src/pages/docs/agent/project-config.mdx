@@ -1,0 +1,134 @@
+---
+title: Project Config
+description: AGENT.md and agent.toml - per-project instructions, model, budget, and tool policy.
+keywords: [Jan, Jan Agent, agent.toml, AGENT.md, project config, instructions, budget]
+---
+
+import { Callout } from 'nextra/components'
+
+# Project Config
+
+Each project gets a `.jan/agent/` directory holding how the agent should behave there.
+
+```
+your-project/
+└── .jan/
+    └── agent/
+        ├── agent.toml     # model, budget, tool policy
+        ├── AGENT.md       # instructions for the agent
+        ├── threads/       # saved sessions
+        ├── skills/        # reusable procedures
+        ├── memory/        # durable facts
+        └── subagents/     # reusable subagent definitions
+```
+
+It's created on first use. To scaffold it up front without starting a session:
+
+```bash
+jan cli agent status --project .
+```
+
+<Callout type="tip">
+Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/` so the whole team gets the same agent.
+Add `threads/` to `.gitignore` - those are personal transcripts.
+</Callout>
+
+## AGENT.md
+
+Plain markdown, injected into the system prompt on every run. The highest-leverage file here.
+
+```markdown
+# Agent Instructions
+
+This is a Rust workspace. `cargo test` must pass before you call anything done.
+
+- Source lives in `src-tauri/src/`, tests alongside the code they cover.
+- Never edit generated files under `gen/`.
+- Prefer small, focused commits with Conventional Commit messages.
+- Ask before adding a dependency.
+```
+
+Write it as rules, not prose. Things that are true every time belong here; a procedure for one kind
+of task belongs in a [skill](/docs/agent/skills).
+
+Point at a different file with `instructions_file` if you already keep conventions somewhere else.
+
+## agent.toml
+
+```toml
+[agent]
+# model = "Jan-V4"
+max_turns = 400
+# context_window = 128000
+# compaction_reserve_tokens = 16384
+# max_tokens = 4096
+instructions_file = "AGENT.md"
+
+# [provider]
+# name = "openai"
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# models = ["gpt-4o"]
+
+[budget]
+max_steps = 40
+max_tokens = 200000
+
+[tools]
+default = "read-only"
+allow = []
+deny = []
+allow_write = []
+
+[skills]
+enabled = []
+inject = "always"
+```
+
+### `[agent]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `model` | inherited | Model id. Overridden by `--model` |
+| `max_turns` | `400` | Turns per message, clamped to 1-400 |
+| `context_window` | `128000` | Context limit in tokens |
+| `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
+| `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
+| `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
+
+### `[provider]`
+
+A project-local provider override, winning over `~/.jan/config.toml` and anything inherited from Jan
+Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-project-override).
+
+### `[budget]`
+
+| Key | Description |
+| --- | --- |
+| `max_steps` | Stop the run after this many steps |
+| `max_tokens` | Stop the run after this many tokens |
+
+A bound on how far one run goes, distinct from the per-request context window.
+
+### `[tools]`
+
+See [Tool permissions](/docs/agent/permissions#project-policy).
+
+### `[skills]`
+
+See [Skills](/docs/agent/skills#controlling-which-are-active).
+
+## Updating
+
+```bash
+jan update           # latest build on this channel
+jan update --check   # report without installing
+jan update --force   # reinstall even if current
+```
+
+Or `/update` in the console, which takes effect on restart.
+
+<Callout type="info">
+Builds compiled from source have no update channel embedded, so `jan update` reports that rather
+than doing anything. Re-run the installer with `--source` to rebuild.
+</Callout>

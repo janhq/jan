@@ -1,21 +1,26 @@
 {
-  "get-started-separator": {
-    "title": "Get started",
-    "type": "separator"
-  },
+  "get-started-separator": { "title": "Get started", "type": "separator" },
   "index": "Overview",
   "quickstart": "Quickstart",
-  "coreconcepts-separator": {
-    "title": "Core concepts",
-    "type": "separator"
-  },
-  "console": "Interactive Console",
-  "tools": "Tools & Permissions",
+  "console": "Using Jan Agent",
+  "slash-commands": "Slash Commands",
+  "keybindings": "Keybindings",
+  "working-separator": { "title": "Working with the agent", "type": "separator" },
+  "run-modes": "Run Modes",
+  "sessions": "Sessions",
+  "goals-and-todos": "Goals & Todos",
+  "context": "Context & Compaction",
+  "capabilities-separator": { "title": "Capabilities", "type": "separator" },
+  "files": "Working with Files",
+  "web": "Web Search & Fetch",
   "subagents": "Subagents",
-  "reference-separator": {
-    "title": "Reference",
-    "type": "separator"
-  },
-  "configuration": "Configuration",
+  "memory": "Memory",
+  "skills": "Skills",
+  "config-separator": { "title": "Configuration", "type": "separator" },
+  "providers": "Providers",
+  "project-config": "Project Config",
+  "permissions": "Tool Permissions",
+  "mcp": "MCP",
+  "reference-separator": { "title": "Reference", "type": "separator" },
   "cli": "CLI"
 }

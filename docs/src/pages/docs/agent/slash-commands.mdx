@@ -1,0 +1,59 @@
+---
+title: Slash Commands
+description: Every slash command available in the Jan Agent console.
+keywords: [Jan, Jan Agent, slash commands, commands, TUI, console]
+---
+
+import { Callout } from 'nextra/components'
+
+# Slash Commands
+
+Type `/` in the input to filter the list as you type. <kbd>Enter</kbd> runs the highlighted command.
+
+## Session
+
+| Command | Description |
+| --- | --- |
+| `/new` | Start a new session |
+| `/clear` | Clear the conversation |
+| `/threads` | List saved threads for this project |
+| `/resume [id]` | Resume a thread. Bare: pick interactively |
+| `/quit` | Exit |
+
+See [Sessions](/docs/agent/sessions).
+
+## Working
+
+| Command | Description |
+| --- | --- |
+| `/goal [condition\|clear]` | Keep working until a condition is met. Bare: status |
+| `/plan [exit\|text]` | Enter read-only plan mode, optionally with a first message |
+| `/todo [add [phase\|] text \| clear]` | Open the todo editor, append an item, or drop all |
+| `/compact` | Summarize older turns to free up context |
+| `/cancel [N]` | Cancel queued messages. Bare: all, or an index |
+
+See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-todos), and
+[Context and compaction](/docs/agent/context).
+
+## Setup
+
+| Command | Description |
+| --- | --- |
+| `/model [id]` | Switch model. Bare: pick interactively |
+| `/mcp` | Enable or disable MCP servers |
+| `/login` | Sign in to Tokamak and save the API key |
+| `/config` | View provider config (`~/.jan/config.toml`) |
+
+See [Providers](/docs/agent/providers) and [MCP](/docs/agent/mcp).
+
+## Other
+
+| Command | Description |
+| --- | --- |
+| `/help` | Show available commands and keyboard shortcuts |
+| `/update` | Install the latest published build. Takes effect on restart |
+
+<Callout type="info">
+`/config` is read-only. To change providers, use `jan config set` from the shell - see
+[Providers](/docs/agent/providers).
+</Callout>

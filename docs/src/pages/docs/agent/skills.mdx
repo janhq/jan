@@ -1,0 +1,93 @@
+---
+title: Skills
+description: Reusable procedures the agent loads when a task calls for them.
+keywords: [Jan, Jan Agent, skills, SKILL.md, procedures, reusable, skill hub]
+---
+
+import { Callout } from 'nextra/components'
+
+# Skills
+
+A skill is a written procedure the agent can load when it's relevant - how to cut a release, how to
+add a migration, how this project wants a new endpoint wired up.
+
+The agent always sees each skill's **name and one-line purpose**. It reads the full text only when a
+task calls for it, so a large library of skills doesn't crowd the context window.
+
+## Where they live
+
+```
+<project>/.jan/agent/skills/
+├── release/
+│   └── SKILL.md          # folder form, can bundle scripts alongside
+└── add-migration.md      # flat form
+```
+
+The folder form is what new and imported skills are written as, and it lets a skill ship helper
+scripts or templates next to its instructions. The format matches the wider SKILL.md ecosystem, so
+skills written elsewhere generally work here.
+
+## Writing one
+
+A skill is markdown with a name and a description:
+
+```markdown
+---
+name: release
+description: Cut and publish a release
+---
+
+# Cutting a release
+
+1. Confirm `main` is green in CI.
+2. Bump the version in `Cargo.toml` and `package.json` - they must match.
+3. Update `CHANGELOG.md`; group by feat/fix/chore.
+4. Tag `v<version>` and push the tag. CI does the rest.
+
+Never publish from a dirty working tree.
+```
+
+Keep it concise. A skill competes for the same attention as everything else in the prompt.
+
+You can write the file yourself, or ask the agent to:
+
+```
+Write a skill for how we cut releases, based on what you see in CHANGELOG.md and the CI config
+```
+
+## Tools
+
+| Tool | Approval |
+| --- | --- |
+| `skill_list` | No |
+| `skill_read` | No |
+| `skill_write` | Yes |
+
+## Controlling which are active
+
+```toml
+[skills]
+enabled = []        # empty means all skills are enabled
+inject = "always"   # always | relevance
+```
+
+`enabled` is a whitelist. `inject` decides how they reach the model: `always` puts every skill's
+name and purpose in the system prompt, `relevance` selects per task.
+
+<Callout type="info">
+Skills are shared with Jan Desktop - the same project files, through the same directory. A skill
+written in one shows up in the other.
+</Callout>
+
+## Skills, AGENT.md, and memory
+
+Three places that shape behaviour, easily confused:
+
+| | Scope | Loaded |
+| --- | --- | --- |
+| [`AGENT.md`](/docs/agent/project-config#agentmd) | Rules for everything the agent does here | Always |
+| Skills | A specific procedure | On demand, when relevant |
+| [Memory](/docs/agent/memory) | Facts the agent learned | Recalled as needed |
+
+Rule of thumb: if it applies to every task, it belongs in `AGENT.md`. If it applies to one kind of
+task, make it a skill.

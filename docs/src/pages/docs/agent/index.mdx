@@ -52,9 +52,9 @@ let it work.
 | Skills and memory | Yes | Yes, the same ones |
 
 Neither replaces the other. A common setup is Jan Desktop serving a local model, with Jan Agent
-pointed at it - see [running against local models](/docs/agent/configuration#running-against-local-models).
+pointed at it - see [running against local models](/docs/agent/providers#your-own-hardware).
 
-Provider settings, MCP servers, [skills, and memory](/docs/agent/configuration#skills-and-memory)
+Provider settings, MCP servers, [skills, and memory](/docs/agent/skills)
 are all shared, so anything you set up in one is already there in the other.
 
 ## Install
@@ -108,8 +108,8 @@ Desktop's [local API server](/docs/desktop/api-server), with `jan config set --b
 <DocCards>
   <DocCard title="Quickstart" href="/docs/agent/quickstart" icon={<Rocket size={20} />}>Install Jan Agent, connect a provider, and finish your first task.</DocCard>
   <DocCard title="Interactive console" href="/docs/agent/console" icon={<SquareTerminal size={20} />}>Slash commands, keyboard shortcuts, and how a session works.</DocCard>
-  <DocCard title="Tools & permissions" href="/docs/agent/tools" icon={<Wrench size={20} />}>What the agent can do, and how approval keeps you in control.</DocCard>
-  <DocCard title="Configuration" href="/docs/agent/configuration" icon={<Settings size={20} />}>Providers, `agent.toml`, and per-project instructions.</DocCard>
+  <DocCard title="Tools & permissions" href="/docs/agent/permissions" icon={<Wrench size={20} />}>What the agent can do, and how approval keeps you in control.</DocCard>
+  <DocCard title="Configuration" href="/docs/agent/project-config" icon={<Settings size={20} />}>Providers, `agent.toml`, and per-project instructions.</DocCard>
   <DocCard title="Subagents" href="/docs/agent/subagents" icon={<Users size={20} />}>Delegate parts of a task to agents that run in parallel.</DocCard>
   <DocCard title="CLI reference" href="/docs/agent/cli" icon={<Terminal size={20} />}>Every flag and subcommand, including headless runs for scripts and CI.</DocCard>
 </DocCards>
@@ -127,4 +127,4 @@ Two ways to change that:
 - **YOLO mode** (`jan --yolo`) disables the sandbox and auto-approves everything. Fast, and only
   appropriate in a throwaway environment such as a container or a scratch checkout.
 
-See [Tools & permissions](/docs/agent/tools) for the full picture.
+See [Tools & permissions](/docs/agent/permissions) for the full picture.

@@ -1,31 +1,21 @@
 ---
-title: Interactive Console
-description: Slash commands, keyboard shortcuts, and how a Jan Agent session works.
-keywords:
-  [
-    Jan,
-    Jan Agent,
-    TUI,
-    terminal UI,
-    slash commands,
-    keyboard shortcuts,
-    plan mode,
-    sessions,
-    agent console,
-  ]
+title: Using Jan Agent
+description: A tour of the console - the screen, approving work, and what to reach for next.
+keywords: [Jan, Jan Agent, TUI, console, terminal UI, using]
 ---
 
 import { Callout } from 'nextra/components'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { Command, Keyboard, GitBranch, Layers } from 'lucide-react'
 
-# Interactive Console
+# Using Jan Agent
 
-Running `jan` with no subcommand opens the interactive console. This is the main way to use Jan
-Agent: you type, it works, you approve what matters.
+Running `jan` with no subcommand opens the console. This is the main way to use Jan Agent.
 
 ```bash
-jan                 # open in the current directory
-jan --project ~/app # open somewhere else
-jan --task "..."    # open with a first message already sent
+jan                 # the current directory
+jan --project ~/app # somewhere else
+jan --task "..."    # with a first message already sent
 ```
 
 ## The screen
@@ -41,62 +31,38 @@ jan --task "..."    # open with a first message already sent
  │ ✓ Edited src/cli.rs
 
  Done - the flag is wired up and documented.
+
+ 2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
 ─────────────────────────────────────────────────────────────────────────────────────
  > Type here to chat with agent
 
 📂  ~/code/app ⎇ main
 ```
 
-The header carries the model, clock, turn count, context usage, throughput, and state. The
-transcript sits in the middle. Your input is at the bottom, with the working directory and git
-branch under it.
-
-## Slash commands
-
-Type `/` in the input to filter the list as you go.
-
-| Command | Description |
+| Region | What it shows |
 | --- | --- |
-| `/help` | Show available commands and keyboard shortcuts |
-| `/new` | Start a new session |
-| `/clear` | Clear the conversation |
-| `/compact` | Summarize older turns to free up context |
-| `/goal [condition\|clear]` | Keep working until a condition is met (bare: status) |
-| `/plan [exit\|text]` | Enter read-only plan mode, optionally seeding it with a message |
-| `/todo [add [phase\|] text \| clear]` | Open the todo editor, append an item, or drop all |
-| `/threads` | List saved threads for this project |
-| `/resume [id]` | Resume a thread (bare: pick interactively) |
-| `/model [id]` | Switch model (bare: pick interactively) |
-| `/mcp` | Enable or disable MCP servers |
-| `/cancel [N]` | Cancel queued messages (bare: all, or index) |
-| `/login` | Sign in to Tokamak and save the API key |
-| `/config` | View provider config (`~/.jan/config.toml`) |
-| `/update` | Install the latest published build (takes effect on restart) |
-| `/quit` | Exit |
+| Header | Model, clock, turn count, context usage, throughput, state |
+| Transcript | The conversation, with tool calls folded into summary rows |
+| Receipt | Per turn: context sent, tokens produced, elapsed, rate |
+| Input | Where you type |
+| Footer | Working directory and git branch |
 
-## Keyboard shortcuts
+Tool rows fold to one line each. <kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to
+expand just that one.
 
-| Key | Action |
-| --- | --- |
-| <kbd>Enter</kbd> | Send the message |
-| <kbd>Alt</kbd>+<kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | Insert a newline |
-| <kbd>Esc</kbd> / <kbd>Ctrl</kbd>+<kbd>C</kbd> | Cancel the running turn |
-| <kbd>Esc</kbd> <kbd>Esc</kbd> | Rewind to an earlier message |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Scroll the transcript |
-| <kbd>Ctrl</kbd>+<kbd>O</kbd> | Expand or collapse all tool calls |
-| <kbd>Ctrl</kbd>+<kbd>V</kbd> | Paste an image from the clipboard |
-| <kbd>Ctrl</kbd>+<kbd>T</kbd> | Toggle mouse capture off to select and copy text |
-| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Quit |
+## A turn
 
-<Callout type="tip">
-Terminal text selection doesn't work while the console captures the mouse (that's what makes tool
-rows clickable). Press <kbd>Ctrl</kbd>+<kbd>T</kbd> to hand the mouse back, select your text, then
-press it again.
-</Callout>
+You type, the agent works, and it stops when it has an answer or needs you.
 
-## Approving tool calls
+While it runs, each tool call appears as it happens. A large `write` previews the file as it streams
+in, so you can see what's being produced before it lands. <kbd>Esc</kbd> cancels the turn.
 
-When the agent wants to write a file or run a command, it stops and asks:
+Type while it's working and your message queues rather than being dropped - see
+[Sessions](/docs/agent/sessions#queueing).
+
+## Approving work
+
+Reads are free. Writes and shell commands stop and ask:
 
 ```
  write src/cli.rs
@@ -105,100 +71,19 @@ When the agent wants to write a file or run a command, it stops and asks:
    n  no
 ```
 
-For file edits you see a diff of the change first. `a` grants that capability for the rest of the
-session only - nothing is written to disk, so the next session starts cautious again.
+You see a diff for a file change, or the exact command for a shell call. Full detail in
+[Tool permissions](/docs/agent/permissions).
 
-## Plan mode
+## Getting help
 
-Plan mode makes the session read-only. The agent can read, search, and reason, but every write and
-command is blocked.
+`/help` inside the console prints every command and keybinding. `/` alone filters the command list
+as you type.
 
-```bash
-jan --plan           # start in plan mode
-```
+## Next
 
-```
-/plan                # switch into it mid-session
-/plan fix the tests  # switch in and send a first message
-/plan exit           # leave and allow changes again
-```
-
-Useful for auditing an unfamiliar codebase, or for getting a plan you agree with before letting
-anything change.
-
-## Goals
-
-A goal is a finish line. Instead of steering turn by turn, describe the condition and let the agent
-re-check itself:
-
-```
-/goal all tests in tests/auth pass
-```
-
-After each turn it evaluates whether the condition holds. If not, it keeps going. Check progress
-with a bare `/goal`, or stop with `/goal clear`.
-
-## Todos
-
-The agent keeps a todo list for multi-step work, shown above the input while it's non-empty. It
-updates as work progresses, and you can edit it yourself:
-
-```
-/todo                        # open the editor
-/todo add write the tests    # append an item
-/todo clear                  # drop all of them
-```
-
-In the editor, <kbd>d</kbd> marks done, <kbd>x</kbd> abandons, <kbd>r</kbd> removes.
-
-## Sessions
-
-Every conversation is saved per project, under `.jan/agent/threads`. Because they're per project,
-resuming from a different directory simply finds nothing.
-
-```bash
-jan -c              # resume the most recent session
-jan --resume 3f7a91 # resume by id, or a unique prefix
-```
-
-```
-/threads            # list saved threads
-/resume             # pick one interactively
-```
-
-<Callout type="info">
-Sessions are shared with Jan Desktop's thread store, so a conversation started in the console can
-show up in the app.
-</Callout>
-
-## Queueing and cancelling
-
-Type while the agent is working and your message is queued rather than dropped - it's sent as soon
-as the current turn ends. The footer shows how many are waiting. Use `/cancel` to drop them all, or
-`/cancel 2` to drop the second.
-
-<kbd>Esc</kbd> cancels the running turn without quitting.
-
-## Rewinding
-
-Press <kbd>Esc</kbd> twice while idle to pick an earlier message and roll back to it. In a git
-repository the agent snapshots your workspace as it goes, so a rewind can restore the files too, not
-just the conversation.
-
-## Images
-
-Paste an image from the clipboard with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or attach one at launch:
-
-```bash
-jan --image screenshot.png --task "why does this layout break?"
-```
-
-Repeat `--image` for more than one. Your model must support vision for this to be useful.
-
-## Context and compaction
-
-The header shows context usage (`ctx 6K/128K`). As a conversation grows, Jan Agent automatically
-summarizes older turns to make room. You can trigger it early with `/compact`, which is worth doing
-before starting a large new sub-task in a long session.
-
-Tune the window and the headroom in [`agent.toml`](/docs/agent/configuration#agent).
+<DocCards>
+  <DocCard title="Slash commands" href="/docs/agent/slash-commands" icon={<Command size={20} />}>Every command, grouped by what it's for.</DocCard>
+  <DocCard title="Keybindings" href="/docs/agent/keybindings" icon={<Keyboard size={20} />}>Shortcuts for input, scrolling, and approval prompts.</DocCard>
+  <DocCard title="Run modes" href="/docs/agent/run-modes" icon={<GitBranch size={20} />}>Normal, read-only plan mode, and YOLO.</DocCard>
+  <DocCard title="Sessions" href="/docs/agent/sessions" icon={<Layers size={20} />}>Resuming, rewinding, and queueing.</DocCard>
+</DocCards>
