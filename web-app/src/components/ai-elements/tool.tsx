@@ -358,10 +358,24 @@ export const ToolApprovalActions = memo(() => {
         </Button>
         <Button
           size="sm"
+          variant="outline"
+          onClick={() => resolveApproval(toolCallId, 'allow-thread')}
+        >
+          {t('tools:toolApproval.allowInThread')}
+        </Button>
+        <Button
+          size="sm"
           autoFocus
           onClick={() => resolveApproval(toolCallId, 'allow-always')}
         >
-          {t('tools:toolApproval.alwaysAllow')}
+          {/* Trusting a server tool-by-tool is the same decision repeated. */}
+          {pending.serverName
+            ? t('tools:toolApproval.allowServerAlways', {
+                server: pending.serverName,
+              })
+            : t('tools:toolApproval.allowToolAlways', {
+                tool: pending.toolName,
+              })}
         </Button>
       </div>
     </div>

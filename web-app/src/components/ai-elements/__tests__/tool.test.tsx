@@ -4,14 +4,18 @@ import '@testing-library/jest-dom'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: Record<string, unknown>) =>
-      options?.tool ? `${key}:${options.tool}` : key,
+    t: (key: string, options?: Record<string, unknown>) => {
+      const named = options?.tool ?? options?.server
+      return named ? `${key}:${named}` : key
+    },
   }),
 }))
 
+const approvalState: { pending: Record<string, unknown> } = { pending: {} }
+const resolveApproval = vi.fn()
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: (selector: (s: unknown) => unknown) =>
-    selector({ pending: {} }),
+    selector({ ...approvalState, resolveApproval }),
 }))
 
 vi.mock('../code-block', () => ({
@@ -28,6 +32,7 @@ vi.mock('@/containers/CopyButton', () => ({
 
 import {
   Tool,
+  ToolApprovalActions,
   ToolContent,
   ToolHeader,
   ToolInput,
@@ -36,6 +41,13 @@ import {
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 
 const resolver = (input: string) => Promise.resolve(input)
+
+// The approval mock is module state; leaving a pending entry behind would make
+// every later header render as awaiting approval.
+beforeEach(() => {
+  approvalState.pending = {}
+  resolveApproval.mockClear()
+})
 
 const renderHeader = (props: Partial<React.ComponentProps<typeof ToolHeader>> = {}) =>
   render(
@@ -48,6 +60,68 @@ const renderHeader = (props: Partial<React.ComponentProps<typeof ToolHeader>> = 
       />
     </Tool>
   )
+
+const renderApproval = (pending: Record<string, unknown>) => {
+  approvalState.pending = pending
+  return render(
+    <Tool state="input-available" toolCallId="tc1" messageId="m1" defaultOpen>
+      <ToolApprovalActions />
+    </Tool>
+  )
+}
+
+describe('ToolApprovalActions', () => {
+  beforeEach(() => {
+    resolveApproval.mockClear()
+    approvalState.pending = {}
+  })
+
+  it('renders nothing when no approval is pending', () => {
+    renderApproval({})
+    expect(
+      screen.queryByText('tools:toolApproval.deny')
+    ).not.toBeInTheDocument()
+  })
+
+  // Trusting a server tool-by-tool is the same decision repeated, so "always"
+  // offers the server rather than the single tool.
+  it('offers to trust the whole server by name', () => {
+    renderApproval({
+      tc1: { toolCallId: 'tc1', toolName: 'create_issue', serverName: 'github' },
+    })
+    expect(
+      screen.getByText('tools:toolApproval.allowServerAlways:github')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/tools:toolApproval.allowToolAlways/)
+    ).not.toBeInTheDocument()
+  })
+
+  it('falls back to the tool name when it has no server', () => {
+    renderApproval({ tc1: { toolCallId: 'tc1', toolName: 'do_thing' } })
+    expect(
+      screen.getByText('tools:toolApproval.allowToolAlways:do_thing')
+    ).toBeInTheDocument()
+  })
+
+  it('grants each scope the reader picked', () => {
+    renderApproval({
+      tc1: { toolCallId: 'tc1', toolName: 'create_issue', serverName: 'github' },
+    })
+    fireEvent.click(screen.getByText('tools:toolApproval.allowOnce'))
+    fireEvent.click(screen.getByText('tools:toolApproval.allowInThread'))
+    fireEvent.click(
+      screen.getByText('tools:toolApproval.allowServerAlways:github')
+    )
+    fireEvent.click(screen.getByText('tools:toolApproval.deny'))
+    expect(resolveApproval.mock.calls.map((c) => c[1])).toEqual([
+      'allow-once',
+      'allow-thread',
+      'allow-always',
+      'deny',
+    ])
+  })
+})
 
 describe('ToolHeader runtime state', () => {
   beforeEach(() => {

@@ -25,6 +25,8 @@ describe('useToolApproval', () => {
     // Reset store state to defaults
     useToolApproval.setState({
       approvedTools: {},
+      approvedServers: [],
+      approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
@@ -152,6 +154,60 @@ describe('useToolApproval', () => {
 
       const isApproved = result.current.isToolApproved('thread-2', 'tool-a')
       expect(isApproved).toBe(false)
+    })
+  })
+
+  describe('approveServer', () => {
+    it('approves every tool from that server, in any thread', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveServer('github')
+      })
+
+      expect(
+        result.current.isToolApproved('thread-1', 'create_issue', 'github')
+      ).toBe(true)
+      expect(
+        result.current.isToolApproved('thread-9', 'list_repos', 'github')
+      ).toBe(true)
+    })
+
+    it('leaves other servers alone', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveServer('github')
+      })
+
+      expect(
+        result.current.isToolApproved('thread-1', 'read_file', 'filesystem')
+      ).toBe(false)
+    })
+
+    it('does not duplicate a server approved twice', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveServer('github')
+        result.current.approveServer('github')
+      })
+
+      expect(result.current.approvedServers).toEqual(['github'])
+    })
+  })
+
+  describe('approveToolEverywhere', () => {
+    it('approves the tool in every thread', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveToolEverywhere('tool-a')
+      })
+
+      expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(true)
+      expect(result.current.isToolApproved('thread-2', 'tool-a')).toBe(true)
+      expect(result.current.isToolApproved('thread-1', 'tool-b')).toBe(false)
     })
   })
 

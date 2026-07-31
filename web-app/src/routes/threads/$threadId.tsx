@@ -91,6 +91,13 @@ const CHAT_STATUS = {
 
 const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 
+// The MCP server a tool belongs to, so an approval prompt can offer to trust
+// the whole server rather than this one tool.
+function serverForTool(toolName: string): string | undefined {
+  return useAppState.getState().tools.find((tool) => tool.name === toolName)
+    ?.server
+}
+
 // Persist the out-of-context error onto the latest user message so the banner
 // survives thread switches, mirroring how LlamacppOomListener stamps oom/backend.
 function stampContextErrorOnThread(
@@ -485,7 +492,12 @@ function ThreadDetail() {
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
                     .getState()
-                    .requestApproval(toolCall.toolCallId, toolName, threadId))
+                    .requestApproval(
+                      toolCall.toolCallId,
+                      toolName,
+                      threadId,
+                      serverForTool(toolName)
+                    ))
             toolApprovalPromises.current.delete(toolCall.toolCallId)
 
             if (!approved) {
@@ -658,7 +670,12 @@ function ThreadDetail() {
           toolCall.toolCallId,
           useToolApprovalRequests
             .getState()
-            .requestApproval(toolCall.toolCallId, toolCall.toolName, threadId)
+            .requestApproval(
+              toolCall.toolCallId,
+              toolCall.toolName,
+              threadId,
+              serverForTool(toolCall.toolName)
+            )
         )
       }
     },

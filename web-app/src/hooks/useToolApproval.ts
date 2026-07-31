@@ -12,13 +12,24 @@ export type ToolApprovalModalProps = {
 }
 
 type ToolApprovalState = {
+  /** threadId -> tool names trusted for that conversation only. */
   approvedTools: Record<string, string[]>
+  /** MCP servers trusted in every conversation, tools included. */
+  approvedServers: string[]
+  /** Tools trusted in every conversation, for tools with no server. */
+  approvedToolsGlobal: string[]
   allowAllMCPPermissions: boolean
   isModalOpen: boolean
   modalProps: ToolApprovalModalProps | null
 
   approveToolForThread: (threadId: string, toolName: string) => void
-  isToolApproved: (threadId: string, toolName: string) => boolean
+  approveServer: (serverName: string) => void
+  approveToolEverywhere: (toolName: string) => void
+  isToolApproved: (
+    threadId: string,
+    toolName: string,
+    serverName?: string
+  ) => boolean
   showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => Promise<boolean>
   closeModal: () => void
   setModalOpen: (open: boolean) => void
@@ -29,6 +40,8 @@ export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
+      approvedServers: [],
+      approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
@@ -45,8 +58,32 @@ export const useToolApproval = create<ToolApprovalState>()(
         }))
       },
 
-      isToolApproved: (threadId: string, toolName: string) => {
+      approveServer: (serverName: string) => {
+        set((state) =>
+          state.approvedServers.includes(serverName)
+            ? state
+            : { approvedServers: [...state.approvedServers, serverName] }
+        )
+      },
+
+      approveToolEverywhere: (toolName: string) => {
+        set((state) =>
+          state.approvedToolsGlobal.includes(toolName)
+            ? state
+            : { approvedToolsGlobal: [...state.approvedToolsGlobal, toolName] }
+        )
+      },
+
+      isToolApproved: (
+        threadId: string,
+        toolName: string,
+        serverName?: string
+      ) => {
         const state = get()
+        if (state.approvedToolsGlobal.includes(toolName)) return true
+        if (serverName && state.approvedServers.includes(serverName)) {
+          return true
+        }
         return state.approvedTools[threadId]?.includes(toolName) || false
       },
 
@@ -114,6 +151,8 @@ export const useToolApproval = create<ToolApprovalState>()(
       // Only persist approved tools and global permission setting, not modal state
       partialize: (state) => ({
         approvedTools: state.approvedTools,
+        approvedServers: state.approvedServers,
+        approvedToolsGlobal: state.approvedToolsGlobal,
         allowAllMCPPermissions: state.allowAllMCPPermissions,
       }),
     }

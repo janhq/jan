@@ -51,6 +51,7 @@ const h = vi.hoisted(() => {
   const appStateState = {
     ragToolNames: new Set<string>(),
     mcpToolNames: new Set<string>(),
+    tools: [] as Array<{ name: string; server?: string }>,
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
     busyThreads: {} as Record<string, boolean>,
@@ -457,6 +458,7 @@ describe('ThreadDetail route', () => {
     h.appStateState.oomError = undefined
     h.appStateState.ragToolNames = new Set<string>()
     h.appStateState.mcpToolNames = new Set<string>()
+    h.appStateState.tools = []
     h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
     sessionStorage.clear()
   })
@@ -734,7 +736,27 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
         'tc1',
         'fetch',
-        'thread-1'
+        'thread-1',
+        undefined
+      )
+    })
+
+    // The prompt offers to trust the whole server, so it needs to know which.
+    it('passes the tool server along with the approval request', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.appStateState.tools = [{ name: 'fetch', server: 'fetch-server' }]
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc1'))
+      })
+
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+        'tc1',
+        'fetch',
+        'thread-1',
+        'fetch-server'
       )
     })
 
