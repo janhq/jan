@@ -185,6 +185,58 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.orcarouter.ai/v1',
+    explore_models_url: 'https://www.orcarouter.ai/models',
+    provider: 'orcarouter',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The OrcaRouter API uses API keys for authentication. Visit your [API Keys](https://www.orcarouter.ai/console) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'orcarouter/auto',
+        name: 'OrcaRouter Auto (adaptive routing)',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'openai/gpt-5.5',
+        name: 'GPT-5.5',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'anthropic/claude-opus-4.8',
+        name: 'Claude Opus 4.8',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'google/gemini-3.5-flash',
+        name: 'Gemini 3.5 Flash',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
