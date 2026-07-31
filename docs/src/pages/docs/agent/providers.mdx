@@ -66,15 +66,18 @@ Or `/login` from inside the console. The key is saved to `~/.jan/config.toml`.
 
 ## Where settings come from
 
-Later wins:
+Four sources, each beating the ones above it:
 
-1. Jan Desktop's settings, if the app is installed
-2. `~/.jan/config.toml`
-3. A project's `[provider]` block in `agent.toml`
-4. `--provider` / `--api-key` flags, or `JAN_API_KEY` / `<PROVIDER>_API_KEY` in the environment
+| | Source | Notes |
+| --- | --- | --- |
+| 1 | `~/.jan/config.toml` | The base, and the only file `jan config set` writes |
+| 2 | Jan Desktop's `settings.json` | Inherit-only. Adds providers you haven't configured here, never overwrites one you have, and is never written back to |
+| 3 | `[provider]` in a project's `agent.toml` | An explicit per-project choice, so it wins over both |
+| 4 | `--provider` / `--api-key`, or `JAN_API_KEY` / `<PROVIDER>_API_KEY` | The most explicit and most ephemeral signal |
 
-A project can pin its own provider without disturbing your global setup, and a single run can
-override both.
+The useful consequence: Jan Desktop fills in providers for free without ever clobbering something
+you set deliberately, a project can pin its own provider without touching your global setup, and a
+single run can override everything.
 
 ## Your own hardware
 

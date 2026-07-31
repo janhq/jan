@@ -92,6 +92,9 @@ Definitions are TOML files, merged from two scopes:
 <project>/.jan/agent/subagents/<name>.toml  # project scope, shareable via git
 ```
 
+The two are merged, and the project scope shadows the user scope by name - so a project can
+override one of your personal subagents without renaming it.
+
 Each definition carries a name, a one-line description, a system prompt, and an optional default
 tool allowlist. The agent can write one for you:
 
