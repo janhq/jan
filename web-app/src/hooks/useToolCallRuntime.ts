@@ -6,7 +6,8 @@ export type ToolCallTiming = {
   endedAt?: number
 }
 
-type ToolCallRuntimeState = {
+/** The readable half of the store, for selectors defined outside it. */
+export type ToolCallRuntimeSnapshot = {
   /**
    * Calls the executor has not reached yet, in execution order. Position is
    * read from here rather than stored per call, so entries move up as the ones
@@ -14,7 +15,9 @@ type ToolCallRuntimeState = {
    */
   queue: string[]
   timings: Record<string, ToolCallTiming>
+}
 
+type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
   /**
    * Starts a turn. Earlier timings are kept: their cards are still on screen
    * and would otherwise lose the duration they had been showing.

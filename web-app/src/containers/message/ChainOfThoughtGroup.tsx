@@ -12,6 +12,10 @@ import {
 } from '@/components/ai-elements/reasoning-timeline'
 import { Button } from '@/components/ui/button'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import {
+  useToolCallRuntime,
+  type ToolCallRuntimeSnapshot,
+} from '@/hooks/useToolCallRuntime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { segmentReasoningSteps } from '@/lib/reasoning'
 import { ToolCallCard } from './ToolCallCard'
@@ -23,6 +27,16 @@ function humanizeToolName(name: string): string {
   const spaced = name.replace(/[_-]+/g, ' ').trim()
   if (!spaced) return 'tool'
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+// Returns a primitive so the selector stays referentially stable.
+function selectRunningToolCallId(s: ToolCallRuntimeSnapshot): string | undefined {
+  for (const [id, timing] of Object.entries(s.timings)) {
+    if (timing.startedAt !== undefined && timing.endedAt === undefined) {
+      return id
+    }
+  }
+  return undefined
 }
 
 export type ChainOfThoughtGroupProps = {
@@ -59,6 +73,7 @@ export const ChainOfThoughtGroup = memo(
   }: ChainOfThoughtGroupProps) => {
     const { t } = useTranslation()
     const pendingApprovals = useToolApprovalRequests((s) => s.pending)
+    const runningToolCallId = useToolCallRuntime(selectRunningToolCallId)
     const [view, setView] = useState<'condensed' | 'extended'>('condensed')
 
     if (entries.length === 0) return null
@@ -81,10 +96,17 @@ export const ChainOfThoughtGroup = memo(
       return isToolPart(part)
     }
     const meaningful = entries.filter(isMeaningfulEntry)
-    // While streaming, show only the latest step — but never truncate away a
+    // Tools execute one at a time, so with several calls in a turn the last
+    // part is the one at the back of the queue. Follow the call actually doing
+    // the work; before execution starts nothing is running and the newest part
+    // is still the right thing to show as it streams in.
+    const running = runningToolCallId
+      ? meaningful.find((e) => e.part.toolCallId === runningToolCallId)
+      : undefined
+    const lastMeaningful = running ?? meaningful[meaningful.length - 1]
+    // While streaming, show only the current step — but never truncate away a
     // tool part that is awaiting the user's approval, or its approve/deny
     // controls would never mount and the run would hang (multi-tool turns).
-    const lastMeaningful = meaningful[meaningful.length - 1]
     const visibleEntries =
       groupIsStreaming && meaningful.length > 0
         ? meaningful.filter((e) => {
