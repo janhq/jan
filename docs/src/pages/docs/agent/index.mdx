@@ -45,17 +45,17 @@ let it work.
 | | Jan Desktop | Jan Agent |
 | --- | --- | --- |
 | Interface | Desktop app | Terminal, interactive or headless |
-| Where models run | Locally via llama.cpp or MLX, or a cloud provider | Cloud providers only, or any OpenAI-compatible endpoint |
+| Where models run | Locally via llama.cpp or MLX, or a cloud provider | Cloud providers, or any OpenAI-compatible endpoint |
 | Works on | Conversations, projects, and files you attach | A project folder on disk |
 | Files and shell | Through MCP servers you add | Built in - read, write, edit, and run commands, each gated by approval |
-| Automation | Interactive | Scriptable: run it in CI, over SSH, or from a cron job |
 | MCP servers | Yes | Yes, the same ones |
+| Skills and memory | Yes | Yes, the same ones |
 
 Neither replaces the other. A common setup is Jan Desktop serving a local model, with Jan Agent
 pointed at it - see [running against local models](/docs/agent/configuration#running-against-local-models).
 
-They share provider settings and MCP config, so anything you set up in one is already there in the
-other.
+Provider settings, MCP servers, [skills, and memory](/docs/agent/configuration#skills-and-memory)
+are all shared, so anything you set up in one is already there in the other.
 
 ## Install
 
@@ -87,6 +87,8 @@ Looking for the desktop app instead? <Link href="https://jan.ai/download" target
 - **Run commands** - build, test, grep, and read the output to decide what to do next.
 - **Search the web** - look things up mid-task when the answer isn't in your project.
 - **Use your MCP servers** - every connector configured in Jan Desktop is available here too.
+- **Follow your project's skills** - reusable procedures it loads when a task calls for them.
+- **Remember across sessions** - durable facts about the project, kept as files you can review.
 - **Delegate** - split large jobs across [subagents](/docs/agent/subagents) that work in parallel.
 - **Keep working toward a goal** - `/goal` keeps it going until a condition you set is true.
 
