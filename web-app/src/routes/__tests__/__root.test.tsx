@@ -73,9 +73,6 @@ vi.mock('@/containers/dialogs/AppUpdater', () => ({
 vi.mock('@/containers/dialogs/BackendUpdater', () => ({
   default: () => <div data-testid="backend-updater" />,
 }))
-vi.mock('@/containers/dialogs/ToolApproval', () => ({
-  default: () => <div data-testid="tool-approval" />,
-}))
 vi.mock('@/containers/dialogs/OutOfContextDialog', () => ({
   default: () => <div data-testid="oocp" />,
 }))
@@ -172,7 +169,6 @@ describe('__root route', () => {
 
   it('renders all persistent dialogs', () => {
     renderComponent()
-    expect(screen.getByTestId('tool-approval')).toBeInTheDocument()
     expect(screen.getByTestId('attach-ingest')).toBeInTheDocument()
     expect(screen.getByTestId('error-dialog')).toBeInTheDocument()
     expect(screen.getByTestId('oocp')).toBeInTheDocument()

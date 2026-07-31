@@ -1,17 +1,11 @@
 {
   "toolApproval": {
-    "title": "Tool Approval Required",
-    "description": "The assistant wants to use",
     "needsApproval": "This tool needs your approval before it runs.",
-    "securityNotice": "Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
     "deny": "Deny",
     "allowOnce": "Allow Once",
     "allowInThread": "Allow in thread",
     "allowServerAlways": "Always allow {{server}}",
-    "allowToolAlways": "Always allow {{tool}}",
-    "alwaysAllow": "Allow in thread",
-    "parameters": "Tool Parameters",
-    "permissionScope": "Permissions granted apply only to this conversation."
+    "allowToolAlways": "Always allow {{tool}}"
   },
   "toolCall": {
     "awaitingApproval": "Awaiting approval: {{tool}}",

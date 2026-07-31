@@ -113,7 +113,6 @@ const h = vi.hoisted(() => {
   useToolAvailableMock.getState = () => toolAvailableState
 
   const toolApprovalState: any = {
-    showApprovalModal: vi.fn().mockResolvedValue(true),
     approveToolForThread: vi.fn(),
     clearPendingForThread: vi.fn(),
     requestApproval: vi.fn().mockResolvedValue(true),

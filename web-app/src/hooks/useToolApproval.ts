@@ -3,14 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 
-export type ToolApprovalModalProps = {
-  toolName: string
-  threadId: string
-  toolParameters?: object
-  onApprove: (allowOnce: boolean) => void
-  onDeny: () => void
-}
-
 type ToolApprovalState = {
   /** threadId -> tool names trusted for that conversation only. */
   approvedTools: Record<string, string[]>
@@ -19,8 +11,6 @@ type ToolApprovalState = {
   /** Tools trusted in every conversation, for tools with no server. */
   approvedToolsGlobal: string[]
   allowAllMCPPermissions: boolean
-  isModalOpen: boolean
-  modalProps: ToolApprovalModalProps | null
 
   approveToolForThread: (threadId: string, toolName: string) => void
   approveServer: (serverName: string) => void
@@ -30,9 +20,6 @@ type ToolApprovalState = {
     toolName: string,
     serverName?: string
   ) => boolean
-  showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => Promise<boolean>
-  closeModal: () => void
-  setModalOpen: (open: boolean) => void
   setAllowAllMCPPermissions: (allow: boolean) => void
 }
 
@@ -43,8 +30,6 @@ export const useToolApproval = create<ToolApprovalState>()(
       approvedServers: [],
       approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
-      isModalOpen: false,
-      modalProps: null,
 
       approveToolForThread: (threadId: string, toolName: string) => {
         set((state) => ({
@@ -85,59 +70,6 @@ export const useToolApproval = create<ToolApprovalState>()(
           return true
         }
         return state.approvedTools[threadId]?.includes(toolName) || false
-      },
-
-      showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => {
-        return new Promise<boolean>((resolve) => {
-          const state = get()
-
-          // Auto-approve if the user has enabled auto-approval setting
-          if (state.allowAllMCPPermissions) {
-            resolve(true)
-            return
-          }
-
-          // Check if tool is already approved for this thread
-          if (state.isToolApproved(threadId, toolName)) {
-            resolve(true)
-            return
-          }
-
-          set({
-            isModalOpen: true,
-            modalProps: {
-              toolName,
-              threadId,
-              toolParameters,
-              onApprove: (allowOnce: boolean) => {
-                if (!allowOnce) {
-                  // If not "allow once", add to approved tools for this thread
-                  get().approveToolForThread(threadId, toolName)
-                }
-                get().closeModal()
-                resolve(true)
-              },
-              onDeny: () => {
-                get().closeModal()
-                resolve(false)
-              },
-            },
-          })
-        })
-      },
-
-      closeModal: () => {
-        set({
-          isModalOpen: false,
-          modalProps: null,
-        })
-      },
-
-      setModalOpen: (open: boolean) => {
-        set({ isModalOpen: open })
-        if (!open) {
-          get().closeModal()
-        }
       },
 
       setAllowAllMCPPermissions: (allow: boolean) => {
