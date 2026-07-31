@@ -108,7 +108,7 @@ export const ChainOfThought = memo(
     }
 
     const [startTime, setStartTime] = useState<number | null>(null)
-    const [duration, setDuration] = useState<number | undefined>(undefined)
+    const [elapsedMs, setElapsedMs] = useState<number | undefined>(undefined)
 
     useEffect(() => {
       if (isStreaming) {
@@ -116,10 +116,20 @@ export const ChainOfThought = memo(
           setStartTime(Date.now())
         }
       } else if (startTime !== null) {
-        setDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
+        // Accumulated, not replaced: an agentic turn reasons, answers, then
+        // reasons again, and each window is part of the same trace.
+        const window = Date.now() - startTime
+        setElapsedMs((previous) => (previous ?? 0) + window)
         setStartTime(null)
       }
     }, [isStreaming, startTime])
+
+    // Rounded up to at least a second: a trace that begins and ends inside one
+    // tick still ran, and a zero would read as "still going" below.
+    const duration =
+      elapsedMs === undefined
+        ? undefined
+        : Math.max(1, Math.ceil(elapsedMs / MS_IN_S))
 
     const contextValue = useMemo(
       () => ({ isStreaming, isOpen, setIsOpen, duration }),
@@ -212,7 +222,7 @@ export const ChainOfThoughtHeader = memo(
     const label = (
       <>
         <SparklesIcon className="size-4" />
-        {isStreaming || duration === 0 ? (
+        {isStreaming ? (
           <Shimmer duration={1}>
             {streamingLabel ?? t('chat:reasoning.label')}
           </Shimmer>
