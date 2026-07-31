@@ -4310,9 +4310,6 @@ async fn run_command(app: &mut App, line: &str) {
         }
         "clear" => {
             app.reset_session();
-            // reset_session only drops the projection; the registry is the
-            // model's copy and would otherwise survive the clear and reappear
-            // on its next todo op.
             clear_todos(app).await;
             app.note("conversation cleared");
         }
@@ -4507,16 +4504,17 @@ const TODO_KEEP_CLOSED_RUNS: u32 = 2;
 
 /// Clear the canonical todo list and the TUI projection together.
 ///
-/// The registry is the model's source of truth; clearing only the projection
-/// leaves the model appending to a list the user believes is gone, and the next
-/// `TodoUpdate` resurrects it on screen.
+/// Goes through `apply_todo_mutation` so the registry -- the model's source of
+/// truth -- is cleared too. Dropping only the projection would leave the model
+/// appending to a list the user believes is gone, and the next `TodoUpdate`
+/// would resurrect it on screen.
 async fn clear_todos(app: &mut App) {
-    if let Some(args) = app.args.clone() {
-        if let Some(registry) = args.todo_registry.as_ref() {
-            *registry.lock().await = crate::core::agent::todo::TodoList::default();
-        }
-    }
-    app.todos = crate::core::agent::todo::TodoList::default();
+    // `Target::All` clears unconditionally; the Result exists for the
+    // unknown-task and unknown-phase targets.
+    let _ = apply_todo_mutation(app, |list| {
+        list.rm(crate::core::agent::todo::Target::All)
+    })
+    .await;
     app.last_todo_reminder = None;
     app.runs_since_todos_closed = 0;
 }
@@ -4529,7 +4527,7 @@ async fn clear_todos(app: &mut App) {
 /// a fresh `todo init` ever replaces it. Users end up reading a plan that
 /// belongs to work they finished several tasks ago.
 async fn age_closed_todos(app: &mut App) {
-    if app.todos.is_empty() || app.todos.open_summary().is_some() {
+    if app.todos.is_empty() || app.todos.has_open() {
         // Nothing to age, or the model still has open work.
         app.runs_since_todos_closed = 0;
         return;
@@ -9756,9 +9754,6 @@ mod tests {
         }
     }
 
-    /// A finished todo list is sticky: `is_empty` means "no tasks exist", and a
-    /// completed task is still a task, so the widget renders a plan the user
-    /// finished long ago until the model happens to declare a new one.
     #[tokio::test]
     async fn finished_todos_clear_after_a_grace_period() {
         let mut app = test_app();
@@ -9783,8 +9778,7 @@ mod tests {
             .unwrap();
         assert!(app.todos.open_summary().is_none(), "all work closed out");
 
-        // The finished list survives the grace period, so a model that closes
-        // its last task and then appends follow-up work keeps its list.
+        // Survives every run up to the cutoff.
         for i in 1..=super::TODO_KEEP_CLOSED_RUNS {
             age_closed_todos(&mut app).await;
             assert!(!app.todos.is_empty(), "cleared too eagerly at run {i}");
@@ -9813,7 +9807,6 @@ mod tests {
         age_closed_todos(&mut app).await;
         assert_eq!(app.runs_since_todos_closed, 1);
 
-        // The model declares new work before the grace period expires.
         app.todos
             .init(vec![crate::core::agent::todo::TodoPhase {
                 name: String::new(),
