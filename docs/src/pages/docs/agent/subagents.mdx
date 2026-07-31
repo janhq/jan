@@ -64,26 +64,6 @@ Context share is the one to watch: an agent climbing toward 100% is about to run
 Dispatch is non-blocking, which is what makes parallel fan-out possible: the main agent dispatches
 several, then awaits each one. Each `run_id` can be awaited once.
 
-## Parallelism and queueing
-
-Up to `max_parallel_subagents` subagents run at the same time (default `10`, minimum `1`, set in
-`agent.toml` under `[agent]` - or from the console with `/settings max_parallel_subagents N`).
-Dispatches beyond the cap are queued FIFO and start as a running child finishes.
-
-A queued run still returns a `run_id` immediately, and `await_subagent` on it simply blocks until a
-slot frees and the run completes - no deadlock, no premature promotion. `abort_all` cancels queued
-runs too.
-
-In the console, a queued subagent shows as `queued (N waiting)` in its panel, where `N` is its
-position in line (`1` = next to start). The panel turns into a normal running row once its slot
-opens.
-
-The cap is snapshotted when a run starts, so changing it mid-run takes effect on the next run.
-
-<Callout type="info">
-A queue is not an error signal. The main agent keeps dispatching; runs just wait their turn.
-</Callout>
-
 ## Isolation
 
 A subagent does not see your conversation. It gets only the task it was handed, so that description

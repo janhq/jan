@@ -36,12 +36,12 @@ Cancelling stops the turn, not the session. See [rewinding](/docs/agent/sessions
 | --- | --- |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Scroll the transcript |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> | Expand or collapse all tool calls |
-| <kbd>Ctrl</kbd>+<kbd>T</kbd> | Toggle mouse capture: on makes tool rows clickable, off lets you drag to select and copy text |
+| <kbd>Ctrl</kbd>+<kbd>T</kbd> | Toggle mouse capture off to select and copy text |
 
 <Callout type="tip">
-Mouse capture defaults off, so drag-to-select works out of the box. Turn it on with
-<kbd>Ctrl</kbd>+<kbd>T</kbd> to make tool rows clickable. While capture is off, the header shows
-"mouse capture off: drag to select/copy text (Ctrl-T to re-enable)".
+Terminal text selection doesn't work while the console captures the mouse - that capture is what
+makes tool rows clickable. Press <kbd>Ctrl</kbd>+<kbd>T</kbd> to hand the mouse back to your
+terminal, select, then press it again.
 </Callout>
 
 ## Approval prompts
