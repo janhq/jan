@@ -1,6 +1,6 @@
 ---
 title: QuickStart
-description: Get started with Jan Agent in minutes.
+description: Install Jan Agent, connect a provider, and finish your first task in the terminal.
 keywords:
   [
     Jan,
@@ -9,9 +9,186 @@ keywords:
     autonomous agent,
     local AI agent,
     quickstart,
+    install,
+    terminal,
+    CLI,
   ]
 ---
 
+import { Callout, Steps, Tabs } from 'nextra/components'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { SquareTerminal, Wrench, Settings, Users } from 'lucide-react'
+
 # QuickStart
 
-Coming soon.
+Get Jan Agent running and finish a real task in a few minutes. You need a terminal and an API key
+for one model provider.
+
+<Steps>
+
+### Install
+
+<Tabs items={['macOS / Linux', 'Windows']}>
+  <Tabs.Tab>
+```bash
+curl -fsSL https://raw.githubusercontent.com/janhq/jan/dev/scripts/install-jan-agent.sh | bash
+```
+
+Installs to `~/.local/bin` by default. Override it with `JAN_INSTALL_DIR=/usr/local/bin`, and make
+sure the directory is on your `PATH`.
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+irm https://raw.githubusercontent.com/janhq/jan/dev/scripts/install-jan-agent.ps1 | iex
+```
+  </Tabs.Tab>
+</Tabs>
+
+Check it worked:
+
+```bash
+jan --version
+```
+
+<Callout type="info">
+Already have the Jan repo checked out? `scripts/install-jan-agent.sh --source` builds from your
+checkout instead of downloading. Source builds don't self-update, because the update channel is
+stamped in by CI.
+</Callout>
+
+### Connect a provider
+
+Jan Agent has no local inference engine - it calls a remote provider. Point it at one:
+
+```bash
+jan config set --provider anthropic --api-key sk-ant-...
+```
+
+Or sign in to Tokamak, which needs no key of your own:
+
+```bash
+jan login
+```
+
+Confirm what's configured (keys are redacted):
+
+```bash
+jan config list
+```
+
+<Callout type="info">
+Already using Jan Desktop? Jan Agent picks up the providers you configured there, so you can skip
+this step entirely.
+</Callout>
+
+### Open the console
+
+Change into the project you want to work on, then:
+
+```bash
+jan
+```
+
+You get an interactive console: type a message, press <kbd>Enter</kbd>. The agent works in the
+directory you launched it from.
+
+### Give it a task
+
+Start with something small and verifiable:
+
+```
+Read the README and tell me how to run the tests
+```
+
+It will read files and answer. Nothing has changed on disk yet - reading is free.
+
+Now ask for a change:
+
+```
+Add a --version flag to the CLI and update the README to document it
+```
+
+This time the agent asks before it writes:
+
+```
+write src/cli.rs
+  y  yes, once
+  a  yes, and don't ask again this session
+  n  no
+```
+
+Press <kbd>y</kbd> to allow it once, <kbd>a</kbd> to stop being asked for that kind of call, or
+<kbd>n</kbd> to refuse. You stay in the loop for every write and every shell command.
+
+### Watch it work
+
+While the agent runs you'll see each tool call as it happens, and a receipt when the turn ends:
+
+```
+2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+```
+
+That's the time, context sent, tokens produced, how long it took, and throughput.
+
+Press <kbd>Esc</kbd> at any point to cancel the current turn. Press <kbd>Ctrl</kbd>+<kbd>D</kbd> to
+quit.
+
+</Steps>
+
+## Pick up where you left off
+
+Sessions are saved per project. To continue the most recent one:
+
+```bash
+jan -c
+```
+
+Or choose from a list inside the console with `/resume`.
+
+## Try these next
+
+Three things worth doing on your first day:
+
+**Explore before changing.** Start read-only so the agent can investigate without touching anything:
+
+```bash
+jan --plan
+```
+
+It will study the project and propose a plan. Type `/plan exit` when you're ready to let it act.
+
+**Set a finish line.** Instead of babysitting turn by turn, tell it what "done" means:
+
+```
+/goal all tests in tests/auth pass
+```
+
+The agent keeps working and re-checking until that holds.
+
+**Seed a task from the shell.** Handy in a script or an alias:
+
+```bash
+jan --task "fix the failing test in tests/auth"
+```
+
+## Where to go next
+
+<DocCards>
+  <DocCard title="Interactive console" href="/docs/agent/console" icon={<SquareTerminal size={20} />}>Every slash command and keyboard shortcut.</DocCard>
+  <DocCard title="Tools & permissions" href="/docs/agent/tools" icon={<Wrench size={20} />}>What the agent can reach, and how to widen or narrow it.</DocCard>
+  <DocCard title="Configuration" href="/docs/agent/configuration" icon={<Settings size={20} />}>Per-project instructions, models, and budgets.</DocCard>
+  <DocCard title="Subagents" href="/docs/agent/subagents" icon={<Users size={20} />}>Split a big job across agents running in parallel.</DocCard>
+</DocCards>
+
+## Troubleshooting
+
+**`jan: command not found`** - the install directory isn't on your `PATH`. The installer prints a
+note when it detects this. Add `~/.local/bin` to your shell profile.
+
+**"no providers configured"** - run `jan config set --provider <id> --api-key <key>`, or `jan login`
+for Tokamak. `jan config path` prints the file it reads.
+
+**The agent won't edit anything** - you're in plan mode. Type `/plan exit`.
+
+**Model errors or an unexpected model** - `/model` inside the console lists what's available and
+switches on the spot. `jan config list` shows which providers are wired up.

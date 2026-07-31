@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Jan Agent overview — coming soon.
+description: Jan Agent is a terminal AI agent that reads, writes, and runs code in your project - powered by the models you already configured.
 keywords:
   [
     Jan,
@@ -8,9 +8,86 @@ keywords:
     Jan Agent,
     agents,
     autonomous agent,
+    terminal agent,
+    coding agent,
+    CLI agent,
+    local AI agent,
+    MCP,
   ]
 ---
 
+import { Callout } from 'nextra/components'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { Rocket, Terminal, Wrench, Settings, Users, SquareTerminal } from 'lucide-react'
+
 # Overview
 
-Coming soon.
+Jan Agent is an AI agent that lives in your terminal. You give it a task in plain language, and it
+reads files, edits them, runs commands, and searches the web until the work is done - asking for
+your approval before anything touches your machine.
+
+It runs against the same providers and models you already use with Jan Desktop, so there is nothing
+new to sign up for.
+
+```bash
+jan
+```
+
+That single command opens the interactive console in whatever directory you're in.
+
+## Why a terminal agent
+
+Jan Desktop is a chat app: you talk to a model and copy the results into your work. Jan Agent closes
+that loop - it operates directly on the folder you point it at.
+
+| | Jan Desktop | Jan Agent |
+| --- | --- | --- |
+| Interface | Desktop app | Terminal |
+| Works on | A conversation | A project folder |
+| Runs commands | No | Yes, with your approval |
+| Edits files | No | Yes, with your approval |
+| Best for | Asking, drafting, exploring | Doing - refactors, fixes, research tasks |
+
+Both read the same provider settings and the same MCP servers, so switching between them costs you
+nothing.
+
+## What it can do
+
+- **Read and change a project** - open files, make targeted edits, create new ones.
+- **Run commands** - build, test, grep, and read the output to decide what to do next.
+- **Search the web** - look things up mid-task when the answer isn't in your project.
+- **Use your MCP servers** - every connector configured in Jan Desktop is available here too.
+- **Delegate** - split large jobs across [subagents](/docs/agent/subagents) that work in parallel.
+- **Keep working toward a goal** - `/goal` keeps it going until a condition you set is true.
+
+<Callout type="info">
+Jan Agent talks to **remote providers only** - it has no local inference engine of its own. To run a
+model on your own hardware, point it at a local OpenAI-compatible endpoint (Jan Desktop's
+[local API server](/docs/desktop/api-server) works) with `jan config set --base-url`.
+</Callout>
+
+## Get started
+
+<DocCards>
+  <DocCard title="Quickstart" href="/docs/agent/quickstart" icon={<Rocket size={20} />}>Install Jan Agent, connect a provider, and finish your first task.</DocCard>
+  <DocCard title="Interactive console" href="/docs/agent/console" icon={<SquareTerminal size={20} />}>Slash commands, keyboard shortcuts, and how a session works.</DocCard>
+  <DocCard title="Tools & permissions" href="/docs/agent/tools" icon={<Wrench size={20} />}>What the agent can do, and how approval keeps you in control.</DocCard>
+  <DocCard title="Configuration" href="/docs/agent/configuration" icon={<Settings size={20} />}>Providers, `agent.toml`, and per-project instructions.</DocCard>
+  <DocCard title="Subagents" href="/docs/agent/subagents" icon={<Users size={20} />}>Delegate parts of a task to agents that run in parallel.</DocCard>
+  <DocCard title="CLI reference" href="/docs/agent/cli" icon={<Terminal size={20} />}>Every flag and subcommand, including headless runs for scripts and CI.</DocCard>
+</DocCards>
+
+## Staying in control
+
+The agent never edits a file or runs a command without asking, unless you tell it otherwise. Reads
+are free; writes and shell commands prompt. You can approve a single call, approve that kind of call
+for the rest of the session, or deny it.
+
+Two ways to change that:
+
+- **Plan mode** (`jan --plan`) makes the session read-only. The agent investigates and proposes, but
+  cannot change anything.
+- **YOLO mode** (`jan --yolo`) disables the sandbox and auto-approves everything. Fast, and only
+  appropriate in a throwaway environment such as a container or a scratch checkout.
+
+See [Tools & permissions](/docs/agent/tools) for the full picture.

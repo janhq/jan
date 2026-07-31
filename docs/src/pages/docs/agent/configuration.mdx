@@ -1,0 +1,214 @@
+---
+title: Configuration
+description: Connect providers, set per-project instructions, and tune Jan Agent with agent.toml.
+keywords:
+  [
+    Jan,
+    Jan Agent,
+    configuration,
+    agent.toml,
+    AGENT.md,
+    providers,
+    API key,
+    context window,
+    budget,
+    skills,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# Configuration
+
+Jan Agent reads two kinds of config: **providers** (user-wide, how to reach a model) and
+**projects** (per-folder, how the agent should behave there).
+
+## Providers
+
+Providers live in `~/.jan/config.toml`. Manage them from the shell:
+
+```bash
+jan config set --provider anthropic --api-key sk-ant-...
+jan config list      # JSON, API keys redacted
+jan config path      # print the file path
+jan config unset --provider anthropic
+```
+
+`jan config set` also takes `--base-url`, `--api-type`, and a repeatable `--model`:
+
+```bash
+jan config set \
+  --provider openai \
+  --api-key sk-... \
+  --base-url https://api.openai.com/v1 \
+  --model gpt-4o \
+  --model gpt-4o-mini
+```
+
+`--api-type` selects the wire protocol (`openai` or `anthropic`); it defaults to OpenAI-compatible,
+which covers most endpoints.
+
+To sign in to Tokamak instead of managing a key yourself:
+
+```bash
+jan login
+```
+
+### Where settings come from
+
+Later entries win:
+
+1. Jan Desktop's settings, if the app is installed
+2. `~/.jan/config.toml`
+3. A project's `[provider]` block in `agent.toml`
+4. `--provider` / `--api-key` flags, or `JAN_API_KEY` / `<PROVIDER>_API_KEY` in the environment
+
+So a project can pin its own provider without disturbing your global setup, and a one-off run can
+override both.
+
+### Running against local models
+
+Jan Agent has no local inference engine. To use a model on your own hardware, run an
+OpenAI-compatible server and point a provider at it - Jan Desktop's
+[local API server](/docs/desktop/api-server) does this:
+
+```bash
+jan config set --provider local --base-url http://localhost:6767/v1 --model my-local-model
+```
+
+## Project config
+
+A project's config lives in `.jan/agent/`, created on first use:
+
+```
+your-project/
+└── .jan/
+    └── agent/
+        ├── agent.toml     # model, budget, tool policy
+        ├── AGENT.md       # instructions for the agent
+        ├── threads/       # saved sessions
+        ├── skills/        # reusable procedures
+        └── memory/        # durable facts
+```
+
+<Callout type="tip">
+Commit `agent.toml` and `AGENT.md` so your whole team gets the same agent behaviour. Add
+`.jan/agent/threads/` to `.gitignore` - those are personal session transcripts.
+</Callout>
+
+### AGENT.md
+
+Plain markdown, injected into the system prompt. This is the highest-leverage file you can write:
+conventions, where things live, what to avoid.
+
+```markdown
+# Agent Instructions
+
+This is a Rust workspace. `cargo test` must pass before you call anything done.
+
+- Source lives in `src-tauri/src/`, tests alongside the code they cover.
+- Never edit generated files under `gen/`.
+- Prefer small, focused commits with Conventional Commit messages.
+```
+
+### agent.toml
+
+The full file, as scaffolded:
+
+```toml
+[agent]
+# model = "Jan-V4"
+max_turns = 400
+# context_window = 128000  # tokens; defaults to 128K if unset
+# compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
+# max_tokens = 4096  # cap on tokens the model generates per response
+instructions_file = "AGENT.md"
+
+# Project-local provider override. Wins over ~/.jan/config.toml and any
+# provider inherited from Jan Desktop. Most projects don't need this.
+# [provider]
+# name = "openai"
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# models = ["gpt-4o"]
+
+[budget]
+max_steps = 40
+max_tokens = 200000
+
+[tools]
+default = "read-only"
+allow = []
+deny = []
+allow_write = []
+
+[skills]
+enabled = []
+inject = "always"
+```
+
+#### `[agent]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `model` | inherited | Model id to use. Overridden by `--model` |
+| `max_turns` | `400` | Turns per message, clamped to 1-400 |
+| `context_window` | `128000` | Context limit in tokens |
+| `compaction_reserve_tokens` | `16384` | Headroom kept free before auto-compaction kicks in |
+| `max_tokens` | unset | Cap on tokens generated per response; omitted from the request when unset |
+| `instructions_file` | `AGENT.md` | Markdown file injected into the system prompt |
+
+#### `[budget]`
+
+| Key | Description |
+| --- | --- |
+| `max_steps` | Stop after this many steps |
+| `max_tokens` | Stop after this many tokens |
+
+A stop point, not a hard cutoff mid-thought - it bounds how far a single run can go.
+
+#### `[tools]`
+
+Covered in [Tools & permissions](/docs/agent/tools#narrowing-tools-per-project).
+
+#### `[skills]`
+
+| Key | Description |
+| --- | --- |
+| `enabled` | Whitelist of skill names. Empty means all skills are enabled |
+| `inject` | `always` puts every skill in the system prompt; `relevance` selects per task |
+
+## Skills and memory
+
+**Skills** are reusable procedures, stored as `skills/<name>/SKILL.md` (or a flat `<name>.md`). The
+format matches the wider SKILL.md ecosystem, so skills written elsewhere generally work here. The
+agent sees each skill's name and purpose, and loads the full text when it needs it.
+
+**Memory** holds durable facts the agent recorded across sessions - a decision, a convention, a
+preference. It's per project and it's just files, so you can read, edit, or delete them.
+
+Both are readable and reviewable in your repo. Nothing is hidden in a database.
+
+## MCP servers
+
+Jan Agent reads the same `mcp_config.json` as Jan Desktop, so servers configured in the app are
+available in the terminal with no extra work. Toggle them for a session with `/mcp`.
+
+See [Model Context Protocol](/docs/desktop/mcp).
+
+## Updating
+
+Builds installed from a release channel can update themselves:
+
+```bash
+jan update           # install the latest build on this channel
+jan update --check   # report whether one exists, without installing
+jan update --force   # reinstall even if already current
+```
+
+Or `/update` from inside the console; it takes effect on restart.
+
+<Callout type="info">
+Builds compiled from source don't self-update - the channel is stamped in by CI. Re-run
+`scripts/install-jan-agent.sh --source` to rebuild.
+</Callout>

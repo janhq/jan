@@ -1,4 +1,21 @@
 {
+  "get-started-separator": {
+    "title": "Get started",
+    "type": "separator"
+  },
   "index": "Overview",
-  "quickstart": "Quickstart"
+  "quickstart": "Quickstart",
+  "coreconcepts-separator": {
+    "title": "Core concepts",
+    "type": "separator"
+  },
+  "console": "Interactive Console",
+  "tools": "Tools & Permissions",
+  "subagents": "Subagents",
+  "reference-separator": {
+    "title": "Reference",
+    "type": "separator"
+  },
+  "configuration": "Configuration",
+  "cli": "CLI"
 }

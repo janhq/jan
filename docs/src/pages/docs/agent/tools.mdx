@@ -1,0 +1,186 @@
+---
+title: Tools & Permissions
+description: The tools Jan Agent can call, and the approval model that keeps you in control of your machine.
+keywords:
+  [
+    Jan,
+    Jan Agent,
+    tools,
+    permissions,
+    sandbox,
+    approval,
+    MCP,
+    yolo,
+    plan mode,
+    agent safety,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# Tools & Permissions
+
+Jan Agent gets things done by calling tools: reading a file, editing it, running a command,
+searching the web. This page covers what it can call and how you stay in control of it.
+
+## Built-in tools
+
+### Files and search
+
+| Tool | What it does | Needs approval |
+| --- | --- | --- |
+| `read` | Read a UTF-8 text file. Truncated to 2000 lines or 64KB | No |
+| `ls` | List a directory, dotfiles included | No |
+| `find` | Find files by glob, e.g. `**/*.rs` | No |
+| `grep` | Search file contents, respects `.gitignore` | No |
+| `write` | Create or overwrite a file | Yes |
+| `edit` | Exact text replacements in an existing file | Yes |
+
+### Shell
+
+| Tool | What it does | Needs approval |
+| --- | --- | --- |
+| `bash` | Run a shell command in the project root | Yes |
+
+Output comes back as combined stdout and stderr with a final `[exit N]` line, so the agent can see
+whether a command actually succeeded.
+
+### Web
+
+| Tool | What it does | Needs approval |
+| --- | --- | --- |
+| `web_search` | Search the web, returns ranked results | No |
+| `web_fetch` | Fetch a URL and return its readable text | No |
+
+### Memory and skills
+
+These operate on `.jan/agent/` by name rather than by path, so they're always scoped to the project
+and never prompt.
+
+| Tool | What it does | Needs approval |
+| --- | --- | --- |
+| `memory_list` / `memory_read` | Recall durable project facts across sessions | No |
+| `memory_write` | Save a durable fact | Yes |
+| `skill_list` / `skill_read` | Look up a reusable procedure for this project | No |
+| `skill_write` | Create or update a skill | Yes |
+
+<Callout type="info">
+Memory is for non-obvious, durable facts - decisions, conventions, preferences. Skills are reusable
+procedures. Both live in your project, so they're reviewable and can be committed to git.
+</Callout>
+
+### Delegation
+
+| Tool | What it does |
+| --- | --- |
+| `dispatch_subagent` | Start a subagent on a task, in the background |
+| `await_subagent` | Wait for a dispatched subagent and collect its answer |
+| `create_subagent` | Save a subagent definition for reuse |
+| `list_subagents` | List the subagents available in this project |
+
+See [Subagents](/docs/agent/subagents).
+
+## MCP tools
+
+Every MCP server you've configured in Jan Desktop is available in Jan Agent too - they read the same
+`mcp_config.json`. Toggle servers on and off for the session with `/mcp`.
+
+Connected servers are announced when the console starts:
+
+```
+MCP ready: sequential-thinking, serper
+```
+
+If one fails to come up you'll see why, in the transcript, rather than losing it:
+
+```
+MCP: failed to connect to 'fetch': connection closed: initialize response
+```
+
+See [Model Context Protocol](/docs/desktop/mcp) for how to add servers.
+
+## The approval model
+
+Reads are free. Anything that changes your machine stops and asks:
+
+```
+ write src/cli.rs
+   y  yes, once
+   a  yes, and don't ask again this session
+   n  no
+```
+
+For `write` and `edit` you get a diff of the change before deciding. For `bash` you get the exact
+command.
+
+`a` grants that capability for the rest of the session only. Nothing is persisted, so every new
+session starts cautious again.
+
+## Capabilities
+
+Each tool maps to one capability, and that's what approval applies to:
+
+| Capability | Tools | Default |
+| --- | --- | --- |
+| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `skill_read` | Allowed |
+| Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
+| Exec | `bash` | Prompts |
+
+Paths are checked against the project root, so a write outside the project is caught before it
+happens rather than silently allowed.
+
+## Modes
+
+### Plan mode
+
+Read-only. Every write and command is blocked, so the agent can investigate and propose but not act.
+
+```bash
+jan --plan
+```
+
+```
+/plan        # switch mid-session
+/plan exit   # leave
+```
+
+Good for auditing code you don't know, or for agreeing on an approach before anything changes.
+
+### YOLO mode
+
+Disables the sandbox and auto-approves every tool call, with no prompts:
+
+```bash
+jan --yolo
+```
+
+<Callout type="warning">
+YOLO mode gives the agent unrestricted shell access to your machine. Use it only in a throwaway
+environment - a container, a VM, or a scratch checkout you don't mind losing. The console shows a
+banner while it's active so it's never a surprise.
+</Callout>
+
+## Narrowing tools per project
+
+`.jan/agent/agent.toml` controls what a project exposes:
+
+```toml
+[tools]
+# read-only | deny | allow
+default = "read-only"
+
+# Exposed even under deny; the deny list wins over everything
+allow = []
+deny = []
+
+# Write tools are opt-in
+allow_write = []
+```
+
+- **`read-only`** (default) - MCP tools and built-in reads are available; built-in writes and exec
+  still prompt.
+- **`deny`** - locks down all MCP tools. Anything in `allow` is still exposed.
+- **`allow`** - exposes everything not in `deny`.
+
+`deny` always wins over `allow`. See [Configuration](/docs/agent/configuration) for the rest of the
+file.
