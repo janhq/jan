@@ -13,8 +13,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
+  findRunningToolCallId,
   useToolCallRuntime,
-  type ToolCallRuntimeSnapshot,
 } from '@/hooks/useToolCallRuntime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { segmentReasoningSteps } from '@/lib/reasoning'
@@ -27,16 +27,6 @@ function humanizeToolName(name: string): string {
   const spaced = name.replace(/[_-]+/g, ' ').trim()
   if (!spaced) return 'tool'
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
-// Returns a primitive so the selector stays referentially stable.
-function selectRunningToolCallId(s: ToolCallRuntimeSnapshot): string | undefined {
-  for (const [id, timing] of Object.entries(s.timings)) {
-    if (timing.startedAt !== undefined && timing.endedAt === undefined) {
-      return id
-    }
-  }
-  return undefined
 }
 
 export type ChainOfThoughtGroupProps = {
@@ -73,7 +63,7 @@ export const ChainOfThoughtGroup = memo(
   }: ChainOfThoughtGroupProps) => {
     const { t } = useTranslation()
     const pendingApprovals = useToolApprovalRequests((s) => s.pending)
-    const runningToolCallId = useToolCallRuntime(selectRunningToolCallId)
+    const runningToolCallId = useToolCallRuntime((s) => findRunningToolCallId(s.timings))
     const [view, setView] = useState<'condensed' | 'extended'>('condensed')
 
     if (entries.length === 0) return null

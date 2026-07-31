@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useToolCallRuntime } from '../useToolCallRuntime'
+import {
+  findRunningToolCallId,
+  useToolCallRuntime,
+} from '../useToolCallRuntime'
 
 const store = () => useToolCallRuntime.getState()
 
@@ -102,6 +105,28 @@ describe('useToolCallRuntime', () => {
       store().markSettled('a')
       expect(store().progress['a']).toBeUndefined()
     })
+  })
+
+  // A turn can be severed mid-flight (HMR in dev, a reload, a crashed
+  // executor), leaving a call marked running that never settles. Since timings
+  // outlive their turn, that phantom would stay "running" forever: its elapsed
+  // timer keeps ticking, the condensed trace follows it, and MCP progress
+  // attaches to it instead of the real call.
+  it('settles a call stranded by an abandoned turn when the next one starts', () => {
+    store().enqueue(['old'])
+    store().markRunning('old')
+    store().enqueue(['new'])
+
+    expect(store().timings['old'].endedAt).toBeDefined()
+    expect(findRunningToolCallId(store().timings)).toBeUndefined()
+  })
+
+  it('reports the running call, ignoring settled ones', () => {
+    store().enqueue(['a', 'b'])
+    store().markRunning('a')
+    store().markSettled('a')
+    store().markRunning('b')
+    expect(findRunningToolCallId(store().timings)).toBe('b')
   })
 
   it('ignores transitions for calls it does not know about', () => {
