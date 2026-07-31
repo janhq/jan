@@ -45,7 +45,7 @@ const ResultRow = ({
 )
 
 export type WebToolWidgetProps = {
-  bar: ToolCallBar
+  bar: Extract<ToolCallBar, { variant: 'search' | 'address' }>
   state: ToolUIPart['state']
   output?: ToolUIPart['output']
   errorText?: string

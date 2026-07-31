@@ -91,7 +91,7 @@ export const ToolCallCard = memo(
           </div>
         )}
         <ToolContent title={toolName}>
-          {part.input && <ToolInput input={part.input} />}
+          {Boolean(part.input) && <ToolInput input={part.input} />}
           <ToolApprovalActions />
           {/* The widget already presents the result for native tools. */}
           {!bar &&
@@ -102,7 +102,7 @@ export const ToolCallCard = memo(
                 resolver={identityResolver}
               />
             ) : (
-              part.output && (
+              Boolean(part.output) && (
                 <ToolOutput
                   output={part.output}
                   errorText={undefined}
