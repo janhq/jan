@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
@@ -33,6 +33,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '../tool'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 
 const resolver = (input: string) => Promise.resolve(input)
 
@@ -47,6 +48,52 @@ const renderHeader = (props: Partial<React.ComponentProps<typeof ToolHeader>> = 
       />
     </Tool>
   )
+
+describe('ToolHeader runtime state', () => {
+  beforeEach(() => {
+    useToolCallRuntime.getState().reset()
+  })
+
+  // A queued call and a running one are both `input-available`, so without the
+  // queue the header claims every pending call is already running.
+  it('says a call is queued until the executor reaches it', () => {
+    useToolCallRuntime.getState().enqueue(['tc1'])
+    renderHeader({ state: 'input-available' })
+    expect(screen.getByText(/tools:toolCall.queued/)).toBeInTheDocument()
+    expect(screen.queryByText(/tools:toolCall.running/)).not.toBeInTheDocument()
+  })
+
+  it('counts the calls waiting ahead of it', () => {
+    useToolCallRuntime.getState().enqueue(['a', 'b', 'tc1'])
+    renderHeader({ state: 'input-available' })
+    expect(screen.getByText('tools:toolCall.queuedPosition')).toBeInTheDocument()
+  })
+
+  it('omits the position for the call that runs next', () => {
+    useToolCallRuntime.getState().enqueue(['tc1', 'b'])
+    renderHeader({ state: 'input-available' })
+    expect(
+      screen.queryByText('tools:toolCall.queuedPosition')
+    ).not.toBeInTheDocument()
+  })
+
+  it('switches to running once the executor starts it', () => {
+    useToolCallRuntime.getState().enqueue(['tc1'])
+    useToolCallRuntime.getState().markRunning('tc1')
+    renderHeader({ state: 'input-available' })
+    expect(screen.getByText(/tools:toolCall.running/)).toBeInTheDocument()
+  })
+
+  it('shows how long a finished call took', () => {
+    const runtime = useToolCallRuntime.getState()
+    runtime.enqueue(['tc1'])
+    runtime.markRunning('tc1')
+    vi.setSystemTime(Date.now() + 5000)
+    runtime.markSettled('tc1')
+    renderHeader({ state: 'output-available' })
+    expect(screen.getByText('common:duration.seconds')).toBeInTheDocument()
+  })
+})
 
 describe('ToolHeader', () => {
   it('shows where the call came from', () => {

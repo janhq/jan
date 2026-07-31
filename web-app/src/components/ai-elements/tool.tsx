@@ -30,6 +30,8 @@ import {
 } from '@/lib/toolInputSummary'
 import { summarizeToolOutput } from '@/lib/toolOutputSummary'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { ToolElapsed } from './tool-runtime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
@@ -136,7 +138,8 @@ const getStatusText = (
   t: TranslateFn,
   status: ToolUIPart['state'],
   toolName: string,
-  awaitingApproval: boolean
+  awaitingApproval: boolean,
+  isQueued: boolean
 ) => {
   const isRunning = status === 'input-streaming' || status === 'input-available'
   const hasError = status === 'output-error' || status === 'output-denied'
@@ -144,6 +147,11 @@ const getStatusText = (
 
   if (awaitingApproval) {
     return t('tools:toolCall.awaitingApproval', { tool })
+  }
+  // Tools run one at a time, so a pending call is only "running" once the
+  // executor has actually reached it.
+  if (isQueued) {
+    return t('tools:toolCall.queued', { tool })
   }
   if (isRunning) {
     return t('tools:toolCall.running', { tool })
@@ -163,6 +171,16 @@ export const ToolHeader = memo(
     )
     const toolName = title ?? type.split('-').slice(1).join('-')
     const summary = useMemo(() => summarizeToolInput(input), [input])
+    // Position in the pending queue, or -1 once the executor has reached it.
+    const queuePosition = useToolCallRuntime((s) =>
+      toolCallId ? s.queue.indexOf(toolCallId) : -1
+    )
+    const startedAt = useToolCallRuntime((s) =>
+      toolCallId ? s.timings[toolCallId]?.startedAt : undefined
+    )
+    const endedAt = useToolCallRuntime((s) =>
+      toolCallId ? s.timings[toolCallId]?.endedAt : undefined
+    )
 
     return (
       <CollapsibleTrigger
@@ -183,7 +201,13 @@ export const ToolHeader = memo(
             awaitingApproval && 'text-amber-600 dark:text-amber-400'
           )}
         >
-          {getStatusText(t, state, toolName, awaitingApproval)}
+          {getStatusText(
+            t,
+            state,
+            toolName,
+            awaitingApproval,
+            queuePosition >= 0
+          )}
         </span>
         {origin && (
           <span className="shrink-0 text-muted-foreground/60">{origin}</span>
@@ -193,12 +217,24 @@ export const ToolHeader = memo(
             {summary}
           </span>
         )}
-        <ChevronDownIcon
-          className={cn(
-            'ml-auto size-4 shrink-0 transition-transform',
-            isOpen ? 'rotate-180' : 'rotate-0'
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {queuePosition > 0 && (
+            <span className="text-xs text-muted-foreground/60">
+              {t('tools:toolCall.queuedPosition', { count: queuePosition })}
+            </span>
           )}
-        />
+          <ToolElapsed
+            startedAt={startedAt}
+            endedAt={endedAt}
+            className="text-muted-foreground/60"
+          />
+          <ChevronDownIcon
+            className={cn(
+              'size-4 shrink-0 transition-transform',
+              isOpen ? 'rotate-180' : 'rotate-0'
+            )}
+          />
+        </span>
       </CollapsibleTrigger>
     )
   }

@@ -13,6 +13,8 @@
   "toolCall": {
     "awaitingApproval": "Awaiting approval: {{tool}}",
     "running": "Running {{tool}}...",
+    "queued": "{{tool}} queued",
+    "queuedPosition": "{{count}} ahead",
     "failed": "{{tool}} failed",
     "used": "Used {{tool}}",
     "parameters": "Parameters",
