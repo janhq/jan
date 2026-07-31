@@ -142,6 +142,13 @@ in its own window and returns only the distilled answer. Dispatch independent su
 their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
 targeted tasks where delegating would cost more than it saves.";
 
+/// Render a path for the prompt with forward slashes, so a Windows root reads
+/// as `C:/Users/me/proj` rather than a string full of escapes the model then
+/// has to guess its way back out of.
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Build a compact runtime environment block injected into the system prompt at
 /// session start so the agent is grounded from turn one. Mirrors the
 /// `<workstation>` / cwd / date context blocks that harnesses like this one
@@ -149,10 +156,14 @@ targeted tasks where delegating would cost more than it saves.";
 /// git state (branch name when the project is inside a git repo). Kept short —
 /// a few lines, not a wall of text.
 fn runtime_environment_block(project_root: &Path) -> String {
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
+    // The project root, NOT `std::env::current_dir()`. Every tool resolves
+    // against the root — `bash` runs there (tools/proc::spawn) and the file
+    // tools join relative paths onto it — while the process cwd is wherever
+    // the app happened to be launched from: `src-tauri` under `tauri dev`,
+    // Explorer's directory or `/` for a packaged build. Reporting that sent
+    // the model looking in a directory its own tools never touch, and it
+    // repeated the bogus path back to the user as if it were fact.
+    let cwd = display_path(project_root);
 
     let os = format!(
         "{} {}",
@@ -414,6 +425,48 @@ mod tests {
         let work_dir_pos = out.find("# Working Directory").unwrap();
         let env_pos = out.find("# Runtime Environment").unwrap();
         assert!(work_dir_pos < env_pos, "env block must come after working directory");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_the_project_root_not_the_process_cwd() {
+        // The regression this guards: the block used to print
+        // `std::env::current_dir()`, i.e. wherever the app was launched from
+        // (`src-tauri` under `tauri dev`), while every tool works off the
+        // project root. The model believed the block and answered with paths
+        // its own tools had never touched.
+        let root = scratch_project("cwd_is_root");
+        std::fs::create_dir_all(&root).unwrap();
+        let process_cwd = std::env::current_dir().expect("cwd");
+        assert_ne!(
+            root, process_cwd,
+            "the test is meaningless unless the two differ"
+        );
+
+        let block = runtime_environment_block(&root);
+        let expected = root.to_string_lossy().replace('\\', "/");
+        assert!(
+            block.contains(&format!("Work directory: `{expected}`")),
+            "block should report the project root, got: {block}"
+        );
+        let cwd_shown = process_cwd.to_string_lossy().replace('\\', "/");
+        assert!(
+            !block.contains(&format!("Work directory: `{cwd_shown}`")),
+            "block must not report the process cwd"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_directory_is_written_with_forward_slashes() {
+        let root = scratch_project("cwd_slashes");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root);
+        let line = block
+            .lines()
+            .find(|l| l.starts_with("Work directory:"))
+            .expect("work directory line");
+        assert!(!line.contains('\\'), "path should be slash-normalised: {line}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
