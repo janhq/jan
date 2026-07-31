@@ -7,6 +7,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
+import { ToolProgressRow } from '@/components/ai-elements/tool-runtime'
 import { useToolOrigin } from '@/hooks/useToolOrigin'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { describeNativeToolCall } from '@/lib/toolPresentation'
@@ -67,6 +68,7 @@ export const ToolCallCard = memo(
           // the header too prints the same text twice, one line apart.
           input={bar ? undefined : part.input}
         />
+        <ToolProgressRow toolCallId={part.toolCallId} />
         {bar && (
           <div className="mt-2">
             {bar.variant === 'documents' ? (

@@ -66,6 +66,44 @@ describe('useToolCallRuntime', () => {
     expect(store().timings['b'].startedAt).toBeUndefined()
   })
 
+  // The notification carries no tool call id, so it lands on the call the
+  // store already knows is running.
+  describe('reportProgress', () => {
+    const update = { server: 'github', progress: 3, total: 10, percent: 30 }
+
+    it('attaches an update to the running call', () => {
+      store().enqueue(['a', 'b'])
+      store().markRunning('a')
+      store().reportProgress(update)
+      expect(store().progress['a']).toMatchObject({ progress: 3, percent: 30 })
+      expect(store().progress['b']).toBeUndefined()
+    })
+
+    it('ignores an update when nothing is running', () => {
+      store().enqueue(['a'])
+      store().reportProgress(update)
+      expect(store().progress).toEqual({})
+    })
+
+    it('replaces the previous update rather than accumulating', () => {
+      store().enqueue(['a'])
+      store().markRunning('a')
+      store().reportProgress(update)
+      store().reportProgress({ ...update, progress: 7, percent: 70 })
+      expect(store().progress['a'].progress).toBe(7)
+    })
+
+    // A finished call has nothing left to report, and a stale bar under a
+    // completed result reads as though it is still working.
+    it('drops the update when the call settles', () => {
+      store().enqueue(['a'])
+      store().markRunning('a')
+      store().reportProgress(update)
+      store().markSettled('a')
+      expect(store().progress['a']).toBeUndefined()
+    })
+  })
+
   it('ignores transitions for calls it does not know about', () => {
     store().markRunning('ghost')
     store().markSettled('ghost')

@@ -6,6 +6,16 @@ export type ToolCallTiming = {
   endedAt?: number
 }
 
+/** A `notifications/progress` update from an MCP server. */
+export type ToolProgressUpdate = {
+  server: string
+  progress: number
+  total?: number
+  message?: string
+  /** Only set when the server reported a usable total. */
+  percent?: number
+}
+
 /** The readable half of the store, for selectors defined outside it. */
 export type ToolCallRuntimeSnapshot = {
   /**
@@ -15,6 +25,8 @@ export type ToolCallRuntimeSnapshot = {
    */
   queue: string[]
   timings: Record<string, ToolCallTiming>
+  /** Latest progress update per call, cleared when the call settles. */
+  progress: Record<string, ToolProgressUpdate>
 }
 
 type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
@@ -25,6 +37,12 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
   enqueue: (toolCallIds: string[]) => void
   markRunning: (toolCallId: string) => void
   markSettled: (toolCallId: string) => void
+  /**
+   * Records an MCP progress update against the running call. The notification
+   * carries no tool call id, so the running call is the only thing it can
+   * belong to -- well defined because tools execute one at a time.
+   */
+  reportProgress: (update: ToolProgressUpdate) => void
   /** Ends a turn: nothing still queued will run, so stop showing it as waiting. */
   settleRemaining: () => void
   reset: () => void
@@ -39,6 +57,7 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
 export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
   queue: [],
   timings: {},
+  progress: {},
 
   enqueue: (toolCallIds) =>
     set((s) => ({
@@ -63,17 +82,29 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
     ),
 
   markSettled: (toolCallId) =>
-    set((s) =>
-      s.timings[toolCallId]
-        ? {
-            queue: s.queue.filter((id) => id !== toolCallId),
-            timings: {
-              ...s.timings,
-              [toolCallId]: { ...s.timings[toolCallId], endedAt: Date.now() },
-            },
-          }
-        : s
-    ),
+    set((s) => {
+      if (!s.timings[toolCallId]) return s
+      const progress = { ...s.progress }
+      delete progress[toolCallId]
+      return {
+        queue: s.queue.filter((id) => id !== toolCallId),
+        timings: {
+          ...s.timings,
+          [toolCallId]: { ...s.timings[toolCallId], endedAt: Date.now() },
+        },
+        progress,
+      }
+    }),
+
+  reportProgress: (update) =>
+    set((s) => {
+      const running = Object.keys(s.timings).find(
+        (id) =>
+          s.timings[id].startedAt !== undefined &&
+          s.timings[id].endedAt === undefined
+      )
+      return running ? { progress: { ...s.progress, [running]: update } } : s
+    }),
 
   settleRemaining: () =>
     set((s) => {
@@ -86,5 +117,5 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return { queue: [], timings }
     }),
 
-  reset: () => set({ queue: [], timings: {} }),
+  reset: () => set({ queue: [], timings: {}, progress: {} }),
 }))

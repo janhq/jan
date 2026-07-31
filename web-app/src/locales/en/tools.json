@@ -12,6 +12,7 @@
     "running": "Running {{tool}}...",
     "queued": "{{tool}} queued",
     "queuedPosition": "{{count}} ahead",
+    "working": "Working...",
     "failed": "{{tool}} failed",
     "used": "Used {{tool}}",
     "parameters": "Parameters",
