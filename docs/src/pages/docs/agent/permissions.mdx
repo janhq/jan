@@ -61,9 +61,6 @@ deny = []
 
 # Write tools are opt-in
 allow_write = []
-
-# Whether the sandboxed shell can reach the network
-# allow_network = true
 ```
 
 | `default` | Effect |
@@ -73,26 +70,6 @@ allow_write = []
 | `allow` | Exposes everything not in `deny` |
 
 `deny` always wins over `allow`. A tool in both lists is denied.
-
-## Network access
-
-A `bash` command runs inside an OS sandbox, and by default it has **no network**. An explicitly
-approved command cannot `curl`, `git fetch`, or install a package unless networking is switched on
-for that surface. Where the toggle lives depends on how the agent runs:
-
-| Surface | How to set network access | Default |
-| --- | --- | --- |
-| Desktop chat agent | The chat-screen tools toggle (`agent_tools`). Per session, in the UI | Off |
-| `jan cli` code-screen agent | `[tools].allow_network` in `.jan/agent/agent.toml` | On |
-
-The two are deliberately independent: the desktop chat agent is ephemeral and never prompts, so it
-stays offline unless you opt in; the CLI runs in your own terminal where every exec is already
-gated behind a prompt, so a coding agent that cannot `curl` or `git fetch` would be largely useless.
-```toml
-# Re-enable networking for a CLI agent
-[tools]
-allow_network = true
-```
 
 ## Subagents
 
