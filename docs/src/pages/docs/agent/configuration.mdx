@@ -78,7 +78,14 @@ jan config set --provider local --base-url http://localhost:6767/v1 --model my-l
 
 ## Project config
 
-A project's config lives in `.jan/agent/`, created on first use:
+A project's config lives in `.jan/agent/`, created on first use. To scaffold it up front without
+starting a session:
+
+```bash
+jan cli agent status --project .
+```
+
+That writes `agent.toml` and `AGENT.md` if they're missing, and prints the resolved config:
 
 ```
 your-project/

@@ -147,11 +147,26 @@ jan cli threads delete <ID>
 
 ## `jan cli models`
 
-List the models exposed by the configured providers.
+Print every configured provider's models as JSON, keys redacted.
 
 ```bash
 jan cli models list
 ```
+
+```json
+[
+  {
+    "provider": "anthropic",
+    "api_type": "anthropic",
+    "base_url": "https://api.anthropic.com/v1",
+    "has_api_key": true,
+    "id": "claude-fable-5"
+  }
+]
+```
+
+This includes providers inherited from Jan Desktop, so it can list models even when
+`jan config list` shows none of its own.
 
 ## `jan update`
 
