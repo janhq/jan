@@ -175,7 +175,21 @@ pub fn take_pending_webdata_reset<R: Runtime>(
 /// Returns (shell_name, env_file_path).
 fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
     let shell = std::env::var("SHELL").unwrap_or_default();
-    if shell.ends_with("/bash") {
+    env_file_for_shell(&shell, home_dir, is_macos)
+}
+
+/// Map a `$SHELL` value to the (shell_name, env_file_path) Jan should write to.
+/// Split out from `detect_shell_env_file` so it can be unit-tested without
+/// mutating the process environment.
+fn env_file_for_shell(shell: &str, home_dir: &str, is_macos: bool) -> (&'static str, String) {
+    if shell.ends_with("/fish") {
+        // fish never sources ~/.zshenv; it auto-loads *.fish from conf.d. A
+        // dedicated file keeps Jan's vars self-contained and leaves config.fish alone.
+        (
+            "fish",
+            format!("{}/.config/fish/conf.d/jan-claude-code.fish", home_dir),
+        )
+    } else if shell.ends_with("/bash") {
         // macOS uses login shells in Terminal, so ~/.bash_profile is sourced.
         // Linux interactive shells source ~/.bashrc.
         let file = if is_macos {
@@ -190,28 +204,50 @@ fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, Strin
     }
 }
 
+/// Format a single env-var line in the syntax the target shell understands.
+/// fish uses `set -gx NAME 'value'`; POSIX shells use `export NAME='value'`.
+fn format_env_line(shell_name: &str, key: &str, value: &str) -> String {
+    if shell_name == "fish" {
+        format!("set -gx {} '{}'\n", key, value)
+    } else {
+        format!("export {}='{}'\n", key, value)
+    }
+}
+
+/// True if a line is a Jan-written marker or ANTHROPIC_ env entry, in either
+/// POSIX (`export`) or fish (`set -gx`) syntax. Used to strip stale entries
+/// before rewriting so re-running or switching shells never duplicates them.
+fn is_jan_env_line(line: &str) -> bool {
+    line.starts_with("# Jan Local API Server")
+        || line.starts_with("export ANTHROPIC_")
+        || line.starts_with("set -gx ANTHROPIC_")
+}
+
 // Helper function to write env vars to a shell config file
-fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
+fn write_env_to_shell(
+    env_file_path: &str,
+    shell_name: &str,
+    env_vars: &[(String, String)],
+) -> Result<(), String> {
     let marker = "# Jan Local API Server - Claude Code Config";
     let new_entries: String = env_vars
         .iter()
-        .map(|(k, v)| format!("export {}='{}'\n", k, v))
+        .map(|(k, v)| format_env_line(shell_name, k, v))
         .collect();
 
     let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
     let cleaned: Vec<&str> = existing_content
         .split('\n')
-        .filter(|line| {
-            // Remove Jan config markers and existing ANTHROPIC env vars to replace them
-            !line.starts_with(marker)
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
+        .filter(|line| !is_jan_env_line(line))
         .collect();
 
     let new_content = format!("{}\n{}\n{}\n", marker, new_entries, marker);
 
     let final_content = cleaned.join("\n") + &new_content;
+    // fish's conf.d directory may not exist yet.
+    if let Some(parent) = std::path::Path::new(env_file_path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -456,6 +492,11 @@ pub fn launch_claude_code_with_config(
             env_file_path
         );
 
+        // Ensure fish's conf.d exists so the write probe below succeeds.
+        if let Some(parent) = std::path::Path::new(&env_file_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
         // Try direct write first
         match std::fs::OpenOptions::new()
             .write(true)
@@ -464,7 +505,7 @@ pub fn launch_claude_code_with_config(
             .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, shell_name, &env_vars)?;
                 Ok(())
             }
             Err(_) => {
@@ -473,16 +514,12 @@ pub fn launch_claude_code_with_config(
                 let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
                 let cleaned: Vec<&str> = existing_content
                     .split('\n')
-                    .filter(|line| {
-                        !line.starts_with(marker)
-                            && !line.starts_with("# Jan Local API Server")
-                            && !line.starts_with("export ANTHROPIC_")
-                    })
+                    .filter(|line| !is_jan_env_line(line))
                     .collect();
 
                 let env_content: String = env_vars
                     .iter()
-                    .map(|(k, v)| format!("export {}='{}'\n", k, v))
+                    .map(|(k, v)| format_env_line(shell_name, k, v))
                     .collect();
 
                 let new_block = format!("{}\n{}", marker, env_content);
@@ -521,6 +558,11 @@ pub fn launch_claude_code_with_config(
             env_file_path
         );
 
+        // Ensure fish's conf.d exists so the write probe below succeeds.
+        if let Some(parent) = std::path::Path::new(&env_file_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -528,12 +570,16 @@ pub fn launch_claude_code_with_config(
             .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, shell_name, &env_vars)?;
                 Ok(())
             }
             Err(_) => {
                 let jan_config_dir = format!("{}/.config/jan", home_dir);
-                let ext = if shell_name == "bash" { "bash" } else { "zsh" };
+                let ext = match shell_name {
+                    "bash" => "bash",
+                    "fish" => "fish",
+                    _ => "zsh",
+                };
                 let env_file = format!("{}/claude-code-env.{}", jan_config_dir, ext);
                 Err(format!("NEED_PERMISSION:{}", env_file))
             }
@@ -757,11 +803,7 @@ fn build_cleaned_env_content(env_file_path: &str) -> String {
     let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
     let cleaned: Vec<&str> = existing_content
         .split('\n')
-        .filter(|line| {
-            !line.starts_with("# Jan Local API Server - Claude Code Config")
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
+        .filter(|line| !is_jan_env_line(line))
         .collect();
     // Trim trailing blank lines left behind by the removed block
     cleaned.join("\n").trim_end().to_string() + "\n"
@@ -781,6 +823,11 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         );
 
         let cleaned = build_cleaned_env_content(&env_file_path);
+
+        // Ensure fish's conf.d exists so the write probe below succeeds.
+        if let Some(parent) = std::path::Path::new(&env_file_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -825,6 +872,11 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         );
 
         let cleaned = build_cleaned_env_content(&env_file_path);
+
+        // Ensure fish's conf.d exists so the write probe below succeeds.
+        if let Some(parent) = std::path::Path::new(&env_file_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -1177,5 +1229,101 @@ mod tests {
         assert!(is_safe_to_delete(std::path::Path::new(
             "/home/user/.local/share/jan"
         )));
+    }
+
+    #[test]
+    fn test_env_file_for_fish_uses_conf_d() {
+        let (name, path) = env_file_for_shell("/opt/homebrew/bin/fish", "/home/u", false);
+        assert_eq!(name, "fish");
+        assert_eq!(path, "/home/u/.config/fish/conf.d/jan-claude-code.fish");
+    }
+
+    #[test]
+    fn test_env_file_for_zsh_uses_zshenv() {
+        let (name, path) = env_file_for_shell("/bin/zsh", "/home/u", true);
+        assert_eq!(name, "zsh");
+        assert_eq!(path, "/home/u/.zshenv");
+    }
+
+    #[test]
+    fn test_env_file_for_bash_differs_by_os() {
+        assert_eq!(
+            env_file_for_shell("/bin/bash", "/home/u", true),
+            ("bash", "/home/u/.bash_profile".to_string())
+        );
+        assert_eq!(
+            env_file_for_shell("/bin/bash", "/home/u", false),
+            ("bash", "/home/u/.bashrc".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_env_line_fish_uses_set_gx() {
+        assert_eq!(
+            format_env_line("fish", "ANTHROPIC_BASE_URL", "http://127.0.0.1:1337"),
+            "set -gx ANTHROPIC_BASE_URL 'http://127.0.0.1:1337'\n"
+        );
+    }
+
+    #[test]
+    fn test_format_env_line_posix_uses_export() {
+        assert_eq!(
+            format_env_line("zsh", "ANTHROPIC_BASE_URL", "http://127.0.0.1:1337"),
+            "export ANTHROPIC_BASE_URL='http://127.0.0.1:1337'\n"
+        );
+    }
+
+    #[test]
+    fn test_is_jan_env_line_matches_both_syntaxes() {
+        assert!(is_jan_env_line("export ANTHROPIC_BASE_URL='x'"));
+        assert!(is_jan_env_line("set -gx ANTHROPIC_BASE_URL 'x'"));
+        assert!(is_jan_env_line(
+            "# Jan Local API Server - Claude Code Config"
+        ));
+        assert!(!is_jan_env_line("export PATH=/usr/bin"));
+        assert!(!is_jan_env_line("set -gx EDITOR nvim"));
+    }
+
+    #[test]
+    fn test_write_env_to_shell_fish_creates_conf_d_and_writes_set_gx() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join(".config/fish/conf.d/jan-claude-code.fish");
+        // Parent directory does not exist yet — write must create it.
+        write_env_to_shell(
+            file.to_str().unwrap(),
+            "fish",
+            &[(
+                "ANTHROPIC_BASE_URL".to_string(),
+                "http://127.0.0.1:1337".to_string(),
+            )],
+        )
+        .unwrap();
+
+        let content = fs::read_to_string(&file).unwrap();
+        assert!(content.contains("set -gx ANTHROPIC_BASE_URL 'http://127.0.0.1:1337'"));
+        assert!(!content.contains("export ANTHROPIC_"));
+    }
+
+    #[test]
+    fn test_write_env_to_shell_replaces_previous_jan_block() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join(".zshenv");
+        fs::write(
+            &file,
+            "export PATH=/usr/bin\n# Jan Local API Server - Claude Code Config\nexport ANTHROPIC_BASE_URL='old'\n",
+        )
+        .unwrap();
+
+        write_env_to_shell(
+            file.to_str().unwrap(),
+            "zsh",
+            &[("ANTHROPIC_BASE_URL".to_string(), "new".to_string())],
+        )
+        .unwrap();
+
+        let content = fs::read_to_string(&file).unwrap();
+        assert!(content.contains("export PATH=/usr/bin")); // unrelated line untouched
+        assert!(content.contains("export ANTHROPIC_BASE_URL='new'"));
+        assert!(!content.contains("'old'")); // stale Jan entry stripped
     }
 }
