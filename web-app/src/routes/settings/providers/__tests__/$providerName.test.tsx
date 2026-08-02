@@ -243,7 +243,7 @@ vi.mock('@/containers/dialogs/DeleteModel', () => ({
 }))
 
 vi.mock('@/containers/FavoriteModelAction', () => ({
-  FavoriteModelAction: ({ model }: any) => <div data-testid={`fav-${model.id}`} />,
+  FavoriteModelAction: ({ model, provider }: any) => <div data-testid={`fav-${provider}:${model.id}`} />,
 }))
 
 vi.mock('@/containers/dialogs/DeleteProvider', () => ({

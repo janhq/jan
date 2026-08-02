@@ -1389,7 +1389,7 @@ function ProviderDetail() {
                                   (p) => p.provider === provider.provider
                                 ) &&
                                 providerHasRemoteApiKeys(provider))) && (
-                              <FavoriteModelAction model={model} />
+                              <FavoriteModelAction model={model} provider={provider.provider} />
                             )}
                             <DialogDeleteModel
                               provider={provider}
