@@ -129,6 +129,11 @@ const getNavMainItems = (
     animatedIcon: BlocksIcon,
   },
   {
+    title: 'Compare',
+    url: route.compare,
+    animatedIcon: BlocksIcon,
+  },
+  {
     title: 'common:settings',
     url: route.settings.general,
     animatedIcon: SettingsIcon,
