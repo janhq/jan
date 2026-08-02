@@ -76,6 +76,21 @@
 
 }
 
+/* Chat message zoom. --font-size-base is set inline on this element; the scale
+   has to be redeclared here because the :root copies substitute the root's
+   --font-size-base before inheriting, so overriding it alone changes nothing
+   for rules reading var(--text-*) (markdown.css). */
+.message-zoom {
+  --text-xs: calc(var(--font-size-base) * 0.75);
+  --text-sm: calc(var(--font-size-base) * 0.875);
+  --text-base: var(--font-size-base);
+  --text-lg: calc(var(--font-size-base) * 1.125);
+  --text-xl: calc(var(--font-size-base) * 1.25);
+  --text-2xl: calc(var(--font-size-base) * 1.5);
+  --text-3xl: calc(var(--font-size-base) * 1.875);
+  --text-4xl: calc(var(--font-size-base) * 2.25);
+}
+
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
