@@ -1,0 +1,73 @@
+{
+  "editServer": "עריכת שרת MCP",
+  "addServer": "הוספת שרת MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "בודקים את סטטוס התוסף..."
+    },
+    "notInstalled": {
+      "title": "‏Jan מבצעת עבורכם משימות בדפדפן",
+      "description": "התקינו את התוסף כדי לתת ל-Jan גישה לדפדפן",
+      "getExtension": "הורדת התוסף"
+    }
+  },
+  "serverName": "שם השרת",
+  "enterServerName": "הזינו שם שרת",
+  "command": "פקודה",
+  "enterCommand": "הזינו פקודה (uvx או npx)",
+  "arguments": "ארגומנטים",
+  "argument": "ארגומנט {{index}}",
+  "envVars": "משתני סביבה",
+  "key": "מפתח",
+  "value": "ערך",
+  "save": "שמירה",
+  "status": "סטטוס",
+  "connected": "מחובר",
+  "disconnected": "מנותק",
+  "deleteServer": {
+    "title": "מחיקת שרת MCP",
+    "description": "האם אתם בטוחים שברצונכם למחוק את שרת ה-MCP בשם {{serverName}}? לא ניתן לבטל פעולה זו.",
+    "delete": "מחיקה",
+    "success": "שרת ה-MCP {{serverName}} נמחק בהצלחה"
+  },
+  "editJson": {
+    "title": "עריכת JSON עבור שרת MCP: {{serverName}}",
+    "titleAll": "עריכת JSON עבור כל שרתי ה-MCP",
+    "placeholder": "הזינו תצורת JSON",
+    "errorParse": "פענוח הנתונים הראשוניים נכשל",
+    "errorPaste": "פורמט JSON לא תקין בתוכן שהודבק",
+    "errorFormat": "פורמט JSON לא תקין",
+    "errorServerName": "יש להזין שם שרת, ולא ניתן להשאיר אותו ריק",
+    "errorMissingServerNameKey": "מבנה ה-JSON חייב להיות {\"serverName\": {config}} - חסר מפתח שם השרת",
+    "errorInvalidType": "סוג לא תקין '{{type}}' עבור השרת '{{serverName}}'. הסוג חייב להיות 'stdio', ‏'http' או 'sse'",
+    "save": "שמירה"
+  },
+  "checkParams": "בדקו את הפרמטרים בהתאם למדריך.",
+  "title": "שרתי MCP",
+  "experimental": "ניסיוני",
+  "editAllJson": "עריכת JSON לכל השרתים",
+  "findMore": "מצאו שרתי MCP נוספים בכתובת",
+  "allowPermissions": "אישור אוטומטי לכל הרשאות כלי ה-MCP",
+  "allowPermissionsDesc": "כשאפשרות זו מופעלת, כל קריאות הכלים של MCP יאושרו אוטומטית בלי הצגת חלונות הרשאה. ההגדרה חלה על כל השיחות, כולל צ'אטים חדשים.",
+  "noServers": "לא נמצאו שרתי MCP",
+  "args": "ארגומנטים",
+  "env": "סביבה",
+  "serverStatusActive": "השרת {{serverKey}} הופעל בהצלחה",
+  "serverStatusInactive": "השרת {{serverKey}} כובה בהצלחה",
+  "runtimeSettings": {
+    "title": "הגדרות זמן ריצה",
+    "description": "הגדירו כיצד Jan מנהלת שרתי MCP ומנסה אותם מחדש.",
+    "toolCallTimeout": "זמן קצוב לקריאת כלי (שניות)",
+    "toolCallTimeoutDesc": "משך הזמן המקסימלי להמתין לתגובה מכלי MCP לפני פסק זמן.",
+    "smartToolRouting": "ניתוב חכם לכלי MCP",
+    "smartToolRoutingDesc": "כשאפשרות זו מופעלת, Jan בוחרת את שרתי ה-MCP הרלוונטיים לפני טעינת הכלים. השביתו כדי לטעון תמיד את רשימת הכלים המלאה.",
+    "useLightweightRouterModel": "שימוש במודל ייעודי לניתוב",
+    "useLightweightRouterModelDesc": "כשהניתוב החכם מופעל, שלב הניתוב יתבצע עם מודל נפרד (לרוב קטן יותר) במקום מודל הצ'אט. כבו כדי להשתמש תמיד במודל הצ'אט הפעיל לניתוב.",
+    "routerModel": "מודל ניתוב",
+    "routerModelDesc": "בחרו ספק ומודל במקום אחד. מוצגים רק מודלים קלים כדי שהניתוב יישאר מהיר וזול.",
+    "selectRouterModelPlaceholder": "בחרו מודל ניתוב…",
+    "routerModelSearchPlaceholder": "חיפוש מודלים…",
+    "routerModelEmptyList": "אין מודלים קלים זמינים. הוסיפו מודל קטן יותר או הגדירו מפתחות API במסך המודלים.",
+    "routerModelEmptySearch": "אין תוצאות עבור “{{query}}”."
+  }
+}
