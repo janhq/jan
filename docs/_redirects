@@ -197,6 +197,7 @@
 /docs/remote-models/nvidia-nim                  /docs/desktop 302
 /docs/remote-models/openai                      /docs/desktop/remote-models/openai 302
 /docs/remote-models/openrouter                  /docs/desktop/remote-models/openrouter 302
+/docs/remote-models/requesty                    /docs/desktop/remote-models/requesty 302
 
 /docs/remote-inference/groq                     /docs/desktop/remote-models/groq 302
 /docs/remote-inference/mistralai                /docs/desktop/remote-models/mistralai 302
