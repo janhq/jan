@@ -1,5 +1,25 @@
 name: tauri-build-windows-x64
 on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: 'main'
+      public_provider:
+        required: false
+        type: string
+        default: 'none'
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: false
+        type: string
+        default: '1.0.0'
+      channel:
+        required: false
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
   workflow_call:
     inputs:
       ref:
@@ -58,8 +78,6 @@ on:
         value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
       MSI_FILE_NAME:
         value: ${{ jobs.build-windows-x64.outputs.MSI_FILE_NAME }}
-      # PORTABLE_FILE_NAME:
-      #   value: ${{ jobs.build-windows-x64.outputs.PORTABLE_FILE_NAME }}
 
 jobs:
   build-windows-x64:
@@ -68,7 +86,6 @@ jobs:
       WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
       MSI_FILE_NAME: ${{ steps.metadata.outputs.MSI_FILE_NAME }}
-      # PORTABLE_FILE_NAME: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
     permissions:
       contents: write
     steps:
@@ -139,18 +156,12 @@ jobs:
           cat ./src-tauri/Cargo.toml
 
           generate_build_version() {
-              ### Example
-              ### input 0.5.6 output will be 0.5.6 and 0.5.6.0
-              ### input 0.5.6-rc2-beta output will be 0.5.6 and 0.5.6.2
-              ### input 0.5.6-1213 output will be 0.5.6 and and 0.5.6.1213
               local new_version="$1"
               local base_version
               local t_value
-              # Check if it has a "-"
               if [[ "$new_version" == *-* ]]; then
-                  base_version="${new_version%%-*}" # part before -
-                  suffix="${new_version#*-}"         # part after -
-                  # Check if it is rcX-beta
+                  base_version="${new_version%%-*}"
+                  suffix="${new_version#*-}"
                   if [[ "$suffix" =~ ^rc([0-9]+)-beta$ ]]; then
                       t_value="${BASH_REMATCH[1]}"
                   else
@@ -160,7 +171,6 @@ jobs:
                   base_version="$new_version"
                   t_value="0"
               fi
-              # Export two values
               new_base_version="$base_version"
               new_build_version="${base_version}.${t_value}"
           }
@@ -251,6 +261,7 @@ jobs:
           name: jan-windows-exe-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/nsis/*.exe
+
       - name: Upload MSI Installer Artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -258,14 +269,6 @@ jobs:
           path: |
             ./src-tauri/target/release/bundle/msi/*.msi
 
-      # - name: Upload Portable Artifact
-      #   uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      #   with:
-      #     name: jan-windows-portable-${{ inputs.new_version }}
-      #     path: |
-      #       ./src-tauri/target/release/Jan*.exe
-
-      ## Set output filename for windows
       - name: Set output filename for windows
         shell: bash
         run: |
@@ -275,29 +278,24 @@ jobs:
             WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
 
             MSI_FILE="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64_en-US.msi"
-            # PORTABLE_FILE_NAME="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-portable.exe"
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
             WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
 
             MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
-            # PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"
           fi
 
-          echo "::set-output name=WIN_SIG::$WIN_SIG"
-          echo "::set-output name=FILE_NAME::$FILE_NAME"
-          echo "::set-output name=MSI_FILE_NAME::$MSI_FILE"
-          # echo "::set-output name=PORTABLE_FILE_NAME::$PORTABLE_FILE_NAME"
+          echo "WIN_SIG=$WIN_SIG" >> $GITHUB_OUTPUT
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_OUTPUT
+          echo "MSI_FILE_NAME=$MSI_FILE" >> $GITHUB_OUTPUT
         id: metadata
 
-      ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
         shell: bash
         if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
-          # Upload for tauri updater
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
         env:
@@ -316,14 +314,3 @@ jobs:
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
           asset_content_type: application/octet-stream
-
-      # - name: Upload portable exe to release (github)
-      #   if: inputs.public_provider == 'github'
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
-      #   with:
-      #     upload_url: ${{ inputs.upload_url }}
-      #     asset_path: ./src-tauri/target/release/${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
-      #     asset_name: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
-      #     asset_content_type: application/octet-stream
