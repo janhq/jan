@@ -230,18 +230,13 @@ impl LoginPrompt {
         }
     }
 
-    /// Bounded stand-in for the key so a long paste can't overflow the box and a
-    /// shoulder-surfer learns nothing beyond "something was entered".
     fn masked(&self) -> String {
-        "*".repeat(self.input.chars().count().min(32))
+        super::secret_input::mask(self.input.chars().count())
     }
 
-    /// Append pasted text, dropping the whitespace terminals add around a paste.
-    /// Interior whitespace is kept so `sanitize_key` can reject a mis-paste with
-    /// a clear reason rather than silently mangling the key.
     fn paste(&mut self, text: &str) {
         if !self.verifying {
-            self.input.push_str(text.trim());
+            self.input.push_str(super::secret_input::pasted(text));
         }
     }
 }
@@ -3809,9 +3804,7 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
 /// Plain text from the OS clipboard, for Ctrl-V in the `/login` prompt (the
 /// image path is `clipboard_image`).
 fn clipboard_text() -> Result<String, String> {
-    arboard::Clipboard::new()
-        .and_then(|mut clip| clip.get_text())
-        .map_err(|e| e.to_string())
+    super::secret_input::clipboard_text()
 }
 
 async fn handle_key(
