@@ -101,11 +101,9 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
-import { usePathReferences } from '@/stores/path-references'
 import {
   parsePromptForReferences,
   resolvePathReference,
-  formatPathReferenceText,
   searchFiles,
   REFERENCE_PATTERN,
   type FilePickerEntry as FileEntry,
@@ -197,11 +195,6 @@ const ChatInput = memo(function ChatInput({
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
 
-  // ── @path file reference state ──────────────────────────────────────────
-  const pathRefs = usePathReferences((s) => s.references)
-  const setPathRefs = usePathReferences((s) => s.setReferences)
-  const clearPathRefs = usePathReferences((s) => s.clearReferences)
-
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
   const [filePickerEntries, setFilePickerEntries] = useState<FileEntry[]>([])
@@ -218,7 +211,7 @@ const ChatInput = memo(function ChatInput({
     const loadWorkingDir = async () => {
       try {
         // Try to get project home directory
-        const { homeDir, documentDir } = await import('@tauri-apps/api/path')
+        const { homeDir } = await import('@tauri-apps/api/path')
         const home = await homeDir()
         setWorkingDir(home)
       } catch {
@@ -330,7 +323,7 @@ const ChatInput = memo(function ChatInput({
           }
         } else {
           parts.push(
-            `[File not found or too large: ${ref.rawPath}]`
+            `[File not found or too large: ${ref}]`
           )
         }
       }
