@@ -92,7 +92,7 @@ test-tauri = [
     "deep-link",
     "hardware",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:ratatui", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
+cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [], optional = true }
