@@ -622,6 +622,7 @@ fn prepare_agent_session(
     overrides: ProviderOverrides,
     yolo: bool,
     plan: bool,
+    require_model: bool,
 ) -> Result<AgentSession, String> {
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
@@ -642,14 +643,31 @@ fn prepare_agent_session(
     // model), then the desktop app's currently-selected model (settings.json
     // inherit). Global config outranks desktop so a standalone agent is
     // self-sufficient without a desktop install.
+    let explicit = model_override.is_some() || overrides.api_key.is_some();
     let model = model_override
         .or_else(|| cfg.agent.model.clone())
         .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
-        .or_else(|| crate::core::cli::providers::desktop_selection().model)
-        .ok_or_else(|| {
+        .or_else(|| crate::core::cli::providers::desktop_selection().model);
+    // A project or global default can name a model with nobody around to serve
+    // it (e.g. this repo's own agent.toml pins one, but a fresh `~/.jan` has no
+    // credentials for anything). Trust it only when the user was explicit
+    // (--model/--api-key) or some provider can actually be reached; otherwise
+    // treat it as unset so the TUI's sign-in notice fires instead of failing on
+    // the first message.
+    let model = if !require_model
+        && !explicit
+        && !crate::core::cli::providers::has_usable_provider(Some(&project_root))
+    {
+        String::new()
+    } else {
+        model.unwrap_or_default()
+    };
+    if model.is_empty() && require_model {
+        return Err(
             "no model specified: run `jan login` to sign in to Tokamak, or pass --model, set [agent].model in agent.toml, set default_model in ~/.jan/config.toml, or select a model in the desktop app"
-                .to_string()
-        })?;
+                .to_string(),
+        );
+    }
     let max_turns = max_turns_override
         .or(cfg.agent.max_turns)
         .unwrap_or(DEFAULT_MAX_TURNS);
@@ -772,8 +790,15 @@ fn prepare_agent_run(
 ) -> Result<PreparedRun, String> {
     // Non-interactive runs (`agent run`/`step`) have no plan-review handoff, so
     // plan mode stays a TUI-only startup option.
-    let session =
-        prepare_agent_session(project, model_override, max_turns_override, overrides, yolo, false)?;
+    let session = prepare_agent_session(
+        project,
+        model_override,
+        max_turns_override,
+        overrides,
+        yolo,
+        false,
+        true,
+    )?;
     let project_root = resolve_project_root(project);
     let (clean_task, injected) = path_refs::resolve_references(task, &project_root);
     let final_task = if injected.is_empty() {
@@ -918,13 +943,16 @@ pub async fn cli_agent_ui(
     resume: Option<ResumeTarget>,
 ) -> Result<(), String> {
     let project_root = resolve_project_root(project);
-    // Fresh install: sign in before session setup, which would otherwise fail on
-    // "no model specified" with nothing configured. Skipped the moment any
-    // provider is usable, and bypassed entirely by an explicit --api-key/env key.
+    // A non-interactive invocation with nothing configured has no terminal to
+    // show the sign-in notice in, so it fails fast with instructions instead.
+    // Bypassed by an explicit --api-key/env key.
     if overrides.api_key.is_none() {
-        login::ensure_provider_configured(Some(&project_root)).await?;
+        login::reject_headless_without_provider(Some(&project_root))?;
     }
-    let session = prepare_agent_session(project, model, max_turns, overrides, yolo, plan)?;
+    // Fresh install with a terminal attached: launch with no model rather than
+    // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
+    // `jan login`) picks a model up once the user is ready.
+    let session = prepare_agent_session(project, model, max_turns, overrides, yolo, plan, false)?;
     // TUI threads persist under the project's .jan/agent dir, separate from the
     // desktop store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
