@@ -10,6 +10,7 @@ pub mod providers;
 mod path_refs;
 pub mod run_report;
 mod secret_input;
+pub mod telemetry;
 pub mod tokamak;
 mod tui;
 pub mod updater;
