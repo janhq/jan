@@ -9,7 +9,7 @@
  *   as inline notices.
  */
 import { fs } from '@janhq/core'
-import type { PathReference, FilePickerEntry } from '@/types/path-reference'
+import type { FilePickerEntry } from '@/types/path-reference'
 
 export type { FilePickerEntry }
 
