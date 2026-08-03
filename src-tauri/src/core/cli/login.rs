@@ -1,10 +1,10 @@
 //! Terminal sign-in UX for Tokamak: the plain-stdout counterpart to the TUI's
 //! `/login` overlay. Both drive [`super::tokamak`]; only presentation differs.
 //!
-//! This runs *before* the TUI starts, which is what makes a fresh install work
-//! at all: with no provider configured, session setup fails on "no model
-//! specified" before a single frame is drawn, so the key has to be collected
-//! here.
+//! `jan login` runs this directly. The TUI no longer forces this flow on a
+//! fresh install -- it launches with an empty model and shows a one-line
+//! notice, letting the user run `/login` (or `jan login`) when they are ready
+//! instead of being dropped into a masked key prompt immediately.
 
 use std::io::IsTerminal;
 
@@ -16,23 +16,18 @@ const MAX_ATTEMPTS: usize = 3;
 
 const KEY_PROMPT: &str = "Paste your Tokamak API key: ";
 
-/// Guarantee a runnable provider before the agent starts, signing the user in if
-/// there is none. No-op when anything usable is already configured, so the
-/// startup cost on an existing install is one config read.
-///
-/// Non-interactive (piped stdin) fails with instructions instead of prompting:
-/// there is no one there to paste a key.
-pub async fn ensure_provider_configured(
-    project_root: Option<&std::path::Path>,
-) -> Result<(), String> {
+/// Reject a non-interactive run with nothing configured: there is no terminal
+/// to show the sign-in notice in and nobody to act on it. No-op otherwise --
+/// an interactive run with no provider proceeds and the TUI shows its own
+/// notice instead of forcing a login flow here.
+pub fn reject_headless_without_provider(project_root: Option<&std::path::Path>) -> Result<(), String> {
     if super::providers::has_usable_provider(project_root) {
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
         return Err(headless_message());
     }
-    println!("No AI provider is configured yet.");
-    run_login().await
+    Ok(())
 }
 
 /// Sign in to Tokamak from a plain terminal: point the user at the API-keys
