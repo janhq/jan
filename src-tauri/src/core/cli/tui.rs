@@ -1260,6 +1260,10 @@ impl App {
     }
 
     fn submit_user(&mut self, text: String) {
+        if self.model.is_empty() {
+            self.note("not signed in — run /login to sign in to Tokamak first");
+            return;
+        }
         // If a turn is already in progress, enqueue the message instead
         if self.status == Status::Running {
             self.message_queue.push_back(text.clone());
@@ -3215,6 +3219,9 @@ pub async fn run(
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
     app.run_mode = args.run_mode;
+    if app.model.is_empty() {
+        app.note("not signed in — run /login to sign in to Tokamak, or `jan config set` to configure a provider manually");
+    }
     if args.yolo {
         app.note("--yolo: sandbox disabled, all tool calls auto-approved without prompting");
     }
@@ -7987,6 +7994,17 @@ mod tests {
         assert!(!prompt.verifying);
         assert!(prompt.input.is_empty());
         assert_eq!(prompt.error.as_deref(), Some("Tokamak rejected that API key."));
+    }
+
+    #[test]
+    fn submit_user_with_no_model_notes_instead_of_starting_a_turn() {
+        let mut app = test_app();
+        app.model = String::new();
+        app.submit_user("hi".into());
+        assert!(!app.want_start, "a fresh install must not start a turn with no model");
+        assert!(app.history.is_empty());
+        let text: String = app.transcript.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.to_string()).collect();
+        assert!(text.contains("/login"), "{text}");
     }
 
     #[test]
