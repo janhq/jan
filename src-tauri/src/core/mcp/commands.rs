@@ -15,7 +15,7 @@ use crate::core::{
 };
 use crate::core::{
     mcp::models::ToolWithServer,
-    state::{RunningServiceEnum, SharedMcpServers},
+    state::{RunningMcpService, SharedMcpServers},
 };
 use std::{collections::HashSet, fs, time::Duration};
 
@@ -219,16 +219,8 @@ pub async fn deactivate_mcp_server<R: Runtime>(
     // Release the lock before calling cancel
     drop(servers_map);
 
-    match service {
-        RunningServiceEnum::NoInit(service) => {
-            log::info!("Stopping server {name}...");
-            service.cancel().await.map_err(|e| e.to_string())?;
-        }
-        RunningServiceEnum::WithInit(service) => {
-            log::info!("Stopping server {name} with initialization...");
-            service.cancel().await.map_err(|e| e.to_string())?;
-        }
-    }
+    log::info!("Stopping server {name}...");
+    service.cancel().await.map_err(|e| e.to_string())?;
 
     let child_pid = {
         let mut pids = state.mcp_server_pids.lock().await;
@@ -300,14 +292,7 @@ async fn remove_mcp_server_entry(
     let mut servers = mcp_servers.lock().await;
     if let Some(service) = servers.remove(server_name) {
         log::warn!("Removing MCP server {server_name} from connected servers");
-        match service {
-            RunningServiceEnum::NoInit(s) => {
-                let _ = s.cancel().await;
-            }
-            RunningServiceEnum::WithInit(s) => {
-                let _ = s.cancel().await;
-            }
-        }
+        let _ = service.cancel().await;
         true
     } else {
         false
@@ -436,7 +421,7 @@ pub async fn call_tool(
     let servers = state.mcp_servers.lock().await;
 
     // If server_name is provided, only check that specific server
-    let servers_to_check: Vec<(&String, &crate::core::state::RunningServiceEnum)> =
+    let servers_to_check: Vec<(&String, &RunningMcpService)> =
         if let Some(ref server) = server_name {
             servers.iter().filter(|(name, _)| *name == server).collect()
         } else {
@@ -728,7 +713,7 @@ enum PingResult {
     ToolNotAvailable,
 }
 
-async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
+async fn try_ping_tool(service: &RunningMcpService) -> PingResult {
     let result = timeout(
         Duration::from_secs(3),
         service.call_tool(CallToolRequestParam {
@@ -764,7 +749,7 @@ async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
     }
 }
 
-async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
+async fn try_browser_snapshot_tool(service: &RunningMcpService) -> Result<bool, String> {
     let result = timeout(
         // Snapshot tool is very time-consuming
         // Extend timeout to make sure the tool call has enough time to succeed
