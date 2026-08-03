@@ -51,6 +51,7 @@ Default permissions for the llamacpp plugin
 - `allow-build-backend-download-items`
 - `allow-fetch-backend-checksums`
 - `allow-verify-file-sha512`
+- `allow-probe-backend-load`
 
 ## Permission Table
 
@@ -941,6 +942,32 @@ Enables the prioritize_backends command without any pre-configured scope.
 <td>
 
 Denies the prioritize_backends command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-probe-backend-load`
+
+</td>
+<td>
+
+Enables the probe_backend_load command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-probe-backend-load`
+
+</td>
+<td>
+
+Denies the probe_backend_load command without any pre-configured scope.
 
 </td>
 </tr>

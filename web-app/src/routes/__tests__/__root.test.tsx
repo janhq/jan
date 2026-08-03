@@ -6,7 +6,7 @@ import React from 'react'
 
 const h = vi.hoisted(() => ({
   productAnalyticPrompt: false,
-  showJanModelPrompt: false,
+  isOnboarding: false,
   leftPanelOpen: true,
   sidebarWidth: 260,
   setLeftPanel: vi.fn(),
@@ -53,6 +53,9 @@ vi.mock('@/providers/AnalyticProvider', () => ({
 vi.mock('@/providers/GlobalEventHandler', () => ({
   GlobalEventHandler: () => <div data-testid="global-event" />,
 }))
+vi.mock('@/providers/DownloadEventListener', () => ({
+  DownloadEventListener: () => <div data-testid="download-events" />,
+}))
 vi.mock('@/providers/ServiceHubProvider', () => ({
   ServiceHubProvider: ({ children }: any) => (
     <div data-testid="service-hub">{children}</div>
@@ -85,9 +88,6 @@ vi.mock('@/containers/dialogs/ErrorDialog', () => ({
 vi.mock('@/containers/analytics/PromptAnalytic', () => ({
   PromptAnalytic: () => <div data-testid="prompt-analytic" />,
 }))
-vi.mock('@/containers/PromptJanModel', () => ({
-  PromptJanModel: () => <div data-testid="prompt-jan" />,
-}))
 vi.mock('@/containers/GlobalError', () => ({
   default: ({ error }: any) => <div data-testid="global-error">{error?.message}</div>,
 }))
@@ -112,8 +112,8 @@ vi.mock('@/components/ui/sidebar', () => ({
 vi.mock('@/hooks/useAnalytic', () => ({
   useAnalytic: () => ({ productAnalyticPrompt: h.productAnalyticPrompt }),
 }))
-vi.mock('@/hooks/useJanModelPrompt', () => ({
-  useJanModelPrompt: () => ({ showJanModelPrompt: h.showJanModelPrompt }),
+vi.mock('@/hooks/useIsOnboarding', () => ({
+  useIsOnboarding: () => h.isOnboarding,
 }))
 vi.mock('@/hooks/useLeftPanel', () => ({
   useLeftPanel: () => ({
@@ -143,7 +143,7 @@ describe('__root route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     h.productAnalyticPrompt = false
-    h.showJanModelPrompt = false
+    h.isOnboarding = false
     // reset document state
     document.body.className = ''
     const loader = document.getElementById('initial-loader')
@@ -176,10 +176,27 @@ describe('__root route', () => {
     expect(screen.getByTestId('backend-updater')).toBeInTheDocument()
   })
 
+  // Mounted here rather than beside the download popover, which is absent on
+  // some screens -- including first-run setup.
+  it('listens for download events for the whole app lifetime', () => {
+    renderComponent()
+    expect(screen.getByTestId('download-events')).toBeInTheDocument()
+  })
+
   it('renders PromptAnalytic when productAnalyticPrompt is true', () => {
     h.productAnalyticPrompt = true
     renderComponent()
     expect(screen.getByTestId('prompt-analytic')).toBeInTheDocument()
+  })
+
+  // The setup screen is the single onboarding surface; these would otherwise
+  // stack on top of it asking for things the wizard already covers.
+  it('defers the analytics prompt and backend updater while onboarding', () => {
+    h.isOnboarding = true
+    h.productAnalyticPrompt = true
+    renderComponent()
+    expect(screen.queryByTestId('prompt-analytic')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('backend-updater')).not.toBeInTheDocument()
   })
 
   it('does not render PromptAnalytic when productAnalyticPrompt is false', () => {
@@ -188,11 +205,6 @@ describe('__root route', () => {
     expect(screen.queryByTestId('prompt-analytic')).not.toBeInTheDocument()
   })
 
-  it('renders PromptJanModel when showJanModelPrompt is true', () => {
-    h.showJanModelPrompt = true
-    renderComponent()
-    expect(screen.getByTestId('prompt-jan')).toBeInTheDocument()
-  })
 
   it('uses LogsLayout on /logs path (no sidebar)', () => {
     window.history.pushState({}, '', '/logs')

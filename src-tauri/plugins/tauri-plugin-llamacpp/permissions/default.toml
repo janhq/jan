@@ -56,5 +56,8 @@ permissions = [
     "allow-fetch-remote-supported-backends",
     "allow-build-backend-download-items",
     "allow-fetch-backend-checksums",
-    "allow-verify-file-sha512"
+    "allow-verify-file-sha512",
+
+    # Backend GPU library load probe
+    "allow-probe-backend-load"
 ]

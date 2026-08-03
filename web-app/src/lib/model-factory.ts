@@ -74,6 +74,8 @@ import {
   getMutualExclusionDrops,
   getProviderApiType,
 } from '@/lib/providerCaps'
+import { describeEngineError } from '@/lib/engineError'
+import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
@@ -913,8 +915,12 @@ export class ModelFactory {
         }
       } catch (error) {
         console.error('Failed to start llamacpp model:', error)
+        // A serialized engine error is a plain object, so the previous
+        // `instanceof Error` path stringified it into raw JSON for the user.
         throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          i18n.t('model-errors:startModelFailed', {
+            reason: describeEngineError(error),
+          })
         )
       }
     }
@@ -926,7 +932,9 @@ export class ModelFactory {
     )
 
     if (!sessionInfo) {
-      throw new Error(`No running session found for model: ${modelId}`)
+      throw new Error(
+        i18n.t('model-errors:noRunningSession', { model: modelId })
+      )
     }
 
     const onLlamacppServerError = provider
@@ -997,7 +1005,9 @@ export class ModelFactory {
       } catch (error) {
         console.error('Failed to start MLX model:', error)
         throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          i18n.t('model-errors:startModelFailed', {
+            reason: describeEngineError(error),
+          })
         )
       }
     }

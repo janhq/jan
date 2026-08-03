@@ -205,3 +205,22 @@ export interface SettingUpdateResult {
   version?: string
   backend?: string
 }
+
+/** One ggml GPU library that failed to load, with the cause. */
+export interface LoadProbeFailure {
+  library: string
+  /** Raw loader message. */
+  error: string
+  /** Names parsed out of `error`, for install advice. */
+  missing_libraries: string[]
+}
+
+export interface LoadProbeResult {
+  loaded: string[]
+  failures: LoadProbeFailure[]
+  /**
+   * The probe could not run, so an empty `failures` list must not be read as a
+   * healthy backend.
+   */
+  inconclusive: boolean
+}
