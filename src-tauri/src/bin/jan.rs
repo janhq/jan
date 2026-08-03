@@ -27,7 +27,10 @@ where you chat with a model that can run tools in your project.\n\n\
 The `jan cli` subcommand is the non-interactive fallback: run folder-based\n\
 agents headlessly and manage threads and providers.\n\n\
 Models are served by remote providers configured in ~/.jan/config.toml\n\
-(see `jan config set`), a project's agent.toml, or the Jan desktop app.",
+(see `jan config set`), a project's agent.toml, or the Jan desktop app.\n\n\
+Once every 24h this sends an anonymous usage ping (version, OS/arch, a random\n\
+install id) to the same endpoint as the update check. Set JAN_CLI_NO_UPDATE_CHECK\n\
+to opt out of both.",
     after_help = "Examples:\n  \
   jan                                                    # open the interactive agent console (TUI)\n  \
   jan --yolo                                             # TUI with every tool call auto-approved\n  \
@@ -374,6 +377,7 @@ async fn main() {
         // No stderr notice on this path: the TUI's alternate screen would wipe
         // it, and blocking on the check here would delay the first frame. The
         // TUI runs the same check itself and notes it in the transcript.
+        // The usage ping is likewise deferred to the TUI's own background task.
         let overrides = cli.providers.into_overrides();
         if let Err(e) = cli_agent_ui(
             &cli.project,
@@ -398,6 +402,10 @@ async fn main() {
     if !matches!(command, Commands::Update { .. }) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
+    // Awaited (not spawned): a short-lived `jan cli ...` invocation can exit
+    // before a detached background task gets to run. See `telemetry::ping_if_due`
+    // for what this sends and `JAN_CLI_NO_UPDATE_CHECK` to opt out.
+    app_lib::core::cli::telemetry::ping_if_due().await;
 
     match command {
         Commands::Cli { cmd } => handle_cli(cmd).await,

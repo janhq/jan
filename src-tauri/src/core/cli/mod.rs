@@ -7,6 +7,7 @@ pub mod mcp;
 pub mod providers;
 mod path_refs;
 mod secret_input;
+pub mod telemetry;
 pub mod tokamak;
 mod tui;
 pub mod updater;

@@ -20,5 +20,9 @@ pub mod state;
 pub mod system;
 pub mod threads;
 
-#[cfg(all(not(any(target_os = "android", target_os = "ios")), not(feature = "cli")))]
+// `custom_updater`/`hmac_client` (the HMAC-signed request-signing bits) are
+// also used by the headless CLI's usage ping (`cli::telemetry`); only
+// `commands`/`session` are Tauri-specific and stay desktop-only, see
+// `updater::mod`.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod updater;

@@ -18,7 +18,7 @@ use thiserror::Error;
 /// Secret key for HMAC signature
 /// - In CI: Set JAN_SIGNING_KEY environment variable at build time
 /// - In local dev: Falls back to a test key
-const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
+pub(crate) const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
     Some(key) => key,
     None => "local-dev-test-key-not-for-production",
 };
