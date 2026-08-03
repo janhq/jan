@@ -8,11 +8,13 @@
 
 use std::io::IsTerminal;
 
-use super::tokamak;
+use super::{secret_input, tokamak};
 
 /// Max key prompts before giving up, so a wrong paste is retryable but a script
 /// piping garbage at us can't loop forever.
 const MAX_ATTEMPTS: usize = 3;
+
+const KEY_PROMPT: &str = "Paste your Tokamak API key: ";
 
 /// Guarantee a runnable provider before the agent starts, signing the user in if
 /// there is none. No-op when anything usable is already configured, so the
@@ -51,6 +53,7 @@ pub async fn run_login() -> Result<(), String> {
         Err(e) => println!("  (open that URL yourself: {e})"),
     }
     println!();
+    println!("The key is masked as you type or paste. Enter verifies, Esc cancels.");
 
     let mut last_error = None;
     for attempt in 1..=MAX_ATTEMPTS {
@@ -99,28 +102,13 @@ async fn login_from_stdin() -> Result<(), String> {
     Ok(())
 }
 
-/// Read the key with echo disabled. `None` means the user interrupted the
-/// prompt. Runs on a blocking thread: `dialoguer` owns the terminal while it
-/// waits, which must not stall the async runtime.
+/// Read the key, echoing a mask so the user can see a paste land. `None` means
+/// the user abandoned the prompt. Runs on a blocking thread: the prompt owns the
+/// terminal while it waits, which must not stall the async runtime.
 async fn prompt_for_key() -> Result<Option<String>, String> {
-    tokio::task::spawn_blocking(|| {
-        match dialoguer::Password::new()
-            .with_prompt("Paste your Tokamak API key")
-            .allow_empty_password(true)
-            .interact()
-        {
-            Ok(key) => Ok(Some(key)),
-            Err(e) if is_interrupted(&e) => Ok(None),
-            Err(e) => Err(format!("could not read the API key: {e}")),
-        }
-    })
-    .await
-    .map_err(|e| format!("key prompt failed: {e}"))?
-}
-
-fn is_interrupted(e: &dialoguer::Error) -> bool {
-    let dialoguer::Error::IO(io) = e;
-    io.kind() == std::io::ErrorKind::Interrupted
+    tokio::task::spawn_blocking(|| secret_input::read_masked_line(KEY_PROMPT))
+        .await
+        .map_err(|e| format!("key prompt failed: {e}"))?
 }
 
 /// Why we stopped when there is nobody at the keyboard to paste a key.
