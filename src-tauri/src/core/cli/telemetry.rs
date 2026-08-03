@@ -3,9 +3,11 @@
 //! Reuses the desktop's HMAC-signed update-check endpoint purely as a usage
 //! counter: once per 24h, fires a signed request carrying the CLI version,
 //! OS/arch, and a persisted anonymous install id (analogous to the desktop's
-//! `nonce_seed` session, see `core::updater::session`). Shares the update
-//! check's opt-out (`JAN_CLI_NO_UPDATE_CHECK`) and its silent-failure
-//! philosophy: a dropped ping must never print anything or affect startup.
+//! `nonce_seed` session, see `core::updater::session`). The `User-Agent` is
+//! `Jan-Agent/...`, not `Jan/...`, so this is distinguishable server-side from
+//! a desktop update check. Shares the update check's opt-out
+//! (`JAN_CLI_NO_UPDATE_CHECK`) and its silent-failure philosophy: a dropped
+//! ping must never print anything or affect startup.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -55,9 +57,13 @@ fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
+// "Jan Agent", not "Jan": lets the analytics backend tell this ping apart
+// from a desktop client, which sends "Jan/{version} (...)" (see
+// `custom_updater::build_user_agent`) -- both share the same version number,
+// so the client name is the only distinguishing signal in the request.
 fn build_user_agent(version: &str) -> String {
     format!(
-        "Jan/{} ({}; {})",
+        "Jan-Agent/{} ({}; {})",
         version,
         std::env::consts::OS,
         std::env::consts::ARCH
