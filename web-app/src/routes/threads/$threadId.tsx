@@ -100,17 +100,6 @@ function serverForTool(toolName: string): string | undefined {
     ?.server
 }
 
-// Internal tools never prompt: RAG and the native web tools are Jan's own, and
-// the built-in agent tools are gated in Rust (execute_tool refuses anything
-// needing approval), so only workspace-confined calls ever reach here.
-function isAutoAllowedTool(toolName: string): boolean {
-  return (
-    useAppState.getState().ragToolNames.has(toolName) ||
-    WEB_TOOL_NAMES.has(toolName) ||
-    AGENT_TOOL_NAMES.has(toolName)
-  )
-}
-
 // Persist the out-of-context error onto the latest user message so the banner
 // survives thread switches, mirroring how LlamacppOomListener stamps oom/backend.
 function stampContextErrorOnThread(

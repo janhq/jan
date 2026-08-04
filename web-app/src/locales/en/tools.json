@@ -5,12 +5,7 @@
     "allowOnce": "Allow Once",
     "allowInThread": "Allow in thread",
     "allowServerAlways": "Always allow {{server}}",
-    "allowToolAlways": "Always allow {{tool}}",
-    "title": "Tool Call Request",
-    "description": "The assistant wants to use the tool:",
-    "securityNotice": "Security Notice: Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
-    "permissionScope": "You can allow it just this once, or every time.",
-    "alwaysAllow": "Always allow"
+    "allowToolAlways": "Always allow {{tool}}"
   },
   "toolCall": {
     "awaitingApproval": "Awaiting approval: {{tool}}",
@@ -36,7 +31,6 @@
     "contentTruncated": "Content truncated",
     "originWeb": "Web",
     "originDocuments": "Documents",
-    "originWorkspace": "Workspace",
     "viewRaw": "Raw",
     "viewTable": "Table",
     "showMore": "Show more",
@@ -48,14 +42,6 @@
     "summaryBlocks": "{{text}} text, {{other}} attachment(s)",
     "summaryItems": "{{count}} item(s)",
     "summaryFields": "{{count}} field(s): {{fields}}",
-    "summaryEmpty": "Empty result",
-    "terminal": "Terminal",
-    "exitCode": "exit {{code}}",
-    "terminated": "terminated",
-    "outputTruncated": "Output was truncated; only the last lines are shown.",
-    "pollingJob": "waiting for background job {{id}}",
-    "pathPlaceholder": "path",
-    "reading": "Reading...",
-    "workspaceRoot": "workspace root"
+    "summaryEmpty": "Empty result"
   }
 }

@@ -2,9 +2,6 @@
   "toolApproval": {
     "needsApproval": "Aquesta eina necessita la teva aprovació abans d’executar-se.",
     "deny": "Denega",
-    "allowOnce": "Permet un cop",
-    "title": "Sol·licitud d’ús d’una eina",
-    "description": "L’assistent vol utilitzar l’eina:",
-    "securityNotice": "Avís de seguretat: Eines malicioses o contingut de la conversa podrien enganyar l’assistent perquè faci accions perjudicials. Revisa cada sol·licitud amb cura abans d’aprovar-la."
+    "allowOnce": "Permet un cop"
   }
 }

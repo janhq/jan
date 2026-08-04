@@ -27,13 +27,6 @@ export type ToolCallRuntimeSnapshot = {
   timings: Record<string, ToolCallTiming>
   /** Latest progress update per call, cleared when the call settles. */
   progress: Record<string, ToolProgressUpdate>
-  /**
-   * Unified diff per `write`/`edit` call. Display-only: it deliberately never
-   * enters the model-facing tool output, so it cannot travel on the message part
-   * and needs a side channel. Unlike `progress` it is kept after the call
-   * settles, since the diff is the whole point of the finished card.
-   */
-  diffs: Record<string, string>
 }
 
 type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
@@ -50,8 +43,6 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * belong to -- well defined because tools execute one at a time.
    */
   reportProgress: (update: ToolProgressUpdate) => void
-  /** Records a display-only diff against the call that produced it. */
-  recordDiff: (toolCallId: string, diff: string) => void
   /** Ends a turn: nothing still queued will run, so stop showing it as waiting. */
   settleRemaining: () => void
   reset: () => void
@@ -82,7 +73,6 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
   queue: [],
   timings: {},
   progress: {},
-  diffs: {},
 
   enqueue: (toolCallIds) =>
     set((s) => {
@@ -138,9 +128,6 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return running ? { progress: { ...s.progress, [running]: update } } : s
     }),
 
-  recordDiff: (toolCallId, diff) =>
-    set((s) => ({ diffs: { ...s.diffs, [toolCallId]: diff } })),
-
   settleRemaining: () =>
     set((s) => {
       if (s.queue.length === 0) return s
@@ -152,5 +139,5 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return { queue: [], timings }
     }),
 
-  reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {} }),
+  reset: () => set({ queue: [], timings: {}, progress: {} }),
 }))

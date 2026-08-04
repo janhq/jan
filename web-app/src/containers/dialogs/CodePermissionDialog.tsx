@@ -31,6 +31,11 @@ export type PendingPermission = {
 // tool-card approval) can reuse it instead of re-deriving the mapping.
 export const WIRE: Record<ApprovalDecision, PermissionDecision> = {
   'allow-once': 'allow_once',
+  // The agent's grants are "in-memory, thread-scoped ... never persisted"
+  // (see `PermissionGrants` in gate.rs), so the wire's `allow_always` already
+  // means "for this session". Both scopes map onto it rather than one of them
+  // silently behaving like a narrower grant than the label promises.
+  'allow-thread': 'allow_always',
   'allow-always': 'allow_always',
   deny: 'deny',
 }

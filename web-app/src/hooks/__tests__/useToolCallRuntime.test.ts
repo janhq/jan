@@ -134,27 +134,4 @@ describe('useToolCallRuntime', () => {
     store().markSettled('ghost')
     expect(store().timings['ghost']).toBeUndefined()
   })
-
-  // The diff is the whole point of a finished write/edit card, so unlike
-  // `progress` it has to outlive the call settling.
-  it('keeps a recorded diff after the call settles', () => {
-    store().enqueue(['a'])
-    store().markRunning('a')
-    store().recordDiff('a', '@@ edit 1/1 @@\n+    1 | A')
-    store().markSettled('a')
-    expect(store().diffs['a']).toContain('+    1 | A')
-  })
-
-  it("clears diffs on reset so a thread cannot show another thread's diff", () => {
-    store().recordDiff('a', 'diff')
-    store().reset()
-    expect(store().diffs).toEqual({})
-  })
-
-  it('records diffs per call without disturbing the others', () => {
-    store().recordDiff('a', 'first')
-    store().recordDiff('b', 'second')
-    store().recordDiff('a', 'first again')
-    expect(store().diffs).toEqual({ a: 'first again', b: 'second' })
-  })
 })
