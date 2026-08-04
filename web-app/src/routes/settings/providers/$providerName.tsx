@@ -52,6 +52,8 @@ import {
 import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
+  applyProviderAuthHeader,
+  ensureAnthropicHeaders,
 } from '@/lib/remoteModelCatalog'
 
 // as route.threadsDetail
@@ -451,15 +453,15 @@ function ProviderDetail() {
         if (!key) continue
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
-          'x-api-key': key,
-          Authorization: `Bearer ${key}`,
         }
+        applyProviderAuthHeader(provider, headers, key)
         if (
           provider.base_url.includes('localhost:') ||
           provider.base_url.includes('127.0.0.1:')
         ) {
           headers['Origin'] = 'tauri://localhost'
         }
+        ensureAnthropicHeaders(provider, headers)
 
         try {
           const response = await fetchImpl(`${provider.base_url}/models`, {
@@ -493,7 +495,7 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+  }, [apiKeysDraft, maskApiKey, provider, serviceHub, t])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {

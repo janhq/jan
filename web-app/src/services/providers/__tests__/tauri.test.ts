@@ -338,7 +338,7 @@ describe('TauriProvidersService', () => {
       )
     })
 
-    it('adds auth headers when api key is available', async () => {
+    it('adds only the Authorization header for OpenAI-compatible providers', async () => {
       vi.mocked(providerRemoteApiKeyChain).mockReturnValue(['sk-test'])
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,
@@ -347,15 +347,31 @@ describe('TauriProvidersService', () => {
       } as any)
 
       await svc.fetchModelsFromProvider(baseProvider)
-      expect(fetchTauri).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'x-api-key': 'sk-test',
-            Authorization: 'Bearer sk-test',
-          }),
-        })
-      )
+      const headers = vi.mocked(fetchTauri).mock.calls[0][1]!
+        .headers as Record<string, string>
+      expect(headers.Authorization).toBe('Bearer sk-test')
+      // Both auth headers at once break upstreams that reject mixed auth
+      // (e.g. AWS Bedrock Mantle answers 401). See issue #8444.
+      expect(headers).not.toHaveProperty('x-api-key')
+    })
+
+    it('adds only the x-api-key header for anthropic-shaped providers', async () => {
+      vi.mocked(providerRemoteApiKeyChain).mockReturnValue(['sk-ant'])
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider({
+        ...baseProvider,
+        provider: 'my-gateway',
+        api_type: 'anthropic',
+      })
+      const headers = vi.mocked(fetchTauri).mock.calls[0][1]!
+        .headers as Record<string, string>
+      expect(headers['x-api-key']).toBe('sk-ant')
+      expect(headers).not.toHaveProperty('Authorization')
     })
 
     it('adds default anthropic-version header for anthropic-shaped custom providers', async () => {
