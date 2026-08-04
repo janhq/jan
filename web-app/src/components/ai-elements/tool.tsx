@@ -11,6 +11,7 @@ import { ChevronDownIcon, WrenchIcon, SearchIcon, GlobeIcon } from 'lucide-react
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
+  Fragment,
   isValidElement,
   memo,
   useContext,
@@ -20,12 +21,25 @@ import {
   useState,
 } from 'react'
 import { CodeBlock } from './code-block'
+import { CopyButton } from '@/containers/CopyButton'
+import {
+  isPlainObject,
+  parseToolInput,
+  stringifyToolInput,
+  summarizeToolInput,
+} from '@/lib/toolInputSummary'
+import { summarizeToolOutput } from '@/lib/toolOutputSummary'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { ToolElapsed } from './tool-runtime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import { ShieldAlertIcon } from 'lucide-react'
 import { Citations } from '@/components/Citations'
 import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
+
+/** Payloads shorter than this fit the collapsed box, so no expand control. */
+const OUTPUT_EXPAND_THRESHOLD = 600
 
 type ToolContextValue = {
   isOpen: boolean
@@ -112,61 +126,119 @@ export type ToolHeaderProps = {
   state: ToolUIPart['state']
   type: ToolUIPart['type']
   className?: string
+  /** Where the tool came from (web provider, documents, MCP server name). */
+  origin?: string
+  /** Arguments, previewed inline so a collapsed call still says what it did. */
+  input?: ToolUIPart['input']
 }
 
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string
+
 const getStatusText = (
+  t: TranslateFn,
   status: ToolUIPart['state'],
   toolName: string,
-  awaitingApproval: boolean
+  awaitingApproval: boolean,
+  isQueued: boolean
 ) => {
   const isRunning = status === 'input-streaming' || status === 'input-available'
   const hasError = status === 'output-error' || status === 'output-denied'
+  const tool = toolName.replaceAll('_', ' ')
 
   if (awaitingApproval) {
-    return `Awaiting approval: ${toolName.replaceAll('_', ' ')}`
+    return t('tools:toolCall.awaitingApproval', { tool })
+  }
+  // Tools run one at a time, so a pending call is only "running" once the
+  // executor has actually reached it.
+  if (isQueued) {
+    return t('tools:toolCall.queued', { tool })
   }
   if (isRunning) {
-    return `Running ${toolName.replaceAll('_', ' ')}...`
+    return t('tools:toolCall.running', { tool })
   }
   if (hasError) {
-    return `${toolName.replaceAll('_', ' ')} failed`
+    return t('tools:toolCall.failed', { tool })
   }
-  return `Used ${toolName.replaceAll('_', ' ')}`
+  return t('tools:toolCall.used', { tool })
 }
 
 export const ToolHeader = memo(
-  ({ className, title, state, type }: ToolHeaderProps) => {
+  ({ className, title, state, type, origin, input }: ToolHeaderProps) => {
+    const { t } = useTranslation()
     const { isOpen, toolCallId } = useTool()
     const awaitingApproval = useToolApprovalRequests((s) =>
       toolCallId ? Boolean(s.pending[toolCallId]) : false
     )
     const toolName = title ?? type.split('-').slice(1).join('-')
+    const summary = useMemo(() => summarizeToolInput(input), [input])
+    // Position in the pending queue, or -1 once the executor has reached it.
+    const queuePosition = useToolCallRuntime((s) =>
+      toolCallId ? s.queue.indexOf(toolCallId) : -1
+    )
+    const startedAt = useToolCallRuntime((s) =>
+      toolCallId ? s.timings[toolCallId]?.startedAt : undefined
+    )
+    const endedAt = useToolCallRuntime((s) =>
+      toolCallId ? s.timings[toolCallId]?.endedAt : undefined
+    )
 
     return (
       <CollapsibleTrigger
         className={cn(
-          'cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors capitalize', !isOpen && 'hover:bg-secondary',
+          'cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors',
+          !isOpen && 'hover:bg-secondary',
           className
         )}
       >
         {awaitingApproval ? (
-          <ShieldAlertIcon className="size-4 text-amber-500" />
+          <ShieldAlertIcon className="size-4 shrink-0 text-amber-500" />
         ) : toolName === 'web_search' ? (
-          <SearchIcon className="size-4" />
+          <SearchIcon className="size-4 shrink-0" />
         ) : toolName === 'web_fetch' ? (
-          <GlobeIcon className="size-4" />
+          <GlobeIcon className="size-4 shrink-0" />
         ) : (
-          <WrenchIcon className="size-4" />
+          <WrenchIcon className="size-4 shrink-0" />
         )}
-        <span className={cn(awaitingApproval && 'text-amber-600 dark:text-amber-400')}>
-          {getStatusText(state, toolName, awaitingApproval)}
-        </span>
-        <ChevronDownIcon
+        <span
           className={cn(
-            'size-4 transition-transform',
-            isOpen ? 'rotate-180' : 'rotate-0'
+            'shrink-0 capitalize',
+            awaitingApproval && 'text-amber-600 dark:text-amber-400'
           )}
-        />
+        >
+          {getStatusText(
+            t,
+            state,
+            toolName,
+            awaitingApproval,
+            queuePosition >= 0
+          )}
+        </span>
+        {origin && (
+          <span className="shrink-0 text-muted-foreground/60">{origin}</span>
+        )}
+        {summary && (
+          <span className="min-w-0 truncate text-left font-mono text-xs text-muted-foreground/60">
+            {summary}
+          </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {queuePosition > 0 && (
+            <span className="text-xs text-muted-foreground/60">
+              {t('tools:toolCall.queuedPosition', { count: queuePosition })}
+            </span>
+          )}
+          <ToolElapsed
+            startedAt={startedAt}
+            endedAt={endedAt}
+            className="text-muted-foreground/60"
+          />
+          <ChevronDownIcon
+            className={cn(
+              'size-4 shrink-0 transition-transform',
+              isOpen ? 'rotate-180' : 'rotate-0'
+            )}
+          />
+        </span>
       </CollapsibleTrigger>
     )
   }
@@ -195,32 +267,63 @@ export type ToolInputProps = ComponentProps<'div'> & {
   input: ToolUIPart['input']
 }
 
+/** Table cells keep nested values readable rather than collapsing them. */
+const formatParamValue = (value: unknown): string =>
+  typeof value === 'string' ? value : stringifyToolInput(value)
+
 export const ToolInput = memo(
   ({ className, input, ...props }: ToolInputProps) => {
-    const formatted = useMemo(() => {
-      let value: unknown = input
-      if (typeof value === 'string') {
-        try {
-          value = JSON.parse(value)
-        } catch {
-          return value as string
-        }
-      }
-      try {
-        return JSON.stringify(value, null, 2)
-      } catch {
-        return String(value)
-      }
-    }, [input])
+    const { t } = useTranslation()
+    const [showRaw, setShowRaw] = useState(false)
+
+    const parsed = useMemo(() => parseToolInput(input), [input])
+    const formatted = useMemo(() => stringifyToolInput(parsed), [parsed])
+    const rows = useMemo(
+      () => (isPlainObject(parsed) ? Object.entries(parsed) : []),
+      [parsed]
+    )
+    const asTable = rows.length > 0 && !showRaw
 
     return (
       <div className={cn('space-y-2', className)} {...props}>
-        <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-          Parameters
-        </h4>
-        <div className="rounded-md max-h-40 overflow-auto border ">
-          <CodeBlock code={formatted} language="json" />
+        <div className="flex items-center gap-1">
+          <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            {t('tools:toolCall.parameters')}
+          </h4>
+          <div className="ml-auto flex items-center gap-1">
+            {rows.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => setShowRaw((raw) => !raw)}
+              >
+                {showRaw
+                  ? t('tools:toolCall.viewTable')
+                  : t('tools:toolCall.viewRaw')}
+              </Button>
+            )}
+            <CopyButton text={formatted} />
+          </div>
         </div>
+        {asTable ? (
+          <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+            {rows.map(([key, value]) => (
+              <Fragment key={key}>
+                <dt className="truncate font-mono text-xs text-muted-foreground/70">
+                  {key}
+                </dt>
+                <dd className="min-w-0 max-h-24 overflow-auto whitespace-pre-wrap wrap-break-word font-mono text-xs">
+                  {formatParamValue(value)}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        ) : (
+          <div className="rounded-md max-h-40 overflow-auto border">
+            <CodeBlock code={formatted} language="json" />
+          </div>
+        )}
       </div>
     )
   }
@@ -259,10 +362,24 @@ export const ToolApprovalActions = memo(() => {
         </Button>
         <Button
           size="sm"
+          variant="outline"
+          onClick={() => resolveApproval(toolCallId, 'allow-thread')}
+        >
+          {t('tools:toolApproval.allowInThread')}
+        </Button>
+        <Button
+          size="sm"
           autoFocus
           onClick={() => resolveApproval(toolCallId, 'allow-always')}
         >
-          {t('tools:toolApproval.alwaysAllow')}
+          {/* Trusting a server tool-by-tool is the same decision repeated. */}
+          {pending.serverName
+            ? t('tools:toolApproval.allowServerAlways', {
+                server: pending.serverName,
+              })
+            : t('tools:toolApproval.allowToolAlways', {
+                tool: pending.toolName,
+              })}
         </Button>
       </div>
     </div>
@@ -334,10 +451,34 @@ export const ToolOutput = memo(
     citationOffset = 0,
     ...props
   }: ToolOutputProps) => {
+    const { t } = useTranslation()
     const { messageId } = useTool()
+    const [expanded, setExpanded] = useState(false)
+    const [showRaw, setShowRaw] = useState(false)
     const citationPayload = useMemo(
       () => (output ? parseCitationsFromToolOutput(output) : null),
       [output]
+    )
+
+    // Generic results lead with a description of what came back; the payload
+    // itself is one click away rather than dumped as JSON.
+    const summary = useMemo(
+      () => (citationPayload || errorText ? undefined : summarizeToolOutput(output)),
+      [citationPayload, errorText, output]
+    )
+
+    const copyText = useMemo(
+      () => (errorText ? errorText : stringifyToolInput(output)),
+      [errorText, output]
+    )
+    // Only offer expansion for payloads long enough to be clipped. Citation
+    // output (native web search, RAG) renders as cards outside the scroll box,
+    // so there is no height for the control to act on.
+    const isLong =
+      !citationPayload && copyText.length > OUTPUT_EXPAND_THRESHOLD
+    const boxClassName = cn(
+      'rounded-md overflow-auto border',
+      expanded ? 'max-h-[32rem]' : 'max-h-40'
     )
 
     const Output = useMemo(() => {
@@ -358,7 +499,7 @@ export const ToolOutput = memo(
       // Handle string output
       if (typeof output === 'string') {
         return (
-          <div className="max-h-40 overflow-auto rounded-md border ">
+          <div className={boxClassName}>
             <CodeBlock code={output} language="json" />
           </div>
         )
@@ -387,10 +528,7 @@ export const ToolOutput = memo(
               {textItems.length > 0 && (
                 <div className="space-y-2">
                   {textItems.map((item, index) => (
-                    <div
-                      key={index}
-                      className="rounded-md max-h-40 overflow-auto border "
-                    >
+                    <div key={index} className={boxClassName}>
                       <CodeBlock code={item.text || ''} language="markdown" />
                     </div>
                   ))}
@@ -427,7 +565,7 @@ export const ToolOutput = memo(
             return (
               <div className="space-y-4">
                 {nonImageOutput.length > 0 && (
-                  <div className="rounded-md max-h-40 overflow-auto rounded-md border ">
+                  <div className={boxClassName}>
                     <CodeBlock
                       code={JSON.stringify(nonImageOutput, null, 2)}
                       language="json"
@@ -452,7 +590,7 @@ export const ToolOutput = memo(
           }
 
           return (
-            <div className="rounded-md max-h-40 overflow-auto border ">
+            <div className={boxClassName}>
               <CodeBlock
                 code={JSON.stringify(output, null, 2)}
                 language="json"
@@ -463,14 +601,22 @@ export const ToolOutput = memo(
 
         // Handle regular object
         return (
-          <div className="rounded-md max-h-40 overflow-auto border ">
+          <div className={boxClassName}>
             <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
           </div>
         )
       }
 
       return <div>{output as ReactNode}</div>
-    }, [output, errorText, resolver, citationPayload, messageId, citationOffset])
+    }, [
+      output,
+      errorText,
+      resolver,
+      citationPayload,
+      messageId,
+      citationOffset,
+      boxClassName,
+    ])
 
     if (!(output || errorText)) {
       return null
@@ -478,16 +624,50 @@ export const ToolOutput = memo(
 
     return (
       <div className={cn('space-y-2 mt-4', className)} {...props}>
-        <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-          {errorText ? 'Error' : 'Result'}
-        </h4>
+        <div className="flex items-center gap-1">
+          <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            {errorText ? t('tools:toolCall.error') : t('tools:toolCall.result')}
+          </h4>
+          <div className="ml-auto flex items-center gap-1">
+            {summary && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => setShowRaw((raw) => !raw)}
+              >
+                {showRaw
+                  ? t('tools:toolCall.hideRaw')
+                  : t('tools:toolCall.viewRaw')}
+              </Button>
+            )}
+            {isLong && (!summary || showRaw) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => setExpanded((open) => !open)}
+              >
+                {expanded
+                  ? t('tools:toolCall.showLess')
+                  : t('tools:toolCall.showMore')}
+              </Button>
+            )}
+            <CopyButton text={copyText} />
+          </div>
+        </div>
+        {summary && (
+          <p className="text-sm text-muted-foreground">
+            {t(summary.key, summary.values)}
+          </p>
+        )}
         <div className="rounded-md overflow-hidden">
           {errorText && (
             <div className="m-2 p-2 bg-destructive/10 text-destructive rounded-md">
               {errorText}
             </div>
           )}
-          {Output}
+          {(!summary || showRaw) && Output}
         </div>
       </div>
     )

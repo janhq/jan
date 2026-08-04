@@ -3,6 +3,7 @@ import { events } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useHardware } from '@/hooks/useHardware'
+import { useMcpToolProgress } from '@/hooks/useMcpToolProgress'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 /**
@@ -13,6 +14,8 @@ export function GlobalEventHandler() {
   const { setProviders } = useModelProvider()
   const serviceHub = useServiceHub()
   const setHardwareData = useHardware((state) => state.setHardwareData)
+
+  useMcpToolProgress()
 
   // Probe hardware on mount so Hub fit-status renders before the user
   // visits Settings → Hardware. Re-detect on visibility return (post-sleep, #6447).

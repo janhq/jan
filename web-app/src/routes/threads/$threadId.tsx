@@ -74,6 +74,7 @@ import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -89,6 +90,13 @@ const CHAT_STATUS = {
 } as const
 
 const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
+
+// The MCP server a tool belongs to, so an approval prompt can offer to trust
+// the whole server rather than this one tool.
+function serverForTool(toolName: string): string | undefined {
+  return useAppState.getState().tools.find((tool) => tool.name === toolName)
+    ?.server
+}
 
 // Persist the out-of-context error onto the latest user message so the banner
 // survives thread switches, mirroring how LlamacppOomListener stamps oom/backend.
@@ -463,6 +471,11 @@ function ThreadDetail() {
       // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
       useAppState.getState().setThreadBusy(threadId, true)
 
+      // Tools run one at a time below, so the rest are genuinely queued.
+      useToolCallRuntime
+        .getState()
+        .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
+
       ;(async () => {
         for (const toolCall of sessionData.tools) {
           if (signal.aborted) {
@@ -479,7 +492,12 @@ function ThreadDetail() {
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
                     .getState()
-                    .requestApproval(toolCall.toolCallId, toolName, threadId))
+                    .requestApproval(
+                      toolCall.toolCallId,
+                      toolName,
+                      threadId,
+                      serverForTool(toolName)
+                    ))
             toolApprovalPromises.current.delete(toolCall.toolCallId)
 
             if (!approved) {
@@ -491,6 +509,10 @@ function ThreadDetail() {
               })
               continue
             }
+
+            // Timed from here, not from approval, so a long approval wait is
+            // not reported as the tool being slow.
+            useToolCallRuntime.getState().markRunning(toolCall.toolCallId)
 
             let result
 
@@ -539,9 +561,13 @@ function ThreadDetail() {
                 errorText: `Error: ${JSON.stringify(error)}`,
               })
             }
+          } finally {
+            // Covers every exit from the iteration, including the denied path.
+            useToolCallRuntime.getState().markSettled(toolCall.toolCallId)
           }
         }
 
+        useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
@@ -550,6 +576,7 @@ function ThreadDetail() {
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
+        useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
@@ -643,7 +670,12 @@ function ThreadDetail() {
           toolCall.toolCallId,
           useToolApprovalRequests
             .getState()
-            .requestApproval(toolCall.toolCallId, toolCall.toolName, threadId)
+            .requestApproval(
+              toolCall.toolCallId,
+              toolCall.toolName,
+              threadId,
+              serverForTool(toolCall.toolName)
+            )
         )
       }
     },

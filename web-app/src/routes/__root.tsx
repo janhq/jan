@@ -17,7 +17,6 @@ import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
 import { PromptJanModel } from '@/containers/PromptJanModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
@@ -127,7 +126,6 @@ function RootLayout() {
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
-          <ToolApproval />
           <AttachmentIngestionDialog />
           <ErrorDialog />
           <LlamacppBusyOnExitDialog />

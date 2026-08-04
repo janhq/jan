@@ -631,5 +631,10 @@
   "cancelSubagent": "Cancel",
   "needsInput": "Needs input",
   "expand": "Expand",
-  "collapse": "Collapse"
+  "collapse": "Collapse",
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
+  }
 }

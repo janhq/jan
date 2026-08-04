@@ -1,13 +1,7 @@
 {
   "toolApproval": {
-    "title": "Yêu cầu phê duyệt công cụ",
-    "securityNotice": "Công cụ này muốn thực hiện một hành động. Vui lòng xem xét và phê duyệt.",
     "deny": "Từ chối",
     "allowOnce": "Cho phép một lần",
-    "alwaysAllow": "Cho phép trong chuỗi",
-    "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>",
-    "needsApproval": "Công cụ này cần sự chấp thuận của bạn trước khi chạy.",
-    "parameters": "Tham số công cụ",
-    "permissionScope": "Quyền được cấp chỉ áp dụng cho cuộc trò chuyện này."
+    "needsApproval": "Công cụ này cần sự chấp thuận của bạn trước khi chạy."
   }
 }

@@ -1,12 +1,28 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
 
-export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
+/**
+ * Scope of the grant. `allow-always` trusts the tool's whole server when it has
+ * one, since trusting a server tool-by-tool is the same decision repeated.
+ */
+export type ApprovalDecision =
+  | 'allow-once'
+  | 'allow-thread'
+  | 'allow-always'
+  | 'deny'
 
 export type PendingApproval = {
   toolCallId: string
   toolName: string
   threadId: string
+  /** MCP server the tool belongs to, so the prompt can offer to trust it. */
+  serverName?: string
+  /**
+   * Carries the decision itself rather than a boolean: Code UI's Rust-side
+   * permission flow (see `registerPending`) needs the scope, not just
+   * approved/denied. Callers that only care whether it was approved map it
+   * themselves.
+   */
   onDecision: (decision: ApprovalDecision) => void
 }
 
@@ -19,7 +35,8 @@ type ToolApprovalRequestsState = {
   requestApproval: (
     toolCallId: string,
     toolName: string,
-    threadId: string
+    threadId: string,
+    serverName?: string
   ) => Promise<boolean>
   // Registers a prompt whose resolution is driven by the caller (Code UI's
   // own Rust-side permission flow, via `agent_permission_respond`) rather
@@ -39,14 +56,14 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
   (set, get) => ({
     pending: {},
 
-    requestApproval: (toolCallId, toolName, threadId) => {
+    requestApproval: (toolCallId, toolName, threadId, serverName) => {
       return new Promise<boolean>((resolve) => {
         const settings = useToolApproval.getState()
         if (settings.allowAllMCPPermissions) {
           resolve(true)
           return
         }
-        if (settings.isToolApproved(threadId, toolName)) {
+        if (settings.isToolApproved(threadId, toolName, serverName)) {
           resolve(true)
           return
         }
@@ -57,6 +74,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               toolCallId,
               toolName,
               threadId,
+              serverName,
               onDecision: (decision) => resolve(decision !== 'deny'),
             },
           },
@@ -76,8 +94,15 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     resolveApproval: (toolCallId, decision) => {
       const entry = get().pending[toolCallId]
       if (!entry) return
-      if (decision === 'allow-always') {
-        useToolApproval.getState().approveToolForThread(entry.threadId, entry.toolName)
+      const approval = useToolApproval.getState()
+      if (decision === 'allow-thread') {
+        approval.approveToolForThread(entry.threadId, entry.toolName)
+      } else if (decision === 'allow-always') {
+        if (entry.serverName) {
+          approval.approveServer(entry.serverName)
+        } else {
+          approval.approveToolEverywhere(entry.toolName)
+        }
       }
       set((s) => {
         const next = { ...s.pending }
