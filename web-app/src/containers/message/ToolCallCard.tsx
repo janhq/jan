@@ -10,11 +10,11 @@ import {
 import { ToolProgressRow } from '@/components/ai-elements/tool-runtime'
 import { useToolOrigin } from '@/hooks/useToolOrigin'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { completedToolLabel } from '@/lib/agentActivity'
 import { describeNativeToolCall } from '@/lib/toolPresentation'
 import { isToolPart, type MessagePartLike } from './types'
 import { RagToolWidget } from './RagToolWidget'
 import { WebToolWidget } from './WebToolWidget'
-import { AgentToolWidget, TerminalWidget } from './AgentToolWidget'
 
 const identityResolver = (input: string) => Promise.resolve(input)
 
@@ -42,9 +42,7 @@ export const ToolCallCard = memo(
           ? t('tools:toolCall.originWeb')
           : origin.kind === 'rag'
             ? t('tools:toolCall.originDocuments')
-            : origin.kind === 'agent'
-              ? t('tools:toolCall.originWorkspace')
-              : origin.detail
+            : origin.detail
 
     const errorText = isError
       ? part.error || part.errorText || t('tools:toolCall.executionFailed')
@@ -55,6 +53,13 @@ export const ToolCallCard = memo(
     // the raw payload is still one click away in the header.
     const bar = describeNativeToolCall(origin, toolName, part.input)
 
+    // `skill_read` reads as a bare tool name otherwise; the label names the
+    // skill actually being loaded, which is the only interesting part of it.
+    const title =
+      toolName === 'skill_read'
+        ? completedToolLabel(toolName, part.input, part.state)
+        : toolName
+
     return (
       <Tool
         state={part.state}
@@ -63,7 +68,7 @@ export const ToolCallCard = memo(
         className={className}
       >
         <ToolHeader
-          title={toolName}
+          title={title}
           type={`tool-${toolName}` as `tool-${string}`}
           state={part.state}
           origin={originLabel}
@@ -83,21 +88,6 @@ export const ToolCallCard = memo(
                 messageId={messageId}
                 citationOffset={citationOffset}
               />
-            ) : bar.variant === 'terminal' ? (
-              <TerminalWidget
-                bar={bar}
-                state={part.state}
-                output={part.output}
-                errorText={errorText}
-              />
-            ) : bar.variant === 'workspace' ? (
-              <AgentToolWidget
-                bar={bar}
-                state={part.state}
-                output={part.output}
-                errorText={errorText}
-                toolCallId={part.toolCallId}
-              />
             ) : (
               <WebToolWidget
                 bar={bar}
@@ -108,7 +98,7 @@ export const ToolCallCard = memo(
             )}
           </div>
         )}
-        <ToolContent title={toolName}>
+        <ToolContent title={title}>
           {Boolean(part.input) && <ToolInput input={part.input} />}
           <ToolApprovalActions />
           {/* The widget already presents the result for native tools. */}

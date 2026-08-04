@@ -1,12 +1,28 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
 
-export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
+/**
+ * Scope of the grant. `allow-always` trusts the tool's whole server when it has
+ * one, since trusting a server tool-by-tool is the same decision repeated.
+ */
+export type ApprovalDecision =
+  | 'allow-once'
+  | 'allow-thread'
+  | 'allow-always'
+  | 'deny'
 
 export type PendingApproval = {
   toolCallId: string
   toolName: string
   threadId: string
+  /** MCP server the tool belongs to, so the prompt can offer to trust it. */
+  serverName?: string
+  /**
+   * Carries the decision itself rather than a boolean: Code UI's Rust-side
+   * permission flow (see `registerPending`) needs the scope, not just
+   * approved/denied. Callers that only care whether it was approved map it
+   * themselves.
+   */
   onDecision: (decision: ApprovalDecision) => void
 }
 
@@ -58,6 +74,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
               toolCallId,
               toolName,
               threadId,
+              serverName,
               onDecision: (decision) => resolve(decision !== 'deny'),
             },
           },

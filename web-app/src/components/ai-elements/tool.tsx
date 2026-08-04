@@ -191,11 +191,11 @@ export const ToolHeader = memo(
         )}
       >
         {awaitingApproval ? (
-          <ShieldAlertIcon className="size-4 text-amber-500" />
+          <ShieldAlertIcon className="size-4 shrink-0 text-amber-500" />
         ) : toolName === 'web_search' ? (
-          <SearchIcon className="size-4" />
+          <SearchIcon className="size-4 shrink-0" />
         ) : toolName === 'web_fetch' ? (
-          <GlobeIcon className="size-4" />
+          <GlobeIcon className="size-4 shrink-0" />
         ) : (
           <WrenchIcon className="size-4 shrink-0" />
         )}

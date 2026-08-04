@@ -2,9 +2,6 @@
   "toolApproval": {
     "needsApproval": "Esta herramienta necesita tu aprobación antes de ejecutarse.",
     "deny": "Denegar",
-    "allowOnce": "Permitir una vez",
-    "title": "Solicitud de llamada a herramienta",
-    "description": "El asistente quiere usar la herramienta:",
-    "securityNotice": "Aviso de seguridad: Herramientas maliciosas o contenido de conversación podrían engañar al asistente para que intente acciones dañinas. Revisa cada llamada a herramienta cuidadosamente antes de aprobar."
+    "allowOnce": "Permitir una vez"
   }
 }

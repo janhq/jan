@@ -2,9 +2,6 @@
   "toolApproval": {
     "needsApproval": "To narzędzie wymaga Twojej zgody przed uruchomieniem.",
     "deny": "Odmów",
-    "allowOnce": "Pozwól Raz",
-    "title": "Prośba o Użycie Narzędzia",
-    "description": "Asystent chce użyć narzędzia:",
-    "securityNotice": "Ostrzeżenie Bezpieczeństwa: Złośliwe narzędzia lub treści rozmowy mają potencjał nakłonić agenta do szkodliwych działań. Dokładnie przejrzyj każdą prośbę o użycie narzędzia przed wyrażeniem zgody."
+    "allowOnce": "Pozwól Raz"
   }
 }
