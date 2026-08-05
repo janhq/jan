@@ -52,6 +52,8 @@ const COMMANDS: &[&str] = &[
     "build_backend_download_items",
     "fetch_backend_checksums",
     "verify_file_sha512",
+    // Backend GPU library load probe
+    "probe_backend_load",
 ];
 
 fn main() {

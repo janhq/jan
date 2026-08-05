@@ -12,6 +12,8 @@ import {
   getSupportedFeaturesFromRust,
   fetchBackendChecksums,
   verifyFileSha512,
+  probeBackendLoad,
+  type LoadProbeResult,
 } from '@janhq/tauri-plugin-llamacpp-api'
 
 /*
@@ -116,6 +118,19 @@ export type BackendVerificationResult = {
   verified: boolean
   missing_libraries: string[]
   resolved_libraries: string[]
+}
+
+/**
+ * Loads the backend's GPU library the way llama-server would, to recover the
+ * reason it cannot. A release build of ggml discards that error and silently
+ * falls back to CPU, so this is the only way to name the missing dependency.
+ */
+export async function probeBackendGpuLibraries(
+  backend: string,
+  version: string
+): Promise<LoadProbeResult> {
+  const janDataFolder = await getJanDataFolderPath()
+  return probeBackendLoad(backend, version, janDataFolder, IS_WINDOWS)
 }
 
 export async function verifyBackendInstallation(

@@ -12,6 +12,7 @@ import {
   BestBackendResult,
   UpdateCheckResult,
   SettingUpdateResult,
+  LoadProbeResult,
 } from './types'
 
 // Helpers
@@ -151,6 +152,25 @@ export async function getDevices(
   return await invoke('plugin:llamacpp|get_devices', {
     backendPath,
     libraryPath,
+  })
+}
+
+/**
+ * Loads the backend's GPU library the way llama-server would, to recover the
+ * reason it cannot. A release build of ggml discards that error and silently
+ * falls back to CPU, so this is the only way to name the missing dependency.
+ */
+export async function probeBackendLoad(
+  backend: string,
+  version: string,
+  janDataFolder: string,
+  isWindows: boolean
+): Promise<LoadProbeResult> {
+  return await invoke('plugin:llamacpp|probe_backend_load', {
+    backend,
+    version,
+    janDataFolder,
+    isWindows,
   })
 }
 

@@ -3435,6 +3435,7 @@ dependencies = [
  "hmac",
  "jan-utils",
  "lddtree",
+ "libloading 0.8.9",
  "log",
  "nix",
  "rand 0.8.6",

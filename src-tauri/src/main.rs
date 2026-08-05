@@ -9,5 +9,8 @@ fn main() {
     // Exits early if invoked as the out-of-process lddtree helper.
     tauri_plugin_llamacpp::deps_analyzer::run_deps_analyzer_if_requested();
 
+    // Exits early if invoked as the out-of-process backend load probe.
+    tauri_plugin_llamacpp::load_probe::run_load_probe_if_requested();
+
     app_lib::run();
 }

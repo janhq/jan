@@ -42,6 +42,7 @@ import {
   getBackendExePath,
   getBackendDir,
   getLocalInstalledBackends,
+  probeBackendGpuLibraries,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -56,6 +57,15 @@ import {
   type EmbedBatchResult,
 } from './util'
 import { generatePreset, MTP_MIN_BUILD } from './preset'
+import {
+  backendImpliesGpu,
+  evaluateEmbeddingVector,
+  evaluateGpuOffload,
+  isBackendConfigured,
+  type EmbeddingVectorProblem,
+  type GpuOffloadCheck,
+  type ReadinessStatus,
+} from './readiness'
 import {
   getBackendSetting,
   setBackendSetting,
@@ -189,11 +199,35 @@ type PersistedModelState = {
 const MODEL_PROVIDER_STORE_KEY = 'model-provider'
 const INTERFACE_SETTINGS_STORE_KEY = 'setting-appearance'
 const EMBEDDER_BOOTSTRAP_KEY = 'llamacpp-embedder-bootstrapped'
+/** Set once the user has agreed to the first-run download. */
+const SETUP_CONSENT_KEY = 'llamacpp-first-run-setup-started'
 const FALLBACK_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 const FALLBACK_EMBEDDING_MODEL_URL =
   'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
 const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
   'llamacpp_model_yaml_backfill_v1'
+
+// Short and non-empty: enough to exercise tokenize plus pooling without making
+// setup wait on a long prompt.
+const EMBEDDING_PROBE_TEXT = 'jan setup embedding probe'
+
+export interface EmbeddingModelReport {
+  status: ReadinessStatus
+  modelId?: string
+  dimension?: number
+  problem?: EmbeddingVectorProblem
+  error?: string
+  /** The engine has not finished setting up, so nothing was concluded. */
+  pending?: boolean
+}
+
+export interface GpuOffloadReport extends GpuOffloadCheck {
+  backend: string
+  /** Set when the device probe itself failed, leaving `reason` undetermined. */
+  error?: string
+  /** The engine has not finished setting up, so nothing was concluded. */
+  pending?: boolean
+}
 
 // Sampling defaults are floats/ints where 0 is a meaningful value (e.g.
 // temperature=0), so unlike ctx_len these coercions keep 0 and only reject
@@ -394,6 +428,9 @@ export default class llamacpp_extension extends AIEngine {
   private providerPath!: string
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
+  /** Keyed by modelId; two imports of one model would cancel each other. */
+  private pendingImports: Map<string, Promise<void>> = new Map()
+  private embedderBootstrapError?: string
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
   private currentUpdate: Promise<{
@@ -418,6 +455,8 @@ export default class llamacpp_extension extends AIEngine {
   // Backend discovery + router spawn run off the onLoad critical path; awaited
   // via ensureRouterReady() before any model load so inference never races it.
   private backgroundInit?: Promise<void>
+  /** Single-flight provisioning run; see ensureProvisioned(). */
+  private provisioning?: Promise<void>
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -497,32 +536,87 @@ export default class llamacpp_extension extends AIEngine {
     // A restart on the new binary is owned by updateBackend, which needs it to
     // health-check the switch. On a fresh install (no backend yet)
     // configureBackends must run first to download one before the router can start.
-    this.backgroundInit = (async () => {
+    // A first run downloads a backend and an embedding model -- hundreds of
+    // megabytes. That is not started behind the user's back: the setup screen
+    // asks first and then calls startFirstRunSetup(). An install that already
+    // has a backend has nothing to ask about, so it provisions as before, and
+    // any later attempt to use a local model provisions on demand through
+    // ensureRouterReady().
+    if ((await this.hasInstalledBackend()) || (await this.hasSetupConsent())) {
+      this.backgroundInit = this.ensureProvisioned()
+    } else {
+      logger.info(
+        'Deferring first-run provisioning until the setup screen asks for it.'
+      )
+    }
+  }
+
+  private async hasSetupConsent(): Promise<boolean> {
+    try {
+      return Boolean(await getBackendSetting(SETUP_CONSENT_KEY))
+    } catch (e) {
+      // A readable answer is not worth blocking startup over; erring towards
+      // "not consented" only defers work the user can still trigger.
+      logger.warn('Could not read the first-run setup flag:', e)
+      return false
+    }
+  }
+
+  /**
+   * Runs the first-run provisioning the setup screen asked for, and remembers
+   * that it was asked so a later launch does not wait again.
+   */
+  async startFirstRunSetup(): Promise<void> {
+    try {
+      await setBackendSetting(SETUP_CONSENT_KEY, 'true')
+    } catch (e) {
+      logger.warn('Could not persist the first-run setup flag:', e)
+    }
+    await this.ensureProvisioned()
+  }
+
+  /**
+   * Downloads/selects a backend, starts the router, then installs the fallback
+   * embedder. Single-flight: startup, the setup screen and the first model load
+   * can all ask for it, and only one run happens.
+   *
+   * When a usable backend is already installed the router starts first so
+   * inference is available without waiting on the network-bound update check.
+   * A restart on the new binary is owned by updateBackend, which needs it to
+   * health-check the switch. On a fresh install configureBackends must run first
+   * to download one before the router can start.
+   */
+  private ensureProvisioned(): Promise<void> {
+    this.provisioning ??= (async () => {
       if (await this.hasInstalledBackend()) {
         try {
           await this.startRouter()
         } catch (e) {
-          logger.error('Router failed to start during onLoad:', e)
+          logger.error('Router failed to start during provisioning:', e)
+          this.reportMissingLibrariesFromError(e)
         }
         try {
           await this.configureBackends()
         } catch (e) {
-          logger.error('configureBackends failed during onLoad:', e)
+          logger.error('configureBackends failed during provisioning:', e)
         }
       } else {
         try {
           await this.configureBackends()
         } catch (e) {
-          logger.error('configureBackends failed during onLoad:', e)
+          logger.error('configureBackends failed during provisioning:', e)
         }
         try {
           await this.startRouter()
         } catch (e) {
-          logger.error('Router failed to start during onLoad:', e)
+          logger.error('Router failed to start during provisioning:', e)
+          this.reportMissingLibrariesFromError(e)
         }
       }
       await this.bootstrapDefaultEmbedder()
     })()
+    this.backgroundInit = this.provisioning
+    return this.provisioning
   }
 
   /**
@@ -537,24 +631,221 @@ export default class llamacpp_extension extends AIEngine {
   private async bootstrapDefaultEmbedder(): Promise<void> {
     try {
       if (await getBackendSetting(EMBEDDER_BOOTSTRAP_KEY)) return
-      const models = await this.list()
-      const hasEmbedder = models.some(
-        (m) => (m as { embedding?: boolean }).embedding === true
-      )
-      if (!hasEmbedder) {
+      if (!(await this.hasEmbedderInstalled())) {
         await this.import(FALLBACK_EMBEDDING_MODEL_ID, {
           modelPath: FALLBACK_EMBEDDING_MODEL_URL,
         })
+        // A stopped or cancelled download resolves without throwing, so the
+        // install has to be confirmed before the one-shot flag is recorded --
+        // otherwise bootstrap marks itself done and never retries.
+        if (!(await this.hasEmbedderInstalled())) {
+          throw new Error(
+            `Import of "${FALLBACK_EMBEDDING_MODEL_ID}" did not complete`
+          )
+        }
         logger.info(
           `Pre-installed fallback embedding model "${FALLBACK_EMBEDDING_MODEL_ID}" at startup`
         )
       }
       await setBackendSetting(EMBEDDER_BOOTSTRAP_KEY, 'true')
+      this.embedderBootstrapError = undefined
     } catch (e) {
+      this.embedderBootstrapError = e instanceof Error ? e.message : String(e)
       logger.warn(
         'Fallback embedder bootstrap failed (will import on demand):',
         e
       )
+    }
+  }
+
+  private async hasEmbedderInstalled(): Promise<boolean> {
+    const models = await this.list()
+    return models.some((m) => (m as { embedding?: boolean }).embedding === true)
+  }
+
+  /**
+   * A launch failure that names unresolvable libraries carries the same
+   * actionable information as a failed static verification, so it raises the
+   * same dependency dialog instead of surfacing a generic process error.
+   */
+  private reportMissingLibrariesFromError(error: unknown): void {
+    const err = error as { code?: string; missing_libraries?: unknown }
+    if (err?.code !== 'MISSING_SHARED_LIBRARY') return
+
+    const libs = Array.isArray(err.missing_libraries)
+      ? err.missing_libraries.filter(
+          (lib): lib is string => typeof lib === 'string'
+        )
+      : []
+    if (libs.length === 0) return
+
+    const [version, backend] = (this.config?.version_backend ?? '').split('/')
+    events.emit(AppEvent.onBackendVerificationFailed, {
+      backend: backend ?? '',
+      version: version ?? '',
+      missingLibraries: libs,
+    })
+  }
+
+  /**
+   * Why the startup embedder install failed, for setup to report. Undefined
+   * when it succeeded or has not run; the import is retried on demand, so this
+   * is advisory rather than terminal.
+   */
+  getEmbedderBootstrapError(): string | undefined {
+    return this.embedderBootstrapError
+  }
+
+  /**
+   * Proves the embedding model can actually produce a usable vector, rather
+   * than inferring health from a completed download. Never throws: setup
+   * reports the problem and lets the user continue.
+   */
+  async verifyEmbeddingModel(): Promise<EmbeddingModelReport> {
+    // The router cannot start before a backend is selected, and the embedder is
+    // installed after that. Probing during that window would block on the whole
+    // backend download and then report a failure that is really an absence.
+    if (!isBackendConfigured(this.config?.version_backend)) {
+      return { status: 'ok', pending: true }
+    }
+
+    let modelId: string | undefined
+    try {
+      const sInfo = await this.ensureEmbeddingModelLoaded()
+      modelId = sInfo.model_id
+      const response = await this.embed([EMBEDDING_PROBE_TEXT])
+      const check = evaluateEmbeddingVector(response?.data?.[0]?.embedding)
+      return {
+        status: check.ok ? 'ok' : 'warning',
+        modelId,
+        dimension: check.dimension,
+        problem: check.problem,
+      }
+    } catch (e) {
+      // A failed startup install is the more specific cause, and it is the one
+      // the user can act on.
+      return {
+        status: 'warning',
+        modelId,
+        error:
+          this.getEmbedderBootstrapError() ??
+          (e instanceof Error ? e.message : String(e)),
+      }
+    }
+  }
+
+  /**
+   * Names the GPU libraries the loader cannot resolve, and raises the same
+   * dependency dialog a failed static verification does. Empty when the probe
+   * found nothing or could not run, so callers fall back to the symptom-level
+   * verdict rather than reporting a cause that was never established.
+   */
+  private async probeMissingGpuLibraries(backend: string): Promise<string[]> {
+    const [version] = (this.config?.version_backend ?? '').split('/')
+    if (!version || !backend) return []
+
+    try {
+      const result = await probeBackendGpuLibraries(backend, version)
+      if (result.inconclusive) return []
+
+      // Built by reduce rather than flatMap: this extension declares an ES2018
+      // lib, where flatMap is not available.
+      const seen = new Set<string>()
+      for (const failure of result.failures) {
+        for (const lib of failure.missing_libraries ?? []) seen.add(lib)
+      }
+      const missing = Array.from(seen)
+      if (missing.length > 0) {
+        logger.warn(
+          `Backend ${backend} cannot load its GPU library; missing: ${missing.join(', ')}`
+        )
+        events.emit(AppEvent.onBackendVerificationFailed, {
+          backend,
+          version,
+          missingLibraries: missing,
+        })
+      }
+      return missing
+    } catch (e) {
+      logger.warn('Backend load probe failed:', e)
+      return []
+    }
+  }
+
+  /**
+   * Detects a GPU backend that runs entirely on the CPU. Such a router starts
+   * cleanly and reports healthy, so this comparison against the engine's own
+   * device list is the only signal that offload never happened.
+   */
+  async verifyGpuOffload(): Promise<GpuOffloadReport> {
+    // No backend chosen yet means the engine is still setting itself up. An
+    // empty name would otherwise read as "a CPU-only build", which is how a
+    // CUDA install came to be reported as leaving the GPU idle.
+    if (!isBackendConfigured(this.config?.version_backend)) {
+      return {
+        status: 'ok',
+        backend: '',
+        gpuExpected: false,
+        engineDeviceCount: 0,
+        pending: true,
+      }
+    }
+
+    const backend = (this.config?.version_backend ?? '').split('/')[1] ?? ''
+
+    // A CPU build cannot offload, so skip the --list-devices subprocess rather
+    // than spend a 30s-timeout spawn confirming a known answer.
+    if (!backendImpliesGpu(backend)) {
+      return {
+        status: 'ok',
+        backend,
+        gpuExpected: false,
+        engineDeviceCount: 0,
+      }
+    }
+
+    let engineDeviceCount: number
+    try {
+      engineDeviceCount = (await this.getDevices()).length
+    } catch (e) {
+      // Without a device list there is no basis for a reason code, and guessing
+      // one would point the user at the wrong fix.
+      return {
+        status: 'warning',
+        backend,
+        gpuExpected: backendImpliesGpu(backend),
+        engineDeviceCount: 0,
+        error: e instanceof Error ? e.message : String(e),
+      }
+    }
+
+    let hardwareGpuCount = 0
+    try {
+      hardwareGpuCount = (await getSystemInfo())?.gpus?.length ?? 0
+    } catch (e) {
+      logger.warn('Hardware GPU probe failed during setup verification:', e)
+    }
+
+    // Zero devices on a GPU build means the library never loaded. ggml discards
+    // that loader error in a release build, so ask the loader directly to name
+    // the dependency instead of reporting only the symptom.
+    if (engineDeviceCount === 0) {
+      const missing = await this.probeMissingGpuLibraries(backend)
+      if (missing.length > 0) {
+        return {
+          status: 'warning',
+          backend,
+          gpuExpected: true,
+          engineDeviceCount: 0,
+          reason: 'missingLibrary',
+          missingLibraries: missing,
+        }
+      }
+    }
+
+    return {
+      backend,
+      ...evaluateGpuOffload({ backend, engineDeviceCount, hardwareGpuCount }),
     }
   }
 
@@ -717,24 +1008,16 @@ export default class llamacpp_extension extends AIEngine {
 
   private async runStartRouter(): Promise<void> {
     const versionBackend = this.config?.version_backend
-    if (
-      !versionBackend ||
-      versionBackend === 'none' ||
-      !versionBackend.includes('/')
-    ) {
+    if (!isBackendConfigured(versionBackend)) {
       logger.info(
-        'Router will start once backend is configured (no version_backend yet).'
+        `Router will start once backend is configured (version_backend: ${
+          versionBackend || 'unset'
+        }).`
       )
       return
     }
 
-    const [version, backend] = versionBackend.split('/')
-    if (!version || !backend) {
-      logger.warn(
-        `Skipping router start; malformed version_backend: ${versionBackend}`
-      )
-      return
-    }
+    const [version, backend] = (versionBackend as string).split('/')
 
     const providerPath = await this.getProviderPath()
     const janDataFolderPath = await getJanDataFolderPath()
@@ -2767,7 +3050,29 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Joins concurrent imports of the same model instead of starting a second one.
+   * Two callers racing (startup embedder bootstrap and an on-demand embed) both
+   * passed the `model.yml` existence guard, then registered the same download
+   * task id -- which Rust resolves by cancelling the first and deleting its
+   * partial file. The loser then returned without writing `model.yml`, so its
+   * caller went on to load a model that was never installed.
+   */
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
+    const inFlight = this.pendingImports.get(modelId)
+    if (inFlight) {
+      logger.info(`Joining in-flight import of "${modelId}"`)
+      return inFlight
+    }
+
+    const task = this.runImport(modelId, opts).finally(() => {
+      this.pendingImports.delete(modelId)
+    })
+    this.pendingImports.set(modelId, task)
+    return task
+  }
+
+  private async runImport(modelId: string, opts: ImportOptions): Promise<void> {
     const isValidModelId = (id: string) => {
       // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
       if (!/^[a-zA-Z0-9/_\-\.]+$/.test(id)) return false
@@ -3145,9 +3450,9 @@ export default class llamacpp_extension extends AIEngine {
   // still isn't up. Safe to call redundantly: startRouter reuses a router that
   // already matches this config rather than respawning it.
   private async ensureRouterReady(): Promise<void> {
-    if (this.backgroundInit) {
-      await this.backgroundInit.catch(() => undefined)
-    }
+    // Provisions if the setup screen never got the chance to ask, so skipping
+    // setup and later loading a local model still works.
+    await this.ensureProvisioned().catch(() => undefined)
     if (!(await this.getRouterInfo())) {
       await this.startRouter()
     }
@@ -3246,12 +3551,16 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * The id becomes a Tauri event name (`download-<taskId>`), which cannot contain
+   * a dot. Dots are replaced rather than truncated at: truncating collapsed every
+   * `Jan-v3.*` quant onto one id, and Rust cancels an in-flight task whose id
+   * repeats -- deleting its partial file -- so downloading one quant destroyed
+   * another's, and pause/cancel hit whichever quant happened to be registered.
+   */
   private createDownloadTaskId(modelId: string) {
-    // prepend provider to make taksId unique across providers
-    const cleanModelId = modelId.includes('.')
-      ? modelId.slice(0, modelId.indexOf('.'))
-      : modelId
-    return `${this.provider}/${cleanModelId}`
+    // prepend provider to make taskId unique across providers
+    return `${this.provider}/${modelId.replace(/\./g, '-')}`
   }
 
   private async verifyBackendDeps(backend: string, version: string): Promise<void> {

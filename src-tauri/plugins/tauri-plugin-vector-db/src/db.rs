@@ -69,9 +69,33 @@ pub fn open_or_init_conn(path: &PathBuf) -> Result<Connection, VectorDBError> {
 // ============================================================================
 
 pub fn try_load_sqlite_vec(conn: &Connection) -> bool {
-    // Check if vec0 module is already available
-    if conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok() {
+    load_sqlite_vec(conn, false)
+}
+
+/// Same probe, narrating each candidate for startup diagnostics.
+pub fn try_load_sqlite_vec_verbose(conn: &Connection) -> bool {
+    load_sqlite_vec(conn, true)
+}
+
+fn vec0_module_available(conn: &Connection) -> bool {
+    if conn
+        .execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])",
+            [],
+        )
+        .is_ok()
+    {
         let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
+        return true;
+    }
+    false
+}
+
+fn load_sqlite_vec(conn: &Connection, verbose: bool) -> bool {
+    if vec0_module_available(conn) {
+        if verbose {
+            println!("[VectorDB] sqlite-vec already loaded");
+        }
         return true;
     }
 
@@ -80,29 +104,70 @@ pub fn try_load_sqlite_vec(conn: &Connection) -> bool {
     }
 
     let paths = possible_sqlite_vec_paths();
+    if verbose {
+        println!("[VectorDB] Trying {} sqlite-vec candidates...", paths.len());
+    }
     for p in paths {
-        unsafe {
-            if conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok()
-                && conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok()
-            {
-                let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
-                return true;
+        if verbose {
+            println!("[VectorDB]   Trying: {}", p);
+        }
+        let loaded = unsafe { conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok() };
+        if loaded && vec0_module_available(conn) {
+            if verbose {
+                println!("[VectorDB] sqlite-vec loaded from: {}", p);
             }
+            return true;
         }
     }
 
+    if verbose {
+        println!("[VectorDB] sqlite-vec unavailable; using linear search");
+    }
     false
 }
 
+/// Filenames sqlite-vec ships under, without a platform suffix; SQLite appends
+/// that itself. `vec0` is what most distro packages install.
+const SQLITE_VEC_STEMS: [&str; 2] = ["sqlite-vec", "vec0"];
+
+const SQLITE_VEC_SYSTEM_DIRS: &[&str] = if cfg!(target_os = "macos") {
+    &["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib"]
+} else if cfg!(target_os = "windows") {
+    &["C:\\Program Files\\sqlite-vec"]
+} else {
+    &[
+        "/usr/lib/sqlite3",
+        "/usr/local/lib/sqlite3",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib64",
+        "/usr/local/lib",
+        "/usr/lib",
+    ]
+};
+
 pub fn possible_sqlite_vec_paths() -> Vec<String> {
+    build_sqlite_vec_paths(
+        std::env::var("JAN_SQLITE_VEC_PATH").ok(),
+        std::env::current_exe().ok(),
+    )
+}
+
+fn build_sqlite_vec_paths(override_path: Option<String>, exe: Option<PathBuf>) -> Vec<String> {
     let mut paths = Vec::new();
+
+    if let Some(custom) = override_path {
+        if !custom.trim().is_empty() {
+            paths.push(custom);
+        }
+    }
 
     // Dev paths
     paths.push("./src-tauri/resources/bin/sqlite-vec".to_string());
     paths.push("./resources/bin/sqlite-vec".to_string());
 
     // Exe-relative paths
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = exe {
         if let Some(dir) = exe.parent() {
             let mut d = dir.to_path_buf();
             d.push("resources");
@@ -122,6 +187,20 @@ pub fn possible_sqlite_vec_paths() -> Vec<String> {
             }
         }
     }
+
+    // System installs: the library is not bundled, so a package-manager copy is
+    // the usual source of ANN acceleration.
+    for dir in SQLITE_VEC_SYSTEM_DIRS {
+        for stem in SQLITE_VEC_STEMS {
+            paths.push(format!("{dir}{}{stem}", std::path::MAIN_SEPARATOR));
+        }
+    }
+
+    // Bare stems last, so the OS loader can search its own default paths.
+    paths.extend(SQLITE_VEC_STEMS.iter().map(|s| s.to_string()));
+
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|p| seen.insert(p.clone()));
     paths
 }
 
@@ -672,6 +751,66 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn override_takes_priority_over_every_other_candidate() {
+        let paths = build_sqlite_vec_paths(Some("/custom/vec".to_string()), None);
+        assert_eq!(paths.first().map(String::as_str), Some("/custom/vec"));
+    }
+
+    #[test]
+    fn blank_override_is_ignored() {
+        let paths = build_sqlite_vec_paths(Some("   ".to_string()), None);
+        assert!(!paths.iter().any(|p| p.trim().is_empty()), "{paths:?}");
+    }
+
+    #[test]
+    fn bundled_paths_are_searched_before_system_paths() {
+        let paths = build_sqlite_vec_paths(None, Some(PathBuf::from("/opt/jan/bin/jan")));
+        let bundled = paths
+            .iter()
+            .position(|p| p.contains("resources"))
+            .expect("a bundled candidate should exist");
+        let system = paths
+            .iter()
+            .position(|p| !p.contains("resources") && p.starts_with('/'))
+            .expect("a system candidate should exist");
+        assert!(bundled < system, "{paths:?}");
+    }
+
+    // A package-manager install is the only way to get ANN now that the library
+    // is deliberately not bundled.
+    #[test]
+    fn searches_system_library_directories() {
+        let paths = build_sqlite_vec_paths(None, None);
+        assert!(
+            paths.iter().any(|p| p.starts_with("/usr/")
+                || p.starts_with("/opt/")
+                || p.starts_with("C:\\")),
+            "{paths:?}"
+        );
+    }
+
+    // A bare stem lets the OS loader consult LD_LIBRARY_PATH and its default
+    // directories, which covers layouts we cannot enumerate.
+    #[test]
+    fn ends_with_bare_stems_for_the_loader_to_resolve() {
+        let paths = build_sqlite_vec_paths(None, None);
+        for stem in SQLITE_VEC_STEMS {
+            assert!(paths.contains(&stem.to_string()), "missing {stem} in {paths:?}");
+        }
+        let first_bare = paths.iter().position(|p| !p.contains('/') && !p.contains('\\'));
+        assert_eq!(first_bare.map(|i| i + SQLITE_VEC_STEMS.len()), Some(paths.len()));
+    }
+
+    #[test]
+    fn candidates_are_unique() {
+        let paths = build_sqlite_vec_paths(None, Some(PathBuf::from("/opt/jan/bin/jan")));
+        let mut seen = paths.clone();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), paths.len(), "duplicate candidates in {paths:?}");
+    }
 
     #[test]
     fn serializes_a_finite_embedding() {
