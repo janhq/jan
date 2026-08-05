@@ -11,6 +11,7 @@ export const localStorageKey = {
   settingLocalApiServer: 'setting-local-api-server',
   settingProxyConfig: 'setting-proxy-config',
   settingWebSearch: 'setting-web-search',
+  settingAgentTools: 'setting-agent-tools',
   settingHardware: 'setting-hardware',
   settingVulkan: 'setting-vulkan',
   productAnalyticPrompt: 'productAnalyticPrompt',

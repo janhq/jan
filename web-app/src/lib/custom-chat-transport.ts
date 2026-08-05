@@ -27,6 +27,8 @@ import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
+import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
+import { getAgentToolSchemas, sandboxEnforces } from '@/lib/agentTools'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { ExtensionManager } from '@/lib/extension'
@@ -969,6 +971,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA as Record<string, unknown>),
         } as Tool
       }
+
+      // Built-in agent tools (filesystem reads plus skills/memory), provided by
+      // the agent-tools plugin. Schemas come from Rust so they are never
+      // re-typed here.
+      if (useAgentToolsConfig.getState().agentToolsEnabled) {
+        try {
+          for (const schema of await getAgentToolSchemas()) {
+            toolsRecord[schema.function.name] = {
+              description: schema.function.description,
+              inputSchema: jsonSchema(schema.function.parameters),
+            } as Tool
+          }
+        } catch (error) {
+          console.warn('Failed to load agent tools:', error)
+        }
+      }
     }
 
     this.tools = toolsRecord
@@ -1224,8 +1242,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
     const webSearchInstruction = this.buildWebSearchSystemInstruction()
+    const agentToolsInstruction = this.buildAgentToolsSystemInstruction()
     const rawSystem =
-      [this.systemMessage, filesInstruction, webSearchInstruction]
+      [
+        this.systemMessage,
+        filesInstruction,
+        webSearchInstruction,
+        agentToolsInstruction,
+      ]
         .filter((s) => typeof s === 'string' && s.trim().length > 0)
         .join('\n\n') || undefined
     // Drop whitespace-only system prompts so we don't send a useless system
@@ -1627,6 +1651,41 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       'Cite each distinct source you rely on; do not add a separate references',
       'or sources section.',
     ].join(' ')
+  }
+
+  /**
+   * Static instruction describing the isolated agent workspace the built-in
+   * tools operate in. Only added when the toolset is enabled so it doesn't
+   * affect prompt caching for users who keep it off.
+   */
+  buildAgentToolsSystemInstruction(): string {
+    if (!useAgentToolsConfig.getState().agentToolsEnabled) return ''
+    const parts = [
+      '# Workspace',
+      'read, ls, find, grep, write and edit operate on an isolated agent',
+      "workspace, not the user's whole filesystem. Paths are relative to that",
+      'workspace root and cannot escape it. The workspace is scratch space for',
+      'this conversation only and is deleted with it, so do not keep anything',
+      'there that should last. Use memory_write to persist facts worth remembering',
+      'across conversations, and memory_list/memory_read to recall them. Skills',
+      'are reusable instructions: list and read them before a task they cover,',
+      'and record a repeatable procedure with skill_write.',
+    ]
+    // Stating the limits up front is cheaper than letting the model discover
+    // them by having a command refused. Only when bash is actually offered.
+    if (sandboxEnforces()) {
+      parts.push(
+        'bash runs commands in that workspace under an OS sandbox: it starts',
+        'there, can only write there, and cannot read files in the',
+        "user's home directory."
+      )
+      parts.push(
+        useAgentToolsConfig.getState().bashNetworkEnabled
+          ? 'It has network access.'
+          : 'It has no network access, so commands that download or upload will fail.'
+      )
+    }
+    return parts.join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

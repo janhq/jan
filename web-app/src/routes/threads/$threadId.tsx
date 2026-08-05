@@ -77,6 +77,7 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
+import { AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -97,6 +98,17 @@ const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 function serverForTool(toolName: string): string | undefined {
   return useAppState.getState().tools.find((tool) => tool.name === toolName)
     ?.server
+}
+
+// Internal tools never prompt: RAG and the native web tools are Jan's own, and
+// the built-in agent tools are gated in Rust (execute_tool refuses anything
+// needing approval), so only workspace-confined calls ever reach here.
+function isAutoAllowedTool(toolName: string): boolean {
+  return (
+    useAppState.getState().ragToolNames.has(toolName) ||
+    WEB_TOOL_NAMES.has(toolName) ||
+    AGENT_TOOL_NAMES.has(toolName)
+  )
 }
 
 // Persist the out-of-context error onto the latest user message so the banner
@@ -488,9 +500,7 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Built-in RAG and native web tools are internal and auto-allowed.
-            const approved = ragToolNames.has(toolName) ||
-              WEB_TOOL_NAMES.has(toolName)
+            const approved = isAutoAllowedTool(toolName)
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
@@ -521,6 +531,22 @@ function ThreadDetail() {
 
             if (WEB_TOOL_NAMES.has(toolName)) {
               result = await executeWebTool(toolName, toolCall.input)
+            } else if (AGENT_TOOL_NAMES.has(toolName)) {
+              const agentResult = await executeAgentTool(
+                toolName,
+                toolCall.input,
+                threadId
+              )
+              // The diff is display-only, so it goes to the runtime store rather
+              // than into `result`: anything in `result` reaches the model, and a
+              // full diff there would duplicate the file it just wrote.
+              const { diff, ...rest } = agentResult
+              if (diff) {
+                useToolCallRuntime
+                  .getState()
+                  .recordDiff(toolCall.toolCallId, diff)
+              }
+              result = rest
             } else if (ragToolNames.has(toolName)) {
               result = await serviceHub.rag().callTool({
                 toolName,
@@ -660,13 +686,11 @@ function ThreadDetail() {
       // right now so the popup appears immediately instead of waiting for the
       // stream's terminal finish chunk (a stalled stream would otherwise leave
       // the tool at "Running..." with no popup). Execution itself stays in
-      // onFinish so the tool result lands on a completed message. RAG tools are
-      // internal and never prompt.
+      // onFinish so the tool result lands on a completed message. Internal tools
+      // never prompt (see isAutoAllowedTool).
       sessionData.tools.push(toolCall)
-      const ragToolNames = useAppState.getState().ragToolNames
       if (
-        !ragToolNames.has(toolCall.toolName) &&
-        !WEB_TOOL_NAMES.has(toolCall.toolName) &&
+        !isAutoAllowedTool(toolCall.toolName) &&
         !toolApprovalPromises.current.has(toolCall.toolCallId)
       ) {
         toolApprovalPromises.current.set(

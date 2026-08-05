@@ -263,7 +263,8 @@ pub fn run() {
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_vector_db::init())
         .plugin(tauri_plugin_rag::init())
-        .plugin(tauri_plugin_websearch::init());
+        .plugin(tauri_plugin_websearch::init())
+        .plugin(tauri_plugin_agent_tools::init());
 
     #[cfg(feature = "deep-link")]
     {

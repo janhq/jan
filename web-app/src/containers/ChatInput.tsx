@@ -32,6 +32,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorldSearch,
+  IconFolderCode,
   IconBrandChrome,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
@@ -109,6 +110,7 @@ import {
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
+import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
 
 type ChatInputProps = {
   className?: string
@@ -194,6 +196,10 @@ const ChatInput = memo(function ChatInput({
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
+  const agentToolsEnabled = useAgentToolsConfig((s) => s.agentToolsEnabled)
+  const setAgentToolsEnabled = useAgentToolsConfig(
+    (s) => s.setAgentToolsEnabled
+  )
 
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
@@ -2446,6 +2452,34 @@ const ChatInput = memo(function ChatInput({
                         {webSearchEnabled
                           ? t('common:web_search') + ' (Active)'
                           : t('common:web_search')}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className={cn(agentToolsEnabled && 'text-primary')}
+                        onClick={() => setAgentToolsEnabled(!agentToolsEnabled)}
+                      >
+                        <IconFolderCode
+                          size={18}
+                          className={cn(
+                            'text-muted-foreground',
+                            agentToolsEnabled && 'text-primary'
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {agentToolsEnabled
+                          ? t('common:agent_tools') + ' (Active)'
+                          : t('common:agent_tools')}
                       </p>
                     </TooltipContent>
                   </Tooltip>

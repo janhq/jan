@@ -1,0 +1,53 @@
+[package]
+name = "tauri-plugin-agent-tools"
+version = "0.8.3"
+authors = ["Jan <service@jan.ai>"]
+description = "Built-in agent toolset (filesystem, shell, skills, memory, web) shared by the Jan desktop app and the headless jan CLI"
+license = "MIT"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-agent-tools"
+
+# The toolset core is Tauri-free so the headless `jan` CLI can drive it directly;
+# only the desktop IPC shims need `tauri`. Build with `--no-default-features` to
+# keep the whole GUI stack out of the graph.
+[features]
+default = ["tauri"]
+tauri = ["dep:tauri", "dep:tauri-plugin"]
+
+[dependencies]
+glob = "0.3"
+ignore = "0.4"
+regex = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9.34"
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.8.5", default-features = false, optional = true }
+# `provider` only; `default-features = false` keeps `tauri` out of the graph so
+# the headless CLI can use the web tools.
+tauri-plugin-websearch = { path = "../tauri-plugin-websearch", default-features = false }
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"], optional = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "=0.30.1", features = ["signal", "process"] }
+
+# AppContainer confinement for the `bash` tool: profile creation, workspace ACLs
+# and the `STARTUPINFOEX` spawn that carries the lowbox token.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Isolation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_JobObjects",
+  "Win32_System_Memory",
+  "Win32_System_Threading",
+] }
