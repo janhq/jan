@@ -53,7 +53,11 @@ fn update_channel() -> Option<&'static str> {
     option_env!("JAN_CLI_UPDATE_CHANNEL")
 }
 
-fn build_version() -> &'static str {
+/// The version this binary reports: the nightly build version embedded by CI
+/// (`JAN_CLI_BUILD_VERSION`) when present, otherwise `Cargo.toml`'s pinned
+/// version. Also used for `--version`, since Cargo.toml's version alone
+/// can't distinguish nightly builds cut from the same release.
+pub fn build_version() -> &'static str {
     option_env!("JAN_CLI_BUILD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
