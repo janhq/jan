@@ -106,6 +106,9 @@ vi.mock('@/hooks/useToolApproval', () => ({
   useToolApproval: () => ({
     allowAllMCPPermissions: true,
     setAllowAllMCPPermissions: vi.fn(),
+    isServerApproved: () => false,
+    approveServer: vi.fn(),
+    revokeServer: vi.fn(),
   }),
 }))
 

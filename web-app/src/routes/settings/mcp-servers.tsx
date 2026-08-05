@@ -109,8 +109,13 @@ function MCPServersDesktop() {
     setSettings,
     updateSettings,
   } = useMCPServers()
-  const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
-    useToolApproval()
+  const {
+    allowAllMCPPermissions,
+    setAllowAllMCPPermissions,
+    isServerApproved,
+    approveServer,
+    revokeServer,
+  } = useToolApproval()
 
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -700,6 +705,17 @@ function MCPServersDesktop() {
                               )}
                             </>
                           )}
+                          <div className="flex items-center gap-2 mt-2">
+                            <Switch
+                              checked={isServerApproved(key)}
+                              onCheckedChange={(checked) =>
+                                checked
+                                  ? approveServer(key)
+                                  : revokeServer(key)
+                              }
+                            />
+                            <span>{t('mcp-servers:autoApproveServer')}</span>
+                          </div>
                         </div>
                       }
                       actions={
