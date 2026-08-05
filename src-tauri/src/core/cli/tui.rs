@@ -933,8 +933,9 @@ impl App {
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
     fn push_assistant_blocks(&mut self, text: &str) {
+        let text = strip_system_xml_tags(text);
         let width = self.render_width();
-        for (reasoning, seg) in split_reasoning(text) {
+        for (reasoning, seg) in split_reasoning(&text) {
             if seg.trim().is_empty() {
                 continue;
             }
@@ -3007,6 +3008,29 @@ fn assistant_has_content(text: &str) -> bool {
     split_reasoning(text)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
+}
+
+/// Regex matching `<system>`, `<system-notice>`, `<system-directive>`,
+/// `<system-conventions>`, etc. - any XML tag named `system` or `system-*`.
+/// Complete tags (`<system-notice>...</system-notice>`) are matched first; when
+/// no closing tag exists, everything from the opening tag to end-of-string is
+/// consumed. A bare word like `<systemic>` is not a tag and passes through.
+fn system_tag_re() -> &'static regex::Regex {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?s)<system(?:-[a-zA-Z]+)?>.*?</system(?:-[a-zA-Z]+)?>|<system(?:-[a-zA-Z]+)?>.*$",
+        )
+        .unwrap()
+    });
+    &RE
+}
+
+/// Strip harness-injected `<system...>` XML tags from assistant text so the
+/// user never sees raw markup. These tags carry internal instructions that
+/// should not be rendered in the TUI transcript.
+fn strip_system_xml_tags(text: &str) -> String {
+    system_tag_re().replace_all(text, "").to_string()
 }
 
 fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentRun {
@@ -6725,8 +6749,9 @@ mod tests {
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         run_command, starting_call_lines, unescape_partial_json_string,
-        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
+        tool_activity, tool_finished,
         transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
         SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
@@ -7178,6 +7203,38 @@ mod tests {
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
         let segs = split_reasoning("<mm:think>reasoning tail");
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
+    }
+
+    #[test]
+    fn strip_system_xml_tags_removes_system_blocks() {
+        assert_eq!(
+            strip_system_xml_tags(
+                "answer<system-notice>internal nudge</system-notice>tail"
+            ),
+            "answertail"
+        );
+    }
+
+    #[test]
+    fn strip_system_xml_tags_removes_multiline_and_unterminated() {
+        assert_eq!(
+            strip_system_xml_tags(
+                "a<system-directive>\nline one\nline two</system-directive>b"
+            ),
+            "ab"
+        );
+        assert_eq!(
+            strip_system_xml_tags("a<system-notice>never closed"),
+            "a"
+        );
+    }
+
+    #[test]
+    fn strip_system_xml_tags_keeps_plain_text() {
+        assert_eq!(
+            strip_system_xml_tags("no tags here <systemic> not a tag"),
+            "no tags here <systemic> not a tag"
+        );
     }
 
     #[test]
