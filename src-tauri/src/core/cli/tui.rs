@@ -1154,10 +1154,11 @@ impl App {
 
     /// Extract the current `@query` from the input buffer, if any.
     /// Returns `None` when the cursor is not inside or immediately after
-    /// a `@`-prefixed token (no space since the `@`).
+    /// a `@`-prefixed token (no space since the `@`), or when the `@` does
+    /// not start a token (e.g. `user@host` is not a file reference).
     fn path_hint_query(&self) -> Option<String> {
         let before = &self.input[..self.cursor];
-        let at_idx = before.rfind('@')?;
+        let at_idx = path_refs::last_ref_start(before)?;
         let after_at = &before[at_idx + 1..];
         if after_at.contains(' ') {
             return None; // space after @ means the token ended
@@ -1200,7 +1201,7 @@ impl App {
         let sel = self.path_hint_selected.min(self.path_hints.len() - 1);
         let selected = &self.path_hints[sel];
         let before = &self.input[..self.cursor];
-        let at_idx = match before.rfind('@') {
+        let at_idx = match path_refs::last_ref_start(before) {
             Some(i) => i,
             None => return,
         };
