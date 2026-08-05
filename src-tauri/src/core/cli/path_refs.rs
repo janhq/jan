@@ -11,6 +11,8 @@
 //! * Images are noted inline as `(image: image/mime)` markers.
 //! * Missing/unreadable items surface as inline error notices.
 //! * `@http://` / `@https://` / `@file://` prefixed tokens are skipped.
+//! * `user@host`, emails and bare IPv4 tokens are not references and pass
+//!   through untouched.
 //! * Once resolved, the `@path` tokens are removed from the text so the model
 //!   sees the content directly via the injected block, not raw `@` tokens.
 
@@ -18,13 +20,51 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use once_cell::sync::Lazy;
 
-/// Regex matching `@path` references.
-/// The path stops at whitespace or common punctuation.
+/// Regex scanning `@token` candidates in text; `ref_matches` applies the
+/// reference rules (boundary, URL, IPv4) on top of this token scan.
 static REFERENCE_RE: Lazy<regex::Regex> = Lazy::new(|| {
     // Using a raw string with hash delimiters avoids escaping quotes and backticks.
     // The negated character class excludes tokens that would make bad paths.
     regex::Regex::new(r###"@([^\s,;:!?'"`\[\](){}<>)\)]+)"###).unwrap()
 });
+
+/// True when `at_idx` in `text` is the start of a reference token: the `@` is
+/// at the start of the text, or the char immediately before it is not a word
+/// character (ASCII letter/digit/underscore). This keeps `user@host` and
+/// `foo@bar.com` from being read as `@path` references while `@path`,
+/// `(@path)` and text in scripts without spaces still resolve.
+/// Non-ASCII letters (e.g. `看@path`) deliberately count as boundaries so CJK
+/// text can reference files without a preceding space.
+fn is_ref_start(text: &str, at_idx: usize) -> bool {
+    match text[..at_idx].chars().next_back() {
+        None => true,
+        Some(c) => !(c.is_ascii_alphanumeric() || c == '_'),
+    }
+}
+
+/// True for tokens shaped like an IPv4 address (`1.2.3.4`), which are never
+/// file paths. A trailing period (sentence punctuation) is ignored.
+fn is_ipv4_like(raw: &str) -> bool {
+    let raw = raw.trim_end_matches('.');
+    let octets: Vec<&str> = raw.split('.').collect();
+    octets.len() == 4
+        && octets
+            .iter()
+            .all(|o| !o.is_empty() && o.len() <= 3 && o.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Iterate over `@token` spans in `text` that qualify as file references: the
+/// `@` must start a token (not be glued to a preceding word char) and the
+/// token must look like a path (not an `http`/`file://` URL or bare IPv4).
+fn ref_matches(text: &str) -> impl Iterator<Item = regex::Match<'_>> {
+    REFERENCE_RE.find_iter(text).filter(|m| {
+        let raw = &text[m.start() + 1..m.end()];
+        is_ref_start(text, m.start())
+            && !raw.starts_with("http")
+            && !raw.starts_with("file://")
+            && !is_ipv4_like(raw)
+    })
+}
 
 /// Maximum bytes we will read from a single file.
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
@@ -37,20 +77,26 @@ const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"]
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+/// Index of the last `@` in `text` that starts a reference token, if any.
+/// Uses the same rules as `ref_matches`; a trailing bare `@` (empty query)
+/// still counts so the TUI hint popup can open with an empty search.
+pub fn last_ref_start(text: &str) -> Option<usize> {
+    if let Some(idx) = text.len().checked_sub(1) {
+        if text.ends_with('@') && is_ref_start(text, idx) {
+            return Some(idx);
+        }
+    }
+    ref_matches(text).map(|m| m.start()).last()
+}
+
 /// Parse `@path` references from `text`.
 ///
 /// Returns the raw path strings in order of appearance (deduplicated).
 pub fn parse_references(text: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut refs = Vec::new();
-    for cap in REFERENCE_RE.captures_iter(text) {
-        let raw = cap[1].trim();
-        if raw.is_empty()
-            || raw.starts_with("http")
-            || raw.starts_with("file://")
-        {
-            continue;
-        }
+    for m in ref_matches(text) {
+        let raw = &text[m.start() + 1..m.end()];
         if seen.insert(raw.to_string()) {
             refs.push(raw.to_string());
         }
@@ -60,10 +106,17 @@ pub fn parse_references(text: &str) -> Vec<String> {
 
 /// Remove all `@path` references from `text` and normalise whitespace.
 pub fn strip_references(text: &str) -> String {
-    let cleaned = REFERENCE_RE.replace_all(text, "");
-    let mut result = String::with_capacity(cleaned.len());
+    let mut kept = String::with_capacity(text.len());
+    let mut last = 0;
+    for m in ref_matches(text) {
+        kept.push_str(&text[last..m.start()]);
+        last = m.end();
+    }
+    kept.push_str(&text[last..]);
+
+    let mut result = String::with_capacity(kept.len());
     let mut prev_space = false;
-    for ch in cleaned.chars() {
+    for ch in kept.chars() {
         if ch.is_whitespace() {
             if !prev_space {
                 result.push(' ');
@@ -321,5 +374,87 @@ mod tests {
         let (clean, block) = resolve_references("plain text", &dir);
         assert_eq!(clean, "plain text");
         assert!(block.is_empty());
+    }
+
+    #[test]
+    fn test_ssh_address_not_a_reference() {
+        // Regression: `ssh username@44.50.0.89` must survive verbatim.
+        let text = "please use bash to ssh username@44.50.0.89";
+        assert!(parse_references(text).is_empty());
+
+        let text = "please use bash to ssh alandao@44.50.0.89";
+        assert!(parse_references(text).is_empty());
+
+        let dir = std::env::temp_dir().join("path_ref_test_ssh");
+        let (clean, block) = resolve_references(text, &dir);
+        assert_eq!(clean, text);
+        assert!(block.is_empty());
+    }
+
+    #[test]
+    fn test_email_not_a_reference() {
+        let refs = parse_references("mail me at foo@bar.com please");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn test_bare_ip_after_space_not_a_reference() {
+        let refs = parse_references("use bash to ssh @44.50.0.89 now");
+        assert!(refs.is_empty());
+
+        // Sentence-final trailing period must not turn it into a path either.
+        let refs = parse_references("please ping @44.50.0.89.");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_rest_of_query_survives() {
+        // The reference resolves, and the rest of the query stays intact.
+        let refs = parse_references("use @README.md to check the build steps");
+        assert_eq!(refs, vec!["README.md"]);
+
+        let dir = std::env::temp_dir().join("path_ref_test_rest");
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("README.md"), b"build steps here").unwrap();
+        let (clean, block) = resolve_references("use @README.md to check the build steps", &dir);
+        assert_eq!(clean, "use to check the build steps");
+        assert!(block.contains("build steps here"));
+    }
+
+    #[test]
+    fn test_reference_with_hyphen() {
+        let refs = parse_references("diff @my-file.txt against main");
+        assert_eq!(refs, vec!["my-file.txt"]);
+    }
+
+    #[test]
+    fn test_reference_still_parsed_with_boundaries() {
+        let refs = parse_references("open @src/main.ts and (@README.md) and 看@docs/guide.md");
+        assert_eq!(refs, vec!["src/main.ts", "README.md", "docs/guide.md"]);
+    }
+
+    #[test]
+    fn test_strip_keeps_ssh_address() {
+        let cleaned = strip_references("see @src/main.ts and ssh user@44.50.0.89");
+        assert_eq!(cleaned, "see and ssh user@44.50.0.89");
+    }
+
+    #[test]
+    fn test_last_ref_start() {
+        assert_eq!(last_ref_start("ssh user@44.50.0.89"), None);
+        assert_eq!(last_ref_start("mail foo@bar.com"), None);
+        assert_eq!(last_ref_start("ping @44.50.0.89 now"), None);
+        assert_eq!(
+            last_ref_start("check @src/main.ts and ssh user@host"),
+            Some("check ".len())
+        );
+        assert_eq!(last_ref_start("see (@README.md)"), Some("see (".len()));
+        // Last of several qualifying references wins.
+        assert_eq!(last_ref_start("check @a and @b"), Some("check @a and ".len()));
+        // A bare trailing `@` is still a hint trigger (empty query).
+        assert_eq!(last_ref_start("@"), Some(0));
+        assert_eq!(last_ref_start("check @"), Some(6));
+        // But a mid-word `@` never is, even at the end.
+        assert_eq!(last_ref_start("ssh user@"), None);
     }
 }
