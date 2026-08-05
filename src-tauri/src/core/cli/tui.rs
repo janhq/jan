@@ -820,7 +820,7 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
-            mouse_capture: true,
+            mouse_capture: false,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
             todo_call_this_turn: false,
@@ -3205,8 +3205,10 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
-        .map_err(|e| e.to_string())?;
+    // Mouse capture stays off by default so terminal text is selectable/copyable
+    // (Ctrl-T enables click-to-expand). `chat_loop` diffs against
+    // `app.mouse_capture` and enables it on the first tick if the user toggles.
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -3285,9 +3287,9 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
-    // Mirrors app.mouse_capture; `run` enables capture on the real terminal
-    // before this loop starts, so both start in sync.
-    let mut mouse_capture_active = true;
+    // Mirrors app.mouse_capture; `run` sets the real terminal to the same
+    // state before this loop starts, so both start in sync.
+    let mut mouse_capture_active = false;
 
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
@@ -4269,7 +4271,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("↑/↓", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
-    ("Ctrl-T", "Toggle mouse capture off to select/copy text"),
+    ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
     ("Ctrl-D", "Quit"),
 ];
 
@@ -9478,7 +9480,7 @@ mod tests {
     #[tokio::test]
     async fn ctrl_t_toggles_mouse_capture() {
         let mut app = test_app();
-        assert!(app.mouse_capture, "capture starts on");
+        assert!(!app.mouse_capture, "capture starts off so text is selectable");
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
@@ -9486,9 +9488,9 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
 
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(!app.mouse_capture);
-        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
         assert!(app.mouse_capture);
+        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
+        assert!(!app.mouse_capture);
     }
 
     #[tokio::test]
