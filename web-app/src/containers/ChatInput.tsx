@@ -105,7 +105,7 @@ import {
   parsePromptForReferences,
   resolvePathReference,
   searchFiles,
-  REFERENCE_PATTERN,
+  stripPromptReferences,
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
@@ -236,9 +236,11 @@ const ChatInput = memo(function ChatInput({
 
       const cursorIdx = filePickerCursorPos.current ?? value.length
 
-      // Look backwards from current cursor to find the last word starting with @
+      // Look backwards from current cursor to find the last word starting with
+      // @ (the @ must not be glued to a preceding word char, so `user@host`
+      // never opens the picker)
       const beforeCursor = value.slice(0, cursorIdx)
-      const atMatch = beforeCursor.match(/@([\w.\/-]*)$/)
+      const atMatch = beforeCursor.match(/(?<![A-Za-z0-9_])@([\w.\/-]*)$/)
 
       if (atMatch) {
         const query = atMatch[1] ?? ''
@@ -280,7 +282,7 @@ const ChatInput = memo(function ChatInput({
       const afterCursor = prompt.slice(filePickerCursorPos.current)
 
       // Replace the `@query` with `path/to/file` (the resolved reference)
-      const textBefore = beforeCursor.replace(/@[\w.\/-]*$/, '')
+      const textBefore = beforeCursor.replace(/(?<![A-Za-z0-9_])@[\w.\/-]*$/, '')
       const refText = entry.path
       const newPrompt = textBefore + refText + afterCursor
 
@@ -332,7 +334,7 @@ const ChatInput = memo(function ChatInput({
 
       // Remove @ references from the prompt text (they'll be replaced by the
       // resolved contents above so the model sees the content directly)
-      const cleanText = text.replace(REFERENCE_PATTERN, '').replace(/\s+/g, ' ').trim()
+      const cleanText = stripPromptReferences(text)
 
       return { text: cleanText, resolvedContents }
     },
