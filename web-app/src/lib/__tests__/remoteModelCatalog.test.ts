@@ -130,19 +130,22 @@ describe('fetchTopRemoteModels openai', () => {
     expect(gpt35.capabilities).toEqual(['completion', 'tools'])
   })
 
-  it('sends bearer + x-api-key headers', async () => {
+  it('sends only Authorization bearer header for OpenAI-compatible providers', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
     await fetchTopRemoteModels(mkOpenAIProvider(), fetchImpl)
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/models',
-      expect.objectContaining({
-        method: 'GET',
-        headers: expect.objectContaining({
-          Authorization: 'Bearer sk-test',
-          'x-api-key': 'sk-test',
-        }),
-      })
-    )
+    const callArgs = fetchImpl.mock.calls[0][1] as RequestInit
+    const headers = callArgs.headers as Record<string, string>
+    expect(headers['Authorization']).toBe('Bearer sk-test')
+    expect(headers['x-api-key']).toBeUndefined()
+  })
+
+  it('sends only x-api-key header for Anthropic providers', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(mkResponse({ data: [] }))
+    await fetchTopRemoteModels(mkAnthropicProvider(), fetchImpl)
+    const callArgs = fetchImpl.mock.calls[0][1] as RequestInit
+    const headers = callArgs.headers as Record<string, string>
+    expect(headers['x-api-key']).toBe('sk-ant')
+    expect(headers['Authorization']).toBeUndefined()
   })
 
   it('retries with fallback key on 401', async () => {

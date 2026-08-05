@@ -1112,10 +1112,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const threadId = this.threadId ?? options.chatId
     const myGeneration = ++this.streamGeneration
     useAppState.getState().setCurrentStreamThreadId(threadId)
-    // Capture the effective provider name early so the Anthropic serial
-    // tool-use repair later uses the same value that was used to create the
-    // model, even if the user switches provider mid-request.
-    const modelId = useModelProvider.getState().selectedModel?.id
+    // Capture the model and provider from global state at the START of the
+    // request. This snapshot is used for the entire duration of this inference
+    // call so that switching models in another chat does not affect this one.
+    const selectedModel = useModelProvider.getState().selectedModel
+    const modelId = selectedModel?.id
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
@@ -1132,7 +1133,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
       const inferenceParams = this.getActiveInferenceParams()
 
-      const selectedModel = useModelProvider.getState().selectedModel
       const reasoningParams = buildLlamacppReasoningParams(
         effectiveProviderName,
         selectedModel?.settings?.reasoning?.controller_props?.value as
@@ -1223,8 +1223,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const messagesToConvert = splitAssistantToolWaves(options.messages)
 
     const inferenceParams = this.getActiveInferenceParams()
-
-    const selectedModel = useModelProvider.getState().selectedModel
 
     const filesInstruction = this.buildFilesSystemInstruction(messagesToConvert)
     const webSearchInstruction = this.buildWebSearchSystemInstruction()
@@ -1357,7 +1355,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // providerOptions (native thinking config), not the raw body.
     const reasoningProviderOptions = buildReasoningProviderOptions(
       providerId,
-      useModelProvider.getState().selectedModel
+      selectedModel
     )
 
     let streamStartTime: number | undefined

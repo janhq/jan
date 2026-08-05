@@ -41,7 +41,7 @@ export const DialogDeleteModel = ({
 
   const removeModel = async () => {
     // Remove model from favorites if it exists
-    removeFavorite(selectedModelId)
+    removeFavorite(selectedModelId, provider.provider)
 
     deleteModelCache(selectedModelId)
     serviceHub

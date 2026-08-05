@@ -27,7 +27,7 @@ type Props = {
 const DeleteProvider = ({ provider }: Props) => {
   const { t } = useTranslation()
   const { deleteProvider, providers } = useModelProvider()
-  const { favoriteModels, removeFavorite } = useFavoriteModel()
+  const { removeFavoritesForProvider } = useFavoriteModel()
   const serviceHub = useServiceHub()
   const router = useRouter()
   if (
@@ -38,13 +38,8 @@ const DeleteProvider = ({ provider }: Props) => {
     return null
 
   const removeProvider = async () => {
-    // Remove favorite models that belong to this provider
-    const providerModelIds = provider.models.map((model) => model.id)
-    favoriteModels.forEach((favoriteModel) => {
-      if (providerModelIds.includes(favoriteModel.id)) {
-        removeFavorite(favoriteModel.id)
-      }
-    })
+    // Remove all favorite models belonging to this provider
+    removeFavoritesForProvider(provider.provider)
 
     deleteProvider(provider.provider)
     // Removing a custom provider is an explicit user action, so purge its
