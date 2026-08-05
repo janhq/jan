@@ -1290,6 +1290,67 @@ mod tests {
         );
     }
 
+    /// Two edits far apart in one call: each hunk carries its own file context
+    /// and nothing in between, and the second is numbered against the state the
+    /// first left behind (edit 1 adds a line, so `eight` is renumbered 8 -> 9).
+    #[test]
+    fn edit_diff_numbers_later_edits_against_earlier_ones() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "two", "new_string": "TWO\nTWO.5"}),
+                json!({"old_string": "eight", "new_string": "EIGHT"}),
+            ],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
+        );
+        assert_eq!(
+            d,
+            concat!(
+                "@@ edit 1/2 @@\n",
+                "     1 | one\n",
+                "-    2 | two\n",
+                "+    2 | TWO\n",
+                "+    3 | TWO.5\n",
+                "     4 | three\n",
+                "     5 | four\n",
+                "@@ edit 2/2 @@\n",
+                "     7 | six\n",
+                "     8 | seven\n",
+                "-    9 | eight\n",
+                "+    9 | EIGHT\n",
+                "    10 | nine",
+            )
+        );
+    }
+
+    /// A later edit may target text an earlier one inserted, since both run
+    /// against the same `working` copy that `edit()` mutates in order.
+    #[test]
+    fn edit_diff_lets_a_later_edit_target_inserted_text() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "b", "new_string": "b\nBETA"}),
+                json!({"old_string": "BETA", "new_string": "GAMMA"}),
+            ],
+            "a\nb\nc",
+        );
+        assert_eq!(
+            d,
+            concat!(
+                "@@ edit 1/2 @@\n",
+                "     1 | a\n",
+                "     2 | b\n",
+                "+    3 | BETA\n",
+                "     4 | c\n",
+                "@@ edit 2/2 @@\n",
+                "     1 | a\n",
+                "     2 | b\n",
+                "-    3 | BETA\n",
+                "+    3 | GAMMA\n",
+                "     4 | c",
+            )
+        );
+    }
+
     #[test]
     fn edit_diff_numbers_against_real_file_position() {
         let d = render_edit_diff(

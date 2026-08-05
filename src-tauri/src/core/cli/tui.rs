@@ -2222,13 +2222,20 @@ const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 /// Max chars shown for a bash/shell/exec command label in the transcript.
 const COMMAND_LABEL_MAX: usize = 80;
 
+/// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
+/// foreground is drawn on top of them, so the tint has to read as added/removed
+/// at a glance without swallowing the code.
+const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
+const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
+
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
-/// `-` rows red and `+` rows green in full (marker, line number and code, so
-/// the change reads as one coloured band), unchanged context syntax-highlighted
-/// or dim, `@@` headers dim-cyan. Content is truncated to `max` and each row
-/// padded so the right border aligns. Collapses to `max_rows` with a `(+N more)`
-/// tail before the closing rule. `gutter` indents the panel (tool-row alignment
-/// under a result; empty in the prompt).
+/// `+` rows on a green background and `-` rows on a red one across the whole row
+/// (so the change reads as a band), `@@` headers dim-cyan. Every row keeps its
+/// syntax highlighting, changed or not; only the background says what happened.
+/// Content is truncated to `max` and each row padded so the right border aligns.
+/// Collapses to `max_rows` with a `(+N more)` tail before the closing rule.
+/// `gutter` indents the panel (tool-row alignment under a result; empty in the
+/// prompt).
 fn diff_lines(
     diff: &str,
     max: usize,
@@ -2245,9 +2252,7 @@ fn diff_lines(
     // Highlight the body with the `-`/`+` markers stripped, so a multi-line
     // string or comment keeps its colour across the hunk instead of restarting
     // on every row; the markers are re-attached with their own colour below.
-    // Hunk headers are not code and stay out of it. Changed rows take the
-    // red/green band instead, but still contribute their body here so the
-    // highlighter sees the whole block and context rows stay in sync.
+    // Hunk headers are not code and stay out of it.
     let bodies: Vec<&str> = kept.iter().map(|l| split_diff_marker(l).1).collect();
     let highlighted: Option<Vec<Vec<Span<'static>>>> = match lang {
         Some(l) if !l.is_empty() => Some(highlight::block(&bodies, l)),
@@ -2261,27 +2266,35 @@ fn diff_lines(
             rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
             continue;
         }
-        // Undimmed so the coloured text keeps its contrast against the dim
-        // context around it; the fg colour alone carries the +/- distinction,
-        // which stays legible on light and dark terminals alike.
-        let changed = match marker.as_bytes().first() {
-            Some(b'-') => Some(Style::new().red()),
-            Some(b'+') => Some(Style::new().green()),
+        let bg = match marker.as_bytes().first() {
+            Some(b'-') => Some(DIFF_DEL_BG),
+            Some(b'+') => Some(DIFF_ADD_BG),
             _ => None,
         };
-        if let Some(style) = changed {
-            rows.push(Line::styled(line.clone(), style));
-            continue;
-        }
         let mut spans = Vec::with_capacity(2);
         if !marker.is_empty() {
-            spans.push(Span::styled(marker.to_string(), Style::new().dim()));
+            // On a tinted row the marker takes the strong colour and the code
+            // keeps its own; elsewhere it recedes.
+            let marker_style = match marker.as_bytes().first() {
+                Some(b'-') => Style::new().red().bold(),
+                Some(b'+') => Style::new().green().bold(),
+                _ => Style::new().dim(),
+            };
+            spans.push(Span::styled(marker.to_string(), marker_style));
         }
         match &highlighted {
             Some(h) => spans.extend(h[i].iter().cloned()),
+            // Dimming an unhighlighted body would fight the tint behind it.
+            None if bg.is_some() => spans.push(Span::raw(body.to_string())),
             None => spans.push(Span::styled(body.to_string(), Style::new().dim())),
         }
-        rows.push(Line::from(spans));
+        // The tint rides on the line so `boxed_panel` can carry it across the
+        // padding too, making the band reach the right border.
+        let row = Line::from(spans);
+        rows.push(match bg {
+            Some(bg) => row.style(Style::new().bg(bg)),
+            None => row,
+        });
     }
     if truncated {
         rows.push(Line::styled(
@@ -2313,7 +2326,9 @@ fn row_width(row: &Line<'_>) -> usize {
 /// `max`). Rows carry their own spans so style can vary within a row (syntax
 /// highlighting); `gutter` prefixes every line to indent the panel. A row's
 /// line-level style is folded into its spans, since the framed line replaces it
-/// with the border's own style.
+/// with the border's own style, and a row-level background also fills the
+/// interior padding so a highlighted row reads as a band from border to border
+/// rather than stopping at the end of its text.
 fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
@@ -2330,16 +2345,25 @@ fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Ve
     for row in rows {
         let pad = inner.saturating_sub(row_width(&row));
         let row_style = row.style;
+        // Interior spacing carries the row's background but not its foreground:
+        // the frame itself stays neutral, so only the padding between the
+        // borders is tinted.
+        let fill = match row_style.bg {
+            Some(bg) => border.bg(bg),
+            None => border,
+        };
         let mut spans = vec![
             Span::styled(gutter, border),
-            Span::styled("│ ", border),
+            Span::styled("│", border),
+            Span::styled(" ", fill),
         ];
         spans.extend(
             row.spans
                 .into_iter()
                 .map(|s| Span::styled(s.content, row_style.patch(s.style))),
         );
-        spans.push(Span::styled(format!("{} │", " ".repeat(pad)), border));
+        spans.push(Span::styled(format!("{} ", " ".repeat(pad)), fill));
+        spans.push(Span::styled("│", border));
         out.push(Line::from(spans));
     }
     out.push(Line::from(vec![
@@ -6787,8 +6811,8 @@ mod tests {
         tool_activity, tool_finished,
         transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS,
-        SPINNER,
+        SnapshotJob, Status, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS,
+        KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
@@ -8631,69 +8655,74 @@ mod tests {
             .collect()
     }
 
-    /// Single foreground colour of the content spans in the row containing
-    /// `needle`, ignoring the dark-gray box frame every row is wrapped in.
-    /// Panics if the content is not one uniform colour.
-    fn row_colour(rows: &[Line<'static>], needle: &str) -> Option<ratatui::style::Color> {
-        use ratatui::style::Color;
-        let row = rows
-            .iter()
+    /// The row containing `needle`, panicking if there is none.
+    fn diff_row(rows: &[Line<'static>], needle: &str) -> Line<'static> {
+        rows.iter()
             .find(|l| line_text(l).contains(needle))
-            .unwrap_or_else(|| panic!("no row containing {needle:?}"));
-        let mut colours: Vec<_> = row
+            .unwrap_or_else(|| panic!("no row containing {needle:?}"))
+            .clone()
+    }
+
+    /// Backgrounds of a row's spans, skipping the box frame and the gutter so
+    /// only the banded interior is left.
+    fn row_backgrounds(rows: &[Line<'static>], needle: &str) -> Vec<Option<ratatui::style::Color>> {
+        diff_row(rows, needle)
             .spans
             .iter()
-            .filter(|s| !s.content.trim().is_empty() && s.style.fg != Some(Color::DarkGray))
-            .map(|s| s.style.fg)
-            .collect();
-        colours.dedup();
-        assert_eq!(
-            colours.len(),
-            1,
-            "row {needle:?} is not one colour: {colours:?}"
-        );
-        colours[0]
+            .filter(|s| !s.content.is_empty() && !s.content.contains('│'))
+            .map(|s| s.style.bg)
+            .collect()
     }
 
-    /// The whole changed row is coloured -- marker, line number and code -- so
-    /// the change reads as a band rather than a single tinted character.
+    /// A changed row is banded by its background, from the left border to the
+    /// right one -- including the padding past the end of the text, or the band
+    /// would stop mid-row on every short line.
     #[test]
-    fn changed_diff_rows_are_fully_green_and_red() {
+    fn changed_diff_rows_are_banded_by_background() {
+        let diff = "     1 | keep\n-    2 | before\n+    2 | a much longer added line";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "│     ", None);
+        assert!(
+            row_backgrounds(&out, "before")
+                .iter()
+                .all(|bg| *bg == Some(DIFF_DEL_BG)),
+            "removed row not fully banded: {:?}",
+            row_backgrounds(&out, "before")
+        );
+        assert!(
+            row_backgrounds(&out, "added line")
+                .iter()
+                .all(|bg| *bg == Some(DIFF_ADD_BG)),
+            "added row not fully banded"
+        );
+        // Unchanged context is left alone, so the bands stand out against it.
+        assert!(
+            row_backgrounds(&out, "keep").iter().all(|bg| bg.is_none()),
+            "context row was banded"
+        );
+    }
+
+    /// The band is a background only: the code inside a changed row keeps the
+    /// same syntax highlighting it has as context, which is what makes it
+    /// readable on top of the tint.
+    #[test]
+    fn changed_diff_rows_keep_their_syntax_highlighting() {
         use ratatui::style::Color;
-        let diff = "     1 | keep\n-    2 | before\n+    2 | after";
-        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", None);
-        assert_eq!(row_colour(&out, "before"), Some(Color::Red));
-        assert_eq!(row_colour(&out, "after"), Some(Color::Green));
-        // Colour, not dimming, carries the distinction: a dim fg would wash the
-        // text out on light terminals.
-        for needle in ["before", "after"] {
-            let row = out.iter().find(|l| line_text(l).contains(needle)).unwrap();
+        let diff = "     1 | fn main() {\n-    2 |     let x = 1;\n+    2 |     let y = 2;";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
+        for needle in ["let x = 1;", "let y = 2;"] {
+            let row = diff_row(&out, needle);
             assert!(
-                !row.spans
+                row.spans
                     .iter()
-                    .any(|s| s.content.contains(needle)
-                        && s.style.add_modifier.contains(Modifier::DIM)),
-                "{needle} row is dimmed"
+                    .any(|s| matches!(s.style.fg, Some(Color::Rgb(..)))),
+                "changed row {needle:?} lost its highlighting: {row:?}"
             );
         }
-    }
-
-    /// Changed rows take the red/green band; unchanged context is where syntax
-    /// highlighting still says something, so it keeps it.
-    #[test]
-    fn diff_context_is_syntax_highlighted_from_its_path() {
-        let diff = "     1 | fn main() {\n-    2 |     let x = 1;\n+    2 |     let x = 2;";
-        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
-        assert!(
-            !diff_syntax_colours(&out).is_empty(),
-            "context not highlighted: {:?}",
-            out.iter().map(line_text).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            row_colour(&out, "let x = 2;"),
-            Some(ratatui::style::Color::Green),
-            "highlighting must not override the added-row colour"
-        );
+        // The marker itself stays red/green, so the sign reads without colour
+        // vision doing all the work.
+        let marker = diff_row(&out, "let y = 2;").spans[3].clone();
+        assert_eq!(marker.content.as_ref(), "+");
+        assert_eq!(marker.style.fg, Some(Color::Green));
     }
 
     #[test]
