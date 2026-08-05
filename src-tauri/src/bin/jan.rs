@@ -37,8 +37,7 @@ Models are served by remote providers configured in ~/.jan/config.toml\n\
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
-  jan update                                             # install the latest build of this channel",
-    version
+  jan update                                             # install the latest build of this channel"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -365,6 +364,7 @@ async fn main() {
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
     let matches = Cli::command()
+        .version(app_lib::core::cli::updater::build_version())
         .before_help(logo.clone())
         .before_long_help(logo)
         .get_matches();
