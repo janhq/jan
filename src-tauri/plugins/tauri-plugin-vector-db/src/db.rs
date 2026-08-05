@@ -69,9 +69,33 @@ pub fn open_or_init_conn(path: &PathBuf) -> Result<Connection, VectorDBError> {
 // ============================================================================
 
 pub fn try_load_sqlite_vec(conn: &Connection) -> bool {
-    // Check if vec0 module is already available
-    if conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok() {
+    load_sqlite_vec(conn, false)
+}
+
+/// Same probe, narrating each candidate for startup diagnostics.
+pub fn try_load_sqlite_vec_verbose(conn: &Connection) -> bool {
+    load_sqlite_vec(conn, true)
+}
+
+fn vec0_module_available(conn: &Connection) -> bool {
+    if conn
+        .execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])",
+            [],
+        )
+        .is_ok()
+    {
         let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
+        return true;
+    }
+    false
+}
+
+fn load_sqlite_vec(conn: &Connection, verbose: bool) -> bool {
+    if vec0_module_available(conn) {
+        if verbose {
+            println!("[VectorDB] sqlite-vec already loaded");
+        }
         return true;
     }
 
@@ -80,29 +104,70 @@ pub fn try_load_sqlite_vec(conn: &Connection) -> bool {
     }
 
     let paths = possible_sqlite_vec_paths();
+    if verbose {
+        println!("[VectorDB] Trying {} sqlite-vec candidates...", paths.len());
+    }
     for p in paths {
-        unsafe {
-            if conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok()
-                && conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok()
-            {
-                let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
-                return true;
+        if verbose {
+            println!("[VectorDB]   Trying: {}", p);
+        }
+        let loaded = unsafe { conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok() };
+        if loaded && vec0_module_available(conn) {
+            if verbose {
+                println!("[VectorDB] sqlite-vec loaded from: {}", p);
             }
+            return true;
         }
     }
 
+    if verbose {
+        println!("[VectorDB] sqlite-vec unavailable; using linear search");
+    }
     false
 }
 
+/// Filenames sqlite-vec ships under, without a platform suffix; SQLite appends
+/// that itself. `vec0` is what most distro packages install.
+const SQLITE_VEC_STEMS: [&str; 2] = ["sqlite-vec", "vec0"];
+
+const SQLITE_VEC_SYSTEM_DIRS: &[&str] = if cfg!(target_os = "macos") {
+    &["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib"]
+} else if cfg!(target_os = "windows") {
+    &["C:\\Program Files\\sqlite-vec"]
+} else {
+    &[
+        "/usr/lib/sqlite3",
+        "/usr/local/lib/sqlite3",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib64",
+        "/usr/local/lib",
+        "/usr/lib",
+    ]
+};
+
 pub fn possible_sqlite_vec_paths() -> Vec<String> {
+    build_sqlite_vec_paths(
+        std::env::var("JAN_SQLITE_VEC_PATH").ok(),
+        std::env::current_exe().ok(),
+    )
+}
+
+fn build_sqlite_vec_paths(override_path: Option<String>, exe: Option<PathBuf>) -> Vec<String> {
     let mut paths = Vec::new();
+
+    if let Some(custom) = override_path {
+        if !custom.trim().is_empty() {
+            paths.push(custom);
+        }
+    }
 
     // Dev paths
     paths.push("./src-tauri/resources/bin/sqlite-vec".to_string());
     paths.push("./resources/bin/sqlite-vec".to_string());
 
     // Exe-relative paths
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = exe {
         if let Some(dir) = exe.parent() {
             let mut d = dir.to_path_buf();
             d.push("resources");
@@ -122,6 +187,20 @@ pub fn possible_sqlite_vec_paths() -> Vec<String> {
             }
         }
     }
+
+    // System installs: the library is not bundled, so a package-manager copy is
+    // the usual source of ANN acceleration.
+    for dir in SQLITE_VEC_SYSTEM_DIRS {
+        for stem in SQLITE_VEC_STEMS {
+            paths.push(format!("{dir}{}{stem}", std::path::MAIN_SEPARATOR));
+        }
+    }
+
+    // Bare stems last, so the OS loader can search its own default paths.
+    paths.extend(SQLITE_VEC_STEMS.iter().map(|s| s.to_string()));
+
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|p| seen.insert(p.clone()));
     paths
 }
 
@@ -284,6 +363,10 @@ pub fn insert_chunks(
         .unwrap_or(-1);
 
     for ch in chunks.into_iter() {
+        // Reject unusable vectors before they reach either table: a non-finite
+        // value poisons cosine_similarity on the linear path and sqlite-vec
+        // silently drops the row on the ANN path.
+        validate_embedding(&ch.embedding)?;
         current_order += 1;
         let emb = to_le_bytes_vec(&ch.embedding);
         let chunk_id = Uuid::new_v4().to_string();
@@ -296,11 +379,16 @@ pub fn insert_chunks(
             let rowid: i64 = tx
                 .prepare("SELECT rowid FROM chunks WHERE id=?1")?
                 .query_row(params![chunk_id], |r| r.get(0))?;
-            let json_vec = serde_json::to_string(&ch.embedding).unwrap_or("[]".to_string());
-            let _ = tx.execute(
+            let json_vec = embedding_to_json(&ch.embedding)?;
+            // Tolerated, not propagated: an existing chunks_vec built for a
+            // different dimension (the embedding model changed) rejects the
+            // row, and linear search still serves it.
+            if let Err(e) = tx.execute(
                 "INSERT OR REPLACE INTO chunks_vec(rowid, embedding) VALUES (?1, ?2)",
                 params![rowid, json_vec],
-            );
+            ) {
+                println!("[VectorDB] ✗ Failed to index chunk in chunks_vec: {}", e);
+            }
         }
     }
 
@@ -331,6 +419,31 @@ pub fn delete_file(conn: &Connection, file_id: &str) -> Result<(), VectorDBError
 // Search Operations
 // ============================================================================
 
+// sqlite-vec parses a bound vector as JSON. serde_json writes a non-finite
+// float as `null` and sqlite-vec then fails with only "JSON parsing error", so
+// reject the vector here while the offending element can still be named.
+fn embedding_to_json(embedding: &[f32]) -> Result<String, VectorDBError> {
+    validate_embedding(embedding)?;
+    Ok(serde_json::to_string(embedding)?)
+}
+
+fn validate_embedding(embedding: &[f32]) -> Result<(), VectorDBError> {
+    if embedding.is_empty() {
+        return Err(VectorDBError::InvalidInput(
+            "embedding is empty; the embedding model returned no vector".to_string(),
+        ));
+    }
+    if let Some(i) = embedding.iter().position(|v| !v.is_finite()) {
+        return Err(VectorDBError::InvalidInput(format!(
+            "embedding has a non-finite value ({}) at index {} of {}; the embedding model returned an unusable vector",
+            embedding[i],
+            i,
+            embedding.len()
+        )));
+    }
+    Ok(())
+}
+
 pub fn search_collection(
     conn: &Connection,
     query_embedding: &[f32],
@@ -340,6 +453,11 @@ pub fn search_collection(
     vec_loaded: bool,
     file_ids: Option<Vec<String>>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
+    // Both paths need this: sqlite-vec fails opaquely on a non-finite value,
+    // and cosine_similarity turns it into a NaN score that silently fails the
+    // threshold, so retrieval would just come back empty.
+    validate_embedding(query_embedding)?;
+
     let has_vec = if vec_loaded {
         conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'")
@@ -370,7 +488,7 @@ fn search_ann(
     limit: usize,
     file_ids: Option<Vec<String>>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
-    let json_vec = serde_json::to_string(&query_embedding).unwrap_or("[]".to_string());
+    let json_vec = embedding_to_json(query_embedding)?;
 
     // Build query with optional file_id filtering
     let query = if let Some(ref ids) = file_ids {
@@ -628,4 +746,145 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn override_takes_priority_over_every_other_candidate() {
+        let paths = build_sqlite_vec_paths(Some("/custom/vec".to_string()), None);
+        assert_eq!(paths.first().map(String::as_str), Some("/custom/vec"));
+    }
+
+    #[test]
+    fn blank_override_is_ignored() {
+        let paths = build_sqlite_vec_paths(Some("   ".to_string()), None);
+        assert!(!paths.iter().any(|p| p.trim().is_empty()), "{paths:?}");
+    }
+
+    #[test]
+    fn bundled_paths_are_searched_before_system_paths() {
+        let paths = build_sqlite_vec_paths(None, Some(PathBuf::from("/opt/jan/bin/jan")));
+        let bundled = paths
+            .iter()
+            .position(|p| p.contains("resources"))
+            .expect("a bundled candidate should exist");
+        let system = paths
+            .iter()
+            .position(|p| !p.contains("resources") && p.starts_with('/'))
+            .expect("a system candidate should exist");
+        assert!(bundled < system, "{paths:?}");
+    }
+
+    // A package-manager install is the only way to get ANN now that the library
+    // is deliberately not bundled.
+    #[test]
+    fn searches_system_library_directories() {
+        let paths = build_sqlite_vec_paths(None, None);
+        assert!(
+            paths.iter().any(|p| p.starts_with("/usr/")
+                || p.starts_with("/opt/")
+                || p.starts_with("C:\\")),
+            "{paths:?}"
+        );
+    }
+
+    // A bare stem lets the OS loader consult LD_LIBRARY_PATH and its default
+    // directories, which covers layouts we cannot enumerate.
+    #[test]
+    fn ends_with_bare_stems_for_the_loader_to_resolve() {
+        let paths = build_sqlite_vec_paths(None, None);
+        for stem in SQLITE_VEC_STEMS {
+            assert!(paths.contains(&stem.to_string()), "missing {stem} in {paths:?}");
+        }
+        let first_bare = paths.iter().position(|p| !p.contains('/') && !p.contains('\\'));
+        assert_eq!(first_bare.map(|i| i + SQLITE_VEC_STEMS.len()), Some(paths.len()));
+    }
+
+    #[test]
+    fn candidates_are_unique() {
+        let paths = build_sqlite_vec_paths(None, Some(PathBuf::from("/opt/jan/bin/jan")));
+        let mut seen = paths.clone();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), paths.len(), "duplicate candidates in {paths:?}");
+    }
+
+    #[test]
+    fn serializes_a_finite_embedding() {
+        assert_eq!(embedding_to_json(&[0.5, -0.25]).unwrap(), "[0.5,-0.25]");
+    }
+
+    // serde_json writes a non-finite float as `null`, which sqlite-vec rejects
+    // with an opaque "JSON parsing error". Catch it here with a usable message.
+    #[test]
+    fn rejects_non_finite_values() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let err = embedding_to_json(&[0.1, bad, 0.3]).unwrap_err();
+            let msg = err.to_string();
+            assert!(matches!(err, VectorDBError::InvalidInput(_)), "{msg}");
+            assert!(msg.contains("index 1"), "{msg}");
+        }
+        assert_eq!(serde_json::to_string(&f32::NAN).unwrap(), "null");
+    }
+
+    // How a non-finite value reaches us at all: a JSON number past f32::MAX is
+    // cast, not rejected, so an embedding of 1e39 arrives over IPC as infinity.
+    #[test]
+    fn json_numbers_past_f32_max_arrive_as_infinity() {
+        assert_eq!(
+            serde_json::from_str::<Vec<f32>>("[1e39]").unwrap(),
+            vec![f32::INFINITY]
+        );
+    }
+
+    // The linear path has no JSON step, so it needs its own guard or a NaN
+    // query silently returns zero matches instead of reporting the bad vector.
+    #[test]
+    fn linear_search_rejects_a_non_finite_query() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = search_collection(
+            &conn,
+            &[0.1, f32::NAN, 0.3],
+            5,
+            0.0,
+            Some("linear".to_string()),
+            false,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+    }
+
+    #[test]
+    fn insert_rejects_a_non_finite_embedding() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = insert_chunks(
+            &conn,
+            "f1",
+            vec![MinimalChunkInput {
+                text: "hello".to_string(),
+                embedding: vec![0.1, f32::INFINITY, 0.3],
+            }],
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn rejects_an_empty_embedding() {
+        assert!(matches!(
+            embedding_to_json(&[]).unwrap_err(),
+            VectorDBError::InvalidInput(_)
+        ));
+    }
 }

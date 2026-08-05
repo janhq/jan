@@ -288,7 +288,12 @@ export default class RagExtension extends RAGExtension {
       } else if (typeof e === 'string') {
         msg = e
       } else if (e && typeof e === 'object') {
-        msg = JSON.stringify(e)
+        // Rust plugin errors arrive as { VariantName: "message" }.
+        const values = Object.values(e as Record<string, unknown>)
+        msg =
+          values.length === 1 && typeof values[0] === 'string'
+            ? values[0]
+            : JSON.stringify(e)
       }
       return {
         error: msg,

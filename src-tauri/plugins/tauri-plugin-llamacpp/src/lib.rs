@@ -12,6 +12,7 @@ mod commands;
 mod device;
 mod error;
 mod gguf;
+pub mod load_probe;
 mod path;
 mod process;
 pub mod router;
@@ -64,6 +65,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::get_backend_exe_path,
             backend::check_backend_installed,
             backend::verify_backend_installation,
+            load_probe::probe_backend_load,
             backend::fetch_remote_supported_backends,
             backend::build_backend_download_items
         ])

@@ -174,18 +174,31 @@ pub fn read_yaml<R: Runtime>(
     Ok(data)
 }
 
+/// Unpacking a backend archive is hundreds of megabytes of gzip and file IO. A
+/// synchronous command would run it on the main thread and freeze the window
+/// (and, on WebKitGTK, all rendering) for its whole duration, so the work is
+/// handed to the blocking pool instead.
 #[tauri::command]
-pub fn decompress<R: Runtime>(
+pub async fn decompress<R: Runtime>(
     app: tauri::AppHandle<R>,
-    path: &str,
-    output_dir: &str,
+    path: String,
+    output_dir: String,
 ) -> Result<(), String> {
-    let path_buf = std::path::PathBuf::from(path);
+    let path_buf = std::path::PathBuf::from(&path);
     let (_jan_data_folder, output_dir_buf) =
-        resolve_app_path_within_jan_data_folder(app, output_dir)?;
+        resolve_app_path_within_jan_data_folder(app, &output_dir)?;
 
+    tauri::async_runtime::spawn_blocking(move || unpack_archive(&path_buf, &output_dir_buf))
+        .await
+        .map_err(|e| format!("Decompression task failed: {}", e))?
+}
+
+pub(crate) fn unpack_archive(
+    path_buf: &std::path::Path,
+    output_dir_buf: &std::path::Path,
+) -> Result<(), String> {
     // Ensure output directory exists
-    fs::create_dir_all(&output_dir_buf).map_err(|e| {
+    fs::create_dir_all(output_dir_buf).map_err(|e| {
         format!(
             "Failed to create output directory {}: {}",
             output_dir_buf.to_string_lossy(),
@@ -196,20 +209,21 @@ pub fn decompress<R: Runtime>(
     // Use short path on Windows to handle paths with spaces
     #[cfg(windows)]
     let file = {
-        if let Some(short_path) = jan_utils::path::get_short_path(&path_buf) {
+        if let Some(short_path) = jan_utils::path::get_short_path(path_buf) {
             fs::File::open(&short_path).map_err(|e| e.to_string())?
         } else {
-            fs::File::open(&path_buf).map_err(|e| e.to_string())?
+            fs::File::open(path_buf).map_err(|e| e.to_string())?
         }
     };
 
     #[cfg(not(windows))]
-    let file = fs::File::open(&path_buf).map_err(|e| e.to_string())?;
-    if path.ends_with(".tar.gz") {
+    let file = fs::File::open(path_buf).map_err(|e| e.to_string())?;
+    let name = path_buf.to_string_lossy();
+    if name.ends_with(".tar.gz") {
         let tar = flate2::read::GzDecoder::new(file);
         let mut archive = tar::Archive::new(tar);
-        archive.unpack(&output_dir_buf).map_err(|e| e.to_string())?;
-    } else if path.ends_with(".zip") {
+        archive.unpack(output_dir_buf).map_err(|e| e.to_string())?;
+    } else if name.ends_with(".zip") {
         let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;

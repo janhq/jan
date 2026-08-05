@@ -29,6 +29,8 @@ import {
 } from '@/lib/webSearchTool'
 import { useAppState } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
+import { describeEngineError } from '@/lib/engineError'
+import { i18n } from '@/i18n/react-i18next-compat'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -1206,7 +1208,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Stop from an actual model-load failure.
       if (error instanceof Error && error.name === 'AbortError') throw error
       throw new Error(
-        `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+        i18n.t('model-errors:createModelFailed', {
+          reason: describeEngineError(error),
+        })
       )
     }
 

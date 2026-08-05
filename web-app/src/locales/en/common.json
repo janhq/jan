@@ -37,6 +37,8 @@
   "hub": "Hub",
   "helpSupport": "Help & Support",
   "helpUsImproveJan": "Help Us Improve Jan",
+  "analyticsConsentDetail": "We collect anonymous data to understand feature usage. Your chats and personal information are never tracked. You can change this anytime in Settings > Privacy.",
+  "analyticsConsentQuestion": "Would you like to help us to improve Jan?",
   "unstarAll": "Unstar All",
   "unstar": "Unstar",
   "deleteAll": "Delete All",
@@ -443,6 +445,19 @@
       "title": "Download Failed",
       "description": "{{item}} download failed"
     },
+    "openSettings": "Open Settings",
+    "downloadTokenRequired": {
+      "title": "Hugging Face token required",
+      "description": "This model requires a Hugging Face access token. Add your token in Settings and retry."
+    },
+    "downloadLicenseRequired": {
+      "title": "Accept model license on Hugging Face",
+      "description": "You must accept the model's license on its Hugging Face page before downloading."
+    },
+    "downloadRateLimited": {
+      "title": "Rate limited by Hugging Face",
+      "description": "You have been rate-limited. Adding a token can increase rate limits. Please try again later."
+    },
     "modelValidationStarted": {
       "title": "Validating Model",
       "description": "Downloaded model \"{{modelId}}\" successfully. Verifying integrity..."
@@ -536,5 +551,10 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
   }
 }

@@ -185,4 +185,48 @@ export interface ModelsService {
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
+  startEngineSetup(): Promise<void>
+  verifyEmbeddingModel(): Promise<EmbeddingModelReport>
+  verifyGpuOffload(): Promise<GpuOffloadReport>
+}
+
+// Mirrors the llamacpp extension's readiness module across the extension
+// boundary, the same way DeviceList is redeclared for the hardware service.
+export type EmbeddingVectorProblem =
+  | 'missing'
+  | 'empty'
+  | 'nonFinite'
+  | 'degenerate'
+
+export type GpuOffloadReason =
+  | 'noGpuHardware'
+  | 'runtimeUnreachable'
+  | 'missingLibrary'
+
+interface ReadinessReport {
+  status: 'ok' | 'warning'
+  /** Raw technical detail for a disclosure area; never translated. */
+  error?: string
+  /** The engine build cannot run this check at all. */
+  unavailable?: boolean
+  /**
+   * The engine has not finished its own setup, so nothing was concluded. Distinct
+   * from `unavailable`: this one resolves on its own.
+   */
+  pending?: boolean
+}
+
+export interface EmbeddingModelReport extends ReadinessReport {
+  modelId?: string
+  dimension?: number
+  problem?: EmbeddingVectorProblem
+}
+
+export interface GpuOffloadReport extends ReadinessReport {
+  backend: string
+  gpuExpected: boolean
+  engineDeviceCount: number
+  reason?: GpuOffloadReason
+  /** Set only for `missingLibrary`; names are not translatable. */
+  missingLibraries?: string[]
 }

@@ -7,7 +7,7 @@ on:
       ref:
         required: true
         type: string
-        default: refs/heads/goal/general-agent
+        default: refs/heads/dev
       new_version:
         required: true
         type: string

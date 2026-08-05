@@ -51,6 +51,7 @@ const h = vi.hoisted(() => {
   const appStateState = {
     ragToolNames: new Set<string>(),
     mcpToolNames: new Set<string>(),
+    tools: [] as Array<{ name: string; server?: string }>,
     setOomError: vi.fn(),
     setBackendError: vi.fn(),
     busyThreads: {} as Record<string, boolean>,
@@ -112,7 +113,6 @@ const h = vi.hoisted(() => {
   useToolAvailableMock.getState = () => toolAvailableState
 
   const toolApprovalState: any = {
-    showApprovalModal: vi.fn().mockResolvedValue(true),
     approveToolForThread: vi.fn(),
     clearPendingForThread: vi.fn(),
     requestApproval: vi.fn().mockResolvedValue(true),
@@ -412,6 +412,13 @@ vi.mock('@/utils/error', () => ({
 // Import component AFTER mocks
 // -----------------------------------------------------------------------------
 import { Route } from '../$threadId'
+import { getServiceHub } from '@/hooks/useServiceHub'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+
+// The global setup mock is a shared object, so an overridden factory has to be
+// put back or it leaks into every later test.
+const hub = getServiceHub() as unknown as Record<string, unknown>
+const realMcp = hub.mcp
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -457,7 +464,10 @@ describe('ThreadDetail route', () => {
     h.appStateState.oomError = undefined
     h.appStateState.ragToolNames = new Set<string>()
     h.appStateState.mcpToolNames = new Set<string>()
+    h.appStateState.tools = []
     h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+    hub.mcp = realMcp
+    useToolCallRuntime.getState().reset()
     sessionStorage.clear()
   })
 
@@ -734,7 +744,27 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
         'tc1',
         'fetch',
-        'thread-1'
+        'thread-1',
+        undefined
+      )
+    })
+
+    // The prompt offers to trust the whole server, so it needs to know which.
+    it('passes the tool server along with the approval request', async () => {
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      h.appStateState.tools = [{ name: 'fetch', server: 'fetch-server' }]
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+
+      await act(async () => {
+        await (h as any).capturedOnToolCall(toolCall('tc1'))
+      })
+
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
+        'tc1',
+        'fetch',
+        'thread-1',
+        'fetch-server'
       )
     })
 
@@ -783,6 +813,129 @@ describe('ThreadDetail route', () => {
       })
 
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+    })
+
+    // A model can request several tools in one turn. They arrive together but
+    // are executed one at a time, which is what the queue display depends on.
+    describe('several tool calls in one turn', () => {
+      const arrive = async (...ids: string[]) => {
+        for (const id of ids) {
+          await act(async () => {
+            await (h as any).capturedOnToolCall(toolCall(id))
+          })
+        }
+      }
+
+      it('executes every call in the turn', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        renderComponent()
+        await arrive('tcA', 'tcB', 'tcC')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        const ids = h.mockAddToolOutput.mock.calls.map(
+          (c: any[]) => c[0].toolCallId
+        )
+        expect(ids).toEqual(['tcA', 'tcB', 'tcC'])
+      })
+
+      it('runs them one at a time, not concurrently', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const started: string[] = []
+        let releaseFirst: (() => void) | undefined
+        const callTool = vi.fn(({ arguments: args }: any) => {
+          started.push(args.id)
+          if (started.length === 1) {
+            return new Promise((resolve) => {
+              releaseFirst = () => resolve({ error: '', content: [] })
+            })
+          }
+          return Promise.resolve({ error: '', content: [] })
+        })
+        hub.mcp = () => ({ callTool }) as never
+
+        renderComponent()
+        await act(async () => {
+          await (h as any).capturedOnToolCall({
+            toolCall: {
+              toolCallId: 'tcA',
+              toolName: 'fetch',
+              input: { id: 'tcA' },
+            },
+          })
+          await (h as any).capturedOnToolCall({
+            toolCall: {
+              toolCallId: 'tcB',
+              toolName: 'fetch',
+              input: { id: 'tcB' },
+            },
+          })
+        })
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        // Second call must not have been dispatched while the first is pending.
+        expect(started).toEqual(['tcA'])
+        await act(async () => {
+          releaseFirst?.()
+        })
+        expect(started).toEqual(['tcA', 'tcB'])
+      })
+
+      it('drains the runtime queue and times every call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        renderComponent()
+        await arrive('tcA', 'tcB')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        const runtime = useToolCallRuntime.getState()
+        expect(runtime.queue).toEqual([])
+        for (const id of ['tcA', 'tcB']) {
+          expect(runtime.timings[id]?.startedAt).toBeDefined()
+          expect(runtime.timings[id]?.endedAt).toBeDefined()
+        }
+      })
+
+      it('keeps going when one call is denied', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn((id: string) =>
+          Promise.resolve(id !== 'tcA')
+        )
+        renderComponent()
+        await arrive('tcA', 'tcB')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        const outputs = h.mockAddToolOutput.mock.calls.map((c: any[]) => c[0])
+        expect(outputs[0]).toMatchObject({
+          toolCallId: 'tcA',
+          state: 'output-error',
+        })
+        expect(outputs[1]).toMatchObject({ toolCallId: 'tcB' })
+        expect(outputs[1].state).not.toBe('output-error')
+      })
+
+      // A denied call never runs, so it has no duration -- but leaving it in
+      // the queue would keep its card claiming it is waiting its turn.
+      it('leaves nothing queued after a denied call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+        renderComponent()
+        await arrive('tcA', 'tcB')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        const runtime = useToolCallRuntime.getState()
+        expect(runtime.queue).toEqual([])
+        expect(runtime.timings['tcA']?.startedAt).toBeUndefined()
+        expect(runtime.timings['tcA']?.endedAt).toBeDefined()
+      })
     })
 
     it('marks the thread busy during onFinish execution and clears it when tools drain', async () => {

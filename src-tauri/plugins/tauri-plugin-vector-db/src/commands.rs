@@ -29,38 +29,9 @@ pub async fn get_status(state: State<'_, VectorDBState>) -> Result<Status, Vecto
     let temp = db::collection_path(&state.base_dir, "__status__");
     let conn = db::open_or_init_conn(&temp)?;
 
-    // Verbose version for startup diagnostics
-    let ann = {
-        if conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok() {
-            let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
-            println!("[VectorDB] ✓ sqlite-vec already loaded");
-            true
-        } else {
-            unsafe { let _ = conn.load_extension_enable(); }
-            let paths = db::possible_sqlite_vec_paths();
-            println!("[VectorDB] Trying {} bundled paths...", paths.len());
-            let mut found = false;
-            for p in paths {
-                println!("[VectorDB]   Trying: {}", p);
-                unsafe {
-                    if conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok()
-                        && conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok()
-                    {
-                        let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
-                        println!("[VectorDB] ✓ sqlite-vec loaded from: {}", p);
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if !found {
-                println!("[VectorDB] ✗ Failed to load sqlite-vec from all paths");
-            }
-            found
-        }
-    };
+    let ann = db::try_load_sqlite_vec_verbose(&conn);
 
-    println!("[VectorDB] ANN status: {}", if ann { "AVAILABLE ✓" } else { "NOT AVAILABLE ✗" });
+    println!("[VectorDB] ANN status: {}", if ann { "AVAILABLE" } else { "NOT AVAILABLE" });
     Ok(Status { ann_available: ann })
 }
 
