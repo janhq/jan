@@ -15,8 +15,12 @@ export type { FilePickerEntry }
 
 // ── Exports ──────────────────────────────────────────────────────────────────
 
-/** Regex matching @path references in text. */
-export const REFERENCE_PATTERN = /@([^\s,;:!?'"`)\]}>]+)/g
+/**
+ * Regex scanning `@token` candidates in text. The `@` must not be glued to a
+ * preceding word char, so `user@host` and `foo@bar.com` are not references;
+ * `isReferenceToken` applies the remaining rules (URL, IPv4) on top.
+ */
+export const REFERENCE_PATTERN = /(?<![A-Za-z0-9_])@([^\s,;:!?'"`)\]}>]+)/g
 
 /** Maximum bytes we'll read from a single file. */
 const MAX_FILE_BYTES = 1 * 1024 * 1024
@@ -35,6 +39,29 @@ const CODE_EXTS = new Set([
   'html', 'sh', 'bash', 'zsh', 'sql', 'graphql',
 ])
 
+/** True for tokens shaped like an IPv4 address (`1.2.3.4`), which are never
+ *  file paths. A trailing period (sentence punctuation) is ignored. */
+function isIpv4Like(raw: string): boolean {
+  const trimmed = raw.replace(/\.+$/, '')
+  const octets = trimmed.split('.')
+  return (
+    octets.length === 4 &&
+    octets.every((o) => o.length > 0 && o.length <= 3 && /^\d+$/.test(o))
+  )
+}
+
+/** True when a captured token qualifies as a file reference. */
+function isReferenceToken(raw: string): boolean {
+  return (
+    raw.length > 0 &&
+    !raw.startsWith('http://') &&
+    !raw.startsWith('https://') &&
+    !raw.startsWith('file://') &&
+    !raw.includes('@') &&
+    !isIpv4Like(raw)
+  )
+}
+
 // ── Parsing references from text ─────────────────────────────────────────────
 
 /**
@@ -46,23 +73,25 @@ export function parsePromptForReferences(text: string): string[] {
   const refs: string[] = []
   let match: RegExpExecArray | null
   while ((match = REFERENCE_PATTERN.exec(text)) !== null) {
-    const raw = match[1].trim()
-    // Skip obvious non-paths
-    if (
-      !raw ||
-      raw.startsWith('http://') ||
-      raw.startsWith('https://') ||
-      raw.startsWith('file://') ||
-      raw.includes('@') ||
-      raw === ''
-    )
-      continue
+    const raw = match[1]
+    if (!isReferenceToken(raw)) continue
     if (!seen.has(raw)) {
       seen.add(raw)
       refs.push(raw)
     }
   }
   return refs
+}
+
+/**
+ * Remove qualified @path references from `text`, leaving non-reference `@`
+ * tokens (ssh/email addresses, bare IPs) intact, and normalise whitespace.
+ */
+export function stripPromptReferences(text: string): string {
+  const cleaned = text.replace(REFERENCE_PATTERN, (match, raw: string) =>
+    isReferenceToken(raw) ? '' : match
+  )
+  return cleaned.replace(/\s+/g, ' ').trim()
 }
 
 /**
