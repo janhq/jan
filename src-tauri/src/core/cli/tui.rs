@@ -6309,11 +6309,16 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::raw(format!("  {}  ", app.model)),
     ];
     // Wall-clock (local) segment, mirroring the reference status line's leading
-    // HH:MM:SS. Recomputed each frame so it ticks in place.
-    spans.push(Span::styled(
-        format!("  {}", chrono::Local::now().format("%H:%M:%S")),
-        Style::new().dim(),
-    ));
+    // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
+    // second repaints the screen every second, which clears the terminal's text
+    // selection mid-drag. An idle frame must be fully static so the transcript
+    // stays selectable/copyable (the 50ms ticker then emits no output at all).
+    if app.run_started.is_some() {
+        spans.push(Span::styled(
+            format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+            Style::new().dim(),
+        ));
+    }
     spans.push(Span::raw(format!("  {turn}")));
     if app.tokens > 0 {
         spans.push(Span::raw(format!(
