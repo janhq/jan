@@ -137,7 +137,7 @@ pub async fn is_model_supported(
             .sum::<u64>(),
     };
 
-    log::info!("Total VRAM reported/calculated (in bytes): {}", &total_vram);
+    log::info!("Total VRAM reported/calculated (in bytes): {}", total_vram);
 
     let usable_vram = total_vram.saturating_sub(RESERVE_BYTES);
 
@@ -146,11 +146,11 @@ pub async fn is_model_supported(
     } else {
         usable_vram
     };
-    log::info!("System RAM: {} bytes", &total_system_memory);
-    log::info!("Total VRAM: {} bytes", &total_vram);
-    log::info!("Usable total memory: {} bytes", &usable_total_memory);
-    log::info!("Usable VRAM: {} bytes", &usable_vram);
-    log::info!("Required: {} bytes", &total_required);
+    log::info!("System RAM: {} bytes", total_system_memory);
+    log::info!("Total VRAM: {} bytes", total_vram);
+    log::info!("Usable total memory: {} bytes", usable_total_memory);
+    log::info!("Usable VRAM: {} bytes", usable_vram);
+    log::info!("Required: {} bytes", total_required);
 
     // Check if model fits in total memory at all (this is the hard limit)
     if total_required > usable_total_memory {

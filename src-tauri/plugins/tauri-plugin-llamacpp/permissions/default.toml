@@ -14,6 +14,8 @@ permissions = [
     "allow-get-router-info",
     "allow-reload-router-models",
     "allow-router-slots-idle",
+    "allow-router-health",
+    "allow-adopt-router",
     "allow-get-devices",
     "allow-generate-api-key",
     "allow-is-process-running",
@@ -52,5 +54,7 @@ permissions = [
     "allow-check-backend-installed",
     "allow-verify-backend-installation",
     "allow-fetch-remote-supported-backends",
-    "allow-build-backend-download-items"
+    "allow-build-backend-download-items",
+    "allow-fetch-backend-checksums",
+    "allow-verify-file-sha512"
 ]

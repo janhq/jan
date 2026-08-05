@@ -8,6 +8,8 @@ pub mod helpers;
 #[cfg(not(feature = "cli"))]
 pub mod lockfile;
 pub mod models;
+#[cfg(not(feature = "cli"))]
+pub mod progress;
 
 #[cfg(test)]
 #[cfg(not(feature = "cli"))]

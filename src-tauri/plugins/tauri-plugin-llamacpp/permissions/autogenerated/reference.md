@@ -14,6 +14,8 @@ Default permissions for the llamacpp plugin
 - `allow-get-router-info`
 - `allow-reload-router-models`
 - `allow-router-slots-idle`
+- `allow-router-health`
+- `allow-adopt-router`
 - `allow-get-devices`
 - `allow-generate-api-key`
 - `allow-is-process-running`
@@ -47,6 +49,8 @@ Default permissions for the llamacpp plugin
 - `allow-verify-backend-installation`
 - `allow-fetch-remote-supported-backends`
 - `allow-build-backend-download-items`
+- `allow-fetch-backend-checksums`
+- `allow-verify-file-sha512`
 
 ## Permission Table
 
@@ -56,6 +60,32 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp:allow-adopt-router`
+
+</td>
+<td>
+
+Enables the adopt_router command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-adopt-router`
+
+</td>
+<td>
+
+Denies the adopt_router command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -235,6 +265,32 @@ Enables the estimate_kv_cache_size command without any pre-configured scope.
 <td>
 
 Denies the estimate_kv_cache_size command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-fetch-backend-checksums`
+
+</td>
+<td>
+
+Enables the fetch_backend_checksums command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-fetch-backend-checksums`
+
+</td>
+<td>
+
+Denies the fetch_backend_checksums command without any pre-configured scope.
 
 </td>
 </tr>
@@ -970,6 +1026,32 @@ Denies the remove_old_backend_versions command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-router-health`
+
+</td>
+<td>
+
+Enables the router_health command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-router-health`
+
+</td>
+<td>
+
+Denies the router_health command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-router-slots-idle`
 
 </td>
@@ -1171,6 +1253,32 @@ Enables the verify_backend_installation command without any pre-configured scope
 <td>
 
 Denies the verify_backend_installation command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-verify-file-sha512`
+
+</td>
+<td>
+
+Enables the verify_file_sha512 command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-verify-file-sha512`
+
+</td>
+<td>
+
+Denies the verify_file_sha512 command without any pre-configured scope.
 
 </td>
 </tr>

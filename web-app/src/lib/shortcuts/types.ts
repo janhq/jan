@@ -17,6 +17,9 @@ export enum ShortcutAction {
 
 export interface ShortcutSpec {
   key: string
+  // Extra KeyboardEvent.key values that trigger the same action, for keys whose
+  // emitted value depends on layout or shift state (e.g. '+' arrives as '=').
+  aliasKeys?: string[]
   usePlatformMetaKey?: boolean
   altKey?: boolean
   shiftKey?: boolean

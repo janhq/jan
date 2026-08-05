@@ -19,7 +19,8 @@ use tokio::{
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{extract_active_status, extract_command_args, McpSettings},
-    state::{AppState, RunningServiceEnum, SharedMcpServers},
+    mcp::progress::JanClientHandler,
+    state::{AppState, RunningMcpService, SharedMcpServers},
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 
@@ -232,14 +233,7 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         {
             let mut servers = servers_state.lock().await;
             if let Some(service) = servers.remove(&name) {
-                match service {
-                    RunningServiceEnum::NoInit(service) => {
-                        let _ = service.cancel().await;
-                    }
-                    RunningServiceEnum::WithInit(service) => {
-                        let _ = service.cancel().await;
-                    }
-                }
+                let _ = service.cancel().await;
             }
         }
         {
@@ -462,17 +456,15 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 icons: None,
             },
         };
-        let client = client_info.serve(transport).await.inspect_err(|e| {
+        let handler = JanClientHandler::new(client_info, name.clone(), app.clone());
+        let client = handler.serve(transport).await.inspect_err(|e| {
             log::error!("client error: {e:?}");
         });
 
         match client {
             Ok(client) => {
                 log::info!("Connected to server: {:?}", client.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
+                servers.lock().await.insert(name.clone(), client);
 
                 emit_mcp_update_event(&app, &name);
             }
@@ -532,7 +524,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 icons: None,
             },
         };
-        let client = client_info.serve(transport).await.map_err(|e| {
+        let handler = JanClientHandler::new(client_info, name.clone(), app.clone());
+        let client = handler.serve(transport).await.map_err(|e| {
             log::error!("client error: {e:?}");
             e.to_string()
         });
@@ -540,10 +533,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         match client {
             Ok(client) => {
                 log::info!("Connected to server: {:?}", client.peer_info());
-                servers
-                    .lock()
-                    .await
-                    .insert(name.clone(), RunningServiceEnum::WithInit(client));
+                servers.lock().await.insert(name.clone(), client);
 
                 emit_mcp_update_event(&app, &name);
             }
@@ -663,7 +653,11 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 pids.insert(name.clone(), pid);
             }
 
-            match ().serve(process).await {
+            // ClientInfo::default() is exactly what the previous `()` handler
+            // sent on initialize, so the handshake is unchanged.
+            let handler =
+                JanClientHandler::new(ClientInfo::default(), name.clone(), app.clone());
+            match handler.serve(process).await {
                 Ok(server) => break (server, stderr),
                 Err(e) => {
                     // The child often crashes here with a write EPIPE while
@@ -719,7 +713,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         servers
             .lock()
             .await
-            .insert(name.clone(), RunningServiceEnum::NoInit(server));
+            .insert(name.clone(), server);
         log::info!("Server {name} started successfully.");
 
         // Wait a short time to verify the server is stable before marking as connected
@@ -1145,7 +1139,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         let pids = state.mcp_server_pids.lock().await;
         pids.clone()
     };
-    let servers_to_stop: Vec<(String, RunningServiceEnum, Option<u16>)> = {
+    let servers_to_stop: Vec<(String, RunningMcpService, Option<u16>)> = {
         let mut servers_map = state.mcp_servers.lock().await;
         let keys: Vec<String> = servers_map.keys().cloned().collect();
 
@@ -1187,12 +1181,7 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
             let child_pid = pids_snapshot.get(&name).copied();
 
             tauri::async_runtime::spawn(async move {
-                let cancel_future = async {
-                    match service {
-                        RunningServiceEnum::NoInit(service) => service.cancel().await,
-                        RunningServiceEnum::WithInit(service) => service.cancel().await,
-                    }
-                };
+                let cancel_future = service.cancel();
 
                 let success = tokio::time::timeout(per_server_timeout, cancel_future)
                     .await

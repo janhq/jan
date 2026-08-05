@@ -33,6 +33,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_router_info,
             commands::reload_router_models,
             commands::router_slots_idle,
+            commands::router_health,
+            commands::adopt_router,
+            backend::fetch_backend_checksums,
+            backend::verify_file_sha512,
             commands::get_devices,
             commands::generate_api_key,
             commands::ensure_session_ready,
@@ -68,4 +72,63 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             Ok(())
         })
         .build()
+}
+
+#[cfg(test)]
+mod permission_tests {
+    /// A command reaches the frontend only if it is BOTH in `generate_handler!`
+    /// and in `build.rs`'s `COMMANDS` (which generates its permission). Missing
+    /// the latter compiles and tests clean, then fails at runtime with
+    /// "not allowed. Command not found" -- invisible to any suite that mocks
+    /// `invoke`. Keep the two lists in lockstep.
+    fn names_between<'a>(src: &'a str, start: &str, end: &str) -> Vec<&'a str> {
+        let body = src
+            .split_once(start)
+            .and_then(|(_, rest)| rest.split_once(end))
+            .map(|(body, _)| body)
+            .unwrap_or_else(|| panic!("could not locate {start} .. {end}"));
+        body.lines()
+            .map(|l| l.trim().trim_end_matches(',').trim_matches('"'))
+            .filter(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with('#'))
+            .map(|l| l.rsplit("::").next().unwrap_or(l))
+            .collect()
+    }
+
+    #[test]
+    fn every_registered_command_has_a_permission() {
+        let handlers = names_between(
+            include_str!("lib.rs"),
+            "tauri::generate_handler![",
+            "])",
+        );
+        let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
+
+        let missing: Vec<_> = handlers
+            .iter()
+            .filter(|c| !declared.contains(c))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "commands registered but absent from build.rs COMMANDS (they will \
+             fail at runtime as \"not allowed\"): {missing:?}"
+        );
+    }
+
+    #[test]
+    fn every_permission_is_in_the_default_set() {
+        let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
+        let default_toml = include_str!("../permissions/default.toml");
+
+        let missing: Vec<_> = declared
+            .iter()
+            .filter(|c| {
+                let permission = format!("allow-{}", c.replace('_', "-"));
+                !default_toml.contains(&permission)
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "commands missing an allow-* entry in permissions/default.toml: {missing:?}"
+        );
+    }
 }

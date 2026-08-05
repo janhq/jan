@@ -68,6 +68,8 @@ import {
   isModelSupported,
   unloadLlamaModel,
   reloadRouterModels,
+  routerHealth,
+  adoptRouter,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -94,6 +96,30 @@ const TEMPLATE_KWARGS_CHECK_VERSION = 1
 // restarting the router (unchanged models stay loaded); below it we must do a
 // full process restart.
 const RELOAD_MIN_BUILD = 9023
+
+// Superseded installs kept on disk so a rollback (or an offline downgrade)
+// does not require re-downloading a release that may since have been yanked.
+const BACKEND_VERSIONS_RETAINED = 2
+
+// Bounded so a long-lived install cannot grow the log without limit.
+const UPDATE_HISTORY_LIMIT = 50
+const UPDATE_HISTORY_FILENAME = 'update_history.json'
+
+type BackendUpdateRecord = {
+  timestamp: string
+  from: string
+  to: string
+  outcome: 'updated' | 'rolled-back' | 'rollback-failed' | 'failed'
+  durationMs: number
+  error?: string
+}
+
+/** Snapshot of an active backend choice, sufficient to restore it on rollback. */
+type BackendSelection = {
+  version: string
+  backend: string
+  storedType?: string
+}
 
 // Provider settings that end up in `router.preset.ini` (`[*]` global section
 // in preset.ts). Mutating any of these requires a router restart so the new
@@ -370,11 +396,21 @@ export default class llamacpp_extension extends AIEngine {
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
+  private currentUpdate: Promise<{
+    wasUpdated: boolean
+    newBackend: string
+  }> | null = null
+  private pendingUpdate: Promise<{
+    wasUpdated: boolean
+    newBackend: string
+  }> | null = null
+  private pendingTarget: string | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
   private routerPort?: number
   private routerApiKey?: string
+  private routerStartLock: Promise<void> | null = null
   private userModelsMax: number = 1
   private routerEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
@@ -457,13 +493,12 @@ export default class llamacpp_extension extends AIEngine {
     // the UI unblocks; performLoad awaits it via ensureRouterReady().
     //
     // When a usable backend is already installed, start the router first so
-    // inference is available without waiting on the network-bound update check,
-    // then run configureBackends and restart the router only if the update
-    // swapped the backend. On a fresh install (no backend yet) configureBackends
-    // must run first to download one before the router can start.
+    // inference is available without waiting on the network-bound update check.
+    // A restart on the new binary is owned by updateBackend, which needs it to
+    // health-check the switch. On a fresh install (no backend yet)
+    // configureBackends must run first to download one before the router can start.
     this.backgroundInit = (async () => {
       if (await this.hasInstalledBackend()) {
-        const before = this.config?.version_backend
         try {
           await this.startRouter()
         } catch (e) {
@@ -473,19 +508,6 @@ export default class llamacpp_extension extends AIEngine {
           await this.configureBackends()
         } catch (e) {
           logger.error('configureBackends failed during onLoad:', e)
-        }
-        const after = this.config?.version_backend
-        if (
-          after &&
-          after !== 'none' &&
-          after.includes('/') &&
-          after !== before
-        ) {
-          try {
-            await this.startRouter()
-          } catch (e) {
-            logger.error('Router restart after backend update failed:', e)
-          }
         }
       } else {
         try {
@@ -675,7 +697,25 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Serialized: two concurrent calls would each run the stop-then-spawn
+   * sequence below, and the second would kill the router the first had just
+   * brought up. A late caller gets the in-flight start rather than a restart.
+   */
   private async startRouter(): Promise<void> {
+    const inflight = this.routerStartLock
+    if (inflight) {
+      logger.info('startRouter already in progress; awaiting the in-flight run')
+      await inflight.catch(() => undefined)
+      return
+    }
+    this.routerStartLock = this.runStartRouter().finally(() => {
+      this.routerStartLock = null
+    })
+    return this.routerStartLock
+  }
+
+  private async runStartRouter(): Promise<void> {
     const versionBackend = this.config?.version_backend
     if (
       !versionBackend ||
@@ -711,13 +751,6 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     const backendExe = await getBackendExePath(backend, version)
-    const port = await this.getRandomPort()
-    const apiKey = await this.generateApiKey('router', String(port))
-
-    const envs: Record<string, string> = {}
-    envs['LLAMA_API_KEY'] = apiKey
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
     const rawMax = (this.config as any).models_max
     let modelsMax = 1
@@ -738,8 +771,35 @@ export default class llamacpp_extension extends AIEngine {
     modelsMax += embeddingSlotBonus
     this.routerEmbeddingBonus = embeddingSlotBonus
 
-    // Defensive: if a router is already running (hot reload / dev), stop it
-    // first so start_router doesn't reject.
+    // Adoption runs before any stop, and is the only thing allowed to end an
+    // existing router here. It reuses a process whose backend, preset and
+    // models_max still match, and kills one whose config has moved on. A router
+    // can outlive the UI (crash, SIGKILL, power loss) since kill_on_drop never
+    // runs, so this both rescues orphans holding VRAM and makes a redundant
+    // call a no-op instead of a needless cold restart.
+    let adopted: Awaited<ReturnType<typeof adoptRouter>> = null
+    try {
+      adopted = await adoptRouter(
+        backendExe,
+        presetPath,
+        modelsMax,
+        this.apiSecret
+      )
+    } catch (e) {
+      logger.warn('Router adoption failed; starting a fresh router:', e)
+    }
+    if (adopted) {
+      this.routerPort = adopted.port
+      this.routerApiKey = adopted.api_key
+      logger.info(
+        `Reusing router on port ${adopted.port} (pid ${adopted.pid}); skipping spawn`
+      )
+      return
+    }
+
+    // Adoption found nothing to adopt, or declined a process it could not
+    // verify against the lock. A live router with no matching lock would make
+    // start_router reject, so clear it.
     try {
       const existing = await invoke<{ port: number; api_key: string } | null>(
         'plugin:llamacpp|get_router_info'
@@ -751,6 +811,14 @@ export default class llamacpp_extension extends AIEngine {
       /* ignore probe failures */
     }
 
+    const port = await this.getRandomPort()
+    const apiKey = await this.generateApiKey('router', String(port))
+
+    const envs: Record<string, string> = {}
+    envs['LLAMA_API_KEY'] = apiKey
+    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
+
     // --no-webui was renamed to --no-ui in upstream b9222. Keep the legacy
     // flag for older backends; the deprecated form still works on newer ones
     // but emits a warning, so prefer the new spelling when available.
@@ -758,11 +826,16 @@ export default class llamacpp_extension extends AIEngine {
     const noUiFlag =
       build !== null && build >= NO_UI_RENAME_BUILD ? '--no-ui' : '--no-webui'
 
+    // Beside app.log in the managed logs folder, where a bug report will look.
+    // The filename is derived from the port inside the plugin.
+    const logDir = await joinPath([janDataFolderPath, 'logs'])
+
     const info = await invoke<{ port: number; api_key: string; pid: number }>(
       'plugin:llamacpp|start_router',
       {
         backendExe,
         presetPath,
+        logDir,
         port,
         apiKey,
         modelsMax,
@@ -1164,12 +1237,22 @@ export default class llamacpp_extension extends AIEngine {
           .value ?? ''
       )
 
+      // Flag versions already on disk so the dropdown distinguishes a rollback
+      // (instant, works offline) from a download.
+      const installedVersions = new Set(
+        (await getLocalInstalledBackends().catch((e) => {
+          logger.warn('Could not list local backends for the version list:', e)
+          return [] as { version: string; backend: string }[]
+        })).map((b) => b.version)
+      )
+
       const allVersions = Array.from(
         new Set(version_backends.map((b) => b.version))
       )
       versionSetting.controllerProps.options = allVersions.map((v) => ({
         value: v,
         name: v,
+        installed: installedVersions.has(v),
       }))
 
       const allBackends = Array.from(
@@ -1459,17 +1542,49 @@ export default class llamacpp_extension extends AIEngine {
     return result.backend_string
   }
 
+  /**
+   * Serializes backend updates. A request arriving mid-update is queued rather
+   * than dropped, and only the newest queued target survives -- if a user
+   * clicks through three versions while a download runs, the first two are
+   * obsolete by the time they could run. All callers waiting on the queued slot
+   * receive the same result.
+   */
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    if (this.isUpdatingBackend) {
-      logger.warn('Backend update already in progress, skipping new update request')
-      // Treat concurrent update requests as a benign no-op and report that no new update
-      // was performed, while still returning the current backend value.
-      return { wasUpdated: false, newBackend: this.config.version_backend }
+    if (this.currentUpdate) {
+      this.pendingTarget = targetBackendString
+      logger.info(
+        `Backend update in progress; queued ${targetBackendString} (supersedes any earlier queued target)`
+      )
+      events.emit(AppEvent.onBackendUpdateQueued, {
+        target: targetBackendString,
+      })
+
+      this.pendingUpdate ??= this.currentUpdate
+        .catch(() => undefined)
+        .then(() => {
+          const next = this.pendingTarget as string
+          this.pendingTarget = null
+          this.pendingUpdate = null
+          return this.updateBackend(next)
+        })
+      return this.pendingUpdate
     }
 
+    // `runUpdate` clears currentUpdate inside its own body, so a queued
+    // continuation chained onto it always observes an idle slot.
+    this.currentUpdate = this.runUpdate(targetBackendString)
+    return this.currentUpdate
+  }
+
+  private async runUpdate(
+    targetBackendString: string
+  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
     this.isUpdatingBackend = true
+    const startedAt = Date.now()
+    const from = this.config.version_backend
+    let previous: BackendSelection | undefined
 
     try {
       if (!targetBackendString)
@@ -1500,6 +1615,8 @@ export default class llamacpp_extension extends AIEngine {
         `Updating backend to ${targetBackendString} (backend type: ${backend})`
       )
 
+      previous = await this.captureBackendSelection()
+
       // Download new backend using the original asset/backend name
       await this.ensureBackendReady(backend, version)
 
@@ -1508,74 +1625,224 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // Map backend type for stored preference only (not for download/config)
-      const effectiveBackendType = await mapOldBackendToNew(backend)
-      const currentStoredBackend = await this.getStoredBackendType()
+      await this.commitBackendSelection(version, backend)
 
-      // Persist settings and stored preference before mutating in-memory config,
-      // so that if any of these steps fail, config remains consistent.
-
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'llamacpp_version') {
-            item.controllerProps.value = version
-          } else if (item.key === 'llamacpp_backend') {
-            item.controllerProps.value = backend
-          }
-          return item
+      if (await this.restartRouterAndProbe()) {
+        logger.info(`Successfully updated to backend: ${targetBackendString}`)
+        await this.pruneOldBackendVersions(version, backend)
+        await this.recordUpdateHistory({
+          from,
+          to: targetBackendString,
+          outcome: 'updated',
+          durationMs: Date.now() - startedAt,
         })
+        return { wasUpdated: true, newBackend: targetBackendString }
+      }
+
+      throw new Error(
+        `Router failed its health check on backend ${targetBackendString}`
       )
-
-      if (currentStoredBackend !== effectiveBackendType) {
-        await this.setStoredBackendType(effectiveBackendType)
-        logger.info(
-          `Updated stored backend type preference: ${effectiveBackendType}`
-        )
-      }
-
-      this.config.llamacpp_version = version
-      this.config.llamacpp_backend = backend
-      this.recomposeVersionBackend()
-      this.config.device = ''
-
-      logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-      if (events && typeof events.emit === 'function') {
-        events.emit('settingsChanged', {
-          key: 'llamacpp_version',
-          value: version,
-        })
-        events.emit('settingsChanged', {
-          key: 'llamacpp_backend',
-          value: backend,
-        })
-      }
-
-      // Clean up old versions — best-effort, don't fail the update if this errors
-      try {
-        const janDataFolderPath = await getJanDataFolderPath()
-        const backendsDir = await joinPath([
-          janDataFolderPath,
-          'llamacpp',
-          'backends',
-        ])
-
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-
-        await removeOldBackendVersions(backendsDir, version, backend)
-      } catch (cleanupError) {
-        logger.warn('Failed to remove old backend versions:', cleanupError)
-      }
-
-      return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
       logger.error('Backend update failed:', error)
+      const rollbackOutcome = await this.rollbackBackendSelection(previous)
+      await this.recordUpdateHistory({
+        from,
+        to: targetBackendString,
+        outcome:
+          rollbackOutcome === 'not-attempted' ? 'failed' : rollbackOutcome,
+        error: String(error),
+        durationMs: Date.now() - startedAt,
+      })
       return { wasUpdated: false, newBackend: this.config.version_backend }
     } finally {
       this.isUpdatingBackend = false
+      this.currentUpdate = null
+    }
+  }
+
+  /**
+   * Every update outcome, newest first, for diagnosing a switch after the fact.
+   * Returns an empty list when nothing has been recorded yet.
+   */
+  async getBackendUpdateHistory(): Promise<BackendUpdateRecord[]> {
+    try {
+      const path = await joinPath([
+        await this.getProviderPath(),
+        UPDATE_HISTORY_FILENAME,
+      ])
+      if (!(await fs.existsSync(path))) return []
+      const parsed = JSON.parse(await fs.readFileSync(path, 'utf8'))
+      return Array.isArray(parsed) ? parsed : []
+    } catch (e) {
+      logger.warn('Could not read backend update history:', e)
+      return []
+    }
+  }
+
+  /**
+   * Append one outcome to the update log. Never throws: losing a diagnostic
+   * record must not turn a working update into a failed one.
+   */
+  private async recordUpdateHistory(
+    record: Omit<BackendUpdateRecord, 'timestamp'>
+  ): Promise<void> {
+    try {
+      const path = await joinPath([
+        await this.getProviderPath(),
+        UPDATE_HISTORY_FILENAME,
+      ])
+      const history = await this.getBackendUpdateHistory()
+      history.unshift({ timestamp: new Date().toISOString(), ...record })
+      await fs.writeFileSync(
+        path,
+        JSON.stringify(history.slice(0, UPDATE_HISTORY_LIMIT), null, 2)
+      )
+    } catch (e) {
+      logger.warn('Could not record backend update history:', e)
+    }
+  }
+
+  /**
+   * Prune superseded installs, keeping BACKEND_VERSIONS_RETAINED older ones as
+   * rollback targets. Runs only after the new backend has passed its health
+   * probe -- pruning earlier would delete the very copy a rollback needs.
+   * Best-effort: a full disk is worse than a failed update, but not by enough
+   * to undo a switch that already works.
+   */
+  private async pruneOldBackendVersions(
+    version: string,
+    backend: string
+  ): Promise<void> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const backendsDir = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'backends',
+      ])
+
+      if (IS_WINDOWS) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+
+      const removed = await removeOldBackendVersions(
+        backendsDir,
+        version,
+        backend,
+        BACKEND_VERSIONS_RETAINED
+      )
+      if (removed.length) {
+        logger.info(`Pruned ${removed.length} superseded backend install(s)`)
+      }
+    } catch (cleanupError) {
+      logger.warn('Failed to remove old backend versions:', cleanupError)
+    }
+  }
+
+  private async captureBackendSelection(): Promise<BackendSelection> {
+    return {
+      version: this.config.llamacpp_version,
+      backend: this.config.llamacpp_backend,
+      storedType: (await this.getStoredBackendType()) || undefined,
+    }
+  }
+
+  /**
+   * Persist a backend choice across all three places it lives: the settings
+   * file, the stored type preference, and in-memory config. Settings are
+   * written before the in-memory mutation so a failure leaves config coherent.
+   */
+  private async commitBackendSelection(
+    version: string,
+    backend: string
+  ): Promise<void> {
+    const effectiveBackendType = await mapOldBackendToNew(backend)
+    const currentStoredBackend = await this.getStoredBackendType()
+
+    const settings = await this.getSettings()
+    await this.updateSettings(
+      settings.map((item) => {
+        if (item.key === 'llamacpp_version') {
+          item.controllerProps.value = version
+        } else if (item.key === 'llamacpp_backend') {
+          item.controllerProps.value = backend
+        }
+        return item
+      })
+    )
+
+    if (currentStoredBackend !== effectiveBackendType) {
+      await this.setStoredBackendType(effectiveBackendType)
+      logger.info(
+        `Updated stored backend type preference: ${effectiveBackendType}`
+      )
+    }
+
+    this.config.llamacpp_version = version
+    this.config.llamacpp_backend = backend
+    this.recomposeVersionBackend()
+    this.config.device = ''
+
+    if (events && typeof events.emit === 'function') {
+      events.emit('settingsChanged', { key: 'llamacpp_version', value: version })
+      events.emit('settingsChanged', { key: 'llamacpp_backend', value: backend })
+    }
+  }
+
+  /**
+   * Bring the router up on whatever backend config currently names and confirm
+   * it answers `/health`. A spawn that throws and a process that starts but
+   * can't serve are the same failure to the caller.
+   *
+   * This is the only gate on a backend switch. Static dependency analysis is
+   * deliberately not one: it is advisory on every other path and cannot be
+   * trusted to fail a switch (see verifyBackendInstallation).
+   */
+  private async restartRouterAndProbe(): Promise<boolean> {
+    try {
+      await this.startRouter()
+    } catch (e) {
+      logger.error('Router failed to start on updated backend:', e)
+      return false
+    }
+    return await routerHealth()
+  }
+
+  /**
+   * Restore the backend that was active before a failed update and bring its
+   * router back. Nothing to do when the update failed before the commit, or
+   * when there was no valid prior selection (first-run install).
+   */
+  private async rollbackBackendSelection(
+    previous: BackendSelection | undefined
+  ): Promise<'rolled-back' | 'rollback-failed' | 'not-attempted'> {
+    if (!previous?.version || !previous.backend) return 'not-attempted'
+    if (
+      this.config.llamacpp_version === previous.version &&
+      this.config.llamacpp_backend === previous.backend
+    ) {
+      return 'not-attempted'
+    }
+
+    const target = `${previous.version}/${previous.backend}`
+    logger.warn(`Rolling back to previous backend: ${target}`)
+    try {
+      await this.commitBackendSelection(previous.version, previous.backend)
+      if (previous.storedType) {
+        await this.setStoredBackendType(previous.storedType)
+      }
+      const healthy = await this.restartRouterAndProbe()
+      if (!healthy) {
+        logger.error(`Rollback target ${target} also failed its health check`)
+      }
+      events.emit(AppEvent.onBackendRollback, {
+        backend: previous.backend,
+        version: previous.version,
+      })
+      return healthy ? 'rolled-back' : 'rollback-failed'
+    } catch (e) {
+      logger.error(`Rollback to ${target} failed:`, e)
+      return 'rollback-failed'
     }
   }
 
@@ -1724,26 +1991,32 @@ export default class llamacpp_extension extends AIEngine {
       this.unlistenValidationStarted()
     }
 
-    // Let any in-flight deferred startup finish so stop_router can't race a
-    // concurrent startRouter and leave an orphaned process.
-    if (this.backgroundInit) {
-      await this.backgroundInit.catch(() => undefined)
-    }
-
-    try {
-      await invoke('plugin:llamacpp|stop_router')
-    } catch (e) {
-      logger.warn('stop_router during onUnload failed (ignored):', e)
-    }
+    // Deliberately does NOT stop the router. The router outlives any single
+    // extension instance: the app owns its lifetime and stops it on
+    // ExitRequested/Exit, and adoption reuses a survivor. An extension teardown
+    // is not an app exit -- React StrictMode and HMR both unload and immediately
+    // reload us, and awaiting backgroundInit here (as this used to) meant
+    // blocking until startRouter had adopted the router, then killing exactly
+    // the process it had just adopted.
     this.routerPort = undefined
     this.routerApiKey = undefined
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    if (key === 'llamacpp_version' || key === 'llamacpp_backend') {
-      if (this.isUpdatingBackend) {
-        return
-      }
+    // configureBackends and updateBackend both persist settings themselves and
+    // own the router restart that follows, so every notification they trigger
+    // is an echo of their own write, and configureBackends writes the whole
+    // settings array rather than just the backend selection. This only
+    // suppresses echoes delivered while they are still running; a debounced
+    // restart outlives the flag. Reuse in startRouter, not this guard, is what
+    // keeps a late echo from respawning a healthy router.
+    const selfInflicted = this.isUpdatingBackend || this.isConfiguringBackends
+
+    if (
+      selfInflicted &&
+      (key === 'llamacpp_version' || key === 'llamacpp_backend')
+    ) {
+      return
     }
 
     this.config[key] = value
@@ -1831,6 +2104,7 @@ export default class llamacpp_extension extends AIEngine {
       // A live router was started with the previous preset; without a restart
       // the new value is invisible to inference. Debounced so a flurry of
       // slider/dropdown updates collapses into one bounce.
+      if (selfInflicted) return
       this.scheduleRouterRestart()
     }
   }
@@ -2868,7 +3142,8 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   // Awaits the deferred startup, then makes one direct attempt if the router
-  // still isn't up. Idempotent: startRouter stops any existing router first.
+  // still isn't up. Safe to call redundantly: startRouter reuses a router that
+  // already matches this config rather than respawning it.
   private async ensureRouterReady(): Promise<void> {
     if (this.backgroundInit) {
       await this.backgroundInit.catch(() => undefined)

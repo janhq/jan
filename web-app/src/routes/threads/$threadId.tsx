@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
@@ -142,6 +143,8 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
+  const fontSize = useInterfaceSettings((state) => state.fontSize)
+  const messageZoom = useInterfaceSettings((state) => state.messageZoom)
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
@@ -1679,7 +1682,14 @@ function ThreadDetail() {
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
         {/* Messages Area */}
-        <div className="flex-1 relative">
+        <div
+          className="message-zoom flex-1 relative"
+          style={
+            {
+              '--font-size-base': `calc(${fontSize} * ${messageZoom})`,
+            } as CSSProperties
+          }
+        >
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
               className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
