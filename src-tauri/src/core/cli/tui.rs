@@ -820,7 +820,7 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
-            mouse_capture: true,
+            mouse_capture: false,
             message_queue: std::collections::VecDeque::new(),
             todos: crate::core::agent::todo::TodoList::default(),
             todo_call_this_turn: false,
@@ -933,8 +933,9 @@ impl App {
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
     fn push_assistant_blocks(&mut self, text: &str) {
+        let text = strip_system_xml_tags(text);
         let width = self.render_width();
-        for (reasoning, seg) in split_reasoning(text) {
+        for (reasoning, seg) in split_reasoning(&text) {
             if seg.trim().is_empty() {
                 continue;
             }
@@ -1153,10 +1154,11 @@ impl App {
 
     /// Extract the current `@query` from the input buffer, if any.
     /// Returns `None` when the cursor is not inside or immediately after
-    /// a `@`-prefixed token (no space since the `@`).
+    /// a `@`-prefixed token (no space since the `@`), or when the `@` does
+    /// not start a token (e.g. `user@host` is not a file reference).
     fn path_hint_query(&self) -> Option<String> {
         let before = &self.input[..self.cursor];
-        let at_idx = before.rfind('@')?;
+        let at_idx = path_refs::last_ref_start(before)?;
         let after_at = &before[at_idx + 1..];
         if after_at.contains(' ') {
             return None; // space after @ means the token ended
@@ -1199,7 +1201,7 @@ impl App {
         let sel = self.path_hint_selected.min(self.path_hints.len() - 1);
         let selected = &self.path_hints[sel];
         let before = &self.input[..self.cursor];
-        let at_idx = match before.rfind('@') {
+        let at_idx = match path_refs::last_ref_start(before) {
             Some(i) => i,
             None => return,
         };
@@ -3009,6 +3011,29 @@ fn assistant_has_content(text: &str) -> bool {
         .any(|(_, seg)| !seg.trim().is_empty())
 }
 
+/// Regex matching `<system>`, `<system-notice>`, `<system-directive>`,
+/// `<system-conventions>`, etc. - any XML tag named `system` or `system-*`.
+/// Complete tags (`<system-notice>...</system-notice>`) are matched first; when
+/// no closing tag exists, everything from the opening tag to end-of-string is
+/// consumed. A bare word like `<systemic>` is not a tag and passes through.
+fn system_tag_re() -> &'static regex::Regex {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?s)<system(?:-[a-zA-Z]+)?>.*?</system(?:-[a-zA-Z]+)?>|<system(?:-[a-zA-Z]+)?>.*$",
+        )
+        .unwrap()
+    });
+    &RE
+}
+
+/// Strip harness-injected `<system...>` XML tags from assistant text so the
+/// user never sees raw markup. These tags carry internal instructions that
+/// should not be rendered in the TUI transcript.
+fn strip_system_xml_tags(text: &str) -> String {
+    system_tag_re().replace_all(text, "").to_string()
+}
+
 fn spawn_run(args: &Arc<OrchestrationArgs>, body: serde_json::Value) -> CurrentRun {
     let (tx, rx) = mpsc::unbounded_channel::<StreamEvent>();
     let args = Arc::clone(args);
@@ -3205,8 +3230,10 @@ pub async fn run(
 
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)
-        .map_err(|e| e.to_string())?;
+    // Mouse capture stays off by default so terminal text is selectable/copyable
+    // (Ctrl-T enables click-to-expand). `chat_loop` diffs against
+    // `app.mouse_capture` and enables it on the first tick if the user toggles.
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -3285,9 +3312,9 @@ async fn chat_loop<B: Backend>(
 ) -> Result<(), String> {
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
-    // Mirrors app.mouse_capture; `run` enables capture on the real terminal
-    // before this loop starts, so both start in sync.
-    let mut mouse_capture_active = true;
+    // Mirrors app.mouse_capture; `run` sets the real terminal to the same
+    // state before this loop starts, so both start in sync.
+    let mut mouse_capture_active = false;
 
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
@@ -4269,7 +4296,7 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("↑/↓", "Scroll the transcript"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
-    ("Ctrl-T", "Toggle mouse capture off to select/copy text"),
+    ("Ctrl-T", "Toggle mouse capture (click-to-expand vs text select)"),
     ("Ctrl-D", "Quit"),
 ];
 
@@ -6283,11 +6310,16 @@ fn header(app: &App) -> Paragraph<'static> {
         Span::raw(format!("  {}  ", app.model)),
     ];
     // Wall-clock (local) segment, mirroring the reference status line's leading
-    // HH:MM:SS. Recomputed each frame so it ticks in place.
-    spans.push(Span::styled(
-        format!("  {}", chrono::Local::now().format("%H:%M:%S")),
-        Style::new().dim(),
-    ));
+    // HH:MM:SS. Shown only while a run is active: a clock that ticks once per
+    // second repaints the screen every second, which clears the terminal's text
+    // selection mid-drag. An idle frame must be fully static so the transcript
+    // stays selectable/copyable (the 50ms ticker then emits no output at all).
+    if app.run_started.is_some() {
+        spans.push(Span::styled(
+            format!("  {}", chrono::Local::now().format("%H:%M:%S")),
+            Style::new().dim(),
+        ));
+    }
     spans.push(Span::raw(format!("  {turn}")));
     if app.tokens > 0 {
         spans.push(Span::raw(format!(
@@ -6723,8 +6755,9 @@ mod tests {
         note_update, open_config_screen,
         parse_command, partial_json_field, restore_goal, restore_run_mode, restore_todos,
         run_command, starting_call_lines, unescape_partial_json_string,
-        running_group_row, split_reasoning, subagent_activity, subagent_name_from_run_id,
-        summarize_result, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        running_group_row, split_reasoning, strip_system_xml_tags, subagent_activity,
+        subagent_name_from_run_id, summarize_result, tilde_path, tokens_per_second,
+        tool_activity, tool_finished,
         transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
         SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
@@ -7178,6 +7211,38 @@ mod tests {
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
         let segs = split_reasoning("<mm:think>reasoning tail");
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
+    }
+
+    #[test]
+    fn strip_system_xml_tags_removes_system_blocks() {
+        assert_eq!(
+            strip_system_xml_tags(
+                "answer<system-notice>internal nudge</system-notice>tail"
+            ),
+            "answertail"
+        );
+    }
+
+    #[test]
+    fn strip_system_xml_tags_removes_multiline_and_unterminated() {
+        assert_eq!(
+            strip_system_xml_tags(
+                "a<system-directive>\nline one\nline two</system-directive>b"
+            ),
+            "ab"
+        );
+        assert_eq!(
+            strip_system_xml_tags("a<system-notice>never closed"),
+            "a"
+        );
+    }
+
+    #[test]
+    fn strip_system_xml_tags_keeps_plain_text() {
+        assert_eq!(
+            strip_system_xml_tags("no tags here <systemic> not a tag"),
+            "no tags here <systemic> not a tag"
+        );
     }
 
     #[test]
@@ -9487,7 +9552,7 @@ mod tests {
     #[tokio::test]
     async fn ctrl_t_toggles_mouse_capture() {
         let mut app = test_app();
-        assert!(app.mouse_capture, "capture starts on");
+        assert!(!app.mouse_capture, "capture starts off so text is selectable");
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers: crate::core::state::SharedMcpServers =
             Arc::new(tokio::sync::Mutex::new(HashMap::new()));
@@ -9495,9 +9560,9 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
 
         handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
-        assert!(!app.mouse_capture);
-        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
         assert!(app.mouse_capture);
+        handle_key(&mut app, key, &registry, &mut current, &mcp_servers).await;
+        assert!(!app.mouse_capture);
     }
 
     #[tokio::test]
