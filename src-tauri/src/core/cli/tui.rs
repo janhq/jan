@@ -125,6 +125,7 @@ impl Pending {
             Some(d) => diff_lines(
                 d,
                 (inner as usize).saturating_sub(4).max(1),
+                DIFF_PREVIEW_MAX_ROWS,
                 "",
                 self.path.as_deref(),
             ),
@@ -1722,7 +1723,7 @@ impl App {
                 ]));
                 if let Some(diff) = diff {
                     let lang = self.diff_paths.remove(&id);
-                    for line in diff_lines(&diff, max, "│     ", lang.as_deref()) {
+                    for line in diff_lines(&diff, max, DIFF_MAX_ROWS, "│     ", lang.as_deref()) {
                         self.push(line);
                     }
                 }
@@ -2208,25 +2209,35 @@ fn summarize_result(s: &str, max: usize) -> String {
     }
 }
 
-/// Max diff rows rendered under a tool result before collapsing the tail.
-const DIFF_MAX_ROWS: usize = 20;
+/// Max diff rows rendered under a tool result before collapsing the tail. The
+/// transcript scrolls, so a whole edit is worth showing; only pathological
+/// machine-generated diffs hit this.
+const DIFF_MAX_ROWS: usize = 1000;
+
+/// Max diff rows in the permission prompt, which does not scroll: its box grows
+/// upward into the transcript and shares the space with the decision list, so a
+/// long diff has to collapse rather than crowd out the options.
+const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
 /// Max chars shown for a bash/shell/exec command label in the transcript.
 const COMMAND_LABEL_MAX: usize = 80;
 
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
-/// `-` lines red, `+` green, `@@` headers dim-cyan. Content is truncated to
-/// `max` and each row padded so the right border aligns. Collapses to
-/// `DIFF_MAX_ROWS` with a `(+N more)` tail before the closing rule. `gutter`
-/// indents the panel (tool-row alignment under a result; empty in the prompt).
+/// `-` rows red and `+` rows green in full (marker, line number and code, so
+/// the change reads as one coloured band), unchanged context syntax-highlighted
+/// or dim, `@@` headers dim-cyan. Content is truncated to `max` and each row
+/// padded so the right border aligns. Collapses to `max_rows` with a `(+N more)`
+/// tail before the closing rule. `gutter` indents the panel (tool-row alignment
+/// under a result; empty in the prompt).
 fn diff_lines(
     diff: &str,
     max: usize,
+    max_rows: usize,
     gutter: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
     let all: Vec<&str> = diff.lines().collect();
-    let shown = all.len().min(DIFF_MAX_ROWS);
+    let shown = all.len().min(max_rows);
     let truncated = all.len() > shown;
 
     // Truncate before highlighting so the width arithmetic is unchanged.
@@ -2234,7 +2245,9 @@ fn diff_lines(
     // Highlight the body with the `-`/`+` markers stripped, so a multi-line
     // string or comment keeps its colour across the hunk instead of restarting
     // on every row; the markers are re-attached with their own colour below.
-    // Hunk headers are not code and stay out of it.
+    // Hunk headers are not code and stay out of it. Changed rows take the
+    // red/green band instead, but still contribute their body here so the
+    // highlighter sees the whole block and context rows stay in sync.
     let bodies: Vec<&str> = kept.iter().map(|l| split_diff_marker(l).1).collect();
     let highlighted: Option<Vec<Vec<Span<'static>>>> = match lang {
         Some(l) if !l.is_empty() => Some(highlight::block(&bodies, l)),
@@ -2244,18 +2257,25 @@ fn diff_lines(
     let mut rows: Vec<Line<'static>> = Vec::with_capacity(shown + 1);
     for (i, line) in kept.iter().enumerate() {
         let (marker, body) = split_diff_marker(line);
-        let marker_style = match marker.as_bytes().first() {
-            Some(b'-') => Style::new().red(),
-            Some(b'+') => Style::new().green(),
-            _ => Style::new().dim(),
-        };
         if marker.starts_with('@') {
             rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
             continue;
         }
+        // Undimmed so the coloured text keeps its contrast against the dim
+        // context around it; the fg colour alone carries the +/- distinction,
+        // which stays legible on light and dark terminals alike.
+        let changed = match marker.as_bytes().first() {
+            Some(b'-') => Some(Style::new().red()),
+            Some(b'+') => Some(Style::new().green()),
+            _ => None,
+        };
+        if let Some(style) = changed {
+            rows.push(Line::styled(line.clone(), style));
+            continue;
+        }
         let mut spans = Vec::with_capacity(2);
         if !marker.is_empty() {
-            spans.push(Span::styled(marker.to_string(), marker_style));
+            spans.push(Span::styled(marker.to_string(), Style::new().dim()));
         }
         match &highlighted {
             Some(h) => spans.extend(h[i].iter().cloned()),
@@ -2291,7 +2311,9 @@ fn row_width(row: &Line<'_>) -> usize {
 
 /// Frame styled rows in a light box, right-padded to the widest row (clamped to
 /// `max`). Rows carry their own spans so style can vary within a row (syntax
-/// highlighting); `gutter` prefixes every line to indent the panel.
+/// highlighting); `gutter` prefixes every line to indent the panel. A row's
+/// line-level style is folded into its spans, since the framed line replaces it
+/// with the border's own style.
 fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Vec<Line<'static>> {
     let inner = rows
         .iter()
@@ -2307,11 +2329,16 @@ fn boxed_panel(rows: Vec<Line<'static>>, max: usize, gutter: &'static str) -> Ve
     ]));
     for row in rows {
         let pad = inner.saturating_sub(row_width(&row));
+        let row_style = row.style;
         let mut spans = vec![
             Span::styled(gutter, border),
             Span::styled("│ ", border),
         ];
-        spans.extend(row.spans);
+        spans.extend(
+            row.spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, row_style.patch(s.style))),
+        );
         spans.push(Span::styled(format!("{} │", " ".repeat(pad)), border));
         out.push(Line::from(spans));
     }
@@ -2789,7 +2816,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
                 ]));
             }
             if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, max, cont_gutter, None) {
+                for line in diff_lines(diff, max, DIFF_MAX_ROWS, cont_gutter, None) {
                     out.push(line);
                 }
             }
@@ -6760,7 +6787,8 @@ mod tests {
         tool_activity, tool_finished,
         transcript_top_padding,
         user_content_parts, App, CurrentRun, Pending, PendingImage, PickerKind, ResumeTarget,
-        SnapshotJob, Status, DIFF_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS, SPINNER,
+        SnapshotJob, Status, DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, SLASH_COMMANDS,
+        SPINNER,
         SPINNER_ADVANCE_MS,
     };
     use std::time::{Duration, Instant};
@@ -8603,27 +8631,74 @@ mod tests {
             .collect()
     }
 
+    /// Single foreground colour of the content spans in the row containing
+    /// `needle`, ignoring the dark-gray box frame every row is wrapped in.
+    /// Panics if the content is not one uniform colour.
+    fn row_colour(rows: &[Line<'static>], needle: &str) -> Option<ratatui::style::Color> {
+        use ratatui::style::Color;
+        let row = rows
+            .iter()
+            .find(|l| line_text(l).contains(needle))
+            .unwrap_or_else(|| panic!("no row containing {needle:?}"));
+        let mut colours: Vec<_> = row
+            .spans
+            .iter()
+            .filter(|s| !s.content.trim().is_empty() && s.style.fg != Some(Color::DarkGray))
+            .map(|s| s.style.fg)
+            .collect();
+        colours.dedup();
+        assert_eq!(
+            colours.len(),
+            1,
+            "row {needle:?} is not one colour: {colours:?}"
+        );
+        colours[0]
+    }
+
+    /// The whole changed row is coloured -- marker, line number and code -- so
+    /// the change reads as a band rather than a single tinted character.
     #[test]
-    fn a_write_diff_is_syntax_highlighted_from_its_path() {
-        let diff = "+fn main() {\n+    let x = 1;\n+}";
-        let out = diff_lines(diff, 80, "", Some("src/main.rs"));
+    fn changed_diff_rows_are_fully_green_and_red() {
+        use ratatui::style::Color;
+        let diff = "     1 | keep\n-    2 | before\n+    2 | after";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", None);
+        assert_eq!(row_colour(&out, "before"), Some(Color::Red));
+        assert_eq!(row_colour(&out, "after"), Some(Color::Green));
+        // Colour, not dimming, carries the distinction: a dim fg would wash the
+        // text out on light terminals.
+        for needle in ["before", "after"] {
+            let row = out.iter().find(|l| line_text(l).contains(needle)).unwrap();
+            assert!(
+                !row.spans
+                    .iter()
+                    .any(|s| s.content.contains(needle)
+                        && s.style.add_modifier.contains(Modifier::DIM)),
+                "{needle} row is dimmed"
+            );
+        }
+    }
+
+    /// Changed rows take the red/green band; unchanged context is where syntax
+    /// highlighting still says something, so it keeps it.
+    #[test]
+    fn diff_context_is_syntax_highlighted_from_its_path() {
+        let diff = "     1 | fn main() {\n-    2 |     let x = 1;\n+    2 |     let x = 2;";
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
         assert!(
             !diff_syntax_colours(&out).is_empty(),
-            "diff body not highlighted: {:?}",
+            "context not highlighted: {:?}",
             out.iter().map(line_text).collect::<Vec<_>>()
         );
-        // The add/remove markers must stay legible as such.
-        let greens = out
-            .iter()
-            .flat_map(|l| l.spans.iter())
-            .filter(|s| s.content.starts_with('+') && s.style.fg == Some(ratatui::style::Color::Green))
-            .count();
-        assert_eq!(greens, 3, "one green marker per added line");
+        assert_eq!(
+            row_colour(&out, "let x = 2;"),
+            Some(ratatui::style::Color::Green),
+            "highlighting must not override the added-row colour"
+        );
     }
 
     #[test]
     fn a_diff_without_a_known_language_stays_plain() {
-        let out = diff_lines("+ foo\n- bar", 80, "", None);
+        let out = diff_lines("+ foo\n- bar", 80, DIFF_MAX_ROWS, "", None);
         assert!(
             diff_syntax_colours(&out).is_empty(),
             "unexpected highlighting without a language"
@@ -8632,7 +8707,13 @@ mod tests {
 
     #[test]
     fn a_hunk_header_is_not_syntax_highlighted() {
-        let out = diff_lines("@@ -1,2 +1,3 @@\n+let x = 1;", 80, "", Some("a.rs"));
+        let out = diff_lines(
+            "@@ -1,2 +1,3 @@\n   1 | let x = 1;",
+            80,
+            DIFF_MAX_ROWS,
+            "",
+            Some("a.rs"),
+        );
         let header = out
             .iter()
             .find(|l| line_text(l).contains("@@"))
@@ -8669,7 +8750,7 @@ mod tests {
             id: "c1".into(),
             content: "wrote 3 lines".into(),
             is_error: false,
-            diff: Some("+fn main() {\n+    let x = 1;\n+}".into()),
+            diff: Some("     1 | fn main() {\n-    2 | let x = 1;\n+    2 | let x = 2;".into()),
         });
         assert!(
             !diff_syntax_colours(&app.transcript).is_empty(),
@@ -8680,7 +8761,7 @@ mod tests {
 
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
-        let out = diff_lines("- foo\n+ bar", 80, "│     ", None);
+        let out = diff_lines("- foo\n+ bar", 80, DIFF_MAX_ROWS, "│     ", None);
         // 2 content rows framed by a top and bottom border.
         assert_eq!(out.len(), 4);
         assert!(line_text(&out[0]).contains('┌'), "top: {}", line_text(&out[0]));
@@ -8691,18 +8772,37 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diff_lines_collapses_tail_past_cap() {
-        let diff = (0..30)
+    fn plus_rows(n: usize) -> String {
+        (0..n)
             .map(|i| format!("+ line {i}"))
             .collect::<Vec<_>>()
-            .join("\n");
-        let out = diff_lines(&diff, 80, "│     ", None);
-        // DIFF_MAX_ROWS content rows + a `(+N more)` row, framed by 2 borders.
-        assert_eq!(out.len(), DIFF_MAX_ROWS + 1 + 2);
+            .join("\n")
+    }
+
+    #[test]
+    fn diff_lines_collapses_tail_past_cap() {
+        let out = diff_lines(&plus_rows(30), 80, 20, "│     ", None);
+        // 20 content rows + a `(+N more)` row, framed by 2 borders.
+        assert_eq!(out.len(), 20 + 1 + 2);
         // The tail sits just above the closing border.
         let tail = line_text(&out[out.len() - 2]);
         assert!(tail.contains("(+10 more)"), "tail: {tail}");
+    }
+
+    /// The transcript scrolls, so a long edit is shown in full there; the
+    /// permission prompt does not, and keeps the tight cap so the decision list
+    /// is never crowded out.
+    #[test]
+    fn the_result_cap_is_generous_and_the_prompt_cap_is_not() {
+        assert_eq!(DIFF_MAX_ROWS, 1000);
+        let long = plus_rows(400);
+        let result = diff_lines(&long, 80, DIFF_MAX_ROWS, "│     ", None);
+        assert_eq!(result.len(), 400 + 2, "result diff must not collapse");
+
+        let mut prompt = pending(true);
+        prompt.diff = Some(long);
+        let preview = prompt.diff_preview(80);
+        assert_eq!(preview.len(), DIFF_PREVIEW_MAX_ROWS + 1 + 2);
     }
 
     #[test]
