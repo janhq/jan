@@ -19,6 +19,8 @@ import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { renderInstructions } from '@/lib/instructionTemplate'
+import { buildSystemPrompt, getSystemEnv } from '@/lib/systemPrompt'
+import { useHardware } from '@/hooks/useHardware'
 import {
   Conversation,
   ConversationContent,
@@ -202,10 +204,16 @@ function ThreadDetail() {
 
   // Get system message from thread's assistant instructions (if thread has an assigned assistant)
   // Only use assistant instructions if the thread was created with one (e.g., via a project)
+  // The builder appends a block describing the current environment (OS, CPU, memory)
+  // so the model can tailor its answers to the user's machine.
   const threadAssistant = thread?.assistants?.[0]
-  const systemMessage = threadAssistant?.instructions
-    ? renderInstructions(threadAssistant.instructions)
-    : undefined
+  const hardwareData = useHardware((state) => state.hardwareData)
+  const systemMessage = useMemo(() => {
+    const instructions = threadAssistant?.instructions
+      ? renderInstructions(threadAssistant.instructions)
+      : undefined
+    return buildSystemPrompt(instructions, getSystemEnv(hardwareData))
+  }, [threadAssistant?.instructions, hardwareData])
 
   useEffect(() => {
     threadRef.current = thread
