@@ -3,7 +3,7 @@
 // machine and the security checks are testable without a DOM.
 
 /** How a given file should be shown. `file` is the fallback card. */
-export type PreviewKind = 'html' | 'svg' | 'markdown' | 'image' | 'video' | 'text' | 'file'
+export type PreviewKind = 'html' | 'svg' | 'markdown' | 'image' | 'video' | 'audio' | 'text' | 'file'
 
 /**
  * Preview FSM, shared with the artifacts library (#304) so both surfaces behave
@@ -45,6 +45,16 @@ const EXT_KIND: Record<string, PreviewKind> = {
   mp4: 'video',
   webm: 'video',
   mov: 'video',
+  mkv: 'video',
+  avi: 'video',
+  m4v: 'video',
+  mp3: 'audio',
+  wav: 'audio',
+  ogg: 'audio',
+  flac: 'audio',
+  m4a: 'audio',
+  aac: 'audio',
+  opus: 'audio',
   txt: 'text',
   json: 'text',
   css: 'text',
@@ -73,9 +83,9 @@ export function previewKindFor(path: string): PreviewKind {
   return EXT_KIND[extensionOf(path)] ?? 'file'
 }
 
-/** `image` and `video` stream from disk via the asset protocol, not a read. */
+/** `image`, `video` and `audio` stream from disk via the asset protocol, not a read. */
 export function isAssetKind(kind: PreviewKind): boolean {
-  return kind === 'image' || kind === 'video'
+  return kind === 'image' || kind === 'video' || kind === 'audio'
 }
 
 export function basenameOf(path: string): string {
