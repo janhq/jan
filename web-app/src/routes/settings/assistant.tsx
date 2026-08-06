@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useState } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 import { useAssistant } from '@/hooks/useAssistant'
 
@@ -30,18 +30,19 @@ export const Route = createFileRoute(route.settings.assistant as any)({
 
 function AssistantContent() {
   const { t } = useTranslation()
-  const { 
+  const {
     assistants,
     addAssistant,
     updateAssistant,
     deleteAssistant,
     defaultAssistantId,
-    setDefaultAssistant
+    setDefaultAssistant,
   } = useAssistant()
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const refreshRequestRef = useRef(0)
 
   const handleDelete = (id: string) => {
     setDeletingId(id)
@@ -65,6 +66,17 @@ function AssistantContent() {
     setOpen(false)
     setEditingKey(null)
   }
+
+  const handleEditClick = useCallback((assistantId: string) => {
+    // Before opening the edit dialog, refresh the assistants to get the latest data
+    const requestId = ++refreshRequestRef.current
+    useAssistant.getState().refreshAssistants()
+      .then(() => {
+        if (refreshRequestRef.current !== requestId) return
+        setEditingKey(assistantId)
+        setOpen(true)
+      })
+  }, [])
 
   const sortedAssistants = assistants.slice().sort((a, b) => a.created_at - b.created_at)
   const defaultAssistant = sortedAssistants.find((a) => a.id === defaultAssistantId)
@@ -174,10 +186,7 @@ function AssistantContent() {
                       variant="ghost"
                       size="icon-xs"
                       title={t('assistants:editAssistant')}
-                      onClick={() => {
-                        setEditingKey(assistant.id)
-                        setOpen(true)
-                      }}
+                      onClick={() => handleEditClick(assistant.id)}
                     >
                       <IconPencil className="text-muted-foreground size-4" />
                     </Button>
@@ -198,11 +207,7 @@ function AssistantContent() {
             open={open}
             onOpenChange={setOpen}
             editingKey={editingKey}
-            initialData={
-              editingKey
-                ? assistants.find((a) => a.id === editingKey)
-                : undefined
-            }
+            initialData={editingKey ? assistants.find(a => a.id === editingKey) : undefined}
             onSave={handleSave}
           />
           <DeleteAssistantDialog
