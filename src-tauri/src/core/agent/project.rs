@@ -214,10 +214,10 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
-/// Persist an `[agent]` key into the agent.toml at `path`, format-preserving
-/// (comments kept). The key is written under `[agent]` like the template's
-/// other knobs, so the value the next run loads is exactly what the TUI
-/// `/settings` surface shows. `None` removes the key (default applies).
+/// Persist a scalar key into the agent.toml at `path`, format-preserving
+/// (comments kept). Keys are `section.key` with `agent` the default section,
+/// so the `/settings` menu can reach `[agent]`, `[budget]`, `[tools]` and
+/// `[skills]` scalars alike. `None` removes the key (default applies).
 #[cfg(feature = "cli")]
 pub(crate) fn set_agent_key(
     path: &Path,
@@ -230,13 +230,18 @@ pub(crate) fn set_agent_key(
         .parse::<toml_edit::DocumentMut>()
         .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
 
+    let (section, key) = match key.split_once('.') {
+        Some((section, key)) => (section, key),
+        None => ("agent", key),
+    };
+
     match value {
         Some(v) => {
-            let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-            agent[key] = v;
+            let table = doc[section].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            table[key] = v;
         }
         None => {
-            if let Some(table) = doc.get_mut("agent").and_then(|t| t.as_table_mut()) {
+            if let Some(table) = doc.get_mut(section).and_then(|t| t.as_table_mut()) {
                 table.remove(key);
             }
         }
@@ -375,6 +380,22 @@ mod tests {
         set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dotted_keys_write_and_remove_under_their_section() {
+        let root = unique_root("dotted");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+
+        set_agent_key(&path, "budget.max_steps", Some(toml_edit::value(60i64))).expect("write");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("max_steps = 60"), "written under [budget]: {raw}");
+
+        set_agent_key(&path, "budget.max_steps", None).expect("unset");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("max_steps = 60"), "removed: {raw}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

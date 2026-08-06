@@ -4611,6 +4611,10 @@ struct AgentSettingDef {
 enum AgentSettingKind {
     Int { default: Option<u64>, min: u64 },
     Text { default: &'static str },
+    /// Exact-match choice: Enter writes one of `options`, cleared field
+    /// unsets. Covers the `read-only | deny | allow` and `always | relevance`
+    /// toggles that hand-editing agent.toml previously required.
+    Enum { options: &'static [&'static str], default: &'static str },
 }
 
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
@@ -4650,6 +4654,36 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         desc: "markdown injected into the system prompt",
         kind: AgentSettingKind::Text { default: "AGENT.md" },
     },
+    AgentSettingDef {
+        key: "budget.max_steps",
+        label: "budget.max_steps",
+        desc: "max tool-call steps per run",
+        kind: AgentSettingKind::Int { default: Some(40), min: 1 },
+    },
+    AgentSettingDef {
+        key: "budget.max_tokens",
+        label: "budget.max_tokens",
+        desc: "max tokens budget per run",
+        kind: AgentSettingKind::Int { default: Some(200000), min: 1 },
+    },
+    AgentSettingDef {
+        key: "tools.default",
+        label: "tools.default",
+        desc: "tool permission mode; deny locks down MCP tools",
+        kind: AgentSettingKind::Enum {
+            options: &["read-only", "deny", "allow"],
+            default: "read-only",
+        },
+    },
+    AgentSettingDef {
+        key: "skills.inject",
+        label: "skills.inject",
+        desc: "when project skills are injected into the prompt",
+        kind: AgentSettingKind::Enum {
+            options: &["always", "relevance"],
+            default: "always",
+        },
+    },
 ];
 
 /// Docked edit prompt for one `/settings` row: value field, inline validation
@@ -4683,7 +4717,11 @@ impl SettingsPrompt {
 fn current_agent_value(toml_path: &std::path::Path, key: &str) -> Option<String> {
     let raw = std::fs::read_to_string(toml_path).ok()?;
     let doc = raw.parse::<toml_edit::DocumentMut>().ok()?;
-    let item = doc.get("agent")?.get(key)?;
+    let (section, key) = match key.split_once('.') {
+        Some((section, key)) => (section, key),
+        None => ("agent", key),
+    };
+    let item = doc.get(section)?.get(key)?;
     Some(match item.as_value() {
         Some(toml_edit::Value::Integer(i)) => i.value().to_string(),
         Some(toml_edit::Value::String(s)) => s.value().to_string(),
@@ -4806,6 +4844,20 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                         None
                     } else {
                         Some(toml_edit::value(prompt.input.trim().to_string()))
+                    }
+                }
+                AgentSettingKind::Enum { options, default } => {
+                    let input = prompt.input.trim();
+                    if input.is_empty() {
+                        None
+                    } else if options.contains(&input) {
+                        Some(toml_edit::value(input.to_string()))
+                    } else {
+                        prompt.error = Some(format!(
+                            "must be one of: {} (default: {default})",
+                            options.join(" | ")
+                        ));
+                        return;
                     }
                 }
             };
@@ -6378,6 +6430,9 @@ fn draw_settings_prompt(
                 format!("default: {d} · valid: >= {min}")
             }
             AgentSettingKind::Text { default } => format!("default: {default}"),
+            AgentSettingKind::Enum { options, default } => {
+                format!("default: {default} · valid: {}", options.join(" | "))
+            }
         },
         dim,
     ));
@@ -6613,6 +6668,12 @@ fn draw_picker(
                 }
                 AgentSettingKind::Text { default } => {
                     format!("default: {default} · current: {current}")
+                }
+                AgentSettingKind::Enum { options, default } => {
+                    format!(
+                        "default: {default} · valid: {} · current: {current}",
+                        options.join(" | ")
+                    )
                 }
             };
             let dim = Style::new().dark_gray();
@@ -9096,6 +9157,57 @@ mod tests {
         assert!(app.settings_prompt.is_none());
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("instructions_file = \"AGENTS.md\""), "{doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_edits_enum_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n[tools]\ndefault = \"read-only\"\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "tools.default")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "deny".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"deny\""), "written under [tools]: {doc}");
+        assert!(transcript_text(&app).contains("tools.default = deny written"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_enum_garbage() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n[tools]\ndefault = \"read-only\"\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "tools.default")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "aggressive".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("read-only | deny | allow"), "{err}");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
