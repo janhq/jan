@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::permissions::ToolPermissions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -921,7 +921,7 @@ pub fn subagent_dir_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+    use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);

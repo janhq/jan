@@ -43,7 +43,7 @@ use super::{sort_threads_recent, AgentSession, ResumeTarget};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{run_orchestration_streamed, OrchestrationArgs, PermissionRegistry};
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 
 #[derive(Debug, PartialEq)]
 enum Status {
@@ -99,7 +99,7 @@ impl Pending {
     /// sees exactly what a grant covers (`git status && rm foo` -> git AND rm);
     /// commands that can't be decomposed grant only their exact text.
     fn always_label(&self) -> String {
-        use crate::core::agent::tools::cmdscan::{scan_command, CommandScan};
+        use tauri_plugin_agent_tools::tools::cmdscan::{scan_command, CommandScan};
         let Some(command) = self.command.as_deref() else {
             return "Allow always (this thread)".to_string();
         };
@@ -7375,7 +7375,7 @@ mod tests {
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
     use crate::core::agent::r#loop::PermissionRegistry;
-    use crate::core::agent::tools::gate::PermissionDecision;
+    use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;

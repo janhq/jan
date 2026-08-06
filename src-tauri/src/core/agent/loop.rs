@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::agent::upstream::{
     collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
     extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
@@ -61,7 +61,7 @@ pub(crate) struct OrchestrationArgs {
     pub mcp_servers: SharedMcpServers,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub jan_data_folder: String,
-    pub permissions: crate::core::agent::permissions::ToolPermissions,
+    pub permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
     /// Present only when a client can render and answer structured questions.
@@ -191,18 +191,33 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
-    permissions: crate::core::agent::permissions::ToolPermissions,
+    /// Where `memory/` and `skills/` live. Co-located with the project here, so
+    /// the on-disk layout is unchanged; the desktop points this at its permanent
+    /// store instead.
+    store_root: std::path::PathBuf,
+    /// `[skills].enabled`, resolved once per run. The toolset owns no config
+    /// format, so the whitelist is injected rather than re-read per tool call.
+    enabled_skills: Vec<String>,
+    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
     ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
-    grants: std::sync::Mutex<crate::core::agent::tools::gate::SessionGrants>,
+    grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
     yolo: bool,
     run_mode: crate::core::agent::plan::RunMode,
 }
 
 impl CompositeToolInvoker {
+    fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
+        tauri_plugin_agent_tools::tools::ToolContext::new(
+            &self.project_root,
+            &self.store_root,
+            &self.enabled_skills,
+        )
+    }
+
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
     /// A dropped responder (client gone / run cancelled) resolves to Deny.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
@@ -494,10 +509,10 @@ impl ToolInvoker for CompositeToolInvoker {
         &self,
         tool_calls: &[serde_json::Value],
     ) -> Result<Vec<ToolOutcome>, String> {
-        use crate::core::agent::tools::{
+        use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
-            is_builtin, lookup, Capability,
+            is_builtin, lookup, Capability, ToolContext,
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
@@ -641,9 +656,14 @@ impl ToolInvoker for CompositeToolInvoker {
             if matches!(decision, Decision::Allow)
                 && matches!(tool.capability, Capability::Read | Capability::Net)
             {
+                // The future outlives this borrow of `self`, so it owns its roots
+                // and builds the context inside.
                 let root = self.project_root.clone();
+                let store = self.store_root.clone();
+                let enabled = self.enabled_skills.clone();
                 read_futures.push(async move {
-                    let (text, diff) = execute_builtin_with_diff(tool, &args, &root).await;
+                    let ctx = ToolContext::new(&root, &store, &enabled);
+                    let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
                         content: text,
@@ -653,7 +673,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             let (text, diff) = match decision {
-                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.project_root).await,
+                Decision::Allow => execute_builtin_with_diff(tool, &args, &self.tool_context()).await,
                 Decision::HardDeny => (denied_by_policy_msg(name, &self.project_root), None),
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
@@ -685,7 +705,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
                         .map(String::from);
-                    let diff = preview_diff(tool, &args, &self.project_root).await;
+                    let diff = preview_diff(tool, &args, &self.tool_context()).await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
                         tool_name: name.to_string(),
@@ -703,7 +723,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     self.permission_requests.lock().await.remove(&request_id);
                     match decision {
                         PermissionDecision::AllowOnce => {
-                            execute_builtin_with_diff(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::AllowAlways => {
                             // Thread-scoped only; never persisted to agent.toml.
@@ -717,7 +737,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             } else {
                                 self.grants.lock().unwrap().grant(kind);
                             }
-                            execute_builtin_with_diff(tool, &args, &self.project_root).await
+                            execute_builtin_with_diff(tool, &args, &self.tool_context()).await
                         }
                         PermissionDecision::Deny => {
                             (format!("ERROR: tool '{name}' denied by user"), None)
@@ -771,7 +791,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         mcp_servers,
         mcp_settings,
         jan_data_folder: jan_data_folder.to_string(),
-        permissions: crate::core::agent::permissions::ToolPermissions::allow_all(),
+        permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::allow_all(),
         project_root: None,
         permission_requests: Arc::new(Mutex::new(HashMap::new())),
         ask_requests: None,
@@ -836,7 +856,7 @@ fn apply_tool_allowlist(
 fn retain_advertisable_mcp_tools(
     openai_tools: &mut Vec<serde_json::Value>,
     tool_to_server: &mut HashMap<String, String>,
-    permissions: &crate::core::agent::permissions::ToolPermissions,
+    permissions: &tauri_plugin_agent_tools::permissions::ToolPermissions,
 ) {
     openai_tools.retain(|t| {
         t.get("function")
@@ -1167,7 +1187,7 @@ async fn orchestrate_inner(
         // we only drop tools explicitly denied in agent.toml (and honor allowed_tools
         // if the request set one). Advertisement is independent of the read-only
         // default that applies to opaque MCP tools.
-        for schema in crate::core::agent::tools::schema::builtin_tool_schemas() {
+        for schema in tauri_plugin_agent_tools::tools::schema::builtin_tool_schemas() {
             let name = schema["function"]["name"].as_str().unwrap_or_default();
             if permissions.is_denied(name) {
                 continue;
@@ -1175,11 +1195,11 @@ async fn orchestrate_inner(
             // Plan mode advertises only read/net builtins; write/exec are hidden
             // entirely rather than relying on a prompt or execution-time denial.
             if run_mode == crate::core::agent::plan::RunMode::Plan
-                && crate::core::agent::tools::lookup(name).is_some_and(|t| {
+                && tauri_plugin_agent_tools::tools::lookup(name).is_some_and(|t| {
                     matches!(
                         t.capability,
-                        crate::core::agent::tools::Capability::Write
-                            | crate::core::agent::tools::Capability::Exec
+                        tauri_plugin_agent_tools::tools::Capability::Write
+                            | tauri_plugin_agent_tools::tools::Capability::Exec
                     )
                 })
             {
@@ -1291,13 +1311,15 @@ async fn orchestrate_inner(
         });
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
+            store_root: tauri_plugin_agent_tools::workspace::project_store(root),
+            enabled_skills: crate::core::agent::project::enabled_skills(root),
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
             ask_requests: ask_requests.clone(),
             todo_registry: todo_registry.clone(),
-            grants: std::sync::Mutex::new(crate::core::agent::tools::gate::SessionGrants::default()),
+            grants: std::sync::Mutex::new(tauri_plugin_agent_tools::tools::gate::SessionGrants::default()),
             subagents,
             yolo: *yolo,
             run_mode,
@@ -1709,7 +1731,7 @@ async fn run_turn_cycle(
             // call as failed for display.
             let is_error = content.starts_with("ERROR")
                 || (tool_names.get(id.as_str()) == Some(&"bash")
-                    && crate::core::agent::tools::handlers::bash_result_failed(&content));
+                    && tauri_plugin_agent_tools::tools::handlers::bash_result_failed(&content));
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
             if name == "todo" {
                 todo_touched_this_batch = true;
@@ -2545,8 +2567,8 @@ mod tests {
         assert_eq!(map.keys().collect::<Vec<_>>(), vec!["search"]);
     }
 
-    use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
-    use crate::core::agent::tools::gate::{PermissionDecision, SessionGrants};
+    use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
+    use tauri_plugin_agent_tools::tools::gate::{PermissionDecision, SessionGrants};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_ROOT_SEQ: AtomicUsize = AtomicUsize::new(0);
@@ -2581,6 +2603,8 @@ mod tests {
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
+            store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
+            enabled_skills: Vec::new(),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -3140,7 +3164,7 @@ mod tests {
 
     #[test]
     fn read_only_project_still_advertises_mcp_tools() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         // The scaffolded CLI project default: read-only, no allow-list.
@@ -3154,7 +3178,7 @@ mod tests {
 
     #[test]
     fn denied_mcp_tool_is_not_advertised() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![
             json!({ "type": "function", "function": { "name": "web_search_exa" } }),
             json!({ "type": "function", "function": { "name": "dangerous_write" } }),
@@ -3179,7 +3203,7 @@ mod tests {
 
     #[test]
     fn deny_default_advertises_no_mcp_tools() {
-        use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
         let mut tools = vec![json!({ "type": "function", "function": { "name": "web_search_exa" } })];
         let mut map = HashMap::from([("web_search_exa".to_string(), "exa".to_string())]);
         let perms = ToolPermissions::new(PermissionDefault::Deny, &[], &[], &[]);

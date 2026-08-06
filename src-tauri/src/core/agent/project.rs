@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::core::agent::permissions::{PermissionDefault, ToolPermissions};
+use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
 /// `[tools]` is always modeled. `[agent]` is only compiled for the CLI (its
 /// sole consumer, via `jan cli agent run/step/status`); serde still ignores the
@@ -150,6 +150,19 @@ pub(crate) fn load_agent_config(project_root: &Path) -> Result<AgentToml, String
     toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
 }
 
+/// The project's `[skills].enabled` whitelist (empty = every skill). A missing
+/// or malformed config falls back to "all skills" rather than erroring, since a
+/// project without an agent.toml should still advertise its skills.
+///
+/// The agent toolset takes this as an argument rather than reading it itself, so
+/// this is the one place that maps agent.toml onto `ToolContext::enabled_skills`.
+pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
+    load_agent_config(project_root)
+        .ok()
+        .map(|c| c.skills.enabled)
+        .unwrap_or_default()
+}
+
 /// Build a `ToolPermissions` from the parsed `[tools]` section.
 pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     let default = cfg
@@ -287,6 +300,31 @@ mod tests {
         let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{n}"));
         std::fs::create_dir_all(&root).expect("create test project root");
         root
+    }
+
+    /// `ensure_project` scaffolds `.jan/agent/{skills,memory}` by hand, while the
+    /// toolset resolves those same directories through `workspace::project_store`.
+    /// Nothing but this test ties the two together, and if they ever drift a
+    /// user's existing skills and memories simply stop being found.
+    #[test]
+    fn scaffolded_dirs_match_the_toolset_store_layout() {
+        use tauri_plugin_agent_tools::workspace;
+
+        let root = unique_root("store_layout");
+        ensure_project(&root).expect("scaffold project");
+
+        let store = workspace::project_store(&root);
+        assert_eq!(store, root.join(".jan").join("agent"));
+        assert!(
+            tauri_plugin_agent_tools::skills::skills_dir(&store).is_dir(),
+            "skills dir the toolset reads is not the one ensure_project created"
+        );
+        assert!(
+            workspace::store_dir(&store, "memory").is_dir(),
+            "memory dir the toolset reads is not the one ensure_project created"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -368,7 +368,7 @@ use crate::core::agent::project::{
 use crate::core::agent::r#loop::{
     run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
 };
-use crate::core::agent::tools::gate::PermissionDecision;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
@@ -516,7 +516,7 @@ pub async fn cli_agent_step(
 #[allow(clippy::too_many_arguments)]
 fn build_cli_orchestration_args(
     project_root: PathBuf,
-    permissions: crate::core::agent::permissions::ToolPermissions,
+    permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     provider_configs: HashMap<String, crate::core::state::ProviderConfig>,
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
