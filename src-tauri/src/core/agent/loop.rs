@@ -209,6 +209,22 @@ struct CompositeToolInvoker {
     run_mode: crate::core::agent::plan::RunMode,
 }
 
+/// Whether the sandboxed shell keeps its network namespace.
+///
+/// The CLI agent runs in the user's own terminal against their own project, and
+/// every exec is already gated behind an interactive prompt, so the network is
+/// not what confines it -- the user is. Before the shell was sandboxed at all it
+/// ran fully unconfined, and a coding agent that cannot `curl`, `git fetch`, or
+/// install a package is largely useless, so the sandbox keeps the network and
+/// relies on the prompt.
+///
+/// The desktop chat sandbox makes the opposite trade: it is ephemeral, has no
+/// prompt, and opts in per call from a user setting (`commands.rs`).
+#[cfg(feature = "cli")]
+const LOOP_ALLOW_NETWORK: bool = true;
+#[cfg(not(feature = "cli"))]
+const LOOP_ALLOW_NETWORK: bool = false;
+
 impl CompositeToolInvoker {
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
@@ -216,6 +232,7 @@ impl CompositeToolInvoker {
             &self.store_root,
             &self.enabled_skills,
         )
+        .with_network(LOOP_ALLOW_NETWORK)
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -662,7 +679,8 @@ impl ToolInvoker for CompositeToolInvoker {
                 let store = self.store_root.clone();
                 let enabled = self.enabled_skills.clone();
                 read_futures.push(async move {
-                    let ctx = ToolContext::new(&root, &store, &enabled);
+                    let ctx = ToolContext::new(&root, &store, &enabled)
+                        .with_network(LOOP_ALLOW_NETWORK);
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
@@ -2617,6 +2635,41 @@ mod tests {
             yolo: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
+    }
+
+    /// The CLI agent's shell keeps its network namespace. Before the sandbox
+    /// existed this shell ran fully unconfined, so flipping this to `false`
+    /// silently breaks `curl`, `git fetch` and package installs while every
+    /// test that does not actually open a socket keeps passing.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn cli_tool_context_allows_network() {
+        let root = std::path::PathBuf::from("/tmp/jan-net-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(
+            invoker.tool_context().allow_network,
+            "CLI shell must keep its network namespace"
+        );
+    }
+
+    /// The desktop chat sandbox is ephemeral and unprompted, so it opts in per
+    /// call from a user setting instead of defaulting on here.
+    #[test]
+    #[cfg(not(feature = "cli"))]
+    fn desktop_tool_context_withholds_network() {
+        let root = std::path::PathBuf::from("/tmp/jan-net-check");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root,
+            tx,
+            Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        );
+        assert!(!invoker.tool_context().allow_network);
     }
 
     async fn respond_once(
