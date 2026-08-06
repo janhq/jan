@@ -6,7 +6,9 @@ authors = ["Jan <service@jan.ai>"]
 license = "MIT"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
-rust-version = "1.77.2"
+# 1.82 is the floor actually used: `Option::is_none_or` (1.82) in agent/loop.rs
+# and `LazyLock` (1.80) in cli/tui.rs.
+rust-version = "1.82"
 resolver = "2"
 default-run = "jan-desktop"
 

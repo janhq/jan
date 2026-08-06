@@ -3056,8 +3056,7 @@ fn assistant_is_awaiting_user_answer(text: &str) -> bool {
     let Some(last_line) = text
         .split(['\n', '\r'])
         .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .next_back()
+        .rfind(|l| !l.is_empty())
     else {
         return false;
     };
@@ -3563,6 +3562,9 @@ async fn chat_loop<B: Backend>(
                                 }
                             }
                         },
+                        // `handle_ask_mouse` mutates app state, so it stays in the
+                        // arm body rather than a match guard that hides the effect.
+                        #[allow(clippy::collapsible_match)]
                         Ok(Event::Mouse(mouse)) => {
                             if !handle_ask_mouse(app, mouse, ask_requests).await {
                                 handle_mouse(app, mouse);
@@ -6019,7 +6021,7 @@ fn draw(f: &mut Frame, app: &mut App) {
                         .map(|block| block.detail.clone())
                 });
             if let Some(detail) = detail {
-                row_index.extend(std::iter::repeat(Some(i)).take(detail.len()));
+                row_index.extend(std::iter::repeat_n(Some(i), detail.len()));
                 lines.extend(detail);
             }
         }

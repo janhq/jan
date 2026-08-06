@@ -18,7 +18,7 @@
 //! touched. Shelling out keeps us free of a libgit2 dependency.
 
 use std::path::Path;
-#[cfg(any(feature = "cli", test))]
+#[cfg(feature = "cli")]
 use std::path::PathBuf;
 use std::process::Command;
 
