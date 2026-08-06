@@ -6,7 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { FileDiff, GitBranch, Laptop, Folder, Sparkles, ListTodo, Eye } from 'lucide-react'
+import { FileDiff, GitBranch, Folder, Sparkles, ListTodo, Eye } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { invoke, Channel } from '@tauri-apps/api/core'
@@ -1079,10 +1079,6 @@ function CodePage() {
                   useCodeSessions.getState().setMode(sid, m)
                 }}
               />
-              <Button variant="outline" size="sm" className="h-7 gap-1.5 rounded-full">
-                <Laptop size={14} className="text-muted-foreground" />
-                <span>{t('common:local')}</span>
-              </Button>
               <div className="flex items-center gap-1 min-w-0 max-w-[460px]">
                 <Button
                   variant="outline"

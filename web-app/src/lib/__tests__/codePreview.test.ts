@@ -15,6 +15,7 @@ describe('previewKindFor', () => {
     expect(previewKindFor('README.md')).toBe('markdown')
     expect(previewKindFor('shot.PNG')).toBe('image')
     expect(previewKindFor('clip.mp4')).toBe('video')
+    expect(previewKindFor('track.mp3')).toBe('audio')
     expect(previewKindFor('main.rs')).toBe('text')
   })
 

@@ -2,7 +2,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { IconSearch } from '@tabler/icons-react'
-import { ChevronsUpDown } from 'lucide-react'
+import { ChevronsUpDown, FolderOpen, SquareArrowOutUpRight } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -52,7 +52,7 @@ function ArtifactsPage() {
   const rows = useMemo<Row[]>(
     () =>
       sessions.flatMap((session) =>
-        artifactsFromTurns(session.turns).map((artifact) => ({
+        artifactsFromTurns(session.turns, session.folder).map((artifact) => ({
           ...artifact,
           sessionId: session.id,
           root: session.folder ?? null,
@@ -137,31 +137,73 @@ function ArtifactsPage() {
                 return (
                   <Card
                     key={`${row.sessionId}:${row.path}`}
-                    className="flex cursor-pointer items-center gap-3 p-3 transition-colors hover:border-accent"
-                    onClick={() => open(row)}
-                    title={row.path}
+                    className="flex items-center gap-3 p-3 transition-colors hover:border-accent"
                   >
-                    {thumb ? (
-                      <img
-                        src={thumb}
-                        alt=""
-                        className="size-10 shrink-0 rounded-md border object-contain"
-                      />
-                    ) : (
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-md border">
-                        <Icon size={18} className="text-muted-foreground" />
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                      onClick={() => open(row)}
+                      title={t('common:artifactOpenPreview')}
+                    >
+                      {thumb ? (
+                        <img
+                          src={thumb}
+                          alt=""
+                          className="size-10 shrink-0 rounded-md border object-contain"
+                        />
+                      ) : (
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-md border">
+                          <Icon size={18} className="text-muted-foreground" />
+                        </div>
+                      )}
+                      {/* min-w-0 on a block box: `truncate` is inert otherwise. */}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{row.title}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {row.group} · {row.label}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground/70">
+                          {row.path}
+                        </span>
+                      </span>
+                    </button>
+                    {abs && (
+                      <div className="flex shrink-0 items-center rounded-md border">
+                        <button
+                          type="button"
+                          onClick={() => void serviceHub.opener().openPath(abs)}
+                          className="flex items-center gap-1.5 rounded-l-md px-2.5 py-1.5 text-xs hover:bg-accent"
+                          title={t('common:artifactOpenExternal')}
+                        >
+                          <SquareArrowOutUpRight size={13} className="text-muted-foreground" />
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={t('common:artifactMoreActions')}
+                              className="rounded-r-md border-l px-1.5 py-1.5 hover:bg-accent"
+                            >
+                              <ChevronsUpDown size={13} className="text-muted-foreground" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => void serviceHub.opener().openPath(abs)}
+                            >
+                              <SquareArrowOutUpRight size={14} />
+                              {t('common:artifactOpenExternal')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => void serviceHub.opener().revealItemInDir(abs)}
+                            >
+                              <FolderOpen size={14} />
+                              {t('common:artifactShowInFolder')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     )}
-                    {/* min-w-0 on a block box: `truncate` is inert otherwise. */}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{row.title}</div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {row.group} · {row.label}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground/70">
-                        {row.path}
-                      </div>
-                    </div>
                   </Card>
                 )
               })}

@@ -1,5 +1,5 @@
-import { Code2, FileText, ImageIcon } from 'lucide-react'
-import { basenameOf, extensionOf } from '@/lib/codePreview'
+import { AudioLines, Code2, FileText, ImageIcon, Video } from 'lucide-react'
+import { basenameOf, extensionOf, resolveInRoot } from '@/lib/codePreview'
 import type { CodeTurn } from '@/hooks/useCodeSessions'
 
 /**
@@ -26,7 +26,7 @@ export type CodeArtifact = {
   /** Display name — the basename without its extension. */
   title: string
   /** Coarse grouping shown on the card, e.g. `Code · HTML`. */
-  group: 'Code' | 'Image' | 'Document'
+  group: 'Code' | 'Image' | 'Document' | 'Video' | 'Audio'
   /** Upper-cased extension, e.g. `HTML`. */
   label: string
 }
@@ -47,6 +47,19 @@ const ARTIFACT_GROUPS: Record<string, CodeArtifact['group']> = {
   xlsx: 'Document',
   pptx: 'Document',
   csv: 'Document',
+  mp4: 'Video',
+  webm: 'Video',
+  mov: 'Video',
+  mkv: 'Video',
+  avi: 'Video',
+  m4v: 'Video',
+  mp3: 'Audio',
+  wav: 'Audio',
+  ogg: 'Audio',
+  flac: 'Audio',
+  m4a: 'Audio',
+  aac: 'Audio',
+  opus: 'Audio',
 }
 
 export function isArtifactPath(path: string): boolean {
@@ -72,9 +85,11 @@ export const ARTIFACT_ICON = {
   Code: Code2,
   Image: ImageIcon,
   Document: FileText,
+  Video: Video,
+  Audio: AudioLines,
 } as const
 
-export const ARTIFACT_GROUP_NAMES = ['Code', 'Image', 'Document'] as const
+export const ARTIFACT_GROUP_NAMES = ['Code', 'Image', 'Document', 'Video', 'Audio'] as const
 
 /**
  * Did this write bring a new file into existence?
@@ -114,6 +129,63 @@ const pathFromInput = (input: unknown): string | undefined => {
     return typeof v === 'string' ? v : undefined
   }
   return undefined
+}
+
+/** A path-shaped token, quoted or bare, e.g. `cat_video.mp4` or `"Rick ....mp4"`. */
+const PATH_TOKEN_RE = /"([^"]+)"|'([^']+)'|(\S+)/g
+
+/**
+ * Artifact paths a `bash` turn produced, recovered from its command and output.
+ *
+ * `write` results name their file directly; `bash` does not. Two signals, one
+ * rule:
+ *
+ * 1. A path the command names explicitly (yt-dlp `-o out.mp4`, `ls -lh
+ *    cat_video.mp4`, `mv a.mp4 b.mp4`) that the output confirms exists — the
+ *    basename reappears in the tool output, so the file is real after the run.
+ * 2. A `Destination: <path>` line in the output (yt-dlp / wget / curl `-o`),
+ *    which declares the file being written even when the command used a
+ *    format template (`-o "%(title)s.%(ext)s"`).
+ *
+ * Probes and directory listings are filtered out: `which ffmpeg` names no
+ * artifact path, and `ls *.mp4` names no literal file — the output lists real
+ * names but the command token `*.mp4` never reappears verbatim, so nothing is
+ * confirmed.
+ *
+ * Absolute paths pass through; relative paths resolve against `root`.
+ */
+export function bashArtifactPaths(
+  command: unknown,
+  output: unknown,
+  root: string | null | undefined
+): CodeArtifact[] {
+  const cmd = typeof command === 'string' ? command : ''
+  const out = typeof output === 'string' ? output : ''
+  if (!out) return []
+  const seen = new Set<string>()
+  const found: CodeArtifact[] = []
+  const consider = (raw: string) => {
+    const token = raw.trim()
+    if (!token || seen.has(token) || !isArtifactPath(token)) return
+    seen.add(token)
+    const path = root ? (resolveInRoot(root, token) ?? token) : token
+    const artifact = artifactFor(path)
+    if (artifact) found.push(artifact)
+  }
+  // 1. Command-named paths, confirmed by their basename reappearing in the
+  //    output. Quoted paths with spaces survive as one token.
+  for (const m of (cmd || '').matchAll(PATH_TOKEN_RE)) {
+    const token = (m[1] ?? m[2] ?? m[3] ?? '').trim()
+    if (token && isArtifactPath(token) && out.includes(basenameOf(token))) {
+      consider(token)
+    }
+  }
+  // 2. `Destination: <path>` in the output — yt-dlp-style writers declare the
+  //    file even when the command only carried a format template.
+  for (const m of out.matchAll(/Destination:\s*([^\n\r]+)/gi)) {
+    consider(m[1] ?? '')
+  }
+  return found
 }
 
 /**
@@ -156,20 +228,33 @@ export function artifactsFromParts(parts: PartLike[] | undefined): CodeArtifact[
  * Deduplicated by path — a session that rewrites a file across turns produced
  * one artifact, not one per rewrite.
  */
-export function artifactsFromTurns(turns: CodeTurn[] | undefined): CodeArtifact[] {
+export function artifactsFromTurns(
+  turns: CodeTurn[] | undefined,
+  root?: string | null
+): CodeArtifact[] {
   if (!turns?.length) return []
   const byPath = new Map<string, CodeArtifact>()
   for (const turn of turns) {
     if (turn.role !== 'tool') continue
-    // `edit` targets a file that already existed, so it never creates one.
-    if (turn.name !== 'write') continue
     // Only a completed, non-error call produced a file.
     if (turn.isError || turn.status === 'running') continue
-    if (!createdNewFile(turn.result ?? turn.content)) continue
-    const path = pathFromInput(turn.args)
-    if (!path) continue
-    const artifact = artifactFor(path)
-    if (artifact) byPath.set(path, artifact)
+    if (turn.name === 'write') {
+      if (!createdNewFile(turn.result ?? turn.content)) continue
+      const path = pathFromInput(turn.args)
+      if (!path) continue
+      const artifact = artifactFor(path)
+      if (artifact) byPath.set(path, artifact)
+    } else if (turn.name === 'bash') {
+      // Files made by shell commands (downloads, ffmpeg renders) carry no
+      // `write` result; recover them from the command + output pair.
+      const command =
+        turn.args && typeof turn.args === 'object'
+          ? (turn.args as Record<string, unknown>).command
+          : undefined
+      for (const artifact of bashArtifactPaths(command, turn.result ?? turn.content, root)) {
+        byPath.set(artifact.path, artifact)
+      }
+    }
   }
   return [...byPath.values()]
 }

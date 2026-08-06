@@ -64,7 +64,7 @@ export function CodePreviewPanel({
       setState({ status: 'loading', path: rel })
       try {
         if (isAssetKind(kind)) {
-          // Images/video stream through the asset protocol; `read_file_sync` is
+          // Images/video/audio stream through the asset protocol; `read_file_sync` is
           // `read_to_string` on the Rust side and fails outright on binary.
           setState({
             status: 'ready',
@@ -241,6 +241,9 @@ export function CodePreviewPanel({
                 )}
                 {state.kind === 'video' && (
                   <video src={state.assetUrl} controls className="max-h-full max-w-full p-3" />
+                )}
+                {state.kind === 'audio' && (
+                  <audio src={state.assetUrl} controls className="w-full p-3" />
                 )}
               </div>
             </div>
