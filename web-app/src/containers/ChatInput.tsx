@@ -246,7 +246,7 @@ const ChatInput = memo(function ChatInput({
       // @ (the @ must not be glued to a preceding word char, so `user@host`
       // never opens the picker)
       const beforeCursor = value.slice(0, cursorIdx)
-      const atMatch = beforeCursor.match(/(?<![A-Za-z0-9_])@([\w.\/-]*)$/)
+      const atMatch = beforeCursor.match(/(?<![A-Za-z0-9_])@([\w./-]*)$/)
 
       if (atMatch) {
         const query = atMatch[1] ?? ''
@@ -288,7 +288,7 @@ const ChatInput = memo(function ChatInput({
       const afterCursor = prompt.slice(filePickerCursorPos.current)
 
       // Replace the `@query` with `path/to/file` (the resolved reference)
-      const textBefore = beforeCursor.replace(/(?<![A-Za-z0-9_])@[\w.\/-]*$/, '')
+      const textBefore = beforeCursor.replace(/(?<![A-Za-z0-9_])@[\w./-]*$/, '')
       const refText = entry.path
       const newPrompt = textBefore + refText + afterCursor
 
