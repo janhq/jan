@@ -1,11 +1,11 @@
 ---
-title: Spec - max parallel subagents
+title: Max Parallel Subagents - Design Spec
 description: Design for capping concurrent subagents with a visible TUI queue.
+keywords:
+  [Jan, Jan Agent, subagents, parallelism, queue, max_parallel_subagents, design spec]
 ---
 
-# Max parallel subagents - design spec
-
-Tracks [issue #8606](https://github.com/janhq/jan/issues/8606).
+# Max Parallel Subagents - Design Spec
 
 ## Problem
 
