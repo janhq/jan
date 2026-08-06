@@ -2,7 +2,8 @@
   "htmlArtifact": {
     "code": "Code",
     "preview": "Preview",
-    "previewStreaming": "Available when generation finishes"
+    "previewStreaming": "Available when generation finishes",
+    "unresolvedAssets": "{{count}} asset reference cannot load in the preview (relative paths have no base URL to resolve against)"
   },
   "assistants": "Assistants",
   "hardware": "Hardware",
@@ -34,7 +35,6 @@
   "newSession": "New session",
   "artifacts": "Artifacts",
   "customize": "Customize",
-  "local": "Local",
   "selectFolder": "Select folder",
   "selectModel": "Select a model first",
   "modeNormal": "Normal",
