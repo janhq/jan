@@ -70,9 +70,52 @@ const h = vi.hoisted(() => {
     ],
   }
 
+  const lemonadeProvider: any = {
+    provider: 'lemonade',
+    active: true,
+    api_key: '',
+    base_url: 'http://127.0.0.1:13305/v1',
+    api_type: 'openai',
+    models: [],
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description: 'The Lemonade server endpoint.',
+        controller_type: 'input',
+        controller_props: { value: 'http://127.0.0.1:13305/v1' },
+      },
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description: 'Optional.',
+        controller_type: 'input',
+        controller_props: { value: '', type: 'password', input_actions: ['unobscure', 'copy'] },
+      },
+      {
+        key: 'api-format',
+        title: 'API Format',
+        description: 'Wire format.',
+        controller_type: 'dropdown',
+        controller_props: {
+          value: 'openai',
+          options: [{ value: 'openai', name: 'OpenAI' }, { value: 'anthropic', name: 'Anthropic' }],
+        },
+      },
+      {
+        key: 'mcp-enabled',
+        title: 'Enable MCP Server',
+        description: 'Register MCP gateway.',
+        controller_type: 'checkbox',
+        controller_props: { value: false },
+      },
+    ],
+  }
+
   const providerMap: Record<string, any> = {
     openai: openaiProvider,
     llamacpp: llamacppProvider,
+    lemonade: lemonadeProvider,
   }
 
   const updateProvider = vi.fn()
@@ -135,6 +178,7 @@ const h = vi.hoisted(() => {
     toastInfo,
     openaiProvider,
     llamacppProvider,
+    lemonadeProvider,
     providerMap,
     modelProviderStore,
     updateProvider,
@@ -203,15 +247,24 @@ vi.mock('@/containers/Capabilities', () => ({
   ),
 }))
 
+// Registry so tests can invoke a specific DynamicControllerSetting's onChange
+// with an arbitrary value rather than the hardcoded 'new-value'.
+const dynamicCtrlRegistry: Map<string, (v: any) => void> = new Map()
+
 vi.mock('@/containers/dynamicControllerSetting', () => ({
-  DynamicControllerSetting: ({ onChange, controllerProps }: any) => (
-    <button
-      data-testid="dynamic-ctrl"
-      onClick={() => onChange('new-value')}
-    >
-      {String(controllerProps?.value ?? '')}
-    </button>
-  ),
+  DynamicControllerSetting: ({ onChange, controllerProps }: any) => {
+    const key = String(controllerProps?.value ?? '')
+    dynamicCtrlRegistry.set(key, onChange)
+    return (
+      <button
+        data-testid="dynamic-ctrl"
+        data-ctrl-value={key}
+        onClick={() => onChange('new-value')}
+      >
+        {key}
+      </button>
+    )
+  },
 }))
 
 vi.mock('@/containers/RenderMarkdown', () => ({
@@ -336,12 +389,24 @@ vi.mock('@/hooks/useBackendUpdater', () => ({
 
 vi.mock('@/hooks/useAppState', () => ({ useAppState: h.useAppStateMock }))
 
+vi.mock('@/hooks/useMCPServers', () => {
+  const addServer = vi.fn()
+  const deleteServer = vi.fn()
+  const syncServersAndRestart = vi.fn().mockResolvedValue(undefined)
+  return {
+    useMCPServers: {
+      getState: () => ({ addServer, deleteServer, syncServersAndRestart }),
+    },
+  }
+})
+
 vi.mock('zustand/shallow', () => ({
   useShallow: (fn: any) => fn,
 }))
 
 // Import AFTER mocks
 import { Route } from '../$providerName'
+import { useMCPServers } from '@/hooks/useMCPServers'
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -379,6 +444,43 @@ beforeEach(() => {
   ]
   h.providerMap.openai = h.openaiProvider
   h.providerMap.llamacpp = h.llamacppProvider
+  h.lemonadeProvider.api_type = 'openai'
+  h.lemonadeProvider.base_url = 'http://127.0.0.1:13305/v1'
+  h.lemonadeProvider.settings = [
+    {
+      key: 'base-url',
+      title: 'Base URL',
+      description: 'The Lemonade server endpoint.',
+      controller_type: 'input',
+      controller_props: { value: 'http://127.0.0.1:13305/v1' },
+    },
+    {
+      key: 'api-key',
+      title: 'API Key',
+      description: 'Optional.',
+      controller_type: 'input',
+      controller_props: { value: '', type: 'password', input_actions: ['unobscure', 'copy'] },
+    },
+    {
+      key: 'api-format',
+      title: 'API Format',
+      description: 'Wire format.',
+      controller_type: 'dropdown',
+      controller_props: {
+        value: 'openai',
+        options: [{ value: 'openai', name: 'OpenAI' }, { value: 'anthropic', name: 'Anthropic' }],
+      },
+    },
+    {
+      key: 'mcp-enabled',
+      title: 'Enable MCP Server',
+      description: 'Register MCP gateway.',
+      controller_type: 'checkbox',
+      controller_props: { value: false },
+    },
+  ]
+  h.providerMap.lemonade = h.lemonadeProvider
+  dynamicCtrlRegistry.clear()
 
   // Reset services to default behavior
   h.providersSvc.getProviders = vi.fn().mockResolvedValue([])
@@ -811,6 +913,63 @@ describe('ProviderDetail route', () => {
         fireEvent.click(dyns[0]) // llamacpp_version
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
+    })
+  })
+
+  describe('Lemonade provider', () => {
+    beforeEach(() => {
+      h.params.providerName = 'lemonade'
+    })
+
+    it('changing api-format updates provider api_type', () => {
+      renderComponent()
+      // The api-format setting renders with current value 'openai' as button text
+      const onChange = dynamicCtrlRegistry.get('openai')
+      expect(onChange).toBeDefined()
+      act(() => {
+        onChange!('anthropic')
+      })
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'lemonade',
+        expect.objectContaining({ api_type: 'anthropic' })
+      )
+    })
+
+    it('toggling mcp-enabled ON calls addServer with correct HTTP MCP config', () => {
+      renderComponent()
+      const { addServer } = useMCPServers.getState()
+      // The mcp-enabled setting renders with current value 'false' as button text
+      const onChange = dynamicCtrlRegistry.get('false')
+      expect(onChange).toBeDefined()
+      act(() => {
+        onChange!(true)
+      })
+      expect(addServer).toHaveBeenCalledWith(
+        'lemonade',
+        expect.objectContaining({
+          type: 'http',
+          url: 'http://127.0.0.1:13305/mcp',
+          active: true,
+        })
+      )
+    })
+
+    it('toggling mcp-enabled OFF calls deleteServer with lemonade', () => {
+      // Set up the lemonade provider with mcp-enabled: true
+      h.lemonadeProvider.settings = h.lemonadeProvider.settings.map((s: any) =>
+        s.key === 'mcp-enabled'
+          ? { ...s, controller_props: { ...s.controller_props, value: true } }
+          : s
+      )
+      renderComponent()
+      const { deleteServer } = useMCPServers.getState()
+      // The mcp-enabled setting renders with current value 'true' as button text
+      const onChange = dynamicCtrlRegistry.get('true')
+      expect(onChange).toBeDefined()
+      act(() => {
+        onChange!(false)
+      })
+      expect(deleteServer).toHaveBeenCalledWith('lemonade')
     })
   })
 })
