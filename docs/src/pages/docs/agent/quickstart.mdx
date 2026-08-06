@@ -29,14 +29,14 @@ for one model provider.
 ### Install
 
 <Callout type="warning">
-Jan Agent is a preview. The installer lives on the `goal/general-agent` branch until it lands on
-`dev`, and pulls from the `agent-nightly` channel - expect nightly-quality builds.
+Jan Agent is a preview. The installer on `dev` pulls from the `agent-nightly` channel - expect
+nightly-quality builds.
 </Callout>
 
 <Tabs items={['macOS / Linux', 'Windows']}>
   <Tabs.Tab>
 ```bash
-curl -fsSL https://raw.githubusercontent.com/janhq/jan/goal/general-agent/scripts/install-jan-agent.sh | bash
+curl -fsSL https://raw.githubusercontent.com/janhq/jan/dev/scripts/install-jan-agent.sh | bash
 ```
 
 Installs to `~/.local/bin` by default. Override it with `JAN_INSTALL_DIR=/usr/local/bin`, and make
@@ -44,7 +44,7 @@ sure the directory is on your `PATH`.
   </Tabs.Tab>
   <Tabs.Tab>
 ```powershell
-irm https://raw.githubusercontent.com/janhq/jan/goal/general-agent/scripts/install-jan-agent.ps1 | iex
+irm https://raw.githubusercontent.com/janhq/jan/dev/scripts/install-jan-agent.ps1 | iex
 ```
   </Tabs.Tab>
 </Tabs>
