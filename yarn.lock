@@ -3055,6 +3055,7 @@ __metadata:
     istanbul-reports: "npm:3.1.7"
     jsdom: "npm:26.1.0"
     katex: "npm:0.16.22"
+    konva: "npm:^10.3.0"
     lodash.clonedeep: "npm:4.5.0"
     lodash.debounce: "npm:4.0.8"
     lucide-react: "npm:^0.563.0"
@@ -3067,6 +3068,7 @@ __metadata:
     react-colorful: "npm:5.6.1"
     react-dom: "npm:19.0.0"
     react-i18next: "npm:15.5.1"
+    react-konva: "npm:^19.2.5"
     react-markdown: "npm:10.1.0"
     react-resizable-panels: "npm:3.0.5"
     react-syntax-highlighter: "npm:15.6.1"
@@ -7214,6 +7216,24 @@ __metadata:
   peerDependencies:
     "@types/react": ^19.0.0
   checksum: 10c0/100c341cacba9ec8ae1d47ee051072a3450e9573bf8eeb7262490e341cb246ea0f95a07a1f2077e61cf92648f812a0324c602fcd811bd87b7ce41db2811510cd
+  languageName: node
+  linkType: hard
+
+"@types/react-reconciler@npm:^0.28.9":
+  version: 0.28.9
+  resolution: "@types/react-reconciler@npm:0.28.9"
+  peerDependencies:
+    "@types/react": "*"
+  checksum: 10c0/9fe71fa856aab2cd4742fe0416bdd4f5c82ecc05ef6451ee7fcb65a5efdf5fa588f5820fbe2a665b15371b0da3bfc4097f28bb6d450b9a834af2d0fc00f403bd
+  languageName: node
+  linkType: hard
+
+"@types/react-reconciler@npm:^0.33.0":
+  version: 0.33.0
+  resolution: "@types/react-reconciler@npm:0.33.0"
+  peerDependencies:
+    "@types/react": "*"
+  checksum: 10c0/190c203d93c0df9a42fabd693ce059dbdf6c53e15eb14502d9e5b946c981231c5846b867de15522ff61368e9218a8508a9db5476f3e47b5d664bbb2c84b31ac7
   languageName: node
   linkType: hard
 
@@ -13380,6 +13400,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"its-fine@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "its-fine@npm:2.0.0"
+  dependencies:
+    "@types/react-reconciler": "npm:^0.28.9"
+  peerDependencies:
+    react: ^19.0.0
+  checksum: 10c0/1ff1ff3257c0c7eb115c9c26cf0506eb84162edc1a63d3136780d146f7c7833298b240d0fcb46888909773f1a7d16539e0c03f2482cff1a5a502d6436686fe21
+  languageName: node
+  linkType: hard
+
 "jackspeak@npm:^3.1.2":
   version: 3.4.3
   resolution: "jackspeak@npm:3.4.3"
@@ -13722,6 +13753,13 @@ __metadata:
   version: 6.0.3
   resolution: "kind-of@npm:6.0.3"
   checksum: 10c0/61cdff9623dabf3568b6445e93e31376bee1cdb93f8ba7033d86022c2a9b1791a1d9510e026e6465ebd701a6dd2f7b0808483ad8838341ac52f003f512e0b4c4
+  languageName: node
+  linkType: hard
+
+"konva@npm:^10.3.0":
+  version: 10.3.0
+  resolution: "konva@npm:10.3.0"
+  checksum: 10c0/f97bf5b370633b97e8860209f3248f0641cd88116036c0ec8c1c1227c9e988e500ef07482fc6677300e066312841fe1851119eafcfcdf93c0e747b958582bef0
   languageName: node
   linkType: hard
 
@@ -16831,6 +16869,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-konva@npm:^19.2.5":
+  version: 19.2.5
+  resolution: "react-konva@npm:19.2.5"
+  dependencies:
+    "@types/react-reconciler": "npm:^0.33.0"
+    its-fine: "npm:^2.0.0"
+    react-reconciler: "npm:0.33.0"
+    scheduler: "npm:0.27.0"
+  peerDependencies:
+    konva: ^8.0.1 || ^7.2.5 || ^9.0.0 || ^10.0.0
+    react: ^19.2.0
+    react-dom: ^19.2.0
+  checksum: 10c0/6f222c47cc4c105a3f4b662a9a86a31983c77bf254aebac9ca21c4e0bf7d3f78a6c2b0c6c2cf23d44fbded1260c69e2a90766ef4eeec85d19457f8aebd978ad1
+  languageName: node
+  linkType: hard
+
 "react-lifecycles-compat@npm:^3.0.4":
   version: 3.0.4
   resolution: "react-lifecycles-compat@npm:3.0.4"
@@ -16857,6 +16911,17 @@ __metadata:
     "@types/react": ">=18"
     react: ">=18"
   checksum: 10c0/4a5dc7d15ca6d05e9ee95318c1904f83b111a76f7588c44f50f1d54d4c97193b84e4f64c4b592057c989228238a2590306cedd0c4d398e75da49262b2b5ae1bf
+  languageName: node
+  linkType: hard
+
+"react-reconciler@npm:0.33.0":
+  version: 0.33.0
+  resolution: "react-reconciler@npm:0.33.0"
+  dependencies:
+    scheduler: "npm:^0.27.0"
+  peerDependencies:
+    react: ^19.2.0
+  checksum: 10c0/3f7b27ea8d0ff4c8bf0e402a285e1af9b7d0e6f4c1a70a28f4384938bc1130bc82a90a31df0b79ef5e380e2e55e2598bd90b4dbf802b1203d735ba0355817d3a
   languageName: node
   linkType: hard
 
@@ -18018,6 +18083,13 @@ __metadata:
   dependencies:
     xmlchars: "npm:^2.2.0"
   checksum: 10c0/3847b839f060ef3476eb8623d099aa502ad658f5c40fd60c105ebce86d244389b0d76fcae30f4d0c728d7705ceb2f7e9b34bb54717b6a7dbedaf5dad2d9a4b74
+  languageName: node
+  linkType: hard
+
+"scheduler@npm:0.27.0, scheduler@npm:^0.27.0":
+  version: 0.27.0
+  resolution: "scheduler@npm:0.27.0"
+  checksum: 10c0/4f03048cb05a3c8fddc45813052251eca00688f413a3cee236d984a161da28db28ba71bd11e7a3dd02f7af84ab28d39fb311431d3b3772fed557945beb00c452
   languageName: node
   linkType: hard
 
