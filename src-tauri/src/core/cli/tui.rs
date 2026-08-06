@@ -698,6 +698,14 @@ struct SubagentPanel {
     /// request -- no completed tool call yet, so a stats line frozen at
     /// "0 tools" and an activity line stuck on "starting…".
     active: Option<StartingCall>,
+    /// True while the dispatch is parked on the parent run's
+    /// `max_parallel_subagents` cap (reported via `SubagentQueued`); flipped
+    /// off when the child's `SubagentStart` arrives. Queued panels render
+    /// "queued (N waiting)" instead of live stats, so a capped fan-out reads
+    /// as a queue rather than a wall of silently-idle agents.
+    queued: bool,
+    /// 1-based position in the queue at the time the child was queued.
+    waiting: u32,
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
@@ -1760,7 +1768,36 @@ impl App {
                 .ask_queue
                 .push_back(PendingAsk::new(request_id, request)),
             StreamEvent::SubagentStart { run_id, name, task } => {
-                // Open a live rolling panel for this run; several may be active.
+                // A queued dispatch already opened a panel for this run; promote
+                // it to running instead of pushing a duplicate. Otherwise open a
+                // fresh live panel (several may be active).
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.queued = false;
+                } else {
+                    self.finalize_tool_group();
+                    self.flush_assistant();
+                    self.subagents.push(SubagentPanel {
+                        run_id,
+                        name,
+                        task: task.unwrap_or_default(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: false,
+                        waiting: 0,
+                    });
+                }
+            }
+            StreamEvent::SubagentQueued {
+                run_id,
+                name,
+                task,
+                waiting,
+            } => {
+                // The cap is exhausted; this dispatch will start when a running
+                // child finishes. Open its panel now, marked queued, so the
+                // fan-out shows the queue instead of hiding dispatches.
                 self.finalize_tool_group();
                 self.flush_assistant();
                 self.subagents.push(SubagentPanel {
@@ -1771,6 +1808,8 @@ impl App {
                     requests: 0,
                     prompt_tokens: 0,
                     active: None,
+                    queued: true,
+                    waiting,
                 });
             }
             StreamEvent::SubagentEnd { run_id, name } => {
@@ -4324,6 +4363,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "View provider config (~/.jan/config.toml)",
     },
     SlashCommand {
+        name: "/settings",
+        hint: "[max_parallel_subagents N]",
+        description: "View agent settings (agent.toml); set [agent] keys, e.g. /settings max_parallel_subagents 20",
+    },
+    SlashCommand {
         name: "/update",
         hint: "",
         description: "Install the latest published build (takes effect on restart)",
@@ -4444,6 +4488,7 @@ async fn run_command(app: &mut App, line: &str) {
         "login" => open_login_prompt(app),
         "update" => update_command(app),
         "config" => open_config_screen(app),
+        "settings" => settings_command(app, arg),
         "goal" => goal_command(app, arg),
         "plan" => plan_command(app, arg),
         "todo" => todo_command(app, arg).await,
@@ -4504,6 +4549,74 @@ fn goal_command(app: &mut App, arg: &str) {
         }
         "" => show_goal_status(app),
         condition => set_goal(app, condition),
+    }
+}
+
+/// `/settings` dispatcher: bare shows the current `[agent]` keys from the
+/// project's agent.toml; `max_parallel_subagents <N>` (validated >= 1) writes a
+/// new cap, effective from the next run (the current run snapshotted it at
+/// start). Runs only while idle, like every command.
+fn settings_command(app: &mut App, arg: &str) {
+    let toml_path = app.agent_dir.join("agent.toml");
+    let arg = arg.trim();
+    let Some((key, value)) = arg.split_once(char::is_whitespace) else {
+        // Bare: show the [agent] table as it is on disk.
+        let raw = match std::fs::read_to_string(&toml_path) {
+            Ok(r) => r,
+            Err(e) => return app.note(&format!("failed to read {}: {e}", toml_path.display())),
+        };
+        let doc = match raw.parse::<toml_edit::DocumentMut>() {
+            Ok(d) => d,
+            Err(e) => return app.note(&format!("failed to parse {}: {e}", toml_path.display())),
+        };
+        app.gap(Kind::Meta);
+        app.push(Line::styled(
+            format!("[agent] ({})", toml_path.display()),
+            Style::new().dim(),
+        ));
+        match doc.get("agent").and_then(|t| t.as_table()) {
+            Some(table) if table.is_empty() => {
+                app.push(Line::styled("  (no keys set - all defaults)", Style::new().dim()));
+            }
+            Some(table) => {
+                for (k, v) in table.iter() {
+                    app.push(Line::styled(format!("  {k} = {v}"), Style::new().dim()));
+                }
+            }
+            None => app.push(Line::styled("  (no [agent] table - all defaults)", Style::new().dim())),
+        }
+        app.push(Line::styled(
+            format!(
+                "  # max_parallel_subagents = {} (default; unset in this file)",
+                crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS
+            ),
+            Style::new().dim(),
+        ));
+        app.push(Line::styled(
+            "set a key: /settings max_parallel_subagents 20".to_string(),
+            Style::new().dim(),
+        ));
+        return;
+    };
+    match key {
+        "max_parallel_subagents" => {
+            let n: u64 = match value.parse() {
+                Ok(n) => n,
+                Err(_) => return app.note(&format!("'{value}' is not an integer")),
+            };
+            if n < 1 {
+                return app.note("max_parallel_subagents must be at least 1");
+            }
+            match crate::core::agent::project::set_agent_integer_key(&toml_path, key, n) {
+                Ok(()) => app.note(&format!(
+                    "max_parallel_subagents = {n} written; takes effect on the next run"
+                )),
+                Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+            }
+        }
+        other => app.note(&format!(
+            "unknown setting '/settings {other}' (currently settable: max_parallel_subagents)"
+        )),
     }
 }
 
@@ -6230,9 +6343,37 @@ fn subagent_panel_lines(
         let mut spans = vec![
             Span::styled("  • ", Style::new().magenta()),
             Span::styled(panel.name.clone(), Style::new().magenta()),
-            Span::styled(format!("  {}", pluralize("tool", panel.calls.len())), dim),
-            Span::styled(format!("  ·  {} req", panel.requests), dim),
         ];
+        if panel.queued {
+            // Parked on the `max_parallel_subagents` cap; the child has not
+            // started, so there are no live stats to show -- render its queue
+            // position and task instead.
+            spans.push(Span::styled(
+                format!("  queued ({} waiting)", panel.waiting),
+                Style::new().yellow(),
+            ));
+            out.push(Line::from(spans));
+            for (written, raw) in panel
+                .task
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .enumerate()
+            {
+                if written == task_lines {
+                    break;
+                }
+                out.push(indented_row(
+                    truncate(raw.trim(), task_width),
+                    Style::new().dim().italic(),
+                ));
+            }
+            continue;
+        }
+        spans.push(Span::styled(
+            format!("  {}", pluralize("tool", panel.calls.len())),
+            dim,
+        ));
+        spans.push(Span::styled(format!("  ·  {} req", panel.requests), dim));
         // Only once the child has reported usage; "0.0%" before its first
         // response would read as a stalled agent rather than a starting one.
         if panel.prompt_tokens > 0 && context_window > 0 {
@@ -8376,6 +8517,93 @@ mod tests {
         assert_eq!(alpha.calls.len(), 0, "beta's call must not land on alpha");
         assert_eq!(beta.calls.len(), 1);
         assert!(beta.calls.last().unwrap().contains("beta-cmd"));
+    }
+
+    #[test]
+    fn queued_panel_promotes_to_running_without_duplicate() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: Some("queue up".into()),
+            waiting: 2,
+        });
+        let queued = app.subagents.iter().find(|p| p.run_id == "r1").expect("queued panel");
+        assert!(queued.queued, "dispatch beyond the cap opens a queued panel");
+        assert_eq!(queued.waiting, 2);
+
+        // The child's later SubagentStart must flip the same panel to running,
+        // not push a duplicate.
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: None,
+        });
+        assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
+        let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
+        assert!(!promoted.queued, "promoted panel is now running");
+    }
+
+    #[test]
+    fn queued_panel_renders_queue_position() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: Some("task".into()),
+            waiting: 3,
+        });
+        let rows = render_rows(&mut app, 80, 20);
+        assert!(
+            rows.iter().any(|r| r.contains("queued (3 waiting)")),
+            "queued panel shows its position: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn settings_command_bare_lists_agent_keys_and_set_writes_toml() {
+        let mut app = test_app();
+        // A minimal agent.toml so the bare view has something to render.
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+
+        super::settings_command(&mut app, "max_parallel_subagents 20");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(
+            doc.contains("max_parallel_subagents = 20"),
+            "key written: {doc}"
+        );
+        assert!(doc.contains("max_turns = 8"), "other keys preserved: {doc}");
+
+        // Zero is invalid: rejected, file unchanged.
+        super::settings_command(&mut app, "max_parallel_subagents 0");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(
+            doc.contains("max_parallel_subagents = 20"),
+            "rejected write must not clobber: {doc}"
+        );
+        assert!(transcript_text(&app).contains("must be at least 1"));
+
+        // Bare view lists the [agent] keys.
+        super::settings_command(&mut app, "");
+        let text = transcript_text(&app);
+        assert!(text.contains("max_parallel_subagents = 20"), "bare view lists keys: {text}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_command_rejects_non_integer_and_unknown_keys() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+        super::settings_command(&mut app, "max_parallel_subagents lots");
+        assert!(transcript_text(&app).contains("is not an integer"));
+        super::settings_command(&mut app, "warp_drive 5");
+        assert!(transcript_text(&app).contains("unknown setting"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
     #[test]

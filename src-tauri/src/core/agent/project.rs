@@ -75,6 +75,12 @@ pub(crate) struct AgentSection {
     /// single response. Omitted from the request when unset (model default).
     #[serde(default)]
     pub max_tokens: Option<u64>,
+    /// Cap on concurrently-running background subagents for a run (defaults to
+    /// 10 if unset). Dispatches beyond the cap queue FIFO and start as running
+    /// ones finish. Snapshot at run start: a mid-run change affects the next
+    /// run only.
+    #[serde(default)]
+    pub max_parallel_subagents: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -95,6 +101,7 @@ max_turns = 400
 # context_window = 128000  # tokens; defaults to 128K if unset
 # compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 instructions_file = "AGENT.md"
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
@@ -202,6 +209,25 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
 
     let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
     agent["model"] = toml_edit::value(model);
+
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+/// Persist an unsigned-integer `[agent]` key (e.g. `max_parallel_subagents`)
+/// into the agent.toml at `path`, format-preserving (comments kept). The key is
+/// written under `[agent]` like the template's other knobs, so the value the
+/// next run loads is exactly what the TUI `/settings` surface shows.
+#[cfg(feature = "cli")]
+pub(crate) fn set_agent_integer_key(path: &Path, key: &str, value: u64) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    agent[key] = toml_edit::value(value as i64);
 
     std::fs::write(path, doc.to_string())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
@@ -316,6 +342,22 @@ mod tests {
         assert_eq!(provider.name, "openai");
         assert_eq!(provider.api_key.as_deref(), Some("sk-test"));
         assert_eq!(provider.models, vec!["gpt-4o".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn max_parallel_subagents_parses_and_defaults_to_none() {
+        let root = unique_root("max_parallel");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, None, "template leaves it unset");
+
+        // Explicit value round-trips through the /settings writer.
+        let path = agent_toml_path(&root);
+        set_agent_integer_key(&path, "max_parallel_subagents", 4).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, Some(4));
         let _ = std::fs::remove_dir_all(&root);
     }
 

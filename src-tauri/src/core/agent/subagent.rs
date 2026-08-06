@@ -406,12 +406,42 @@ struct BackgroundEntry {
 /// Registry of a single parent run's background subagents, keyed by `run_id`.
 /// Dropped when the parent run ends (see `AbortOnDrop`), aborting any child that
 /// was never collected so a finished/cancelled parent leaves no orphan runs.
-#[derive(Default)]
 pub(crate) struct BackgroundSubagents {
     inner: std::sync::Mutex<std::collections::HashMap<String, BackgroundEntry>>,
+    /// Admission gate: `max_parallel_subagents` permits, one per child that is
+    /// *running* (as opposed to merely dispatched). A dispatch beyond the cap
+    /// parks on `acquire_owned` in FIFO order inside its spawned task, so the
+    /// queue is exactly the tokio semaphore waitlist -- no separate queue
+    /// structure that could drift from reality.
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+    /// Number of children currently parked on the semaphore waiting for a slot
+    /// (a dispatch reported `SubagentQueued` and its task has not started yet).
+    /// Used to report each queued child's 1-based position; decremented by the
+    /// task itself the moment it acquires its permit.
+    queued: std::sync::atomic::AtomicUsize,
+}
+
+/// Default cap on concurrently *running* subagents per parent run when
+/// `agent.toml` does not set `max_parallel_subagents`.
+pub(crate) const DEFAULT_MAX_PARALLEL_SUBAGENTS: u32 = 10;
+
+impl Default for BackgroundSubagents {
+    fn default() -> Self {
+        Self::new(DEFAULT_MAX_PARALLEL_SUBAGENTS)
+    }
 }
 
 impl BackgroundSubagents {
+    /// Create a registry admitting at most `cap` concurrently-running children.
+    /// Clamped to at least 1: a cap of 0 would make every dispatch queue
+    /// forever with nothing ever releasing a permit.
+    pub(crate) fn new(cap: u32) -> Self {
+        Self {
+            inner: std::sync::Mutex::new(std::collections::HashMap::new()),
+            semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(cap.max(1) as usize)),
+            queued: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
     /// Abort and forget every registered child. Called on parent teardown when
     /// the run is cancelled. Emits a closing `SubagentEnd` for each aborted
     /// child (its own task is cancelled inside its await and never reaches its
@@ -551,6 +581,12 @@ async fn run_subagent(
 /// [`await_subagent`]. Registered in `bg` so the parent run can abort it on
 /// teardown. Resolution (name lookup, permission intersection) happens
 /// synchronously, so a bad request errors here rather than in the background.
+///
+/// Admission: up to `max_parallel_subagents` children run at once; a dispatch
+/// beyond the cap is queued (FIFO) and its task parks on the shared semaphore
+/// until a running child finishes. A queued dispatch still returns its `run_id`
+/// right away, and `await_subagent` on a queued run blocks until it gets a slot
+/// and runs to completion -- never errors, never starts out of turn.
 pub(crate) fn spawn_subagent(
     bg: &Arc<BackgroundSubagents>,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
@@ -559,6 +595,9 @@ pub(crate) fn spawn_subagent(
     budget_remaining: Option<u64>,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
 ) -> Result<String, SubagentError> {
+    use crate::core::agent::events::StreamEvent;
+    use std::sync::atomic::Ordering;
+
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
             "subagents cannot dispatch nested subagents".to_string(),
@@ -575,13 +614,47 @@ pub(crate) fn spawn_subagent(
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
 
+    // Try to grab a permit at dispatch time. On success the child is admitted
+    // immediately; on exhaustion it joins the semaphore waitlist (FIFO) and is
+    // reported as queued. The permit is held by the task for its whole run and
+    // dropped when the task ends, so completion -- not collection -- releases
+    // the slot to the next queued child.
+    let semaphore = bg.semaphore.clone();
+    let admitted = semaphore.clone().try_acquire_owned();
+    let waiting = if admitted.is_err() {
+        bg.queued.fetch_add(1, Ordering::SeqCst) as u32 + 1
+    } else {
+        0
+    };
+    if waiting > 0 {
+        let _ = events.send(StreamEvent::SubagentQueued {
+            run_id: run_id.clone(),
+            name: name.clone(),
+            task: Some(req.description.clone()),
+            waiting,
+        });
+    }
+
     let parent_args = parent_args.clone();
     let task_events = events.clone();
     let entry_events = events.clone();
     let model = parent_model.to_string();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
+    let queued_counter = bg.clone();
     let handle = tokio::spawn(async move {
+        let permit = match admitted {
+            Ok(p) => p,
+            Err(_) => {
+                let p = semaphore
+                    .acquire_owned()
+                    .await
+                    .expect("subagent semaphore is never closed");
+                queued_counter.queued.fetch_sub(1, Ordering::SeqCst);
+                p
+            }
+        };
+        let _permit = permit;
         let result = run_subagent(
             parent_args,
             resolved,
@@ -665,7 +738,10 @@ pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
 /// OpenAI tool schemas for the subagent tools. The dispatch tool's description
 /// lists the currently-resolvable subagent names so the model can pick one
 /// without a separate discovery call.
-pub fn subagent_tool_schemas(registry: &SubagentRegistry) -> Vec<serde_json::Value> {
+pub fn subagent_tool_schemas(
+    registry: &SubagentRegistry,
+    max_parallel: u32,
+) -> Vec<serde_json::Value> {
     use serde_json::json;
     let available: Vec<&str> = {
         let mut names: Vec<&str> = registry.list().iter().map(|d| d.name.as_str()).collect();
@@ -674,7 +750,7 @@ pub fn subagent_tool_schemas(registry: &SubagentRegistry) -> Vec<serde_json::Val
         names
     };
     let one_off = " For a one-off subagent, pass system_prompt inline (with a descriptive subagent_name); use create_subagent only to save a reusable definition.";
-    let bg = " Runs in the BACKGROUND and returns a run_id immediately; keep working, dispatch more, then call await_subagent(run_id) to collect each result. Several can run concurrently.";
+    let bg = format!(" Runs in the BACKGROUND and returns a run_id immediately; keep working, dispatch more, then call await_subagent(run_id) to collect each result. Up to {max_parallel} run concurrently (max_parallel_subagents in agent.toml); dispatches beyond that are queued FIFO and start as running ones finish.");
     let dispatch_desc = if available.is_empty() {
         format!("Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} No saved subagents yet.")
     } else {
@@ -1405,11 +1481,226 @@ mod tests {
         assert!(bg.inner.lock().unwrap().is_empty(), "teardown drained the map");
     }
 
+    // ── max-parallel admission (semaphore queue) ───────────────────────────
+
+    /// Minimal run args for queue tests: empty providers (so dispatched
+    /// children fail fast instead of hanging), a real project root holding the
+    /// subagent def, subagents enabled, cap 1.
+    #[cfg(feature = "cli")]
+    fn max_par_args(root: &std::path::Path) -> crate::core::agent::r#loop::OrchestrationArgs {
+        use crate::core::agent::permissions::ToolPermissions;
+        use crate::core::agent::r#loop::OrchestrationArgs;
+        use crate::core::mcp::models::McpSettings;
+        use crate::core::state::ProviderConfig;
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+        OrchestrationArgs {
+            client: reqwest::Client::new(),
+            provider_configs: Arc::new(tokio::sync::Mutex::new(
+                HashMap::<String, ProviderConfig>::new(),
+            )),
+            mcp_servers: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            mcp_settings: Arc::new(tokio::sync::Mutex::new(McpSettings::default())),
+            jan_data_folder: std::env::temp_dir().to_string_lossy().into_owned(),
+            permissions: ToolPermissions::allow_all(),
+            project_root: Some(root.to_path_buf()),
+            permission_requests: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            ask_requests: None,
+            todo_registry: None,
+            system_prompt_override: None,
+            subagents_enabled: true,
+            max_parallel_subagents: 1,
+            yolo: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+        }
+    }
+
+    #[test]
+    fn subagent_cap_is_clamped_to_at_least_one() {
+        let bg = BackgroundSubagents::new(0);
+        assert_eq!(bg.semaphore.available_permits(), 1);
+        assert_eq!(BackgroundSubagents::new(3).semaphore.available_permits(), 3);
+        assert_eq!(
+            BackgroundSubagents::default().semaphore.available_permits(),
+            DEFAULT_MAX_PARALLEL_SUBAGENTS as usize
+        );
+    }
+
+    #[test]
+    fn queued_dispatches_wait_for_a_permit_in_fifo_order() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let bg = Arc::new(BackgroundSubagents::new(1));
+            // Occupy the single permit as if one child were running.
+            let running = bg.semaphore.clone().try_acquire_owned().unwrap();
+
+            let order = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let mut handles = Vec::new();
+            for i in 0..3 {
+                let sem = bg.semaphore.clone();
+                let order = order.clone();
+                handles.push(tokio::spawn(async move {
+                    let _permit = sem.acquire_owned().await.unwrap();
+                    order.lock().unwrap().push(i);
+                }));
+                // Let the new task register its acquire before spawning the
+                // next, mirroring the real loop where each spawn_subagent
+                // dispatch runs synchronously (dispatch order == waiter order).
+                tokio::task::yield_now().await;
+            }
+            // All three parked: none can start while the permit is held.
+            tokio::task::yield_now().await;
+            assert!(order.lock().unwrap().is_empty(), "cap holds while a child runs");
+            drop(running);
+            for h in handles {
+                h.await.unwrap();
+            }
+            assert_eq!(
+                *order.lock().unwrap(),
+                vec![0, 1, 2],
+                "FIFO: dispatch order is start order"
+            );
+        });
+    }
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn dispatches_beyond_cap_emit_subagent_queued_and_promote_fifo() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("maxpar");
+        let sub_dir = project_subagents_dir(&root);
+        write_def(&sub_dir, "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut starts = Vec::new();
+
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        assert_ne!(r1, r2);
+        assert_ne!(r2, r3);
+
+        // The two beyond-cap dispatches must be reported queued, with their
+        // 1-based queue positions in dispatch order.
+        let mut queued = Vec::new();
+        while let Ok(ev) = events_rx.try_recv() {
+            if let StreamEvent::SubagentQueued { run_id, waiting, .. } = ev {
+                queued.push((run_id, waiting));
+            }
+        }
+        assert_eq!(queued.len(), 2, "two dispatches exceeded the cap of 1");
+        assert_eq!(queued[0], (r2.clone(), 1), "second dispatch queues first");
+        assert_eq!(queued[1], (r3.clone(), 2), "third dispatch queues behind it");
+
+        // The first dispatch is admitted immediately: it starts without a
+        // queued event (children fail fast without a provider, which is fine --
+        // we only assert the queueing/ordering contract here).
+        let out1 = await_subagent(&bg, &r1).await;
+        let out2 = await_subagent(&bg, &r2).await;
+        let out3 = await_subagent(&bg, &r3).await;
+        assert!(out1.is_err(), "child run fails without a provider (expected)");
+        assert!(out2.is_err() && out3.is_err(), "queued children also complete");
+
+        // Promotion must be FIFO: r2 started before r3.
+        while let Ok(ev) = events_rx.try_recv() {
+            if let StreamEvent::SubagentStart { run_id, .. } = ev {
+                starts.push(run_id);
+            }
+        }
+        let pos = |id: &str| starts.iter().position(|s| s == id);
+        assert!(
+            pos(&r2).unwrap() < pos(&r3).unwrap(),
+            "FIFO promotion: {starts:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn await_on_queued_run_blocks_until_a_slot_frees() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("maxpar_await");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Occupy the only slot BEFORE dispatching, so every dispatch queues and
+        // the await below is deterministic: nothing can start while held.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+
+        // r2 is queued (not started), and awaiting it must NOT start it: the
+        // slot is still held, so the await parks. Assert via the events: no
+        // SubagentStart for either child yet.
+        let bg2 = bg.clone();
+        let r2b = r2.clone();
+        let awaited = tokio::spawn(async move { await_subagent(&bg2, &r2b).await });
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        assert!(!awaited.is_finished(), "await on a queued run must block");
+        while let Ok(ev) = events_rx.try_recv() {
+            assert!(
+                !matches!(ev, StreamEvent::SubagentStart { run_id, .. } if run_id == r2),
+                "awaiting a queued run must not start it early"
+            );
+        }
+
+        drop(_running); // free the slot: r1 promotes first (FIFO), then r2
+        assert!(
+            awaited.await.unwrap().is_err(),
+            "awaited queued run resolves once it gets a slot"
+        );
+        let _ = await_subagent(&bg, &r1).await;
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn abort_all_cancels_queued_dispatches_too() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("maxpar_abort");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
+        // the semaphore) -- the interesting teardown case.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+
+        AbortOnDrop(bg.clone()); // teardown with queued children parked
+
+        let mut ends = Vec::new();
+        while let Ok(ev) = events_rx.try_recv() {
+            if let StreamEvent::SubagentEnd { run_id, .. } = ev {
+                ends.push(run_id);
+            }
+        }
+        assert!(ends.contains(&r2) && ends.contains(&r3), "queued children get SubagentEnd: {ends:?}");
+        assert!(
+            bg.inner.lock().unwrap().is_empty(),
+            "abort_all drains queued dispatches too"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn schemas_list_available_names_in_dispatch_description() {
         let reg = registry_with("reviewer", None);
-        let schemas = subagent_tool_schemas(&reg);
-        assert_eq!(schemas.len(), 4);
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);        assert_eq!(schemas.len(), 4);
         let names: Vec<&str> = schemas
             .iter()
             .map(|s| s["function"]["name"].as_str().unwrap())

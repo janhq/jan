@@ -77,6 +77,10 @@ pub(crate) struct OrchestrationArgs {
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
     pub subagents_enabled: bool,
+    /// Cap on concurrently-running background subagents for this run
+    /// (`[agent].max_parallel_subagents` in agent.toml, default 10). Snapshot
+    /// taken at run start: a mid-run config edit affects the *next* run only.
+    pub max_parallel_subagents: u32,
     /// `--yolo`: disable the sandbox/permission gate and auto-allow every tool
     /// call (built-in reads/writes/exec and MCP) without prompting. Inherited by
     /// dispatched subagents via the cloned parent args.
@@ -774,6 +778,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: false,
+        max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         yolo: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
     };
@@ -1001,6 +1006,7 @@ async fn orchestrate_inner(
         todo_registry,
         system_prompt_override,
         subagents_enabled,
+        max_parallel_subagents,
         yolo,
         run_mode,
     } = args;
@@ -1192,7 +1198,9 @@ async fn orchestrate_inner(
         if args.subagents_enabled && run_mode != crate::core::agent::plan::RunMode::Plan {
             if let Some(root) = project_root {
                 let registry = crate::core::agent::subagent::SubagentRegistry::load(root);
-                for schema in crate::core::agent::subagent::subagent_tool_schemas(&registry) {
+                for schema in
+                    crate::core::agent::subagent::subagent_tool_schemas(&registry, *max_parallel_subagents)
+                {
                     let name = schema["function"]["name"].as_str().unwrap_or_default();
                     if permissions.is_denied(name) {
                         continue;
@@ -1270,7 +1278,10 @@ async fn orchestrate_inner(
         }
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
+        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+            *max_parallel_subagents,
+        ));
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
