@@ -1,16 +1,13 @@
 import {
   workspacePath,
-  skillList,
-  skillRead,
-  skillWrite,
-  skillDelete,
   memoryList,
   memoryRead,
   memoryWrite,
   memoryDelete,
-  type SkillMeta,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import * as skillStore from '@/lib/skillStore'
+import type { SkillMeta } from '@/lib/skillStore'
 
 export type { SkillMeta }
 
@@ -34,22 +31,15 @@ export async function storePath(): Promise<string> {
   return await workspacePath(await dataFolder())
 }
 
-export async function listSkills(): Promise<SkillMeta[]> {
-  return await skillList(await dataFolder())
-}
-
-/** Raw SKILL.md text, frontmatter included. */
-export async function readSkill(name: string): Promise<string> {
-  return await skillRead(await dataFolder(), name)
-}
-
-export async function writeSkill(name: string, content: string): Promise<void> {
-  await skillWrite(await dataFolder(), name, content)
-}
-
-export async function deleteSkill(name: string): Promise<void> {
-  await skillDelete(await dataFolder(), name)
-}
+// Skill CRUD is shared with the code screen's per-project skills; only the root
+// differs. These bind this page to the permanent store.
+export const listSkills = () => skillStore.listSkills(skillStore.storeScope)
+export const readSkill = (name: string) =>
+  skillStore.readSkill(skillStore.storeScope, name)
+export const writeSkill = (name: string, content: string) =>
+  skillStore.writeSkill(skillStore.storeScope, name, content)
+export const deleteSkill = (name: string) =>
+  skillStore.deleteSkill(skillStore.storeScope, name)
 
 export async function listMemories(): Promise<string[]> {
   return await memoryList(await dataFolder())
