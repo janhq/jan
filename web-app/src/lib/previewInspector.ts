@@ -9,6 +9,9 @@
  *   label chip (`div#main.card.active`, truncated) following the element.
  * - Click an element: pin its bbox + label. Click the background (html/body)
  *   or press Escape: clear the pin. Scrolling/resizing keeps the pin aligned.
+ * - Every pin/clear posts a `{source:'jan-preview-inspector', type:'pin'|
+ *   'clear'}` message to the parent so the annotation overlay can anchor its
+ *   inline note box at the selected element (see AnnotationOverlay).
  *
  * Kept dependency-free and CSP-safe: inlined via `script-src 'unsafe-inline'`,
  * only DOM/style APIs, no network. The string must never contain the literal
@@ -83,6 +86,35 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
     return !t || t === document.documentElement || t === document.body
   }
 
+  // The parent (annotation overlay) anchors its inline note box at the pinned
+  // element, so it needs the bbox. postMessage works across the sandbox; the
+  // opaque origin forces targetOrigin '*'.
+  function sendPin(r) {
+    try {
+      window.parent.postMessage(
+        {
+          source: 'jan-preview-inspector',
+          type: 'pin',
+          rect: { x: r.left, y: r.top, width: r.width, height: r.height }
+        },
+        '*'
+      )
+    } catch (e) {
+      /* parent may be gone or block cross-frame messaging */
+    }
+  }
+
+  function sendClear() {
+    try {
+      window.parent.postMessage(
+        { source: 'jan-preview-inspector', type: 'clear' },
+        '*'
+      )
+    } catch (e) {
+      /* see sendPin */
+    }
+  }
+
   // Clicking whitespace should deselect, not pin the full-page wrapper that
   // usually covers the whole viewport.
   function coversViewport(el) {
@@ -97,6 +129,7 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
     pinnedEl = null
     if (pinBox) pinBox.style.display = 'none'
     if (pinLabel) pinLabel.style.display = 'none'
+    sendClear()
   }
 
   function refreshPin() {
@@ -146,7 +179,9 @@ export const PREVIEW_INSPECTOR_SCRIPT = `(function () {
       }
       pinnedEl = t
       pinLabel.textContent = labelFor(t)
-      placeLabel(placeBox(pinBox, t, PIN, 2, false))
+      var r = placeBox(pinBox, t, PIN, 2, false)
+      placeLabel(r)
+      sendPin(r)
     },
     true
   )
