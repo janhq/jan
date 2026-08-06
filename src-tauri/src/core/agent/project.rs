@@ -214,20 +214,33 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
-/// Persist an unsigned-integer `[agent]` key (e.g. `max_parallel_subagents`)
-/// into the agent.toml at `path`, format-preserving (comments kept). The key is
-/// written under `[agent]` like the template's other knobs, so the value the
-/// next run loads is exactly what the TUI `/settings` surface shows.
+/// Persist an `[agent]` key into the agent.toml at `path`, format-preserving
+/// (comments kept). The key is written under `[agent]` like the template's
+/// other knobs, so the value the next run loads is exactly what the TUI
+/// `/settings` surface shows. `None` removes the key (default applies).
 #[cfg(feature = "cli")]
-pub(crate) fn set_agent_integer_key(path: &Path, key: &str, value: u64) -> Result<(), String> {
+pub(crate) fn set_agent_key(
+    path: &Path,
+    key: &str,
+    value: Option<toml_edit::Item>,
+) -> Result<(), String> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     let mut doc = raw
         .parse::<toml_edit::DocumentMut>()
         .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
 
-    let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    agent[key] = toml_edit::value(value as i64);
+    match value {
+        Some(v) => {
+            let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            agent[key] = v;
+        }
+        None => {
+            if let Some(table) = doc.get_mut("agent").and_then(|t| t.as_table_mut()) {
+                table.remove(key);
+            }
+        }
+    }
 
     std::fs::write(path, doc.to_string())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
@@ -353,11 +366,15 @@ mod tests {
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None, "template leaves it unset");
 
-        // Explicit value round-trips through the /settings writer.
+        // Explicit value round-trips through the /settings writer; unset removes.
         let path = agent_toml_path(&root);
-        set_agent_integer_key(&path, "max_parallel_subagents", 4).expect("write");
+        set_agent_key(&path, "max_parallel_subagents", Some(toml_edit::value(4i64)))
+            .expect("write");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, Some(4));
+        set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
