@@ -93,6 +93,12 @@ pub(crate) struct ToolsSection {
     pub deny: Vec<String>,
     #[serde(default)]
     pub allow_write: Vec<String>,
+    /// Whether the sandboxed shell keeps its network namespace. `None` (unset)
+    /// leaves the choice to the surface running the loop, which differ: the CLI
+    /// prompts before every exec and allows it, the desktop's ephemeral chat
+    /// sandbox does not and denies it.
+    #[serde(default)]
+    pub allow_network: Option<bool>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
@@ -127,6 +133,10 @@ deny = []
 # Write tools are opt-in only:
 # allow_write = ["fs.write"]
 allow_write = []
+# Whether the sandboxed shell can reach the network. Unset follows the surface
+# running the agent: the CLI allows it (every exec is prompted first), the
+# desktop's throwaway chat sandbox does not.
+# allow_network = true
 
 [skills]
 enabled = []
@@ -150,17 +160,34 @@ pub(crate) fn load_agent_config(project_root: &Path) -> Result<AgentToml, String
     toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
 }
 
-/// The project's `[skills].enabled` whitelist (empty = every skill). A missing
-/// or malformed config falls back to "all skills" rather than erroring, since a
-/// project without an agent.toml should still advertise its skills.
+/// The per-run knobs a `ToolContext` needs from agent.toml.
 ///
-/// The agent toolset takes this as an argument rather than reading it itself, so
-/// this is the one place that maps agent.toml onto `ToolContext::enabled_skills`.
+/// The toolset owns no config format, so this is the one place that maps
+/// agent.toml onto a `ToolContext`. Resolved once per run rather than per tool
+/// call, and in a single parse rather than one per field.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RunSettings {
+    /// `[skills].enabled` (empty = every skill).
+    pub enabled_skills: Vec<String>,
+    /// `[tools].allow_network`; `None` when unset, so the caller applies the
+    /// default appropriate to its surface.
+    pub allow_network: Option<bool>,
+}
+
+/// A missing or malformed config yields defaults rather than an error: a project
+/// without an agent.toml should still run, advertising all of its skills.
+pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
+    let Ok(cfg) = load_agent_config(project_root) else {
+        return RunSettings::default();
+    };
+    RunSettings {
+        enabled_skills: cfg.skills.enabled,
+        allow_network: cfg.tools.allow_network,
+    }
+}
+
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
-    load_agent_config(project_root)
-        .ok()
-        .map(|c| c.skills.enabled)
-        .unwrap_or_default()
+    run_settings(project_root).enabled_skills
 }
 
 /// Build a `ToolPermissions` from the parsed `[tools]` section.
@@ -325,6 +352,51 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_agent_toml(root: &Path, body: &str) {
+        let dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&dir).expect("create agent dir");
+        std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
+    }
+
+    #[test]
+    fn run_settings_reads_allow_network_both_ways() {
+        let root = unique_root("allow_net");
+        write_agent_toml(&root, "[tools]\nallow_network = true\n");
+        assert_eq!(run_settings(&root).allow_network, Some(true));
+
+        write_agent_toml(&root, "[tools]\nallow_network = false\n");
+        assert_eq!(run_settings(&root).allow_network, Some(false));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Unset must stay `None` rather than collapsing to `false`, or the caller
+    /// cannot tell "explicitly denied" from "not configured" and every CLI
+    /// project silently loses the network.
+    #[test]
+    fn run_settings_leaves_unset_allow_network_undecided() {
+        let root = unique_root("allow_net_unset");
+
+        write_agent_toml(&root, "[tools]\ndefault = \"read-only\"\n");
+        assert_eq!(run_settings(&root).allow_network, None);
+
+        // A project with no agent.toml at all resolves the same way.
+        let bare = unique_root("allow_net_bare");
+        assert_eq!(run_settings(&bare).allow_network, None);
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&bare);
+    }
+
+    /// The scaffold documents the key, so it has to stay parseable as written.
+    #[test]
+    fn scaffold_template_parses_with_allow_network_documented() {
+        let cfg: AgentToml =
+            toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.tools.allow_network, None);
+        assert!(AGENT_TOML_TEMPLATE.contains("allow_network"));
     }
 
     #[test]

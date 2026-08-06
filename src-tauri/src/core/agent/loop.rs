@@ -198,6 +198,10 @@ struct CompositeToolInvoker {
     /// `[skills].enabled`, resolved once per run. The toolset owns no config
     /// format, so the whitelist is injected rather than re-read per tool call.
     enabled_skills: Vec<String>,
+    /// Whether the sandboxed shell keeps its network namespace. Resolved once
+    /// per run from `[tools].allow_network`, falling back to the surface
+    /// default when unset.
+    allow_network: bool,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -209,7 +213,8 @@ struct CompositeToolInvoker {
     run_mode: crate::core::agent::plan::RunMode,
 }
 
-/// Whether the sandboxed shell keeps its network namespace.
+/// Default for the sandboxed shell's network namespace, used when
+/// `[tools].allow_network` is unset.
 ///
 /// The CLI agent runs in the user's own terminal against their own project, and
 /// every exec is already gated behind an interactive prompt, so the network is
@@ -221,9 +226,32 @@ struct CompositeToolInvoker {
 /// The desktop chat sandbox makes the opposite trade: it is ephemeral, has no
 /// prompt, and opts in per call from a user setting (`commands.rs`).
 #[cfg(feature = "cli")]
-const LOOP_ALLOW_NETWORK: bool = true;
+const DEFAULT_ALLOW_NETWORK: bool = true;
 #[cfg(not(feature = "cli"))]
-const LOOP_ALLOW_NETWORK: bool = false;
+const DEFAULT_ALLOW_NETWORK: bool = false;
+
+/// `[tools].allow_network` wins over the surface default when set.
+fn resolve_allow_network(configured: Option<bool>) -> bool {
+    configured.unwrap_or(DEFAULT_ALLOW_NETWORK)
+}
+
+/// agent.toml resolved for one run: the skill whitelist, plus the network
+/// decision with this surface's default already applied.
+struct ResolvedSettings {
+    enabled_skills: Vec<String>,
+    allow_network: bool,
+}
+
+/// Kept out of the invoker's struct literal so it is reachable from a test.
+/// Inline, it was silently passing `None` instead of the parsed value, which
+/// made `[tools].allow_network` a no-op that nothing detected.
+fn resolve_run_settings(project_root: &std::path::Path) -> ResolvedSettings {
+    let settings = crate::core::agent::project::run_settings(project_root);
+    ResolvedSettings {
+        enabled_skills: settings.enabled_skills,
+        allow_network: resolve_allow_network(settings.allow_network),
+    }
+}
 
 impl CompositeToolInvoker {
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
@@ -232,7 +260,7 @@ impl CompositeToolInvoker {
             &self.store_root,
             &self.enabled_skills,
         )
-        .with_network(LOOP_ALLOW_NETWORK)
+        .with_network(self.allow_network)
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -678,9 +706,10 @@ impl ToolInvoker for CompositeToolInvoker {
                 let root = self.project_root.clone();
                 let store = self.store_root.clone();
                 let enabled = self.enabled_skills.clone();
+                let allow_network = self.allow_network;
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
-                        .with_network(LOOP_ALLOW_NETWORK);
+                        .with_network(allow_network);
                     let (text, diff) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
@@ -1327,10 +1356,12 @@ async fn orchestrate_inner(
             max_session_tokens,
             bg: bg.clone(),
         });
+        let settings = resolve_run_settings(root);
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root: tauri_plugin_agent_tools::workspace::project_store(root),
-            enabled_skills: crate::core::agent::project::enabled_skills(root),
+            enabled_skills: settings.enabled_skills,
+            allow_network: settings.allow_network,
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -2623,6 +2654,7 @@ mod tests {
             },
             store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
             enabled_skills: Vec::new(),
+            allow_network: DEFAULT_ALLOW_NETWORK,
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -2635,6 +2667,56 @@ mod tests {
             yolo: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
+    }
+
+    /// The whole point of the setting: what agent.toml says has to survive the
+    /// trip into the invoker. This is the assertion that was missing when the
+    /// resolution passed `None` and silently ignored the file.
+    #[test]
+    fn agent_toml_network_setting_reaches_the_invoker() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_net_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("create agent dir");
+
+        let write = |body: &str| {
+            std::fs::write(agent_dir.join("agent.toml"), body).expect("write agent.toml")
+        };
+
+        write("[tools]\nallow_network = false\n[skills]\nenabled = [\"deploy\"]\n");
+        let denied = resolve_run_settings(&root);
+        assert!(!denied.allow_network, "explicit false must be honoured");
+        assert_eq!(denied.enabled_skills, vec!["deploy".to_string()]);
+
+        write("[tools]\nallow_network = true\n");
+        assert!(
+            resolve_run_settings(&root).allow_network,
+            "explicit true must be honoured"
+        );
+
+        write("[tools]\ndefault = \"read-only\"\n");
+        assert_eq!(
+            resolve_run_settings(&root).allow_network,
+            DEFAULT_ALLOW_NETWORK,
+            "unset must fall back to the surface default"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An explicit `[tools].allow_network` overrides the surface default in both
+    /// directions, so a project can lock the shell down or open it up whichever
+    /// way its surface leans.
+    #[test]
+    fn configured_allow_network_overrides_the_default() {
+        assert!(resolve_allow_network(Some(true)));
+        assert!(!resolve_allow_network(Some(false)));
+        assert_eq!(resolve_allow_network(None), DEFAULT_ALLOW_NETWORK);
     }
 
     /// The CLI agent's shell keeps its network namespace. Before the sandbox
