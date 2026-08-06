@@ -578,12 +578,13 @@ struct App {
     scrollback: u16,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
-    /// Runs started since the todo list last had open work. The list is the
-    /// model's own scratchpad, so a finished one lingers until it declares a
-    /// new plan -- which may never happen. This counts down a grace period
-    /// instead of clearing the moment the last task closes, so a model that is
-    /// still mid-flow (about to append, or reopening a task) keeps its list.
-    runs_since_todos_closed: u32,
+    /// Turns (model roundtrips, plus the submission that kicked off a run)
+    /// since the todo list last had open work. The list is the model's own
+    /// scratchpad, so a finished one lingers until it declares a new plan --
+    /// which may never happen. This counts down a grace period instead of
+    /// clearing the moment the last task closes, so a model that is still
+    /// mid-flow (about to append, or reopening a task) keeps its list.
+    turns_since_todos_closed: u32,
     /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
     /// it. 0 until the first draw (callers fall back to a default).
     view_width: u16,
@@ -803,7 +804,7 @@ impl App {
             update_installing: false,
             scrollback: 0,
             want_start: false,
-            runs_since_todos_closed: 0,
+            turns_since_todos_closed: 0,
             view_width: 0,
             last_kind: Kind::None,
             should_quit: false,
@@ -3406,6 +3407,8 @@ async fn chat_loop<B: Backend>(
             let base_ready = app.repo_root.is_none() || app.base_snapshot.is_some();
             if mcp_ready && base_ready {
                 app.want_start = false;
+                // The submission itself is one human turn toward the aging
+                // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
                 current = Some(spawn_run(args, app.body()));
             } else if !loading_noted && !mcp_ready {
@@ -3562,6 +3565,14 @@ async fn chat_loop<B: Backend>(
                 Some(StreamEvent::Error { code, message }) => {
                     app.on_error(code, message);
                     current = None;
+                }
+                // Each model roundtrip is one turn toward the finished-todo
+                // aging grace period. A single run can span many tool-call
+                // turns, so aging must count turns, not runs -- otherwise a
+                // finished plan lingers through the rest of a long run.
+                Some(ev @ StreamEvent::Step { .. }) => {
+                    app.apply(ev);
+                    age_closed_todos(app).await;
                 }
                 Some(other) => app.apply(other),
                 None => {
@@ -4523,11 +4534,11 @@ async fn apply_todo_mutation(
     Ok(())
 }
 
-/// Runs allowed to start with a fully closed-out todo list before it is
-/// dropped. One is too eager -- a model often closes the last task and then
-/// appends follow-up work in the next run, and clearing between the two would
-/// destroy a list it is still using.
-const TODO_KEEP_CLOSED_RUNS: u32 = 2;
+/// Turns (model roundtrips or user submissions) allowed to pass with a fully
+/// closed-out todo list before it is dropped. One is too eager -- a model
+/// often closes the last task and then appends follow-up work in the next
+/// turn, and clearing between the two would destroy a list it is still using.
+const TODO_KEEP_CLOSED_TURNS: u32 = 2;
 
 /// Clear the canonical todo list and the TUI projection together.
 ///
@@ -4543,11 +4554,14 @@ async fn clear_todos(app: &mut App) {
     })
     .await;
     app.last_todo_reminder = None;
-    app.runs_since_todos_closed = 0;
+    app.turns_since_todos_closed = 0;
 }
 
 /// Age a finished todo list, dropping it once it has survived
-/// `TODO_KEEP_CLOSED_RUNS` runs without the model reopening or extending it.
+/// `TODO_KEEP_CLOSED_TURNS` turns without the model reopening or extending it.
+/// Called on every model roundtrip (`Step`) and at each run kick, so a single
+/// run's many tool-call turns all count -- a finished plan does not outlive
+/// the long run that produced it.
 ///
 /// Without this the widget is sticky: `is_empty` means "no tasks exist", and a
 /// completed task is still a task, so a finished plan renders forever and only
@@ -4556,11 +4570,11 @@ async fn clear_todos(app: &mut App) {
 async fn age_closed_todos(app: &mut App) {
     if app.todos.is_empty() || app.todos.has_open() {
         // Nothing to age, or the model still has open work.
-        app.runs_since_todos_closed = 0;
+        app.turns_since_todos_closed = 0;
         return;
     }
-    app.runs_since_todos_closed += 1;
-    if app.runs_since_todos_closed > TODO_KEEP_CLOSED_RUNS {
+    app.turns_since_todos_closed += 1;
+    if app.turns_since_todos_closed > TODO_KEEP_CLOSED_TURNS {
         clear_todos(app).await;
         app.persist();
     }
@@ -9843,7 +9857,7 @@ mod tests {
             .unwrap();
         assert!(!app.todos.is_empty());
 
-        // Open work is never aged away, however many runs go by.
+        // Open work is never aged away, however many turns go by.
         for _ in 0..5 {
             age_closed_todos(&mut app).await;
         }
@@ -9854,13 +9868,13 @@ mod tests {
             .unwrap();
         assert!(app.todos.open_summary().is_none(), "all work closed out");
 
-        // Survives every run up to the cutoff.
-        for i in 1..=super::TODO_KEEP_CLOSED_RUNS {
+        // Survives every turn up to the cutoff.
+        for i in 1..=super::TODO_KEEP_CLOSED_TURNS {
             age_closed_todos(&mut app).await;
-            assert!(!app.todos.is_empty(), "cleared too eagerly at run {i}");
+            assert!(!app.todos.is_empty(), "cleared too eagerly at turn {i}");
         }
 
-        // One run past the grace period and it goes.
+        // One turn past the grace period and it goes.
         age_closed_todos(&mut app).await;
         assert!(app.todos.is_empty(), "finished list should have been dropped");
     }
@@ -9881,7 +9895,7 @@ mod tests {
             .unwrap();
 
         age_closed_todos(&mut app).await;
-        assert_eq!(app.runs_since_todos_closed, 1);
+        assert_eq!(app.turns_since_todos_closed, 1);
 
         app.todos
             .init(vec![crate::core::agent::todo::TodoPhase {
@@ -9890,7 +9904,7 @@ mod tests {
             }])
             .unwrap();
         age_closed_todos(&mut app).await;
-        assert_eq!(app.runs_since_todos_closed, 0, "counter must reset");
+        assert_eq!(app.turns_since_todos_closed, 0, "counter must reset");
         assert!(!app.todos.is_empty(), "new work must not be aged out");
     }
 
@@ -9901,7 +9915,37 @@ mod tests {
         for _ in 0..5 {
             age_closed_todos(&mut app).await;
         }
-        assert_eq!(app.runs_since_todos_closed, 0);
+        assert_eq!(app.turns_since_todos_closed, 0);
+    }
+
+    /// Turn-granular aging: a single run's model roundtrips (`Step` events)
+    /// each count toward the grace period, so a finished plan does not outlive
+    /// the long tool-call run that produced it.
+    #[tokio::test]
+    async fn closed_todos_age_per_turn_not_per_run() {
+        let mut app = test_app();
+        app.todos
+            .init(vec![crate::core::agent::todo::TodoPhase {
+                name: String::new(),
+                tasks: vec![todo_item("a")],
+            }])
+            .unwrap();
+        app.todos
+            .done(crate::core::agent::todo::Target::All)
+            .unwrap();
+
+        // Three roundtrips inside the run that finished the list: the counter
+        // climbs per turn, and once it passes the cutoff the list drops even
+        // though no new run kicked off.
+        for _ in 1..=super::TODO_KEEP_CLOSED_TURNS {
+            app.apply(StreamEvent::Step { index: 1, max: 8 });
+            age_closed_todos(&mut app).await;
+        }
+        assert!(!app.todos.is_empty(), "must survive the full grace period");
+
+        app.apply(StreamEvent::Step { index: 1, max: 8 });
+        age_closed_todos(&mut app).await;
+        assert!(app.todos.is_empty(), "dropped mid-run after the grace period");
     }
 
     #[test]
