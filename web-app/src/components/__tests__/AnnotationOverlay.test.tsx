@@ -29,6 +29,7 @@ vi.mock('react-konva', () => ({
   Line: () => null,
   Arrow: () => null,
   Text: () => null,
+  Circle: () => null,
 }))
 
 describe('AnnotationOverlay', () => {
@@ -162,5 +163,103 @@ describe('AnnotationOverlay', () => {
     // Arrow button should now have active class
     expect(arrowBtn.className).toContain('bg-main-view-fg/10')
     expect(arrowBtn.className).toContain('text-main-view-fg')
+  })
+
+  it('opens an inline note at the pinned element (select tool)', () => {
+    render(
+      <AnnotationOverlay {...defaultProps} active={true}>
+        <div>Preview</div>
+      </AnnotationOverlay>
+    )
+    fireEvent(window, new MessageEvent('message', {
+        data: {
+          source: 'jan-preview-inspector',
+          type: 'pin',
+          rect: { x: 50, y: 60, width: 100, height: 30 },
+        },
+      })
+    )
+    const note = screen.getByPlaceholderText('Add note…')
+    expect(note).toBeTruthy()
+    // Anchored at the bbox top-right, clamped to the stage (0x0 in jsdom).
+    expect((note.parentElement as HTMLElement).style.left).toBe('0px')
+    expect((note.parentElement as HTMLElement).style.top).toBe('0px')
+  })
+
+  it('closes the pending note when the pin is cleared', () => {
+    render(
+      <AnnotationOverlay {...defaultProps} active={true}>
+        <div>Preview</div>
+      </AnnotationOverlay>
+    )
+    fireEvent(window, new MessageEvent('message', {
+        data: { source: 'jan-preview-inspector', type: 'pin', rect: { x: 0, y: 0, width: 40, height: 20 } },
+      })
+    )
+    expect(screen.getByPlaceholderText('Add note…')).toBeTruthy()
+    fireEvent(window, new MessageEvent('message', {
+        data: { source: 'jan-preview-inspector', type: 'clear' },
+      })
+    )
+    expect(screen.queryByPlaceholderText('Add note…')).toBeNull()
+  })
+
+  it('commits a note and does not reopen it on re-click of the same element', () => {
+    render(
+      <AnnotationOverlay {...defaultProps} active={true}>
+        <div>Preview</div>
+      </AnnotationOverlay>
+    )
+    fireEvent(window, new MessageEvent('message', {
+        data: { source: 'jan-preview-inspector', type: 'pin', rect: { x: 10, y: 10, width: 40, height: 20 } },
+      })
+    )
+    fireEvent.change(screen.getByPlaceholderText('Add note…'), {
+      target: { value: 'fix this' },
+    })
+    fireEvent.keyDown(screen.getByPlaceholderText('Add note…'), { key: 'Enter' })
+    expect(screen.queryByPlaceholderText('Add note…')).toBeNull()
+
+    // Same element pinned again must not pop another note box.
+    fireEvent(window, new MessageEvent('message', {
+        data: { source: 'jan-preview-inspector', type: 'pin', rect: { x: 10, y: 10, width: 40, height: 20 } },
+      })
+    )
+    expect(screen.queryByPlaceholderText('Add note…')).toBeNull()
+  })
+
+  it('opens an inline note at the tip of a finished stroke', () => {
+    render(
+      <AnnotationOverlay {...defaultProps} active={true}>
+        <div>Preview</div>
+      </AnnotationOverlay>
+    )
+    fireEvent.click(screen.getByTitle('Pencil (freehand)'))
+    const stage = screen.getByTestId('konva-stage')
+    fireEvent.mouseDown(stage)
+    fireEvent.mouseMove(stage)
+    fireEvent.mouseMove(stage)
+    fireEvent.mouseUp(stage)
+    expect(screen.getByPlaceholderText('Add note…')).toBeTruthy()
+  })
+
+  it('drops the pending note when annotation mode is deactivated', () => {
+    const { rerender } = render(
+      <AnnotationOverlay {...defaultProps} active={true}>
+        <div>Preview</div>
+      </AnnotationOverlay>
+    )
+    fireEvent(window, new MessageEvent('message', {
+        data: { source: 'jan-preview-inspector', type: 'pin', rect: { x: 0, y: 0, width: 40, height: 20 } },
+      })
+    )
+    expect(screen.getByPlaceholderText('Add note…')).toBeTruthy()
+    rerender(
+      <AnnotationOverlay {...defaultProps} active={false}>
+        <div>Preview</div>
+      </AnnotationOverlay>
+    )
+    // Inactive: no overlay UI at all.
+    expect(screen.queryByPlaceholderText('Add note…')).toBeNull()
   })
 })

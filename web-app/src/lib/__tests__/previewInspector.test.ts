@@ -191,6 +191,38 @@ describe('PREVIEW_INSPECTOR_SCRIPT', () => {
     expect(visible(pinBox)).toBe(false)
   })
 
+  it('posts the pinned bbox rect to the parent', () => {
+    const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {})
+    const main = document.querySelector('main')!
+    main.style.width = '120px'
+    main.style.height = '60px'
+
+    fire('pointerdown', main)
+    expect(spy).toHaveBeenCalledWith(
+      {
+        source: 'jan-preview-inspector',
+        type: 'pin',
+        rect: { x: 0, y: 0, width: 120, height: 60 },
+      },
+      '*'
+    )
+    spy.mockRestore()
+  })
+
+  it('posts clear when the pin is dismissed', () => {
+    const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {})
+    const main = document.querySelector('main')!
+    main.style.width = '80px'
+    main.style.height = '40px'
+
+    fire('pointerdown', main)
+    fire('pointerdown', document.body)
+    const calls = spy.mock.calls.map((c) => (c[0] as { type?: string }).type)
+    expect(calls).toContain('pin')
+    expect(calls).toContain('clear')
+    spy.mockRestore()
+  })
+
   it('clears the pin when the pinned element leaves the DOM', () => {
     const main = document.querySelector('main')!
     const [, pinBox] = overlays()

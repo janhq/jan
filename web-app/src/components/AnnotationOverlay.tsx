@@ -10,6 +10,12 @@
  * clicks reach the preview iframe, where the injected element inspector (see
  * `lib/previewInspector.ts`) draws the hover outline / pinned bbox.
  *
+ * Inline notes: selecting an element (or finishing a stroke) pops a small
+ * chat-style input right at that spot; the committed text is rendered as a
+ * comment pin (text + anchor dot) in the annotation layer and exported with
+ * the screenshot, so the model sees the note next to the element it refers to.
+ * The inspector reports the pinned bbox to the parent via postMessage.
+ *
  * Layout note: the toolbar is a sibling of the content wrapper (which stays a
  * flex child of the panel), so the preview's scroll container keeps its
  * `flex-1 overflow-auto` behavior while annotation mode is on — the Stage only
@@ -24,7 +30,7 @@ import {
   Type,
   Undo2,
 } from 'lucide-react'
-import { Stage, Layer, Line, Arrow, Text } from 'react-konva'
+import { Stage, Layer, Line, Arrow, Text, Circle } from 'react-konva'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Button } from '@/components/ui/button'
@@ -57,7 +63,14 @@ interface TextShape {
   fontSize: number
 }
 
-type AnnotationShape = PencilStroke | ArrowShape | TextShape
+/** Small anchor dot drawn under a committed note so it reads as a comment pin. */
+interface DotShape {
+  tool: 'dot'
+  pos: Point
+  color: string
+}
+
+type AnnotationShape = PencilStroke | ArrowShape | TextShape | DotShape
 
 interface AnnotationOverlayProps {
   /** Whether annotation mode is active. */
@@ -82,6 +95,8 @@ export function AnnotationOverlay({
 }: AnnotationOverlayProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
+  /** Last element-pin anchor that opened a note, to dedupe re-clicks. */
+  const lastPinRef = useRef<Point | null>(null)
   const [tool, setTool] = useState<AnnotationTool>('select')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [strokeWidth, setStrokeWidth] = useState(3)
@@ -94,6 +109,14 @@ export function AnnotationOverlay({
     pos: Point
     shapeIndex: number
   } | null>(null)
+
+  // Drop the pending (empty) note placeholder shape alongside its input.
+  const discardPendingNote = useCallback(() => {
+    if (textEdit) {
+      setShapes((prev) => prev.filter((_, i) => i !== textEdit.shapeIndex))
+      setTextEdit(null)
+    }
+  }, [textEdit])
 
   // Track the visible content box while active; the Stage overlays exactly
   // this area (toolbar excluded).
@@ -108,21 +131,80 @@ export function AnnotationOverlay({
     return () => observer.disconnect()
   }, [active])
 
-  // Esc exits annotation mode (or closes an open text editor first).
+  // Esc exits annotation mode (or closes an open note first).
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (textEdit) setTextEdit(null)
+      if (textEdit) discardPendingNote()
       else onCancel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, textEdit, onCancel])
+  }, [active, textEdit, onCancel, discardPendingNote])
+
+  // An element pin inside the preview iframe anchors the inline note box at
+  // the selected element (select tool -> inspector posts the bbox rect).
+  useEffect(() => {
+    if (!active) return
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as
+        | { source?: string; type?: string; rect?: { x: number; y: number; width: number; height: number } }
+        | null
+      if (!data || data.source !== 'jan-preview-inspector') return
+      if (data.type === 'clear') {
+        lastPinRef.current = null
+        discardPendingNote()
+        return
+      }
+      if (data.type !== 'pin' || !data.rect) return
+
+      // Only the iframe this overlay wraps may drive the note position.
+      const iframe = contentRef.current?.querySelector('iframe')
+      if (iframe && e.source !== iframe.contentWindow) return
+
+      // Convert iframe-viewport coords to stage coords (accounts for the
+      // iframe's offset inside the scrollable content box).
+      const box = contentRef.current?.getBoundingClientRect()
+      const frameRect = iframe?.getBoundingClientRect()
+      let x = data.rect.x
+      let y = data.rect.y
+      if (box && frameRect) {
+        x = frameRect.left - box.left + data.rect.x
+        y = frameRect.top - box.top + data.rect.y
+      }
+      // Anchor the note at the top-right of the bbox, clamped to the stage.
+      const anchor: Point = {
+        x: Math.min(x + data.rect.width, Math.max(0, dimensions.width - 140)),
+        y: Math.min(y, Math.max(0, dimensions.height - 48)),
+      }
+
+      // A fresh element pin opens the note box; re-clicking the same element
+      // or an already-open note keeps the current state.
+      if (textEdit) return
+      const last = lastPinRef.current
+      if (last && Math.abs(last.x - anchor.x) < 2 && Math.abs(last.y - anchor.y) < 2) return
+      lastPinRef.current = anchor
+
+      const idx = shapes.length
+      setShapes((prev) => [
+        ...prev,
+        { tool: 'text', pos: anchor, text: '', color, fontSize: TEXT_FONT_SIZE },
+      ])
+      setTextEdit({ pos: anchor, shapeIndex: idx })
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [active, textEdit, discardPendingNote, dimensions, color, shapes.length])
+
+  // Leaving annotation mode drops any pending note input.
+  useEffect(() => {
+    if (!active && textEdit) discardPendingNote()
+  }, [active, textEdit, discardPendingNote])
 
   const getPointerPos = useCallback(
     (e: KonvaEventObject<MouseEvent | TouchEvent>): Point => {
-      const stage = e.target.getStage()
+      const stage = e.target.getStage?.()
       if (!stage) return { x: 0, y: 0 }
       return stage.getPointerPosition() ?? { x: 0, y: 0 }
     },
@@ -166,15 +248,22 @@ export function AnnotationOverlay({
   const handlePointerUp = useCallback(() => {
     if (!drawing) return
 
+    // A note box follows each completed stroke, anchored at its tip. The
+    // placeholder is appended after the stroke, so its index is the pre-stroke
+    // count + 1 (both updaters run in order within this event).
+    let noteAnchor: Point | null = null
     if (tool === 'pencil' && currentLine.length >= 4) {
+      const pts = currentLine
+      noteAnchor = { x: pts[pts.length - 2], y: pts[pts.length - 1] }
       setShapes((prev) => [
         ...prev,
-        { tool: 'pencil', points: currentLine, color, width: strokeWidth },
+        { tool: 'pencil', points: pts, color, width: strokeWidth },
       ])
       setCurrentLine([])
     } else if (tool === 'arrow' && arrowStart) {
       const stage = stageRef.current
       const end = stage?.getPointerPosition() ?? arrowStart
+      noteAnchor = end
       setShapes((prev) => [
         ...prev,
         { tool: 'arrow', start: arrowStart, end, color, width: strokeWidth },
@@ -183,19 +272,36 @@ export function AnnotationOverlay({
     }
 
     setDrawing(false)
-  }, [drawing, tool, currentLine, arrowStart, color, strokeWidth])
+
+    if (noteAnchor && !textEdit) {
+      const idx = shapes.length + 1
+      setShapes((prev) => [
+        ...prev,
+        { tool: 'text', pos: noteAnchor, text: '', color, fontSize: TEXT_FONT_SIZE },
+      ])
+      setTextEdit({ pos: noteAnchor, shapeIndex: idx })
+    }
+  }, [drawing, tool, currentLine, arrowStart, color, strokeWidth, textEdit, shapes.length])
 
   const handleTextConfirm = useCallback(
     (text: string) => {
       if (!textEdit) return
       if (text.trim()) {
+        // Reuse the color the placeholder was created with so the note matches
+        // its anchor even if the palette changed mid-typing.
+        const ph = shapes[textEdit.shapeIndex]
+        const fill =
+          ph && ph.tool === 'text' ? ph.color : color
         setShapes((prev) => {
           const copy = [...prev]
           copy[textEdit.shapeIndex] = {
-            ...copy[textEdit.shapeIndex],
+            tool: 'text',
+            pos: textEdit.pos,
             text: text.trim(),
-          } as TextShape
-          return copy
+            color: fill,
+            fontSize: TEXT_FONT_SIZE,
+          }
+          return [...copy, { tool: 'dot', pos: textEdit.pos, color: fill }]
         })
       } else {
         // Empty text - remove the placeholder shape.
@@ -203,7 +309,7 @@ export function AnnotationOverlay({
       }
       setTextEdit(null)
     },
-    [textEdit]
+    [textEdit, shapes, color]
   )
 
   const undo = useCallback(() => {
@@ -214,6 +320,7 @@ export function AnnotationOverlay({
     setShapes([])
     setCurrentLine([])
     setArrowStart(null)
+    lastPinRef.current = null
   }, [])
 
   const exit = useCallback(() => {
@@ -230,6 +337,7 @@ export function AnnotationOverlay({
     })
     onSend(dataUrl)
     setShapes([])
+    lastPinRef.current = null
     onCancel()
   }, [onSend, onCancel])
 
@@ -438,6 +546,17 @@ export function AnnotationOverlay({
                   />
                 )
               }
+              if (shape.tool === 'dot') {
+                return (
+                  <Circle
+                    key={i}
+                    x={shape.pos.x}
+                    y={shape.pos.y}
+                    radius={3}
+                    fill={shape.color}
+                  />
+                )
+              }
               return null
             })}
             {previewShapes}
@@ -502,7 +621,7 @@ function ToolButton({
   )
 }
 
-/** Floating textarea for text annotation input. */
+/** Inline note input: a small chat-style card anchored at the element/stroke. */
 function TextInputOverlay({
   pos,
   color,
@@ -544,7 +663,9 @@ function TextInputOverlay({
           }
         }}
         onBlur={() => onConfirm(value)}
-        className="min-w-[120px] resize-none rounded-md border bg-background px-2 py-1 text-sm shadow-sm outline-none"
+        placeholder="Add note…"
+        rows={1}
+        className="min-w-[130px] max-w-[220px] resize-none rounded-lg border bg-main-view px-2 py-1.5 text-sm shadow-md outline-none"
         style={{
           color,
           fontSize: TEXT_FONT_SIZE,
@@ -552,8 +673,6 @@ function TextInputOverlay({
           borderColor: color,
           lineHeight: 1.3,
         }}
-        rows={1}
-        placeholder="Type here..."
       />
     </div>
   )
