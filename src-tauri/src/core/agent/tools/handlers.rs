@@ -174,7 +174,8 @@ pub async fn execute_builtin(
 /// its position in the file; `None` for other tools or when nothing would
 /// change. Used to show the change in the permission prompt. Both variants read
 /// the prior file: `write` to show its `created`/`overwrote` header, `edit` to
-/// locate `old_string` and number the hunk against real file lines.
+/// locate `old_string`, number the hunk against real file lines, and surround it
+/// with context lines the arguments alone do not carry.
 pub(crate) async fn preview_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
@@ -240,10 +241,22 @@ fn line_number_at(text: &str, pos: usize) -> usize {
     text[..pos].matches('\n').count() + 1
 }
 
-/// Per-edit `-old`/`+new` hunks, each line numbered against its position in
-/// `prior` (the file content before this call's edits are applied). Multiple
-/// edits are separated by `@@ edit i/n @@` and applied in order so later edits
-/// number against the state left by earlier ones, matching what `edit()` does.
+/// Lines of surrounding file context kept around a change, and the threshold
+/// past which one edit's hunk is split with a `...` gap. Matches the feel of a
+/// unified diff without the `@@ -a,b +c,d @@` range header (the existing
+/// `@@ edit i/n @@` marker already identifies the hunk).
+const DIFF_CONTEXT: usize = 2;
+
+/// Per-edit hunks computed with a real line-level diff (`similar`), so a
+/// one-line change inside a large `old_string`/`new_string` pair shows only the
+/// lines that actually differ instead of the whole block as removed and
+/// re-added. The compared blocks are widened from the raw arguments to whole
+/// lines plus up to `DIFF_CONTEXT` unchanged lines taken from the file, so a
+/// change is shown in place even when `old_string` carries no context of its
+/// own. Deleted lines are numbered against the file before the edit, kept and
+/// inserted lines against the file after it. Multiple edits are separated by
+/// `@@ edit i/n @@` and applied in order so later edits number against the
+/// state left by earlier ones, matching what `edit()` does.
 fn render_edit_diff(edits: &[serde_json::Value], prior: &str) -> String {
     let n = edits.len();
     let mut working = prior.to_string();
@@ -254,18 +267,100 @@ fn render_edit_diff(edits: &[serde_json::Value], prior: &str) -> String {
         if n > 1 {
             out.push_str(&format!("@@ edit {}/{} @@\n", i + 1, n));
         }
-        let start = working.find(old).map(|pos| line_number_at(&working, pos)).unwrap_or(1);
-        for (j, line) in old.lines().enumerate() {
-            out.push_str(&format!("- {:>4} | {line}\n", start + j));
-        }
-        for (j, line) in new.lines().enumerate() {
-            out.push_str(&format!("+ {:>4} | {line}\n", start + j));
-        }
-        if let Some(pos) = working.find(old) {
-            working.replace_range(pos..pos + old.len(), new);
+        match working.find(old) {
+            Some(pos) => {
+                let (old_block, new_block, start) = expand_hunk(&working, pos, old, new);
+                out.push_str(&render_hunk_diff(&old_block, &new_block, start));
+                working.replace_range(pos..pos + old.len(), new);
+            }
+            // `edit()` will reject this call, but the arguments are still worth
+            // showing; there is no file position to number them against.
+            None => out.push_str(&render_hunk_diff(old, new, 1)),
         }
     }
     out.trim_end().to_string()
+}
+
+/// Widen the replacement of `old` at `pos` in `text` to whole lines plus
+/// `DIFF_CONTEXT` lines of surrounding file context, returning the before and
+/// after blocks and the 1-based line the blocks start at. Both blocks share the
+/// context verbatim, so the diff renders it as unchanged lines; whole-line
+/// bounds keep a match that starts or ends mid-line from being diffed against a
+/// line fragment.
+fn expand_hunk(text: &str, pos: usize, old: &str, new: &str) -> (String, String, usize) {
+    let end = pos + old.len();
+    let mut ctx_start = text[..pos].rfind('\n').map_or(0, |i| i + 1);
+    for _ in 0..DIFF_CONTEXT {
+        if ctx_start == 0 {
+            break;
+        }
+        ctx_start = text[..ctx_start - 1].rfind('\n').map_or(0, |i| i + 1);
+    }
+    let mut ctx_end = text[end..].find('\n').map_or(text.len(), |i| end + i);
+    for _ in 0..DIFF_CONTEXT {
+        if ctx_end >= text.len() {
+            break;
+        }
+        ctx_end = text[ctx_end + 1..]
+            .find('\n')
+            .map_or(text.len(), |i| ctx_end + 1 + i);
+    }
+    let old_block = text[ctx_start..ctx_end].to_string();
+    let new_block = format!("{}{new}{}", &text[ctx_start..pos], &text[end..ctx_end]);
+    (old_block, new_block, line_number_at(text, ctx_start))
+}
+
+/// Line-diff `old` against `new`, rendering each changed/context line with its
+/// real line number (`start`-based on both sides, since old and new begin at
+/// the same position). Groups distant changes with a `...` gap.
+fn render_hunk_diff(old: &str, new: &str, start: usize) -> String {
+    use similar::{ChangeTag, TextDiff};
+
+    // `old_string`/`new_string` are exact source snippets and often lack a
+    // trailing newline on their last line. `from_lines` tokenizes by keeping
+    // each line's newline, so a shared last line would otherwise mismatch
+    // (`"b"` vs `"b\n"`) and show as a spurious delete+insert instead of
+    // context. Padding both sides equally doesn't change indices or output,
+    // since `\n` is stripped again before each line is printed.
+    let pad = |s: &str| {
+        if s.is_empty() || s.ends_with('\n') {
+            s.to_string()
+        } else {
+            format!("{s}\n")
+        }
+    };
+    let (old, new) = (pad(old), pad(new));
+    let diff = TextDiff::from_lines(&old, &new);
+    let mut out = String::new();
+    for (gi, group) in diff.grouped_ops(DIFF_CONTEXT).iter().enumerate() {
+        if gi > 0 {
+            out.push_str("      ...\n");
+        }
+        for op in group {
+            for change in diff.iter_changes(op) {
+                let text = change.value();
+                let text = text.strip_suffix('\n').unwrap_or(text);
+                match change.tag() {
+                    // Numbered on the new side: context below an insertion or
+                    // deletion has moved, and an old-side number there would
+                    // run backwards against the `+` lines just above it.
+                    ChangeTag::Equal => {
+                        let line = start + change.new_index().unwrap_or(0);
+                        out.push_str(&format!("  {line:>4} | {text}\n"));
+                    }
+                    ChangeTag::Delete => {
+                        let line = start + change.old_index().unwrap_or(0);
+                        out.push_str(&format!("- {line:>4} | {text}\n"));
+                    }
+                    ChangeTag::Insert => {
+                        let line = start + change.new_index().unwrap_or(0);
+                        out.push_str(&format!("+ {line:>4} | {text}\n"));
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Whole-file `+` preview for a write, headed by created/overwrote, each line
@@ -1191,7 +1286,68 @@ mod tests {
         );
         assert_eq!(
             d,
-            "@@ edit 1/2 @@\n-    1 | a\n-    2 | b\n+    1 | A\n@@ edit 2/2 @@\n-    2 | c\n+    2 | C\n+    3 | D"
+            "@@ edit 1/2 @@\n-    1 | a\n-    2 | b\n+    1 | A\n     2 | c\n@@ edit 2/2 @@\n     1 | A\n-    2 | c\n+    2 | C\n+    3 | D"
+        );
+    }
+
+    /// Two edits far apart in one call: each hunk carries its own file context
+    /// and nothing in between, and the second is numbered against the state the
+    /// first left behind (edit 1 adds a line, so `eight` is renumbered 8 -> 9).
+    #[test]
+    fn edit_diff_numbers_later_edits_against_earlier_ones() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "two", "new_string": "TWO\nTWO.5"}),
+                json!({"old_string": "eight", "new_string": "EIGHT"}),
+            ],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
+        );
+        assert_eq!(
+            d,
+            concat!(
+                "@@ edit 1/2 @@\n",
+                "     1 | one\n",
+                "-    2 | two\n",
+                "+    2 | TWO\n",
+                "+    3 | TWO.5\n",
+                "     4 | three\n",
+                "     5 | four\n",
+                "@@ edit 2/2 @@\n",
+                "     7 | six\n",
+                "     8 | seven\n",
+                "-    9 | eight\n",
+                "+    9 | EIGHT\n",
+                "    10 | nine",
+            )
+        );
+    }
+
+    /// A later edit may target text an earlier one inserted, since both run
+    /// against the same `working` copy that `edit()` mutates in order.
+    #[test]
+    fn edit_diff_lets_a_later_edit_target_inserted_text() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "b", "new_string": "b\nBETA"}),
+                json!({"old_string": "BETA", "new_string": "GAMMA"}),
+            ],
+            "a\nb\nc",
+        );
+        assert_eq!(
+            d,
+            concat!(
+                "@@ edit 1/2 @@\n",
+                "     1 | a\n",
+                "     2 | b\n",
+                "+    3 | BETA\n",
+                "     4 | c\n",
+                "@@ edit 2/2 @@\n",
+                "     1 | a\n",
+                "     2 | b\n",
+                "-    3 | BETA\n",
+                "+    3 | GAMMA\n",
+                "     4 | c",
+            )
         );
     }
 
@@ -1201,7 +1357,93 @@ mod tests {
             &[json!({"old_string": "two", "new_string": "TWO"})],
             "one\ntwo\nthree",
         );
-        assert_eq!(d, "-    2 | two\n+    2 | TWO");
+        assert_eq!(
+            d,
+            "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three"
+        );
+    }
+
+    /// The context around a change comes from the file, not just from whatever
+    /// `old_string` happened to include, and stops at `DIFF_CONTEXT` lines.
+    #[test]
+    fn edit_diff_pads_hunk_with_file_context() {
+        let d = render_edit_diff(
+            &[json!({"old_string": "four", "new_string": "FOUR"})],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven",
+        );
+        assert_eq!(
+            d,
+            "     2 | two\n     3 | three\n-    4 | four\n+    4 | FOUR\n     5 | five\n     6 | six"
+        );
+    }
+
+    /// A match that starts and ends mid-line is diffed as the whole lines it
+    /// sits in, so the surrounding text on those lines is visible.
+    #[test]
+    fn edit_diff_widens_a_mid_line_match_to_whole_lines() {
+        let d = render_edit_diff(
+            &[json!({"old_string": "b = 1", "new_string": "b = 2"})],
+            "let a = 0;\nlet b = 1;\nlet c = 0;\n",
+        );
+        assert_eq!(
+            d,
+            "     1 | let a = 0;\n-    2 | let b = 1;\n+    2 | let b = 2;\n     3 | let c = 0;"
+        );
+    }
+
+    /// Distant changes inside one edit stay in one hunk, split by a `...` gap
+    /// rather than dumping the untouched lines between them.
+    #[test]
+    fn edit_diff_splits_distant_changes_with_a_gap() {
+        let d = render_edit_diff(
+            &[json!({
+                "old_string": "a\nb\nc\nd\ne\nf\ng\nh\ni",
+                "new_string": "A\nb\nc\nd\ne\nf\ng\nh\nI",
+            })],
+            "a\nb\nc\nd\ne\nf\ng\nh\ni",
+        );
+        assert_eq!(
+            d,
+            "-    1 | a\n+    1 | A\n     2 | b\n     3 | c\n      ...\n     7 | g\n     8 | h\n-    9 | i\n+    9 | I"
+        );
+    }
+
+    /// Nothing to show when the arguments do not change the file: the caller
+    /// turns an empty diff into `None`.
+    #[test]
+    fn edit_diff_is_empty_for_a_no_op_edit() {
+        let d = render_edit_diff(
+            &[json!({"old_string": "two", "new_string": "two"})],
+            "one\ntwo\nthree",
+        );
+        assert!(d.is_empty(), "unexpected: {d}");
+    }
+
+    #[test]
+    fn edit_diff_shows_only_the_changed_line_amid_shared_context() {
+        let d = render_edit_diff(
+            &[json!({
+                "old_string": "one\ntwo\nthree",
+                "new_string": "one\nTWO\nthree",
+            })],
+            "one\ntwo\nthree",
+        );
+        assert_eq!(
+            d,
+            "     1 | one\n-    2 | two\n+    2 | TWO\n     3 | three"
+        );
+    }
+
+    #[test]
+    fn edit_diff_numbers_inserted_lines_against_new_content() {
+        let d = render_edit_diff(
+            &[json!({"old_string": "b", "new_string": "b\nc\nd"})],
+            "a\nb\ne",
+        );
+        assert_eq!(
+            d,
+            "     1 | a\n     2 | b\n+    3 | c\n+    4 | d\n     5 | e"
+        );
     }
 
     #[test]
