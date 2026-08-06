@@ -14,5 +14,6 @@
   "useModel": "Use this model",
   "downloadModel": "Download model",
   "tools": "Tools",
-  "searchPlaceholder": "Search for models on Hugging Face..."
+  "searchPlaceholder": "Search for models on Hugging Face...",
+  "resumeUnavailable": "Cannot resume this download. Please start it again."
 }

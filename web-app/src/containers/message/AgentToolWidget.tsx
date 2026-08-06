@@ -135,7 +135,9 @@ export const TerminalWidget = memo(
           </div>
           {running && (
             <div className="mt-1">
-              <Shimmer duration={1}>{t('tools:toolCall.running')}</Shimmer>
+              {/* The command is already on screen above, so the tool-named
+                  `running` string would just repeat it. */}
+              <Shimmer duration={1}>{t('tools:toolCall.working')}</Shimmer>
             </div>
           )}
           {!running && body && (
