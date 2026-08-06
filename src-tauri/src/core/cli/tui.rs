@@ -199,7 +199,7 @@ impl Picker {
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
-            PickerKind::AgentSettings => " ↑/↓ select   Enter edit   Esc close",
+            PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
         }
     }
@@ -4096,6 +4096,27 @@ async fn handle_key(
                     }
                 }
             }
+            // `/settings` picker: `x` restores the selected key to its default
+            // by removing it from agent.toml - same write as clearing the
+            // field in the edit dock, one keypress instead of two.
+            KeyCode::Char('x') if picker.kind == PickerKind::AgentSettings => {
+                let key = picker.items[picker.selected].value.clone();
+                // (picker borrow ends here; nothing below reads it before rebuild)
+                let toml_path = app.agent_dir.join("agent.toml");
+                match crate::core::agent::project::set_agent_key(&toml_path, &key, None) {
+                    Ok(()) => {
+                        app.note(&format!(
+                            "{key} unset (default applies); takes effect on the next run"
+                        ));
+                        if let Some(picker) = app.picker.as_mut() {
+                            picker.items = build_agent_settings_items(&toml_path);
+                            picker.selected =
+                                picker.selected.min(picker.items.len().saturating_sub(1));
+                        }
+                    }
+                    Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
+                }
+            }
             KeyCode::Enter => {
                 let kind = picker.kind;
                 let value = picker.items[picker.selected].value.clone();
@@ -4709,28 +4730,35 @@ fn settings_command(app: &mut App, arg: &str) {
     }
 }
 
-/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
-/// current value (or `unset`), Enter docking the edit prompt for that row.
-fn open_settings_screen(app: &mut App) {
-    let toml_path = app.agent_dir.join("agent.toml");
-    let items: Vec<PickerItem> = AGENT_SETTINGS
+/// One picker row per `[agent]` def; the hint carries the current on-disk
+/// value (`= 400`) or `(unset)` when the default applies. `value` is the key
+/// so the edit dock and the `x` unset shortcut can act on it.
+fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
+    AGENT_SETTINGS
         .iter()
         .map(|def| {
-            let current = current_agent_value(&toml_path, def.key);
+            let current = current_agent_value(toml_path, def.key);
             PickerItem {
                 value: def.key.to_string(),
                 label: def.label.to_string(),
                 hint: Some(match &current {
-                    Some(v) => format!("{} = {v}", def.key),
-                    None => format!("{} = (unset)", def.key),
+                    Some(v) => format!("= {v}"),
+                    None => "(unset)".to_string(),
                 }),
                 checkbox: None,
             }
         })
-        .collect();
+        .collect()
+}
+
+/// Open the `/settings` menu: a picker row per `[agent]` key, hint showing the
+/// current value (or `unset`), Enter docking the edit prompt for that row, `x`
+/// removing the key so its default applies again.
+fn open_settings_screen(app: &mut App) {
+    let toml_path = app.agent_dir.join("agent.toml");
     app.picker = Some(Picker {
         kind: PickerKind::AgentSettings,
-        items,
+        items: build_agent_settings_items(&toml_path),
         selected: 0,
     });
 }
@@ -5870,7 +5898,8 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     if let Some(picker) = &app.picker {
         app.row_index.clear();
-        draw_picker(f, chunks[1], picker);
+        let toml_path = app.agent_dir.join("agent.toml");
+        draw_picker(f, chunks[1], picker, &toml_path);
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(path_line(app), chunks[3]);
         f.render_widget(footer(app), chunks[4]);
@@ -6078,7 +6107,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_login(f, rect, prompt);
     } else if let Some(prompt) = &app.settings_prompt {
-        let height = (4 + u16::from(prompt.error.is_some())).min(chunks[1].height);
+        let height = (5 + u16::from(prompt.error.is_some())).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
             x: chunks[2].x,
@@ -6340,6 +6369,18 @@ fn draw_settings_prompt(
             Style::new().cyan(),
         ),
     ])];
+    lines.push(Line::styled(
+        match def.kind {
+            AgentSettingKind::Int { default, min } => {
+                let d = default
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "unset".to_string());
+                format!("default: {d} · valid: >= {min}")
+            }
+            AgentSettingKind::Text { default } => format!("default: {default}"),
+        },
+        dim,
+    ));
     if let Some(error) = &prompt.error {
         lines.push(Line::styled(error.clone(), Style::new().red()));
     }
@@ -6511,7 +6552,12 @@ fn draw_permission(f: &mut Frame, area: ratatui::layout::Rect, pending: &Pending
     f.render_stateful_widget(list, rows[2], &mut state);
 }
 
-fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
+fn draw_picker(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    picker: &Picker,
+    toml_path: &std::path::Path,
+) {
     use ratatui::widgets::{List, ListItem, ListState};
 
     let items: Vec<ListItem> = picker
@@ -6540,7 +6586,51 @@ fn draw_picker(f: &mut Frame, area: ratatui::layout::Rect, picker: &Picker) {
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(picker.selected));
-    f.render_stateful_widget(list, area, &mut state);
+
+    // The settings menu keeps two rows under the list for the selected
+    // setting's description, default, valid range, and current value - the
+    // rows themselves stay terse (`key  = value`) because the detail footer
+    // explains what each knob does.
+    if picker.kind == PickerKind::AgentSettings {
+        let list_area = Rect {
+            height: area.height.saturating_sub(2),
+            ..area
+        };
+        f.render_stateful_widget(list, list_area, &mut state);
+        if let Some(def) = picker
+            .items
+            .get(picker.selected)
+            .and_then(|it| AGENT_SETTINGS.iter().find(|d| d.key == it.value))
+        {
+            let current = current_agent_value(toml_path, def.key)
+                .unwrap_or_else(|| "unset".to_string());
+            let meta = match def.kind {
+                AgentSettingKind::Int { default, min } => {
+                    let d = default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".to_string());
+                    format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Text { default } => {
+                    format!("default: {default} · current: {current}")
+                }
+            };
+            let dim = Style::new().dark_gray();
+            f.render_widget(
+                Paragraph::new(vec![
+                    Line::styled(def.desc.to_string(), dim),
+                    Line::styled(meta, dim),
+                ]),
+                Rect {
+                    y: list_area.y + list_area.height,
+                    height: area.height - list_area.height,
+                    ..area
+                },
+            );
+        }
+    } else {
+        f.render_stateful_widget(list, area, &mut state);
+    }
 }
 
 /// Render a duration as a compact `"12s"` / `"3m12s"` / `"1h04m"` label.
@@ -8834,7 +8924,7 @@ mod tests {
         assert!(transcript_text(&app).contains("must be at least 1"));
 
         // Bare opens the settings picker with a row per def, hints carrying
-        // the on-disk current value.
+        // the on-disk current value (no key prefix; the label is the key).
         super::settings_command(&mut app, "");
         let picker = app.picker.as_ref().expect("bare /settings opens picker");
         assert_eq!(picker.kind, PickerKind::AgentSettings);
@@ -8844,13 +8934,37 @@ mod tests {
             .iter()
             .find(|i| i.value == "max_turns")
             .expect("max_turns row present");
-        assert_eq!(row.hint.as_deref(), Some("max_turns = 8"));
+        assert_eq!(row.hint.as_deref(), Some("= 8"));
         let row = picker
             .items
             .iter()
             .find(|i| i.value == "max_parallel_subagents")
             .expect("max_parallel_subagents row present");
-        assert_eq!(row.hint.as_deref(), Some("max_parallel_subagents = 20"));
+        assert_eq!(row.hint.as_deref(), Some("= 20"));
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[tokio::test]
+    async fn settings_picker_x_unsets_selected_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\nmax_turns = 8\n").unwrap();
+
+        super::settings_command(&mut app, "");
+        // Select the max_turns row (index 0) and press x: the key must be
+        // removed, the row hint flip back to (unset), the note rendered.
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("max_turns = 8"), "key removed: {doc}");
+        assert!(transcript_text(&app).contains("max_turns unset"));
+        let picker = app.picker.as_ref().expect("picker stays open");
+        let row = picker
+            .items
+            .iter()
+            .find(|i| i.value == "max_turns")
+            .expect("max_turns row present");
+        assert_eq!(row.hint.as_deref(), Some("(unset)"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
