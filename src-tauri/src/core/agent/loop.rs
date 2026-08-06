@@ -1107,8 +1107,11 @@ async fn orchestrate_inner(
     }
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
-    // could silently ignore.
-    let force_first_tool = eager_todo_plan.then_some("todo");
+    // could silently ignore. Only when the todo tool is actually advertised —
+    // with no registry the loop skips the `todo` schema, and a forced
+    // tool_choice for an unadvertised tool is rejected upstream (the headless
+    // CLI path runs with `todo_registry: None`).
+    let force_first_tool = (eager_todo_plan && todo_registry.is_some()).then_some("todo");
 
     let model_override = json_body.get("model").and_then(|v| v.as_str());
     let mut model_id: Option<String> = model_override.map(|v| v.to_string());
