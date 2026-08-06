@@ -4,6 +4,7 @@ import { CodeIcon, EyeIcon, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { countUnresolvedAssetRefs } from '@/lib/htmlAssets'
+import { PREVIEW_INSPECTOR_SCRIPT } from '@/lib/previewInspector'
 import type { BundledLanguage } from 'shiki'
 
 interface HtmlArtifactProps {
@@ -59,9 +60,18 @@ function buildSrcDoc(
 ): string {
   const csp = buildCsp(allowNetwork, allowScripts)
   const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`
+  // Zero the shell's body margin so artifact content sits flush and the
+  // element inspector can treat full-viewport wrappers as background.
+  const shellStyle = '<style>html,body{margin:0}</style>'
+  // Element inspection (hover outline / click-to-pin bbox) needs a script in
+  // the iframe's own document, which is only possible when scripts run at all
+  // (allowScripts=false is the static SVG mode).
+  const inspector = allowScripts
+    ? `<script>${PREVIEW_INSPECTOR_SCRIPT}</script>`
+    : ''
   // Always wrap so the CSP meta precedes all model markup — a meta CSP is only
   // honored before resource-fetching content, and a later one can't loosen it.
-  return `<!doctype html><html><head>${meta}</head><body>${code}</body></html>`
+  return `<!doctype html><html><head>${meta}${shellStyle}${inspector}</head><body>${code}</body></html>`
 }
 
 function HtmlArtifactComponent({
