@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fs } from '@janhq/core'
-import { AlertTriangle, FileIcon, FolderOpen, RotateCw } from 'lucide-react'
+import { AlertTriangle, FileIcon, FolderOpen, Pencil, RotateCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { CodeSidePanel } from '@/containers/CodeSidePanel'
 import { HtmlArtifact } from '@/components/HtmlArtifact'
+import { AnnotationOverlay } from '@/components/AnnotationOverlay'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useCodeSessions } from '@/hooks/useCodeSessions'
+import { useChatAttachments } from '@/hooks/useChatAttachments'
+import { createImageAttachment } from '@/types/attachment'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -19,6 +24,9 @@ import {
   type PreviewState,
 } from '@/lib/codePreview'
 import type { BundledLanguage } from 'shiki'
+
+/** Kinds that can be meaningfully annotated (visual content). */
+const ANNOTATABLE_KINDS = new Set(['html', 'svg', 'image', 'markdown'])
 
 /**
  * Preview pane for files the agent produced (jan-internal #242). Reads from disk
@@ -44,7 +52,10 @@ export function CodePreviewPanel({
 }): React.ReactElement {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
+  const currentId = useCodeSessions((s) => s.currentId)
+  const setAttachments = useChatAttachments((s) => s.setAttachments)
   const [state, setState] = useState<PreviewState>({ status: 'idle' })
+  const [annotate, setAnnotate] = useState(false)
 
   const load = useCallback(
     async (rel: string) => {
@@ -102,6 +113,36 @@ export function CodePreviewPanel({
     [root, serviceHub, t]
   )
 
+  const handleAnnotateSend = useCallback(
+    (dataUrl: string) => {
+      if (!currentId) {
+        toast.error('No active session')
+        return
+      }
+      const sid = currentId
+      // Compute a rough byte length from the data URL (base64 inflates ~33%).
+      const base64 = dataUrl.split(',')[1] ?? ''
+      const size = Math.ceil((base64.length * 3) / 4)
+      setAttachments(sid, (prev) => [
+        ...prev,
+        createImageAttachment({
+          name: 'annotation.png',
+          base64,
+          dataUrl,
+          mimeType: 'image/png',
+          size,
+        }),
+      ])
+      toast.success('Annotation added to message')
+    },
+    [currentId, setAttachments]
+  )
+
+  const canAnnotate =
+    state.status === 'ready' &&
+    state.kind != null &&
+    ANNOTATABLE_KINDS.has(state.kind)
+
   // Load whenever the caller changes the selection (file list click, or a
   // transcript artifact card opening a specific file).
   useEffect(() => {
@@ -121,15 +162,31 @@ export function CodePreviewPanel({
       title={t('common:previewPanelTitle')}
       summary={
         state.status === 'ready' || state.status === 'unsupported' ? (
-          <button
-            type="button"
-            onClick={() => selectedPath && void load(selectedPath)}
-            title={t('common:previewReload')}
-            aria-label={t('common:previewReload')}
-            className="shrink-0 text-main-view-fg/60 hover:text-main-view-fg"
-          >
-            <RotateCw size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            {canAnnotate && (
+              <button
+                type="button"
+                onClick={() => setAnnotate((v) => !v)}
+                title={annotate ? 'Exit annotation mode' : 'Annotate preview'}
+                aria-label={annotate ? 'Exit annotation mode' : 'Annotate preview'}
+                className={cn(
+                  'shrink-0 rounded p-0.5 text-main-view-fg/60 hover:bg-main-view-fg/10 hover:text-main-view-fg',
+                  annotate && 'bg-main-view-fg/10 text-main-view-fg'
+                )}
+              >
+                <Pencil size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => selectedPath && void load(selectedPath)}
+              title={t('common:previewReload')}
+              aria-label={t('common:previewReload')}
+              className="shrink-0 text-main-view-fg/60 hover:text-main-view-fg"
+            >
+              <RotateCw size={14} />
+            </button>
+          </div>
         ) : null
       }
       onClose={onClose}
@@ -206,46 +263,52 @@ export function CodePreviewPanel({
                   {t('common:previewUnresolvedRefs', { count: state.unresolvedRefs })}
                 </p>
               )}
-              <div className="min-h-0 flex-1 overflow-auto">
-                {state.kind === 'html' && (
-                  <HtmlArtifact code={state.content ?? ''} language="html" />
-                )}
-                {state.kind === 'svg' && (
-                  <HtmlArtifact
-                    code={state.content ?? ''}
-                    language="xml"
-                    allowScripts={false}
-                  />
-                )}
-                {state.kind === 'markdown' && (
-                  <div className="p-3">
-                    <RenderMarkdown content={state.content ?? ''} />
-                  </div>
-                )}
-                {state.kind === 'text' && (
-                  <CodeBlock
-                    code={state.content ?? ''}
-                    language={
-                      (previewKindFor(state.path) === 'text'
-                        ? state.path.split('.').pop()
-                        : 'text') as BundledLanguage
-                    }
-                  />
-                )}
-                {state.kind === 'image' && (
-                  <img
-                    src={state.assetUrl}
-                    alt={basenameOf(state.path)}
-                    className="max-h-full max-w-full object-contain p-3"
-                  />
-                )}
-                {state.kind === 'video' && (
-                  <video src={state.assetUrl} controls className="max-h-full max-w-full p-3" />
-                )}
-                {state.kind === 'audio' && (
-                  <audio src={state.assetUrl} controls className="w-full p-3" />
-                )}
-              </div>
+              <AnnotationOverlay
+                active={annotate && canAnnotate}
+                onSend={handleAnnotateSend}
+                onCancel={() => setAnnotate(false)}
+              >
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {state.kind === 'html' && (
+                    <HtmlArtifact code={state.content ?? ''} language="html" />
+                  )}
+                  {state.kind === 'svg' && (
+                    <HtmlArtifact
+                      code={state.content ?? ''}
+                      language="xml"
+                      allowScripts={false}
+                    />
+                  )}
+                  {state.kind === 'markdown' && (
+                    <div className="p-3">
+                      <RenderMarkdown content={state.content ?? ''} />
+                    </div>
+                  )}
+                  {state.kind === 'text' && (
+                    <CodeBlock
+                      code={state.content ?? ''}
+                      language={
+                        (previewKindFor(state.path) === 'text'
+                          ? state.path.split('.').pop()
+                          : 'text') as BundledLanguage
+                      }
+                    />
+                  )}
+                  {state.kind === 'image' && (
+                    <img
+                      src={state.assetUrl}
+                      alt={basenameOf(state.path)}
+                      className="max-h-full max-w-full object-contain p-3"
+                    />
+                  )}
+                  {state.kind === 'video' && (
+                    <video src={state.assetUrl} controls className="max-h-full max-w-full p-3" />
+                  )}
+                  {state.kind === 'audio' && (
+                    <audio src={state.assetUrl} controls className="w-full p-3" />
+                  )}
+                </div>
+              </AnnotationOverlay>
             </div>
           )}
         </div>
