@@ -10,7 +10,14 @@ import { Callout } from 'nextra/components'
 
 Type `/` in the input to filter the list as you type. <kbd>Enter</kbd> runs the highlighted command.
 
-Installed project skills ([Skills](/docs/agent/skills)) join the same popup: typing `/deploy` matches a skill named `deploy` (magenta row, alongside the cyan commands), <kbd>Tab</kbd> completes it, and <kbd>Enter</kbd> tells the agent to load and follow the skill. Disabled skills (via `[skills].enabled`) are not offered.
+Installed project skills ([Skills](/docs/agent/skills)) join the same popup: typing `/deploy` matches a skill named `deploy` (magenta row, alongside the cyan commands), <kbd>Tab</kbd> completes it, and <kbd>Enter</kbd> tells the agent to follow the skill. Disabled skills (via `[skills].enabled`) are not offered.
+
+Skills accept arguments, and there are two ways to invoke one:
+
+- `/deploy staging` - short form; arguments after the name are passed to the skill. If the name collides with a built-in command, the command wins.
+- `/skill:deploy staging` - explicit form, never collides with a command, and also works mid-prompt: `fix the auth flow /skill:deploy harden` runs the skill with the surrounding prose as its arguments.
+
+Either form loads the skill's full instructions into the conversation (no separate fetch step), announces the skill's folder so bundled files resolve relative paths, and renders one compact `[skill:deploy]` row in the transcript.
 
 ## Session
 
