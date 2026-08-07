@@ -1488,12 +1488,12 @@ mod tests {
     /// subagent def, subagents enabled, cap 1.
     #[cfg(feature = "cli")]
     fn max_par_args(root: &std::path::Path) -> crate::core::agent::r#loop::OrchestrationArgs {
-        use crate::core::agent::permissions::ToolPermissions;
         use crate::core::agent::r#loop::OrchestrationArgs;
         use crate::core::mcp::models::McpSettings;
+        use tauri_plugin_agent_tools::permissions::ToolPermissions;
         use crate::core::state::ProviderConfig;
         use std::collections::HashMap;
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
         OrchestrationArgs {
             client: reqwest::Client::new(),
             provider_configs: Arc::new(tokio::sync::Mutex::new(
@@ -1677,7 +1677,7 @@ mod tests {
         // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
         // the semaphore) -- the interesting teardown case.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
+        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
         let r2 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
         let r3 = spawn_subagent(&bg, &args, req("reviewer", None), "m", None, &events_tx).unwrap();
 
