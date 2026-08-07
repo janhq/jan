@@ -523,6 +523,7 @@ fn build_cli_orchestration_args(
     permission_requests: PermissionRegistry,
     yolo: bool,
     plan: bool,
+    max_parallel_subagents: u32,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: reqwest::Client::new(),
@@ -537,6 +538,7 @@ fn build_cli_orchestration_args(
         todo_registry: None,
         system_prompt_override: None,
         subagents_enabled: true,
+        max_parallel_subagents,
         yolo,
         run_mode: if plan {
             crate::core::agent::plan::RunMode::Plan
@@ -716,6 +718,10 @@ fn prepare_agent_session(
     };
 
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let max_parallel_subagents = cfg
+        .agent
+        .max_parallel_subagents
+        .unwrap_or(crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS);
     let args = build_cli_orchestration_args(
         project_root,
         permissions,
@@ -725,6 +731,7 @@ fn prepare_agent_session(
         permission_requests.clone(),
         yolo,
         plan,
+        max_parallel_subagents,
     );
 
     Ok(AgentSession {
@@ -997,6 +1004,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         }
         StreamEvent::SubagentStart { name, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
+        }
+        StreamEvent::SubagentQueued { name, waiting, .. } => {
+            eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
         StreamEvent::SubagentEnd { name, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
